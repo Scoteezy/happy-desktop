@@ -506,10 +506,7 @@ function onboardingSenderRequire(sender: Electron.WebContents): void {
         throw new Error("First-run setup is not being presented by this window.");
 }
 
-const legacyCli = legacyCliConnectorCreate(
-    () => daemonController.launchEnvironment(),
-    desktopFlavor.kind === "local-web" ? "beta" : "latest",
-);
+const legacyCli = legacyCliConnectorCreate(() => daemonController.launchEnvironment());
 
 function legacyCliSenderCurrent(event: Electron.IpcMainInvokeEvent): () => boolean {
     onboardingSenderRequire(event.sender);

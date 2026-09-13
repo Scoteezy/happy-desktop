@@ -13,10 +13,7 @@ interface PreparedLegacyCli {
 }
 
 /** Installation precedes the phone steps; linking only uses the prepared CLI. */
-export function legacyCliConnectorCreate(
-    launchEnvironment: () => Promise<NodeJS.ProcessEnv>,
-    channel: "latest" | "beta",
-): {
+export function legacyCliConnectorCreate(launchEnvironment: () => Promise<NodeJS.ProcessEnv>): {
     prepare(current: () => boolean): Promise<void>;
     connect(current: () => boolean): Promise<void>;
 } {
@@ -27,7 +24,7 @@ export function legacyCliConnectorCreate(
         async prepare(current) {
             requireCurrent(current);
             if (prepared) return;
-            preparing ??= prepare(current, launchEnvironment, channel)
+            preparing ??= prepare(current, launchEnvironment)
                 .then((result) => {
                     requireCurrent(current);
                     prepared = result;
@@ -93,7 +90,6 @@ function requireCurrent(current: () => boolean): void {
 async function prepare(
     current: () => boolean,
     launchEnvironment: () => Promise<NodeJS.ProcessEnv>,
-    channel: "latest" | "beta",
 ): Promise<PreparedLegacyCli> {
     requireCurrent(current);
     const nativeEnvironment = await launchEnvironment();
@@ -161,7 +157,7 @@ async function prepare(
             try {
                 await run(
                     npm,
-                    ["install", "--global", `happy@${channel}`, "--no-audit", "--no-fund"],
+                    ["install", "--global", "happy@latest", "--no-audit", "--no-fund"],
                     300_000,
                 );
             } catch {
