@@ -65,6 +65,8 @@ export function HappyAgentOnboardingBoundary(props: {
                     : {}),
             };
         switch (mobile.status) {
+            case "desktop":
+                return { kind: "happy-mobile-desktop", step: mobile.step };
             case "checking":
                 return { kind: "happy-mobile-checking" };
             case "offer":
@@ -99,6 +101,7 @@ export function HappyAgentOnboardingBoundary(props: {
             onConnectRetry={props.onRetry}
             onHappyMobileConnect={props.store.mobile.happyMobileConnect}
             onHappyMobileSkip={props.store.mobile.happyMobileSkip}
+            onHappyMobilePlatformSelect={props.store.mobile.happyMobilePlatformSelect}
             onProfileNameChange={props.profile.displayNameUpdate}
             onProfileEmailChange={props.profile.emailUpdate}
             onProfileCreate={() => {

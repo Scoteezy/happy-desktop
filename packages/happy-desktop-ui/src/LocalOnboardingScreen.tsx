@@ -1,7 +1,9 @@
 import { type AssistantMarkName } from "./AssistantMark";
 import { Button } from "./Button";
+import { DesktopMobileSetup, type DesktopMobileSetupStep } from "./DesktopMobileSetup";
 import { QRCode } from "./QRCode";
 import { SetupAssistants, type SetupAssistantEntry } from "./SetupAssistants";
+import { SetupChoice } from "./SetupChoice";
 import { SetupPage, SetupProgress, type SetupPageProgress } from "./SetupPage";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
@@ -41,6 +43,7 @@ export type LocalOnboardingAgentSetupPhase =
     | { readonly kind: "starting" };
 
 export type LocalOnboardingView =
+    | { readonly kind: "happy-mobile-desktop"; readonly step: DesktopMobileSetupStep }
     | { readonly kind: "checking"; readonly message?: string }
     | { readonly kind: "node-missing" }
     | {
@@ -80,6 +83,7 @@ export type LocalOnboardingView =
           readonly kind: "happy-mobile-failed";
           readonly message: string;
       }
+    | { readonly kind: "first-project"; readonly busy: boolean; readonly message?: string }
     | { readonly kind: "project"; readonly busy: boolean; readonly message?: string };
 
 export interface LocalOnboardingScreenProps {
@@ -89,7 +93,11 @@ export interface LocalOnboardingScreenProps {
     onConnectRetry(): void;
     onHappyMobileConnect(): void;
     onHappyMobileSkip(): void;
+    onHappyMobilePlatformSelect?(platform: "ios" | "android"): void;
     onProjectChoose(): void;
+    onProjectSetupManual?(): void;
+    onProjectSetupBack?(): void;
+    onChiefOfStaffSetup?(): void;
     onProfileNameChange(value: string): void;
     onProfileEmailChange(value: string): void;
     onProfileCreate(): void;
@@ -366,6 +374,16 @@ function MachineSetupStatus(props: {
  */
 export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
     const { view } = props;
+    if (view.kind === "happy-mobile-desktop")
+        return (
+            <DesktopMobileSetup
+                appearance={props.appearance}
+                step={view.step}
+                onContinue={props.onHappyMobileConnect}
+                onSkip={props.onHappyMobileSkip}
+                onPlatformSelect={props.onHappyMobilePlatformSelect}
+            />
+        );
     // Download, start, discovery, and verification are one machine-setup
     // surface. Profile, mobile pairing, and project decisions begin their own
     // pages after that machine work.
@@ -373,6 +391,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
         switch (view.kind) {
             case "profile-required":
             case "project":
+            case "first-project":
             case "happy-mobile-checking":
             case "happy-mobile-offer":
             case "happy-mobile-pairing":
@@ -446,7 +465,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 className="happy-local-onboarding__mobile"
                 copy={
                     view.message ??
-                    "Pair Happy Mobile to follow sessions, reply, and approve requests when you're away from your desk."
+                    "Connect Happy, Claude Code, and Codex to Happy Mobile. Follow sessions, reply, and approve requests when you're away from your desk."
                 }
                 data-testid="local-onboarding-screen"
                 scene="alien-monster"
@@ -587,6 +606,57 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
             />
         );
 
+    if (view.kind === "first-project")
+        return (
+            <SetupPage
+                {...frame}
+                className="happy-local-onboarding__first-project"
+                title="Start small, with Chief of Staff"
+                copy="Chief of Staff helps you set up Happy and coordinate your work. Make it a habit: ask for the next step, choose one project, and make one simple change together."
+                data-testid="local-onboarding-screen"
+            >
+                <SetupChoice
+                    onSelect={(id) => {
+                        if (id === "chief") props.onChiefOfStaffSetup?.();
+                        else if (id === "manual") props.onProjectSetupManual?.();
+                    }}
+                    options={[
+                        {
+                            id: "chief",
+                            scene: "robot",
+                            title: "Conversational setup",
+                            description:
+                                "Recommended. Find one recent project to import, or create a new one, with Chief of Staff's guidance.",
+                            actionLabel: view.busy
+                                ? "Opening draft…"
+                                : "Set up with Chief of Staff",
+                            actionVariant: "primary",
+                            disabled: view.busy,
+                        },
+                        {
+                            id: "manual",
+                            scene: "wand",
+                            title: "Manual setup",
+                            description:
+                                "Prefer to choose the folder yourself? Open a project now. Chief of Staff will still be there whenever you need it.",
+                            actionLabel: "Set up manually",
+                            disabled: view.busy,
+                        },
+                    ]}
+                />
+                <p className="happy-setup-page__copy">
+                    The recommended option opens an editable, unsent draft. Local Claude Code and
+                    Codex project metadata is inspected only after you send the message—not when you
+                    click. Nothing is imported or changed without your confirmation.
+                </p>
+                {view.message ? (
+                    <p className="happy-setup-page__copy" role="alert">
+                        {view.message}
+                    </p>
+                ) : null}
+            </SetupPage>
+        );
+
     if (view.kind === "project")
         return (
             <SetupPage
@@ -604,7 +674,13 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 data-testid="local-onboarding-screen"
                 scene="wand"
                 title="Open your first project"
-            />
+            >
+                {props.onProjectSetupBack ? (
+                    <Button disabled={view.busy} onClick={props.onProjectSetupBack} variant="ghost">
+                        Back to setup options
+                    </Button>
+                ) : null}
+            </SetupPage>
         );
 
     return null;

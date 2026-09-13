@@ -986,6 +986,8 @@ export interface HappyAgentWorkspaceStore {
     messageSend(sessionId: HappyAgentSessionId, message: string): Promise<void>;
     /** Replaces one explicitly addressed conversation's composer draft. */
     draftUpdate(sessionId: HappyAgentSessionId, message: string): Promise<void>;
+    /** Adds an unsent suggestion without replacing an existing draft or duplicating an unchanged retry. */
+    draftAppend(sessionId: HappyAgentSessionId, message: string): Promise<void>;
     /** Starts the new conversation described by a slot action and optionally submits its prompt. */
     chatStart(input: HappyAgentWorkspaceNewChatInput): Promise<void>;
     /**
@@ -4541,6 +4543,50 @@ export function happyAgentWorkspaceStoreCreate(
                 withAddressedChat(sessionId, (store) =>
                     store.draftSet(message, nextDraftUpdatedAt(), draftOrigin),
                 ),
+            ),
+        draftAppend: (sessionId, message) =>
+            writeGuard(sessionConversationRefusal(sessionId), () =>
+                withAddressedChat(sessionId, async (store) => {
+                    // Read the existing draft before adding anything. Acquiring a
+                    // chat starts its projection, but does not wait for its data.
+                    await new Promise<void>((resolve, reject) => {
+                        let unsubscribe = () => {};
+                        let settled = false;
+                        const finish = (error?: Error) => {
+                            if (settled) return;
+                            settled = true;
+                            clearTimeout(timeout);
+                            unsubscribe();
+                            if (error) reject(error);
+                            else resolve();
+                        };
+                        const timeout = setTimeout(
+                            () =>
+                                finish(new Error("The conversation is still loading. Try again.")),
+                            15_000,
+                        );
+                        const check = () => {
+                            if (disposed) {
+                                finish(new Error("This workspace is no longer open."));
+                                return;
+                            }
+                            const session = store.get().session;
+                            if (session.type === "error") finish(session.error);
+                            else if (session.type === "ready") finish();
+                        };
+                        unsubscribe = store.subscribe(check);
+                        if (settled) unsubscribe();
+                        else check();
+                    });
+                    if (disposed) throw new Error("This workspace is no longer open.");
+                    const existing = store.get().draft ?? "";
+                    if (existing === message || existing.endsWith(`\n\n${message}`)) return;
+                    await store.draftSet(
+                        existing ? `${existing}\n\n${message}` : message,
+                        nextDraftUpdatedAt(),
+                        draftOrigin,
+                    );
+                }),
             ),
         async chatStart(input) {
             const groupId = slotGroupFind(input);

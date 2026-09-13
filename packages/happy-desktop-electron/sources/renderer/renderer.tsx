@@ -37,6 +37,7 @@ import {
     type TitleShimmerStore,
     type HappyAgentWindowStore,
     type HappyAgentModelPreferencePersistence,
+    type HappyAgentSessionId,
 } from "happy-desktop-state";
 import {
     CodeHighlightWorkers,
@@ -359,10 +360,16 @@ function DesktopOnboardingGate(props: {
             onConnectRetry={() => props.store.connectRetry()}
             onHappyMobileConnect={() => props.store.happyMobileConnect()}
             onHappyMobileSkip={() => props.store.happyMobileSkip()}
+            onHappyMobilePlatformSelect={(platform) =>
+                props.store.happyMobilePlatformSelect(platform)
+            }
             onProfileCreate={() => props.store.profileCreate()}
             onProfileEmailChange={(value) => props.store.profileEmailUpdate(value)}
             onProfileNameChange={(value) => props.store.profileNameUpdate(value)}
             onProjectChoose={() => props.store.projectChoose()}
+            onProjectSetupManual={() => props.store.projectSetupManual()}
+            onProjectSetupBack={() => props.store.projectSetupBack()}
+            onChiefOfStaffSetup={() => props.store.chiefOfStaffSetup()}
             view={view}
         />
     );
@@ -1088,6 +1095,8 @@ if (mediaPreviewBridge) {
         // the addressed conversation without the reader navigating twice.
         const happyAgents = happyAgentDirectoryStoreCreate(desktopBridge, runtimeStore, {
             cloudHostFor: auth.hostFor,
+            connectLegacyCli: window.happyDesktop?.legacyCliConnect,
+            prepareLegacyCli: window.happyDesktop?.legacyCliPrepare,
             conversationOpen: (happyAgentId, location) =>
                 happyAgentRouterConversationOpen(
                     connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,
@@ -1141,6 +1150,37 @@ if (mediaPreviewBridge) {
         // the same local connection store and transport as the workspace.
         const onboardingStore = localOnboardingStoreCreate(desktopBridge, {
             agentSetupActive: welcome.get().welcomeAcknowledged,
+            chiefOfStaffPrepare: async () => {
+                const session = happyAgents
+                    .get()
+                    .happyAgents.find((entry) => entry.id === LOCAL_HAPPY_AGENT_ID)?.session;
+                const bot = session?.workspace
+                    .get()
+                    .list.bots.find((entry) => entry.systemKey === "chief_of_staff");
+                if (!session || !bot)
+                    throw new Error(
+                        "Chief of Staff is not available yet. Try again or set up manually.",
+                    );
+                const location = await session.workspace.sessionLocationRead(
+                    bot.conversation.id as HappyAgentSessionId,
+                );
+                if (!location)
+                    throw new Error("Chief of Staff's conversation is not available yet.");
+                await session.workspace.draftAppend(
+                    location.sessionId,
+                    "Read recipe/first-project.md beside your Happy Agent documentation README. " +
+                        "Help me set up Happy, starting small. First, inspect only recent local Claude Code and Codex project-location metadata, read-only; do not import or expose conversation contents or credentials. " +
+                        "Show a few recent projects and help me choose ONE to import into Happy, or help me create a new project if I prefer. " +
+                        "Ask for my confirmation before importing or creating anything. Preserve any existing work and dirty checkout. " +
+                        "Then help me agree on one simple first change before editing. Do not bulk-import projects, start agents, or change files during discovery.",
+                );
+                return () =>
+                    happyAgentRouterConversationOpen(
+                        connectionUis.get(LOCAL_HAPPY_AGENT_ID)?.router ?? happyAgentRouter,
+                        LOCAL_HAPPY_AGENT_ID,
+                        location,
+                    );
+            },
             happyMobile: {
                 get: () =>
                     happyAgents.get().happyAgents.find((entry) => entry.id === LOCAL_HAPPY_AGENT_ID)

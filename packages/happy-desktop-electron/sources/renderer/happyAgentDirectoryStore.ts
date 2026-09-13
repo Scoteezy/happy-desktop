@@ -67,6 +67,8 @@ export interface HappyAgentDirectoryStore {
 }
 
 export interface HappyAgentDirectoryDeps {
+    readonly prepareLegacyCli?: () => Promise<void>;
+    readonly connectLegacyCli?: () => Promise<void>;
     readonly cloudHostFor: (id: string) => HappyAgentCloudHost;
     readonly conversationOpen: (happyAgentId: string, location: HappyAgentSessionLocation) => void;
     readonly groupOpen: (happyAgentId: string, groupId: string) => void;
@@ -277,6 +279,10 @@ export function happyAgentDirectoryStoreCreate(
         happyAgent.url = happyAgentHttpUrl;
         happyAgent.connection = happyAgentConnectionOpen({
             cloudHost: deps.cloudHostFor(happyAgent.entry.id),
+            connectLegacyCli:
+                happyAgent.entry.id === LOCAL_HAPPY_AGENT_ID ? deps.connectLegacyCli : undefined,
+            prepareLegacyCli:
+                happyAgent.entry.id === LOCAL_HAPPY_AGENT_ID ? deps.prepareLegacyCli : undefined,
             host: happyAgent.entry.remoteId
                 ? {
                       projectSource: "repository",

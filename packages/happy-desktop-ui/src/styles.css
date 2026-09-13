@@ -1,4 +1,5 @@
 @import "./theme.css";
+@import "./styles/desktop-mobile-setup.css";
 @import "./styles/brand-logo.css";
 @import "./styles/scrollbar.css";
 @import "./styles/visually-hidden.css";

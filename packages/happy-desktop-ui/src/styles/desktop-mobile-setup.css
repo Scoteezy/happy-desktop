@@ -1,0 +1,43 @@
+.happy-desktop-mobile-setup .happy-setup-page__body {
+    gap: 12px;
+    padding: 32px;
+}
+
+.happy-desktop-mobile-setup__body,
+.happy-desktop-mobile-setup__preparation {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+}
+
+.happy-desktop-mobile-setup__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+}
+
+.happy-desktop-mobile-setup__note,
+.happy-desktop-mobile-setup__link {
+    margin: 0;
+    color: var(--button-primary-tint);
+    font-size: 14px;
+    line-height: 20px;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.happy-desktop-mobile-setup__platform {
+    display: flex;
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 4px;
+}
+
+.happy-desktop-mobile-setup__preparation {
+    min-height: 44px;
+}

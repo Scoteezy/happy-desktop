@@ -79,6 +79,8 @@ function providersMissingParse(message: string): readonly string[] | undefined {
 
 /** The decisions first-run setup writes down, and nothing it can observe instead. */
 export interface LocalOnboardingRecord {
+    /** First-project setup was explicitly handed to an unsent Chief of Staff draft. */
+    readonly chiefOfStaffSetup?: true;
     /** The last folder opened as a project, kept for display rather than for stages. */
     readonly projectPath?: string;
     readonly version: typeof recordVersion;
@@ -118,14 +120,17 @@ export async function localOnboardingRecordRead(
  * actually have written.
  */
 function recordParse(parsed: Record<string, unknown>): LocalOnboardingRecord | undefined {
-    const allowed = new Set(["version", "projectPath"]);
+    const allowed = new Set(["version", "projectPath", "chiefOfStaffSetup"]);
     for (const key of Object.keys(parsed)) if (!allowed.has(key)) return undefined;
 
     const pathValue = parsed.projectPath;
     if (pathValue !== undefined && (typeof pathValue !== "string" || !pathValue)) return undefined;
     const projectPath = pathValue as string | undefined;
+    if (parsed.chiefOfStaffSetup !== undefined && parsed.chiefOfStaffSetup !== true)
+        return undefined;
 
     return {
+        ...(parsed.chiefOfStaffSetup === true ? { chiefOfStaffSetup: true as const } : {}),
         ...(projectPath === undefined ? {} : { projectPath }),
         version: recordVersion,
     };
@@ -385,6 +390,13 @@ export class LocalOnboarding implements Disposable {
         this.assistantsAcknowledged = true;
         this.providerSetupAcknowledged = true;
         this.publish();
+    }
+
+    /** Finishes the desktop decisions without discovering or registering a project. */
+    async chiefOfStaffComplete(): Promise<void> {
+        await this.durable("Happy could not finish setup", ["project"], async (working) => {
+            await this.recordWrite({ ...this.record, chiefOfStaffSetup: true }, working.current);
+        });
     }
 
     /**
@@ -1014,11 +1026,13 @@ export class LocalOnboarding implements Disposable {
         const next = ((): LocalOnboardingSnapshot["stage"] => {
             switch (onboarding.state) {
                 case "complete":
-                    return this.freshness === "fresh" ? "project" : "complete";
+                    return this.freshness === "fresh" && !this.record.chiefOfStaffSetup
+                        ? "project"
+                        : "complete";
                 case "provider_setup":
                     if (!this.providerSetupAcknowledged) return "providersMissing";
                     return onboarding.profileDone
-                        ? this.freshness === "fresh"
+                        ? this.freshness === "fresh" && !this.record.chiefOfStaffSetup
                             ? "project"
                             : "complete"
                         : "profileRequired";

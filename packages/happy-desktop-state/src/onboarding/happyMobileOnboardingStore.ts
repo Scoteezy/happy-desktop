@@ -2,8 +2,26 @@ import type { HappyAgentClient, HappyIntegration } from "@slopus/happy-agent-cli
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
+import { happyDesktopMobileOnboardingStoreCreate } from "./happyDesktopMobileOnboardingStore.js";
+
+export type HappyMobileLinkPhase =
+    | { readonly kind: "checking" | "preparing" | "finishing" }
+    | { readonly kind: "pairing"; readonly data: string; readonly expiresAt: number }
+    | { readonly kind: "failed"; readonly message: string };
+
+export type HappyDesktopMobileStep =
+    | { readonly kind: "intro"; readonly alreadyLinked?: boolean }
+    | {
+          readonly kind: "get-app";
+          readonly platform: "ios" | "android";
+          readonly preparation: "preparing" | "ready" | "failed";
+          readonly message?: string;
+      }
+    | { readonly kind: "link"; readonly phase: HappyMobileLinkPhase }
+    | { readonly kind: "connected"; readonly online: boolean; readonly message?: string };
 
 export type HappyMobileOnboardingSnapshot =
+    | { readonly status: "desktop"; readonly step: HappyDesktopMobileStep }
     | { readonly status: "checking" }
     | {
           readonly message?: string;
@@ -32,6 +50,8 @@ export interface HappyMobileOnboardingStore {
     subscribe(listener: () => void): () => void;
     happyMobileConnect(): void;
     happyMobileSkip(): void;
+    happyMobilePlatformSelect(platform: "ios" | "android"): void;
+    [Symbol.dispose](): void;
 }
 
 export interface HappyMobileOnboardingStoreOptions {
@@ -41,6 +61,9 @@ export interface HappyMobileOnboardingStoreOptions {
         "cancelHappyIntegration" | "getHappyIntegration" | "startHappyIntegration"
     >;
     readonly initialSkipped?: boolean;
+    /** Local desktop only; remote Happy Agents retain their Agent-only pairing. */
+    readonly connectLegacyCli?: () => Promise<void>;
+    readonly prepareLegacyCli?: () => Promise<void>;
     readonly onOutput?: (output: HappyMobileOnboardingOutput) => void;
 }
 
@@ -70,13 +93,16 @@ function resolved(snapshot: HappyMobileOnboardingSnapshot): boolean {
 export function happyMobileOnboardingStoreCreate(
     options: HappyMobileOnboardingStoreOptions,
 ): HappyMobileOnboardingStore {
+    if (options.connectLegacyCli) return happyDesktopMobileOnboardingStoreCreate(options);
     const listeners = new Set<() => void>();
     let snapshot: HappyMobileOnboardingSnapshot = options.initialSkipped ? SKIPPED : CHECKING;
     let version: string | undefined;
     let networkAbort: AbortController | undefined;
     let mutation = 0;
+    let disposed = false;
 
     const publish = (next: HappyMobileOnboardingSnapshot): void => {
+        if (disposed) return;
         snapshot = next;
         for (const listener of listeners) listener();
     };
@@ -85,6 +111,7 @@ export function happyMobileOnboardingStoreCreate(
         networkAbort = undefined;
     };
     const integrationAdopt = (integration: HappyIntegration): void => {
+        if (disposed || snapshot.status === "skipped") return;
         if (version !== undefined) {
             const order = version.localeCompare(integration.version);
             if (order > 0 || (order === 0 && snapshot.status !== "failed")) return;
@@ -178,7 +205,7 @@ export function happyMobileOnboardingStoreCreate(
         }
     };
     const networkEnsure = (): void => {
-        if (listeners.size === 0 || networkAbort || resolved(snapshot)) return;
+        if (disposed || listeners.size === 0 || networkAbort || resolved(snapshot)) return;
         const abort = new AbortController();
         networkAbort = abort;
         void follow(abort)
@@ -198,21 +225,47 @@ export function happyMobileOnboardingStoreCreate(
     return {
         get: () => snapshot,
         subscribe(listener) {
+            if (disposed) return () => undefined;
             listeners.add(listener);
             if (listeners.size === 1) networkEnsure();
             return () => {
                 listeners.delete(listener);
-                if (listeners.size === 0) networkStop();
+                if (listeners.size === 0) {
+                    networkStop();
+                    mutation += 1;
+                    if (
+                        (snapshot.status === "offer" || snapshot.status === "failed") &&
+                        snapshot.pending
+                    )
+                        snapshot = {
+                            status: "failed",
+                            pending: false,
+                            message: "Setup paused. Try again to finish connecting Happy Mobile.",
+                        };
+                }
             };
         },
         happyMobileConnect() {
-            if ((snapshot.status !== "offer" && snapshot.status !== "failed") || snapshot.pending)
+            if (
+                disposed ||
+                (snapshot.status !== "offer" && snapshot.status !== "failed") ||
+                snapshot.pending
+            )
                 return;
             const request = ++mutation;
             publish({ ...snapshot, pending: true });
             void options.client.startHappyIntegration().then(
                 (response) => {
-                    if (request !== mutation || snapshot.status === "skipped") return;
+                    if (request !== mutation || snapshot.status === "skipped") {
+                        if (
+                            !disposed &&
+                            snapshot.status === "skipped" &&
+                            !response.integration.configured &&
+                            response.integration.status === "pairing"
+                        )
+                            void options.client.cancelHappyIntegration().catch(() => undefined);
+                        return;
+                    }
                     integrationAdopt(response.integration);
                     networkEnsure();
                 },
@@ -227,13 +280,20 @@ export function happyMobileOnboardingStoreCreate(
             );
         },
         happyMobileSkip() {
-            if (resolved(snapshot)) return;
+            if (disposed || resolved(snapshot)) return;
             const cancelPairing = snapshot.status === "pairing";
             mutation += 1;
             publish(SKIPPED);
             networkStop();
             options.onOutput?.({ type: "happyMobileSkipped" });
             if (cancelPairing) void options.client.cancelHappyIntegration().catch(() => undefined);
+        },
+        happyMobilePlatformSelect() {},
+        [Symbol.dispose]() {
+            disposed = true;
+            mutation += 1;
+            networkStop();
+            listeners.clear();
         },
     };
 }

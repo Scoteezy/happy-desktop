@@ -701,6 +701,10 @@ export interface HappyDesktopBridge {
     daemonInstallKill(): Promise<void>;
     /** Drains and restarts the local daemon on the version it is already running. */
     daemonRestart(): Promise<void>;
+    /** Installs/checks the compatible CLI before any phone authorization. */
+    legacyCliPrepare(): Promise<void>;
+    /** Links the prepared terminal CLI to this machine's existing Mobile pairing. */
+    legacyCliConnect(): Promise<void>;
     /** Downloads and verifies the first Happy Agent release without running it. */
     daemonDownload(): Promise<void>;
     daemonGet(): Promise<DesktopDaemonSnapshot>;
@@ -742,6 +746,8 @@ export interface HappyDesktopBridge {
      * already receive in a snapshot.
      */
     onboardingProjectChoose(): Promise<void>;
+    /** Remembers the explicit handoff to Chief of Staff without importing a project. */
+    onboardingChiefOfStaffComplete(): Promise<void>;
     /** Leaves provider authentication setup after its report, or skips it while it runs. */
     onboardingAssistantsContinue(): Promise<void>;
     runtimeGet(): Promise<DesktopRuntimeSnapshot>;
@@ -805,6 +811,8 @@ export const desktopIpc = {
     daemonInstallDismiss: "happy:daemon:install-dismiss",
     daemonInstallKill: "happy:daemon:install-kill",
     daemonRestart: "happy:daemon:restart",
+    legacyCliConnect: "happy:legacy-cli:connect",
+    legacyCliPrepare: "happy:legacy-cli:prepare",
     daemonGet: "happy:daemon:get",
     daemonStart: "happy:daemon:start",
     daemonUpgrade: "happy:daemon:upgrade",
@@ -831,6 +839,7 @@ export const desktopIpc = {
     onboardingGet: "happy:onboarding:get",
     onboardingProfileCreate: "happy:onboarding:profile-create",
     onboardingProjectChoose: "happy:onboarding:project-choose",
+    onboardingChiefOfStaffComplete: "happy:onboarding:chief-of-staff-complete",
     runtimeChanged: "happy:runtime:changed",
     runtimeGet: "happy:runtime:get",
     runtimeReset: "happy:runtime:reset",

@@ -465,6 +465,11 @@ export {
     type LocalOnboardingView,
 } from "./LocalOnboardingScreen";
 export {
+    DesktopMobileSetup,
+    type DesktopMobileSetupProps,
+    type DesktopMobileSetupStep,
+} from "./DesktopMobileSetup";
+export {
     AgentInstallScreen,
     type AgentInstallDrainAgent,
     type AgentInstallDrainComponent,

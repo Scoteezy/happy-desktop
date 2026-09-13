@@ -1,5 +1,6 @@
 import { SetupChoice } from "../../src/SetupChoice";
-import { LocalOnboardingScreen } from "../../src/LocalOnboardingScreen";
+import { DesktopMobileSetup, type DesktopMobileSetupStep } from "../../src/DesktopMobileSetup";
+import { LocalOnboardingScreen, type LocalOnboardingView } from "../../src/LocalOnboardingScreen";
 import { SetupPage } from "../../src/SetupPage";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -8,6 +9,86 @@ import { ComponentPage, DimensionRule, Specimen } from "../kit";
 export const componentNumber = "C-252";
 
 const noop = () => undefined;
+
+const firstProjectSteps: readonly { label: string; view: LocalOnboardingView }[] = [
+    { label: "First project · setup options", view: { kind: "first-project", busy: false } },
+    { label: "First project · preparing draft", view: { kind: "first-project", busy: true } },
+    {
+        label: "First project · setup retry",
+        view: {
+            kind: "first-project",
+            busy: false,
+            message: "Chief of Staff is not available yet. Try again or set up manually.",
+        },
+    },
+    { label: "First project · manual folder", view: { kind: "project", busy: false } },
+    {
+        label: "First project · manual retry",
+        view: {
+            kind: "project",
+            busy: false,
+            message:
+                "That folder is not in a Git repository. Choose a folder with a Git repository in it, or run git init there first.",
+        },
+    },
+];
+
+const mobileSteps: readonly { label: string; step: DesktopMobileSetupStep }[] = [
+    { label: "Mobile · opt-in", step: { kind: "intro" } },
+    { label: "Mobile · existing connection", step: { kind: "intro", alreadyLinked: true } },
+    {
+        label: "Mobile · get app and install CLI",
+        step: { kind: "get-app", platform: "ios", preparation: "preparing" },
+    },
+    {
+        label: "Mobile · app ready",
+        step: { kind: "get-app", platform: "ios", preparation: "ready" },
+    },
+    {
+        label: "Mobile · Android",
+        step: { kind: "get-app", platform: "android", preparation: "ready" },
+    },
+    {
+        label: "Mobile · CLI installation error",
+        step: {
+            kind: "get-app",
+            platform: "ios",
+            preparation: "failed",
+            message:
+                "Happy could not update the terminal CLI. Check your npm installation and permissions, then try again.",
+        },
+    },
+    {
+        label: "Mobile · checking saved connection",
+        step: { kind: "link", phase: { kind: "checking" } },
+    },
+    { label: "Mobile · already paired", step: { kind: "link", phase: { kind: "preparing" } } },
+    {
+        label: "Mobile · device QR",
+        step: {
+            kind: "link",
+            phase: {
+                kind: "pairing",
+                data: "happy://terminal?AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                expiresAt: 1924992000000,
+            },
+        },
+    },
+    { label: "Mobile · finishing inline", step: { kind: "link", phase: { kind: "finishing" } } },
+    {
+        label: "Mobile · link retry",
+        step: {
+            kind: "link",
+            phase: {
+                kind: "failed",
+                message:
+                    "Happy CLI is linked but spawn and resume are not online yet. Retry when your connection is available.",
+            },
+        },
+    },
+    { label: "Mobile · connected", step: { kind: "connected", online: true } },
+    { label: "Mobile · linked and offline", step: { kind: "connected", online: false } },
+];
 
 /** Setup fills the window, so every specimen gets a window-shaped frame. */
 const frame = {
@@ -520,6 +601,56 @@ export function SetupPagePage() {
                     </ThemeScope>
                 </div>
             </Specimen>
+            {mobileSteps.map(({ label, step }, index) => (
+                <Specimen
+                    key={label}
+                    detail="Optional mobile setup · bundled animated sticker · no runtime or account required"
+                    label={label}
+                    number={String(index + 18)}
+                    stage="surface"
+                >
+                    <div style={{ ...frame, height: "800px" }} data-mobile-specimen={label}>
+                        <ThemeScope mode="dark">
+                            <DesktopMobileSetup
+                                appearance="dark"
+                                step={step}
+                                onContinue={noop}
+                                onSkip={noop}
+                                onPlatformSelect={noop}
+                            />
+                        </ThemeScope>
+                    </div>
+                </Specimen>
+            ))}
+            {firstProjectSteps.map(({ label, view }, index) => (
+                <Specimen
+                    key={label}
+                    detail="One first project · an unsent editable Chief of Staff draft or the existing manual folder picker"
+                    label={label}
+                    number={String(index + 18 + mobileSteps.length)}
+                    stage="surface"
+                >
+                    <div style={{ ...frame, height: "800px" }} data-first-project-specimen={label}>
+                        <ThemeScope mode="dark">
+                            <LocalOnboardingScreen
+                                appearance="dark"
+                                onAssistantsContinue={noop}
+                                onConnectRetry={noop}
+                                onHappyMobileConnect={noop}
+                                onHappyMobileSkip={noop}
+                                onProfileCreate={noop}
+                                onProfileEmailChange={noop}
+                                onProfileNameChange={noop}
+                                onProjectChoose={noop}
+                                onProjectSetupManual={noop}
+                                onProjectSetupBack={noop}
+                                onChiefOfStaffSetup={noop}
+                                view={view}
+                            />
+                        </ThemeScope>
+                    </div>
+                </Specimen>
+            ))}
         </ComponentPage>
     );
 }

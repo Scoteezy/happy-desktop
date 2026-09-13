@@ -38,6 +38,7 @@ export interface LocalOnboardingViewSnapshot {
     readonly profileEmail: string;
     /** The optional mobile step, materialized only before the first project. */
     readonly happyMobile?: HappyMobileOnboardingSnapshot;
+    readonly projectSetupMode?: "manual";
 }
 
 export interface LocalOnboardingStore {
@@ -47,15 +48,21 @@ export interface LocalOnboardingStore {
     /** Enters machine setup and allows its automatic download and launch to begin. */
     agentSetupBegin(): void;
     projectChoose(): void;
+    projectSetupManual(): void;
+    projectSetupBack(): void;
+    chiefOfStaffSetup(): void;
     assistantsContinue(): void;
     profileNameUpdate(value: string): void;
     profileEmailUpdate(value: string): void;
     profileCreate(): void;
     happyMobileConnect(): void;
     happyMobileSkip(): void;
+    happyMobilePlatformSelect(platform: "ios" | "android"): void;
 }
 
 export interface LocalOnboardingStoreOptions {
+    /** Prepares an editable draft only, then returns navigation for the completed setup. */
+    readonly chiefOfStaffPrepare: () => Promise<() => void>;
     /** The local connection owns mobile setup and its shared realtime transport. */
     readonly happyMobile: {
         get(): HappyMobileOnboardingStore | undefined;
@@ -477,7 +484,34 @@ export function localOnboardingStoreCreate(
             setupSynchronize();
         },
         projectChoose() {
+            if (snapshot.pending) return;
             attempt(bridge.onboardingProjectChoose(), "Happy could not open a project.");
+        },
+        projectSetupManual() {
+            if (snapshot.pending || localOnboardingView(snapshot)?.kind !== "first-project") return;
+            publish({ ...snapshot, projectSetupMode: "manual", failure: undefined });
+        },
+        projectSetupBack() {
+            if (snapshot.pending || localOnboardingView(snapshot)?.kind !== "project") return;
+            publish({ ...snapshot, projectSetupMode: undefined, failure: undefined });
+        },
+        chiefOfStaffSetup() {
+            if (snapshot.pending || localOnboardingView(snapshot)?.kind !== "first-project") return;
+            const runtime = snapshot.runtime;
+            if (runtime?.phase !== "ready" || runtime.mode !== "local") return;
+            const current = () =>
+                snapshot.runtime?.phase === "ready" &&
+                snapshot.runtime.connectionId === runtime.connectionId;
+            attempt(
+                (async () => {
+                    const open = await options.chiefOfStaffPrepare();
+                    if (!current()) throw new Error("The local Happy Agent changed. Try again.");
+                    await bridge.onboardingChiefOfStaffComplete();
+                    const completed = await bridge.onboardingGet();
+                    if (current() && completed.stage === "complete") open();
+                })(),
+                "Happy could not open Chief of Staff setup.",
+            );
         },
         assistantsContinue() {
             attempt(bridge.onboardingAssistantsContinue(), "Happy could not continue setup.");
@@ -503,6 +537,9 @@ export function localOnboardingStoreCreate(
         },
         happyMobileSkip() {
             happyMobileStore?.happyMobileSkip();
+        },
+        happyMobilePlatformSelect(platform) {
+            happyMobileStore?.happyMobilePlatformSelect(platform);
         },
     };
 }
@@ -566,6 +603,8 @@ export function localOnboardingView(
             const mobile = snapshot.happyMobile;
             if (!mobile || mobile.status === "checking") return { kind: "happy-mobile-checking" };
             switch (mobile.status) {
+                case "desktop":
+                    return { kind: "happy-mobile-desktop", step: mobile.step };
                 case "offer":
                     return {
                         busy: mobile.pending,
@@ -587,7 +626,11 @@ export function localOnboardingView(
                 case "configured":
                 case "disabled":
                 case "skipped":
-                    return { busy, kind: "project", ...(message ? { message } : {}) };
+                    return {
+                        busy,
+                        kind: snapshot.projectSetupMode === "manual" ? "project" : "first-project",
+                        ...(message ? { message } : {}),
+                    };
             }
         }
         case "complete":

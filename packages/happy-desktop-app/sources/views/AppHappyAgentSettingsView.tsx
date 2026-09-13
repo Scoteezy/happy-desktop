@@ -34,6 +34,7 @@ import {
     titleShimmerStoreNoop,
 } from "happy-desktop-state";
 import {
+    DesktopMobileSetup,
     HappyAgentAccountSettings,
     HappyAgentGeneralSettings,
     HappyAgentDebugLogPanel,
@@ -479,6 +480,22 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         model?.model && !model.model.thinkingLevels.includes(settings.defaultEffort)
             ? model.model.defaultThinkingLevel
             : settings.defaultEffort;
+    if (
+        props.section === "mobile-access" &&
+        happyIntegration.setup &&
+        happyIntegrationStore.mobileSetup
+    )
+        return (
+            <HappyAgentVersionProvider lastKnownVersion={host?.version}>
+                <DesktopMobileSetup
+                    appearance={appearance.mode}
+                    step={happyIntegration.setup}
+                    onContinue={happyIntegrationStore.mobileSetup.continue}
+                    onSkip={happyIntegrationStore.mobileSetup.close}
+                    onPlatformSelect={happyIntegrationStore.mobileSetup.platformSelect}
+                />
+            </HappyAgentVersionProvider>
+        );
     const content = (
         <HappyAgentSettingsShell
             activeCategoryId={props.section}
@@ -497,6 +514,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             {props.section === "mobile-access" ? (
                 <HappyAgentMobileSettings
                     configured={happyIntegration.configured}
+                    onSetup={happyIntegrationStore.mobileSetup?.start}
                     disconnecting={happyIntegration.disconnecting}
                     onDisconnect={() => {
                         if (happyAgentOnline()) happyIntegrationStore.happyIntegrationDisconnect();

@@ -36,6 +36,8 @@ export interface HappyAgentMobileSettingsProps {
     readonly message?: string;
     /** Why actions cannot currently reach this Happy Agent. */
     readonly unavailable?: string;
+    /** Opens the shared Desktop mobile setup; absent for remote Agent-only pairing. */
+    readonly onSetup?: () => void;
     onDisconnect(): void;
     onPair(): void;
     onPairingCancel(): void;
@@ -118,7 +120,7 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                 description={statusDescription(props.status)}
                 label="Connection"
             />
-            {props.status === "pairing" && props.pairingData ? (
+            {!props.onSetup && props.status === "pairing" && props.pairingData ? (
                 <Box className="happy-agent-mobile-settings__pairing">
                     <QRCode
                         data={props.pairingData}
@@ -140,7 +142,8 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                     </Button>
                 </Box>
             ) : null}
-            {props.configured === false &&
+            {!props.onSetup &&
+            props.configured === false &&
             (props.status === "disconnected" || props.status === "failed") ? (
                 <FormRow
                     align="start"
@@ -158,6 +161,27 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                     }
                     description="Start a secure pairing and scan the QR code with Happy Mobile."
                     label="Pair Happy Mobile"
+                />
+            ) : null}
+            {props.onSetup ? (
+                <FormRow
+                    align="start"
+                    label="Set up mobile access"
+                    description={
+                        props.configured
+                            ? "Use your saved pairing to finish mobile access for Happy Desktop and terminal Claude Code and Codex sessions."
+                            : "Get Happy Coder, prepare the Happy CLI, and link this computer with one device-pairing code."
+                    }
+                    control={
+                        <Button
+                            disabled={props.unavailable !== undefined || props.disconnecting}
+                            onClick={props.onSetup}
+                            size="small"
+                            variant="primary"
+                        >
+                            {props.configured ? "Finish mobile setup" : "Set up mobile access"}
+                        </Button>
+                    }
                 />
             ) : null}
             {props.configured === true ? (

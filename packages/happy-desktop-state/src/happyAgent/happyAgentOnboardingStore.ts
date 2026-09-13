@@ -55,6 +55,8 @@ export function happyAgentOnboardingStoreCreate(
         readonly setupActive?: boolean;
         readonly mobileSkipped?: boolean;
         readonly onMobileSkip?: () => void;
+        readonly connectLegacyCli?: () => Promise<void>;
+        readonly prepareLegacyCli?: () => Promise<void>;
     } = {},
 ): HappyAgentOnboardingStore {
     let snapshot: HappyAgentOnboardingSnapshot = {
@@ -74,6 +76,8 @@ export function happyAgentOnboardingStoreCreate(
         client,
         sync,
         initialSkipped: options.mobileSkipped,
+        connectLegacyCli: options.connectLegacyCli,
+        prepareLegacyCli: options.prepareLegacyCli,
         onOutput: options.onMobileSkip,
     });
     const publish = (next: HappyAgentOnboardingSnapshot): void => {
@@ -261,6 +265,7 @@ export function happyAgentOnboardingStoreCreate(
         [Symbol.dispose]() {
             disposed = true;
             stop();
+            mobile[Symbol.dispose]();
             listeners.clear();
         },
     };

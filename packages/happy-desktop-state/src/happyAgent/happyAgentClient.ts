@@ -276,6 +276,8 @@ export interface HappyAgentWorkspaceClient {
 }
 
 export interface HappyAgentWorkspaceClientDeps {
+    readonly connectLegacyCli?: () => Promise<void>;
+    readonly prepareLegacyCli?: () => Promise<void>;
     readonly client: HappyAgentClient;
     readonly cloudHost: HappyAgentCloudHost;
     readonly connection: HappyAgentConnection;
@@ -611,6 +613,8 @@ export function happyAgentWorkspaceClientCreate(
             happyIntegrationStore ??= happyAgentIntegrationStoreCreate({
                 client: deps.client,
                 sync: deps.connection.sync,
+                connectLegacyCli: deps.connectLegacyCli,
+                prepareLegacyCli: deps.prepareLegacyCli,
             });
             return happyIntegrationStore;
         },

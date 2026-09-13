@@ -151,6 +151,12 @@ export function browserDevBridgeCreate(): HappyDesktopBridge {
         daemonRestart: async () => {
             throw new Error("Happy Agent is restarted from the Electron desktop window.");
         },
+        legacyCliConnect: async () => {
+            throw new Error("Connect the terminal CLI from the Electron desktop window.");
+        },
+        legacyCliPrepare: async () => {
+            throw new Error("Install the terminal CLI from the Electron desktop window.");
+        },
         daemonStart: async () => {
             throw new Error("Happy Agent is started from the Electron desktop window.");
         },
@@ -188,6 +194,7 @@ export function browserDevBridgeCreate(): HappyDesktopBridge {
         onboardingAssistantsContinue: async () => undefined,
         onboardingProfileCreate: async () => undefined,
         onboardingProjectChoose: async () => undefined,
+        onboardingChiefOfStaffComplete: async () => undefined,
         runtimeGet: async () => {
             const snapshot = await request<DesktopRuntimeSnapshot>("runtimeGet");
             if (snapshot.phase !== "ready" || snapshot.activeTarget.mode !== "local")

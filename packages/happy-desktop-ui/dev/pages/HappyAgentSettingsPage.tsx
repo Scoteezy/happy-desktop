@@ -1,5 +1,6 @@
 import type { HappyAgentProviderUsageEntry } from "happy-desktop-state";
 import {
+    DesktopMobileSetup,
     HappyAgentAccountSettings,
     HappyAgentDebugLogPanel,
     HappyAgentDebugSettings,
@@ -504,6 +505,7 @@ export function HappyAgentSettingsBlueprintPage() {
                     <HappyAgentMobileSettings
                         configured
                         onDisconnect={noop}
+                        onSetup={noop}
                         onPair={noop}
                         onPairingCancel={noop}
                         status="connected"
@@ -511,8 +513,8 @@ export function HappyAgentSettingsBlueprintPage() {
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
             <FullScreenSpecimen
-                detail="Happy Mobile pairing: the unconfigured installation is waiting for a phone to scan its authorization"
-                label="Happy Agent settings — Mobile Access pairing"
+                detail="Remote Agent-only pairing remains unchanged; local Desktop opens the shared mobile setup instead."
+                label="Happy Agent settings — Remote Mobile Access pairing"
                 number="01f"
             >
                 <HappyAgentSettingsShell
@@ -533,6 +535,65 @@ export function HappyAgentSettingsBlueprintPage() {
                         status="pairing"
                     />
                 </HappyAgentSettingsShell>
+            </FullScreenSpecimen>
+            {([false, undefined] as const).map((configured) => (
+                <FullScreenSpecimen
+                    key={String(configured)}
+                    detail="One local setup entry opens the same consent and linking flow as first-run. Unknown configuration is not shown as unlinked."
+                    label={`Happy Mobile — local ${configured === false ? "unlinked" : "unknown"}`}
+                    number={`01f-${String(configured)}`}
+                >
+                    <HappyAgentSettingsShell
+                        activeCategoryId="mobile-access"
+                        categories={categories}
+                        description={mobileDescription}
+                        onCategorySelect={noop}
+                        onClose={noop}
+                        title="Mobile Access"
+                    >
+                        <HappyAgentMobileSettings
+                            configured={configured}
+                            onDisconnect={noop}
+                            onSetup={noop}
+                            onPair={noop}
+                            onPairingCancel={noop}
+                            status={configured === false ? "disconnected" : "loading"}
+                        />
+                    </HappyAgentSettingsShell>
+                </FullScreenSpecimen>
+            ))}
+            <FullScreenSpecimen
+                detail="Settings opens the exact first-run component and store. Not now or completion Continue returns to Mobile Access status."
+                label="Happy Mobile — shared local setup"
+                number="01f-setup"
+            >
+                <DesktopMobileSetup
+                    appearance="light"
+                    step={{ kind: "intro", alreadyLinked: true }}
+                    onContinue={noop}
+                    onSkip={noop}
+                    onPlatformSelect={noop}
+                />
+            </FullScreenSpecimen>
+            <FullScreenSpecimen
+                detail="A failed native status read stays unknown and shows its reason, even after the CLI is ready."
+                label="Happy Mobile — native status unavailable"
+                number="01f-read-failed"
+            >
+                <DesktopMobileSetup
+                    appearance="light"
+                    step={{
+                        kind: "link",
+                        phase: {
+                            kind: "failed",
+                            message:
+                                "Happy cannot reach the local Happy Agent. Reconnect and try again.",
+                        },
+                    }}
+                    onContinue={noop}
+                    onSkip={noop}
+                    onPlatformSelect={noop}
+                />
             </FullScreenSpecimen>
             <FullScreenSpecimen
                 detail="Live debugger controls and a bounded raw renderer profile with React attribution"

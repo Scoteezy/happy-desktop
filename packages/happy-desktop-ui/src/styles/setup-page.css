@@ -38,6 +38,11 @@
     gap: 16px;
 }
 
+.happy-local-onboarding__first-project .happy-setup-choice__title,
+.happy-local-onboarding__first-project .happy-setup-choice__description {
+    color: var(--button-primary-tint);
+}
+
 .happy-local-onboarding__mobile-actions,
 .happy-local-onboarding__mobile-pairing-body,
 .happy-local-onboarding__mobile-waiting {

@@ -4,6 +4,11 @@ import type { UserError } from "../types.js";
 import { happyAgentUserError } from "./happyAgentSupport.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import { happyDesktopMobileOnboardingStoreCreate } from "../onboarding/happyDesktopMobileOnboardingStore.js";
+import type {
+    HappyDesktopMobileStep,
+    HappyMobileOnboardingStore,
+} from "../onboarding/happyMobileOnboardingStore.js";
 
 export type HappyAgentIntegrationStatus =
     | "loading"
@@ -39,6 +44,8 @@ export interface HappyAgentIntegrationSnapshot {
     /** The daemon's own detail for a disconnected or failed integration. */
     readonly message?: string;
     readonly status: HappyAgentIntegrationStatus;
+    /** Projection of the shared first-run flow while local setup is open. */
+    readonly setup?: HappyDesktopMobileStep;
 }
 
 /** One installation-wide Happy Mobile integration, read while its surface is open. */
@@ -51,10 +58,19 @@ export interface HappyAgentIntegrationStore {
     happyIntegrationPair(): void;
     /** Cancels the pairing authorization currently shown by this window. */
     happyIntegrationPairingCancel(): void;
+    /** Present only for the local Desktop; remote Agents retain Agent-only pairing. */
+    readonly mobileSetup?: {
+        start(): void;
+        continue(): void;
+        close(): void;
+        platformSelect(platform: "ios" | "android"): void;
+    };
     [Symbol.dispose](): void;
 }
 
 export interface HappyAgentIntegrationStoreDeps {
+    readonly connectLegacyCli?: () => Promise<void>;
+    readonly prepareLegacyCli?: () => Promise<void>;
     readonly sync: HappyAgentSync;
     readonly client: Pick<
         HappyAgentClient,
@@ -88,6 +104,36 @@ export function happyAgentIntegrationStoreCreate(
     let controller: AbortController | undefined;
     let disposed = false;
     let version: string | undefined;
+    let setup: HappyMobileOnboardingStore | undefined;
+    let setupUnsubscribe: (() => void) | undefined;
+
+    const setupClose = (): void => {
+        const closing = setup;
+        setup = undefined;
+        setupUnsubscribe?.();
+        setupUnsubscribe = undefined;
+        closing?.[Symbol.dispose]();
+        const { setup: _closed, ...current } = store.getState();
+        store.setState(current, true);
+    };
+    const setupStart = (): void => {
+        if (disposed || listeners.size === 0 || setup || !deps.connectLegacyCli) return;
+        const session = happyDesktopMobileOnboardingStoreCreate({
+            client: deps.client,
+            sync: deps.sync,
+            connectLegacyCli: deps.connectLegacyCli,
+            prepareLegacyCli: deps.prepareLegacyCli,
+        });
+        setup = session;
+        const project = () => {
+            if (setup !== session) return;
+            const snapshot = session.get();
+            if (snapshot.status === "desktop") store.setState({ setup: snapshot.step });
+            else setupClose();
+        };
+        setupUnsubscribe = session.subscribe(project);
+        project();
+    };
 
     const integrationAdopt = (integration: HappyIntegration): void => {
         if (version !== undefined && version.localeCompare(integration.version) >= 0) {
@@ -104,6 +150,7 @@ export function happyAgentIntegrationStoreCreate(
                 ...integrationProject(integration),
                 disconnecting: current.disconnecting,
                 pairingCanceling: current.pairingCanceling,
+                ...(current.setup ? { setup: current.setup } : {}),
                 pairingStarting: current.pairingStarting,
                 ...(integration.configured && current.disconnectError
                     ? { disconnectError: current.disconnectError }
@@ -137,7 +184,11 @@ export function happyAgentIntegrationStoreCreate(
                     if (active.signal.aborted) return;
                     if (input.kind === "bootstrap") version = undefined;
                     if (!integration) {
-                        store.setState({ ...EMPTY, status: "unavailable" }, true);
+                        const setup = store.getState().setup;
+                        store.setState(
+                            { ...EMPTY, status: "unavailable", ...(setup ? { setup } : {}) },
+                            true,
+                        );
                         continue;
                     }
                     integrationAdopt(integration);
@@ -173,6 +224,17 @@ export function happyAgentIntegrationStoreCreate(
 
     return {
         get: () => store.getState(),
+        ...(deps.connectLegacyCli
+            ? {
+                  mobileSetup: {
+                      start: setupStart,
+                      continue: () => setup?.happyMobileConnect(),
+                      close: () => setup?.happyMobileSkip(),
+                      platformSelect: (platform: "ios" | "android") =>
+                          setup?.happyMobilePlatformSelect(platform),
+                  },
+              }
+            : {}),
         subscribe(listener) {
             if (disposed) return () => undefined;
             listeners.add(listener);
@@ -187,6 +249,7 @@ export function happyAgentIntegrationStoreCreate(
                 if (listeners.size !== 0) return;
                 controller?.abort();
                 controller = undefined;
+                setupClose();
             };
         },
         happyIntegrationDisconnect() {
@@ -210,6 +273,10 @@ export function happyAgentIntegrationStoreCreate(
             );
         },
         happyIntegrationPair() {
+            if (deps.connectLegacyCli) {
+                setupStart();
+                return;
+            }
             const current = store.getState();
             if (
                 disposed ||
@@ -258,6 +325,7 @@ export function happyAgentIntegrationStoreCreate(
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
+            setupClose();
             controller?.abort();
             controller = undefined;
             listeners.clear();

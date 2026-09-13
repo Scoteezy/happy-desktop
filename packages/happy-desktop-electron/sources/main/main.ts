@@ -65,6 +65,7 @@ import {
 } from "./mediaPreviewWindow";
 import { localHappyAgentConnectorCreate, localRuntimeProbe } from "./localHappyAgent";
 import { LocalOnboarding } from "./localOnboarding";
+import { legacyCliConnectorCreate } from "./legacyCliConnect";
 import { desktopBrowserProxyTargetValidate } from "./happyAgentIpcValidation";
 import { htmlPreviewProxyCreate, type HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
 import { happyAgentRendererOrigin } from "./happyAgentRendererProxy";
@@ -503,6 +504,27 @@ function onboardingSenderRequire(sender: Electron.WebContents): void {
     const presenting = windowLifecycle.get();
     if (!presenting || presenting.isDestroyed() || presenting.webContents !== sender)
         throw new Error("First-run setup is not being presented by this window.");
+}
+
+const legacyCli = legacyCliConnectorCreate(() => daemonController.launchEnvironment());
+
+function legacyCliSenderCurrent(event: Electron.IpcMainInvokeEvent): () => boolean {
+    onboardingSenderRequire(event.sender);
+    if (event.senderFrame !== event.sender.mainFrame)
+        throw new Error("Only the desktop window can set up the terminal CLI.");
+    const presentation = presentationIdentity();
+    const initial = runtime.get();
+    if (initial.phase !== "ready" || initial.mode !== "local")
+        throw new Error("Connect your local Happy Agent before setting up the terminal CLI.");
+    return () => {
+        const current = runtime.get();
+        return (
+            presentationIdentity() === presentation &&
+            current.phase === "ready" &&
+            current.mode === "local" &&
+            current.connectionId === initial.connectionId
+        );
+    };
 }
 
 async function browserProxyFailClosed(browserSession: Electron.Session): Promise<void> {
@@ -1693,9 +1715,21 @@ void app
             onboardingSenderRequire(event.sender);
             return onboarding.get();
         });
+        ipcMain.handle(desktopIpc.legacyCliPrepare, (event) =>
+            legacyCli.prepare(legacyCliSenderCurrent(event)),
+        );
+        ipcMain.handle(desktopIpc.legacyCliConnect, (event) =>
+            legacyCli.connect(legacyCliSenderCurrent(event)),
+        );
         ipcMain.handle(desktopIpc.onboardingProjectChoose, (event) => {
             onboardingSenderRequire(event.sender);
             return onboarding.projectChoose();
+        });
+        ipcMain.handle(desktopIpc.onboardingChiefOfStaffComplete, (event) => {
+            onboardingSenderRequire(event.sender);
+            if (event.senderFrame !== event.sender.mainFrame)
+                throw new Error("Only the desktop window can finish first-run setup.");
+            return onboarding.chiefOfStaffComplete();
         });
         ipcMain.handle(desktopIpc.onboardingAssistantsContinue, (event) => {
             onboardingSenderRequire(event.sender);

@@ -120,6 +120,8 @@ const bridge: HappyDesktopBridge = {
     daemonInstallDismiss: () => ipcRenderer.invoke(desktopIpc.daemonInstallDismiss),
     daemonInstallKill: () => ipcRenderer.invoke(desktopIpc.daemonInstallKill),
     daemonRestart: () => ipcRenderer.invoke(desktopIpc.daemonRestart),
+    legacyCliConnect: () => ipcRenderer.invoke(desktopIpc.legacyCliConnect),
+    legacyCliPrepare: () => ipcRenderer.invoke(desktopIpc.legacyCliPrepare),
     daemonGet: () => ipcRenderer.invoke(desktopIpc.daemonGet),
     daemonStart: () => ipcRenderer.invoke(desktopIpc.daemonStart),
     daemonSubscribe(listener: (snapshot: DesktopDaemonSnapshot) => void) {
@@ -176,6 +178,8 @@ const bridge: HappyDesktopBridge = {
     onboardingProfileCreate: (input) =>
         ipcRenderer.invoke(desktopIpc.onboardingProfileCreate, input),
     onboardingProjectChoose: () => ipcRenderer.invoke(desktopIpc.onboardingProjectChoose),
+    onboardingChiefOfStaffComplete: () =>
+        ipcRenderer.invoke(desktopIpc.onboardingChiefOfStaffComplete),
     onboardingAssistantsContinue: () => ipcRenderer.invoke(desktopIpc.onboardingAssistantsContinue),
     runtimeGet: () => ipcRenderer.invoke(desktopIpc.runtimeGet),
     runtimeReset: () => ipcRenderer.invoke(desktopIpc.runtimeReset),
