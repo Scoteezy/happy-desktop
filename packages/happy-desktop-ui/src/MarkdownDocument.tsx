@@ -113,6 +113,7 @@ export function markdownDocumentLinkPath(value: unknown): string | undefined {
     } catch {
         return undefined;
     }
+    // eslint-disable-next-line no-control-regex -- Control characters are deliberately rejected in local file links.
     if (path.startsWith("//") || /[\u0000-\u001f]/u.test(path)) return undefined;
     // A colon before a line number is not a scheme separator, so the position
     // comes off before anything decides this is a protocol: `Message.tsx:42`

@@ -413,6 +413,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
             if (cancel) void options.client.cancelHappyIntegration().catch(() => undefined);
         },
         [Symbol.dispose]() {
+            if (disposed) return;
             const cancel = !skipped && !continued && appReady && integration?.status === "pairing";
             disposed = true;
             generation += 1;
