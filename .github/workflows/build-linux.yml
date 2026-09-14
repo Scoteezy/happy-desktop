@@ -37,9 +37,15 @@ jobs:
                   pnpm --dir packages/happy-desktop-electron typecheck
                   pnpm --dir packages/happy-desktop-gym typecheck
             - name: Build the standard desktop AppImage on its native architecture
+              env:
+                  RELEASE_ARCH: ${{ matrix.arch }}
               run: |
+                  VERSION="$(node -p "require('./package.json').version")"
                   pnpm --dir packages/happy-desktop-electron build
-                  pnpm --dir packages/happy-desktop-electron exec electron-builder --linux AppImage --${{ matrix.arch }} --publish never
+                  # AppImage normally rewrites x64 to x86_64. Keep the release
+                  # filename contract shared with the cask and publish checks.
+                  pnpm --dir packages/happy-desktop-electron exec electron-builder --linux AppImage --"$RELEASE_ARCH" --publish never \
+                    --config.linux.artifactName="Happy-${VERSION}-${RELEASE_ARCH}.AppImage"
             - name: Boot the actual AppImage and verify its welcome screen
               env:
                   HAPPY_DESKTOP_GYM_PACKAGED: "1"
