@@ -11,12 +11,23 @@ export const componentNumber = "C-252";
 const noop = () => undefined;
 
 const firstProjectSteps: readonly { label: string; view: LocalOnboardingView }[] = [
-    { label: "First project · setup options", view: { kind: "first-project", busy: false } },
-    { label: "First project · preparing draft", view: { kind: "first-project", busy: true } },
+    {
+        label: "First project · Chief of Staff loading",
+        view: { kind: "first-project", busy: false, chiefOfStaffReady: false },
+    },
+    {
+        label: "First project · setup options",
+        view: { kind: "first-project", busy: false, chiefOfStaffReady: true },
+    },
+    {
+        label: "First project · preparing draft",
+        view: { kind: "first-project", busy: true, chiefOfStaffReady: true },
+    },
     {
         label: "First project · setup retry",
         view: {
             kind: "first-project",
+            chiefOfStaffReady: true,
             busy: false,
             message: "Chief of Staff is not available yet. Try again or set up manually.",
         },

@@ -1150,6 +1150,15 @@ if (mediaPreviewBridge) {
         // the same local connection store and transport as the workspace.
         const onboardingStore = localOnboardingStoreCreate(desktopBridge, {
             agentSetupActive: welcome.get().welcomeAcknowledged,
+            chiefOfStaff: {
+                get: () => {
+                    const entry = happyAgents
+                        .get()
+                        .happyAgents.find((candidate) => candidate.id === LOCAL_HAPPY_AGENT_ID);
+                    return entry?.status === "connected" ? entry.session?.workspace : undefined;
+                },
+                subscribe: happyAgents.subscribe,
+            },
             chiefOfStaffPrepare: async () => {
                 const session = happyAgents
                     .get()

@@ -1,6 +1,7 @@
 import type { LocalOnboardingAssistant, LocalOnboardingView } from "happy-desktop-ui";
 import {
     HappyAgentClient,
+    type HappyAgentWorkspaceStore,
     type HappyMobileOnboardingSnapshot,
     type HappyMobileOnboardingStore,
 } from "happy-desktop-state";
@@ -39,6 +40,7 @@ export interface LocalOnboardingViewSnapshot {
     /** The optional mobile step, materialized only before the first project. */
     readonly happyMobile?: HappyMobileOnboardingSnapshot;
     readonly projectSetupMode?: "manual";
+    readonly chiefOfStaffReady: boolean;
 }
 
 export interface LocalOnboardingStore {
@@ -61,6 +63,11 @@ export interface LocalOnboardingStore {
 }
 
 export interface LocalOnboardingStoreOptions {
+    /** The connected local workspace, available while earlier setup steps are open. */
+    readonly chiefOfStaff: {
+        get(): HappyAgentWorkspaceStore | undefined;
+        subscribe(listener: () => void): () => void;
+    };
     /** Prepares an editable draft only, then returns navigation for the completed setup. */
     readonly chiefOfStaffPrepare: () => Promise<() => void>;
     /** The local connection owns mobile setup and its shared realtime transport. */
@@ -94,6 +101,7 @@ export function localOnboardingStoreCreate(
     const listeners = new Set<() => void>();
     let snapshot: LocalOnboardingViewSnapshot = {
         agentStarting: false,
+        chiefOfStaffReady: false,
         pending: false,
         profileEmail: "",
         profileName: "",
@@ -115,6 +123,9 @@ export function localOnboardingStoreCreate(
     let happyMobileStore: HappyMobileOnboardingStore | undefined;
     let happyMobileUnsubscribe: (() => void) | undefined;
     let happyMobileSourceUnsubscribe: (() => void) | undefined;
+    let chiefOfStaffWorkspace: HappyAgentWorkspaceStore | undefined;
+    let chiefOfStaffUnsubscribe: (() => void) | undefined;
+    let chiefOfStaffSourceUnsubscribe: (() => void) | undefined;
     let inFlight = 0;
     let agentSetupActive = options.agentSetupActive === true;
 
@@ -284,6 +295,34 @@ export function localOnboardingStoreCreate(
         startSynchronize();
         providerAuthenticationSynchronize();
         happyMobileSynchronize();
+        chiefOfStaffSynchronize();
+    }
+
+    const chiefOfStaffRead = () => {
+        const list = chiefOfStaffWorkspace?.get().list;
+        const ready =
+            list?.projects.type === "ready" &&
+            list.bots.some((bot) => bot.systemKey === "chief_of_staff");
+        if (snapshot.chiefOfStaffReady !== ready)
+            publish({ ...snapshot, chiefOfStaffReady: ready });
+    };
+    function chiefOfStaffSynchronize() {
+        const onboarding = snapshot.onboarding;
+        const workspace =
+            listeners.size > 0 &&
+            onboarding &&
+            onboarding.stage !== "inactive" &&
+            onboarding.stage !== "complete" &&
+            snapshot.runtime?.phase === "ready" &&
+            snapshot.runtime.mode === "local"
+                ? options.chiefOfStaff.get()
+                : undefined;
+        if (chiefOfStaffWorkspace !== workspace) {
+            chiefOfStaffUnsubscribe?.();
+            chiefOfStaffWorkspace = workspace;
+            chiefOfStaffUnsubscribe = workspace?.subscribe(chiefOfStaffRead);
+        }
+        chiefOfStaffRead();
     }
 
     const happyMobileStop = () => {
@@ -405,6 +444,8 @@ export function localOnboardingStoreCreate(
         subscribe(listener) {
             listeners.add(listener);
             if (listeners.size === 1) {
+                chiefOfStaffSourceUnsubscribe =
+                    options.chiefOfStaff.subscribe(chiefOfStaffSynchronize);
                 happyMobileSourceUnsubscribe =
                     options.happyMobile.subscribe(happyMobileSynchronize);
                 eventReceived = false;
@@ -468,6 +509,9 @@ export function localOnboardingStoreCreate(
                 runtimeUnsubscribe = undefined;
                 happyMobileSourceUnsubscribe?.();
                 happyMobileSourceUnsubscribe = undefined;
+                chiefOfStaffSourceUnsubscribe?.();
+                chiefOfStaffSourceUnsubscribe = undefined;
+                chiefOfStaffSynchronize();
                 verificationAbort?.abort();
                 verificationAbort = undefined;
                 happyMobileStop();
@@ -496,6 +540,8 @@ export function localOnboardingStoreCreate(
             publish({ ...snapshot, projectSetupMode: undefined, failure: undefined });
         },
         chiefOfStaffSetup() {
+            chiefOfStaffSynchronize();
+            if (!snapshot.chiefOfStaffReady) return;
             if (snapshot.pending || localOnboardingView(snapshot)?.kind !== "first-project") return;
             const runtime = snapshot.runtime;
             if (runtime?.phase !== "ready" || runtime.mode !== "local") return;
@@ -628,6 +674,7 @@ export function localOnboardingView(
                 case "skipped":
                     return {
                         busy,
+                        chiefOfStaffReady: snapshot.chiefOfStaffReady,
                         kind: snapshot.projectSetupMode === "manual" ? "project" : "first-project",
                         ...(message ? { message } : {}),
                     };

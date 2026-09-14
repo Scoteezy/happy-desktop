@@ -362,6 +362,8 @@ export function happyAgentConnectionOpen(input: {
         ? { welcome, onboarding, profile: profileStore, retry: () => agentConnection.retry() }
         : undefined;
 
+    let workspace: HappyAgentWorkspaceStore | undefined;
+    let workspaceKeepWarm: (() => void) | undefined;
     let modelsLoading = false;
     const modelsLoad = (): void => {
         retry = undefined;
@@ -375,6 +377,30 @@ export function happyAgentConnectionOpen(input: {
             startup.error
         )
             return;
+        // Profile completion is the first authorized opportunity to load the
+        // workspace. Warm its empty state and bot catalog alongside models,
+        // while onboarding is still on the steps before first-project setup.
+        if (!workspace) {
+            workspace = happyAgentWorkspaceStoreCreate(client, {
+                host: input.host,
+                viewPreferences: desktopViewPreferencesPersistence(input.happyAgentId),
+                output: (event) => {
+                    switch (event.type) {
+                        case "conversationOpenRequested":
+                            input.deps.conversationOpen(event.location);
+                            return;
+                        case "groupOpenRequested":
+                            input.deps.groupOpen(event.groupId);
+                            return;
+                        case "addressedGroupRemoved":
+                            input.deps.groupForget(event.groupId);
+                            return;
+                    }
+                },
+            });
+            workspaceKeepWarm = workspace.subscribe(() => undefined);
+        }
+        const preparedWorkspace = workspace;
         modelsLoading = true;
         debugEntry({
             level: "info",
@@ -415,23 +441,7 @@ export function happyAgentConnectionOpen(input: {
                     profile: () => profileStore,
                     providerUsage: client.providerUsage(),
                     providers: client.providers(),
-                    workspace: happyAgentWorkspaceStoreCreate(client, {
-                        host: input.host,
-                        viewPreferences: desktopViewPreferencesPersistence(input.happyAgentId),
-                        output: (event) => {
-                            switch (event.type) {
-                                case "conversationOpenRequested":
-                                    input.deps.conversationOpen(event.location);
-                                    return;
-                                case "groupOpenRequested":
-                                    input.deps.groupOpen(event.groupId);
-                                    return;
-                                case "addressedGroupRemoved":
-                                    input.deps.groupForget(event.groupId);
-                                    return;
-                            }
-                        },
-                    }),
+                    workspace: preparedWorkspace,
                     instructions: client.instructions(),
                     securityPolicy: client.securityPolicy(),
                     secrets: () => client.secrets(),
@@ -445,6 +455,9 @@ export function happyAgentConnectionOpen(input: {
                 catalogFailure = undefined;
                 catalogStarting = false;
                 input.deps.changed();
+                // The directory now owns the live workspace subscription.
+                workspaceKeepWarm?.();
+                workspaceKeepWarm = undefined;
             },
             (error: unknown) => {
                 modelsLoading = false;
@@ -499,8 +512,9 @@ export function happyAgentConnectionOpen(input: {
             });
             disposed = true;
             if (retry) clearTimeout(retry);
+            workspaceKeepWarm?.();
+            workspace?.[Symbol.dispose]();
             if (session) {
-                session.workspace[Symbol.dispose]();
                 session.connection[Symbol.dispose]();
                 session.clock[Symbol.dispose]();
                 session = undefined;

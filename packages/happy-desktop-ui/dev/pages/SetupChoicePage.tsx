@@ -93,6 +93,16 @@ export function SetupChoicePage() {
                     <DimensionRule label="460 measure · min-width 0 keeps them equal" />
                 </div>
             </Specimen>
+            <Specimen
+                detail="The available path stays usable while another choice is being prepared"
+                label="One available choice"
+                number="04"
+                stage="surface"
+            >
+                <div style={{ width: "460px" }}>
+                    <SetupChoice onSelect={noop} options={[setupOptions[0]]} />
+                </div>
+            </Specimen>
         </ComponentPage>
     );
 }

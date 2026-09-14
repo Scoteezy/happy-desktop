@@ -22,8 +22,10 @@ export interface SetupChoiceProps {
     readonly className?: string;
     readonly "data-testid"?: string;
     readonly style?: CSSProperties;
-    /** Exactly two: the left panel and the right one, in that order. */
-    readonly options: readonly [SetupChoiceOption, SetupChoiceOption];
+    /** One available path, or two equal choices in left-to-right order. */
+    readonly options:
+        | readonly [SetupChoiceOption]
+        | readonly [SetupChoiceOption, SetupChoiceOption];
     onSelect(id: string): void;
 }
 
