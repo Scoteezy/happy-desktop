@@ -1,7 +1,7 @@
 import { SetupChoice } from "../../src/SetupChoice";
 import { DesktopMobileSetup, type DesktopMobileSetupStep } from "../../src/DesktopMobileSetup";
 import { LocalOnboardingScreen, type LocalOnboardingView } from "../../src/LocalOnboardingScreen";
-import { SetupPage } from "../../src/SetupPage";
+import { SetupHandoff, SetupPage } from "../../src/SetupPage";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
@@ -12,24 +12,15 @@ const noop = () => undefined;
 
 const firstProjectSteps: readonly { label: string; view: LocalOnboardingView }[] = [
     {
-        label: "First project · Chief of Staff loading",
-        view: { kind: "first-project", busy: false, chiefOfStaffReady: false },
-    },
-    {
-        label: "First project · setup options",
-        view: { kind: "first-project", busy: false, chiefOfStaffReady: true },
-    },
-    {
-        label: "First project · preparing draft",
-        view: { kind: "first-project", busy: true, chiefOfStaffReady: true },
+        label: "First project · opening the conversation",
+        view: { kind: "finishing", busy: true },
     },
     {
         label: "First project · setup retry",
         view: {
-            kind: "first-project",
-            chiefOfStaffReady: true,
+            kind: "finishing",
             busy: false,
-            message: "Chief of Staff is not available yet. Try again or set up manually.",
+            message: "The conversation could not be opened. Try again.",
         },
     },
     { label: "First project · manual folder", view: { kind: "project", busy: false } },
@@ -636,28 +627,35 @@ export function SetupPagePage() {
             {firstProjectSteps.map(({ label, view }, index) => (
                 <Specimen
                     key={label}
-                    detail="One first project · an unsent editable Chief of Staff draft or the existing manual folder picker"
+                    detail="Automatic handoff to an unsent editable Chief of Staff draft · manual projects use the sidebar + button"
                     label={label}
                     number={String(index + 18 + mobileSteps.length)}
                     stage="surface"
                 >
                     <div style={{ ...frame, height: "800px" }} data-first-project-specimen={label}>
                         <ThemeScope mode="dark">
-                            <LocalOnboardingScreen
-                                appearance="dark"
-                                onAssistantsContinue={noop}
-                                onConnectRetry={noop}
-                                onHappyMobileConnect={noop}
-                                onHappyMobileSkip={noop}
-                                onProfileCreate={noop}
-                                onProfileEmailChange={noop}
-                                onProfileNameChange={noop}
-                                onProjectChoose={noop}
-                                onProjectSetupManual={noop}
-                                onProjectSetupBack={noop}
-                                onChiefOfStaffSetup={noop}
-                                view={view}
-                            />
+                            {view.kind === "finishing" ? (
+                                <SetupHandoff error={view.message} busy={view.busy} onRetry={noop}>
+                                    <SetupPage
+                                        title="Workspace stays open"
+                                        copy="The conversation and sidebar remain usable while the draft is prepared."
+                                    />
+                                </SetupHandoff>
+                            ) : (
+                                <LocalOnboardingScreen
+                                    appearance="dark"
+                                    onAssistantsContinue={noop}
+                                    onConnectRetry={noop}
+                                    onHappyMobileConnect={noop}
+                                    onHappyMobileSkip={noop}
+                                    onProfileCreate={noop}
+                                    onProfileEmailChange={noop}
+                                    onProfileNameChange={noop}
+                                    onProjectChoose={noop}
+                                    onProjectSetupBack={noop}
+                                    view={view}
+                                />
+                            )}
                         </ThemeScope>
                     </div>
                 </Specimen>

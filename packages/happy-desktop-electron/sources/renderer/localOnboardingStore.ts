@@ -39,7 +39,6 @@ export interface LocalOnboardingViewSnapshot {
     readonly profileEmail: string;
     /** The optional mobile step, materialized only before the first project. */
     readonly happyMobile?: HappyMobileOnboardingSnapshot;
-    readonly projectSetupMode?: "manual";
     readonly chiefOfStaffReady: boolean;
 }
 
@@ -50,8 +49,6 @@ export interface LocalOnboardingStore {
     /** Enters machine setup and allows its automatic download and launch to begin. */
     agentSetupBegin(): void;
     projectChoose(): void;
-    projectSetupManual(): void;
-    projectSetupBack(): void;
     chiefOfStaffSetup(): void;
     assistantsContinue(): void;
     profileNameUpdate(value: string): void;
@@ -126,6 +123,7 @@ export function localOnboardingStoreCreate(
     let chiefOfStaffWorkspace: HappyAgentWorkspaceStore | undefined;
     let chiefOfStaffUnsubscribe: (() => void) | undefined;
     let chiefOfStaffSourceUnsubscribe: (() => void) | undefined;
+    let chiefOfStaffAttempted = false;
     let inFlight = 0;
     let agentSetupActive = options.agentSetupActive === true;
 
@@ -170,6 +168,7 @@ export function localOnboardingStoreCreate(
             () => {
                 inFlight -= 1;
                 publish({ ...snapshot, pending: inFlight > 0 });
+                chiefOfStaffSetupAutomatically();
             },
             (error: unknown) => {
                 inFlight -= 1;
@@ -305,6 +304,7 @@ export function localOnboardingStoreCreate(
             list.bots.some((bot) => bot.systemKey === "chief_of_staff");
         if (snapshot.chiefOfStaffReady !== ready)
             publish({ ...snapshot, chiefOfStaffReady: ready });
+        chiefOfStaffSetupAutomatically();
     };
     function chiefOfStaffSynchronize() {
         const onboarding = snapshot.onboarding;
@@ -323,6 +323,43 @@ export function localOnboardingStoreCreate(
             chiefOfStaffUnsubscribe = workspace?.subscribe(chiefOfStaffRead);
         }
         chiefOfStaffRead();
+    }
+
+    // Open the real interface with an editable draft after mobile opt-in/skip.
+    // Wait for the bot catalog, and never send the draft automatically.
+    function chiefOfStaffSetupAutomatically() {
+        if (!chiefOfStaffAttempted) chiefOfStaffSetupBegin();
+    }
+
+    function chiefOfStaffSetupBegin() {
+        if (
+            listeners.size === 0 ||
+            !agentSetupActive ||
+            snapshot.pending ||
+            snapshot.onboarding?.busy ||
+            !snapshot.chiefOfStaffReady ||
+            localOnboardingView(snapshot)?.kind !== "finishing"
+        )
+            return;
+        const runtime = snapshot.runtime;
+        if (runtime?.phase !== "ready" || runtime.mode !== "local") return;
+        chiefOfStaffAttempted = true;
+        const current = () =>
+            snapshot.runtime?.phase === "ready" &&
+            snapshot.runtime.connectionId === runtime.connectionId;
+        attempt(
+            (async () => {
+                const open = await options.chiefOfStaffPrepare();
+                if (!current()) throw new Error("The local Happy Agent changed. Try again.");
+                await bridge.onboardingChiefOfStaffComplete();
+                const completed = await bridge.onboardingGet();
+                if (current() && completed.stage === "complete") {
+                    open();
+                    onboardingSet(completed);
+                }
+            })(),
+            "Happy could not open your first conversation.",
+        );
     }
 
     const happyMobileStop = () => {
@@ -355,7 +392,9 @@ export function localOnboardingStoreCreate(
         happyMobileUnsubscribe = store.subscribe(() => {
             if (happyMobileStore !== store) return;
             publish({ ...snapshot, happyMobile: store.get() });
+            chiefOfStaffSetupAutomatically();
         });
+        chiefOfStaffSetupAutomatically();
     }
 
     function providerAuthenticationSynchronize() {
@@ -531,33 +570,8 @@ export function localOnboardingStoreCreate(
             if (snapshot.pending) return;
             attempt(bridge.onboardingProjectChoose(), "Happy could not open a project.");
         },
-        projectSetupManual() {
-            if (snapshot.pending || localOnboardingView(snapshot)?.kind !== "first-project") return;
-            publish({ ...snapshot, projectSetupMode: "manual", failure: undefined });
-        },
-        projectSetupBack() {
-            if (snapshot.pending || localOnboardingView(snapshot)?.kind !== "project") return;
-            publish({ ...snapshot, projectSetupMode: undefined, failure: undefined });
-        },
         chiefOfStaffSetup() {
-            chiefOfStaffSynchronize();
-            if (!snapshot.chiefOfStaffReady) return;
-            if (snapshot.pending || localOnboardingView(snapshot)?.kind !== "first-project") return;
-            const runtime = snapshot.runtime;
-            if (runtime?.phase !== "ready" || runtime.mode !== "local") return;
-            const current = () =>
-                snapshot.runtime?.phase === "ready" &&
-                snapshot.runtime.connectionId === runtime.connectionId;
-            attempt(
-                (async () => {
-                    const open = await options.chiefOfStaffPrepare();
-                    if (!current()) throw new Error("The local Happy Agent changed. Try again.");
-                    await bridge.onboardingChiefOfStaffComplete();
-                    const completed = await bridge.onboardingGet();
-                    if (current() && completed.stage === "complete") open();
-                })(),
-                "Happy could not open Chief of Staff setup.",
-            );
+            chiefOfStaffSetupBegin();
         },
         assistantsContinue() {
             attempt(bridge.onboardingAssistantsContinue(), "Happy could not continue setup.");
@@ -674,8 +688,7 @@ export function localOnboardingView(
                 case "skipped":
                     return {
                         busy,
-                        chiefOfStaffReady: snapshot.chiefOfStaffReady,
-                        kind: snapshot.projectSetupMode === "manual" ? "project" : "first-project",
+                        kind: "finishing",
                         ...(message ? { message } : {}),
                     };
             }

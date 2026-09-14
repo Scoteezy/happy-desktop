@@ -3,7 +3,6 @@ import { Button } from "./Button";
 import { DesktopMobileSetup, type DesktopMobileSetupStep } from "./DesktopMobileSetup";
 import { QRCode } from "./QRCode";
 import { SetupAssistants, type SetupAssistantEntry } from "./SetupAssistants";
-import { SetupChoice, type SetupChoiceOption } from "./SetupChoice";
 import { SetupPage, SetupProgress, type SetupPageProgress } from "./SetupPage";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
@@ -84,9 +83,8 @@ export type LocalOnboardingView =
           readonly message: string;
       }
     | {
-          readonly kind: "first-project";
+          readonly kind: "finishing";
           readonly busy: boolean;
-          readonly chiefOfStaffReady: boolean;
           readonly message?: string;
       }
     | { readonly kind: "project"; readonly busy: boolean; readonly message?: string };
@@ -100,9 +98,7 @@ export interface LocalOnboardingScreenProps {
     onHappyMobileSkip(): void;
     onHappyMobilePlatformSelect?(platform: "ios" | "android"): void;
     onProjectChoose(): void;
-    onProjectSetupManual?(): void;
     onProjectSetupBack?(): void;
-    onChiefOfStaffSetup?(): void;
     onProfileNameChange(value: string): void;
     onProfileEmailChange(value: string): void;
     onProfileCreate(): void;
@@ -396,7 +392,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
         switch (view.kind) {
             case "profile-required":
             case "project":
-            case "first-project":
+            case "finishing":
             case "happy-mobile-checking":
             case "happy-mobile-offer":
             case "happy-mobile-pairing":
@@ -610,73 +606,6 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 title="Happy could not reach Happy Agent"
             />
         );
-
-    if (view.kind === "first-project") {
-        const manual: SetupChoiceOption = {
-            id: "manual",
-            scene: "wand",
-            title: "Manual setup",
-            description:
-                "Prefer to choose the folder yourself? Open a project now. Chief of Staff will still be there whenever you need it.",
-            actionLabel: "Set up manually",
-            disabled: view.busy,
-        };
-        return (
-            <SetupPage
-                {...frame}
-                className="happy-local-onboarding__first-project"
-                title={
-                    view.chiefOfStaffReady
-                        ? "Start small, with Chief of Staff"
-                        : "Start with one project"
-                }
-                copy={
-                    view.chiefOfStaffReady
-                        ? "Chief of Staff helps you set up Happy and coordinate your work. Make it a habit: ask for the next step, choose one project, and make one simple change together."
-                        : "Choose a project to get started. Chief of Staff setup will appear here when it is ready."
-                }
-                data-testid="local-onboarding-screen"
-            >
-                <SetupChoice
-                    onSelect={(id) => {
-                        if (id === "chief") props.onChiefOfStaffSetup?.();
-                        else if (id === "manual") props.onProjectSetupManual?.();
-                    }}
-                    options={
-                        view.chiefOfStaffReady
-                            ? [
-                                  {
-                                      id: "chief",
-                                      scene: "robot",
-                                      title: "Conversational setup",
-                                      description:
-                                          "Recommended. Find one recent project to import, or create a new one, with Chief of Staff's guidance.",
-                                      actionLabel: view.busy
-                                          ? "Opening draft…"
-                                          : "Set up with Chief of Staff",
-                                      actionVariant: "primary",
-                                      disabled: view.busy,
-                                  },
-                                  manual,
-                              ]
-                            : [manual]
-                    }
-                />
-                {view.chiefOfStaffReady ? (
-                    <p className="happy-setup-page__copy">
-                        The recommended option opens an editable, unsent draft. Local Claude Code
-                        and Codex project metadata is inspected only after you send the message—not
-                        when you click. Nothing is imported or changed without your confirmation.
-                    </p>
-                ) : null}
-                {view.message ? (
-                    <p className="happy-setup-page__copy" role="alert">
-                        {view.message}
-                    </p>
-                ) : null}
-            </SetupPage>
-        );
-    }
 
     if (view.kind === "project")
         return (

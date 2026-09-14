@@ -42,6 +42,7 @@ import {
 import {
     CodeHighlightWorkers,
     LocalOnboardingScreen,
+    SetupHandoff,
     SetupPage,
     ThemeScope,
     AgentInstallScreen,
@@ -336,11 +337,10 @@ function DesktopOnboardingGate(props: {
     // main process takes to say so. The boot cover holds the window meanwhile.
     if (!snapshot.onboarding) return null;
     const view = localOnboardingView(snapshot);
-    if (!view) return <>{props.children}</>;
     // The welcome is only the deck. Entering setup acknowledges it and enables
     // the renderer-owned automatic download and launch; every machine operation
     // appears on the one setup surface that follows.
-    if (!welcome.welcomeAcknowledged)
+    if (view && !welcome.welcomeAcknowledged)
         return (
             <WelcomeScreen
                 appearance={appearance.mode}
@@ -352,6 +352,18 @@ function DesktopOnboardingGate(props: {
                 onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}
                 slides={happyAgentWelcomeSlides}
             />
+        );
+    // The interface is the final onboarding step. Keep the sidebar (+) usable
+    // while Chief of Staff's unsent draft is being prepared in the background.
+    if (!view || view.kind === "finishing")
+        return (
+            <SetupHandoff
+                error={view?.message}
+                busy={view?.busy}
+                onRetry={() => props.store.chiefOfStaffSetup()}
+            >
+                {props.children}
+            </SetupHandoff>
         );
     return (
         <LocalOnboardingScreen
@@ -367,9 +379,6 @@ function DesktopOnboardingGate(props: {
             onProfileEmailChange={(value) => props.store.profileEmailUpdate(value)}
             onProfileNameChange={(value) => props.store.profileNameUpdate(value)}
             onProjectChoose={() => props.store.projectChoose()}
-            onProjectSetupManual={() => props.store.projectSetupManual()}
-            onProjectSetupBack={() => props.store.projectSetupBack()}
-            onChiefOfStaffSetup={() => props.store.chiefOfStaffSetup()}
             view={view}
         />
     );
@@ -1167,9 +1176,7 @@ if (mediaPreviewBridge) {
                     .get()
                     .list.bots.find((entry) => entry.systemKey === "chief_of_staff");
                 if (!session || !bot)
-                    throw new Error(
-                        "Chief of Staff is not available yet. Try again or set up manually.",
-                    );
+                    throw new Error("Chief of Staff is not available yet. Try again.");
                 const location = await session.workspace.sessionLocationRead(
                     bot.conversation.id as HappyAgentSessionId,
                 );
@@ -1177,11 +1184,9 @@ if (mediaPreviewBridge) {
                     throw new Error("Chief of Staff's conversation is not available yet.");
                 await session.workspace.draftAppend(
                     location.sessionId,
-                    "Read recipe/first-project.md beside your Happy Agent documentation README. " +
-                        "Help me set up Happy, starting small. First, inspect only recent local Claude Code and Codex project-location metadata, read-only; do not import or expose conversation contents or credentials. " +
-                        "Show a few recent projects and help me choose ONE to import into Happy, or help me create a new project if I prefer. " +
-                        "Ask for my confirmation before importing or creating anything. Preserve any existing work and dirty checkout. " +
-                        "Then help me agree on one simple first change before editing. Do not bulk-import projects, start agents, or change files during discovery.",
+                    "Help me get started with Happy. Let’s choose one project or create a new one, " +
+                        "then make one small change together. Ask before looking for local projects " +
+                        "or changing anything.",
                 );
                 return () =>
                     happyAgentRouterConversationOpen(

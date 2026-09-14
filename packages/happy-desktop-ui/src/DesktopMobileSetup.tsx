@@ -1,6 +1,5 @@
 import { Button } from "./Button";
 import { QRCode } from "./QRCode";
-import { SegmentedControl } from "./SegmentedControl";
 import { SetupPage, SetupProgress } from "./SetupPage";
 import type { ThemeMode } from "./ThemeScope";
 
@@ -33,8 +32,7 @@ const STORE_URLS = {
     ios: "https://apps.apple.com/us/app/happy-claude-code-client/id6748571505",
     android: "https://play.google.com/store/apps/details?id=com.ex3ndr.happy",
 } as const;
-const ENCRYPTION_COPY =
-    "Your messages and session content are end-to-end encrypted between your computer and phone.";
+const ENCRYPTION_COPY = "Messages and session content are end-to-end encrypted.";
 
 /** Optional desktop-to-phone setup. All operations and progress arrive through props. */
 export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
@@ -42,6 +40,7 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
     const frame = {
         backdrop: { appearance: props.appearance, kind: "sky" },
         className: "happy-desktop-mobile-setup",
+        sceneSize: step.kind === "get-app" || step.kind === "link" ? 48 : 80,
         "data-testid": "local-onboarding-screen",
         // Approval replaces only the QR body, not the retained linking page or its sticker.
         transitionKey: `desktop-mobile-${step.kind}`,
@@ -57,25 +56,18 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
             <SetupPage
                 {...frame}
                 scene="closed-lock"
-                title={
-                    step.alreadyLinked
-                        ? "Your phone is already linked"
-                        : "Control Happy Desktop from your phone"
-                }
+                title={step.alreadyLinked ? "Your phone is already linked" : "Take Happy with you"}
                 copy={
                     step.alreadyLinked
-                        ? "Your phone is already linked to Happy Desktop. Finish setup to enable remote control of terminal Claude Code and Codex sessions too."
-                        : "Control Happy Desktop from your phone, and remotely control terminal Claude Code and Codex sessions started with happy claude or happy codex."
+                        ? "Finish setup to steer your agents and start new ones from your phone."
+                        : "Steer your agents and start new ones from your phone."
                 }
             >
                 <div className="happy-desktop-mobile-setup__body">
                     <p className="happy-desktop-mobile-setup__note">{ENCRYPTION_COPY}</p>
-                    <p className="happy-desktop-mobile-setup__note">
-                        You can also set this up later in Settings → Mobile Access.
-                    </p>
                     <div className="happy-desktop-mobile-setup__actions">
                         <Button onClick={props.onContinue} size="large">
-                            {step.alreadyLinked ? "Finish mobile setup" : "Set up mobile access"}
+                            {step.alreadyLinked ? "Finish mobile setup" : "Connect phone"}
                         </Button>
                         {skip}
                     </div>
@@ -88,40 +80,40 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
             <SetupPage
                 {...frame}
                 scene="open-hands"
-                title="Get the app"
-                copy={`Search ${step.platform === "ios" ? "the App Store" : "Google Play"} for Happy Coder, or scan this code with your phone’s camera. Open the app and finish account setup.`}
+                title="Get Happy Coder"
+                copy="Scan with your phone’s camera to install the app."
             >
                 <div className="happy-desktop-mobile-setup__body">
-                    <div className="happy-desktop-mobile-setup__platform">
-                        <SegmentedControl
+                    <div className="happy-desktop-mobile-setup__download">
+                        <div
+                            className="happy-desktop-mobile-setup__platform"
+                            role="group"
                             aria-label="Phone platform"
-                            value={step.platform}
-                            onChange={(value) => {
-                                if (value === "ios" || value === "android")
-                                    props.onPlatformSelect?.(value);
-                            }}
-                            segments={[
-                                { value: "ios", label: "iPhone" },
-                                { value: "android", label: "Android" },
-                            ]}
+                        >
+                            <Button
+                                aria-pressed={step.platform === "ios"}
+                                variant={step.platform === "ios" ? "primary" : "ghost"}
+                                onClick={() => props.onPlatformSelect?.("ios")}
+                                fullWidth
+                            >
+                                iPhone
+                            </Button>
+                            <Button
+                                aria-pressed={step.platform === "android"}
+                                variant={step.platform === "android" ? "primary" : "ghost"}
+                                onClick={() => props.onPlatformSelect?.("android")}
+                                fullWidth
+                            >
+                                Android
+                            </Button>
+                        </div>
+                        <QRCode
+                            data={STORE_URLS[step.platform]}
+                            size={160}
+                            label="QR code to download Happy Coder"
+                            data-testid="happy-mobile-store-qr"
                         />
                     </div>
-                    <QRCode
-                        data={STORE_URLS[step.platform]}
-                        size={160}
-                        label="QR code to download Happy Coder"
-                        data-testid="happy-mobile-store-qr"
-                    />
-                    <a
-                        className="happy-desktop-mobile-setup__link"
-                        href={STORE_URLS[step.platform]}
-                        target="_blank"
-                        rel="noreferrer"
-                    >
-                        {step.platform === "ios"
-                            ? "View on the App Store"
-                            : "Get it on Google Play"}
-                    </a>
                     <div className="happy-desktop-mobile-setup__actions">
                         <Button
                             disabled={step.preparation !== "ready"}
@@ -135,22 +127,22 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                     <div className="happy-desktop-mobile-setup__preparation" aria-live="polite">
                         {step.preparation === "preparing" ? (
                             <SetupProgress
-                                label="Downloading / updating the Happy CLI…"
+                                label="Preparing mobile access…"
                                 progress={{ kind: "waiting" }}
                                 tone="inverse"
                             />
                         ) : null}
                         {step.preparation === "ready" ? (
-                            <p className="happy-desktop-mobile-setup__note">Happy CLI is ready.</p>
+                            <p className="happy-desktop-mobile-setup__note">Ready to connect.</p>
                         ) : null}
                         {step.preparation === "failed" ? (
                             <>
                                 <p className="happy-desktop-mobile-setup__note" role="alert">
                                     {step.message ??
-                                        "Happy CLI setup needs attention. Your existing sign-in and sessions were kept."}
+                                        "Mobile setup couldn’t finish. Your sign-in and sessions are unchanged."}
                                 </p>
                                 <Button onClick={props.onContinue} size="medium">
-                                    Retry CLI setup
+                                    Try again
                                 </Button>
                             </>
                         ) : null}
@@ -168,14 +160,13 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                 title="Connect your phone"
                 copy={
                     pairing
-                        ? "In Happy Coder, tap Open Camera and scan this code. Approve the connection on your phone."
+                        ? "Follow the onboarding instructions in Happy Coder. Scan this code when prompted."
                         : step.phase.kind === "checking"
                           ? "Checking whether this computer is already linked."
-                          : "Your existing sign-in stays in place while Happy finishes mobile setup."
+                          : "Finishing your connection…"
                 }
             >
                 <div className="happy-desktop-mobile-setup__body">
-                    <p className="happy-desktop-mobile-setup__note">{ENCRYPTION_COPY}</p>
                     {pairing ? (
                         <>
                             <QRCode
@@ -205,7 +196,7 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                         <SetupProgress
                             label={
                                 step.phase.kind === "preparing"
-                                    ? "Setting up the Happy CLI…"
+                                    ? "Preparing mobile access…"
                                     : step.phase.kind === "checking"
                                       ? "Checking your connection…"
                                       : "Finishing mobile setup…"
@@ -225,15 +216,11 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
             {...frame}
             scene="confetti-ball"
             title={step.online ? "Your phone is connected" : "Your phone is linked"}
-            copy="Control Happy Desktop from Happy Coder. To control a vanilla Claude Code or Codex session remotely, start it with one of these commands—or start a new session directly from your phone."
+            copy="Steer your agents and start new ones from your phone."
         >
             <div className="happy-desktop-mobile-setup__body">
-                <code className="happy-setup-page__command">happy claude</code>
-                <code className="happy-setup-page__command">happy codex</code>
-                <p className="happy-desktop-mobile-setup__note">{ENCRYPTION_COPY}</p>
                 {!step.online ? (
                     <p className="happy-desktop-mobile-setup__note" role="status">
-                        Already linked · Waiting for connection.{" "}
                         {step.message ?? "Remote control resumes when your computer is online."}
                     </p>
                 ) : null}

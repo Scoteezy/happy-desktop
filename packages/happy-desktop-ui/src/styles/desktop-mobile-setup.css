@@ -1,6 +1,12 @@
 .happy-desktop-mobile-setup .happy-setup-page__body {
-    gap: 12px;
-    padding: 32px;
+    gap: 8px;
+    max-width: 640px;
+    padding: 32px 24px 16px;
+}
+
+.happy-desktop-mobile-setup .happy-setup-page__copy {
+    max-width: 560px;
+    text-wrap: balance;
 }
 
 .happy-desktop-mobile-setup__body,
@@ -8,7 +14,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     width: 100%;
     min-width: 0;
 }
@@ -21,8 +27,7 @@
     gap: 12px;
 }
 
-.happy-desktop-mobile-setup__note,
-.happy-desktop-mobile-setup__link {
+.happy-desktop-mobile-setup__note {
     margin: 0;
     color: var(--button-primary-tint);
     font-size: 14px;
@@ -31,13 +36,23 @@
     overflow-wrap: anywhere;
 }
 
+.happy-desktop-mobile-setup__download {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+}
+
 .happy-desktop-mobile-setup__platform {
     display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 104px;
     border-radius: 8px;
     background: var(--surface);
     padding: 4px;
 }
 
 .happy-desktop-mobile-setup__preparation {
-    min-height: 44px;
+    min-height: 36px;
 }

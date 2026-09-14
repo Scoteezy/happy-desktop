@@ -498,6 +498,7 @@ export {
 } from "./SetupAssistants";
 export { AssistantMark, type AssistantMarkName, type AssistantMarkProps } from "./AssistantMark";
 export {
+    SetupHandoff,
     SetupPage,
     SetupProgress,
     type SetupPageAction,

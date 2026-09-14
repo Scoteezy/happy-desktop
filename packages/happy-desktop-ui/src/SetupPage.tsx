@@ -1,12 +1,35 @@
 import { partitionComponentProps } from "./componentProps";
 import { type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
+import { Banner } from "./Banner";
 import type { Dimension } from "./dimensions";
 import { LottieScene, type LottieSceneName } from "./LottieScene";
 import { OnboardingSky } from "./OnboardingSky";
 import { ScrollArea } from "./Scrollbar";
 import type { ThemeMode } from "./ThemeScope";
 import { WindowDragRegion } from "./TitleBar";
+
+/** Keep the workspace mounted while first-run draft preparation finishes. */
+export function SetupHandoff(props: {
+    readonly children: ReactNode;
+    readonly error?: string;
+    readonly busy?: boolean;
+    readonly onRetry: () => void;
+}) {
+    return (
+        <div className="happy-setup-handoff" data-happy-desktop-ui="setup-handoff">
+            {props.error ? (
+                <Banner
+                    tone="neutral"
+                    action={props.busy ? undefined : { label: "Try again", onClick: props.onRetry }}
+                >
+                    {props.error}
+                </Banner>
+            ) : null}
+            <div className="happy-setup-handoff__content">{props.children}</div>
+        </div>
+    );
+}
 
 /**
  * How far a running action has got, for the few that can say.
@@ -67,6 +90,8 @@ export interface SetupPageProps {
      * already its own picture — the install terminal, or the two-panel fork.
      */
     readonly scene?: LottieSceneName;
+    /** Compact illustration for steps whose QR code is the main visual. */
+    readonly sceneSize?: number;
     readonly title: string;
     readonly copy?: string;
     /**
@@ -115,6 +140,7 @@ export function SetupPage(props: SetupPageProps) {
         "backdrop",
         "transitionKey",
         "scene",
+        "sceneSize",
         "title",
         "copy",
         "command",
@@ -147,13 +173,18 @@ export function SetupPage(props: SetupPageProps) {
                         <span
                             className="happy-setup-page__stage"
                             data-happy-desktop-ui="setup-page-stage"
+                            style={
+                                local.sceneSize === undefined
+                                    ? undefined
+                                    : { width: local.sceneSize, height: local.sceneSize }
+                            }
                         >
                             <LottieScene
                                 name={local.scene}
                                 // The picture repeats what the title already says, so
                                 // the only thing worth offering is one more play.
                                 replayLabel={local.title}
-                                size={120}
+                                size={local.sceneSize ?? 120}
                             />
                         </span>
                     ) : null}
