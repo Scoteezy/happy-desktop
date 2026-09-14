@@ -18,6 +18,7 @@
 }
 
 .happy-splash-screen {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;

@@ -2,6 +2,7 @@ import { partitionComponentProps } from "./componentProps";
 import { type CSSProperties } from "react";
 import { happyLogoBlackUrl } from "./assets";
 import { SegmentedProgress, type SegmentedProgressSegment } from "./SegmentedProgress";
+import { WindowDragRegion } from "./TitleBar";
 
 export interface SplashScreenProps {
     readonly className?: string;
@@ -60,6 +61,7 @@ export function SplashScreen(props: SplashScreenProps) {
             data-testid={local["data-testid"]}
             style={local.style}
         >
+            <WindowDragRegion />
             <div className="happy-splash-screen__body">
                 <img
                     alt={local.label ?? "Happy"}

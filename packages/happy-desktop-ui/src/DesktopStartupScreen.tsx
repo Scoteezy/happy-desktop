@@ -1,6 +1,5 @@
 import { SetupPage } from "./SetupPage";
 import { SplashScreen } from "./SplashScreen";
-import { WindowDragRegion } from "./TitleBar";
 
 export type DesktopStartupPhase = "choosing" | "starting" | "error";
 export interface DesktopStartupValues {
@@ -52,13 +51,10 @@ export function DesktopStartupScreen(props: DesktopStartupScreenProps) {
 
     if (props.phase === "starting")
         return (
-            <>
-                <WindowDragRegion />
-                {/* No note: `message` narrates a step that normally passes in a
-                    few frames, and a line appearing under a mark that is about
-                    to leave is the flicker this screen exists to avoid. */}
-                <SplashScreen data-testid="desktop-startup-screen" />
-            </>
+            // No note: `message` narrates a step that normally passes in a few
+            // frames, and a line appearing under a mark that is about to leave
+            // is the flicker this screen exists to avoid.
+            <SplashScreen data-testid="desktop-startup-screen" />
         );
 
     return (

@@ -1,6 +1,6 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import { SplashCover, type SegmentedProgressSegment } from "happy-desktop-ui";
-import type { DesktopRuntimeSnapshot } from "../shared/desktopContract";
+import type { DesktopRuntimeSnapshot, LocalOnboardingSnapshot } from "../shared/desktopContract";
 import type { LocalOnboardingStore } from "./localOnboardingStore";
 import type {
     HappyAgentDirectoryEntry,
@@ -53,7 +53,7 @@ function happyAgentSettled(happyAgent: HappyAgentDirectoryEntry): boolean {
 function bootReady(
     runtime: DesktopRuntimeSnapshot | undefined,
     happyAgents: readonly HappyAgentDirectoryEntry[],
-    setupAnswered: boolean,
+    setup: LocalOnboardingSnapshot | undefined,
 ): boolean {
     // Nothing published yet: the main process has not even read its settings.
     if (!runtime) return false;
@@ -65,7 +65,28 @@ function bootReady(
     // the machine can lose either way: quick, and the workspace mounts against a
     // machine that turns out to need setting up; slow, and setup's own first
     // screen appears after the mark has already gone.
-    if (!setupAnswered) return false;
+    if (!setup) return false;
+    // Resumed setup may need input before a workspace connection can exist.
+    // Waiting for that connection would hide the very screen that can unblock
+    // it. Transient probes still belong behind the cover on an ordinary boot.
+    switch (setup.stage) {
+        case "checking":
+        case "connecting":
+        case "examining":
+            return false;
+        case "inactive":
+        case "complete":
+            break;
+        case "nodeMissing":
+        case "daemonDownload":
+        case "daemonStarting":
+        case "connectFailed":
+        case "providersMissing":
+        case "assistantsFound":
+        case "profileRequired":
+        case "project":
+            return true;
+    }
     // Connected, so the workspace is what comes next: wait for it to be worth
     // looking at rather than mounting an app around an empty sidebar.
     if (happyAgents.length === 0) return false;
@@ -152,7 +173,7 @@ export function DesktopBootGate(props: {
     );
     if (booted) return <>{props.children}</>;
     const local = directory.happyAgents.filter((entry) => entry.id === "local");
-    const ready = bootReady(runtime, local, setup.onboarding !== undefined);
+    const ready = bootReady(runtime, local, setup.onboarding);
     if (ready) booted = true;
     return (
         <SplashCover
