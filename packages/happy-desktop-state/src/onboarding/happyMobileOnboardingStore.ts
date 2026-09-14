@@ -17,7 +17,7 @@ export type HappyDesktopMobileStep =
           readonly preparation: "preparing" | "ready" | "failed";
           readonly message?: string;
       }
-    | { readonly kind: "link"; readonly phase: HappyMobileLinkPhase }
+    | { readonly kind: "link"; readonly appReady: boolean; readonly phase: HappyMobileLinkPhase }
     | { readonly kind: "connected"; readonly online: boolean; readonly message?: string };
 
 export type HappyMobileOnboardingSnapshot =

@@ -75,6 +75,8 @@ export interface SetupPageAction {
 }
 
 export interface SetupPageProps {
+    /** A retained, compact stage indicator above the scrolling page content. */
+    readonly steps?: ReactNode;
     readonly className?: string;
     readonly "data-testid"?: string;
     readonly style?: CSSProperties;
@@ -113,13 +115,8 @@ export interface SetupPageProps {
  * to do. So they are all this component, and the only thing that changes
  * between them is which of those four are filled in.
  *
- * It replaced a wrapper that carried a step rail, a kicker, a measure column, a
- * scrollport and a footer slot. The rail tracked two steps across eight states
- * and so tracked nothing; the kicker restated the title in capitals; and the
- * remaining chrome was empty on every screen that used it. What was left after
- * removing them was a worse `WelcomeScreen`, which is why this is deliberately
- * the same centred column that screen opens the product with — arriving at
- * setup should change the words on the surface, not the surface.
+ * Onboarding may supply a compact stage indicator. It stays outside the
+ * transitioning content and reports actual stages, not individual loading states.
  *
  * The scene is illustration and never information. `LottieScene` renders
  * nothing until its worker runtime arrives, and nothing at all in an engine that
@@ -146,6 +143,7 @@ export function SetupPage(props: SetupPageProps) {
         "command",
         "children",
         "action",
+        "steps",
     ]);
     return (
         <div
@@ -155,10 +153,12 @@ export function SetupPage(props: SetupPageProps) {
             data-backdrop={local.backdrop?.kind}
             data-transition={local.transitionKey === undefined ? undefined : ""}
             data-testid={local["data-testid"]}
+            data-steps={local.steps ? "true" : undefined}
             style={local.style}
         >
             {local.backdrop ? <OnboardingSky appearance={local.backdrop.appearance} /> : null}
             <WindowDragRegion />
+            {local.steps ? <div className="happy-setup-page__steps">{local.steps}</div> : null}
             <ScrollArea
                 axes="both"
                 className="happy-setup-page__scroll"
@@ -169,31 +169,33 @@ export function SetupPage(props: SetupPageProps) {
                     data-happy-desktop-ui="setup-page-body"
                     key={local.transitionKey}
                 >
-                    {local.scene ? (
-                        <span
-                            className="happy-setup-page__stage"
-                            data-happy-desktop-ui="setup-page-stage"
-                            style={
-                                local.sceneSize === undefined
-                                    ? undefined
-                                    : { width: local.sceneSize, height: local.sceneSize }
-                            }
+                    <div className="happy-setup-page__heading">
+                        {local.scene ? (
+                            <span
+                                className="happy-setup-page__stage"
+                                data-happy-desktop-ui="setup-page-stage"
+                                style={
+                                    local.sceneSize === undefined
+                                        ? undefined
+                                        : { width: local.sceneSize, height: local.sceneSize }
+                                }
+                            >
+                                <LottieScene
+                                    name={local.scene}
+                                    // The picture repeats what the title already says, so
+                                    // the only thing worth offering is one more play.
+                                    replayLabel={local.title}
+                                    size={local.sceneSize ?? 120}
+                                />
+                            </span>
+                        ) : null}
+                        <h1
+                            className="happy-setup-page__title"
+                            data-happy-desktop-ui="setup-page-title"
                         >
-                            <LottieScene
-                                name={local.scene}
-                                // The picture repeats what the title already says, so
-                                // the only thing worth offering is one more play.
-                                replayLabel={local.title}
-                                size={local.sceneSize ?? 120}
-                            />
-                        </span>
-                    ) : null}
-                    <h1
-                        className="happy-setup-page__title"
-                        data-happy-desktop-ui="setup-page-title"
-                    >
-                        {local.title}
-                    </h1>
+                            {local.title}
+                        </h1>
+                    </div>
                     {local.copy === undefined ? null : (
                         <p
                             className="happy-setup-page__copy"

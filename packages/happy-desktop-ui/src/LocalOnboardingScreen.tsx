@@ -1,6 +1,7 @@
 import { type AssistantMarkName } from "./AssistantMark";
 import { Button } from "./Button";
 import { DesktopMobileSetup, type DesktopMobileSetupStep } from "./DesktopMobileSetup";
+import { OnboardingSteps, type OnboardingStage } from "./OnboardingSteps";
 import { QRCode } from "./QRCode";
 import { SetupAssistants, type SetupAssistantEntry } from "./SetupAssistants";
 import { SetupPage, SetupProgress, type SetupPageProgress } from "./SetupPage";
@@ -90,6 +91,7 @@ export type LocalOnboardingView =
     | { readonly kind: "project"; readonly busy: boolean; readonly message?: string };
 
 export interface LocalOnboardingScreenProps {
+    readonly showSteps?: boolean;
     readonly appearance: ThemeMode;
     readonly view: LocalOnboardingView;
     onAssistantsContinue(): void;
@@ -380,6 +382,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
             <DesktopMobileSetup
                 appearance={props.appearance}
                 step={view.step}
+                onboarding={props.showSteps}
                 onContinue={props.onHappyMobileConnect}
                 onSkip={props.onHappyMobileSkip}
                 onPlatformSelect={props.onHappyMobilePlatformSelect}
@@ -405,6 +408,17 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
     const frame = {
         backdrop: { appearance: props.appearance, kind: "sky" },
         transitionKey,
+        steps: props.showSteps ? (
+            <OnboardingSteps
+                scope="desktop"
+                stage={onboardingStage(view)}
+                failed={
+                    view.kind === "node-missing" ||
+                    view.kind === "connect-failed" ||
+                    view.kind === "happy-mobile-failed"
+                }
+            />
+        ) : undefined,
     } as const;
     const machineSetup = machineSetupProject(view);
 
@@ -634,4 +648,24 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
         );
 
     return null;
+}
+
+function onboardingStage(view: LocalOnboardingView): OnboardingStage {
+    switch (view.kind) {
+        case "examining":
+        case "provider-authentication":
+            return "assistants";
+        case "profile-required":
+            return "profile";
+        case "happy-mobile-desktop":
+        case "happy-mobile-checking":
+        case "happy-mobile-offer":
+        case "happy-mobile-pairing":
+        case "happy-mobile-failed":
+        case "finishing":
+        case "project":
+            return "mobile";
+        default:
+            return "setup";
+    }
 }

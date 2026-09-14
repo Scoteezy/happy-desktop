@@ -584,6 +584,7 @@ export function HappyAgentSettingsBlueprintPage() {
                     appearance="light"
                     step={{
                         kind: "link",
+                        appReady: true,
                         phase: {
                             kind: "failed",
                             message:

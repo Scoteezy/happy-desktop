@@ -1,4 +1,5 @@
 import { Button } from "./Button";
+import { OnboardingSteps, type MobileOnboardingStage } from "./OnboardingSteps";
 import { QRCode } from "./QRCode";
 import { SetupPage, SetupProgress } from "./SetupPage";
 import type { ThemeMode } from "./ThemeScope";
@@ -13,6 +14,8 @@ export type DesktopMobileSetupStep =
       }
     | {
           readonly kind: "link";
+          /** Supplied by setup state, including checks before the app-download step. */
+          readonly appReady: boolean;
           readonly phase:
               | { readonly kind: "checking" | "preparing" | "finishing" }
               | { readonly kind: "pairing"; readonly data: string; readonly expiresAt: number }
@@ -21,6 +24,8 @@ export type DesktopMobileSetupStep =
     | { readonly kind: "connected"; readonly online: boolean; readonly message?: string };
 
 export interface DesktopMobileSetupProps {
+    /** Full first-run context; Settings shows only the opted-in mobile branch. */
+    readonly onboarding?: boolean;
     readonly appearance: ThemeMode;
     readonly step: DesktopMobileSetupStep;
     readonly onContinue: () => void;
@@ -37,10 +42,27 @@ const ENCRYPTION_COPY = "Messages and session content are end-to-end encrypted."
 /** Optional desktop-to-phone setup. All operations and progress arrive through props. */
 export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
     const { step } = props;
+    const mobile: MobileOnboardingStage | undefined =
+        step.kind === "intro"
+            ? undefined
+            : step.kind === "get-app" || (step.kind === "link" && !step.appReady)
+              ? "get-app"
+              : step.kind === "link"
+                ? "connect"
+                : "complete";
+    const failed =
+        (step.kind === "get-app" && step.preparation === "failed") ||
+        (step.kind === "link" && step.phase.kind === "failed");
+    const steps = props.onboarding ? (
+        <OnboardingSteps scope="desktop" stage="mobile" mobile={mobile} failed={failed} />
+    ) : mobile ? (
+        <OnboardingSteps scope="mobile" stage={mobile} failed={failed} />
+    ) : undefined;
     const frame = {
         backdrop: { appearance: props.appearance, kind: "sky" },
         className: "happy-desktop-mobile-setup",
-        sceneSize: step.kind === "get-app" || step.kind === "link" ? 48 : 80,
+        sceneSize: steps || step.kind === "get-app" || step.kind === "link" ? 48 : 80,
+        steps,
         "data-testid": "local-onboarding-screen",
         // Approval replaces only the QR body, not the retained linking page or its sticker.
         transitionKey: `desktop-mobile-${step.kind}`,
@@ -171,7 +193,7 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                         <>
                             <QRCode
                                 data={pairing.data}
-                                size={192}
+                                size={160}
                                 label="QR code to link your devices"
                                 data-testid="happy-mobile-pairing-qr"
                             />

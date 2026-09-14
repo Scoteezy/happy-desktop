@@ -10,6 +10,23 @@ export const componentNumber = "C-252";
 
 const noop = () => undefined;
 
+const desktopSteps: readonly { label: string; view: LocalOnboardingView }[] = [
+    { label: "Progress · setup", view: { kind: "agent-setup", phase: { kind: "preparing" } } },
+    { label: "Progress · assistants", view: { kind: "examining" } },
+    {
+        label: "Progress · profile",
+        view: { kind: "profile-required", name: "", email: "", busy: false },
+    },
+    {
+        label: "Progress · retry",
+        view: {
+            kind: "connect-failed",
+            message: "Happy Agent could not connect. Try again.",
+            retrying: false,
+        },
+    },
+];
+
 const firstProjectSteps: readonly { label: string; view: LocalOnboardingView }[] = [
     {
         label: "First project · opening the conversation",
@@ -62,13 +79,21 @@ const mobileSteps: readonly { label: string; step: DesktopMobileSetupStep }[] = 
     },
     {
         label: "Mobile · checking saved connection",
-        step: { kind: "link", phase: { kind: "checking" } },
+        step: { kind: "link", appReady: true, phase: { kind: "checking" } },
     },
-    { label: "Mobile · already paired", step: { kind: "link", phase: { kind: "preparing" } } },
+    {
+        label: "Mobile · initial connection check",
+        step: { kind: "link", appReady: false, phase: { kind: "checking" } },
+    },
+    {
+        label: "Mobile · already paired",
+        step: { kind: "link", appReady: true, phase: { kind: "preparing" } },
+    },
     {
         label: "Mobile · device QR",
         step: {
             kind: "link",
+            appReady: true,
             phase: {
                 kind: "pairing",
                 data: "happy://terminal?AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -76,11 +101,15 @@ const mobileSteps: readonly { label: string; step: DesktopMobileSetupStep }[] = 
             },
         },
     },
-    { label: "Mobile · finishing inline", step: { kind: "link", phase: { kind: "finishing" } } },
+    {
+        label: "Mobile · finishing inline",
+        step: { kind: "link", appReady: true, phase: { kind: "finishing" } },
+    },
     {
         label: "Mobile · link retry",
         step: {
             kind: "link",
+            appReady: true,
             phase: {
                 kind: "failed",
                 message:
@@ -603,18 +632,46 @@ export function SetupPagePage() {
                     </ThemeScope>
                 </div>
             </Specimen>
+            {desktopSteps.map(({ label, view }, index) => (
+                <Specimen
+                    key={label}
+                    detail="Stable overall stages · completed and remaining counts · current step is not a loading animation"
+                    label={label}
+                    number={String(index + 18)}
+                    stage="surface"
+                >
+                    <div style={{ ...frame, height: "800px" }} data-progress-specimen={label}>
+                        <ThemeScope mode="dark">
+                            <LocalOnboardingScreen
+                                appearance="dark"
+                                showSteps
+                                view={view}
+                                onAssistantsContinue={noop}
+                                onConnectRetry={noop}
+                                onHappyMobileConnect={noop}
+                                onHappyMobileSkip={noop}
+                                onProfileCreate={noop}
+                                onProfileEmailChange={noop}
+                                onProfileNameChange={noop}
+                                onProjectChoose={noop}
+                            />
+                        </ThemeScope>
+                    </div>
+                </Specimen>
+            ))}
             {mobileSteps.map(({ label, step }, index) => (
                 <Specimen
                     key={label}
                     detail="Optional mobile setup · bundled animated sticker · no runtime or account required"
                     label={label}
-                    number={String(index + 18)}
+                    number={String(index + 18 + desktopSteps.length)}
                     stage="surface"
                 >
                     <div style={{ ...frame, height: "800px" }} data-mobile-specimen={label}>
                         <ThemeScope mode="dark">
                             <DesktopMobileSetup
                                 appearance="dark"
+                                onboarding
                                 step={step}
                                 onContinue={noop}
                                 onSkip={noop}
@@ -629,7 +686,7 @@ export function SetupPagePage() {
                     key={label}
                     detail="Automatic handoff to an unsent editable Chief of Staff draft · manual projects use the sidebar + button"
                     label={label}
-                    number={String(index + 18 + mobileSteps.length)}
+                    number={String(index + 18 + desktopSteps.length + mobileSteps.length)}
                     stage="surface"
                 >
                     <div style={{ ...frame, height: "800px" }} data-first-project-specimen={label}>

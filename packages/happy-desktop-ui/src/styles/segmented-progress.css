@@ -129,3 +129,53 @@
 .happy-segmented-progress__segment[data-state="failed"] .happy-segmented-progress__label {
     color: var(--text-destructive);
 }
+
+/* The same restart tracks, presented as a user-paced step indicator. */
+.happy-segmented-progress[data-mode="steps"] .happy-segmented-progress__segment {
+    gap: 4px;
+}
+
+.happy-segmented-progress[data-mode="steps"] .happy-segmented-progress__track::after {
+    display: none;
+}
+
+.happy-segmented-progress[data-mode="steps"]
+    .happy-segmented-progress__segment[data-state="running"]
+    .happy-segmented-progress__track {
+    outline: 1px solid var(--text);
+    outline-offset: 2px;
+}
+
+.happy-segmented-progress[data-tone="inverse"] .happy-segmented-progress__track {
+    background: color-mix(in srgb, var(--button-primary-tint) 20%, transparent);
+}
+
+.happy-segmented-progress[data-tone="inverse"] .happy-segmented-progress__fill {
+    background: var(--button-primary-tint);
+}
+
+.happy-segmented-progress[data-tone="inverse"] .happy-segmented-progress__track::after {
+    background: var(--button-primary-tint);
+}
+
+.happy-segmented-progress[data-tone="inverse"] .happy-segmented-progress__label {
+    color: var(--button-primary-tint);
+}
+
+.happy-segmented-progress[data-tone="inverse"][data-mode="steps"]
+    .happy-segmented-progress__segment[data-state="running"]
+    .happy-segmented-progress__track {
+    outline-color: var(--button-primary-tint);
+}
+
+.happy-segmented-progress[data-tone="inverse"]
+    .happy-segmented-progress__segment[data-state="failed"]
+    .happy-segmented-progress__track {
+    background: var(--text-destructive);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-segmented-progress[data-mode="steps"] .happy-segmented-progress__fill {
+        transition: none;
+    }
+}

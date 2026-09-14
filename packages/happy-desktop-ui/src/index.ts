@@ -386,6 +386,12 @@ export {
     type SegmentedProgressSegment,
     type SegmentedProgressState,
 } from "./SegmentedProgress";
+export {
+    OnboardingSteps,
+    type OnboardingStepsProps,
+    type OnboardingStage,
+    type MobileOnboardingStage,
+} from "./OnboardingSteps";
 export { Banner, type BannerAction, type BannerProps, type BannerTone } from "./Banner";
 export {
     EmptyState,

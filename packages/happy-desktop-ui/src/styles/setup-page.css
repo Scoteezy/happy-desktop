@@ -138,6 +138,24 @@
     padding: 40px;
 }
 
+.happy-setup-page__steps {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex: none;
+    justify-content: center;
+    padding: 32px 32px 8px;
+}
+
+.happy-setup-page__heading {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: inherit;
+    width: 100%;
+}
+
 /* The sky remains one stable full-window layer while a stage changes. Only the
    content remounts and dissolves into place, so a background shared by two
    adjacent setup states never flashes or moves. */

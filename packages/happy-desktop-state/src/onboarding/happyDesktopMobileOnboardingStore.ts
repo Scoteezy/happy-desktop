@@ -65,6 +65,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
         if (!integration || networkError || reading)
             return {
                 kind: "link",
+                appReady: appReady || integration?.configured === true,
                 phase:
                     networkError && !reading
                         ? { kind: "failed", message: networkError }
@@ -74,6 +75,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
             const message = preparationError ?? linkError;
             return {
                 kind: "link",
+                appReady: true,
                 phase: message
                     ? { kind: "failed", message }
                     : { kind: prepared ? "finishing" : "preparing" },
@@ -89,10 +91,11 @@ export function happyDesktopMobileOnboardingStoreCreate(
                     : {}),
             };
         const message = pairingError ?? networkError;
-        if (message) return { kind: "link", phase: { kind: "failed", message } };
+        if (message) return { kind: "link", appReady: true, phase: { kind: "failed", message } };
         if (integration?.status === "pairing")
             return {
                 kind: "link",
+                appReady: true,
                 phase: {
                     kind: "pairing",
                     data: integration.authorization.data,
@@ -102,6 +105,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
         if (integration?.status === "failed" || integration?.status === "disabled")
             return {
                 kind: "link",
+                appReady: true,
                 phase: {
                     kind: "failed",
                     message:
@@ -112,6 +116,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
             };
         return {
             kind: "link",
+            appReady: true,
             phase: pairing
                 ? { kind: "checking" }
                 : {

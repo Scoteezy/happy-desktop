@@ -9,6 +9,17 @@
     text-wrap: balance;
 }
 
+/* Keep the progress header and QR actions visible in short desktop windows. */
+.happy-desktop-mobile-setup[data-steps] .happy-setup-page__body {
+    padding: 8px 24px;
+}
+
+.happy-desktop-mobile-setup[data-steps] .happy-setup-page__heading {
+    flex-direction: row;
+    justify-content: center;
+    gap: 12px;
+}
+
 .happy-desktop-mobile-setup__body,
 .happy-desktop-mobile-setup__preparation {
     display: flex;

@@ -368,6 +368,7 @@ function DesktopOnboardingGate(props: {
     return (
         <LocalOnboardingScreen
             appearance={appearance.mode}
+            showSteps
             onAssistantsContinue={() => props.store.assistantsContinue()}
             onConnectRetry={() => props.store.connectRetry()}
             onHappyMobileConnect={() => props.store.happyMobileConnect()}
