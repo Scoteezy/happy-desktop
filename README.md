@@ -32,6 +32,17 @@ Step 1: Download the desktop app
 Open it — setup runs itself.
 </p>
 
+Or install through our [Homebrew tap](https://github.com/slopus/homebrew-tap):
+
+```sh
+brew install --cask slopus/tap/happy
+```
+
+The cask selects the native macOS build, or a Linux AppImage on x64/arm64 for
+releases that include Linux. On Linux, launch with `happy-desktop`; a graphical
+session and FUSE support are required. Upgrade with
+`brew upgrade --cask slopus/tap/happy`.
+
 <h3 align="center">
 Step 2: Connect your phone
 </h3>
