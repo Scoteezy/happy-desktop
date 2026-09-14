@@ -31,6 +31,11 @@ env:
     RELEASE_PRERELEASE: ${{ inputs.prerelease }}
 
 jobs:
+    linux:
+        needs: verify
+        if: ${{ !inputs.prerelease }}
+        uses: ./.github/workflows/build-linux.yml
+
     windows:
         needs: verify
         if: ${{ !inputs.prerelease }}
@@ -214,11 +219,12 @@ jobs:
 
     publish:
         name: Publish GitHub Release
-        if: ${{ !cancelled() && needs.verify.result == 'success' && needs.build.result == 'success' && (needs.windows.result == 'success' || (inputs.prerelease && needs.windows.result == 'skipped')) }}
+        if: ${{ !cancelled() && needs.verify.result == 'success' && needs.build.result == 'success' && ((needs.windows.result == 'success' && needs.linux.result == 'success') || (inputs.prerelease && needs.windows.result == 'skipped' && needs.linux.result == 'skipped')) }}
         needs:
             - verify
             - build
             - windows
+            - linux
         runs-on: ubuntu-latest
         timeout-minutes: 15
         permissions:
@@ -264,6 +270,14 @@ jobs:
                     exit 1
                   fi
 
+            - name: Download boot-verified Linux AppImages
+              if: ${{ !inputs.prerelease }}
+              uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+              with:
+                  pattern: happy-desktop-linux-*
+                  path: packages/happy-desktop-electron/release/linux
+                  merge-multiple: true
+
             - name: Create architecture-aware updater manifests
               run: |
                   if [[ "$RELEASE_PRERELEASE" != true ]]; then node scripts/create-mac-update-manifest.mjs standard; fi
@@ -293,6 +307,11 @@ jobs:
                     }
                   }
                   if (process.env.RELEASE_PRERELEASE !== 'true') {
+                    for (const arch of ['x64', 'arm64']) {
+                      const path = `packages/happy-desktop-electron/release/linux/Happy-${process.env.RELEASE_VERSION}-${arch}.AppImage`;
+                      const info = await stat(path);
+                      if (!info.isFile() || info.size === 0) throw new Error(`Missing or empty release asset: ${path}`);
+                    }
                     for (const name of desktopFlavorNames) {
                       const flavor = desktopFlavorRead(name);
                       const installer = `${flavor.artifactPrefix}-${process.env.RELEASE_VERSION}-x64.exe`;
@@ -308,6 +327,7 @@ jobs:
                   assets=(packages/happy-desktop-electron/release/{standard,local-web}/*.{dmg,zip,blockmap} packages/happy-desktop-electron/release/{standard,local-web}/*-mac.yml)
                   if [[ "$RELEASE_PRERELEASE" != true ]]; then
                     assets+=(packages/happy-desktop-electron/release/windows/*.{exe,blockmap} packages/happy-desktop-electron/release/windows/{latest,nightly}.yml)
+                    assets+=(packages/happy-desktop-electron/release/linux/*.AppImage)
                   fi
                   arguments=("$RELEASE_TAG" --draft --target "$GITHUB_SHA" --title "Happy $RELEASE_TAG" --notes-file .release/notes.md)
                   if [[ "$RELEASE_PRERELEASE" == true ]]; then arguments+=(--prerelease --latest=false); fi

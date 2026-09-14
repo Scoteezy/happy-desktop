@@ -47,3 +47,34 @@ standard offers stable updates only. Existing Agent activation/drain controls,
 native install-on-quit/install action, and compatibility guards remain unchanged.
 Ship an initial stable native update so older Nightly hosts gain preview support;
 a hosted renderer refresh cannot update Electron host code.
+
+## Homebrew and Linux
+
+The standard desktop app is also distributed through `slopus/homebrew-tap`:
+
+```sh
+brew install --cask slopus/tap/happy
+```
+
+Stable native releases additionally build standard Linux x64 and arm64 AppImages
+on native Ubuntu runners. `build-linux.yml` boots each actual AppImage with a
+disposable profile and asserts that its packaged Electron renderer reaches the
+welcome screen, saving a screenshot. Publishing is gated on both checks. Linux
+Nightly and native Linux auto-updates are not shipped; use Homebrew to upgrade
+Linux installations. Preview behavior and all macOS signing and Windows checks
+remain unchanged.
+
+The tap's scheduled/manual update workflow reads the latest stable GitHub release,
+pins each artifact's SHA-256, and tests Homebrew installation, packaged app boot,
+and uninstall on every supported OS/architecture before committing the new cask.
+It uses only the tap's own workflow token, with no cross-repository secret. To
+update the tap immediately after a stable release:
+
+```sh
+gh workflow run update-happy.yml --repo slopus/homebrew-tap --ref main
+```
+
+Check that workflow and the resulting cask version before reporting Homebrew
+distribution complete. Never disable Gatekeeper or remove quarantine to make a
+cask pass. Linux CI's Chromium sandbox override is test-runner-only, not part of
+the cask or shipped app.
