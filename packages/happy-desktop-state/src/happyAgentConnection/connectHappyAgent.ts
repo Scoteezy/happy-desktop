@@ -1584,6 +1584,18 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         if (message.role === "user") sendConfirmations.get(message.id)?.();
         const entry = sessions.get(agentId);
         if (entry === undefined) return;
+        const current = entry.messages.get(message.id)?.message;
+        // HTTP replies and stream events can arrive independently. Acceptance
+        // is final for a message ID: a late send reply must not put it back in
+        // the pending tail after run.started or run.boundary already took it.
+        if (
+            current?.role === "user" &&
+            current.status === "accepted" &&
+            message.role === "user" &&
+            message.status === "pending"
+        ) {
+            return;
+        }
         entry.messages.set(message.id, { message, runId });
         indexMessageUser(entry, message);
         if (message.role === "user") {
@@ -3531,7 +3543,12 @@ function ingestHistory(
             entry.messages.set(message.id, { message, runId: run.id });
     }
     entry.runsOrdered = undefined;
-    for (const message of pending) entry.messages.set(message.id, { message, runId: null });
+    // History and pending bootstrap are independent snapshots. A message
+    // already present in accepted history cannot become pending again.
+    for (const message of pending) {
+        if (!entry.messages.has(message.id))
+            entry.messages.set(message.id, { message, runId: null });
+    }
 }
 
 function resolveWorkspaceId(
