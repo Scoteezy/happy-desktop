@@ -381,11 +381,20 @@ export function ConversationView(props: ConversationViewProps) {
         !delegating &&
         props.agentAuthor !== undefined &&
         conversationWorkingStatusStartsGroup(transcript);
+    const workingStatusClosesMessage =
+        statusVisible && conversationMessageClosedByStatus(transcript, transcript.length - 1, true);
     const workingStatus = (
         <AgentWorkingStatus
             active={statusVisible}
             awaitingInput={awaitingInput}
-            className="happy-conversation-turn-status"
+            className={[
+                "happy-conversation-turn-status",
+                workingStatusClosesMessage
+                    ? "happy-conversation-turn-status--after-message"
+                    : undefined,
+            ]
+                .filter(Boolean)
+                .join(" ")}
             elapsedMs={delegating ? props.delegatedElapsedMs : props.elapsedMs}
             label={delegating ? undefined : props.workingLabel}
             /* The phase word is the one label whose changes are the whole
@@ -450,7 +459,9 @@ export function ConversationView(props: ConversationViewProps) {
     const workingStatusHeight = statusVisible
         ? workingStatusStartsGroup
             ? 68
-            : AGENT_WORKING_STATUS_ROW_HEIGHT
+            : workingStatusClosesMessage
+              ? 32
+              : AGENT_WORKING_STATUS_ROW_HEIGHT
         : 0;
     return (
         <section
@@ -546,6 +557,7 @@ export function ConversationView(props: ConversationViewProps) {
                                         ? false
                                         : rowExpanded(transcript[index]),
                                 surface: "conversation",
+                                liveStatus: statusVisible,
                                 viewerId: props.viewerId,
                                 width,
                             },
@@ -652,7 +664,11 @@ export function ConversationView(props: ConversationViewProps) {
                                         conversationEntryPrecedesActivity(transcript, index)
                                             ? "happy-conversation__continues"
                                             : undefined,
-                                        conversationMessageClosedByStatus(transcript, index)
+                                        conversationMessageClosedByStatus(
+                                            transcript,
+                                            index,
+                                            statusVisible,
+                                        )
                                             ? "happy-conversation__closing"
                                             : undefined,
                                     ]

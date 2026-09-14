@@ -122,7 +122,7 @@ updates every 5ms. Animation-frame gaps are calibrated against idle frames
 captured immediately around each sweep and reported with estimated dropped
 frames, long frames, browser long tasks, delivered viewport widths, and panel
 geometry. Every sampled frame must keep rendered transcript rows mounted. The
-gym window remains inactive and the workload never controls the system cursor.
+gym window must always remain inactive, never take keyboard focus or be brought to the foreground, and the workload never controls the system cursor.
 
 Run it repeatedly against one already-prepared root:
 

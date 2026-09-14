@@ -169,18 +169,19 @@ export function conversationTurnStatusAfterActivity(
 }
 
 /**
- * Whether this message is the answer a settled status closes. The two are one
- * block: the message gives up the trailing padding that would separate it from a
- * new author, and the pair keeps the 8px a paragraph break carries.
+ * Whether this message is the answer the live or settled status closes. The two
+ * are one block: the message gives up the trailing padding before completion so
+ * replacing the live footer with the durable status cannot move the transcript.
  */
 export function conversationMessageClosedByStatus(
     entries: readonly ConversationEntry[],
     index: number,
+    liveStatus = false,
 ): boolean {
     const entry = entries[index];
     return (
         entry?.kind === "message" &&
         entry.message.sender?.kind === "agent" &&
-        entries[index + 1]?.kind === "turnStatus"
+        (entries[index + 1]?.kind === "turnStatus" || (liveStatus && index === entries.length - 1))
     );
 }

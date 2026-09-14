@@ -116,6 +116,11 @@
     margin-top: 4px;
 }
 
+/* Prose already owns the closing boundary shared with its settled summary. */
+.happy-conversation-turn-status--after-message.happy-agent-working-status {
+    margin-top: 0;
+}
+
 .happy-chat-turn-status.happy-agent-working-status:not([data-active]),
 .happy-conversation-turn-status.happy-agent-working-status:not([data-active]) {
     margin-top: 0;

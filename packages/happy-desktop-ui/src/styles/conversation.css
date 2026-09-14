@@ -77,11 +77,10 @@
     padding-bottom: 8px;
 }
 
-/* An answer and the status that closes it are one block, so the boundary
-   between them is the 8px that separates two paragraphs: 4px of this row's own
-   trailing padding, and the 4px of leading the status row carries. Padding for
-   a new author would put the turn's last line and its own footer further apart
-   than the paragraphs above them. */
+/* An answer and the status that closes it are one block. This row owns their
+   4px boundary in both the live and settled states so replacing the footer does
+   not move the transcript. Padding for a new author would put the turn's last
+   line and its own footer further apart than the paragraphs above them. */
 .happy-conversation .happy-message[data-agent].happy-conversation__closing {
     padding-bottom: 4px;
 }

@@ -63,6 +63,14 @@ const tool: ConversationEntry = {
     sequence: "2",
     activity: { kind: "labeled", label: "Edit", subject: "Write", status: "success", mono: true },
 };
+const completed: ConversationEntry = {
+    kind: "turnStatus",
+    id: "completed-status",
+    sequence: "3",
+    status: "complete",
+    reason: "completed",
+    durationMs: 82_000,
+};
 const screenshotProse = [
     "`full-access` — which is what yolo maps to. So the mapping is right; `never` just reads alarming in isolation.",
     "",
@@ -162,6 +170,52 @@ it("keeps live prose, tool, and status rows adjacent before and after settlement
             expectRowGeometry(view.container, `first settled frame at ${String(width)}px`);
         }
     }
+});
+
+it("keeps the transcript fixed when the live status becomes the completed summary", async () => {
+    const view = createRenderer();
+    let settle!: () => void;
+    function Harness() {
+        const [running, setRunning] = useState(true);
+        settle = () => setRunning(false);
+        return (
+            <div className="happy-theme-dark" style={{ width: 800, height: 700 }}>
+                <ConversationView
+                    agentAuthor={agent}
+                    composer={composer}
+                    conversationId="completion-transition"
+                    elapsedMs={82_000}
+                    entries={
+                        running
+                            ? [tool, message(markdown, true)]
+                            : [tool, message(markdown, false), completed]
+                    }
+                    motion="calm"
+                    onComposerSend={() => {}}
+                    onComposerValueChange={() => {}}
+                    running={running}
+                    workingLabel="Finishing"
+                />
+            </div>
+        );
+    }
+    view.render(Harness, { width: 900, height: 700 });
+    await view.ready();
+    await nextFrame();
+    await nextFrame();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    const messageRow = view.container.querySelector<HTMLElement>(
+        '.happy-message-list__virtual-row:has([data-generation-status="streaming"])',
+    )!;
+    expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight);
+    const scrollHeight = viewport.scrollHeight;
+    const messageTop = messageRow.getBoundingClientRect().top;
+    flushSync(settle);
+    expect(viewport.scrollHeight).toBe(scrollHeight);
+    expect(messageRow.getBoundingClientRect().top).toBe(messageTop);
+    expect(messageRow.querySelector('[data-generation-status="complete"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-happy-desktop-ui="turn-summary"]')).not.toBeNull();
+    expectRowGeometry(view.container, "completed status transition");
 });
 
 for (const width of [800, 560, 360]) {

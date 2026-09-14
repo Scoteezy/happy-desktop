@@ -3847,6 +3847,7 @@ function streamingPaintMeasurementBuild(
             Math.abs(settledStatusHeightMin - 32) <= 0.5 &&
             settledStatusHeightMax !== undefined &&
             Math.abs(settledStatusHeightMax - 32) <= 0.5 &&
+            statusTransitionContinuous &&
             statusTypographyMatched &&
             tableObserved &&
             tableStructureTransitions === 1,

@@ -60,6 +60,8 @@ export type ConversationRowContext = {
     readonly activityTreatment?: "detailed" | "focused";
     /** Explicit disclosure state supplied by the UI owner; never inferred from a row. */
     readonly expanded?: boolean;
+    /** A live status footer follows the final agent message. */
+    readonly liveStatus?: boolean;
 };
 type CachedRowHeight = { readonly value: number | undefined };
 type Dictionary<T> = Record<string, T | undefined>;
@@ -644,7 +646,8 @@ export function conversationRowHeight(
         context.surface === "conversation" &&
         conversationEntryPrecedesActivity(entries, index);
     const closedByStatus =
-        context.surface === "conversation" && conversationMessageClosedByStatus(entries, index);
+        context.surface === "conversation" &&
+        conversationMessageClosedByStatus(entries, index, context.liveStatus);
     const cacheKey = [
         "message",
         String(width),
