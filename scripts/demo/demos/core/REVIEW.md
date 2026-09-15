@@ -1,5 +1,55 @@
 # Core demo — local review
 
+## Stable-center revision — implementation ready, final recording blocked
+
+The current script is `SCRIPT.md`. Recorder checkpoint `ca0436fa` is rebased onto
+Desktop main `8f3820f65b55d8869022fafe823d98e896d87b10`; it remains local.
+The current real center rectangle is CSS `(288,88,936,576)`, mapped to crop
+`(790,290,2340,1440)` in the captured scene. Output is exactly 2340×1440 at 60 fps,
+without stretching. The narrowed separate still uses an 840×664 viewport at
+2.5× device scale (2100×1660). Its actual model picker, project sidebar, and
+`Edit waveformActive.ts +3 -1` row were visually inspected and are not clipped.
+
+The explicit sub-agent model contract and product presentation are published:
+
+- Client `0.0.66-preview.2`, workflow `34966773558`; stable npm latest remains
+  `0.0.65`.
+- Desktop renderer `0.0.85-preview.3`, workflow `34969546290`, source `8f3820f6`;
+  verified on the Nightly renderer URL. No native Electron release or host edit.
+- Agent `0.4.69-preview.4`, workflow `34969855394`, source `7585e70c`;
+  all platform/signing/release jobs passed. GitHub latest stable remains
+  `v0.4.68`. The isolated recorder's downloaded Darwin arm64 binary passed its
+  SHA-256 check, codesign verification, and version check.
+
+Rehearsal `artifacts/v16-r10` visibly contains the real typed
+`Spawned Grok 4.6 sub-agent` row after Steve's steering message. It is not a
+final deliverable: the phone's actual unread-state assertion failed after the
+desktop response completed, so the recorder refused to encode it as a final take.
+
+Diagnosis established a real Agent archive feedback loop. `HappySessionClient`
+recomputes `lifecycleStateSince: Date.now()` while archiving, so its own echoed
+metadata update continually changes the next payload and prevents `settle()`
+from completing. Archived rehearsals reached tens of thousands of metadata
+versions (one reached 46,032), overwhelming native JavaScript. The same native
+process recovered after the isolated publisher stopped, without debugger
+pause/resume, relaunch, or navigation; queries then took 2–5 ms. A separate
+native Header Unistyles warning was fixed and verified, but was not the cause
+of this remaining flood. No native synchronization workaround was added.
+
+The required Happy Agent regression-test edit was refused by Auto review.
+Explicit human authorization is pending in request `y42m02omlhy042w4hbli2jrv`;
+the refused edit has not been retried, delegated, or implemented by another
+route. Agent source remains unchanged for this archive bug. The requested
+Antigravity/Fable external-sharing approval is also still pending in
+`jpl5niwo2i2osl7y19juhkop`; no external review is claimed.
+
+Website changes are local, not deployed: separate static mobile lifetime,
+captions below the desktop video, cue-only phone focus, and lazy buffering
+that can actually reach `canplay`. Build/typecheck passed. Provisional v16
+stills are real separate rehearsal captures for layout review only; replace
+them with final-take assets before publishing. The previously published
+`d5b2ca7` page and v15 media remain the live rollback.
+
 ## Upright flat frame and original-detail 60 fps website
 
 The upright flat iPhone and footer credits shipped first as website `1e417f2`

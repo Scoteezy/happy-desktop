@@ -293,7 +293,7 @@ export default {
         await demo.hold(2500);
         await demo.finish();
         // Separate honest still: completed edit and actual picker, after the movie ends.
-        await demo.page.setViewportSize({ width: 720, height: 664 });
+        await demo.page.setViewportSize({ width: 840, height: 664 });
         await demo.page
             .getByText("waveformActive.ts", { exact: true })
             .first()
@@ -308,6 +308,11 @@ export default {
             .first()
             .click();
         await choices.filter({ hasText: "Fable 5.1" }).first().hover();
+        await demo.page
+            .getByText("waveformActive.ts", { exact: true })
+            .first()
+            .evaluate((element) => element.scrollIntoView({ block: "start" }));
+        await demo.page.waitForTimeout(700);
         await demo.page.screenshot({ path: join(output, "mobile-desktop-still.png") });
         await writeFile(join(output, "cues.json"), JSON.stringify(cues, null, 2));
     },

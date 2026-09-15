@@ -5,7 +5,8 @@ recording against these criteria before publishing to `/tmp/happy-one/`.
 
 ## Rollback points and scope
 
-- Desktop recorder/screenplay checkpoint: `df84fe5e` (local only).
+- Desktop recorder/screenplay checkpoint: `ca0436fa` (local only, rebased onto
+  Desktop main `8f3820f6`). Earlier checkpoints remain in Git history.
 - Native phone preparation checkpoint: `7d206eb5` (local only).
 - Published website/video rollback: `d5b2ca7`, with v15 media retained.
 - Keep the precise upright Black Titanium frame. Retain the unused 3D variant.
@@ -124,3 +125,10 @@ both at 60 fps with direct numbered-frame timing.
 
 Fill in measured geometry, final cue times, source boundaries, review outcomes,
 artifact paths, and deployed commit only after the corresponding work is verified.
+
+Current status: not complete. `v16-r10` proves the actual model-aware spawn row,
+but fails the real phone unread-state check because an Agent archive metadata
+loop floods the native client. See `REVIEW.md` for the cause and authorization
+blocker. Do not publish this rehearsal or retain its provisional cue times as
+the final timeline. The separate still's verified source size is 2100×1660;
+the measured desktop video target is 2340×1440 at 60 fps.
