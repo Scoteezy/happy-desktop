@@ -67,7 +67,8 @@ export async function gatewayCreate(options) {
                     ? replayReply(payload, replayLog, replayed)
                     : mode === "live"
                       ? await liveReply(payload)
-                      : screenplayReply(payload, emitted);
+                      : ((await options.screenplay?.(payload, emitted)) ??
+                        screenplayReply(payload, emitted, options.turnFind ?? turnFind));
             await appendFile(
                 options.ioPath,
                 `${JSON.stringify({ at: new Date().toISOString(), mode, request: payload, response: reply })}\n`,
@@ -126,7 +127,7 @@ export async function gatewayCreate(options) {
 
 // ------------------------------------------------------------- screenplay
 
-function screenplayReply(payload, emitted) {
+function screenplayReply(payload, emitted, findTurn) {
     const latest = latestUserText(payload.context);
     const sessionId =
         typeof payload.options?.sessionId === "string" ? payload.options.sessionId : "";
@@ -151,7 +152,7 @@ function screenplayReply(payload, emitted) {
     if (sessionId.endsWith(":title")) {
         // Title generation frames user messages in wrapper lines that vary by
         // turn, so key on any screenplay words appearing anywhere in context.
-        const known = sessionFindInContext(payload.context);
+        const known = sessionFindInContext(payload.context, findTurn);
         const title = known?.title ?? "Working session";
         const recap = known?.recap ?? "In progress.";
         return {
@@ -159,7 +160,7 @@ function screenplayReply(payload, emitted) {
         };
     }
 
-    const found = turnFind(latest);
+    const found = findTurn(latest);
 
     if (
         !found &&
@@ -470,12 +471,12 @@ async function liveReply(payload) {
 
 // ---------------------------------------------------------------- helpers
 
-function sessionFindInContext(context) {
+function sessionFindInContext(context, findTurn) {
     const messages = Array.isArray(context?.messages) ? context.messages : [];
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
         if (message?.role !== "user") continue;
-        const found = turnFind(contentText(message.content));
+        const found = findTurn(contentText(message.content));
         if (found) return found.session;
     }
     return undefined;

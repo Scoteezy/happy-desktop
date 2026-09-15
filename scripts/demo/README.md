@@ -13,6 +13,15 @@ It is a copy of the original `demos/resume/artifacts/v13/resume.mp4`; the
 original and other generated takes remain gitignored. Recording a new take
 does not overwrite this selected video.
 
+The landing-page story lives in [`demos/core/`](./demos/core/BRIEF.md): start
+inside a workspace, send the waveform task, let Steve steer the active run
+toward a Grok sub-agent, then show the edit, Astra review, and Split diff.
+Steve's completed message arrives without draft synchronization. This take
+uses its own explicit screenplay and fictional participant identity; it does
+not demonstrate live vendor inference or real team authentication. Record it
+with `pnpm demo reset` followed by `pnpm demo record core`. Core supports
+screenplay inference only.
+
 ## The shape of it
 
 ```
@@ -129,6 +138,17 @@ world between runs, which is realistic but not deterministic.
 Useful flags: `--fps <n>`, `--appearance dark|light`, `--out <dir>`,
 `--keep-frames`, `--verbose`, `--inference <mode>`, `--replay-io <path>`.
 
+For the core take with a real paired Simulator, add
+`--mobile-server http://127.0.0.1:<port> --phone-udid <dedicated-simulator-udid>`.
+Start the isolated Happy server and development app separately, then complete
+the native encrypted pairing before recording. This opt-in changes only the
+demo daemon's Happy server URL; it never redirects the user's own daemon.
+The recorder exports synchronized `phone-screen.mp4`, transparent
+`phone-bezel.webm`, frame geometry, and focus cues beside the desktop MP4.
+Phone takes must keep the continuous 1× timeline with no intro or outro.
+Preserve the paired `.d` world between takes; archive only the exact previous
+rehearsal workspace instead of using `reset`, which would discard pairing.
+
 By default a finished video lands in its own gitignored
 `demos/<id>/artifacts/` directory. `--out <dir>` deliberately collects one or
 more takes elsewhere. On this machine the recorder needs sandbox-exempt
@@ -144,17 +164,18 @@ the daemon client, and `daemonRestart()` — the primitive behind the update
 story. Navigate to the opening shot **off camera** (raw `demo.page` calls
 before the first frame-rendering primitive), so the video starts on the work.
 
-| Call                           | What it does                                                    |
-| ------------------------------ | --------------------------------------------------------------- |
-| `settle(selector)`             | waits live once the take starts; preparation is off camera      |
-| `hold(ms)`                     | holds the shot for a real wall-time duration                    |
-| `moveTo/click/clickText`       | eased pointer, press ripple, real events                        |
-| `type(text)` / `press(chord)`  | human-cadence typing, key-cap badge                             |
-| `type(text, { speed: 3 })`     | faster prompt typing with a visible 3× badge, cleared afterward |
-| `zoomTo(target)` / `zoomOut()` | eased camera, capped at real pixels                             |
-| `caption(text)`                | caption pill; `caption(undefined)` clears it                    |
-| `sticker(name, target)`        | pops an animated sticker that rides the content                 |
-| `sound(name)`                  | palette cue: `click, key, key2, key3, chime, arrive`            |
+| Call                           | What it does                                                      |
+| ------------------------------ | ----------------------------------------------------------------- |
+| `settle(selector)`             | waits live once the take starts; preparation is off camera        |
+| `hold(ms)`                     | holds the shot for a real wall-time duration                      |
+| `moveTo/click/clickText`       | eased pointer, press ripple, real events                          |
+| `type(text)` / `press(chord)`  | human-cadence typing, key-cap badge                               |
+| `type(text, { speed: 3 })`     | faster prompt typing with a visible 3× badge, cleared afterward   |
+| `zoomTo(target)` / `zoomOut()` | eased camera, capped at real pixels                               |
+| `playbackSpeed(1\|4)`          | genuine work-only time compression in the output, with a 4× badge |
+| `caption(text)`                | caption pill; `caption(undefined)` clears it                      |
+| `sticker(name, target)`        | pops an animated sticker that rides the content                   |
+| `sound(name)`                  | palette cue: `click, key, key2, key3, chime, arrive`              |
 
 ## How a frame is made
 
@@ -170,6 +191,9 @@ before the first frame-rendering primitive), so the video starts on the work.
    fades up from black _in linear light_ (a power law commutes with
    multiplication, so encoded pixels are multiplied by `t^(1/2.2)`) with a
    gentle push-in; the outro mirrors it. No encoder-side fades.
+   A take declaring `transitions: "none"` (including `core`) starts and ends
+   directly on the product. Caption timing is also exported as an SRT beside
+   the MP4 for later human voiceover; the recorder does not synthesize narration.
 3. **Mix** — the director's cue list becomes one sample-exact WAV: clicks on
    clicks, recorded mechanical keys under typing, a chime on send, a low arrival
    note on completion. Keypresses use the vendored CC0 sample library documented

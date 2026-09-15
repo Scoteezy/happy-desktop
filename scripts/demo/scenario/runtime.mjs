@@ -8,7 +8,7 @@ import {
     happyAgentExecutableResolve,
 } from "../../../packages/happy-desktop-gym/sources/electron/index.ts";
 import { gatewayCreate } from "./inference.mjs";
-import { backgroundRepositories, repository, sessions, worktrees } from "./world.mjs";
+import * as defaultWorld from "./world.mjs";
 
 const execFile = promisify(execFileCallback);
 const workspace = resolve(import.meta.dirname, "../../..");
@@ -67,7 +67,7 @@ function paths() {
     };
 }
 
-function environment(p, gateway) {
+function environment(p, gateway, mobileServerUrl) {
     const safeSystemPath = "/usr/bin:/bin:/usr/sbin:/sbin";
     return {
         HAPPY_HOME_DIR: p.happyHome,
@@ -88,11 +88,14 @@ function environment(p, gateway) {
         HAPPY_AGENT_WORKSPACES_DIRECTORY: p.workspaces,
         HAPPY_GYM_INFERENCE_URL: gateway.url,
         HAPPY_GYM_TOKEN: gateway.token,
+        ...(mobileServerUrl ? { HAPPY_AGENT_HAPPY_SERVER_URL: mobileServerUrl } : {}),
         // Provider enablement checks that credentials exist; routing never
         // uses them, because the gym URL backs every provider with our
         // gateway. A placeholder enables the claude provider so sessions can
         // carry a real model identity instead of "Gym".
         ANTHROPIC_API_KEY: "demo-gym-placeholder",
+        OPENAI_API_KEY: "demo-gym-placeholder",
+        XAI_API_KEY: "demo-gym-placeholder",
         TMPDIR: p.tmp,
     };
 }
@@ -142,7 +145,7 @@ function processBaseEnvironment(p) {
     };
 }
 
-async function daemonStart(p, gateway) {
+async function daemonStart(p, gateway, mobileServerUrl) {
     const executable = await happyAgentExecutableResolve();
     const command = join(p.bin, "happy-agent");
     await unlink(command).catch(() => undefined);
@@ -152,7 +155,7 @@ async function daemonStart(p, gateway) {
     const nodeCommand = join(p.bin, "node");
     await unlink(nodeCommand).catch(() => undefined);
     await symlink(process.execPath, nodeCommand);
-    const env = environment(p, gateway);
+    const env = environment(p, gateway, mobileServerUrl);
     // A previous take may have left a daemon owning the socket; stop that exact
     // daemon before starting this lifetime so the token and gateway URL match.
     await execFile(command, ["stop"], { cwd: p.root, env, timeout: 15_000 }).catch(() => undefined);
@@ -178,6 +181,16 @@ async function runtimeConfigurationWrite(p) {
         [
             "[providers.gym]",
             'type = "codex"',
+            "auto_enable = true",
+            "",
+            "[providers.codex]",
+            'type = "codex"',
+            "enabled = true",
+            "auto_enable = true",
+            "",
+            "[providers.grok]",
+            'type = "grok"',
+            "enabled = true",
             "auto_enable = true",
             "",
             "[providers.claude]",
@@ -258,7 +271,8 @@ export async function runSettleWait(client, agentId, runId, timeoutMs) {
     throw new Error(`Demo run ${runId} did not settle in ${timeoutMs}ms.`);
 }
 
-async function seed(p, client) {
+async function seed(p, client, definition) {
+    const { backgroundRepositories, repository, sessions, worktrees } = definition;
     const projects = new Map();
     for (const definition of [repository, ...backgroundRepositories]) {
         const registered = await client.registerProject({
@@ -313,7 +327,7 @@ async function seed(p, client) {
             const send = await client.sendMessage(created.agent.id, {
                 delivery: "queue",
                 id: cuid(),
-                mode: seedMode,
+                mode: definition.seedMode ?? seedMode,
                 text: turn.user,
             });
             const runId = await runIdWait(client, created.agent.id, send.message.id, send.cursor);
@@ -373,10 +387,20 @@ function cuid() {
  */
 export async function gymOpen(options = {}) {
     const p = paths();
+    const mobileServerUrl = options.mobileServerUrl;
+    if (mobileServerUrl) {
+        const url = new URL(mobileServerUrl);
+        if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname))
+            throw new Error("The demo mobile server must be local to this recording machine.");
+    }
+    const definition = options.world ?? defaultWorld;
+    const worldId = definition.id ?? "original";
     const prepared = await readFile(marker, "utf8").then(
         (value) => JSON.parse(value),
         () => undefined,
     );
+    if (prepared && (prepared.worldId ?? "original") !== worldId)
+        throw new Error("The saved gym belongs to another demo. Run pnpm demo reset first.");
     if (!prepared) {
         process.stdout.write("  preparing the demo gym world…\n");
         await rm(root, { force: true, recursive: true });
@@ -399,8 +423,8 @@ export async function gymOpen(options = {}) {
             "# Demo gym profile. Disposable and run-owned.\n",
             "utf8",
         );
-        for (const definition of [repository, ...backgroundRepositories]) {
-            await fixtureWrite(p, definition);
+        for (const project of [definition.repository, ...definition.backgroundRepositories]) {
+            await fixtureWrite(p, project);
         }
     }
 
@@ -408,8 +432,10 @@ export async function gymOpen(options = {}) {
         ioPath: p.ioPath,
         mode: options.inference ?? "screenplay",
         replayPath: options.replayPath,
+        screenplay: definition.reply,
+        turnFind: definition.turnFind,
     });
-    const daemon = await daemonStart(p, gateway);
+    const daemon = await daemonStart(p, gateway, mobileServerUrl);
     let client = await clientCreate(p, daemon.token);
     await healthWait(client, 30_000);
 
@@ -426,7 +452,7 @@ export async function gymOpen(options = {}) {
 
     let world = prepared;
     if (!world) {
-        world = await seed(p, client);
+        world = { ...(await seed(p, client, definition)), worldId };
         await writeFile(marker, `${JSON.stringify(world, null, 2)}\n`, "utf8");
         process.stdout.write("  demo gym world prepared\n");
     }
@@ -464,7 +490,7 @@ export async function gymOpen(options = {}) {
          * take can prove what the restart actually waited for.
          */
         async daemonRestart() {
-            const env = environment(p, gateway);
+            const env = environment(p, gateway, mobileServerUrl);
             const previousPid = (
                 await readFile(join(p.happyHome, "agent", "daemon.pid"), "utf8")
             ).trim();
@@ -485,7 +511,7 @@ export async function gymOpen(options = {}) {
         },
         async close() {
             gateway.release();
-            const env = environment(p, gateway);
+            const env = environment(p, gateway, mobileServerUrl);
             await execFile(daemon.command, ["stop"], {
                 cwd: p.root,
                 env,

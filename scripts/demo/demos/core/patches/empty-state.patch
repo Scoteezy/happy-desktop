@@ -1,0 +1,10 @@
+diff --git a/packages/happy-desktop-app/sources/AppHappyAgentView.tsx b/packages/happy-desktop-app/sources/AppHappyAgentView.tsx
+--- a/packages/happy-desktop-app/sources/AppHappyAgentView.tsx
++++ b/packages/happy-desktop-app/sources/AppHappyAgentView.tsx
+@@ -3232,1 +3232,0 @@
+-                            animation="chief-of-staff"
+diff --git a/packages/happy-desktop-ui/src/ConversationView.tsx b/packages/happy-desktop-ui/src/ConversationView.tsx
+--- a/packages/happy-desktop-ui/src/ConversationView.tsx
++++ b/packages/happy-desktop-ui/src/ConversationView.tsx
+@@ -518,1 +518,0 @@
+-                            animation="robot"

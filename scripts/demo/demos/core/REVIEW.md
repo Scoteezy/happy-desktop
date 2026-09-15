@@ -1,0 +1,246 @@
+# Core demo — local review
+
+## Upright flat frame and original-detail 60 fps website
+
+The upright flat iPhone and footer credits shipped first as website `1e417f2`
+(Pages `34890487646` succeeded), after preserving remote `d990451`'s mobile
+feature-reveal changes during rebase. `HappyOnePhone3D.tsx`, the scene renderer,
+and its model remain as an unused alternative; the active page imports none of
+them and requests no 3D assets. Credits now sit beside Docs, Privacy, and Terms.
+
+The separate quality pass shipped as `d5b2ca7778ff35cfb8da76c5149aa5e2252bf57d`
+(Pages `34891633037` succeeded). Its 2560×1440 desktop was recomposed from the
+original 3060×1660 captures in their 3200×1800 scene. The closest 347 frames
+were widened slightly to a minimum 2560×1440 crop, avoiding upscaling. Website
+phone playback uses the unchanged native 1206×2622 export. Both files have
+4,674 frames at 60 fps / 77.900 seconds. No re-record or native host change was
+needed; original masters and the unused 3D assets remain intact.
+
+Found a cadence issue in the old composition export: ffprobe established that
+its JPEG concat input used a 1/25 time base, producing repeated 40ms timestamps
+before the output frame-rate conversion. The new desktop encode reads the
+numbered captured/composed frames directly at 60 Hz. It does not interpolate
+or manufacture intermediate motion. Caption timing, interaction sounds, native
+phone timing, and the full synchronized take's duration are unchanged.
+
+Media Capabilities chooses the high-quality pair before either source loads,
+only when both are reported supported, smooth, and power-efficient. Unsupported
+or data-saving environments retain the existing 30 fps pair; the source does
+not switch mid-playback. Runtime inspection covered normal and forced fallback
+selection in Chromium, Firefox, and WebKit. All sampled playback intervals
+reported zero dropped frames. Chromium delivered about 59 presented-frame
+callbacks/sec at high quality; Firefox callback delivery stayed around 24/sec
+in this automation environment despite 60 decoded frames/sec and zero reported
+drops, so those callbacks do not establish 60 visible updates/sec there. Headed
+WebKit delivered about 54 callbacks/sec versus about 30 for the standard pair.
+The videos remained synchronized. Actual desktop text crops, phone home/diff,
+and desktop/mobile footer placement were inspected. Website typecheck/build
+and diff checks passed; no tests were added. Desktop/phone source was not pushed.
+
+## Website zoom flicker correction
+
+Reproduced the reported zoom jitter in headed hardware Chromium. The original
+width transition repeatedly resized the WebGL drawing buffer in ResizeObserver,
+after the frame's draw. A single zoom produced 100 canvas-attribute mutation
+batches, including 66 transparent center-pixel reads. Intermediate screenshots
+showed the phone disappearing, despite smooth animation-frame timing.
+
+The fix keeps the phone's layout/canvas at expanded size and animates only its
+CSS transform. Genuine layout resizes are queued and applied immediately before
+the same frame's draw; initial presentation waits for the first measured size.
+The identical zoom diagnostic then reported no canvas mutations, no resize-induced
+blank states, and no frame gaps over 25ms. Intermediate screenshots retained the
+phone. Real playback entrance/exit also produced no canvas resizes; a subsequent
+window resize produced an opaque center-pixel read in its resize observer batch.
+
+Hardware Chromium, four-core Firefox fallback, and mobile WebKit playback were
+inspected. The videos remained aligned, reduced motion paused them, and mobile
+retained its existing caption-safe reveal with no WebGL assets or overflow.
+Website typecheck/build and diff checks passed. Only the three scoped website
+files were committed, rebased onto remote main, and pushed as `fa556a4`.
+Native footage, desktop recorder changes, and the Electron host were untouched.
+Pages workflow `34888278115` succeeded. The same diagnostic against the published
+page reported zero canvas mutations, no resize-induced blank states, and a
+maximum animation-frame gap of 9.4ms; its mid-zoom screenshot retained the phone.
+
+## Precise black device and responsive website revision
+
+The [new black-frame export](./artifacts/v13/phone-bezel-iphone16pro-black.webm)
+uses the original native screen under Apple's iPhone 16 Pro Black Titanium
+frame, sourced through James Jingyi's Device Mockups collection. Its exact
+screen opening is 102,100,1206,2622 in a 1406×2822 canvas. The 60 fps VP9-alpha
+file contains 4,674 frames / 77.900 seconds; decoded alpha is 0 outside and 255
+on the screen. The encoded diff frame was visually inspected. Original footage,
+timing, native masters, and the earlier bezel export remain unchanged.
+
+The website revision uses this precise frame by default and an actual CC-BY
+iPhone 16 Pro model by tranminhluan on capable desktops. It preserves the sourced
+body, button, camera, and antenna geometry and adapts its atlas to neutral black.
+Public artwork credits record author, sources, license, and modifications. The
+16 Pro is deliberately identified correctly: 17 Pro has no black finish.
+
+The caption-free desktop web derivative retains the v13 77.900-second clock,
+camera moves, interaction sounds, and 30 fps encode. Responsive HTML captions
+use the original narration cues. Mobile now uses a centered portrait phone
+moment, 16px captions, and complete phone exit before desktop review.
+
+Actual normal-speed playback was inspected at entrance, chat/diff arrival,
+panned diff, and desktop return. Headed hardware Chromium used the real WebGL
+model; native WebKit mobile played both recordings in sync without requesting
+Three.js or the model. Firefox layouts at 360px and 430px had no horizontal
+overflow. A four-core desktop also requested no 3D assets. Deliberate context
+loss returned to the precise flat frame without stopping either video; reduced
+motion paused the pair. Final website typecheck/build and diff checks passed.
+No tests were written, and the policy-blocked external reviews were not retried.
+
+Website commit `861b5fa5e751ee6bb732bee5e05e0f1c09881a52` was rebased onto
+remote main and pushed normally. Pages workflow `34859011794` passed its existing
+tests, build, and deployment. Actual published playback was then watched again
+at the diff and desktop-return cues. Hardware Chromium loaded the real model;
+390px WebKit loaded no 3D assets, kept 16px captions, and hid the phone on exit.
+Both had no page errors or horizontal overflow. At the 44-second observation,
+the two video clocks differed by about 42ms on desktop and 4ms on mobile.
+
+## Published synchronized take — v13
+
+[Desktop](./artifacts/v13/core.mp4),
+[native phone screen](./artifacts/v13/phone-screen.mp4), and
+[transparent bezel](./artifacts/v13/phone-bezel.webm) each contain exactly
+4,674 frames at 60 fps: 77.900 seconds. The bezel's decoded alpha is 0 outside
+the device and 255 on its screen. Native phone capture covers the full take;
+its trim offset is 0.000179 seconds. No phone frames or sync data were fabricated.
+
+Phone home has six real durable sessions with actual project artwork: three
+Happy sessions, travel-vibes, bra1nDump, and the only bot, Chief of Staff. The
+phone's actual model/effort selection is Fable 5.1 / Extra High. Local native
+accessibility reads keep the recording driver warm during the desktop opening.
+
+Phone focus begins at 30.717s, chat is open at 34.300s, and the actual inline
+diff arrives between 36.5s and 37.0s. The horizontal swipe settles by 43.317s;
+focus returns to desktop at 48.200s. No session-info or separate Changes view
+is opened on the phone. Desktop file review begins at 60.550s and retains both
+sidebars through Unified / No wrap → Wrap → close file tab → chat.
+
+Inspected the native home, diff arrival, panned syntax highlighting, desktop
+subtitle beats, completed research link, and ending. Merged one 13-frame subtitle
+into the following narration beat during composition; capture timing is unchanged.
+The full desktop black-frame scan found no black interval. Phone typecheck and
+targeted recorder formatting/lint/syntax checks passed; no tests were written.
+
+The user explicitly selected this take for publication. Website commit
+`ead7329` was rebased onto current remote main and pushed to `slopus.github.io`.
+GitHub Pages workflow `34853964365` passed its existing tests, build, and deploy.
+The demo is live at https://happy.engineering/tmp/happy-one/ with the lightweight
+CSS 3D phone. Matched website derivatives use 30 fps, with the phone at 804×1748;
+the native 60 fps masters above remain intact. Real browser inspection covered
+Chromium, Firefox, and WebKit, including seeking and reduced-motion behavior;
+paired off-screen pause/resume was checked in Chromium. Deployed WebKit replay
+returns both videos to zero and restarts them together. Over a five-second
+sample WebKit reported 41 dropped frames with one plain desktop video, 41/43
+with two plain videos, and 44/44 on the deployed page. These similar counts do
+not establish an added problem caused by the phone treatment; no follow-up
+code change or deployment was warranted by this check.
+
+Recording boundaries remain explicit: inference text/timing and Steve's desktop
+identity are screenplay fixtures; native tools, edits, and encrypted phone sync
+are real. The research post was verified outside the recording. Antigravity and
+Fable review did not run because of the policy denial documented below. This is
+not a claim of their sign-off. No production Electron host was changed or restarted,
+and neither the desktop nor phone source workspace was pushed.
+
+## Synchronized desktop and phone — v11
+
+The revised [desktop video](./artifacts/v11/core.mp4) and
+[native phone screen](./artifacts/v11/phone-screen.mp4) contain exactly 4,876
+frames each: 81.266667 seconds at 60 fps. The
+[transparent bezel treatment](./artifacts/v11/phone-bezel.webm) uses the same
+screen source and also contains 4,876 frames at 60 fps. Its decoded alpha is
+transparent outside the device and opaque on the screen; the rounded frame and
+hardware buttons were inspected in the encoded result.
+[Focus cues](./artifacts/v11/phone-timing.json) and
+[voiceover subtitles](./artifacts/v11/core.srt) accompany the exports.
+
+Locally inspected the rendered desktop opening and ending, all subtitle beats,
+the phone's working session list, active conversation, real +14/−6 update, and
+syntax-highlighted file diff. A natural horizontal swipe brings the changed
+logic into view. The desktop keeps both sidebars open through Unified / No wrap,
+clicks Wrap, and closes only the file tab back to chat. The completed research
+finding visibly links to a verified OpenAI Developers post. The full desktop
+black-frame scan found no black interval.
+
+The phone is a dedicated iPhone 17 Pro Simulator running the real Happy app,
+paired through its encrypted integration to the same isolated demo daemon.
+No mobile messages, sessions, diffs, or transport responses are injected.
+Both captures run concurrently at continuous 1×. Simulator's changed-frame
+recording covers the full exported timeline; no frozen tail is manufactured.
+The screen export's last frame remains on the diff, with no off-camera reset.
+
+Phone focus starts at 30.717s, the session is open by 38.450s, the panned diff
+is visible by 49.367s, and focus returns to desktop at 59.917s. Desktop file
+review begins at 63.933s. All cues use the same zero-based playback clock.
+
+The inference screenplay and fictional Steve identity remain the same explicit
+recording boundary as before. Actual phone synchronization is not evidence of
+live vendor inference or real multi-user authentication. The tweet was verified
+outside the take; the Grok response is scripted.
+
+Targeted formatting, script lint (zero warnings/errors), Node syntax checks,
+and `git diff --check` passed. The real desktop renderer and native mobile app
+ran for the capture; no tests were written or test suites run. The supporting
+Happy environment lives in its separate `core-demo-phone-recording` workspace.
+No production Electron host, deployment, release, commit, or push was performed.
+
+Independent Antigravity/Fable review remains blocked as described below; this
+local inspection does not claim their sign-off.
+
+## Earlier desktop-only take — v09
+
+Previously reviewed [v09 video](./artifacts/v09/core.mp4),
+[subtitles](./artifacts/v09/core.srt), and
+[native evidence](./artifacts/v09/core.evidence.json).
+Generated takes are gitignored; no video has been selected for committing or publishing.
+
+The file is 53.183 seconds, 1920×1080, 60 fps, H.264/AAC, 3,733,215 bytes.
+It was recorded against desktop `4e05ac78` and the isolated stable daemon
+`0.4.68`. Narration is subtitles for later human recording; audio contains
+interaction sounds, not generated speech.
+
+## Local inspection
+
+Inspected the rendered opening, model selection, typing and marker, Steve's
+message, running delegates, work-speed transition, and final diff, including
+the encoded ending. The wider composer framing keeps the complete request
+visible. The final Split view uses the full content width and wraps long lines.
+The first frame is the product with no open menu. No workspace creation,
+manual naming, Steve draft, title card, decorative sticker, or black transition
+is filmed. FFmpeg's full-video black-frame scan reported no black interval.
+
+Native history establishes the causal order below. Times are elapsed since
+the implementation request was submitted, not edited-video timestamps:
+
+| Event                                                      | Seconds |
+| ---------------------------------------------------------- | ------: |
+| Fable's first completed Read                               |   1.259 |
+| Steve's completed message submitted with `delivery: steer` |   3.168 |
+| Grok sub-agent created                                     |  10.774 |
+| File edited, +14/−6                                        |  16.602 |
+| Astra review sub-agent created                             |  24.133 |
+
+The daemon reported healthy and ready; both children settled. Inference and
+Steve's identity are fixtures, not proof of live vendor research or real team
+authentication. The native tools, steering, file edit, counts, and diff are real.
+
+Repository formatting check and `pnpm format` passed, script lint reported zero
+warnings/errors, Node syntax checks passed, and `git diff --check` was clean.
+No tests were added or test suites run. Production files and the real Electron
+host/daemon were not changed or restarted.
+
+## Outstanding independent review
+
+Antigravity (`agy`, Gemini 3.1 Pro High) and native Fable 5.1 High review commands
+were submitted once against v07. Both were refused by Auto review because
+sending local documents and imagery to those services violates the workspace's
+data-sharing policy. Neither reviewer ran; no alternate route was attempted.
+The requested independent sign-off is therefore still blocked. The local cut
+is available to inspect, but this is not a claim that all acceptance conditions
+or the requested “flawless” sign-off have been met.

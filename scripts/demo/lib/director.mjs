@@ -64,6 +64,7 @@ export class Director {
     #card;
     #liveWaits = [];
     #typingSpeed = 1;
+    #playbackSpeed = 1;
     #recording = false;
     #pump;
     #startedAt;
@@ -94,6 +95,7 @@ export class Director {
     get timing() {
         return {
             fps: this.#fps,
+            startedAt: this.#startedAt,
             frames: this.#sink.frames.length,
             liveWaits: this.#liveWaits.map((wait) => ({ ...wait })),
             wallMs:
@@ -167,6 +169,7 @@ export class Director {
                 ...(this.#caption ? { caption: this.#caption } : {}),
                 ...(this.#card ? { card: this.#card } : {}),
                 ...(this.#typingSpeed === 3 ? { typingSpeed: 3 } : {}),
+                ...(this.#playbackSpeed !== 1 ? { playbackSpeed: this.#playbackSpeed } : {}),
                 ...this.#stickerPose(this.#step),
             },
             options,
@@ -446,9 +449,10 @@ export class Director {
         let ordinaryKey = 0;
         let spaceKey = 0;
         try {
-            for (const character of text) {
+            for (const [index, character] of [...text].entries()) {
                 if (this.#error) throw this.#error;
                 await this.#page.keyboard.type(character);
+                await options.afterCharacter?.(index + 1);
                 const sound =
                     character === " "
                         ? `space-${String((spaceKey++ % 2) + 1).padStart(3, "0")}`
@@ -541,6 +545,12 @@ export class Director {
     async caption(text, options = {}) {
         this.#caption = text;
         if (options.hold) await this.hold(options.hold);
+    }
+
+    /** Editorial playback rate; the app and capture clock remain real-time. */
+    playbackSpeed(speed) {
+        if (speed !== 1 && speed !== 4) throw new Error("Playback speed must be 1 or 4.");
+        this.#playbackSpeed = speed;
     }
 
     /** Preparation waits are off camera; all waits after the first shot stay live. */

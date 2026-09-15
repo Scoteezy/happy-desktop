@@ -8,7 +8,9 @@ import { encode } from "./lib/encode.mjs";
 import { soundtrackWrite } from "./lib/sounds.mjs";
 import { stageOpen } from "./lib/stage.mjs";
 import { viewport } from "./lib/scene.mjs";
+import { subtitlesSrt, timelineEdit } from "./lib/timeline.mjs";
 import { gymOpen, gymReset } from "./scenario/runtime.mjs";
+import { phoneVideoOpen } from "./lib/phone-video.mjs";
 
 /*
  * The demo recorder's front door.
@@ -47,6 +49,8 @@ function parse(argv) {
         else if (argument === "--appearance") options.appearance = rest.shift();
         else if (argument === "--inference") options.inference = rest.shift();
         else if (argument === "--replay-io") options.replayIo = resolve(rest.shift());
+        else if (argument === "--mobile-server") options.mobileServerUrl = rest.shift();
+        else if (argument === "--phone-udid") options.phoneUdid = rest.shift();
         else if (argument === "--out") options.out = resolve(workspace, rest.shift());
         else if (argument.startsWith("--")) throw new Error(`Unknown option: ${argument}`);
         else if (!options.command) options.command = argument;
@@ -59,6 +63,8 @@ function parse(argv) {
         throw new Error('--appearance must be either "dark" or "light".');
     if (!new Set(["screenplay", "live", "replay"]).has(options.inference))
         throw new Error('--inference must be "screenplay", "live", or "replay".');
+    if (options.phoneUdid && !options.mobileServerUrl)
+        throw new Error("A synchronized phone capture requires --mobile-server.");
     return options;
 }
 
@@ -138,17 +144,40 @@ async function record(demo, stage, gym, options) {
         sink,
         viewport,
     });
+    const phone = options.phoneUdid
+        ? await phoneVideoOpen({ udid: options.phoneUdid, output, work })
+        : undefined;
     try {
-        await demo.run(director, gym);
+        await demo.run(director, gym, { phone });
+    } catch (error) {
+        await stage.page
+            .screenshot({ path: join(output, `${demo.id}.failed.png`) })
+            .catch(() => {});
+        await writeFile(
+            join(output, `${demo.id}.failed.txt`),
+            await stage.page
+                .locator("body")
+                .innerText()
+                .catch(() => "Page unavailable"),
+        );
+        throw error;
     } finally {
         try {
             await director.finish();
         } finally {
-            await sink.close();
+            try {
+                await phone?.finish(director.timing);
+            } finally {
+                await sink.close();
+                await writeFile(
+                    join(work, "timeline.json"),
+                    JSON.stringify(sink.frames, null, 2),
+                    "utf8",
+                );
+            }
         }
     }
     process.stdout.write(`\r    shooting  ${sink.frames.length} frames — done\n`);
-    await writeFile(join(work, "timeline.json"), JSON.stringify(sink.frames, null, 2), "utf8");
 
     if (demo.assert) {
         const evidence = await demo.assert(stage.page, gym);
@@ -161,21 +190,45 @@ async function record(demo, stage, gym, options) {
         }
         process.stdout.write("    asserted  the take shows what it claims\n");
     }
+    if (demo.evidence) {
+        await writeFile(
+            join(output, `${demo.id}.evidence.json`),
+            JSON.stringify(await demo.evidence(stage.page, gym), null, 2),
+        );
+        process.stdout.write("    captured  native run and file-view evidence\n");
+    }
 
+    const edited = timelineEdit(sink.frames, director.sounds);
+    await writeFile(join(work, "edited-timeline.json"), JSON.stringify(edited.frames, null, 2));
     const { listing, introFrames, outroFrames } = await composeFrames({
         appearance: options.appearance,
         demo,
         fps: options.fps,
-        frames: sink.frames,
+        frames: edited.frames,
         onProgress: (done, total) => process.stdout.write(`\r    composing ${done}/${total}`),
         sourceDirectory: captured,
         targetDirectory: composed,
     });
-    process.stdout.write(`\r    composing ${sink.frames.length}/${sink.frames.length} — done\n`);
+    process.stdout.write(
+        `\r    composing ${edited.frames.length}/${edited.frames.length} — done\n`,
+    );
+    await writeFile(
+        join(output, `${demo.id}.srt`),
+        subtitlesSrt(
+            [
+                ...Array(introFrames).fill(edited.frames[0]),
+                ...edited.frames,
+                ...Array(outroFrames).fill(edited.frames.at(-1)),
+            ],
+            options.fps,
+        ),
+    );
 
-    const totalFrames = introFrames + sink.frames.length + outroFrames;
+    const totalFrames = introFrames + edited.frames.length + outroFrames;
+    if (phone && (introFrames || outroFrames || edited.frames.length !== sink.frames.length))
+        throw new Error("This synchronized phone take must retain one continuous 1× timeline.");
     const soundtrack = await soundtrackWrite(
-        director.sounds.map((event) => ({ ...event, frame: event.frame + introFrames })),
+        edited.sounds.map((event) => ({ ...event, frame: event.frame + introFrames })),
         options.fps,
         totalFrames,
         join(work, "soundtrack.wav"),
@@ -190,6 +243,10 @@ async function record(demo, stage, gym, options) {
         soundtrack,
         target,
     });
+    if (phone) {
+        process.stdout.write("    exporting  synchronized phone screen and bezel…\n");
+        await phone.export({ fps: options.fps, frames: totalFrames });
+    }
     if (!options.keepFrames) await rm(work, { force: true, recursive: true });
     process.stdout.write(
         `    ${target}  (${seconds.toFixed(1)}s, took ${((Date.now() - started) / 1000).toFixed(0)}s)\n`,
@@ -274,24 +331,58 @@ const selected = options.all
         })
       : demos;
 
+for (const demo of selected) {
+    if (demo.inferenceModes && !demo.inferenceModes.includes(options.inference))
+        throw new Error(
+            `Demo ${demo.id} supports ${demo.inferenceModes.join(", ")} inference only.`,
+        );
+}
+
 // A full production run starts from the snapshot, not from whatever earlier
 // takes typed into the world: live sends are durable, and a repeated take on
 // a reused world shows its own previous send above the composer.
 if (options.command === "record" && options.all) await gymReset();
 
-process.stdout.write(`  opening the demo gym (${options.inference} inference)…\n`);
-const gym = await gymOpen({
-    inference: options.inference,
-    ...(options.replayIo ? { replayPath: options.replayIo } : {}),
-});
-process.stdout.write(`  gym          ${gym.paths.root}\n  appearance   ${options.appearance}\n`);
+let gym;
+let protocol;
+let activeWorld;
+let activeProtocolOpen;
+let stage;
+
+async function demoGymOpen(demo) {
+    if (gym && activeWorld === demo?.world && activeProtocolOpen === demo?.protocolOpen) return;
+    if (gym) {
+        await stage?.close();
+        stage = undefined;
+        await protocol?.close();
+        activeWorld?.close?.();
+        await gym.close();
+        gym = undefined;
+        protocol = undefined;
+        // Changing screenplays is an explicit disposable-world boundary.
+        await gymReset();
+    }
+    activeWorld = demo?.world;
+    activeProtocolOpen = demo?.protocolOpen;
+    process.stdout.write(`  opening the demo gym (${options.inference} inference)…\n`);
+    gym = await gymOpen({
+        inference: options.inference,
+        mobileServerUrl: options.mobileServerUrl,
+        ...(activeWorld ? { world: activeWorld } : {}),
+        ...(options.replayIo ? { replayPath: options.replayIo } : {}),
+    });
+    protocol = await activeProtocolOpen?.(gym);
+    process.stdout.write(
+        `  gym          ${gym.paths.root}\n  appearance   ${options.appearance}\n`,
+    );
+}
 
 async function demoStageOpen(demo) {
     const { patches, assets } = demoResourcesResolve(demo);
     const stage = await stageOpen({
         appearance: options.appearance,
         assets,
-        environment: gym.viteEnvironment,
+        environment: protocol?.viteEnvironment ?? gym.viteEnvironment,
         patches,
         verbose: options.verbose,
     });
@@ -303,21 +394,21 @@ async function demoStageOpen(demo) {
     return stage;
 }
 
-let stage;
-
 try {
     if (options.command === "probe") {
         // An unqualified probe inspects production source. Naming one demo
         // probes the exact disposable source that demo declares.
         const demo = options.ids.length === 1 ? selected[0] : undefined;
+        await demoGymOpen(demo);
         stage = await demoStageOpen(demo);
         await probe(stage, options, demo);
     } else {
         let activePatchKey;
         for (const demo of selected) {
+            await demoGymOpen(demo);
             const { patches, assets } = demoResourcesResolve(demo);
             const patchKey = JSON.stringify({ assets, patches });
-            if (patchKey !== activePatchKey) {
+            if (!stage || patchKey !== activePatchKey) {
                 await stage?.close();
                 stage = await demoStageOpen(demo);
                 activePatchKey = patchKey;
@@ -328,5 +419,7 @@ try {
     }
 } finally {
     await stage?.close();
-    await gym.close();
+    await protocol?.close();
+    activeWorld?.close?.();
+    await gym?.close();
 }

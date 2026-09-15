@@ -142,6 +142,16 @@ function typingSpeedLayer() {
     );
 }
 
+/** Work acceleration stays separate from both subtitles and keyboard badges. */
+function workSpeedLayer() {
+    return Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${output.width}" height="${output.height}">
+            <rect x="1744" y="72" width="104" height="64" rx="32" fill="rgba(8,10,14,0.88)" stroke="rgba(255,255,255,0.18)"/>
+            <text x="1796" y="116" text-anchor="middle" font-family="${fontStack}" font-size="36" font-weight="650" fill="#f4f6fb">4×</text>
+        </svg>`,
+    );
+}
+
 /** An opaque premise card, deliberately free of app content and decoration. */
 function cardLayer(text) {
     const size = text.length > 42 ? 54 : 66;
@@ -205,6 +215,7 @@ export async function composeFrames(options) {
     const cards = new Map();
     const stickers = new Map();
     const typingSpeed = typingSpeedLayer();
+    const workSpeed = workSpeedLayer();
     let done = 0;
 
     const stickerSource = async (name) => {
@@ -253,6 +264,7 @@ export async function composeFrames(options) {
             layers.push({ input: captions.get(entry.caption) });
         }
         if (entry.typingSpeed === 3) layers.push({ input: typingSpeed });
+        if (entry.playbackSpeed === 4) layers.push({ input: workSpeed });
         if (entry.card) {
             if (!cards.has(entry.card)) cards.set(entry.card, cardLayer(entry.card));
             layers.push({ input: cards.get(entry.card) });
@@ -276,7 +288,7 @@ export async function composeFrames(options) {
     // an encoded-space fade makes them die.
     const easeOutQuint = (t) => 1 - (1 - t) ** 5;
     const easeInOutSine = (t) => -(Math.cos(Math.PI * t) - 1) / 2;
-    const introCount = Math.round(options.fps * 1.1);
+    const introCount = options.demo.transitions === "none" ? 0 : Math.round(options.fps * 1.1);
     const first = await readFile(join(targetDirectory, "f000000.jpg"));
     const intro = [];
     for (let index = 0; index < introCount; index += 1) {
@@ -302,7 +314,7 @@ export async function composeFrames(options) {
 
     // The closer mirrors it: the last shot eases to black in linear light, so
     // the video never ends on a hard cut and never needs an encoder-side fade.
-    const outroCount = Math.round(options.fps * 0.7);
+    const outroCount = options.demo.transitions === "none" ? 0 : Math.round(options.fps * 0.7);
     const last = await readFile(
         join(targetDirectory, `f${String(frames.length - 1).padStart(6, "0")}.jpg`),
     );
