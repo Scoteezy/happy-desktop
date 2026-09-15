@@ -20,6 +20,11 @@ export type ConnectionState = "connecting" | "live" | "reconnecting" | "closed";
 
 export type ToolPresentation =
     | {
+          kind: "agent_spawn";
+          model?: { modelId: string; providerId: string; name: string };
+          agentId?: string;
+      }
+    | {
           kind: "compaction";
           trigger: "manual" | "automatic";
           tokensBefore?: number;

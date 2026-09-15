@@ -1,6 +1,7 @@
 import type { ConversationToolCall } from "happy-desktop-state";
 import { AgentActivityRow } from "../../src/AgentActivityRow";
 import { ComponentPage, Specimen } from "../kit";
+import { agentSpawnRows } from "./agentSpawnFixtures";
 import {
     happyAgentAwaitingTool,
     happyAgentCompactionCompletedTool,
@@ -29,6 +30,31 @@ export function AgentActivityRowPage() {
             summary="One glanceable row per piece of agent activity — a tool call, a reasoning block, or a shell run — with a status dot, verb, subject, and an expandable detail body."
             title="AgentActivityRow"
         >
+            <Specimen
+                detail="Typed catalog names only · unresolved, running, success, failure, stopped, approval, and another provider · focused production treatment"
+                label="Model-aware sub-agent spawning"
+                number="spawn"
+                stage="surface"
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                        width: "720px",
+                    }}
+                >
+                    {agentSpawnRows.map((tool) => (
+                        <AgentActivityRow
+                            activity={{ kind: "tool", tool }}
+                            key={tool.toolCallId}
+                            motion="calm"
+                            singleLine
+                            treatment="focused"
+                        />
+                    ))}
+                </div>
+            </Specimen>
             <Specimen
                 detail="file diff, exec command, and background terminal, expanded"
                 label="Rich tool bodies"

@@ -157,6 +157,12 @@ function toolVerb(
     status: ConversationActivityStatus,
     presentation?: ConversationActivityPresentation,
 ): string {
+    if (presentation?.type === "agentSpawn") {
+        if (status === "awaitingApproval") return "Awaiting approval to spawn";
+        if (status === "failed") return "Failed to spawn";
+        if (status === "stopped") return "Stopped spawning";
+        return status === "running" ? "Spawning" : "Spawned";
+    }
     if (status === "awaitingApproval") return "Awaiting approval";
     if (status === "stopped") return "Stopped";
     const active = status === "running";
@@ -223,6 +229,7 @@ function toolGlyph(
     failed: boolean,
 ): ToolGlyph {
     if (failed) return { set: "octicons", name: "alert" };
+    if (presentation?.type === "agentSpawn") return { set: "house", name: "agents" };
     if (presentation?.type === "compaction") return { set: "house", name: "filter" };
     if (presentation?.type === "search") return { set: "house", name: "globe" };
     if (presentation?.type === "exploration") return { set: "house", name: "search" };
@@ -565,6 +572,9 @@ function AgentToolActivity(props: {
     if (mcp) {
         verb = toolVerb(tool.toolName, tool.status, presentation);
         primaryText = `${mcp.server} · ${mcp.tool}`;
+    } else if (presentation?.type === "agentSpawn") {
+        verb = toolVerb(tool.toolName, tool.failed ? "failed" : tool.status, presentation);
+        primaryText = presentation.model ? `${presentation.model.name} sub-agent` : "sub-agent";
     } else if (presentation?.type === "compaction") {
         verb = toolVerb(tool.toolName, tool.status, presentation);
         primaryText = compactionSummary(presentation);

@@ -121,6 +121,16 @@ export interface ConversationFileDiff {
 /** The rich body an activity expands into, when the producer knows its shape. */
 export type ConversationActivityPresentation =
     | {
+          readonly type: "agentSpawn";
+          /** The catalog identity resolved for this spawn, never a live lookup. */
+          readonly model?: {
+              readonly modelId: string;
+              readonly providerId: string;
+              readonly name: string;
+          };
+          readonly agentId?: string;
+      }
+    | {
           readonly type: "compaction";
           readonly trigger: "manual" | "automatic";
           readonly tokensBefore?: number;

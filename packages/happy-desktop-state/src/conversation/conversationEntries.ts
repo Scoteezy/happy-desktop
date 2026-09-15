@@ -459,6 +459,13 @@ function presentationEqual(
     if (left === right) return true;
     if (!left || !right) return false;
     if (left.type !== right.type) return false;
+    if (left.type === "agentSpawn" && right.type === "agentSpawn")
+        return (
+            left.agentId === right.agentId &&
+            left.model?.modelId === right.model?.modelId &&
+            left.model?.providerId === right.model?.providerId &&
+            left.model?.name === right.model?.name
+        );
     if (left.type === "exploration" && right.type === "exploration")
         return (
             left.operations.length === right.operations.length &&

@@ -59,7 +59,8 @@ function statusLabel(tool: ConversationToolCall): string {
 
 function presentationTitle(
     presentation: ConversationActivityPresentation | undefined,
-): "File edit" | "Terminal" | "Tool call" {
+): "File edit" | "Terminal" | "Sub-agent spawn" | "Tool call" {
+    if (presentation?.type === "agentSpawn") return "Sub-agent spawn";
     if (presentation?.type === "fileDiff") return "File edit";
     if (
         presentation?.type === "execCommand" ||
@@ -103,14 +104,20 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
                                 ? "terminal"
                                 : title === "File edit"
                                   ? "doc"
-                                  : "zap"
+                                  : title === "Sub-agent spawn"
+                                    ? "agents"
+                                    : "zap"
                         }
                         size={16}
                     />
                 </span>
                 <span className="happy-tool-call-preview__heading-copy">
                     <strong>{title}</strong>
-                    <span>{humanize(tool.toolName)}</span>
+                    <span>
+                        {presentation?.type === "agentSpawn"
+                            ? (presentation.model?.name ?? "Model unresolved")
+                            : humanize(tool.toolName)}
+                    </span>
                 </span>
                 <span
                     className="happy-tool-call-preview__status"
@@ -125,6 +132,38 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
                 viewportClassName="happy-tool-call-preview__scroll-viewport"
             >
                 <div className="happy-tool-call-preview__content">
+                    {presentation?.type === "agentSpawn" ? (
+                        <>
+                            {presentation.model ? (
+                                <>
+                                    <section className="happy-tool-call-preview__section">
+                                        <span className="happy-tool-call-preview__label">
+                                            Provider ID
+                                        </span>
+                                        <pre className="happy-tool-call-preview__arguments">
+                                            {presentation.model.providerId}
+                                        </pre>
+                                    </section>
+                                    <section className="happy-tool-call-preview__section">
+                                        <span className="happy-tool-call-preview__label">
+                                            Model ID
+                                        </span>
+                                        <pre className="happy-tool-call-preview__arguments">
+                                            {presentation.model.modelId}
+                                        </pre>
+                                    </section>
+                                </>
+                            ) : null}
+                            {presentation.agentId ? (
+                                <section className="happy-tool-call-preview__section">
+                                    <span className="happy-tool-call-preview__label">Agent ID</span>
+                                    <pre className="happy-tool-call-preview__arguments">
+                                        {presentation.agentId}
+                                    </pre>
+                                </section>
+                            ) : null}
+                        </>
+                    ) : null}
                     {command !== undefined ? (
                         <section className="happy-tool-call-preview__section">
                             <span className="happy-tool-call-preview__label">Command</span>
@@ -180,7 +219,7 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
                             </div>
                         </section>
                     ) : null}
-                    {presentation === undefined ? (
+                    {presentation === undefined || presentation.type === "agentSpawn" ? (
                         <section className="happy-tool-call-preview__section">
                             <span className="happy-tool-call-preview__label">Arguments</span>
                             <pre className="happy-tool-call-preview__arguments">

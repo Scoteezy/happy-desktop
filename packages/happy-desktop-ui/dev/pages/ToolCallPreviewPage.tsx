@@ -1,6 +1,12 @@
 import type { ConversationToolCall } from "happy-desktop-state";
 import { ToolCallPreview } from "../../src/ToolCallPreview";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import {
+    agentSpawnCompleted,
+    agentSpawnFailed,
+    agentSpawnStopped,
+    agentSpawnUnresolved,
+} from "./agentSpawnFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-165";
@@ -96,6 +102,25 @@ export function ToolCallPreviewPage() {
             title="Tool call preview"
         >
             <div className="specimen-grid">
+                {[
+                    agentSpawnCompleted,
+                    agentSpawnUnresolved,
+                    agentSpawnFailed,
+                    agentSpawnStopped,
+                ].map((tool) => (
+                    <Specimen
+                        detail="Authoritative catalog identity and successful child ID only · raw arguments and result stay inspectable"
+                        key={tool.toolCallId}
+                        label={`Sub-agent · ${tool.status}${tool.presentation?.type === "agentSpawn" && !tool.presentation.model ? " · unresolved" : ""}`}
+                        number={tool.toolCallId}
+                        stage="app"
+                    >
+                        <div style={{ padding: "24px" }}>
+                            <Preview tool={tool} width={250} />
+                            <DimensionRule label="250px · exact model and provider IDs" />
+                        </div>
+                    </Specimen>
+                ))}
                 <Specimen
                     detail="250px inspector minimum · long command and output wrap inside the panel"
                     label="Running Bash call"

@@ -974,6 +974,20 @@ function projectToolPresentation(
     presentation: NonNullable<Extract<MessageBlock, { type: "tool_call" }>["presentation"]>,
 ): ToolPresentation {
     switch (presentation.type) {
+        case "agent_spawn":
+            return {
+                kind: "agent_spawn",
+                ...(presentation.model === undefined
+                    ? {}
+                    : {
+                          model: {
+                              modelId: presentation.model.modelId,
+                              providerId: presentation.model.providerId,
+                              name: presentation.model.name,
+                          },
+                      }),
+                ...(presentation.agentId === undefined ? {} : { agentId: presentation.agentId }),
+            };
         case "exploration":
             return { kind: "exploration", steps: presentation.operations };
         case "exec_command":

@@ -1099,6 +1099,20 @@ function presentationProject(
     presentation: ToolPresentation,
 ): ConversationActivityPresentation | undefined {
     switch (presentation.kind) {
+        case "agent_spawn":
+            return {
+                type: "agentSpawn",
+                ...(presentation.model === undefined
+                    ? {}
+                    : {
+                          model: {
+                              modelId: presentation.model.modelId,
+                              providerId: presentation.model.providerId,
+                              name: presentation.model.name,
+                          },
+                      }),
+                ...(presentation.agentId === undefined ? {} : { agentId: presentation.agentId }),
+            };
         case "compaction":
             return {
                 type: "compaction",
