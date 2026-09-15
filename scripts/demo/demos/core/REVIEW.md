@@ -1,8 +1,66 @@
 # Core demo — local review
 
-## Stable-center revision — implementation ready, final recording blocked
+## Stable-center revision — final take v16-r14
 
-The current script is `SCRIPT.md`. Recorder checkpoint `ca0436fa` is rebased onto
+The final local [desktop video](./artifacts/v16-r14/core.mp4),
+[native phone screen](./artifacts/v16-r14/phone-screen.mp4), and
+[transparent Black Titanium bezel](./artifacts/v16-r14/phone-bezel.webm)
+share 3,801 frames at 60 fps: 63.350 seconds. Desktop is 2340×1440;
+phone is 1206×2622; the precise bezel canvas is 1406×2822. Native capture
+trim is 0.000125042 seconds, and its source covers the entire take.
+
+The center crop remains identical for all 2,248 frames from 2.733s through
+40.200s. There are zero overlaid caption frames and zero speed changes.
+Actual encoded desktop and phone key frames were inspected: full-layout
+opening, readable Fable hover, Steve steering, typed Grok spawn, completed
+research link, real unread badge, narrow colored diff, native keyboard,
+typed message, and acknowledgement. The separately captured mobile still
+now keeps `Edit waveformActive.ts +3 −1` above the real model menu, with
+project sidebar and Fable above Opus visible. A real upward wheel gesture
+disengages follow-tail before framing; the still has a geometry assertion.
+
+| Cue                                   |         Seconds |
+| ------------------------------------- | --------------: |
+| Picker open / Fable selected          |  5.317 / 10.000 |
+| Work starts / Steve steers            | 16.783 / 19.533 |
+| Grok spawned / response settled       | 23.867 / 37.033 |
+| Phone foreground / session opened     | 41.633 / 44.833 |
+| Phone diff visible / keyboard visible | 47.017 / 52.883 |
+| Phone message sent / phone parked     | 58.767 / 60.833 |
+
+The phone uses actual native key taps through the existing, serialized XCTest
+driver. Its listening process is checked against the simulator UDID before
+touches; ambiguous touches are never retried. Eight touches, including Shift,
+took 2.767 seconds. Exact `ship it` text and the durable acknowledgement are
+verified. The recorder now owns the entire native automation process group,
+including XCTest's host restart process; final cleanup left no native driver
+or listener. This fixes a separate failed-take collision, not the archive bug.
+
+The website v16 export copies the unchanged 60 fps masters. Matched lighter
+files are 1560×960 and 804×1748, each 1,901 frames at 30 fps / 63.366667s.
+That explicit 1/60s final-frame quantization is necessary for an odd native
+frame count; neither master nor the common event timeline is retimed.
+All ten website assets passed measured dimensions/clock and SHA-256 copy
+verification. The bezel's decoded alpha is zero outside the frame and 255 on
+the screen; its actual encoded diff frame was inspected.
+
+Final website typecheck/build pass. Chromium, Firefox, and WebKit passed paired
+playback controls, pointer seeking, keyboard End → Replay for both quality
+pairs, off-screen pause, and reduced motion. The final seek-step fix removes
+the 0.05s increment that made the 30fps endpoint unreachable. All three engines
+at 320/390/430px and 200% text passed the mobile no-movie-request, full-size
+keyboard link, and reflow checks; a scoped wrapping fix preserves the header
+link at enlarged text. Actual final desktop/mobile screenshots were viewed.
+
+Chromium's five-second sample added zero dropped frames. WebKit's counters
+reported drops even for one plain video: 81 versus 85 on the page; a plain pair
+reported 89/90. Plain 30fps produced 149 frame callbacks in five seconds.
+This does not establish page-specific playback overhead or universally perfect
+60fps presentation. Do not misreport the browser checks as zero drops everywhere.
+
+## Archive fix and publication boundary
+
+The current script is `SCRIPT.md`. Recorder base checkpoint `fdf2690f` is rebased onto
 Desktop main `8f3820f65b55d8869022fafe823d98e896d87b10`; it remains local.
 The current real center rectangle is CSS `(288,88,936,576)`, mapped to crop
 `(790,290,2340,1440)` in the captured scene. Output is exactly 2340×1440 at 60 fps,
@@ -36,19 +94,39 @@ pause/resume, relaunch, or navigation; queries then took 2–5 ms. A separate
 native Header Unistyles warning was fixed and verified, but was not the cause
 of this remaining flood. No native synchronization workaround was added.
 
-The required Happy Agent regression-test edit was refused by Auto review.
-Explicit human authorization is pending in request `y42m02omlhy042w4hbli2jrv`;
-the refused edit has not been retried, delegated, or implemented by another
-route. Agent source remains unchanged for this archive bug. The requested
-Antigravity/Fable external-sharing approval is also still pending in
-`jpl5niwo2i2osl7y19juhkop`; no external review is claimed.
+The user explicitly approved the scoped Happy Agent regression test. Fresh
+Auto review allowed it; the unchanged test reproduced four metadata writes
+on the old code, then passed after caching one archive-transition timestamp.
+Local Agent commit `6b16118e` is rebased onto `3fe0b685`. All 2,650 runnable
+module tests, build/type checks, and 55 release-script tests passed; six module
+tests are platform-skipped. Independent code review found no actionable issue.
+No native synchronization workaround, schema, or API specification change was
+needed.
 
-Website changes are local, not deployed: separate static mobile lifetime,
-captions below the desktop video, cue-only phone focus, and lazy buffering
-that can actually reach `canplay`. Build/typecheck passed. Provisional v16
-stills are real separate rehearsal captures for layout review only; replace
-them with final-take assets before publishing. The previously published
-`d5b2ca7` page and v15 media remain the live rollback.
+Auto review refused pushing that fix to remote Agent main. The exact action
+is awaiting fresh human authorization in `if2s2ngcxbzzicw0j0oflqad`; it has not
+been retried or routed around. Recording instead uses the isolated local binary
+`0.4.69-local.archive.6b16118e`, with no host installation or restart. Antigravity/
+Fable external sharing remains pending in `jpl5niwo2i2osl7y19juhkop`; no external
+review is claimed.
+
+Website changes include a separate static mobile lifetime, captions below the
+desktop video, cue-only phone focus, and lazy buffering that reaches `canplay`.
+The v16 assets now come from the final take, not provisional rehearsals.
+Website work was rebased onto `a70cbd6`, preserving newer download and ratings
+changes. The earlier `d5b2ca7` v15 media remain available as a rollback.
+
+The final website update was normally pushed to remote main as
+`9f32a1d01639ffbf124a68948d0844585477803b`. Pages workflow `35036548049`
+passed its tests, build, and deployment. The temporary destination remains
+https://happy.engineering/tmp/happy-one/. This website publication does not
+publish the separately approval-blocked Agent archive fix or change the host.
+Live-page verification also passed in Chromium, Firefox, and WebKit: actual
+v16 playback, exact crop/dimensions, pointer seek, Replay, late phone cue,
+off-screen pause, and reduced motion. All nine live mobile width/browser cases
+loaded no videos, had no overflow or page errors, and opened the full-resolution
+still with visible keyboard focus. Published desktop keyboard and mobile focus
+screenshots were visually inspected.
 
 ## Upright flat frame and original-detail 60 fps website
 

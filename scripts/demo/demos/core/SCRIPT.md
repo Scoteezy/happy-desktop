@@ -126,9 +126,14 @@ both at 60 fps with direct numbered-frame timing.
 Fill in measured geometry, final cue times, source boundaries, review outcomes,
 artifact paths, and deployed commit only after the corresponding work is verified.
 
-Current status: not complete. `v16-r10` proves the actual model-aware spawn row,
-but fails the real phone unread-state check because an Agent archive metadata
-loop floods the native client. See `REVIEW.md` for the cause and authorization
-blocker. Do not publish this rehearsal or retain its provisional cue times as
-the final timeline. The separate still's verified source size is 2100×1660;
-the measured desktop video target is 2340×1440 at 60 fps.
+Final recording: `artifacts/v16-r14`, 3,801 frames at 60 fps / 63.350s. All
+actual desktop/native flow checks passed, including the unread state, concise
+diff, native key taps, real send, and acknowledgement. The 2100×1660 separate
+still visibly retains sidebar, edit counts, and Fable picker. The desktop crop
+is exactly 2340×1440 and remains fixed from 2.733s through 40.200s.
+
+The archive metadata loop is fixed and regression-verified locally. Its remote
+Agent push awaits fresh authorization; this take uses the isolated fixed
+development binary. See `REVIEW.md` for final cue times, verification,
+export quantization, and publication/review boundaries. Website deployment and
+external reviewer sign-off are not implied by completion of the recording.

@@ -98,6 +98,8 @@ export async function frameBuild(directory) {
     return {
         frame,
         alpha,
+        framing:
+            "Apple Simulator phone11 device chrome, 3× rasterization, original corners and hardware buttons",
         width,
         height: bodyHeight,
         screen: { x: 81, y: 54, width: 1206, height: 2622 },
@@ -237,9 +239,12 @@ export async function phoneVideoOpen({ udid, output, work, frame }) {
                     await new Promise((resolve) => setTimeout(resolve, 350));
                 }
             } finally {
-                await simulator.close();
-                capture.kill("SIGINT");
-                await captureExit;
+                try {
+                    await simulator.close();
+                } finally {
+                    capture.kill("SIGINT");
+                    await captureExit;
+                }
             }
             if (!clock) return;
             clock.desktopStartedAt = timing.startedAt;
@@ -360,8 +365,7 @@ export async function phoneVideoOpen({ udid, output, work, frame }) {
                         screen: { width: 1206, height: 2622 },
                         bezel: geometry.screen,
                         bezelCanvas: { width: geometry.width, height: geometry.height },
-                        framing:
-                            "Apple Simulator phone11 device chrome, 3× rasterization, original corners and hardware buttons",
+                        framing: geometry.framing,
                     },
                     null,
                     2,

@@ -1,7 +1,11 @@
-import { spawn } from "node:child_process";
+import { execFile as execFileCallback, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
 
 /** Local native taps and accessibility reads; no injected app state or RPC stubs. */
 export async function simulatorOpen({
@@ -9,11 +13,15 @@ export async function simulatorOpen({
     executable = join(homedir(), ".maestro", "bin", "maestro"),
 }) {
     const child = spawn(executable, ["mcp"], {
+        // Own the whole driver lifetime, including xcodebuild's restart loop.
+        // Killing only Java leaves XCTest alive to collide with the next take.
+        detached: true,
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env, MAESTRO_CLI_NO_ANALYTICS: "true" },
     });
     let next = 0;
     let diagnostics = "";
+    let closing = false;
     const pending = new Map();
     child.stderr.on("data", (chunk) => {
         diagnostics = (diagnostics + chunk).slice(-2000);
@@ -56,6 +64,7 @@ export async function simulatorOpen({
     let queue = Promise.resolve();
     let lastOperation = Date.now();
     const invoke = async (name, args) => {
+        if (closing) throw new Error("The recorder's native driver is closing.");
         lastOperation = Date.now();
         const result = await call("tools/call", { name, arguments: { device_id: udid, ...args } });
         if (result.isError)
@@ -72,6 +81,30 @@ export async function simulatorOpen({
         queue = operation.catch(() => {});
         return operation;
     };
+    const signalGroup = (signal) => {
+        if (child.pid === undefined) return false;
+        try {
+            process.kill(-child.pid, signal);
+            return true;
+        } catch (error) {
+            if (error.code === "ESRCH") return false;
+            throw error;
+        }
+    };
+    const closeDriver = async () => {
+        closing = true;
+        fail(new Error("The recorder's native driver is closing."));
+        if (!signalGroup("SIGTERM")) return;
+        const deadline = Date.now() + 5000;
+        // The parent can exit before its children. Wait for the owned group,
+        // not just Java's exit event, before allowing another native driver.
+        while (signalGroup(0) && Date.now() < deadline) await delay(50);
+        if (!signalGroup(0)) return;
+        signalGroup("SIGKILL");
+        const killDeadline = Date.now() + 2000;
+        while (signalGroup(0) && Date.now() < killDeadline) await delay(50);
+        if (signalGroup(0)) throw new Error("The recorder's native driver group did not stop.");
+    };
     try {
         await call("initialize", {
             protocolVersion: "2024-11-05",
@@ -82,7 +115,7 @@ export async function simulatorOpen({
             JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n",
         );
     } catch (error) {
-        child.kill("SIGTERM");
+        await closeDriver();
         throw error;
     }
     // Keep the local accessibility driver warm during the desktop-only opening.
@@ -90,13 +123,66 @@ export async function simulatorOpen({
     const heartbeat = setInterval(() => {
         // A threshold equal to the interval can miss one tick and leave a
         // sixteen-second gap. Keep idle accessibility reads comfortably bounded.
-        if (Date.now() - lastOperation > 4000) void tool("inspect_screen", {}).catch(() => {});
+        if (Date.now() - lastOperation > 4000)
+            void tool("inspect_screen", {}).catch((error) => {
+                if (!closing) process.stderr.write(`Native driver heartbeat failed: ${error}\n`);
+            });
     }, 3000);
     heartbeat.unref();
     return {
         udid,
         async run(commands) {
             await tool("run", { yaml: `appId: com.slopus.happy.dev\n---\n${commands}` });
+        },
+        async tapPoints(points) {
+            const operation = queue.then(async () => {
+                // Use the same Maestro-owned XCTest driver, without its
+                // per-key app-settling delay. These are real native touches.
+                await invoke("inspect_screen", {});
+                const { stdout } = await execFile("/usr/sbin/lsof", [
+                    "-nP",
+                    "-iTCP:22087",
+                    "-sTCP:LISTEN",
+                    "-t",
+                ]);
+                const pids = [...new Set(stdout.trim().split(/\s+/))];
+                if (pids.length !== 1 || !/^\d+$/.test(pids[0]))
+                    throw new Error("Expected one native keyboard touch listener.");
+                const { stdout: command } = await execFile("/bin/ps", [
+                    "-p",
+                    pids[0],
+                    "-o",
+                    "command=",
+                ]);
+                if (
+                    !command.includes(`/Devices/${udid}/`) ||
+                    !command.includes("maestro-driver-iosUITests-Runner")
+                )
+                    throw new Error("The native touch listener belongs to another simulator.");
+                const timings = [];
+                for (const point of points) {
+                    if (closing) throw new Error("The recorder's native driver is closing.");
+                    if (!Number.isFinite(point.x) || !Number.isFinite(point.y))
+                        throw new Error("Invalid native keyboard coordinates.");
+                    lastOperation = Date.now();
+                    // Maestro 2.6.1 XCTestDriverClient.tap / TouchRequest.
+                    // Never retry an ambiguous touch: it may already have typed.
+                    const response = await fetch("http://127.0.0.1:22087/touch", {
+                        method: "POST",
+                        redirect: "error",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ ...point, duration: null }),
+                        signal: AbortSignal.timeout(5000),
+                    });
+                    await response.text();
+                    if (!response.ok)
+                        throw new Error(`Native keyboard touch failed: ${response.status}`);
+                    timings.push({ ...point, milliseconds: Date.now() - lastOperation });
+                }
+                return timings;
+            });
+            queue = operation.catch(() => {});
+            return await operation;
         },
         async inspect() {
             const result = await tool("inspect_screen", {});
@@ -115,23 +201,7 @@ export async function simulatorOpen({
         },
         async close() {
             clearInterval(heartbeat);
-            if (child.exitCode !== null || child.signalCode !== null) return;
-            const exited = new Promise((resolve) => child.once("exit", resolve));
-            child.kill("SIGTERM");
-            let timeout;
-            try {
-                await Promise.race([
-                    exited,
-                    new Promise((resolve) => {
-                        timeout = setTimeout(() => {
-                            child.kill("SIGKILL");
-                            resolve();
-                        }, 5000);
-                    }),
-                ]);
-            } finally {
-                clearTimeout(timeout);
-            }
+            await closeDriver();
         },
     };
 }

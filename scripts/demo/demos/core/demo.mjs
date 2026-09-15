@@ -32,6 +32,8 @@ export default {
     phoneFrame: {
         frame: "assets/device/iphone-16-pro-black.png",
         alpha: "assets/device/screen-alpha.png",
+        framing:
+            "Apple iPhone 16 Pro Black Titanium frame via Device Mockups; original 1406×2822 geometry",
         width: 1406,
         height: 2822,
         screen: { x: 102, y: 100, width: 1206, height: 2622 },
@@ -257,24 +259,28 @@ export default {
             cue("phone-typing", demo, phone);
             // Tap the actual native keys, including their pressed/key-preview
             // states. Resolve their physical positions from iOS accessibility.
-            const commands = keys.some((item) => item.text === "S")
-                ? ["- tapOn:\n    id: shift"]
-                : [];
-            for (const character of "ship it") {
+            const characters = [
+                ...(keys.some((item) => item.text === "S") ? ["shift"] : []),
+                ..."ship it",
+            ];
+            const points = characters.map((character) => {
                 const key = keys.find((item) =>
-                    character === " "
-                        ? item.id === "space"
-                        : item.text?.toLowerCase() === character,
+                    character === "shift"
+                        ? item.id === "shift"
+                        : character === " "
+                          ? item.id === "space"
+                          : item.text?.toLowerCase() === character,
                 );
                 const rectangle = key?.bounds?.match(/^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/);
                 if (!rectangle) throw new Error(`Native keyboard key is missing: ${character}`);
                 const [, left, top, right, bottom] = rectangle.map(Number);
-                commands.push(
-                    `- tapOn:\n    point: ${Math.round((left + right) / 2)}, ${Math.round((top + bottom) / 2)}`,
-                );
-            }
-            await phone.simulator.run(commands.join("\n"));
-            await phone.inspect("native-ship-it-typed");
+                return { x: Math.round((left + right) / 2), y: Math.round((top + bottom) / 2) };
+            });
+            const taps = await phone.simulator.tapPoints(points);
+            await writeFile(join(output, "native-key-taps.json"), JSON.stringify(taps, null, 2));
+            const typed = await phone.inspect("native-ship-it-typed");
+            if (!typed.some((item) => item.text === "ship it"))
+                throw new Error("The native keyboard did not type the exact requested message.");
             await demo.hold(600);
             await phone.simulator.run("- tapOn:\n    text: Send\n    index: 0");
             cue("phone-sent", demo, phone);
@@ -294,6 +300,12 @@ export default {
         await demo.finish();
         // Separate honest still: completed edit and actual picker, after the movie ends.
         await demo.page.setViewportSize({ width: 840, height: 664 });
+        // A real upward scroll hands the transcript from follow-tail to the
+        // reader before placing the edited row. Programmatic scrolling alone
+        // can be restored to the tail by the next measured layout commit.
+        await demo.page.mouse.move(650, 280);
+        await demo.page.mouse.wheel(0, -500);
+        await demo.page.waitForTimeout(300);
         await demo.page
             .getByText("waveformActive.ts", { exact: true })
             .first()
@@ -313,6 +325,18 @@ export default {
             .first()
             .evaluate((element) => element.scrollIntoView({ block: "start" }));
         await demo.page.waitForTimeout(700);
+        const stillEdit = await demo.page
+            .getByText("waveformActive.ts", { exact: true })
+            .first()
+            .boundingBox();
+        const stillPicker = await fable.boundingBox();
+        if (
+            !stillEdit ||
+            !stillPicker ||
+            stillEdit.y < 88 ||
+            stillEdit.y + stillEdit.height > stillPicker.y - 30
+        )
+            throw new Error("The mobile still must visibly retain its edit row above the picker.");
         await demo.page.screenshot({ path: join(output, "mobile-desktop-still.png") });
         await writeFile(join(output, "cues.json"), JSON.stringify(cues, null, 2));
     },
