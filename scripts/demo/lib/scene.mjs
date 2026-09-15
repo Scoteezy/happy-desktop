@@ -7,7 +7,7 @@
  * a frame starts being invented rather than resampled.
  */
 
-/** Delivered video. 16:9 because that is what every timeline expects. */
+/** Default delivery. A measured panel take sets its exact even-pixel aspect before shooting. */
 export const output = { width: 1920, height: 1080 };
 
 /** Working canvas. 1.667x the output, which is the zoom budget. */

@@ -145,7 +145,7 @@ function processBaseEnvironment(p) {
     };
 }
 
-async function daemonStart(p, gateway, mobileServerUrl) {
+async function daemonStart(p, gateway, mobileServerUrl, models) {
     const executable = await happyAgentExecutableResolve();
     const command = join(p.bin, "happy-agent");
     await unlink(command).catch(() => undefined);
@@ -160,7 +160,7 @@ async function daemonStart(p, gateway, mobileServerUrl) {
     // daemon before starting this lifetime so the token and gateway URL match.
     await execFile(command, ["stop"], { cwd: p.root, env, timeout: 15_000 }).catch(() => undefined);
     await unlink(p.socketPath).catch(() => undefined);
-    await runtimeConfigurationWrite(p);
+    await runtimeConfigurationWrite(p, models);
     await execFile(command, ["start"], { cwd: p.root, env, timeout: 30_000 });
     const token = await tokenWait(p.tokenPath, 30_000);
     return { command, env, token };
@@ -174,7 +174,7 @@ async function daemonStart(p, gateway, mobileServerUrl) {
  * identity — its inference still routes to the gym gateway, which backs every
  * provider while the URL is set.
  */
-async function runtimeConfigurationWrite(p) {
+async function runtimeConfigurationWrite(p, models) {
     await mkdir(join(p.happyHome, "agent"), { recursive: true });
     await writeFile(
         join(p.happyHome, "agent", "runtime.toml"),
@@ -185,16 +185,19 @@ async function runtimeConfigurationWrite(p) {
             "",
             "[providers.codex]",
             'type = "codex"',
+            ...(models?.codex ? [`include_models = ${JSON.stringify(models.codex)}`] : []),
             "enabled = true",
             "auto_enable = true",
             "",
             "[providers.grok]",
             'type = "grok"',
+            ...(models?.grok ? [`include_models = ${JSON.stringify(models.grok)}`] : []),
             "enabled = true",
             "auto_enable = true",
             "",
             "[providers.claude]",
             'type = "claude"',
+            ...(models?.claude ? [`include_models = ${JSON.stringify(models.claude)}`] : []),
             "enabled = true",
             "auto_enable = true",
             "",
@@ -435,7 +438,7 @@ export async function gymOpen(options = {}) {
         screenplay: definition.reply,
         turnFind: definition.turnFind,
     });
-    const daemon = await daemonStart(p, gateway, mobileServerUrl);
+    const daemon = await daemonStart(p, gateway, mobileServerUrl, definition.models);
     let client = await clientCreate(p, daemon.token);
     await healthWait(client, 30_000);
 

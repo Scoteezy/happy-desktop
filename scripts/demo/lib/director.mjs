@@ -5,6 +5,7 @@ import {
     cameraRest,
     deviceScaleFactor,
     maximumZoom,
+    output,
     sceneRectangle,
 } from "./scene.mjs";
 
@@ -72,6 +73,7 @@ export class Director {
     #motion;
     #error;
     #maxFrameLatenessMs = 0;
+    #lockedCrop;
 
     constructor(options) {
         this.#page = options.page;
@@ -165,7 +167,7 @@ export class Director {
     async #captureCurrent(options = {}) {
         await this.#sink.capture(
             {
-                camera: cameraCrop(this.#camera),
+                camera: this.#lockedCrop ?? cameraCrop(this.#camera),
                 ...(this.#caption ? { caption: this.#caption } : {}),
                 ...(this.#card ? { card: this.#card } : {}),
                 ...(this.#typingSpeed === 3 ? { typingSpeed: 3 } : {}),
@@ -297,6 +299,7 @@ export class Director {
      * it back on the edge of that box, eased so the correction is never abrupt.
      */
     #follow() {
+        if (this.#lockedCrop) return;
         if (this.#camera.level <= 1.01) return;
         const crop = cameraCrop(this.#camera);
         const point = {
@@ -344,7 +347,45 @@ export class Director {
 
     /** Eases the camera back to the whole scene. */
     async zoomOut(options = {}) {
+        if (this.#lockedCrop) {
+            await this.#cropTo(cameraCrop(cameraRest()), options.duration ?? 1000);
+            return;
+        }
         await this.#camera_to(cameraRest(), options.duration ?? 620);
+    }
+
+    /** Measure before shooting. The delivery aspect is the actual panel, not 16:9. */
+    async framingPrepare(target) {
+        if (this.#recording) throw new Error("Measure the delivery geometry before recording.");
+        const css = await this.#rectangle(target);
+        const rectangle = sceneRectangle(css);
+        const crop = {
+            left: Math.round(rectangle.x),
+            top: Math.round(rectangle.y),
+            width: Math.floor(rectangle.width / 2) * 2,
+            height: Math.floor(rectangle.height / 2) * 2,
+        };
+        output.width = crop.width;
+        output.height = crop.height;
+        return { css, crop, output: { ...output }, deviceScaleFactor };
+    }
+
+    /** One explicit camera move, then a fixed crop independent of pointer motion. */
+    async frameTo(crop, options = {}) {
+        await this.#cropTo(crop, options.duration ?? 1000);
+    }
+
+    async #cropTo(to, duration) {
+        const from = this.#lockedCrop ?? cameraCrop(this.#camera);
+        await this.#render(duration, (progress) => {
+            const eased = easeInOutQuint(progress);
+            this.#lockedCrop = Object.fromEntries(
+                Object.entries(to).map(([key, value]) => [
+                    key,
+                    Math.round(from[key] + (value - from[key]) * eased),
+                ]),
+            );
+        });
     }
 
     async #camera_to(to, durationMs) {
@@ -485,8 +526,9 @@ export class Director {
     /** Sends a keyboard chord and shows it as key caps while it lands. */
     async press(chord, options = {}) {
         const caps = keyCaps(chord);
-        await this.#page.evaluate((value) => window.__happyDemo.keys(value), caps);
         this.#keysLife = options.badge ?? 1100;
+        if (this.#keysLife > 0)
+            await this.#page.evaluate((value) => window.__happyDemo.keys(value), caps);
         await this.hold(options.before ?? 220);
         this.#sounds.push({
             frame: this.#sink.frames.length,

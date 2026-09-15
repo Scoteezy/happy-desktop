@@ -88,8 +88,10 @@ export async function simulatorOpen({
     // Keep the local accessibility driver warm during the desktop-only opening.
     // Reads share the interaction queue and never change the phone's UI.
     const heartbeat = setInterval(() => {
-        if (Date.now() - lastOperation > 8000) void tool("inspect_screen", {}).catch(() => {});
-    }, 8000);
+        // A threshold equal to the interval can miss one tick and leave a
+        // sixteen-second gap. Keep idle accessibility reads comfortably bounded.
+        if (Date.now() - lastOperation > 4000) void tool("inspect_screen", {}).catch(() => {});
+    }, 3000);
     heartbeat.unref();
     return {
         udid,
@@ -111,9 +113,25 @@ export async function simulatorOpen({
                 ]);
             return visit(screen.elements);
         },
-        close() {
+        async close() {
             clearInterval(heartbeat);
+            if (child.exitCode !== null || child.signalCode !== null) return;
+            const exited = new Promise((resolve) => child.once("exit", resolve));
             child.kill("SIGTERM");
+            let timeout;
+            try {
+                await Promise.race([
+                    exited,
+                    new Promise((resolve) => {
+                        timeout = setTimeout(() => {
+                            child.kill("SIGKILL");
+                            resolve();
+                        }, 5000);
+                    }),
+                ]);
+            } finally {
+                clearTimeout(timeout);
+            }
         },
     };
 }

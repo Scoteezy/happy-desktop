@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
 
 /*
  * The last pass: composed frames into a file anyone can post.
@@ -15,12 +16,9 @@ export async function encode(options) {
         "-hide_banner",
         "-loglevel",
         "error",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        options.listing,
+        ...(options.numbered
+            ? ["-framerate", String(options.fps), "-i", join(dirname(options.listing), "f%06d.jpg")]
+            : ["-f", "concat", "-safe", "0", "-i", options.listing]),
         ...(options.soundtrack ? ["-i", options.soundtrack] : []),
         "-vf",
         `fps=${options.fps},format=yuv420p`,
@@ -32,6 +30,8 @@ export async function encode(options) {
         "18",
         "-pix_fmt",
         "yuv420p",
+        "-frames:v",
+        String(options.frames),
         ...(options.soundtrack ? ["-c:a", "aac", "-b:a", "160k", "-shortest"] : []),
         "-movflags",
         "+faststart",

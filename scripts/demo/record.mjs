@@ -145,11 +145,33 @@ async function record(demo, stage, gym, options) {
         viewport,
     });
     const phone = options.phoneUdid
-        ? await phoneVideoOpen({ udid: options.phoneUdid, output, work })
+        ? await phoneVideoOpen({
+              udid: options.phoneUdid,
+              output,
+              work,
+              frame: demo.phoneFrame
+                  ? {
+                        ...demo.phoneFrame,
+                        frame: resolve(demo.sourceDirectory, demo.phoneFrame.frame),
+                        alpha: resolve(demo.sourceDirectory, demo.phoneFrame.alpha),
+                    }
+                  : undefined,
+          })
         : undefined;
     try {
-        await demo.run(director, gym, { phone });
+        await demo.run(director, gym, { phone, output });
     } catch (error) {
+        await writeFile(
+            join(output, `${demo.id}.failure.json`),
+            JSON.stringify(
+                {
+                    message: String(error),
+                    stack: error?.stack,
+                },
+                null,
+                2,
+            ),
+        );
         await stage.page
             .screenshot({ path: join(output, `${demo.id}.failed.png`) })
             .catch(() => {});
@@ -240,6 +262,7 @@ async function record(demo, stage, gym, options) {
         fps: options.fps,
         frames: totalFrames,
         listing,
+        numbered: introFrames === 0 && outroFrames === 0,
         soundtrack,
         target,
     });

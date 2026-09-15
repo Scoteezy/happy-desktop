@@ -6,6 +6,25 @@ export const stevePrompt =
     "Find a recent GPT-duplex product demo that blew up on X with a Grok sub-agent.";
 export const voicePath = "packages/happy-app/sources/components/VoiceAssistantStatusBar.tsx";
 export const barsPath = "packages/happy-app/sources/components/VoiceBars.tsx";
+export const logicPath = "packages/happy-app/sources/realtime/waveformActive.ts";
+export const logicBefore = `export function waveformActive(
+    connected: boolean,
+    agentSpeaking: boolean,
+    userSpeaking: boolean,
+): boolean {
+    return false;
+}
+`;
+export const logicAfter = `export function waveformActive(
+    connected: boolean,
+    agentSpeaking: boolean,
+    userSpeaking: boolean,
+): boolean {
+    return connected && (
+        agentSpeaking || userSpeaking
+    );
+}
+`;
 export const id = "core";
 export const seedMode = {
     effort: "high",
@@ -22,14 +41,40 @@ export const fableMode = {
 };
 const asset = (name) => `demos/core/assets/${name}`;
 const source = (name) => readFile(new URL(`./assets/${name}`, import.meta.url), "utf8");
+const voiceSource = (await source("VoiceAssistantStatusBar.tsx.txt"))
+    .replace(
+        "import { VoiceBars }",
+        "import { waveformActive } from '@/realtime/waveformActive';\nimport { VoiceBars }",
+    )
+    .replace(
+        "const isVoiceSpeaking = realtimeMode === 'agent-speaking' || realtimeMode === 'user-speaking';",
+        `const isVoiceSpeaking = waveformActive(
+        realtimeStatus === 'connected',
+        realtimeMode === 'agent-speaking',
+        realtimeMode === 'user-speaking',
+    );`,
+    )
+    .replace(
+        `<Ionicons name="mic" size={24} color="#FFFFFF" />`,
+        `<VoiceBars isActive={isVoiceSpeaking} color="#FFFFFF" size="medium" />`,
+    );
+
+// Read-only machine preferences and the current enabled catalog supplied these six
+// routes. The old Fable/Sonnet entries and duplicate Claude account are not staged.
+export const models = {
+    codex: ["openai/gpt-6-astra", "openai/gpt-5.6-sol", "openai/gpt-5.6-luna"],
+    claude: ["anthropic/fable-5-1", "anthropic/opus-5"],
+    grok: ["xai/grok-4.6"],
+};
 
 export const repository = {
     name: "happy",
     avatar: asset("happy.png"),
     files: {
         "README.md": "# Happy\n\nRemote access to your coding agents.\n",
-        [voicePath]: await source("VoiceAssistantStatusBar.tsx.txt"),
+        [voicePath]: voiceSource,
         [barsPath]: await source("VoiceBars.tsx.txt"),
+        [logicPath]: logicBefore,
     },
 };
 export const backgroundRepositories = [
@@ -200,17 +245,29 @@ export async function reply(payload, emitted) {
         if (step === 0)
             return paced([
                 tool("exec_command", {
-                    cmd: `sed -n '85,135p' ${voicePath}`,
+                    cmd: `sed -n '1,40p' ${logicPath}`,
                     max_output_tokens: 2000,
                 }),
             ]);
         await gate("astra-running");
         return paced([
             text(
-                "The header reuses the existing speaking state and reserves a fixed slot. Connecting and error states keep the microphone. The timer and tap-to-end handler are unchanged.",
+                "The waveform activates only while connected, for either speaker, and rests in silence. Connecting and error states cannot animate it. The timer and tap-to-end handler are unchanged.",
             ),
         ]);
     }
+    if (
+        messages.some(
+            (message) =>
+                message.role === "user" &&
+                (message.content === "ship it" ||
+                    (Array.isArray(message.content) &&
+                        message.content.some(
+                            (block) => block.type === "text" && block.text === "ship it",
+                        ))),
+        )
+    )
+        return paced([text("Got it — the waveform change is ready to ship.")]);
     if (!input.includes(prompt)) return undefined;
     emitted.set(key, step + 1);
     if (step === 0)
@@ -222,12 +279,14 @@ export async function reply(payload, emitted) {
         ]);
     if (step === 1) {
         await gate("reading");
-        return paced([tool("Read", { file_path: barsPath })]);
+        return paced([tool("Read", { file_path: logicPath })]);
     }
     if (step === 2) {
         await gate("delegation");
         return paced([
-            text("On it, Steve. Grok can research X while I make the change."),
+            text(
+                "On it, Steve. Spawning a Grok 4.6 sub-agent to research X while I make the change.",
+            ),
             tool("create_agent", {
                 title: grokTask,
                 model: "xai/grok-4.6",
@@ -242,9 +301,10 @@ export async function reply(payload, emitted) {
         return paced(
             [
                 tool("Edit", {
-                    file_path: voicePath,
-                    old_string: `                                <ShimmerView\n                                    shimmerColors={['rgba(255, 255, 255, 0.45)', '#FFFFFF', 'rgba(255, 255, 255, 0.45)']}\n                                    duration={1800}\n                                >\n                                    <Ionicons name="mic" size={24} color="#FFFFFF" />\n                                </ShimmerView>`,
-                    new_string: `                                {realtimeStatus === 'connected' ? (\n                                    <VoiceBars\n                                        isActive={isVoiceSpeaking}\n                                        color={theme.colors.header.tint}\n                                        size="medium"\n                                    />\n                                ) : (\n                                    <ShimmerView\n                                        shimmerColors={['rgba(255, 255, 255, 0.45)', '#FFFFFF', 'rgba(255, 255, 255, 0.45)']}\n                                        duration={1800}\n                                    >\n                                        <Ionicons name="mic" size={24} color="#FFFFFF" />\n                                    </ShimmerView>\n                                )}`,
+                    file_path: logicPath,
+                    old_string: "    return false;",
+                    new_string:
+                        "    return connected && (\n        agentSpeaking || userSpeaking\n    );",
                 }),
             ],
             { toolCallDeltaDelayMs: 1800 },
@@ -258,7 +318,7 @@ export async function reply(payload, emitted) {
                 model: "openai/gpt-6-astra",
                 provider: "codex",
                 effort: "high",
-                text: `CORE_ASTRA_REVIEW\nReview ${voicePath}. Check speaking and idle behavior, connecting and error states, and the existing timer and tap-to-end handler. Do not edit.`,
+                text: `CORE_ASTRA_REVIEW\nReview ${logicPath} and its existing caller in ${voicePath}. Check speaking and idle behavior, connecting and error states. Do not edit.`,
             }),
         ]);
     }

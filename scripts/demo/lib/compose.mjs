@@ -245,9 +245,11 @@ export async function composeFrames(options) {
             .png({ compressionLevel: 0 })
             .toBuffer();
 
-        let pipeline = sharp(composed)
-            .extract(entry.camera)
-            .resize(output.width, output.height, { kernel: "lanczos3" });
+        let pipeline = sharp(composed).extract(entry.camera).resize(output.width, output.height, {
+            kernel: "lanczos3",
+            fit: "contain",
+            background: "#090b10",
+        });
         const layers = [];
         if (entry.sticker) {
             layers.push(
@@ -341,7 +343,10 @@ export async function composeFrames(options) {
             ),
             ...outro,
         ]
-            .map((file) => `file '${file}'\nduration ${(1 / options.fps).toFixed(6)}`)
+            .map(
+                (file) =>
+                    `file '${file}'\noption framerate ${options.fps}\nduration ${(1 / options.fps).toFixed(9)}`,
+            )
             .join("\n") + "\n",
         "utf8",
     );

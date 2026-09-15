@@ -105,7 +105,7 @@ export async function frameBuild(directory) {
 }
 
 /** One concurrently captured phone source supplies both phone deliverables. */
-export async function phoneVideoOpen({ udid, output, work }) {
+export async function phoneVideoOpen({ udid, output, work, frame }) {
     const directory = join(work, "phone");
     await mkdir(directory, { recursive: true });
     const simulator = await simulatorOpen({ udid });
@@ -116,13 +116,42 @@ export async function phoneVideoOpen({ udid, output, work }) {
     const source = join(directory, "phone-source.mov");
     let nativeScreens = [];
     return {
-        simulator,
-        async prepare() {
-            await execFile("xcrun", ["simctl", "openurl", udid, "happy:///"]);
-            const screen = await simulator.inspect();
-            if (!screen.some((item) => item.text === "Sessions"))
-                throw new Error("The phone must start on its actual session list.");
-            nativeScreens.push({ phase: "prepared", screen });
+        get simulator() {
+            return simulator;
+        },
+        async prepare({ sessionTitle, relaunch = false } = {}) {
+            if (relaunch) {
+                // Each take restarts its private daemon. Reopen only this
+                // Simulator development app off camera so its socket lifetime
+                // begins against the new daemon and prepared catalog.
+                await execFile("xcrun", ["simctl", "terminate", udid, "com.slopus.happy.dev"]);
+                await execFile("xcrun", ["simctl", "launch", udid, "com.slopus.happy.dev"]);
+                await execFile("xcrun", ["simctl", "openurl", udid, "happy:///"]);
+            }
+            const deadline = Date.now() + 45000;
+            for (;;) {
+                const screen = await simulator.inspect();
+                if (
+                    screen.some((item) => item.text === "Sessions") &&
+                    (sessionTitle === undefined ||
+                        screen.some((item) => item.text?.startsWith(`${sessionTitle},`)))
+                ) {
+                    nativeScreens.push({ phase: "prepared", screen });
+                    await writeFile(
+                        join(output, "phone-prepared.json"),
+                        JSON.stringify(screen, null, 2),
+                    );
+                    return;
+                }
+                if (Date.now() >= deadline) {
+                    await writeFile(
+                        join(output, "phone-prepare-failure.json"),
+                        JSON.stringify(screen, null, 2),
+                    );
+                    throw new Error("The phone must start on its actual session list.");
+                }
+                await new Promise((resolve) => setTimeout(resolve, 250));
+            }
         },
         async start() {
             const requestedAt = performance.now();
@@ -183,9 +212,18 @@ export async function phoneVideoOpen({ udid, output, work }) {
             nativeScreens.push({ phase, screen });
             return screen;
         },
+        async screenshot(name) {
+            await execFile("xcrun", [
+                "simctl",
+                "io",
+                udid,
+                "screenshot",
+                join(output, `${name}.png`),
+            ]);
+        },
         async finish(timing) {
             if (!capture) {
-                simulator.close();
+                await simulator.close();
                 return;
             }
             try {
@@ -199,7 +237,7 @@ export async function phoneVideoOpen({ udid, output, work }) {
                     await new Promise((resolve) => setTimeout(resolve, 350));
                 }
             } finally {
-                simulator.close();
+                await simulator.close();
                 capture.kill("SIGINT");
                 await captureExit;
             }
@@ -239,7 +277,7 @@ export async function phoneVideoOpen({ udid, output, work }) {
                 throw new Error(
                     "Native phone capture does not cover the continuous desktop timeline.",
                 );
-            const geometry = await frameBuild(directory);
+            const geometry = frame ?? (await frameBuild(directory));
             const screenVideo = join(output, "phone-screen.mp4");
             await run("ffmpeg", [
                 "-y",

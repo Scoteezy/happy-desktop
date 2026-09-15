@@ -22,18 +22,18 @@ The model choice is a principal product moment. All footage is real-time 1×.
 No accelerated picker section, hard cuts between choices, moving camera during
 model selection, right-hand activity panel, or desktop diff viewer.
 
-| Beat | Visible action | Intended pacing / narration guide (not subtitles) |
-| --- | --- | --- |
-| 1 | Prepared workspace; center conversation/composer fills the precisely measured crop. No workspace creation or manual naming. Right panel is already closed. | Brief settled opening. This is Happy. |
-| 2 | Hold on the current Astra choice. Open the actual model menu. Slowly move the real pointer through a few relevant alternatives, visibly triggering their hover states, then settle on Fable 5.1. | Allow about 10–15 seconds for the choice, including at least a readable second on Fable before clicking. Switch models inside the same session. |
-| 3 | Confirm Fable selection, then type the short voice-waveform request and Astra review request. Submit once. The framing and interface do not move. | Readable deliberate typing; no camera or decorative marker animation. |
-| 4 | Fable begins actual file work. Steve sends his completed steering message asking for Grok research. No Steve draft. | Give the finished message time to read; keep the collaborative point visible in the same transcript. |
-| 5 | The transcript shows the actual typed delegation, including Grok 4.6 (and provider if needed), e.g. “Spawning Grok 4.6 sub-agent.” No side panel or child-chat navigation. | Hold the inline spawn state long enough to read; continue real work normally. |
-| 6 | A small realistic speaker-detection/voice-state logic edit happens. Fable/Astra and research complete; the result and real research link settle in the center transcript. | Do not show a desktop file tab or diff review. No phone emphasis before the entire response settles. |
-| 7 | After a settled completion hold, perform one restrained pullback to the desktop composition. Bring the upright phone forward, slightly right of center. | Away from your keyboard? Pick up the same session on your phone. |
-| 8 | Phone begins on its real session list. Tap the completed agent, then show its concise syntax-highlighted logic diff. | The changed logic must fit without horizontal scrolling. Avoid a long JSX block. |
-| 9 | Tap the phone composer. Show the native software keyboard, type “ship it”, and send through the actual linked session. | Keep the typing and Send action visible. The message really reaches the same session; do not perform an actual Git push from this demo message. |
-| 10 | Brief settled acknowledgement. Return the phone to its parked position on the right; hold that final frame. | That’s a wrap. No black outro and no added closing animation. |
+| Beat | Visible action                                                                                                                                                                                                                             | Intended pacing / narration guide (not subtitles)                                                                                                             |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Start with the full desktop layout in an already prepared workspace. Show the sidebar and overall app context; no workspace creation or manual naming. Right panel is already closed. Then enter the precisely measured center-panel crop. | Brief settled opening, then one deliberate zoom. Do not say “This is Happy.”                                                                                  |
+| 2    | Hold on the current Astra choice. Open the actual model menu. Move the real pointer naturally toward Fable, passing relevant alternatives and triggering their hover states, then select Fable 5.1.                                        | A purposeful choice, not a slow tour. About 6–8 seconds including a readable Fable hover; never speed up this section. Switch models inside the same session. |
+| 3    | Confirm Fable selection, then type the short voice-waveform request and Astra review request. Submit once. The framing and interface do not move.                                                                                          | Readable deliberate typing; no camera or decorative marker animation.                                                                                         |
+| 4    | Fable begins actual file work. Steve sends his completed steering message asking for Grok research. No Steve draft.                                                                                                                        | Give the finished message time to read; keep the collaborative point visible in the same transcript.                                                          |
+| 5    | The transcript shows the actual typed delegation, including Grok 4.6 (and provider if needed), e.g. “Spawning Grok 4.6 sub-agent.” No side panel or child-chat navigation.                                                                 | Hold the inline spawn state long enough to read; continue real work normally.                                                                                 |
+| 6    | A small realistic speaker-detection/voice-state logic edit happens, without opening its diff on desktop. Fable/Astra and research complete; the result and real research link settle in the center transcript.                             | Viewers do not see the actual diff yet. No phone emphasis before the entire response settles.                                                                 |
+| 7    | After a settled completion hold, perform one restrained pullback to the desktop composition. Bring the upright phone forward, slightly right of center.                                                                                    | Away from your keyboard? Pick up the same session on your phone.                                                                                              |
+| 8    | Phone begins on its real session list with the completed session’s actual unread indicator visible. Tap that agent, then show its concise syntax-highlighted logic diff for the first time.                                                | The changed logic must fit without horizontal scrolling. Avoid a long JSX block.                                                                              |
+| 9    | Tap the phone composer. Show the native software keyboard, type “ship it”, and send through the actual linked session.                                                                                                                     | Keep the typing and Send action visible. The message really reaches the same session; do not perform an actual Git push from this demo message.               |
+| 10   | Brief settled acknowledgement. Return the phone to its parked position on the right; hold that final frame.                                                                                                                                | That’s a wrap. No black outro and no added closing animation.                                                                                                 |
 
 Timing is driven by actual UI readiness and readable holds, not by fitting the
 old take's timestamps. Preserve a single shared desktop/phone clock and export
@@ -45,8 +45,9 @@ both at 60 fps with direct numbered-frame timing.
   the crop, scale, and aspect ratio from that rectangle; do not guess offsets or
   stretch it into 16:9. Keep the whole intended conversation/composer and picker
   visible. Record the measured rectangle and transformation with the evidence.
-- The crop is fixed from the opening through model choice, typing, steering,
-  delegation, and completed response. Only the final desktop/phone handoff moves.
+- Begin zoomed out to establish the full app layout, then enter the crop once.
+  The crop is fixed through model choice, typing, steering, delegation, and the
+  completed response. Only the ending desktop/phone handoff moves after that.
 - Use an intentionally narrower prepared layout that keeps the main content
   legible; the picker must not be clipped by either source or export boundaries.
 - Match the models actually enabled/used on this machine, using a read-only
@@ -55,7 +56,8 @@ both at 60 fps with direct numbered-frame timing.
   model preferences merely to dress the recording.
 - Real pointer paths take their time, enter actual hit targets, and produce real
   hover states. No teleporting among model choices or editorial cursor overlay
-  that disagrees with the browser's pointer.
+  that disagrees with the browser's pointer. Move naturally in the direction of
+  the intended choice; do not linger on every option or make a theatrical tour.
 
 ## Phone and change acceptance
 
@@ -65,6 +67,8 @@ both at 60 fps with direct numbered-frame timing.
   sequence begins only after the parent response and delegates have finished.
 - Keep the phone on the session list until the ending handoff; tap into the
   session there. The earlier idea of opening it mid-generation is superseded.
+- Preserve and verify the real unread status on the session list before entry;
+  do not paint an unread badge into the recording.
 - Prefer changing a small real logical portion of the waveform/speaker detection
   code so the native diff naturally fits. The user permits a presentation-adjusted
   diff, but any such fixture must be disclosed in the recording evidence; never
@@ -90,8 +94,10 @@ both at 60 fps with direct numbered-frame timing.
 - Provide a concise readable text alternative describing the selected model,
   delegated work, edit, and cross-device continuation. Screenshot text is not the
   only way to understand the feature. Use useful alt text without duplication.
-- No distracting automatic subtitles on any viewport. Keep narration/transcript
-  available as an accessible text alternative; no full-screen title cards.
+- No subtitles over the footage and no full-screen title cards. Show only a
+  couple of concise supporting captions below the desktop video at relevant
+  moments: multi-model work and the end-to-end encrypted mobile client. Do not
+  narrate every action. Keep a readable accessible text alternative on mobile.
 - Desktop playback remains keyboard operable, with visible focus, useful labels,
   off-screen/hidden pause, reduced-motion handling, and usable controls at zoom.
 - Keep Credits in the footer beside the existing navigation links.
