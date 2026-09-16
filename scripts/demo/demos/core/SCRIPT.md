@@ -1,14 +1,14 @@
-# Core demo — stable center-panel revision
+# Core demo — readable beats, one window, decisive phone ending
 
 This script supersedes `BRIEF.md` for the current revision. Write and verify the
 recording against these criteria before publishing to `/tmp/happy-one/`.
 
 ## Rollback points and scope
 
-- Desktop recorder/screenplay checkpoint: `ca0436fa` (local only, rebased onto
+- Desktop recorder/screenplay checkpoint: `abcf40d2` (local only, rebased onto
   Desktop main `8f3820f6`). Earlier checkpoints remain in Git history.
-- Native phone preparation checkpoint: `7d206eb5` (local only).
-- Published website/video rollback: `d5b2ca7`, with v15 media retained.
+- Native phone preparation checkpoint: `5e0c75db` (local only).
+- Published website/video rollback: `9f32a1d`, with v16 media retained.
 - Keep the precise upright Black Titanium frame. Retain the unused 3D variant.
 - Do not build the laptop-closing / cinematic 3D transition in this pass.
 - Never modify or restart the actual Electron host. Use isolated recording
@@ -23,22 +23,77 @@ The model choice is a principal product moment. All footage is real-time 1×.
 No accelerated picker section, hard cuts between choices, moving camera during
 model selection, right-hand activity panel, or desktop diff viewer.
 
-| Beat | Visible action                                                                                                                                                                                                                             | Intended pacing / narration guide (not subtitles)                                                                                                             |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | Start with the full desktop layout in an already prepared workspace. Show the sidebar and overall app context; no workspace creation or manual naming. Right panel is already closed. Then enter the precisely measured center-panel crop. | Brief settled opening, then one deliberate zoom. Do not say “This is Happy.”                                                                                  |
-| 2    | Hold on the current Astra choice. Open the actual model menu. Move the real pointer naturally toward Fable, passing relevant alternatives and triggering their hover states, then select Fable 5.1.                                        | A purposeful choice, not a slow tour. About 6–8 seconds including a readable Fable hover; never speed up this section. Switch models inside the same session. |
-| 3    | Confirm Fable selection, then type the short voice-waveform request and Astra review request. Submit once. The framing and interface do not move.                                                                                          | Readable deliberate typing; no camera or decorative marker animation.                                                                                         |
-| 4    | Fable begins actual file work. Steve sends his completed steering message asking for Grok research. No Steve draft.                                                                                                                        | Give the finished message time to read; keep the collaborative point visible in the same transcript.                                                          |
-| 5    | The transcript shows the actual typed delegation, including Grok 4.6 (and provider if needed), e.g. “Spawning Grok 4.6 sub-agent.” No side panel or child-chat navigation.                                                                 | Hold the inline spawn state long enough to read; continue real work normally.                                                                                 |
-| 6    | A small realistic speaker-detection/voice-state logic edit happens, without opening its diff on desktop. Fable/Astra and research complete; the result and real research link settle in the center transcript.                             | Viewers do not see the actual diff yet. No phone emphasis before the entire response settles.                                                                 |
-| 7    | After a settled completion hold, perform one restrained pullback to the desktop composition. Bring the upright phone forward, slightly right of center.                                                                                    | Away from your keyboard? Pick up the same session on your phone.                                                                                              |
-| 8    | Phone begins on its real session list with the completed session’s actual unread indicator visible. Tap that agent, then show its concise syntax-highlighted logic diff for the first time.                                                | The changed logic must fit without horizontal scrolling. Avoid a long JSX block.                                                                              |
-| 9    | Tap the phone composer. Show the native software keyboard, type “ship it”, and send through the actual linked session.                                                                                                                     | Keep the typing and Send action visible. The message really reaches the same session; do not perform an actual Git push from this demo message.               |
-| 10   | Brief settled acknowledgement. Return the phone to its parked position on the right; hold that final frame.                                                                                                                                | That’s a wrap. No black outro and no added closing animation.                                                                                                 |
+### Pacing principles
 
-Timing is driven by actual UI readiness and readable holds, not by fitting the
-old take's timestamps. Preserve a single shared desktop/phone clock and export
-both at 60 fps with direct numbered-frame timing.
+- One new idea at a time. Readiness is not permission to rush to the next action.
+  After each visible state arrives, hold it long enough to understand it.
+- Submission, thinking, Steve's intervention, delegation, and completion are
+  separate beats. Do not let them read as one continuous stream of arrivals.
+- Show real thinking/activity presentation for at least 2.5 seconds before the
+  first answer block. Hold the first answer block for at least 2 seconds before
+  Steve's completed message; hold his message for at least 3.5 seconds before
+  spawning Grok. Hold the actual inline spawn for at least 2.5 seconds.
+- Deliver short, complete prose blocks instead of a constant trickle of tokens.
+  Wait between blocks when there is another point to absorb. Keep actual tool
+  execution, linked state, native keyboard input, and transport real.
+- The final completion is one compact block with two short paragraphs (about
+  27 words), followed by “Ready to ship.” Both the waveform/review outcome and
+  Grok's link must remain visible together during the settled hold.
+- Keep the approved picker pace and fixed measured center crop. Do not add
+  movement to fill a pause. Prefer a still pointer and stable content.
+- Review actual encoded playback critically, including the transitions between
+  beats. A collection of attractive screenshots is not proof of good pacing.
+
+| Beat | Visible action                                                                                                                                                                                                                             | Intended pacing / narration guide (not subtitles)                                                                                                                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | Start with the full desktop layout in an already prepared workspace. Show the sidebar and overall app context; no workspace creation or manual naming. Right panel is already closed. Then enter the precisely measured center-panel crop. | Brief settled opening, then one deliberate zoom. Do not say “This is Happy.”                                                                                      |
+| 2    | Hold on the current Astra choice. Open the actual model menu. Move the real pointer naturally toward Fable, passing relevant alternatives and triggering their hover states, then select Fable 5.1.                                        | A purposeful choice, not a slow tour. About 6–8 seconds including a readable Fable hover; never speed up this section. Switch models inside the same session.     |
+| 3    | Confirm Fable selection, then type the short voice-waveform request and Astra review request. Submit once. The framing and interface do not move.                                                                                          | Readable deliberate typing; no camera or decorative marker animation.                                                                                             |
+| 4    | Submission visibly enters thinking, then Fable begins actual file work. After a distinct settled beat, Steve sends his completed steering message asking for Grok research. No Steve draft.                                                | Separate thinking, work, and Steve's message with readable pauses. Keep the collaborative point visible in the same transcript.                                   |
+| 5    | The transcript shows the actual typed delegation, including Grok 4.6 (and provider if needed), e.g. “Spawning Grok 4.6 sub-agent.” No side panel or child-chat navigation.                                                                 | Hold the inline spawn state long enough to read; continue real work normally.                                                                                     |
+| 6    | A small realistic speaker-detection/voice-state logic edit happens, without opening its diff on desktop. Fable/Astra and research complete; the result and real research link settle in the center transcript.                             | Viewers do not see the actual diff yet. No phone emphasis before the entire response settles.                                                                     |
+| 7    | After a settled completion hold, perform one restrained pullback to the desktop composition. Bring the upright phone forward, slightly right of center.                                                                                    | Away from your keyboard? Pick up the same session on your phone.                                                                                                  |
+| 8    | Phone begins on its real session list with the completed session’s actual unread indicator visible. Tap that agent, then show its concise syntax-highlighted logic diff for the first time.                                                | The changed logic must fit without horizontal scrolling. Avoid a long JSX block.                                                                                  |
+| 9    | Tap the phone composer. Show the native software keyboard, type “ship it” briskly, and send through the actual linked session.                                                                                                             | Aim for about 1–2 seconds of typing, with actual native input and no unnecessary pause before Send.                                                               |
+| 10   | Show the staged shipping result “Pushed to main. New version is being deployed.” The owned fixture's real change set clears through normal Git synchronization. Return home, then park the phone.                                          | Push/deploy is explicitly a screenplay fixture, as authorized by the user. No real push/deploy or fabricated permission-review approval. Hold the settled result. |
+
+### Viewer-experience timeline
+
+These are target windows for the next take, not an instruction to accelerate
+footage to hit a runtime. The final evidence must add actual start/end times
+beside them. There are no hard scene cuts: the two measured camera moves and
+the late phone emphasis are the only framing transitions.
+
+| Target time | Duration | Viewer sees / reads                                                                                        | What the viewer should connect                                                | Content and pacing budget                                                                                                                                        |
+| ----------- | -------- | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0:00–0:02   | 2s       | The full app: project sidebar, prepared workspace, empty conversation and composer.                        | “This is my working environment, not an isolated chatbot.”                    | No narration introducing Happy. No workspace creation, right panel, or unrelated banner. Hold before moving.                                                     |
+| 0:02–0:03   | 1s       | One smooth move into the precisely measured center panel.                                                  | “This is where the work happens.”                                             | One transition only; the following selection and conversation stay locked here.                                                                                  |
+| 0:03–0:10   | 7s       | Actual model menu; purposeful pointer path with hover feedback; Fable 5.1 selected above Opus.             | “I choose the model for this conversation.”                                   | Preserve the approved picker pace. A readable Fable hover, not a tour of every option. First supporting caption below the video: multi-model work.               |
+| 0:10–0:17   | 7s       | The short waveform request plus Astra review request is typed and submitted.                               | “One task can use more than one model.”                                       | One prompt, about 17 words; no other message arrives while the viewer reads it.                                                                                  |
+| 0:17–0:20   | 3s       | Submitted prompt and genuine thinking/activity state.                                                      | “The agent has started; it is working on my request.”                         | Do not immediately fill the transcript. Keep thinking visible for at least 2.5s after it actually appears.                                                       |
+| 0:20–0:23   | 3s       | One short answer block: reuse the voice bars; then the first real file read.                               | “It is working in the actual code.”                                           | One sentence, approximately 12–16 words. Whole-block arrival, then at least 2s of settled reading.                                                               |
+| 0:23–0:27   | 4s       | Steve's completed steering message asks for Grok research, while the parent is still working.              | “A teammate can steer the same live conversation.”                            | One collaborator message, about 16 words; no draft. At least 3.5s before the next new idea.                                                                      |
+| 0:27–0:31   | 4s       | A brief acknowledgement and the actual inline Grok 4.6 sub-agent spawn.                                    | “The request becomes a real specialist working alongside the original agent.” | No side panel. Keep acknowledgement short; hold the real spawn row at least 2.5s.                                                                                |
+| 0:31–0:36   | 5s       | A small Edit row, then Astra's inline review; no desktop diff.                                             | “The code work continues while research/review happens.”                      | Tool events separated by a pause; no token flood or extra explanatory paragraph. The phone remains parked on home.                                               |
+| 0:36–0:42   | 6s       | Concise completed waveform/review result, then completed Grok finding and one real X link.                 | “Both branches finished and came back to the same conversation.”              | At most two short prose blocks, roughly 40 words total. Separate their arrival; hold all results settled at least 3s. No unexplained still-running research.     |
+| 0:42–0:44   | 2s       | One restrained pullback to the full app; the upright phone becomes prominent beyond the window edge.       | “The same work is available away from the keyboard.”                          | No new desktop message competing with the transition. Second supporting caption below: end-to-end encrypted mobile client.                                       |
+| 0:44–0:47   | 3s       | Real phone session list, real project avatars, actual unread result badge.                                 | “My completed session is waiting for me.”                                     | Keep home visible before entering. No What's New, unrelated bot list, or extra phone tour.                                                                       |
+| 0:47–0:51   | 4s       | Tap the session, then reveal its concise syntax-highlighted logic diff.                                    | “I can inspect the actual change on my phone.”                                | One necessary scroll at most; stop as soon as the useful diff fits. Never swipe it farther upward for decoration.                                                |
+| 0:51–0:55   | 4s       | The short +/− logic diff stays still.                                                                      | “I can understand and approve this change here.”                              | No horizontal scroll; enough context to read the connected/speaking condition. Desktop stays quiet.                                                              |
+| 0:55–0:58   | 3s       | Native keyboard opens; “ship it” is typed briskly and sent.                                                | “I can act, not just watch.”                                                  | Approximately 1–2s of actual typing. Avoid a long pre-Send pause.                                                                                                |
+| 0:58–1:03   | 5s       | Staged shipping completion; actual change counters clear; “Pushed to main. New version is being deployed.” | “The action completes the workflow.”                                          | One concise result. Push/deploy is staged. Restore only the owned fixture edit to its baseline and wait for the real Git watcher and phone to show zero changes. |
+| 1:03–1:07   | 4s       | Settled success, phone returns to its parked right-hand position, final hold.                              | “I can carry this work between desktop and phone.”                            | No new concept, black card, extra subtitle, or closing flourish. End on the product.                                                                             |
+
+The target is approximately 67 seconds, with breathing room rather than a hard
+ceiling. If native navigation or tool work takes longer, shift later windows
+instead of shortening the meaningful reading holds. Record actual timing and
+visible word counts after the take; check whether each takeaway landed before
+the next one appeared. A hold begins when its content is visible and stable,
+not when an API request was sent.
+
+Preserve a single shared desktop/phone clock and export both at 60 fps with
+direct numbered-frame timing. Do not speed up the picker or erase real loading
+states to manufacture the target runtime.
 
 ## Framing and model-picker acceptance
 
@@ -49,6 +104,10 @@ both at 60 fps with direct numbered-frame timing.
 - Begin zoomed out to establish the full app layout, then enter the crop once.
   The crop is fixed through model choice, typing, steering, delegation, and the
   completed response. Only the ending desktop/phone handoff moves after that.
+- The movie contains no desktop wallpaper, rounded inner window, or shadow. The
+  website owns one macOS-style window frame with decorative traffic lights.
+  The phone is a sibling outside its clipping boundary and visibly protrudes
+  beyond the right and bottom edges, including during its focused ending.
 - Use an intentionally narrower prepared layout that keeps the main content
   legible; the picker must not be clipped by either source or export boundaries.
 - Match the models actually enabled/used on this machine, using a read-only
@@ -70,19 +129,37 @@ both at 60 fps with direct numbered-frame timing.
   session there. The earlier idea of opening it mid-generation is superseded.
 - Preserve and verify the real unread status on the session list before entry;
   do not paint an unread badge into the recording.
+- Dismiss “What's New” through the normal native read action off camera. It must
+  not distract from the actual session list in the recorded take.
 - Prefer changing a small real logical portion of the waveform/speaker detection
   code so the native diff naturally fits. The user permits a presentation-adjusted
   diff, but any such fixture must be disclosed in the recording evidence; never
   replace transport or claim an injected phone response is live sync.
 - No horizontal diff swipe. Show meaningful additions/removals, syntax coloring,
   and enough context to understand the small change at phone width.
+- Stop scrolling as soon as the concise diff is visible. Do not add a second
+  upward swipe or pull already visible content away from its useful position.
 - Native keyboard is present for “ship it”; the actual send and resulting durable
-  message are verified. Script a harmless acknowledgement, not a real deployment.
+  message are verified. Push/deployment narration is a declared screenplay,
+  explicitly permitted by the user. Restore only the owned fixture edit to its
+  baseline, then verify the authoritative Git API and phone counters clear.
+  Never inject a permission approval or push a production repository for the shot.
+- The attempted local shipping tool in rehearsal v17-r4 reached a permission
+  reviewer that also used the scripted inference endpoint. It did not produce a
+  valid verdict before the take timed out. Do not supply a fake approval or retry
+  that tool: the filmed ending now uses only the permitted presentation fixture.
+- After the success hold, return normally to the session list before parking the
+  phone. Verify the completed session's change counts are gone. Do not leave an
+  idle keyboard covering the final product frame.
 
-## Mobile website: static composition, not video
+## Mobile website: focused playback with a static fallback
 
-- On narrow/mobile viewports, render a static image composition, not either
-  playing video. No video source request, playback control, or motion sequence.
+- Try the actual synchronized video in a taller center-focused mobile viewport.
+  Verify the important picker, message, and phone states at 320, 390, and 430 CSS
+  px. Do not publish a crop that cuts away the point being demonstrated.
+- Use matched 30 fps mobile derivatives. Reduced-motion/save-data visitors get
+  the real static composition with no automatic movie request and an explicit
+  playback opt-in. Retain a full-size screenshot link and useful text alternative.
 - Main screenshot is the narrow, center-focused state with the model picker
   open, visible sidebar context, and an Edit/file +/- cue. Capture this as an
   honest separate still from the real prepared app after the edit; do not splice
@@ -99,7 +176,7 @@ both at 60 fps with direct numbered-frame timing.
   couple of concise supporting captions below the desktop video at relevant
   moments: multi-model work and the end-to-end encrypted mobile client. Do not
   narrate every action. Keep a readable accessible text alternative on mobile.
-- Desktop playback remains keyboard operable, with visible focus, useful labels,
+- Playback remains keyboard operable, with visible focus, useful labels,
   off-screen/hidden pause, reduced-motion handling, and usable controls at zoom.
 - Keep Credits in the footer beside the existing navigation links.
 
@@ -117,11 +194,60 @@ both at 60 fps with direct numbered-frame timing.
   obvious visual/flow problems only if the scoped external sharing is explicitly
   authorized and Auto review permits it. Prior sharing was denied; do not bypass
   or silently retry. Local inspection is not their sign-off.
+- Obtain the newly requested Grok 4.6 Extra High review of the actual video;
+  address actionable pacing, readability, or framing findings before publication.
 - Build/typecheck affected packages, then commit the website, fetch and rebase
   onto current `origin/main`, push normally to remote main, and verify Pages plus
   actual deployed desktop/mobile presentation. Preserve newer remote work.
 
-## Completion record
+## Measured viewer-experience timeline — v17-r6
+
+Final take: **67.967 seconds, 4,078 frames at 60 fps**. The intervals below use
+the final `cues.json`, not approximate rehearsal timestamps. All footage remains
+1×; there are no hard cuts. Durations are rounded to milliseconds.
+
+| Actual interval | Duration | Visible scene / content budget                                                       | Connection before the next scene                                        |
+| --------------- | -------: | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| 0.000–1.617     |   1.617s | Whole prepared desktop, project sidebar, empty conversation.                         | Establish the complete working environment.                             |
+| 1.617–2.733     |   1.116s | One measured zoom to the center panel.                                               | Direct attention to the work without losing app context.                |
+| 2.733–10.000    |   7.267s | Astra choice, actual picker at 5.333s, purposeful hover path, Fable selected.        | Choose a model within this same session.                                |
+| 10.000–16.783   |   6.783s | One 16-word waveform/Astra-review request, typed and submitted.                      | One task can involve multiple models.                                   |
+| 16.783–21.067   |   4.284s | Submitted prompt and actual Thinking state; no answer yet.                           | The agent has started working.                                          |
+| 21.067–24.500   |   3.433s | One complete 10-word response; first actual Read arrives at 23.450s.                 | The agent is working in the code before the teammate intervenes.        |
+| 24.500–29.317   |   4.817s | Steve's completed 15-word request; then a short acknowledgement and the real spawn.  | A teammate can steer the work already underway.                         |
+| 29.317–32.783   |   3.466s | Fully rendered `Spawned Grok 4.6 sub-agent` row; no side panel.                      | The request becomes a real delegated task.                              |
+| 32.783–41.017   |   8.234s | Real Edit +3/−1, Astra review, then a 27-word combined completion and research link. | Code, review, and research return to one conversation. No desktop diff. |
+| 41.017–44.033   |   3.016s | All results settled, delegate replies, “Ready to ship.”                              | Both branches really finished before attention moves away.              |
+| 44.033–45.483   |   1.450s | One pullback to the full desktop.                                                    | This work can continue away from the keyboard.                          |
+| 45.483–49.217   |   3.734s | Upright phone grows in place; real home list and unread result.                      | The completed session is waiting on the phone.                          |
+| 49.217–49.683   |   0.466s | Open session and reveal the concise native diff.                                     | Enter the same session, not a separate mockup.                          |
+| 49.683–55.550   |   5.867s | Colored speaking-state predicate, stationary, no horizontal scroll.                  | Read and understand the change before approving it.                     |
+| 55.550–58.033   |   2.483s | Native keyboard, “ship it,” real Send; actual key touches total 1.781s.              | Act from the phone, not merely observe.                                 |
+| 58.033–60.967   |   2.934s | Actual sent message and working state; real Git counters clear.                      | The action is being handled.                                            |
+| 60.967–65.450   |   4.483s | Eight-word staged shipping result, readable hold, normal return home.                | The workflow completes; the keyboard does not cover the final shot.     |
+| 65.450–67.967   |   2.517s | Phone parks on the session list; final product hold.                                 | End on the connected desktop and phone.                                 |
+
+The first response stands alone for 2.383s before Read. Steve gets a deliberate
+3.5s hold before the next inference step, and the fully typed Grok row gets a
+2.8s director hold. The center rectangle is unchanged for all 2,478 locked
+frames. The final source has zero caption overlays and zero speed changes.
+
+The phone uses real encrypted synchronization, native touches, unread/read
+state, and Git counts. The final push/deployment sentence is explicitly staged;
+no repository was pushed or deployed for that shot. The local Git tracker fix
+publishes the genuinely clean fixture snapshot to the phone. The archive and
+Git fixes are recording-build changes, not claims of a released Agent update.
+
+The portrait mobile crop was rejected after visual inspection because it cut
+real prose. The website uses the actual narrow still plus partially peeking
+phone by default, with explicit uncropped 30fps playback and a readable HTML
+summary/full-size image link. Both 30fps files contain exactly 2,039 frames;
+their endpoint is identical to the 60fps masters, without padding or retiming.
+
+See `REVIEW.md` for encoded inspection, browser results, publication status,
+root causes, and reviewer limitations.
+
+## Previous completion record (v16; superseded acceptance above)
 
 Fill in measured geometry, final cue times, source boundaries, review outcomes,
 artifact paths, and deployed commit only after the corresponding work is verified.

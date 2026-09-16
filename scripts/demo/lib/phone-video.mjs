@@ -210,8 +210,9 @@ export async function phoneVideoOpen({ udid, output, work, frame }) {
             });
         },
         async inspect(phase) {
+            const startedAt = performance.now();
             const screen = await simulator.inspect();
-            nativeScreens.push({ phase, screen });
+            nativeScreens.push({ phase, milliseconds: performance.now() - startedAt, screen });
             return screen;
         },
         async screenshot(name) {
@@ -236,6 +237,10 @@ export async function phoneVideoOpen({ udid, output, work, frame }) {
                     clock.desktopFinishedAt = performance.now();
                     await execFile("xcrun", ["simctl", "openurl", udid, "happy:///"]);
                     await simulator.inspect();
+                    // The final shot can already be home. A real off-camera
+                    // navigation guarantees a changed frame after the tail,
+                    // rather than assuming reopening home changes pixels.
+                    await simulator.run("- tapOn:\n    text: Settings\n    index: 0");
                     await new Promise((resolve) => setTimeout(resolve, 350));
                 }
             } finally {

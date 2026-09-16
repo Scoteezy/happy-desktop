@@ -138,7 +138,9 @@ export async function simulatorOpen({
             const operation = queue.then(async () => {
                 // Use the same Maestro-owned XCTest driver, without its
                 // per-key app-settling delay. These are real native touches.
-                await invoke("inspect_screen", {});
+                // The caller has just inspected the actual keyboard/control.
+                // Re-reading the whole native hierarchy here adds a visible
+                // idle pause; listener ownership below is the safety check.
                 const { stdout } = await execFile("/usr/sbin/lsof", [
                     "-nP",
                     "-iTCP:22087",
@@ -171,7 +173,7 @@ export async function simulatorOpen({
                         method: "POST",
                         redirect: "error",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ ...point, duration: null }),
+                        body: JSON.stringify({ ...point, duration: 0.01 }),
                         signal: AbortSignal.timeout(5000),
                     });
                     await response.text();

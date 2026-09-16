@@ -7,6 +7,7 @@ import {
     maximumZoom,
     output,
     sceneRectangle,
+    window as windowRectangle,
 } from "./scene.mjs";
 
 /*
@@ -74,6 +75,7 @@ export class Director {
     #error;
     #maxFrameLatenessMs = 0;
     #lockedCrop;
+    #restCrop;
 
     constructor(options) {
         this.#page = options.page;
@@ -348,14 +350,17 @@ export class Director {
     /** Eases the camera back to the whole scene. */
     async zoomOut(options = {}) {
         if (this.#lockedCrop) {
-            await this.#cropTo(cameraCrop(cameraRest()), options.duration ?? 1000);
+            await this.#cropTo(
+                this.#restCrop ?? cameraCrop(cameraRest()),
+                options.duration ?? 1000,
+            );
             return;
         }
         await this.#camera_to(cameraRest(), options.duration ?? 620);
     }
 
     /** Measure before shooting. The delivery aspect is the actual panel, not 16:9. */
-    async framingPrepare(target) {
+    async framingPrepare(target, options = {}) {
         if (this.#recording) throw new Error("Measure the delivery geometry before recording.");
         const css = await this.#rectangle(target);
         const rectangle = sceneRectangle(css);
@@ -367,7 +372,16 @@ export class Director {
         };
         output.width = crop.width;
         output.height = crop.height;
-        return { css, crop, output: { ...output }, deviceScaleFactor };
+        if (options.rawWindow) {
+            this.#restCrop = {
+                left: windowRectangle.x,
+                top: windowRectangle.y,
+                width: windowRectangle.width,
+                height: windowRectangle.height,
+            };
+            this.#lockedCrop = this.#restCrop;
+        }
+        return { css, crop, restCrop: this.#restCrop, output: { ...output }, deviceScaleFactor };
     }
 
     /** One explicit camera move, then a fixed crop independent of pointer motion. */

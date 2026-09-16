@@ -194,8 +194,10 @@ const text = (value) => ({ type: "text", text: value });
 const tool = (name, args) => ({ type: "toolCall", name, arguments: args });
 const paced = (content, timing = {}) => ({
     content,
-    textDeltaChunkSize: 8,
-    textDeltaDelayMs: 65,
+    // Complete, readable blocks. Deliberate director holds separate concepts;
+    // constant token motion should not consume the viewer's attention budget.
+    textDeltaChunkSize: 4096,
+    textDeltaDelayMs: 300,
     toolCallDeltaDelayMs: 350,
     completionDelayMs: 100,
     ...timing,
@@ -203,7 +205,13 @@ const paced = (content, timing = {}) => ({
 export const grokTask = "Grok · Research X";
 export const astraTask = "Astra · Review control flow";
 export const grokFinding =
-    "Found OpenAI’s GPT-Live-1 demo: voice agents that listen while they speak. [Watch the demo on X](https://x.com/OpenAIDevs/status/2098099269551149398).";
+    "Found OpenAI’s live voice demo: listening while speaking. [Watch the demo on X](https://x.com/OpenAIDevs/status/2098099269551149398).";
+export const shipResult = "Pushed to main. New version is being deployed.";
+export const firstWorkText = "I’ll reuse the voice bars and ask Astra to review.";
+let shippingFinalize;
+export function shippingConfigure(finalize) {
+    shippingFinalize = finalize;
+}
 
 // The copy is a screenplay. Delegation, Read, and Edit are actual daemon tools;
 // this isolated fixture does not claim that its inference called live vendors.
@@ -266,17 +274,29 @@ export async function reply(payload, emitted) {
                             (block) => block.type === "text" && block.text === "ship it",
                         ))),
         )
-    )
-        return paced([text("Got it — the waveform change is ready to ship.")]);
+    ) {
+        if (!shippingFinalize) throw new Error("Prepare the staged shipping fixture first.");
+        // The user explicitly permits this shipping/deployment screenplay.
+        // No permission-review verdict, Git push, or production deploy is faked
+        // into a tool result. Only the owned fixture's edit is restored, then
+        // the real Git watcher and encrypted phone projection must reconcile.
+        await shippingFinalize();
+        return paced([{ type: "thinking", thinking: "Preparing the release." }, text(shipResult)], {
+            thinkingDeltaChunkSize: 4096,
+            thinkingDeltaDelayMs: 1800,
+        });
+    }
     if (!input.includes(prompt)) return undefined;
     emitted.set(key, step + 1);
     if (step === 0)
-        return paced([
-            text(
-                "I’ll reuse the existing voice bars, then bring in Astra to review the control flow.",
-            ),
-            tool("Read", { file_path: voicePath }),
-        ]);
+        return paced(
+            [
+                { type: "thinking", thinking: "Checking the existing waveform and voice state." },
+                text(firstWorkText),
+                tool("Read", { file_path: voicePath }),
+            ],
+            { thinkingDeltaChunkSize: 4096, thinkingDeltaDelayMs: 4000, textDeltaDelayMs: 2200 },
+        );
     if (step === 1) {
         await gate("reading");
         return paced([tool("Read", { file_path: logicPath })]);
@@ -284,9 +304,7 @@ export async function reply(payload, emitted) {
     if (step === 2) {
         await gate("delegation");
         return paced([
-            text(
-                "On it, Steve. Spawning a Grok 4.6 sub-agent to research X while I make the change.",
-            ),
+            text("On it, Steve. Grok will research X while I make the change."),
             tool("create_agent", {
                 title: grokTask,
                 model: "xai/grok-4.6",
@@ -307,7 +325,7 @@ export async function reply(payload, emitted) {
                         "    return connected && (\n        agentSpeaking || userSpeaking\n    );",
                 }),
             ],
-            { toolCallDeltaDelayMs: 1800 },
+            { toolCallDeltaDelayMs: 350 },
         );
     }
     if (step === 4) {
@@ -324,11 +342,14 @@ export async function reply(payload, emitted) {
     }
     if (step === 5) {
         await gate("finishing");
-        return paced([
-            text(
-                `Added the waveform. It animates for either speaker and settles when silent. Astra reviewed the control flow; the timer and tap-to-end behavior are unchanged.\n\nGrok’s research is done. ${grokFinding}`,
-            ),
-        ]);
+        return paced(
+            [
+                text(
+                    `Waveform added for either speaker. Astra reviewed the control flow.\n\nGrok’s research is done. ${grokFinding}`,
+                ),
+            ],
+            { textDeltaDelayMs: 1600 },
+        );
     }
-    return paced([text("The waveform change is ready to inspect.")]);
+    return paced([text("Ready to ship.")], { completionDelayMs: 1200 });
 }

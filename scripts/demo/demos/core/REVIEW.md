@@ -1,5 +1,131 @@
 # Core demo — local review
 
+## Readable-beat revision — final take v17-r6
+
+The final [desktop video](./artifacts/v17-r6/core.mp4),
+[native phone screen](./artifacts/v17-r6/phone-screen.mp4), and
+[transparent Black Titanium bezel](./artifacts/v17-r6/phone-bezel.webm)
+share **4,078 frames at 60 fps / 67.966667 seconds**. Desktop is 2340×1440,
+phone 1206×2622, bezel 1406×2822. The native trim is 0.000149875 seconds;
+the concurrent native source covers the entire take. The encoded bezel has
+alpha mode enabled; its decoded corner alpha is 0 and screen alpha is 255.
+
+`SCRIPT.md` now contains both the target timeline and a measured scene table:
+start/end, duration, content budget, and the connection a viewer should make
+before the next scene. The actual cue file is authoritative. Thinking appears
+at 16.783s and remains alone until 21.067s; the first sentence remains alone
+until Read at 23.450s. Steve arrives at 24.500s. The fully typed Grok spawn is
+visible at 29.317s, Edit at 32.783s, settled results at 41.017s. The camera
+does not leave the center until 44.033s. Phone focus begins at **45.483s**,
+the native diff at **49.683s**, and the movie ends at **67.967s**.
+
+The measured CSS center rectangle remains `(288,88,936,576)`, mapped at 2.5×
+to `(790,290,2340,1440)`. All 2,478 locked frames have the identical crop.
+There are no speed changes or caption overlays. The resting crop is the raw
+3060×1660 application window, fit on its flat background. No wallpaper,
+rounded inner frame, shadow, or titlebar is baked into the movie. The website
+owns one decorative macOS-style frame; its upright phone protrudes beyond the
+right and bottom edges and grows in place only for the ending.
+
+Actual encoded keyframes were viewed for the full-layout opening, picker,
+Thinking, first response, Steve, completed Grok label, Edit, review/research
+completion and link, unread native home, colored narrow diff, keyboard,
+sent message, staged shipping acknowledgement, and clean home ending. The
+phone no longer displays What's New, does not add an unnecessary second diff
+swipe, and returns normally home before parking. Eight genuine native key
+touches take 1.781s; keyboard-to-Send is 2.483s. Exact durable `ship it`, real
+unread/read state, and zero final change counters are all asserted.
+
+The unchanged HQ masters and eight derivatives/posters/stills were exported
+to website `public/video/happy-one/v17/`. All ten assets passed dimensions,
+clock, decoded-frame counts for the movies, and copied SHA-256 verification.
+The matched 30fps pair is 1560×960 and 804×1748, 2,039 frames each, with exactly
+the same endpoint as HQ: no quantization padding or retiming. Export evidence
+is `.context/core-web-export-UgdGdo/export-report.json` (scratch, not committed).
+Older v16 assets remain available for rollback.
+
+The mobile portrait crop was rejected because it removed real message prose.
+The default is the real narrower screenshot, visible sidebar/Edit +3−1/Fable
+picker, and a partially peeking phone. A readable HTML description, full-size
+image link, and explicit uncropped 30fps Play option preserve access to the
+content without relying on tiny screenshot text. Only two supporting captions
+appear below playback: multi-provider work and the encrypted mobile app.
+
+### Real backend causes, fixes, and staging boundary
+
+The archive flood was a real Agent bug: `HappySessionClient` regenerated
+`lifecycleStateSince` with `Date.now()` for every echoed archive metadata update.
+Each echo therefore required another write and prevented `settle()` from
+finishing. Caching the single archive-transition timestamp breaks the loop.
+The unchanged regression reproduced four writes before the fix, then passed;
+the local commit and complete verification remain documented below.
+
+A second real bug appeared when the last file change was cleared.
+`GitStateTracker.#flushDirty` treated empty path-scoped `git status` output as an
+irrelevant filesystem event. Dirty-to-clean naturally produces empty status,
+so the published tracked snapshot kept +3/−1 until its two-minute stale timer.
+The independently scanned Git HTTP API already returned zero, but the encrypted
+phone metadata reads the published tracked snapshot. This was not a native
+badge-rendering bug.
+
+The fix in isolated Agent commit `c88cebdf76a0d0301d2c83403b2032da75e725a9`
+rescans when an event overlaps a previously changed path (including previous
+rename paths); missing or truncated snapshots conservatively rescan. The
+ignored-noise optimization remains for unrelated paths. Its real-Git regression
+failed unchanged before the fix and passed afterward. All 17 focused Git tests,
+module checks/typechecks/build, and formatting passed. The branch was based on
+fresh Agent main `a205db54` and remains local, independent of the archive fix.
+
+The recording uses private build `0.4.69-local.core.c88cebdf`, combining those
+two fixes in an isolated non-Git build copy. The combined focused Git and
+session-client regressions pass 38/38. No host binary was installed, no Electron
+host was changed or restarted, and no new Agent preview is implied. The earlier
+denied Agent main push has not been retried or delegated; publication of these
+backend fixes still requires fresh authorization.
+
+Inference copy/timing, Steve's protocol-fixture identity, and the final
+“Pushed to main. New version is being deployed.” sentence are screenplay.
+The user explicitly authorized staging the shipping outcome. Only the exact
+owned generated waveform edit is restored to its baseline; the actual watcher,
+Git API, encrypted sync, and phone then publish genuinely clean counters.
+No push/deployment or fabricated permission approval happens for the shot.
+Real delegation, file work, native keyboard input, message delivery, and sync
+are retained. `shipping-verified.json` explicitly records the staging boundary.
+
+### Review and publication status
+
+Local final-asset Chromium/Firefox/WebKit checks pass for 117 playback/control
+records, nine static mobile cases at 320/390/430px, and 15 enlarged-text/reflow
+cases. They cover actual movie frames, paired seeks, keyboard End → Replay,
+sole desktop audio, keyboard opt-in focus under reduced motion/save-data,
+full-size still navigation, no unwanted static movie loads, and no page
+overflow. Main also viewed the resulting desktop/mobile website screenshots.
+Normal-speed Chromium HQ playback ran the entire 67.967s movie in 68.064s;
+Firefox and WebKit ran the 43s-to-end phone handoff at 30fps in 25.008s and
+25.019s. No waiting/error events occurred. Maximum sampled pair drift was
+9.97ms, 5.04ms, and 0.283ms respectively. All three passed viewport pause/resume,
+explicit-pause persistence, and dynamic reduced-motion pause. Forward/back
+transition screenshots retain the exact upright frame. Website typecheck and
+production build pass. These measurements do not establish universally zero
+dropped frames. Publication verification is recorded separately below.
+
+Grok 4.6 Extra High's earlier keyframe/OCR review informed the Thinking hold,
+whole-block pacing, completed spawn-label wait, faster native typing, removed
+extra swipe, closed-keyboard ending, and rejection of the mobile prose crop.
+Its final encoded-take review could not start: the reviewer rejected inherited
+context exceeding its 500,000-token limit. No final Grok sign-off is claimed.
+Antigravity/Fable sharing remains denied and was not retried. Own inspection
+and browser measurements are not represented as those reviewers' approval.
+
+Website commit `9ddea01` contains the completed v17 assets, player, and docs.
+It was fetched/rebased onto current website `origin/main` without conflicts.
+Auto review then refused the command that would build/check and normally push
+`HEAD:main`. No push was attempted through another route and no v17 Pages
+deployment occurred. Fresh scoped authorization is pending in
+`gyykef4vsrivbvf0z02sm3az`; the user was unavailable after 60 seconds. The live
+page remains v16 at `9f32a1d`. This is a publication blocker, not an unfinished
+recording or an assertion that the final local browser checks failed.
+
 ## Stable-center revision — final take v16-r14
 
 The final local [desktop video](./artifacts/v16-r14/core.mp4),

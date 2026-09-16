@@ -1,10 +1,12 @@
 import * as world from "./world.mjs";
 import { coreProtocolOpen, steveMessageId } from "./protocol.mjs";
+import { stagedShippingFinalize } from "./shipping.mjs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 let recordedAgentId;
 let framing;
+let shippingEvidence;
 const cues = [];
 const cue = (name, demo, phone) => {
     cues.push({ name, seconds: demo.timing.frames / demo.timing.fps });
@@ -26,6 +28,7 @@ export default {
     title: "One conversation, shared work",
     subtitle: "One conversation, shared work",
     transitions: "none",
+    rawWindow: true,
     inferenceModes: ["screenplay"],
     world,
     protocolOpen: coreProtocolOpen,
@@ -94,10 +97,27 @@ export default {
         await demo.page.waitForTimeout(650);
         framing = await demo.framingPrepare(
             demo.page.locator('[data-happy-desktop-ui="conversation-view"]').first(),
+            { rawWindow: true },
         );
         await writeFile(join(output, "framing.json"), JSON.stringify(framing, null, 2));
         if (phone) {
             await phone.prepare({ sessionTitle: "New chat", relaunch: true });
+            if (
+                (await phone.inspect("home-before-preparation")).some((item) =>
+                    /What's new/i.test(item.text ?? ""),
+                )
+            ) {
+                await phone.simulator.run("- tapOn:\n    text: .*What's new.*");
+                await demo.page.waitForTimeout(1300);
+                await phone.simulator.run("- tapOn:\n    point: 38, 88");
+                await phone.prepare({ sessionTitle: "New chat" });
+            }
+            if (
+                (await phone.inspect("home-changelog-read")).some((item) =>
+                    /What's new/i.test(item.text ?? ""),
+                )
+            )
+                throw new Error("Dismiss What's New normally before recording the session list.");
             if ((await gym.client.getHappyIntegration()).integration.status !== "connected")
                 throw new Error("The phone is not connected to this actual demo daemon.");
             // Configure this private session's native composer before any work
@@ -169,10 +189,29 @@ export default {
             id: new URL(submission.url()).pathname.match(/\/v0\/agents\/([^/]+)\/send$/)[1],
         };
         recordedAgentId = parent.id;
+        const { agent } = await gym.client.getAgent(parent.id);
+        world.shippingConfigure(async () => {
+            shippingEvidence = await stagedShippingFinalize(gym, agent.workspaceId, {
+                path: world.logicPath,
+                before: world.logicBefore,
+                after: world.logicAfter,
+            });
+            await writeFile(
+                join(output, "shipping-verified.json"),
+                JSON.stringify(shippingEvidence, null, 2),
+            );
+        });
         await demo.pointerVisible(false);
         cue("work-started", demo, phone);
+        // Reasoning details are intentionally collapsed/hidden by preference;
+        // the authoritative run-status footer still shows Thinking.
+        await demo.page.getByText("Thinking", { exact: true }).first().waitFor();
+        cue("thinking-visible", demo, phone);
+        await demo.page.getByText(world.firstWorkText, { exact: true }).first().waitFor();
+        cue("first-answer-visible", demo, phone);
         await until(demo, () => world.hasReached("reading"), "Fable reading the voice files");
-        await demo.hold(1400);
+        cue("first-work-visible", demo, phone);
+        await demo.hold(1000);
         // Submit only the finished collaborator message: no draft synchronization.
         await gym.client.sendMessage(parent.id, {
             id: steveMessageId,
@@ -183,16 +222,28 @@ export default {
         world.release("reading");
         await demo.page.getByText("Steve", { exact: true }).first().waitFor({ timeout: 15000 });
         cue("steve-steers", demo, phone);
-        await demo.hold(3000);
+        await demo.hold(3500);
 
         world.release("delegation");
         await until(demo, () => world.hasReached("implementation"), "Grok’s delegation");
+        const spawnedModel = demo.page.getByText("Grok 4.6 sub-agent", { exact: true }).first();
+        await spawnedModel.waitFor();
+        await until(
+            demo,
+            () =>
+                spawnedModel.evaluate((element) =>
+                    element
+                        .getAnimations({ subtree: true })
+                        .every((animation) => animation.playState !== "running"),
+                ),
+            "the complete, visibly typed Grok spawn label",
+        );
         cue("grok-spawned", demo, phone);
-        await demo.hold(2000);
+        await demo.hold(2800);
         world.release("implementation");
         await until(demo, () => world.hasReached("astra-launch"), "the file edit");
         cue("logic-edited", demo, phone);
-        await demo.hold(800);
+        await demo.hold(1400);
         world.release("astra-launch");
         await until(demo, () => world.hasReached("finishing"), "Astra’s delegation");
         await until(demo, () => world.hasReached("astra-running"), "Astra’s review");
@@ -237,14 +288,11 @@ export default {
                 throw new Error("The completed phone session must show its actual unread status.");
             await phone.screenshot("phone-home");
             cue("phone-enter", demo, phone);
-            await demo.hold(1800);
+            await demo.hold(2200);
             await phone.simulator.run("- tapOn:\n    text: Voice waveform, .*");
             cue("phone-session-open", demo, phone);
             await phone.simulator.run(
                 "- scrollUntilVisible:\n    element:\n      id: diff-syntax-ready\n    direction: UP\n    timeout: 15000\n    centerElement: true",
-            );
-            await phone.simulator.run(
-                "- swipe:\n    start: 50%, 65%\n    end: 50%, 30%\n    duration: 700",
             );
             await phone.inspect("concise-syntax-highlighted-diff");
             cue("phone-diff-visible", demo, phone);
@@ -281,19 +329,41 @@ export default {
             const typed = await phone.inspect("native-ship-it-typed");
             if (!typed.some((item) => item.text === "ship it"))
                 throw new Error("The native keyboard did not type the exact requested message.");
-            await demo.hold(600);
-            await phone.simulator.run("- tapOn:\n    text: Send\n    index: 0");
+            const sendBounds = typed
+                .find((item) => item.text === "Send")
+                ?.bounds?.match(/^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/);
+            if (!sendBounds) throw new Error("The actual native Send control is missing.");
+            const [, sendLeft, sendTop, sendRight, sendBottom] = sendBounds.map(Number);
+            await phone.simulator.tapPoints([
+                {
+                    x: Math.round((sendLeft + sendRight) / 2),
+                    y: Math.round((sendTop + sendBottom) / 2),
+                },
+            ]);
             cue("phone-sent", demo, phone);
             await until(
                 demo,
                 async () =>
                     JSON.stringify(await gym.client.getMessages(parent.id, { limit: 64 })).includes(
-                        "Got it — the waveform change is ready to ship.",
+                        world.shipResult,
                     ),
                 "the actual phone send and acknowledgement",
             );
             await phone.inspect("phone-acknowledged");
-            await demo.hold(1800);
+            cue("phone-shipped", demo, phone);
+            await demo.hold(2800);
+            // Return naturally to the session list; do not park a phone with
+            // an abandoned keyboard covering half the finished conversation.
+            await phone.simulator.run("- tapOn:\n    point: 38, 88");
+            await phone.prepare({ sessionTitle: "Voice waveform" });
+            const shippedHome = await phone.inspect("phone-shipped-home");
+            const shippedSession = shippedHome.find((item) =>
+                item.text?.startsWith("Voice waveform,"),
+            );
+            if (!shippedSession || /\+3|−1|-1/.test(shippedSession.text))
+                throw new Error(
+                    "The phone's real session-list change counters must clear after shipping.",
+                );
             cue("phone-exit", demo, phone);
         }
         await demo.hold(2500);
@@ -349,9 +419,12 @@ export default {
                 delivery: "steer",
                 logic: "Small real waveform predicate and pre-wired call site, curated for a narrow phone diff",
                 spawn: "Assistant announcement followed by real create_agent; no fabricated tool presentation",
+                shipping:
+                    "Push/deploy outcome is screenplay. The owned fixture edit is restored to its baseline; actual Git watcher and encrypted native counters reconcile to zero. No real push, deployment, or fabricated permission approval.",
             },
             framing,
             cues,
+            shipping: shippingEvidence,
             health: await gym.client.getHealth(),
             agentId: recordedAgentId,
             steveMessageId,

@@ -210,7 +210,8 @@ async function stickerRender(source, pose, camera) {
 
 export async function composeFrames(options) {
     const { appearance, frames, onProgress, sourceDirectory, targetDirectory } = options;
-    const overlay = await overlayBuild(appearance);
+    const rawWindow = options.demo.rawWindow === true;
+    const overlay = rawWindow ? undefined : await overlayBuild(appearance);
     const captions = new Map();
     const cards = new Map();
     const stickers = new Map();
@@ -240,16 +241,18 @@ export async function composeFrames(options) {
         })
             .composite([
                 { input: capture, left: margin, top: margin },
-                { input: overlay, left: 0, top: 0 },
+                ...(overlay ? [{ input: overlay, left: 0, top: 0 }] : []),
             ])
             .png({ compressionLevel: 0 })
             .toBuffer();
 
-        let pipeline = sharp(composed).extract(entry.camera).resize(output.width, output.height, {
-            kernel: "lanczos3",
-            fit: "contain",
-            background: "#090b10",
-        });
+        let pipeline = sharp(composed)
+            .extract(entry.camera)
+            .resize(output.width, output.height, {
+                kernel: "lanczos3",
+                fit: "contain",
+                background: rawWindow ? "#212121" : "#090b10",
+            });
         const layers = [];
         if (entry.sticker) {
             layers.push(
