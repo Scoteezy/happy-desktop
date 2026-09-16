@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 export type GymProfile = "smoke" | "realistic" | "stress";
 
 export type GymWorkloadName =
+    | "public-repository"
     | "boot"
     | "catalog-switch"
     | "long-transcript"
@@ -65,6 +66,15 @@ export interface GymManifest {
     /** Measured local-host scale; it is informational until a real prepare observes it. */
     readonly hostSnapshot: GymDurableHostSnapshot;
     readonly seed: GymSeedPlan;
+    /** Optional, additive real repository fixture; all histories use public Agent APIs. */
+    readonly publicRepository?: {
+        readonly commit: string;
+        readonly source: string;
+        readonly checkout: string;
+        readonly trackedFiles: number;
+        readonly projectId: string;
+        readonly sessionIds: readonly string[];
+    };
 }
 
 export interface GymRunPaths {

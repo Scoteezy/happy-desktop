@@ -9,6 +9,7 @@ import {
     happyAgentExecutableResolve,
 } from "./paths.js";
 import { GymHappyAgentClient } from "./happyAgentProtocol.js";
+import { gymHostEnvironment } from "./hostEnvironment.js";
 import type { GymInferenceServer, GymRunPaths, HappyAgentRuntime } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -31,6 +32,9 @@ export async function happyAgentRuntimeCreate(
             join(paths.home, ".cache"),
             join(paths.home, ".local", "share"),
             join(paths.home, ".local", "state"),
+            ...(process.platform === "win32"
+                ? [join(paths.home, "AppData", "Local"), join(paths.home, "AppData", "Roaming")]
+                : []),
         ].map((directory) => mkdir(directory, { recursive: true })),
     );
     await writeFile(
@@ -50,6 +54,7 @@ export async function happyAgentRuntimeCreate(
         env: environment,
         timeout: 15_000,
         maxBuffer: 2 * 1024 * 1024,
+        windowsHide: true,
     }).catch(() => undefined);
     await unlink(paths.socketPath).catch(() => undefined);
     const runtime = new LocalHappyAgentRuntime(paths, command, environment, inference);
@@ -107,8 +112,9 @@ class LocalHappyAgentRuntime implements StartedHappyAgentRuntime {
         await execFileAsync(this.#command, ["start"], {
             cwd: this.#paths.root,
             env: this.#environment,
-            timeout: 30_000,
+            timeout: 75_000,
             maxBuffer: 2 * 1024 * 1024,
+            windowsHide: true,
         });
         await waitForToken(this.tokenPath, 30_000);
         this.#token = (await readFile(this.tokenPath, "utf8")).trim();
@@ -124,6 +130,7 @@ class LocalHappyAgentRuntime implements StartedHappyAgentRuntime {
             env: this.#environment,
             timeout: 15_000,
             maxBuffer: 2 * 1024 * 1024,
+            windowsHide: true,
         }).catch(() => undefined);
         this.#client = undefined;
         this.#token = "";
@@ -136,30 +143,18 @@ function environmentCreate(
     paths: GymRunPaths,
     inference: GymInferenceServer,
 ): Record<string, string> {
-    const safeSystemPath = "/usr/bin:/bin:/usr/sbin:/sbin";
     return {
+        ...gymHostEnvironment(paths),
         HAPPY_HOME_DIR: paths.happyHome,
-        HOME: paths.home,
-        LANG: "C.UTF-8",
-        LOGNAME: "happy-desktop-gym",
-        PATH: `${paths.bin}:${safeSystemPath}`,
-        // The run's login shell must exist on the host: zsh ships with macOS,
-        // while Linux hosts (including CI runners) are only guaranteed bash.
-        // The fixtures seed both .zprofile and .bash_profile in the run home.
-        SHELL: process.platform === "linux" ? "/bin/bash" : "/bin/zsh",
-        TERM: "xterm-256color",
-        USER: "happy-desktop-gym",
-        XDG_CACHE_HOME: join(paths.home, ".cache"),
-        XDG_CONFIG_HOME: join(paths.home, ".config"),
-        XDG_DATA_HOME: join(paths.home, ".local", "share"),
-        XDG_STATE_HOME: join(paths.home, ".local", "state"),
         HAPPY_AGENT_PROJECTS_DIRECTORY: paths.projects,
         HAPPY_AGENT_SERVER_SOCKET_PATH: paths.socketPath,
         HAPPY_AGENT_SERVER_TOKEN_PATH: paths.tokenPath,
         HAPPY_AGENT_WORKSPACES_DIRECTORY: paths.workspaces,
         HAPPY_GYM_INFERENCE_URL: inference.url,
         HAPPY_GYM_TOKEN: inference.token,
-        TMPDIR: paths.tmp,
+        ...(process.env.HAPPY_DESKTOP_GYM_AGENT_PROFILE === "1"
+            ? { BUN_OPTIONS: `--cpu-prof --cpu-prof-dir "${paths.artifacts}"` }
+            : {}),
     };
 }
 

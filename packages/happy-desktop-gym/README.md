@@ -5,6 +5,46 @@ isolated, host-native Electron performance gym for Happy Agent.
 
 ## Electron Happy Agent gym
 
+### Windows and public-repository load
+
+The native runner supports Windows named pipes, an isolated `USERPROFILE` and
+AppData, native PowerShell tool commands, and hidden background Git/daemon
+helpers. Set `HAPPY_DESKTOP_AGENT_EXECUTABLE` to an absolute built agent `.exe`;
+`HAPPY_DESKTOP_ELECTRON_EXECUTABLE` can select an installed Electron binary.
+The Windows runner uses that agent executable directly, without a symlink or
+`.cmd` wrapper. Desktop navigation clicks the actual sidebar and conversation
+tabs: connection routers do not follow arbitrary URL-hash changes.
+
+Build and run from PowerShell at the repository root:
+
+```powershell
+$env:HAPPY_DESKTOP_PROFILE = '1'
+$env:HAPPY_DESKTOP_PROFILE_MODE = 'optimized'
+# Only when testing a local source daemon reporting 0.0.0:
+$env:HAPPY_ALLOW_SOURCE_AGENT = '1'
+pnpm --dir packages/happy-desktop-electron build
+node --import tsx packages/happy-desktop-gym/sources/electron/cli.ts prepare --profile realistic
+# Use the root printed by prepare and a previously checked-out public repository:
+node --import tsx packages/happy-desktop-gym/sources/electron/cli.ts attach-repository --root C:\path\to\hdg\g-RUNID --repository C:\path\to\public-checkout
+node --import tsx packages/happy-desktop-gym/sources/electron/cli.ts run --root C:\path\to\hdg\g-RUNID --workload public-repository
+```
+
+`attach-repository` makes a separate local clone, checks out the source HEAD,
+records its commit and tracked-file count in the manifest, and seeds four
+40-turn conversations through real Agent APIs. Prompts include checked-out
+source excerpts and file paths; responses use the profile's deterministic long
+history lane. It verifies persistence after restarting the daemon. The source
+checkout stays untouched, and no repository scripts or dependencies are run.
+The additive counts remain distinct from the original versioned dataset.
+Run this workload on `realistic` or `stress` for substantial transcript load.
+
+Set `HAPPY_DESKTOP_GYM_AGENT_PROFILE=1` to additionally request Bun CPU profiles
+in the owned artifacts directory. Bun writes those on process exit; renderer
+Chromium traces and React profiles still come from the app's native profiler.
+Use identical fixtures and profiler settings for before/after comparisons.
+Deterministic inference makes performance repeatable; it does not replace a
+separate test with an authenticated real provider.
+
 The gym creates one disposable run under `<system-temp>/hdg/g-<run-id>` by
 default. Every mutable path belongs to that one short root: `HOME`, `TMPDIR`,
 `HAPPY_HOME_DIR`, the Happy Agent socket and token, Electron user data,

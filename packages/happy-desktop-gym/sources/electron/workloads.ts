@@ -754,8 +754,16 @@ async function workloadRun(
         await mark("profiler-started");
         return finish(await mixedReplayRun(page, app, options, material, targets, mark));
     }
-    if (workload === "long-chat-scroll" || workload === "session-switch-load") {
-        const targets = await mixedSessionTargetsRead(options.clusterSessionIds, options.runtime);
+    if (
+        workload === "long-chat-scroll" ||
+        workload === "session-switch-load" ||
+        workload === "public-repository"
+    ) {
+        const sessionIds =
+            workload === "public-repository"
+                ? (options.manifest.publicRepository?.sessionIds ?? [])
+                : options.clusterSessionIds;
+        const targets = await mixedSessionTargetsRead(sessionIds, options.runtime);
         if (targets.length < 3) {
             return finish({
                 reason: `${workload} needs three durable sessions; found ${targets.length}.`,
@@ -766,7 +774,7 @@ async function workloadRun(
         await options.profilerStart();
         await mark("profiler-started");
         return finish(
-            workload === "long-chat-scroll"
+            workload !== "session-switch-load"
                 ? await longChatScrollRun(page, app, options, material, targets, mark)
                 : await sessionSwitchLoadRun(page, app, options, material, targets, mark),
         );
@@ -5035,9 +5043,6 @@ async function sessionRunBarrierWait(
 }
 
 async function waitForSessionUiReady(page: Page, route: string, sessionId?: string): Promise<void> {
-    await page.waitForFunction((expected) => location.hash === `#${expected}`, route, {
-        timeout: 10_000,
-    });
     try {
         if (sessionId !== undefined) {
             const tab = page
@@ -5277,12 +5282,40 @@ function agentLocation(agent: {
 }
 
 async function navigateRoute(page: Page, path: string): Promise<void> {
-    await page.evaluate((nextPath) => {
-        window.location.hash = nextPath;
-    }, path);
-    await page.waitForFunction((expected) => location.hash === `#${expected}`, path, {
-        timeout: 10_000,
-    });
+    // Each desktop connection has its own memory router. A changed URL hash
+    // no longer navigates it: use the same sidebar and tabs as the reader.
+    const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
+    const [kind, connectionId, groupId, sessionId] = parts;
+    if (kind !== "chats" || !connectionId || !groupId || parts.length > 4)
+        throw new Error(`Gym has no public-control navigation for ${path}.`);
+    const row = page.locator(
+        `[data-happy-desktop-ui="sidebar-item"][data-item-id="${connectionId}/${groupId}"]`,
+    );
+    await row.waitFor({ state: "attached", timeout: 30_000 });
+    if ((await row.getAttribute("aria-current")) !== "page") await row.click();
+    await page.waitForFunction(
+        (id) =>
+            document
+                .querySelector(`[data-happy-desktop-ui="sidebar-item"][data-item-id="${id}"]`)
+                ?.getAttribute("aria-current") === "page",
+        `${connectionId}/${groupId}`,
+        { timeout: 30_000 },
+    );
+    if (sessionId) {
+        const tab = page
+            .locator(`[data-happy-desktop-ui="tab"][data-tab-id="${sessionId}"]`)
+            .first();
+        await tab.waitFor({ state: "attached", timeout: 30_000 });
+        if ((await tab.getAttribute("aria-selected")) !== "true") await tab.click();
+        await page.waitForFunction(
+            (id) =>
+                document
+                    .querySelector(`[data-happy-desktop-ui="tab"][data-tab-id="${id}"]`)
+                    ?.getAttribute("aria-selected") === "true",
+            sessionId,
+            { timeout: 30_000 },
+        );
+    }
 }
 
 async function waitForAny(page: Page, selectors: readonly string[]): Promise<void> {

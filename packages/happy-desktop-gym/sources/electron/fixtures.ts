@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import type { GymHappyAgentClient, HappyAgentWorkspace } from "./happyAgentProtocol.js";
+import { gymHostEnvironment } from "./hostEnvironment.js";
 import type { GymFixtureCounts, GymManifest, GymProject, GymRunPaths } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -53,11 +54,8 @@ export async function gitFixturesCreate(
         throw new Error("Gym worktree distribution does not match its target worktree count.");
     }
     const gitEnvironment = {
-        HOME: paths.home,
-        LANG: "C.UTF-8",
-        PATH: `${paths.bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
-        TMPDIR: paths.tmp,
-        GIT_CONFIG_GLOBAL: "/dev/null",
+        ...gymHostEnvironment(paths),
+        GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
         GIT_CONFIG_NOSYSTEM: "1",
     };
     const repositories = await Promise.all(
@@ -307,7 +305,7 @@ async function createRepository(
 
 async function workingTreeChangesApply(path: string, manifest: GymManifest): Promise<void> {
     const scale = scaleFor(manifest);
-    const checkoutLabel = path.split("/").at(-1) ?? "checkout";
+    const checkoutLabel = basename(path);
     await writeFile(
         join(path, "src/recent-change.ts"),
         [
@@ -435,6 +433,7 @@ async function runGit(
         env: { ...environment, GIT_TERMINAL_PROMPT: "0" },
         maxBuffer: 4 * 1024 * 1024,
         timeout: 60_000,
+        windowsHide: true,
     });
 }
 
@@ -445,12 +444,14 @@ async function runGitCapture(cwd: string, args: readonly string[]): Promise<stri
             HOME: process.env.HOME,
             LANG: "C.UTF-8",
             PATH: process.env.PATH,
-            GIT_CONFIG_GLOBAL: "/dev/null",
+            SystemRoot: process.env.SystemRoot,
+            GIT_CONFIG_GLOBAL: process.platform === "win32" ? "NUL" : "/dev/null",
             GIT_CONFIG_NOSYSTEM: "1",
             GIT_TERMINAL_PROMPT: "0",
         },
         maxBuffer: 8 * 1024 * 1024,
         timeout: 60_000,
+        windowsHide: true,
     });
     return result.stdout;
 }

@@ -2,11 +2,13 @@ import { gymPrepare, gymRun } from "./gym.js";
 import { gymProfilesList } from "./manifest.js";
 import { gymRunClean, gymRunsRootResolve } from "./paths.js";
 import { gymSmokeRun } from "./smoke.js";
+import { gymPublicRepositoryAttach } from "./publicRepository.js";
 import type { GymProfile, GymWorkloadName } from "./types.js";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 const workloads: readonly GymWorkloadName[] = [
+    "public-repository",
     "boot",
     "catalog-switch",
     "long-transcript",
@@ -40,6 +42,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     if (command === "smoke") {
         const result = await gymSmokeRun();
         console.log(JSON.stringify({ command, ...result }, null, 2));
+        return;
+    }
+    if (command === "attach-repository") {
+        if (!flags.repository) throw new Error("--repository is required.");
+        await gymPublicRepositoryAttach(required(flags, "root"), flags.repository);
         return;
     }
     if (command === "prepare") {
@@ -92,6 +99,7 @@ function parseFlags(args: readonly string[]): {
     readonly artifactDir?: string;
     readonly workload?: string;
     readonly uiTrace?: boolean;
+    readonly repository?: string;
 } {
     const result: {
         profile?: string;
@@ -99,6 +107,7 @@ function parseFlags(args: readonly string[]): {
         artifactDir?: string;
         workload?: string;
         uiTrace?: boolean;
+        repository?: string;
     } = {};
     for (let index = 0; index < args.length; index += 1) {
         const value = args[index];
@@ -110,6 +119,8 @@ function parseFlags(args: readonly string[]): {
         else if (value === "--workload")
             result.workload = requiredValue(value, next, () => index++);
         else if (value === "--ui-trace") result.uiTrace = true;
+        else if (value === "--repository")
+            result.repository = requiredValue(value, next, () => index++);
         else throw new Error(`Unknown option '${value}'.`);
     }
     return result;
@@ -150,6 +161,7 @@ function printHelp(): void {
 
 Commands:
   prepare --profile smoke|realistic|stress [--root PATH] [--artifact-dir PATH]
+  attach-repository --root PATH --repository ABSOLUTE_LOCAL_CHECKOUT
   run [--profile PROFILE] [--root PATH] [--workload WORKLOAD] [--ui-trace]
   smoke
   clean --root PATH
@@ -157,7 +169,7 @@ Commands:
 Workloads:
   boot, catalog-switch, long-transcript, file-switch-warm,
   long-chat-scroll, session-switch-load, highlight-warm, changed-files-warm,
-  streaming, mixed-replay, memory-idle, window-edge-resize, archive-reconcile, all
+  streaming, mixed-replay, memory-idle, window-edge-resize, archive-reconcile, public-repository, all
 
 The default root is ${gymRunsRootResolve()}/g-<run-id>.
 Only roots carrying the Gym ownership marker can be cleaned.`);
