@@ -90,7 +90,7 @@ export class HappyAgentServiceBrowser {
     popupAllowed(guest: WebContents, candidate: string): boolean {
         try {
             const address = new URL(candidate);
-            if (!localAddress(address)) return true;
+            if (!localAddress(address) || this.#directLocalAddress(address)) return true;
             return (
                 this.owns(guest) &&
                 this.#serviceId(address) !== undefined &&
@@ -158,6 +158,16 @@ export class HappyAgentServiceBrowser {
         return /^s-[a-z][a-z0-9]{1,127}$/.test(label) ? label.slice(2) : undefined;
     }
 
+    #directLocalAddress(address: URL): boolean {
+        // Ordinary local development is browser traffic, independent of the daemon's
+        // service API. Explicit service selectors retain their private admission path.
+        return (
+            this.target.connectionId === null &&
+            loopbackAddress(address) &&
+            serviceSelector(address) === undefined
+        );
+    }
+
     async #resolve(candidate: string): Promise<string> {
         if (candidate === "about:blank") return candidate;
         const address = new URL(candidate);
@@ -168,13 +178,13 @@ export class HappyAgentServiceBrowser {
             candidate.length > 65536
         )
             throw new Error("The browser address is invalid.");
+        if (this.#directLocalAddress(address)) return address.href;
         let selector: { id: string } | { port: number } | undefined;
         const own = this.#serviceId(address);
         if (own) selector = { id: own };
         else {
-            const named = /^service-([a-z][a-z0-9]{1,127})\.localhost$/.exec(address.hostname);
-            if (named && address.protocol === "http:" && !address.port)
-                selector = { id: named[1]! };
+            const named = serviceSelector(address);
+            if (named && address.protocol === "http:" && !address.port) selector = { id: named };
             else if (
                 ["localhost", "127.0.0.1", "[::1]", "0.0.0.0"].includes(address.hostname) &&
                 address.protocol === "http:"
@@ -213,7 +223,7 @@ export class HappyAgentServiceBrowser {
             const normalized = serviceBrowserAddress(details.url);
             const id = normalized ? this.#serviceId(normalized) : undefined;
             if (!id) {
-                if (localAddress(address)) {
+                if (localAddress(address) && !this.#directLocalAddress(address)) {
                     release(details.id);
                     callback({ cancel: true });
                     return;
@@ -344,10 +354,17 @@ function withoutHash(candidate: string): string {
 }
 
 function localAddress(address: URL): boolean {
+    return loopbackAddress(address) || address.hostname.endsWith(".happy.invalid");
+}
+
+function serviceSelector(address: URL): string | undefined {
+    return /^service-([a-z][a-z0-9]{1,127})\.localhost$/.exec(address.hostname)?.[1];
+}
+
+function loopbackAddress(address: URL): boolean {
     return (
         address.hostname === "localhost" ||
         address.hostname.endsWith(".localhost") ||
-        address.hostname.endsWith(".happy.invalid") ||
         address.hostname.startsWith("127.") ||
         ["0.0.0.0", "[::1]"].includes(address.hostname)
     );

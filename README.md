@@ -143,8 +143,10 @@ and take your own sessions with you.
   Happy instead of bouncing to an external browser.
   Workspace service browsing keeps Chromium on your machine and sends only a
   selected service's traffic through its owning Happy Agent connection. Ask the
-  agent to start the server with `service_start`, then open `http://localhost:PORT`
-  in that workspace. An exact service can be opened as
+  agent to start a remote server with `service_start`, then open `http://localhost:PORT`
+  in that remote workspace. In local workspaces, ordinary localhost URLs stay direct
+  and do not require the service API or a registered service. An exact sandboxed
+  service, local or remote, can be opened as
   `http://service-SERVICE_ID.localhost`; the browser switches to a private,
   workspace-specific origin. Ordinary internet traffic stays direct. This does
   not expose ordinary shell listeners or create a public sharing link. The first
