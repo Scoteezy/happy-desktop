@@ -63,7 +63,7 @@ export interface LocalHappyAgentConnection {
 }
 
 export interface LocalHappyAgentConnector {
-    connect(): Promise<LocalHappyAgentConnection>;
+    connect(options?: { readonly startIfMissing?: boolean }): Promise<LocalHappyAgentConnection>;
 }
 
 /** The selected standalone Happy Agent release used by the packaged desktop. */
@@ -229,7 +229,7 @@ export function localHappyAgentConnectorCreate(
     const debug = options.debug ?? (() => undefined);
     const daemonBinary = options.daemonBinary;
     return {
-        async connect(): Promise<LocalHappyAgentConnection> {
+        async connect(connectionOptions = {}): Promise<LocalHappyAgentConnection> {
             const explicitSocketPath = baseEnvironment.HAPPY_AGENT_SERVER_SOCKET_PATH?.trim();
             const explicitTokenPath = baseEnvironment.HAPPY_AGENT_SERVER_TOKEN_PATH?.trim();
             if (explicitSocketPath && explicitTokenPath) {
@@ -248,6 +248,12 @@ export function localHappyAgentConnectorCreate(
             const defaultDaemonPaths = happyAgentDaemonPathsResolve(baseEnvironment);
             const runningDaemon = await sharedDaemonAttach(defaultDaemonPaths, clientCreate, wait);
             if (runningDaemon) return localHappyAgentConnectionCreate(runningDaemon, wait);
+
+            if (connectionOptions.startIfMissing === false) {
+                throw new Error(
+                    "Happy Agent is no longer running. Reopen Happy or start the daemon to resume.",
+                );
+            }
 
             if (daemonBinary) {
                 const selected = await daemonBinary.selectedBinary();

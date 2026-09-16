@@ -368,7 +368,9 @@ export class DesktopRuntime implements AsyncDisposable {
                 this.happyAgentProxy !== proxy
             )
                 return;
-            const replacement = await this.connector.connect();
+            // Reconnect may attach to a replacement, but must respect a user who stopped the
+            // daemon from its tray or CLI. Initial startup and explicit retry still start it.
+            const replacement = await this.connector.connect({ startIfMissing: false });
             if (
                 this.closed ||
                 this.activationGeneration !== generation ||

@@ -13,6 +13,25 @@ afterEach(async () => {
 });
 
 describe("local Happy Agent connection", () => {
+    it("does not restart a stopped daemon during background reconnection", async () => {
+        const root = await mkdtemp(join(tmpdir(), "happy-stopped-daemon-"));
+        directories.push(root);
+        const selectedBinary = vi.fn(async () => {
+            throw new Error("Reconnect attempted to start a daemon.");
+        });
+        const connector = localHappyAgentConnectorCreate({
+            environment: { HAPPY_HOME_DIR: join(root, ".happy") },
+            daemonBinary: { selectedBinary, launchEnvironment: async () => ({}) },
+        });
+        await expect(connector.connect({ startIfMissing: false })).rejects.toThrow(
+            "no longer running",
+        );
+        expect(selectedBinary).not.toHaveBeenCalled();
+        // A subsequent explicit startup retains the normal launch path.
+        await expect(connector.connect()).rejects.toThrow("attempted to start");
+        expect(selectedBinary).toHaveBeenCalledOnce();
+    });
+
     it("connects to an exact daemon named by HAPPY_AGENT_SERVER_SOCKET_PATH and HAPPY_AGENT_SERVER_TOKEN_PATH, never discovering or starting Happy Agent", async () => {
         const root = await mkdtemp(join(tmpdir(), "happy-local-happy-agent-"));
         directories.push(root);
