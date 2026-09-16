@@ -586,6 +586,24 @@ function projectWorkspace(
     };
 }
 
+// A catalog event replaces one immutable Agent. Keep the other session rows
+// through all projection layers instead of allocating the whole catalog again.
+// Store only workspace context, never the workspace's sibling-agent array.
+const groupSessionCache = new WeakMap<
+    Agent,
+    {
+        config: DaemonConfig;
+        draft: AgentDraftSnapshot | undefined;
+        storedMode: MessageMode | null | undefined;
+        endpoint: string;
+        cwd: string;
+        workspaceKind: Workspace["kind"] | undefined;
+        botId: string | undefined;
+        projectId: string;
+        value: GroupSession;
+    }
+>();
+
 function projectAgent(
     agent: Agent,
     workspace: Workspace | undefined,
@@ -594,10 +612,24 @@ function projectAgent(
     draft?: AgentDraftSnapshot,
     storedMode?: MessageMode | null,
 ): GroupSession {
-    const mode = modeOf(config, draft, storedMode);
-    const serviceTier = happyAgentServiceTierFromWire(mode.serviceTier);
     const botId = workspace?.kind === "bot" ? (workspace.botId ?? undefined) : undefined;
     const projectId = workspace?.projectId ?? agent.workspaceId;
+    const cwd = workspacePath(workspace);
+    const cached = groupSessionCache.get(agent);
+    if (
+        cached &&
+        cached.config === config &&
+        cached.draft === draft &&
+        cached.storedMode === storedMode &&
+        cached.endpoint === endpoint &&
+        cached.cwd === cwd &&
+        cached.workspaceKind === workspace?.kind &&
+        cached.botId === botId &&
+        cached.projectId === projectId
+    )
+        return cached.value;
+    const mode = modeOf(config, draft, storedMode);
+    const serviceTier = happyAgentServiceTierFromWire(mode.serviceTier);
     // A bot's one conversation is scoped to the bot. Only a project's workspace
     // can answer with a project, so the bot case is decided before that.
     const scope =
@@ -606,12 +638,12 @@ function projectAgent(
             : workspace?.kind === "root"
               ? ({ kind: "project", projectId } as const)
               : ({ kind: "workspace", projectId, workspaceId: agent.workspaceId } as const);
-    return {
+    const value: GroupSession = {
         activeSubagents: agent.subagents.running,
         archived: agent.archivedAt !== null,
         ...(agent.archivedAt === null ? {} : { archivedAt: agent.archivedAt }),
         createdAt: agent.createdAt,
-        cwd: workspacePath(workspace),
+        cwd,
         ...(draft?.value == null
             ? {}
             : {
@@ -647,6 +679,18 @@ function projectAgent(
               }),
         updatedAt: agent.updatedAt,
     };
+    groupSessionCache.set(agent, {
+        config,
+        draft,
+        storedMode,
+        endpoint,
+        cwd,
+        workspaceKind: workspace?.kind,
+        botId,
+        projectId,
+        value,
+    });
+    return value;
 }
 
 function projectQuestion(question: Question): UserInputRequest {

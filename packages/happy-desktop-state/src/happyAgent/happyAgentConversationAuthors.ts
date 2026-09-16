@@ -67,11 +67,15 @@ function summaryActivity(
 }
 
 /** Projects one Happy Agent session into the shared conversation-list row. */
+const summaryCache = new WeakMap<HappyAgentConversationSummaryInput, ConversationSummary>();
+
 export function happyAgentConversationSummaryProject(
     session: HappyAgentConversationSummaryInput,
 ): ConversationSummary {
+    const cached = summaryCache.get(session);
+    if (cached) return cached;
     const activity = summaryActivity(session);
-    return {
+    const value: ConversationSummary = {
         id: session.id,
         title: summaryTitle(session),
         subtitle: session.displayCwd || session.cwd,
@@ -80,4 +84,6 @@ export function happyAgentConversationSummaryProject(
         ...(session.unreadReason === undefined ? {} : { unread: true }),
         participants: [happyAgentOwnerAuthor, agentAuthor],
     };
+    summaryCache.set(session, value);
+    return value;
 }

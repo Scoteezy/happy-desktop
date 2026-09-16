@@ -127,6 +127,36 @@ async function liveHarness(): Promise<
 
 // --- startup and SSE reconnection ---------------------------------------
 
+it("keeps 523 untouched catalog sessions identical when one session changes", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-large" });
+    for (let index = 0; index < 524; index += 1) {
+        daemon.agentSeed(project.id, { id: `agent-${index}`, title: `Conversation ${index}` });
+    }
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.projects[0]?.sessions.length).toBe(524));
+    const before = new Map(groups.projects[0]!.sessions.map((session) => [session.id, session]));
+    const current = daemon.agentGet("agent-0");
+    daemon.eventEmit("agent.updated", {
+        agentId: current.id,
+        previousVersion: current.version,
+        version: daemon.versionNext(),
+        changes: { title: "Changed conversation", status: "working", updatedAt: 42_000 },
+    });
+    await vi.waitFor(() =>
+        expect(groups.projects[0]?.sessions.find((s) => s.id === current.id)?.title).toBe(
+            "Changed conversation",
+        ),
+    );
+    for (const session of groups.projects[0]!.sessions) {
+        if (session.id === current.id) {
+            expect(session).not.toBe(before.get(session.id));
+            expect(session.status).toBe("running");
+            expect(session.updatedAt).toBe(42_000);
+        } else expect(session).toBe(before.get(session.id));
+    }
+});
+
 it("connects through health and bootstrap, then streams from the bootstrap cursor", async () => {
     const { connection, daemon } = harnessOpen();
     daemon.projectSeed({ id: "project-a" });

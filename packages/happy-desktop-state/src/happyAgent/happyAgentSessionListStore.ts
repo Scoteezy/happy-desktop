@@ -890,10 +890,10 @@ export function happyAgentSessionListStoreCreate(
                     snapshot.catalog,
                     snapshot.sessions,
                 );
-                const projected = happyAgentProjectGroupsProject(
-                    snapshot.catalog,
-                    pending.sessions,
-                );
+                const projected =
+                    pending.sessions === snapshot.sessions
+                        ? authoritativeProjected
+                        : happyAgentProjectGroupsProject(snapshot.catalog, pending.sessions);
                 optimisticOrdersConfirm(authoritativeProjected);
                 // Judged against the previous authoritative read, so a row this
                 // store took out optimistically is still a change when the host

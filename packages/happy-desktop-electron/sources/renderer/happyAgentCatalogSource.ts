@@ -278,6 +278,8 @@ function gitStatusProject(status: string): HappyAgentGitChangedFile["status"] {
     return "modified";
 }
 
+const sessionSummaryCache = new WeakMap<GroupSession, HappyAgentSessionSummary>();
+
 function sessionProject(
     session: GroupSession,
     /**
@@ -288,13 +290,17 @@ function sessionProject(
      */
     projectId: HappyAgentProjectId,
 ): HappyAgentSessionSummary {
-    return {
+    const cached = sessionSummaryCache.get(session);
+    if (cached?.projectId === projectId) return cached;
+    const value: HappyAgentSessionSummary = {
         ...conversationProject(session),
         projectId,
         ...(session.scope.kind === "workspace"
             ? { worktreeId: session.scope.workspaceId as HappyAgentWorktreeId }
             : {}),
     };
+    sessionSummaryCache.set(session, value);
+    return value;
 }
 
 /**
