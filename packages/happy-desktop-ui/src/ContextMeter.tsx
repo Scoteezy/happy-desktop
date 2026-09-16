@@ -8,15 +8,26 @@ export interface ContextMeterProps {
     readonly usedTokens: number;
     /** The whole context window. */
     readonly totalTokens: number;
+    /**
+     * Tokens at which the daemon compacts the conversation on its own. The notch sits here and
+     * the colour turns as the fill approaches it. Without it the meter falls back to marking
+     * three quarters of the window.
+     */
+    readonly compactTokens?: number;
     /** True when the underlying count is estimated rather than reported. */
     readonly approximate?: boolean;
     /** False while the model window is known but no provider measurement exists yet. */
     readonly measured?: boolean;
 }
 
-/** Above this share used, the bar asks for a compaction; above the second, it insists. */
-const COMPACT_FRACTION = 0.75;
-const CRITICAL_FRACTION = 0.9;
+/** Where compaction is marked when the model publishes no threshold of its own. */
+const DEFAULT_COMPACT_FRACTION = 0.75;
+/**
+ * The bar takes its warning colour once the fill is within this share of the compaction point,
+ * so it turns yellow while there is still room to finish a thought, and its error colour at the
+ * point itself, when the next turn compacts.
+ */
+const WARNING_MARGIN = 0.2;
 const contextMeterFractions = new WeakMap<HTMLElement, number>();
 
 function contextMeterAnimate(node: HTMLElement | null, fraction: number): void {
@@ -106,18 +117,26 @@ export function ContextMeter(props: ContextMeterProps) {
     const used = measured ? Math.max(0, Math.min(props.usedTokens, total)) : 0;
     const fraction = total === 0 ? 0 : used / total;
     const percent = Math.round(fraction * 100);
+    const compactFraction =
+        props.compactTokens !== undefined && props.compactTokens > 0 && props.compactTokens < total
+            ? props.compactTokens / total
+            : DEFAULT_COMPACT_FRACTION;
     const tone =
-        fraction >= CRITICAL_FRACTION
+        fraction >= compactFraction
             ? "critical"
-            : fraction >= COMPACT_FRACTION
+            : fraction >= compactFraction * (1 - WARNING_MARGIN)
               ? "compact"
               : "ample";
+    const compactNote =
+        props.compactTokens === undefined
+            ? ""
+            : ` \u00b7 compacts at ${tokensFormat(props.compactTokens)}`;
     return (
         <div
             aria-label={
                 measured
-                    ? `${tokensFormat(used)} of ${tokensFormat(total)} context tokens used${props.approximate ? ", approximate" : ""}`
-                    : `Context measurement pending for a ${tokensFormat(total)} token window`
+                    ? `${tokensFormat(used)} of ${tokensFormat(total)} context tokens used${props.approximate ? ", approximate" : ""}${compactNote}`
+                    : `Context measurement pending for a ${tokensFormat(total)} token window${compactNote}`
             }
             className={["happy-context-meter", props.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="context-meter"
@@ -130,8 +149,8 @@ export function ContextMeter(props: ContextMeterProps) {
             style={props.style}
             title={
                 measured
-                    ? `${tokensFormat(used)} of ${tokensFormat(total)} context tokens used${props.approximate ? " (approximate)" : ""}${tone === "ample" ? "" : " — compact the conversation to free room"}`
-                    : `Waiting for the first context measurement (${tokensFormat(total)} token window)`
+                    ? `${tokensFormat(used)} of ${tokensFormat(total)} context tokens used${props.approximate ? " (approximate)" : ""}${compactNote}${tone === "critical" ? " — the next turn compacts the conversation" : tone === "compact" ? " — compaction is close; compact now to choose the moment" : ""}`
+                    : `Waiting for the first context measurement (${tokensFormat(total)} token window${compactNote})`
             }
         >
             <span aria-hidden="true" className="happy-context-meter__readout">
@@ -158,13 +177,13 @@ export function ContextMeter(props: ContextMeterProps) {
                 />
                 <span className="happy-context-meter__shine" />
                 {/*
-                 * Where compacting becomes the right move, notched into the
-                 * track itself, so the fill approaching it is legible before the
-                 * colour changes rather than only after.
+                 * Where the daemon compacts, notched into the track itself, so
+                 * the fill approaching it is legible before the colour changes
+                 * rather than only after. The notch is centred on the point.
                  */}
                 <span
                     className="happy-context-meter__threshold"
-                    style={{ left: `${String(COMPACT_FRACTION * 100)}%` }}
+                    style={{ left: `calc(${String(compactFraction * 100)}% - 1.5px)` }}
                 />
             </span>
         </div>

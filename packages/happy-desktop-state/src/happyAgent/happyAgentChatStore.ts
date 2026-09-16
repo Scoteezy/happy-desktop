@@ -33,6 +33,7 @@ import type {
     HappyAgentImageInput,
     HappyAgentMenusSnapshot,
     HappyAgentContextGauge,
+    HappyAgentModel,
     HappyAgentModelCatalog,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
@@ -305,28 +306,42 @@ function contextGaugeDerive(
     context: HappyAgentSessionUsage["context"],
     selection?: { readonly modelId: string; readonly providerId: string },
 ): HappyAgentContextGauge | undefined {
+    const catalogModel = (providerId: string, modelId: string) =>
+        catalog.providers
+            .find((provider) => provider.id === providerId)
+            ?.models.find((model) => model.id === modelId);
+    // The daemon compacts at the model's published threshold, so that point, not a share of
+    // the window, is where the meter marks compaction; a limit at or past the window is no
+    // threshold at all.
+    const compactTokensOf = (
+        model: HappyAgentModel | undefined,
+        total: number,
+    ): { readonly compactTokens: number } | Record<never, never> =>
+        model?.autoCompactWindow !== undefined &&
+        model.autoCompactWindow > 0 &&
+        model.autoCompactWindow < total
+            ? { compactTokens: model.autoCompactWindow }
+            : {};
     if (!context) {
         if (selection === undefined) return undefined;
-        const total = catalog.providers
-            .find((provider) => provider.id === selection.providerId)
-            ?.models.find((model) => model.id === selection.modelId)?.contextWindow;
+        const model = catalogModel(selection.providerId, selection.modelId);
+        const total = model?.contextWindow;
         if (total === undefined || total <= 0) return undefined;
         return {
             usedTokens: 0,
             remainingTokens: total,
             totalTokens: total,
             remainingFraction: 1,
+            ...compactTokensOf(model, total),
             approximate: false,
             measured: false,
         };
     }
-    const catalogWindow =
+    const model =
         context.modelId === undefined
             ? undefined
-            : catalog.providers
-                  .find((provider) => provider.id === context.providerId)
-                  ?.models.find((model) => model.id === context.modelId)?.contextWindow;
-    const total = context.contextWindow ?? catalogWindow;
+            : catalogModel(context.providerId, context.modelId);
+    const total = context.contextWindow ?? model?.contextWindow;
     if (total == null || total <= 0) return undefined;
     const usedTokens = Math.max(0, Math.min(context.totalTokens, total));
     const remainingTokens = total - usedTokens;
@@ -335,6 +350,7 @@ function contextGaugeDerive(
         remainingTokens,
         totalTokens: total,
         remainingFraction: remainingTokens / total,
+        ...compactTokensOf(model, total),
         approximate: context.approximate,
     };
 }

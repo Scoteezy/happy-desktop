@@ -161,7 +161,13 @@ export interface HappyAgentModel {
     readonly name: string;
     readonly thinkingLevels: readonly HappyAgentThinkingLevel[];
     readonly defaultThinkingLevel: HappyAgentThinkingLevel;
+    /** The hard window in tokens; absent for a custom model whose limit is unknown. */
     readonly contextWindow?: number;
+    /**
+     * The measured conversation size at which the daemon compacts automatically, below the
+     * window. Absent when the daemon predates the field or the model has no curated threshold.
+     */
+    readonly autoCompactWindow?: number;
 }
 
 export interface HappyAgentModelProvider {
@@ -313,6 +319,12 @@ export interface HappyAgentContextGauge {
     readonly totalTokens: number;
     /** Remaining share of the window, 0–1. */
     readonly remainingFraction: number;
+    /**
+     * Tokens at which the daemon compacts the conversation on its own, when the model
+     * publishes that point. The meter draws its notch and takes colour from this, not from a
+     * fixed share of the window.
+     */
+    readonly compactTokens?: number;
     /** True when the underlying token count is estimated, not provider-reported. */
     readonly approximate: boolean;
     /** False until the provider reports the active conversation's token count. */

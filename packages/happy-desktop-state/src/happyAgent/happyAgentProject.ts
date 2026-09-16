@@ -26,6 +26,12 @@ function modelProject(
         thinkingLevels: (reference?.efforts ?? definition.efforts) as HappyAgentThinkingLevel[],
         defaultThinkingLevel: (reference?.defaultEffort ??
             definition.defaultEffort) as HappyAgentThinkingLevel,
+        ...(definition.contextWindow === null ? {} : { contextWindow: definition.contextWindow }),
+        // An older daemon omits the threshold; the gauge then has no notch to draw rather than a
+        // guessed one.
+        ...(definition.autoCompactWindow === undefined || definition.autoCompactWindow === null
+            ? {}
+            : { autoCompactWindow: definition.autoCompactWindow }),
     };
 }
 

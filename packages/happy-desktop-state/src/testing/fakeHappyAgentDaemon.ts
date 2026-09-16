@@ -127,6 +127,7 @@ function configDefault(): DaemonConfig {
         mcpServers: {},
         models: {
             "test-model": {
+                autoCompactWindow: 80_000,
                 contextWindow: 100_000,
                 defaultEffort: "medium",
                 efforts: ["low", "medium", "high"],

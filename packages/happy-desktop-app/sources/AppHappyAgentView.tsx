@@ -4751,6 +4751,7 @@ function HappyAgentConversationSurface(props: {
                         conversation.contextGauge ? (
                             <ContextMeter
                                 approximate={conversation.contextGauge.approximate}
+                                compactTokens={conversation.contextGauge.compactTokens}
                                 measured={conversation.contextGauge.measured}
                                 totalTokens={conversation.contextGauge.totalTokens}
                                 usedTokens={conversation.contextGauge.usedTokens}

@@ -106,12 +106,14 @@
 }
 
 /* The compaction mark: a notch in the track, not a line over the fill, so the
-   fill passing it covers it rather than being cut by it. */
+   fill passing it covers it rather than being cut by it. Three pixels, because
+   a one-pixel gap in a four-pixel track was invisible at a glance, and the whole
+   point of the notch is to be seen before the colour changes. */
 .happy-context-meter__threshold {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 1px;
+    width: 3px;
     background: var(--surface);
     opacity: 0.9;
 }
