@@ -8,13 +8,13 @@ import {
     screen,
     session as electronSession,
     shell,
+    webContents as electronWebContents,
     type BrowserWindowConstructorOptions,
     type MenuItemConstructorOptions,
     type OpenDialogOptions,
     type WebContents,
 } from "electron";
 import { existsSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopRuntime } from "./desktopRuntime";
@@ -66,17 +66,17 @@ import {
 import { localHappyAgentConnectorCreate, localRuntimeProbe } from "./localHappyAgent";
 import { LocalOnboarding } from "./localOnboarding";
 import { legacyCliConnectorCreate } from "./legacyCliConnect";
-import { desktopBrowserProxyTargetValidate } from "./happyAgentIpcValidation";
+import {
+    desktopBrowserCommandValidate,
+    desktopBrowserProxyTargetValidate,
+} from "./happyAgentIpcValidation";
 import { htmlPreviewProxyCreate, type HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
 import { happyAgentRendererOrigin } from "./happyAgentRendererProxy";
 import {
     happyAgentRendererSessionCreate,
     type HappyAgentRendererSession,
 } from "./happyAgentRendererSession";
-import {
-    happyAgentBrowserProxyCreate,
-    type HappyAgentBrowserProxyHandle,
-} from "./happyAgentBrowserProxy";
+import { HappyAgentServiceBrowser } from "./happyAgentServiceBrowser";
 import { desktopConfigPath, DesktopConfigStore } from "./desktopConfig";
 import { DesktopDebugController } from "./desktopDebugController";
 import { desktopMainInspectorStart } from "./desktopInspector";
@@ -301,7 +301,7 @@ let desktopWindowStateStore: DesktopWindowStateStore;
 let onboarding: LocalOnboarding;
 let quitting = false;
 /** Each workspace keeps its own network profile, including while its tabs are hidden. */
-const browserProxies = new Map<string, HappyAgentBrowserProxyHandle>();
+const browserProxies = new Map<string, HappyAgentServiceBrowser>();
 let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
 let browserProxyConnectionId: number | undefined;
 let browserProxyOperation = Promise.resolve();
@@ -547,27 +547,15 @@ function browserProxySerial<T>(work: () => Promise<T>): Promise<T> {
 
 function browserProxyApply(target: DesktopBrowserProxyTarget): Promise<string> {
     return browserProxySerial(async () => {
-        const identity = createHash("sha256")
-            .update(JSON.stringify([target.connectionId, target.workspaceId]))
-            .digest("hex");
-        const partition = `persist:happy-browser-${identity}`;
+        const partition = HappyAgentServiceBrowser.partition(target);
         if (browserProxies.has(partition)) return partition;
+        if (browserProxies.size >= 128)
+            throw new Error("Too many workspace browser profiles are open.");
         const browserSession = electronSession.fromPartition(partition, { cache: true });
         await browserSessionConfigure(browserSession);
-        let candidate: HappyAgentBrowserProxyHandle | undefined;
+        let candidate: HappyAgentServiceBrowser | undefined;
         try {
-            candidate = await happyAgentBrowserProxyCreate({
-                // Resolve through the current runtime on every request, so a
-                // reconnect resumes this profile without remounting its guests.
-                // An unavailable route rejects; it never falls back to direct.
-                openHttpProxy: () => runtime.openHttpProxy(target),
-            });
-            await browserSession.setProxy({
-                mode: "fixed_servers",
-                proxyBypassRules: "<-loopback>",
-                proxyRules: `http://127.0.0.1:${String(candidate.port)}`,
-            });
-            await browserSession.closeAllConnections();
+            candidate = await HappyAgentServiceBrowser.create(browserSession, target, runtime);
             browserProxies.set(partition, candidate);
             return partition;
         } catch (error) {
@@ -699,14 +687,16 @@ function htmlPreviewUrl(candidate: string): string | undefined {
 
 app.on("login", (event, _webContents, _details, authInfo, callback) => {
     if (!authInfo.isProxy || authInfo.host !== "127.0.0.1") return;
-    // Both loopback proxies this process runs are credentialed, and the
-    // credentials never leave it: the port says which one is asking.
-    for (const proxy of browserProxies.values())
-        if (authInfo.port === proxy.port) {
-            event.preventDefault();
-            callback(proxy.username, proxy.password);
-            return;
-        }
+    // Chromium's ws:// CONNECT uses proxy login before its inner Upgrade can
+    // carry request-bound admission. Only the exact owning guest may obtain it.
+    for (const browser of browserProxies.values()) {
+        if (authInfo.port !== browser.proxy.port) continue;
+        event.preventDefault();
+        if (_webContents && browser.owns(_webContents))
+            callback(browser.proxy.username, browser.proxy.password);
+        else callback();
+        return;
+    }
     if (authInfo.port === htmlPreviewProxy?.port) {
         event.preventDefault();
         callback(htmlPreviewProxy.username, htmlPreviewProxy.password);
@@ -718,7 +708,7 @@ function browserGuestAttach(window: BrowserWindow): void {
         const previewGuest = params.partition === happyHtmlPreviewPartition;
         const allowed = previewGuest
             ? htmlPreviewUrl(params.src) !== undefined
-            : browserProxies.has(params.partition) && browserWebUrl(params.src, true);
+            : browserProxies.has(params.partition) && params.src === "about:blank";
         if (!allowed) {
             event.preventDefault();
             return;
@@ -763,7 +753,21 @@ function browserGuestAttach(window: BrowserWindow): void {
             // opening a window from it, is browsing, and browsing is the browser
             // tab's job — so the guest stays on the document it was opened with.
             guest.setWindowOpenHandler(({ url }) => {
-                browserOpenPublish(window, url);
+                // A document cannot turn an unsolicited popup into trusted service navigation.
+                try {
+                    const address = new URL(url);
+                    if (
+                        address.hostname === "localhost" ||
+                        address.hostname.endsWith(".localhost") ||
+                        address.hostname.endsWith(".happy.invalid") ||
+                        address.hostname.startsWith("127.") ||
+                        ["[::1]", "0.0.0.0"].includes(address.hostname)
+                    )
+                        return { action: "deny" };
+                    browserOpenPublish(window, url);
+                } catch {
+                    /* Invalid navigation is refused. */
+                }
                 return { action: "deny" };
             });
             const stayOnPreview = (event: Electron.Event, candidate: string) => {
@@ -774,9 +778,17 @@ function browserGuestAttach(window: BrowserWindow): void {
             htmlPreviewLifecyclePublish(window, guest);
             return;
         }
+        const browser = [...browserProxies.values()].find(
+            (profile) => profile.session === guest.session,
+        );
+        if (!browser) {
+            guest.close();
+            return;
+        }
+        browser.register(guest);
         guest.setUserAgent(guest.session.getUserAgent());
         guest.setWindowOpenHandler(({ url }) => {
-            browserOpenPublish(window, url);
+            if (browser.popupAllowed(guest, url)) browserOpenPublish(window, url);
             return { action: "deny" };
         });
         const navigationGuard = (event: Electron.Event, candidate: string) => {
@@ -1644,8 +1656,34 @@ void app
                 desktopReactDevtoolsMessageValidate(raw);
             if (message) desktopProfilerController.reactMessage(message);
         });
-        ipcMain.handle(desktopIpc.browserProxyApply, (_event, target: unknown) =>
-            browserProxyApply(desktopBrowserProxyTargetValidate(target)),
+        ipcMain.handle(desktopIpc.browserProxyApply, (event, target: unknown) => {
+            desktopDaemonSenderRequire(event.sender);
+            if (event.senderFrame !== event.sender.mainFrame)
+                throw new Error("Only Happy can configure a browser profile.");
+            return browserProxyApply(desktopBrowserProxyTargetValidate(target));
+        });
+        ipcMain.handle(
+            desktopIpc.browserCommand,
+            (event, rawTarget: unknown, guestId: unknown, rawCommand: unknown) => {
+                desktopDaemonSenderRequire(event.sender);
+                if (
+                    event.senderFrame !== event.sender.mainFrame ||
+                    !Number.isSafeInteger(guestId) ||
+                    (guestId as number) <= 0
+                )
+                    throw new Error("Invalid browser tab.");
+                const target = desktopBrowserProxyTargetValidate(rawTarget);
+                const browser = browserProxies.get(HappyAgentServiceBrowser.partition(target));
+                const guest = electronWebContents.fromId(guestId as number);
+                if (
+                    !browser ||
+                    !guest ||
+                    guest.hostWebContents !== event.sender ||
+                    !browser.owns(guest)
+                )
+                    throw new Error("This browser tab does not belong to this workspace.");
+                return browser.command(guest, desktopBrowserCommandValidate(rawCommand));
+            },
         );
         ipcMain.handle(desktopIpc.applicationMenuOpen, () => {
             Menu.getApplicationMenu()?.popup();

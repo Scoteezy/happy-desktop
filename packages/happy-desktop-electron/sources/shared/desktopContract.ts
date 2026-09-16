@@ -538,6 +538,11 @@ export interface DesktopBrowserProxyTarget {
     readonly workspaceId: string;
 }
 
+/** User-initiated navigation; guest pages never receive this bridge. */
+export type DesktopBrowserCommand =
+    | { readonly action: "load"; readonly url: string }
+    | { readonly action: "back" | "forward" | "reload" | "stop" };
+
 /**
  * One step in the life of one main-frame document inside an HTML preview guest.
  *
@@ -632,6 +637,12 @@ export interface HappyDesktopBridge {
     /** Points this window's browser guests at one local Happy Agent session's network boundary. */
     /** Returns the guest partition only after its workspace proxy is configured. */
     browserProxyApply(target: DesktopBrowserProxyTarget): Promise<string>;
+    /** Absent on older native hosts, which cannot safely open private service pages. */
+    browserCommand?(
+        target: DesktopBrowserProxyTarget,
+        guestId: number,
+        command: DesktopBrowserCommand,
+    ): Promise<void>;
     browserOpenSubscribe(listener: (url: string) => void): () => void;
     browserStatusSubscribe(listener: (status: DesktopBrowserStatus) => void): () => void;
     /** Announces that the shell received a WorkOS OAuth callback. */
@@ -782,6 +793,7 @@ export const desktopIpc = {
     /** Renderer → main only: the appearance source inherited by local web contents. */
     appearanceSet: "happy:appearance:set",
     browserProxyApply: "happy:browser:proxy-apply",
+    browserCommand: "happy:browser:command",
     browserOpenRequested: "happy:browser:open-requested",
     browserStatusChanged: "happy:browser:status-changed",
     cloudAuthCallbackReceived: "happy:cloud-auth:callback-received",

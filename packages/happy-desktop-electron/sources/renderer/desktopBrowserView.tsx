@@ -1,6 +1,6 @@
 import { Component, createElement } from "react";
 import type { BrowserContentProps, BrowserController } from "happy-desktop-ui";
-import type { DesktopBrowserStatus } from "../shared/desktopContract";
+import type { DesktopBrowserCommand, DesktopBrowserStatus } from "../shared/desktopContract";
 
 interface BrowserWebViewEvent extends Event {
     readonly canGoBack?: boolean;
@@ -20,11 +20,6 @@ interface BrowserWebViewElement extends HTMLElement {
     getTitle(): string;
     getURL(): string;
     getWebContentsId(): number;
-    goBack(): void;
-    goForward(): void;
-    loadURL(url: string): Promise<void>;
-    reload(): void;
-    stop(): void;
 }
 
 const browserEvents = [
@@ -62,6 +57,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
     private element?: BrowserWebViewElement;
     private proxyGeneration = 0;
     private statusUnsubscribe?: () => void;
+    private initialized = false;
     /** Response of the navigation that is loading or has just committed. */
     private status?: DesktopBrowserStatus;
     /** Address of the newest requested navigation, for failures with no commit. */
@@ -69,41 +65,78 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
 
     private readonly controller: BrowserController = {
         browserBack: () => {
-            const view = this.element;
-            if (view?.canGoBack()) view.goBack();
+            this.requested = undefined;
+            this.command({ action: "back" });
         },
         browserForward: () => {
-            const view = this.element;
-            if (view?.canGoForward()) view.goForward();
+            this.requested = undefined;
+            this.command({ action: "forward" });
         },
         browserLoad: (url) => {
             this.status = undefined;
             this.requested = url;
-            void this.element?.loadURL(url).catch((error: unknown) => {
-                // The rejection repeats the Chromium failure `did-fail-load`
-                // already reported, but it is the only report for an address
-                // Chromium refuses before it starts loading at all.
-                if (this.requested !== url) return;
+            this.command({ action: "load", url });
+        },
+        browserReload: () => {
+            if (this.element?.getURL() === "about:blank" && this.requested)
+                this.controller.browserLoad(this.requested);
+            else this.command({ action: "reload" });
+        },
+        browserStop: () => {
+            this.command({ action: "stop" });
+            this.props.browserLoadingChanged(false);
+        },
+    };
+
+    private command(command: DesktopBrowserCommand): void {
+        const desktop = window.happyDesktop;
+        const target = this.props.target;
+        const view = this.element;
+        if (!desktop?.browserCommand || !target || !view || !this.initialized) return;
+        const generation = this.proxyGeneration;
+        void desktop
+            .browserCommand(target, view.getWebContentsId(), command)
+            .catch((error: unknown) => {
+                if (
+                    generation !== this.proxyGeneration ||
+                    (command.action === "load" && this.requested !== command.url)
+                )
+                    return;
                 this.props.browserFailed({
-                    url,
+                    url: command.action === "load" ? command.url : view.getURL(),
                     ...browserErrorDescribe(error),
                 });
             });
-        },
-        browserReload: () => this.element?.reload(),
-        browserStop: () => this.element?.stop(),
-    };
+    }
 
     private readonly receive = (raw: Event): void => {
         const event = raw as BrowserWebViewEvent;
         const view = this.element;
         if (!view) return;
+        if (!this.initialized) {
+            if (event.type === "dom-ready") {
+                this.initialized = true;
+                this.props.browserControllerReady(this.controller);
+                if (this.props.source !== "about:blank")
+                    this.controller.browserLoad(this.props.source);
+                return;
+            }
+            if (!["crashed", "render-process-gone", "did-fail-load"].includes(event.type)) return;
+        }
         if (event.type === "did-start-loading") {
             this.status = undefined;
             this.props.browserLoadingChanged(true);
             return;
         }
         if (event.type === "did-stop-loading") {
+            // The bootstrap blank document is not the requested address. Service
+            // discovery may still be in flight when that document finishes.
+            if (
+                view.getURL() === "about:blank" &&
+                this.requested &&
+                this.requested !== "about:blank"
+            )
+                return;
             this.props.browserLoadingChanged(false);
             this.locationPublish();
             void this.statusVerify();
@@ -141,6 +174,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
 
     componentDidMount(): void {
         this.statusUnsubscribe = window.happyDesktop?.browserStatusSubscribe((status) => {
+            if (!this.initialized) return;
             if (status.guestId !== this.element?.getWebContentsId()) return;
             this.status = status;
             void this.statusVerify();
@@ -189,9 +223,9 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             for (const event of browserEvents)
                 this.element.removeEventListener(event, this.receive);
         this.element = view ?? undefined;
+        this.initialized = false;
         if (this.element) {
             for (const event of browserEvents) this.element.addEventListener(event, this.receive);
-            this.props.browserControllerReady(this.controller);
         } else {
             this.props.browserControllerReady(undefined);
         }
@@ -205,6 +239,12 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         if (this.state.partition) this.setState({ partition: undefined });
         if (!target || !desktop) {
             this.props.browserFailed({ message: "The browser has no Happy Agent workspace." });
+            return;
+        }
+        if (!desktop.browserCommand) {
+            this.props.browserFailed({
+                message: "Update Happy Nightly to enable the private workspace service browser.",
+            });
             return;
         }
         void desktop.browserProxyApply(target).then(
@@ -228,6 +268,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         if (!view) return;
         const url = candidate || view.getURL();
         if (!url) return;
+        if (url === "about:blank" && this.requested && this.requested !== "about:blank") return;
         this.props.browserLocationChanged(url, view.canGoBack(), view.canGoForward());
     }
 
@@ -241,7 +282,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             "data-happy-browser-guest": "",
             partition: this.state.partition,
             ref: this.elementApply,
-            src: this.props.source,
+            src: "about:blank",
             webpreferences: "contextIsolation=yes,nodeIntegration=no,sandbox=yes",
         });
     }

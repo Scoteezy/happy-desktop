@@ -3,7 +3,26 @@
 // the main process's HTTP proxy), so what remains is the install terminal's
 // input and size, and the address a browser tunnel is opened on.
 
-import type { DesktopBrowserProxyTarget } from "../shared/desktopContract";
+import type { DesktopBrowserCommand, DesktopBrowserProxyTarget } from "../shared/desktopContract";
+
+export function desktopBrowserCommandValidate(value: unknown): DesktopBrowserCommand {
+    if (typeof value !== "object" || value === null) throw new Error("Invalid browser command.");
+    const command = value as { action?: unknown; url?: unknown };
+    if (
+        command.action === "load" &&
+        Object.keys(value).every((key) => key === "action" || key === "url")
+    )
+        return { action: "load", url: boundedString(command.url, "Browser address", 65536) };
+    if (
+        Object.keys(value).length === 1 &&
+        (command.action === "back" ||
+            command.action === "forward" ||
+            command.action === "reload" ||
+            command.action === "stop")
+    )
+        return { action: command.action };
+    throw new Error("Invalid browser command.");
+}
 
 /** The explicit Happy Agent connection and workspace a browser tunnel is asked for. */
 export function desktopBrowserProxyTargetValidate(value: unknown): DesktopBrowserProxyTarget {

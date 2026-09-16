@@ -278,6 +278,34 @@ export class DesktopRuntime implements AsyncDisposable {
 
     /** Opens a workspace tunnel through its owning host-published connection. */
     openHttpProxy(target: DesktopBrowserProxyTarget): Promise<Duplex> {
+        return this.browserClient(target).openWorkspaceHttpProxy(target.workspaceId);
+    }
+
+    browserServiceResolve(
+        target: DesktopBrowserProxyTarget,
+        selector: { readonly id: string } | { readonly port: number },
+        signal: AbortSignal,
+    ): Promise<string> {
+        return this.browserClient(target).browserServiceResolve(
+            target.workspaceId,
+            selector,
+            signal,
+        );
+    }
+
+    openServiceHttpProxy(
+        target: DesktopBrowserProxyTarget,
+        serviceId: string,
+        signal: AbortSignal,
+    ): Promise<Duplex> {
+        return this.browserClient(target).openWorkspaceServiceProxy(
+            target.workspaceId,
+            serviceId,
+            signal,
+        );
+    }
+
+    private browserClient(target: DesktopBrowserProxyTarget) {
         if (
             this.snapshotValue.phase !== "ready" ||
             this.snapshotValue.mode !== "local" ||
@@ -285,8 +313,7 @@ export class DesktopRuntime implements AsyncDisposable {
         )
             throw new Error("The local Happy Agent daemon is unavailable.");
         const host = this.happyAgentConnection.client;
-        const client = target.connectionId === null ? host : host.connection(target.connectionId);
-        return client.openWorkspaceHttpProxy(target.workspaceId);
+        return target.connectionId === null ? host : host.connection(target.connectionId);
     }
 
     start(request: DesktopStartRequest): Promise<void> {

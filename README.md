@@ -141,6 +141,20 @@ and take your own sessions with you.
 - **Terminals.** Real terminals attached to the machine doing the work.
 - **Browser and HTML preview.** Open web content and rendered HTML inside
   Happy instead of bouncing to an external browser.
+  Workspace service browsing keeps Chromium on your machine and sends only a
+  selected service's traffic through its owning Happy Agent connection. Ask the
+  agent to start the server with `service_start`, then open `http://localhost:PORT`
+  in that workspace. An exact service can be opened as
+  `http://service-SERVICE_ID.localhost`; the browser switches to a private,
+  workspace-specific origin. Ordinary internet traffic stays direct. This does
+  not expose ordinary shell listeners or create a public sharing link. The first
+  service release requires the updated Nightly native host and Agent preview,
+  and the service host must support strict Linux sandboxing and delegated
+  resource controllers. Cross-origin pages and redirects cannot silently gain
+  access to a private service. Private pages currently use plain HTTP under
+  `.happy.invalid`; secure-context-only browser features are not enabled. A dev
+  server with a Host allowlist must allow this private suffix (for Vite,
+  `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.happy.invalid`).
 - **Models, providers, and usage.** Choose models and effort per session, and
   see what your work is costing as it happens.
 - **Notes and visibility.** Keep notes alongside the work, and see what agents

@@ -59,6 +59,8 @@ const bridge: HappyDesktopBridge = {
         }
     },
     browserProxyApply: (target) => ipcRenderer.invoke(desktopIpc.browserProxyApply, target),
+    browserCommand: (target, guestId, command) =>
+        ipcRenderer.invoke(desktopIpc.browserCommand, target, guestId, command),
     browserOpenSubscribe(listener: (url: string) => void) {
         const receive = (_event: Electron.IpcRendererEvent, url: string) => listener(url);
         ipcRenderer.on(desktopIpc.browserOpenRequested, receive);

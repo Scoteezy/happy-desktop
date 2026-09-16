@@ -8,6 +8,7 @@ import type { Duplex } from "node:stream";
 import {
     HappyAgentApiError,
     HappyAgentClient,
+    WORKSPACE_SERVICE_AUTHORIZATION_HEADER,
     type AgentResponse,
     type Cuid2,
     type DrainResponse,
@@ -17,6 +18,7 @@ import {
     type InspectorStoppedResponse,
     type ShutdownResponse,
     type WorkspaceResponse,
+    type WorkspaceService,
     type WriteFileRequest,
     type WriteFileResponse,
 } from "@slopus/happy-agent-client";
@@ -212,19 +214,93 @@ export class HappyAgentDaemonClient {
         // as it does for ordinary HTTP requests and terminal attachments.
         const prefix = new URL(this.#client.endpoint).pathname.replace(/\/$/u, "");
         const path = `${prefix}/v0/workspaces/${encodeURIComponent(workspaceId)}/proxy`;
+        return this.#openConnect(path);
+    }
+
+    /** Only explicitly started services can be selected; an ordinary host port is not exposed. */
+    async browserServiceResolve(
+        workspaceId: string,
+        selector: { readonly id: string } | { readonly port: number },
+        signal: AbortSignal,
+    ): Promise<string> {
+        let candidates: readonly WorkspaceService[];
+        if ("id" in selector) {
+            const result = await this.#client.getWorkspaceService(
+                workspaceId as Cuid2,
+                selector.id as Cuid2,
+                { signal },
+            );
+            candidates = [result.service];
+        } else {
+            const result = await this.#client.listWorkspaceServices(
+                workspaceId as Cuid2,
+                { limit: 100 },
+                { signal },
+            );
+            if (result.nextPageCursor !== null)
+                throw new Error("The service catalog is incomplete.");
+            candidates = result.services.filter((service) => service.port === selector.port);
+        }
+        const active = candidates.filter((service) => service.status === "running");
+        if (active.length === 0)
+            throw new Error(
+                "No running sandboxed service matches this address. Ask the agent to start it with service_start.",
+            );
+        if (active.length !== 1)
+            throw new Error(
+                "More than one sandboxed service uses this port. Open its service-specific address instead.",
+            );
+        return active[0]!.id;
+    }
+
+    /** Both credentials stay in main and cover only this service's current execution. */
+    async openWorkspaceServiceProxy(
+        workspaceId: string,
+        serviceId: string,
+        signal: AbortSignal,
+    ): Promise<Duplex> {
+        const credential = await this.#client.issueWorkspaceServiceAccessToken(
+            workspaceId as Cuid2,
+            serviceId as Cuid2,
+            { signal },
+        );
+        const path = new URL(
+            this.#client.workspaceServiceProxyUrl(workspaceId as Cuid2, serviceId as Cuid2),
+        ).pathname;
+        return this.#openConnect(
+            path,
+            { [WORKSPACE_SERVICE_AUTHORIZATION_HEADER]: `Bearer ${credential.accessToken}` },
+            signal,
+        );
+    }
+
+    #openConnect(
+        path: string,
+        headers: Readonly<Record<string, string>> = {},
+        signal?: AbortSignal,
+    ): Promise<Duplex> {
         return new Promise((resolvePromise, reject) => {
+            if (signal?.aborted) {
+                reject(abortedError());
+                return;
+            }
             const request = httpRequest({
                 // CONNECT must enter the daemon's tunnel router on a fresh connection.
                 agent: false,
-                headers: { authorization: `Bearer ${this.#token}` },
+                headers: { ...headers, authorization: `Bearer ${this.#token}` },
                 method: "CONNECT",
                 path,
                 socketPath: this.socketPath,
             });
+            const abort = () => request.destroy(abortedError());
+            const cleanup = () => signal?.removeEventListener("abort", abort);
+            signal?.addEventListener("abort", abort, { once: true });
+            request.once("close", cleanup);
             let settled = false;
             const fail = (statusCode: number | undefined): void => {
                 if (settled) return;
                 settled = true;
+                cleanup();
                 const status = statusCode ?? 500;
                 reject(
                     new HappyAgentDaemonHttpError(
@@ -244,6 +320,7 @@ export class HappyAgentDaemonClient {
                     return;
                 }
                 settled = true;
+                cleanup();
                 if (head.length > 0) socket.unshift(head);
                 resolvePromise(socket);
             });

@@ -574,6 +574,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                             <HappyAgentBoundary
                                 appearance={props.appearance}
                                 bridge={props.bridge}
+                                browserContent={props.browserContent}
                                 commandPalette={ui.commandPalette}
                                 connectionOnboarding
                                 experiments={props.experiments}
