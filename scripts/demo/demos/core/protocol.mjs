@@ -1,9 +1,9 @@
 import { createServer, request as httpRequest } from "node:http";
 import { join } from "node:path";
 import { readFile, unlink } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 
-export const steveMessageId = `coresteve${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+/** The one message Steve sends: typed on the real phone, word for word. */
+export const stevePhoneMessage = "ship it";
 export const steve = {
     id: "coresteve",
     name: "Steve",
@@ -14,16 +14,24 @@ export const steve = {
 
 /**
  * Recording-only identity fixture, not a team authentication implementation.
- * The private daemon accepts the real second message. This transparent Unix
- * proxy supplies the fictional actor's explicit userId at the protocol boundary
- * (both live events and authoritative reads), and answers his user lookup.
- * No production code, credentials, account, or real person's identity is changed.
+ * The private daemon accepts the real message typed on the paired phone. This
+ * transparent Unix proxy supplies the fictional actor's explicit userId at the
+ * protocol boundary (both live events and authoritative reads), and answers
+ * his user lookup. No production code, credentials, account, or real person's
+ * identity is changed.
  */
 export async function coreProtocolOpen(gym) {
     const socketPath = join(gym.paths.root, "core.sock");
     const authorization = `Bearer ${(await readFile(gym.paths.tokenPath, "utf8")).trim()}`;
+    const fromSteve = (message) =>
+        message.role === "user" &&
+        (message.content === stevePhoneMessage ||
+            (Array.isArray(message.content) &&
+                message.content.length === 1 &&
+                message.content[0].type === "text" &&
+                message.content[0].text === stevePhoneMessage));
     const author = (message) =>
-        message.id === steveMessageId
+        fromSteve(message)
             ? { ...message, metadata: { ...message.metadata, userId: steve.id } }
             : message;
     const event = (value) =>

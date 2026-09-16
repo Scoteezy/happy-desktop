@@ -8,7 +8,17 @@ import { dirname, join } from "node:path";
  * browser, every timeline, and every social upload accepts without
  * re-encoding it themselves and undoing the work above. The fades live in the
  * composed frames (in linear light); the encoder adds nothing but the codec.
+ *
+ * The composed JPEG frames are full-range BT.601. Browsers assume a limited
+ * range BT.709 H.264 stream and decode a full-range one about fourteen levels
+ * too dark, so the conversion happens here, once, and the stream is tagged.
  */
+const colourConversion = [
+    "scale=in_range=pc:in_color_matrix=bt601:out_range=tv:out_color_matrix=bt709:flags=lanczos+accurate_rnd+full_chroma_int",
+    "format=yuv420p",
+    "setparams=range=tv:color_primaries=bt709:color_trc=iec61966-2-1:colorspace=bt709",
+].join(",");
+
 export async function encode(options) {
     const seconds = options.frames / options.fps;
     const argv = [
@@ -21,7 +31,7 @@ export async function encode(options) {
             : ["-f", "concat", "-safe", "0", "-i", options.listing]),
         ...(options.soundtrack ? ["-i", options.soundtrack] : []),
         "-vf",
-        `fps=${options.fps},format=yuv420p`,
+        `fps=${options.fps},${colourConversion}`,
         "-c:v",
         "libx264",
         "-preset",

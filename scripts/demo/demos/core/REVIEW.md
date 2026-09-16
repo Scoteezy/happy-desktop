@@ -1,5 +1,51 @@
 # Core demo — local review
 
+## Static-window revision — final take v18-r3
+
+The final [desktop video](./artifacts/v18-r3/core.mp4) and
+[native phone screen](./artifacts/v18-r3/phone-screen.mp4) share
+**4,194 frames at 60 fps / 69.9 seconds**. Desktop is 1950×1660 (the raw
+780×664 CSS-pixel window at 2.5×, no camera), phone 1206×2622. The desktop
+encode is limited-range BT.709 with sRGB transfer tags straight from
+`encode.mjs`, so the website copies it byte for byte.
+
+Rehearsals before the final take found and fixed, in order: the phone's
+`hideKeyboard` step (replaced by a real back tap to the session list); the
+phone composer mirroring the session's mode, which reverted an off-camera Full
+access preset (now chosen on camera through the real permission menu right
+before typing); the sandboxed Bash in Auto mode that cannot commit from a
+worktree (Steve's message carries Full access, asserted on the arrived
+message); the xcrun `git` shim printing developer-path noise into the Bash
+output (the resolved real git is placed on the gym PATH); a leftover
+`remote.origin.pushurl` from an earlier fixture that would have pushed
+elsewhere (unset in `shippingPrepare`); the baseline read from `origin/main`,
+which an earlier real push had moved so the new workspace already contained the
+edit (now `refs/heads/main`, and the take asserts exactly one changed file
+after the Edit); the Bash row selector (a Bash tool call renders as an
+`agent-activity-call`, not the shell-mode row); and the greeting arriving
+before the phone had returned (`delayMs` on the ship reply, a shorter hold
+after Send, phone-list verification moved off the camera path).
+
+`shipping-verified.json` records the real result: worktree HEAD
+`fecd755b` "Animate the voice waveform while speaking", origin `main` equal to
+that HEAD, the diff from baseline `cfd375c4` touching only
+`packages/happy-app/sources/realtime/waveformActive.ts`, and the daemon's Git
+read model at `comparison: ready`, base equal to head, zero changed files. The
+screenplay's "Deployed" text is emitted only when the Bash tool result carries
+no error and exit code 0; a failed command produces "The push did not go
+through. Leaving main untouched." (observed once in rehearsal, when the
+baseline bug left nothing to commit).
+
+Contact sheets of the encoded frames were reviewed at 1, 6, 12, 17, 21, 25,
+28, 33, 37, 42, 46, 49.5, 54, 55.5, 56.5, 58, 60, 63, 65.5, and 69 seconds:
+picker hover order Astra → Opus → Fable, readable typing, Thinking, two
+Explore rows, Edit +3 −1, the Astra spawn row with "1 Agent", the completion,
+the unread phone list, the diff, the permission menu with Full chosen, native
+typing, the sent bubble, the phone back home, greeting with the wave past the
+end of its line, the Bash row in its running state, cleared counters,
+"Deployed" under confetti, and the final "Completed in 12s" hold. Fixture
+disclosures are in `core.evidence.json`.
+
 ## Readable-beat revision — final take v17-r6
 
 The final [desktop video](./artifacts/v17-r6/core.mp4),

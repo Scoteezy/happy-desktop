@@ -3,6 +3,55 @@
 This script supersedes `BRIEF.md` for the current revision. Write and verify the
 recording against these criteria before publishing to `/tmp/happy-one/`.
 
+## Current revision — v18 (take `v18-r3`)
+
+The user's revision of the v17 script. Everything below this section is the
+v17 record and stays for history; where the two disagree, this section wins.
+
+- No camera moves. The whole recording is one static window, 780×664 CSS px
+  (1950×1660 at 2.5×): the sidebar at the product's minimum width (220 px) and
+  a 560 px main pane. Nothing is zoomed, letterboxed, or cropped.
+- First turn: pick Fable in the real menu, type the prompt, send. Thinking, two
+  file reads, the real Edit (+3 −1 in the sidebar), the real Astra sub-agent
+  spawn, then one short completion. No Steve steering, no Grok, no
+  "Message from …" rows: Astra's review is held until after the take.
+- Phone beat: the session is unread on the real phone list; open it, show the
+  syntax-highlighted diff, choose Full access in the phone's own permission
+  menu on camera, type "ship it" on the native keyboard, Send, go back home.
+- Ship beat: the desktop replies "Hi Steve, pushing to main. Waiting for CI to
+  deploy." with a wave sticker, then one real Bash command commits, pushes
+  `HEAD:main` into the gym's own bare origin, and watches the deploy run through
+  the offline `gh` fixture. The sidebar counters clear through the real Git
+  watcher. "Deployed. The waveform is live." lands with the standard confetti.
+  The screenplay only claims a deploy when the daemon reports success.
+- Website: native video controls on the desktop movie (muted by default), the
+  phone follows the desktop clock, one layout at every width, no captions or
+  custom controls, the phone drawn full size to the right, downloads directly
+  below the figure.
+
+### Measured viewer-experience timeline — v18-r3 (69.9 s, 4,194 frames)
+
+| Time    | Event                                                     |
+| ------- | --------------------------------------------------------- |
+| 0.0 s   | Settled window on the fresh workspace, Astra selected     |
+| 4.1 s   | Model menu opens; pointer passes Astra and Opus           |
+| 8.7 s   | Fable 5.1 chosen                                          |
+| 15.5 s  | Prompt sent; Thinking visible                             |
+| 20.3 s  | First file read visible                                   |
+| 23.5 s  | Real Edit lands; sidebar shows +3 −1                      |
+| 26.4 s  | "Spawned GPT-6 Astra sub-agent"; footer shows 1 Agent     |
+| 31.6 s  | Completion text; "Completed in 15s"                       |
+| 35.0 s  | Phone forward: session unread on the real list            |
+| 38.7 s  | Session open; 39.2 s diff visible                         |
+| 45.3 s  | Permission menu; 48.3 s Full access chosen                |
+| 50.7 s  | Native keyboard typing "ship it"; 53.3 s Send             |
+| 55.1 s  | Phone back home; Steve's message on the desktop           |
+| 55.9 s  | Greeting and wave                                         |
+| 57.2 s  | Bash row running the real ship command                    |
+| 59.7 s  | Sidebar counters clear (real Git watcher)                 |
+| 65.0 s  | "Deployed. The waveform is live."; confetti               |
+| 69.9 s  | End hold after "Completed in 12s"                         |
+
 ## Rollback points and scope
 
 - Desktop recorder/screenplay checkpoint: `abcf40d2` (local only, rebased onto

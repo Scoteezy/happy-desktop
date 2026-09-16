@@ -63,6 +63,7 @@ export class Director {
     #keysLife = 0;
     #sounds = [];
     #sticker;
+    #confetti;
     #card;
     #liveWaits = [];
     #typingSpeed = 1;
@@ -175,9 +176,20 @@ export class Director {
                 ...(this.#typingSpeed === 3 ? { typingSpeed: 3 } : {}),
                 ...(this.#playbackSpeed !== 1 ? { playbackSpeed: this.#playbackSpeed } : {}),
                 ...this.#stickerPose(this.#step),
+                ...this.#confettiTick(),
             },
             options,
         );
+    }
+
+    /** The confetti's age in frames, advanced by one frame; gone when its life ends. */
+    #confettiTick() {
+        const confetti = this.#confetti;
+        if (!confetti) return {};
+        const tick = confetti.tick;
+        confetti.tick += 1;
+        if (confetti.tick >= confetti.ticks) this.#confetti = undefined;
+        return { confetti: { tick, ticks: confetti.ticks } };
     }
 
     /** Runs independently of scenario actions, so API awaits remain on film. */
@@ -359,7 +371,11 @@ export class Director {
         await this.#camera_to(cameraRest(), options.duration ?? 620);
     }
 
-    /** Measure before shooting. The delivery aspect is the actual panel, not 16:9. */
+    /**
+     * Measure before shooting. The delivery aspect is the actual panel, not
+     * 16:9. A raw-window take instead delivers the whole application viewport
+     * at its captured pixels, with no camera, wallpaper, or frame of its own.
+     */
     async framingPrepare(target, options = {}) {
         if (this.#recording) throw new Error("Measure the delivery geometry before recording.");
         const css = await this.#rectangle(target);
@@ -373,13 +389,21 @@ export class Director {
         output.width = crop.width;
         output.height = crop.height;
         if (options.rawWindow) {
+            const viewport = this.#page.viewportSize();
             this.#restCrop = {
                 left: windowRectangle.x,
                 top: windowRectangle.y,
-                width: windowRectangle.width,
-                height: windowRectangle.height,
+                width: Math.floor((viewport.width * deviceScaleFactor) / 2) * 2,
+                height: Math.floor((viewport.height * deviceScaleFactor) / 2) * 2,
             };
+            if (
+                this.#restCrop.width > windowRectangle.width ||
+                this.#restCrop.height > windowRectangle.height
+            )
+                throw new Error("The viewport is larger than the capture window.");
             this.#lockedCrop = this.#restCrop;
+            output.width = this.#restCrop.width;
+            output.height = this.#restCrop.height;
         }
         return { css, crop, restCrop: this.#restCrop, output: { ...output }, deviceScaleFactor };
     }
@@ -581,6 +605,18 @@ export class Director {
             size: options.size ?? 300,
             x: rectangle.x + rectangle.width * offset.x,
             y: rectangle.y + rectangle.height * offset.y,
+        };
+    }
+
+    /**
+     * Fires the standard celebration: two confetti cannons from the bottom
+     * corners that live for about three seconds over the whole shot. Spends no
+     * frames itself; the confetti falls across whatever the demo does next.
+     */
+    confetti(options = {}) {
+        this.#confetti = {
+            tick: 0,
+            ticks: Math.round(((options.duration ?? 3200) / 1000) * this.#fps),
         };
     }
 

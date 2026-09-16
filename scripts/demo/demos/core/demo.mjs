@@ -1,11 +1,20 @@
 import * as world from "./world.mjs";
-import { coreProtocolOpen, steveMessageId } from "./protocol.mjs";
-import { stagedShippingFinalize } from "./shipping.mjs";
+import { coreProtocolOpen, steve, stevePhoneMessage } from "./protocol.mjs";
+import { shipCommand, shippingPrepare, shippingVerify } from "./shipping.mjs";
+import { execFile as exec } from "node:child_process";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
+import { deviceScaleFactor } from "../../lib/scene.mjs";
+
+const execFile = promisify(exec);
+
+/** The whole app, delivered as one static window: a narrow sidebar beside a compact main pane. */
+const viewport = { width: 780, height: 664 };
 
 let recordedAgentId;
 let framing;
+let shippingFixture;
 let shippingEvidence;
 const cues = [];
 const cue = (name, demo, phone) => {
@@ -22,6 +31,23 @@ async function until(demo, read, label, timeout = 30000) {
         await demo.hold(200);
     }
 }
+
+/** The tight box of a paragraph's ink, so a sticker can sit at the end of its line. */
+async function textInk(locator) {
+    return locator.evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element.closest("p") ?? element);
+        const box = range.getBoundingClientRect();
+        return { x: box.x, y: box.y, width: box.width, height: box.height };
+    });
+}
+
+const settled = (locator) =>
+    locator.evaluate((element) =>
+        element
+            .getAnimations({ subtree: true })
+            .every((animation) => animation.playState !== "running"),
+    );
 
 export default {
     id: "core",
@@ -56,8 +82,17 @@ export default {
         for (const workspace of workspaces) {
             if (workspace.id === gym.world.projectId || world.worktrees.includes(workspace.name))
                 continue;
-            await gym.client.archiveWorkspace(workspace.id, { ifMatch: workspace.version });
+            // A crashed rehearsal can leave its agents mid-turn; archiving an
+            // agent aborts its run, so a stale take cannot consume this one's cues.
+            for (const agent of workspace.agents ?? []) {
+                if (agent.archived) continue;
+                await gym.client.archiveAgent(agent.id).catch(() => undefined);
+            }
+            const { workspace: current } = await gym.client.getWorkspace(workspace.id);
+            await gym.client.archiveWorkspace(workspace.id, { ifMatch: current.version });
         }
+        shippingFixture = await shippingPrepare(gym);
+        await demo.page.setViewportSize(viewport);
         await demo.page.locator('[data-happy-desktop-ui="sidebar"]').waitFor();
         await demo.page.getByText("happy", { exact: true }).first().click();
         await demo.page.locator('[data-happy-desktop-ui="conversation-view"]').waitFor();
@@ -75,6 +110,16 @@ export default {
         await demo.page.waitForTimeout(1800);
         const hidePanel = demo.page.getByRole("button", { name: "Hide panel", exact: true });
         if (await hidePanel.isVisible()) await hidePanel.click();
+        // The real sidebar splitter, taken to the product's own minimum width.
+        const splitter = demo.page.getByRole("separator", { name: "Resize sidebar", exact: true });
+        await splitter.focus();
+        await demo.page.keyboard.press("Home");
+        await demo.page.waitForTimeout(400);
+        const sidebarWidth = (
+            await demo.page.locator('[data-happy-desktop-ui="sidebar"]').boundingBox()
+        ).width;
+        if (sidebarWidth !== Number(await splitter.getAttribute("aria-valuemin")))
+            throw new Error("The sidebar is not at the product's minimum width.");
         // Set the opening choice through the real control, still off camera.
         await demo.page
             .locator('[data-happy-desktop-ui="composer-model-control-trigger"]')
@@ -99,8 +144,28 @@ export default {
             demo.page.locator('[data-happy-desktop-ui="conversation-view"]').first(),
             { rawWindow: true },
         );
+        framing.sidebarWidth = sidebarWidth;
         await writeFile(join(output, "framing.json"), JSON.stringify(framing, null, 2));
         if (phone) {
+            // Apple's own recording status bar; a relaunched Simulator forgets it.
+            await execFile("xcrun", [
+                "simctl",
+                "status_bar",
+                phone.simulator.udid,
+                "override",
+                "--time",
+                "9:41",
+                "--dataNetwork",
+                "wifi",
+                "--wifiMode",
+                "active",
+                "--wifiBars",
+                "3",
+                "--batteryState",
+                "charged",
+                "--batteryLevel",
+                "100",
+            ]);
             await phone.prepare({ sessionTitle: "New chat", relaunch: true });
             if (
                 (await phone.inspect("home-before-preparation")).some((item) =>
@@ -122,6 +187,8 @@ export default {
                 throw new Error("The phone is not connected to this actual demo daemon.");
             // Configure this private session's native composer before any work
             // arrives, then return home. Later results genuinely become unread.
+            // The composer mirrors the session's latest mode, so the permission
+            // setting is chosen on camera, right before Steve's own message.
             for (const command of [
                 "- tapOn:\n    text: New chat, .*",
                 "- tapOn:\n    text: MODEL\n    index: 0",
@@ -134,15 +201,15 @@ export default {
                 // reports success. Do not send the next tap into that layer.
                 await demo.page.waitForTimeout(650);
             }
+            // The chip's accessibility label names the control, not its value;
+            // the message's own mode is asserted once Steve's message arrives.
+            await phone.inspect("phone-configured");
             await phone.screenshot("phone-configured");
             await phone.simulator.run("- tapOn:\n    point: 38, 88");
             await phone.prepare();
             await phone.start();
         }
         await demo.hold(1600);
-        cue("center-enter", demo, phone);
-        await demo.frameTo(framing.crop, { duration: 1100 });
-        cue("center-locked", demo, phone);
         const composer = demo.page.locator('[data-happy-desktop-ui="composer-textarea"]').first();
         const model = demo.page
             .locator('[data-happy-desktop-ui="composer-model-control-trigger"]')
@@ -190,92 +257,64 @@ export default {
         };
         recordedAgentId = parent.id;
         const { agent } = await gym.client.getAgent(parent.id);
-        world.shippingConfigure(async () => {
-            shippingEvidence = await stagedShippingFinalize(gym, agent.workspaceId, {
-                path: world.logicPath,
-                before: world.logicBefore,
-                after: world.logicAfter,
-            });
-            await writeFile(
-                join(output, "shipping-verified.json"),
-                JSON.stringify(shippingEvidence, null, 2),
-            );
-        });
         await demo.pointerVisible(false);
         cue("work-started", demo, phone);
         // Reasoning details are intentionally collapsed/hidden by preference;
         // the authoritative run-status footer still shows Thinking.
         await demo.page.getByText("Thinking", { exact: true }).first().waitFor();
         cue("thinking-visible", demo, phone);
-        await demo.page.getByText(world.firstWorkText, { exact: true }).first().waitFor();
-        cue("first-answer-visible", demo, phone);
-        await until(demo, () => world.hasReached("reading"), "Fable reading the voice files");
-        cue("first-work-visible", demo, phone);
+        await until(demo, () => world.hasReached("reading", parent.id), "the first file read");
+        cue("first-read-visible", demo, phone);
         await demo.hold(1000);
-        // Submit only the finished collaborator message: no draft synchronization.
-        await gym.client.sendMessage(parent.id, {
-            id: steveMessageId,
-            text: world.stevePrompt,
-            mode: world.fableMode,
-            delivery: "steer",
-        });
-        world.release("reading");
-        await demo.page.getByText("Steve", { exact: true }).first().waitFor({ timeout: 15000 });
-        cue("steve-steers", demo, phone);
-        await demo.hold(3500);
-
-        world.release("delegation");
-        await until(demo, () => world.hasReached("implementation"), "Grok’s delegation");
-        const spawnedModel = demo.page.getByText("Grok 4.6 sub-agent", { exact: true }).first();
-        await spawnedModel.waitFor();
+        world.release("reading", parent.id);
         await until(
             demo,
-            () =>
-                spawnedModel.evaluate((element) =>
-                    element
-                        .getAnimations({ subtree: true })
-                        .every((animation) => animation.playState !== "running"),
-                ),
-            "the complete, visibly typed Grok spawn label",
+            () => world.hasReached("implementation", parent.id),
+            "the second file read",
         );
-        cue("grok-spawned", demo, phone);
-        await demo.hold(2800);
-        world.release("implementation");
-        await until(demo, () => world.hasReached("astra-launch"), "the file edit");
+        await demo.hold(900);
+        world.release("implementation", parent.id);
+        await until(demo, () => world.hasReached("astra-launch", parent.id), "the file edit");
         cue("logic-edited", demo, phone);
-        await demo.hold(1400);
-        world.release("astra-launch");
-        await until(demo, () => world.hasReached("finishing"), "Astra’s delegation");
-        await until(demo, () => world.hasReached("astra-running"), "Astra’s review");
-        await demo.hold(1800);
-        world.release("grok-running");
-        world.release("astra-running");
+        // The edit is real: the daemon's own Git read model must see exactly
+        // this one changed file, which is what the sidebar counters show.
         await until(
             demo,
-            async () =>
-                (await gym.client.getAgentActivity(parent.id)).subagents.every(
-                    (agent) => agent.status === "idle",
-                ),
-            "completed delegates",
+            async () => {
+                const { git } = await gym.client.getWorkspaceGit(agent.workspaceId);
+                if (
+                    git.changedFiles > 1 ||
+                    (git.files ?? []).some((f) => f.path !== world.logicPath)
+                )
+                    throw new Error(
+                        `Unexpected changes in the checkout: ${JSON.stringify(git.files)}`,
+                    );
+                return git.changedFiles === 1;
+            },
+            "the edit to reach the checkout's Git state",
+            15000,
         );
-        world.release("finishing");
+        await demo.hold(1600);
+        world.release("astra-launch", parent.id);
+        await until(demo, () => world.hasReached("finishing", parent.id), "Astra’s delegation");
+        const spawned = demo.page.getByText(/Astra.*sub-agent/u).first();
+        await spawned.waitFor();
+        await until(demo, () => settled(spawned), "the complete, visibly typed Astra spawn label");
+        cue("astra-spawned", demo, phone);
+        await demo.hold(2800);
+        world.release("finishing", parent.id);
+        await demo.page.getByText(world.completionText.slice(0, 48)).first().waitFor();
         await until(
             demo,
             async () =>
                 (await gym.client.getMessages(parent.id, { limit: 64 })).runs.every(
                     (run) => run.status !== "running",
                 ),
-            "the completed turn",
+            "the completed first turn",
         );
-        const researchLink = demo.page
-            .getByRole("link", { name: "Watch the demo on X", exact: true })
-            .last();
-        await researchLink.waitFor();
         cue("response-settled", demo, phone);
-        await demo.pointerVisible(false);
         await demo.hold(3000);
-        cue("center-exit", demo, phone);
-        await demo.zoomOut({ duration: 1100 });
+        let phoneHome = Promise.resolve();
         if (phone) {
             const screen = await phone.inspect("completed-unread-session-list");
             if (
@@ -297,6 +336,15 @@ export default {
             await phone.inspect("concise-syntax-highlighted-diff");
             cue("phone-diff-visible", demo, phone);
             await demo.hold(4000);
+            // Full access is the real product setting that lets the ship
+            // command commit and push; the screenplay answers no review.
+            // Steve chooses it on camera through the native composer menu.
+            await phone.simulator.run("- tapOn:\n    text: PERMISSION MODE\n    index: 0");
+            cue("phone-permission-menu", demo, phone);
+            await demo.hold(1100);
+            await phone.simulator.run("- tapOn:\n    text: Full access.*");
+            cue("phone-full-access", demo, phone);
+            await demo.hold(900);
             await phone.simulator.run("- tapOn:\n    text: Type a message ...");
             const keyboard = await phone.inspect("native-keyboard-visible");
             const keyboardStart = keyboard.findIndex(
@@ -309,7 +357,7 @@ export default {
             // states. Resolve their physical positions from iOS accessibility.
             const characters = [
                 ...(keys.some((item) => item.text === "S") ? ["shift"] : []),
-                ..."ship it",
+                ...stevePhoneMessage,
             ];
             const points = characters.map((character) => {
                 const key = keys.find((item) =>
@@ -327,7 +375,7 @@ export default {
             const taps = await phone.simulator.tapPoints(points);
             await writeFile(join(output, "native-key-taps.json"), JSON.stringify(taps, null, 2));
             const typed = await phone.inspect("native-ship-it-typed");
-            if (!typed.some((item) => item.text === "ship it"))
+            if (!typed.some((item) => item.text === stevePhoneMessage))
                 throw new Error("The native keyboard did not type the exact requested message.");
             const sendBounds = typed
                 .find((item) => item.text === "Send")
@@ -341,73 +389,85 @@ export default {
                 },
             ]);
             cue("phone-sent", demo, phone);
-            await until(
-                demo,
-                async () =>
-                    JSON.stringify(await gym.client.getMessages(parent.id, { limit: 64 })).includes(
-                        world.shipResult,
-                    ),
-                "the actual phone send and acknowledgement",
-            );
-            await phone.inspect("phone-acknowledged");
-            cue("phone-shipped", demo, phone);
-            await demo.hold(2800);
-            // Return naturally to the session list; do not park a phone with
-            // an abandoned keyboard covering half the finished conversation.
+            await demo.hold(500);
+            // Steve returns to the session list; the parked phone shows the
+            // session working, not the keyboard. The list is verified while
+            // the desktop carries on, so the reply's timing stays on camera.
             await phone.simulator.run("- tapOn:\n    point: 38, 88");
-            await phone.prepare({ sessionTitle: "Voice waveform" });
-            const shippedHome = await phone.inspect("phone-shipped-home");
-            const shippedSession = shippedHome.find((item) =>
-                item.text?.startsWith("Voice waveform,"),
-            );
-            if (!shippedSession || /\+3|−1|-1/.test(shippedSession.text))
-                throw new Error(
-                    "The phone's real session-list change counters must clear after shipping.",
-                );
             cue("phone-exit", demo, phone);
+            phoneHome = phone.prepare({ sessionTitle: "Voice waveform" });
+            phoneHome.catch(() => undefined);
+        } else {
+            await gym.client.sendMessage(parent.id, {
+                text: stevePhoneMessage,
+                mode: { ...world.fableMode, permissionMode: "full_access" },
+            });
         }
-        await demo.hold(2500);
+        // Steve's message and the reply land on the desktop.
+        await demo.page.getByText(steve.name, { exact: true }).first().waitFor({ timeout: 15000 });
+        cue("steve-message-visible", demo, phone);
+        const steveMessage = (await gym.client.getMessages(parent.id, { limit: 64 })).runs
+            .flatMap((run) => run.messages)
+            .findLast((message) => message.role === "user");
+        if (steveMessage?.mode?.permissionMode !== "full_access")
+            throw new Error("Steve's phone message did not carry the Full access setting.");
+        const greeting = demo.page.getByText(world.shipGreeting.slice(0, 32)).first();
+        await greeting.waitFor({ timeout: 20000 });
+        await until(demo, () => settled(greeting), "the greeting to finish arriving");
+        // The wave sits just past the end of the greeting's line, on its
+        // baseline. Sticker size is in scene pixels; the ink box is CSS pixels.
+        const ink = await textInk(greeting);
+        const waveSize = 128;
+        await demo.sticker("wave", ink, {
+            offset: { x: 1 + (waveSize / 2 + 12) / (ink.width * deviceScaleFactor), y: 0.5 },
+            size: waveSize,
+            duration: 2600,
+        });
+        cue("wave", demo, phone);
+        // The Bash tool row: the real command, shown in its running state
+        // while the push lands and the deploy run is watched.
+        const shell = demo.page
+            .locator('[data-happy-desktop-ui="agent-activity-call"][data-status="running"]')
+            .filter({ hasText: "Bash" })
+            .last();
+        await shell.waitFor({ timeout: 20000 });
+        cue("ship-running", demo, phone);
+        await until(
+            demo,
+            async () =>
+                (await gym.client.getWorkspaceGit(agent.workspaceId)).git.changedFiles === 0,
+            "the pushed checkout to read clean",
+            60000,
+        );
+        cue("changes-cleared", demo, phone);
+        const deployed = demo.page.getByText(world.shipResult.slice(0, 24)).first();
+        await deployed.waitFor({ timeout: 60000 });
+        await until(demo, () => settled(deployed), "the deploy result to finish arriving");
+        cue("deployed", demo, phone);
+        demo.confetti({ duration: 3200 });
+        await until(
+            demo,
+            async () =>
+                (await gym.client.getMessages(parent.id, { limit: 64 })).runs.every(
+                    (run) => run.status !== "running",
+                ),
+            "the completed shipping turn",
+        );
+        await demo.hold(3600);
+        cue("end", demo, phone);
+        await phoneHome;
         await demo.finish();
-        // Separate honest still: completed edit and actual picker, after the movie ends.
-        await demo.page.setViewportSize({ width: 840, height: 664 });
-        // A real upward scroll hands the transcript from follow-tail to the
-        // reader before placing the edited row. Programmatic scrolling alone
-        // can be restored to the tail by the next measured layout commit.
-        await demo.page.mouse.move(650, 280);
-        await demo.page.mouse.wheel(0, -500);
-        await demo.page.waitForTimeout(300);
-        await demo.page
-            .getByText("waveformActive.ts", { exact: true })
-            .first()
-            .scrollIntoViewIfNeeded();
-        await demo.page
-            .locator('[data-happy-desktop-ui="composer-model-control-trigger"]')
-            .first()
-            .click();
-        await demo.page
-            .locator('[data-happy-desktop-ui="composer-model-control-row"]')
-            .filter({ hasText: "Model" })
-            .first()
-            .click();
-        await choices.filter({ hasText: "Fable 5.1" }).first().hover();
-        await demo.page
-            .getByText("waveformActive.ts", { exact: true })
-            .first()
-            .evaluate((element) => element.scrollIntoView({ block: "start" }));
-        await demo.page.waitForTimeout(700);
-        const stillEdit = await demo.page
-            .getByText("waveformActive.ts", { exact: true })
-            .first()
-            .boundingBox();
-        const stillPicker = await fable.boundingBox();
-        if (
-            !stillEdit ||
-            !stillPicker ||
-            stillEdit.y < 88 ||
-            stillEdit.y + stillEdit.height > stillPicker.y - 30
-        )
-            throw new Error("The mobile still must visibly retain its edit row above the picker.");
-        await demo.page.screenshot({ path: join(output, "mobile-desktop-still.png") });
+        // Off camera: let Astra's review finish, then check what the command did.
+        world.release("astra-running");
+        shippingEvidence = await shippingVerify(gym, agent.workspaceId, {
+            origin: shippingFixture.origin,
+            baseline: shippingFixture.baseline,
+            path: world.logicPath,
+        });
+        await writeFile(
+            join(output, "shipping-verified.json"),
+            JSON.stringify(shippingEvidence, null, 2),
+        );
         await writeFile(join(output, "cues.json"), JSON.stringify(cues, null, 2));
     },
     async evidence(page, gym) {
@@ -415,19 +475,19 @@ export default {
             fixture: {
                 inference: "screenplay",
                 collaborator:
-                    "Fictional Steve, one explicit protocol-fixture identity; no draft synchronization",
-                delivery: "steer",
+                    "Fictional Steve, one explicit protocol-fixture identity attached to the real message typed on the paired phone",
                 logic: "Small real waveform predicate and pre-wired call site, curated for a narrow phone diff",
-                spawn: "Assistant announcement followed by real create_agent; no fabricated tool presentation",
+                spawn: "Real create_agent; Astra's review is released after the take so no collaborator row is filmed",
                 shipping:
-                    "Push/deploy outcome is screenplay. The owned fixture edit is restored to its baseline; actual Git watcher and encrypted native counters reconcile to zero. No real push, deployment, or fabricated permission approval.",
+                    "The ship command is real and runs with the phone's Full access setting: a real commit and a real push into the gym's own bare origin. gh is an offline fixture on the gym PATH reporting one deploy run. No real remote, deployment, or permission review verdict.",
+                shipCommand,
             },
             framing,
+            viewport,
             cues,
             shipping: shippingEvidence,
             health: await gym.client.getHealth(),
             agentId: recordedAgentId,
-            steveMessageId,
             history: await gym.client.getMessages(recordedAgentId, { limit: 64 }),
             activity: await gym.client.getAgentActivity(recordedAgentId),
             finalVisibleText: await page.locator("body").innerText(),

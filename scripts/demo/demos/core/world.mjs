@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
+import { shipCommand } from "./shipping.mjs";
+import { stevePhoneMessage } from "./protocol.mjs";
 
 export const prompt =
     "Add a waveform to the voice agent that animates when speaking. Review control flow with Astra.";
-export const stevePrompt =
-    "Find a recent GPT-duplex product demo that blew up on X with a Grok sub-agent.";
 export const voicePath = "packages/happy-app/sources/components/VoiceAssistantStatusBar.tsx";
 export const barsPath = "packages/happy-app/sources/components/VoiceBars.tsx";
 export const logicPath = "packages/happy-app/sources/realtime/waveformActive.ts";
@@ -174,21 +174,35 @@ export function turnFind(text) {
     return undefined;
 }
 
+// Gates are scoped by the session that reached them, so a stale agent from an
+// earlier take can never consume the cue meant for the one being filmed. A
+// release without a session opens that gate for every session.
 const gates = new Map();
 const reached = new Set();
-export function release(name) {
-    gates.get(name)?.();
-    gates.delete(name);
+const gateKey = (session, name) => `${session}:${name}`;
+export function release(name, session) {
+    for (const key of [...gates.keys()]) {
+        const matches =
+            session === undefined ? key.endsWith(`:${name}`) : key === gateKey(session, name);
+        if (!matches) continue;
+        gates.get(key)?.();
+        gates.delete(key);
+    }
 }
-export function hasReached(name) {
-    return reached.has(name);
+export function hasReached(name, session) {
+    return session === undefined
+        ? [...reached].some((key) => key.endsWith(`:${name}`))
+        : reached.has(gateKey(session, name));
 }
 export function close() {
-    for (const name of gates.keys()) release(name);
+    for (const key of [...gates.keys()]) {
+        gates.get(key)?.();
+        gates.delete(key);
+    }
 }
-async function gate(name) {
-    reached.add(name);
-    await new Promise((resolve) => gates.set(name, resolve));
+async function gate(session, name) {
+    reached.add(gateKey(session, name));
+    await new Promise((resolve) => gates.set(gateKey(session, name), resolve));
 }
 const text = (value) => ({ type: "text", text: value });
 const tool = (name, args) => ({ type: "toolCall", name, arguments: args });
@@ -202,19 +216,42 @@ const paced = (content, timing = {}) => ({
     completionDelayMs: 100,
     ...timing,
 });
-export const grokTask = "Grok · Research X";
 export const astraTask = "Astra · Review control flow";
-export const grokFinding =
-    "Found OpenAI’s live voice demo: listening while speaking. [Watch the demo on X](https://x.com/OpenAIDevs/status/2098099269551149398).";
-export const shipResult = "Pushed to main. New version is being deployed.";
-export const firstWorkText = "I’ll reuse the voice bars and ask Astra to review.";
-let shippingFinalize;
-export function shippingConfigure(finalize) {
-    shippingFinalize = finalize;
-}
+export const shipGreeting = "Hi Steve, pushing to main. Waiting for CI to deploy.";
+export const shipResult = "Deployed. The waveform is live.";
+export const shipFailure = "The push did not go through. Leaving main untouched.";
 
-// The copy is a screenplay. Delegation, Read, and Edit are actual daemon tools;
-// this isolated fixture does not claim that its inference called live vendors.
+// The daemon's own verdict on the ship command: the tool message that answers
+// the Bash call, which it flags as an error and closes with the exit code.
+function shipCommandFailed(messages) {
+    const call = messages.findLastIndex(
+        (message) =>
+            message.role === "assistant" &&
+            Array.isArray(message.content) &&
+            message.content.some((block) => block.type === "tool_call" && block.name === "Bash"),
+    );
+    const result = messages[call + 1];
+    if (call < 0 || result?.role !== "tool") return true;
+    const output = (result.content ?? [])
+        .filter((block) => block.type === "text")
+        .map((block) => block.text)
+        .join("\n");
+    const exit = output.match(/exited with code (\d+)/u);
+    return result.isError === true || (exit !== null && exit[1] !== "0");
+}
+export const completionText =
+    "Waveform animates for either speaker while connected. Astra is reviewing the control flow.";
+
+const fromSteve = (message) =>
+    message.role === "user" &&
+    (message.content === stevePhoneMessage ||
+        (Array.isArray(message.content) &&
+            message.content.some(
+                (block) => block.type === "text" && block.text === stevePhoneMessage,
+            )));
+
+// The copy is a screenplay. Delegation, Read, Edit, and Bash are actual daemon
+// tools; this isolated fixture does not claim that its inference called live vendors.
 export async function reply(payload, emitted) {
     const sessionId = payload.options?.sessionId ?? "";
     const messages = payload.context?.messages ?? [];
@@ -231,7 +268,7 @@ export async function reply(payload, emitted) {
         .join("\n");
     if (payload.options?.intent === "compaction") return undefined;
     if (sessionId.endsWith(":title")) {
-        if (input.includes(prompt) || input.includes(stevePrompt))
+        if (input.includes(prompt))
             return {
                 content: [
                     text(
@@ -243,11 +280,6 @@ export async function reply(payload, emitted) {
     }
     const key = `core:${sessionId}`;
     const step = emitted.get(key) ?? 0;
-    if (input.includes("CORE_GROK_RESEARCH")) {
-        emitted.set(key, step + 1);
-        await gate("grok-running");
-        return paced([text(grokFinding)]);
-    }
     if (input.includes("CORE_ASTRA_REVIEW")) {
         emitted.set(key, step + 1);
         if (step === 0)
@@ -257,34 +289,40 @@ export async function reply(payload, emitted) {
                     max_output_tokens: 2000,
                 }),
             ]);
-        await gate("astra-running");
+        // The review keeps running until the take releases it after the end,
+        // so its report never adds a collaborator row to the filmed transcript.
+        await gate(sessionId, "astra-running");
         return paced([
             text(
                 "The waveform activates only while connected, for either speaker, and rests in silence. Connecting and error states cannot animate it. The timer and tap-to-end handler are unchanged.",
             ),
         ]);
     }
-    if (
-        messages.some(
-            (message) =>
-                message.role === "user" &&
-                (message.content === "ship it" ||
-                    (Array.isArray(message.content) &&
-                        message.content.some(
-                            (block) => block.type === "text" && block.text === "ship it",
-                        ))),
-        )
-    ) {
-        if (!shippingFinalize) throw new Error("Prepare the staged shipping fixture first.");
-        // The user explicitly permits this shipping/deployment screenplay.
-        // No permission-review verdict, Git push, or production deploy is faked
-        // into a tool result. Only the owned fixture's edit is restored, then
-        // the real Git watcher and encrypted phone projection must reconcile.
-        await shippingFinalize();
-        return paced([{ type: "thinking", thinking: "Preparing the release." }, text(shipResult)], {
-            thinkingDeltaChunkSize: 4096,
-            thinkingDeltaDelayMs: 1800,
-        });
+    if (messages.some(fromSteve)) {
+        const shipKey = `${key}:ship`;
+        const shipStep = emitted.get(shipKey) ?? 0;
+        emitted.set(shipKey, shipStep + 1);
+        // Steve's message arrives with Full access from the phone. The command
+        // is real: the commit and push land in the gym's own bare origin and the
+        // deploy run comes from the offline gh fixture on the gym's PATH.
+        if (shipStep === 0)
+            return paced(
+                [
+                    text(shipGreeting),
+                    tool("Bash", {
+                        command: shipCommand,
+                        description: "Commit, push to main, and wait for the deploy run",
+                        timeout: 120000,
+                    }),
+                ],
+                // The greeting waits for the phone to settle back into the
+                // shot; the command follows once the wave has landed.
+                { delayMs: 2200, textDeltaDelayMs: 1400, toolCallDeltaDelayMs: 400 },
+            );
+        // The screenplay only claims a deploy the daemon actually reported.
+        if (shipCommandFailed(messages))
+            return paced([text(shipFailure)], { textDeltaDelayMs: 700, completionDelayMs: 800 });
+        return paced([text(shipResult)], { textDeltaDelayMs: 700, completionDelayMs: 800 });
     }
     if (!input.includes(prompt)) return undefined;
     emitted.set(key, step + 1);
@@ -292,30 +330,16 @@ export async function reply(payload, emitted) {
         return paced(
             [
                 { type: "thinking", thinking: "Checking the existing waveform and voice state." },
-                text(firstWorkText),
                 tool("Read", { file_path: voicePath }),
             ],
-            { thinkingDeltaChunkSize: 4096, thinkingDeltaDelayMs: 4000, textDeltaDelayMs: 2200 },
+            { thinkingDeltaChunkSize: 4096, thinkingDeltaDelayMs: 4000, toolCallDeltaDelayMs: 600 },
         );
     if (step === 1) {
-        await gate("reading");
+        await gate(sessionId, "reading");
         return paced([tool("Read", { file_path: logicPath })]);
     }
     if (step === 2) {
-        await gate("delegation");
-        return paced([
-            text("On it, Steve. Grok will research X while I make the change."),
-            tool("create_agent", {
-                title: grokTask,
-                model: "xai/grok-4.6",
-                provider: "grok",
-                effort: "high",
-                text: `CORE_GROK_RESEARCH\n${stevePrompt}`,
-            }),
-        ]);
-    }
-    if (step === 3) {
-        await gate("implementation");
+        await gate(sessionId, "implementation");
         return paced(
             [
                 tool("Edit", {
@@ -328,8 +352,8 @@ export async function reply(payload, emitted) {
             { toolCallDeltaDelayMs: 350 },
         );
     }
-    if (step === 4) {
-        await gate("astra-launch");
+    if (step === 3) {
+        await gate(sessionId, "astra-launch");
         return paced([
             tool("create_agent", {
                 title: astraTask,
@@ -340,16 +364,6 @@ export async function reply(payload, emitted) {
             }),
         ]);
     }
-    if (step === 5) {
-        await gate("finishing");
-        return paced(
-            [
-                text(
-                    `Waveform added for either speaker. Astra reviewed the control flow.\n\nGrok’s research is done. ${grokFinding}`,
-                ),
-            ],
-            { textDeltaDelayMs: 1600 },
-        );
-    }
-    return paced([text("Ready to ship.")], { completionDelayMs: 1200 });
+    await gate(sessionId, "finishing");
+    return paced([text(completionText)], { textDeltaDelayMs: 1200, completionDelayMs: 900 });
 }

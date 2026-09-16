@@ -1,7 +1,14 @@
 import { createRequire } from "node:module";
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { margin, output, scene, window as windowRectangle, windowRadius } from "./scene.mjs";
+import {
+    deviceScaleFactor,
+    margin,
+    output,
+    scene,
+    window as windowRectangle,
+    windowRadius,
+} from "./scene.mjs";
 
 /*
  * Turns captured viewport frames into the delivered shot.
@@ -165,6 +172,100 @@ function cardLayer(text) {
     );
 }
 
+/** Deterministic 32-bit generator, so confetti recorded twice falls the same way twice. */
+function mulberry32(seed) {
+    let state = seed >>> 0;
+    return () => {
+        state = (state + 0x6d2b79f5) >>> 0;
+        let value = Math.imul(state ^ (state >>> 15), 1 | state);
+        value = (value + Math.imul(value ^ (value >>> 7), 61 | value)) ^ value;
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+/**
+ * The standard celebration, simulated once for the whole output frame.
+ *
+ * Two cannons at the bottom corners fire toward the centre. The motion is the
+ * familiar browser-confetti model: an initial velocity that decays every
+ * tick, constant gravity, a wobble and a tilt that make each piece flutter,
+ * and a life that fades out. Positions are in output pixels; the model was
+ * tuned for CSS pixels, so it is scaled by the delivered pixel density.
+ */
+export function confettiSimulate(ticks, density) {
+    const random = mulberry32(0x5eed_c0f7);
+    const colours = ["#26ccff", "#a25afd", "#ff5e7e", "#88ff5a", "#fcff42", "#ffa62d", "#ff36ff"];
+    const cannons = [
+        { x: 0.04, y: 1.02, angle: 58 },
+        { x: 0.96, y: 1.02, angle: 122 },
+    ];
+    const pieces = [];
+    for (const cannon of cannons) {
+        for (let index = 0; index < 90; index += 1) {
+            const spread = 58;
+            const startVelocity = 62;
+            pieces.push({
+                x: cannon.x * output.width,
+                y: cannon.y * output.height,
+                angle:
+                    (-cannon.angle * Math.PI) / 180 + (0.5 - random()) * ((spread * Math.PI) / 180),
+                velocity: (startVelocity * 0.5 + random() * startVelocity) * density,
+                colour: colours[Math.floor(random() * colours.length)],
+                circle: random() < 0.3,
+                wobble: random() * 10,
+                wobbleSpeed: Math.min(0.11, random() * 0.1 + 0.05),
+                tilt: random() * Math.PI,
+                life: Math.round(ticks * (0.86 + random() * 0.14)),
+                size: (8 + random() * 5) * density,
+            });
+        }
+    }
+    const gravity = 1 * density;
+    const decay = 0.91;
+    const frames = [];
+    for (let tick = 0; tick < ticks; tick += 1) {
+        const shapes = [];
+        for (const piece of pieces) {
+            if (tick >= piece.life) continue;
+            const progress = tick / piece.life;
+            const wobbleX = piece.x + 10 * density * Math.cos(piece.wobble);
+            const wobbleY = piece.y + 10 * density * Math.sin(piece.wobble);
+            shapes.push({
+                x: wobbleX,
+                y: wobbleY,
+                width: piece.size * Math.abs(Math.cos(piece.tilt)) + piece.size * 0.35,
+                height: piece.size * Math.abs(Math.sin(piece.tilt)) + piece.size * 0.35,
+                rotation: (piece.wobble * 180) / Math.PI,
+                colour: piece.colour,
+                circle: piece.circle,
+                opacity: 1 - progress,
+            });
+            piece.x += Math.cos(piece.angle) * piece.velocity;
+            piece.y += Math.sin(piece.angle) * piece.velocity + gravity;
+            piece.velocity *= decay;
+            piece.wobble += piece.wobbleSpeed;
+            piece.tilt += 0.1;
+        }
+        frames.push(shapes);
+    }
+    return frames;
+}
+
+/** One confetti tick as an SVG layer at output resolution. */
+export function confettiLayer(shapes) {
+    const body = shapes
+        .map((shape) => {
+            const transform = `translate(${shape.x.toFixed(1)} ${shape.y.toFixed(1)}) rotate(${shape.rotation.toFixed(1)})`;
+            return shape.circle
+                ? `<ellipse rx="${(shape.width / 2).toFixed(1)}" ry="${(shape.height / 2).toFixed(1)}" fill="${shape.colour}" opacity="${shape.opacity.toFixed(3)}" transform="${transform}"/>`
+                : `<rect x="${(-shape.width / 2).toFixed(1)}" y="${(-shape.height / 2).toFixed(1)}" width="${shape.width.toFixed(1)}" height="${shape.height.toFixed(1)}" fill="${shape.colour}" opacity="${shape.opacity.toFixed(3)}" transform="${transform}"/>`;
+        })
+        .join("");
+    return Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${output.width}" height="${output.height}">${body}</svg>`,
+    );
+}
+
 /** Runs `work` over `items`, `limit` at a time. sharp does its work off-thread, so this scales. */
 async function pool(items, limit, work) {
     let next = 0;
@@ -217,6 +318,9 @@ export async function composeFrames(options) {
     const stickers = new Map();
     const typingSpeed = typingSpeedLayer();
     const workSpeed = workSpeedLayer();
+    // The delivered pixel density: output pixels per CSS pixel of the app.
+    const density = deviceScaleFactor * (output.width / (frames[0]?.camera.width ?? output.width));
+    let confetti;
     let done = 0;
 
     const stickerSource = async (name) => {
@@ -267,6 +371,11 @@ export async function composeFrames(options) {
             if (!captions.has(entry.caption))
                 captions.set(entry.caption, captionLayer(entry.caption));
             layers.push({ input: captions.get(entry.caption) });
+        }
+        if (entry.confetti) {
+            confetti ??= confettiSimulate(entry.confetti.ticks, density);
+            const shapes = confetti[entry.confetti.tick];
+            if (shapes?.length) layers.push({ input: confettiLayer(shapes) });
         }
         if (entry.typingSpeed === 3) layers.push({ input: typingSpeed });
         if (entry.playbackSpeed === 4) layers.push({ input: workSpeed });
