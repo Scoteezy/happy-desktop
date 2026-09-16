@@ -341,8 +341,13 @@ class DeterministicInferenceServer implements GymInferenceServer {
                           textDeltaDelayMs: 4,
                       }
                     : {
-                          textDeltaChunkSize: longChat ? 16_384 : 96,
-                          textDeltaDelayMs: this.#manifest.profile === "smoke" ? 0 : 1,
+                          textDeltaChunkSize:
+                              latestUserText.includes("gym-history-") || longChat ? 16_384 : 96,
+                          textDeltaDelayMs:
+                              latestUserText.includes("gym-history-") ||
+                              this.#manifest.profile === "smoke"
+                                  ? 0
+                                  : 1,
                       }),
             completionDelayMs: replay ? 20 : this.#manifest.profile === "smoke" ? 0 : 2,
         };
