@@ -7,10 +7,10 @@ interface VoiceBarsProps {
     size?: 'small' | 'medium';
 }
 
-export const VoiceBars: React.FC<VoiceBarsProps> = ({ 
-    isActive, 
+export const VoiceBars: React.FC<VoiceBarsProps> = ({
+    isActive,
     color = '#fff',
-    size = 'small' 
+    size = 'small'
 }) => {
     const bar1 = useRef(new Animated.Value(0.3)).current;
     const bar2 = useRef(new Animated.Value(0.5)).current;
@@ -45,7 +45,7 @@ export const VoiceBars: React.FC<VoiceBarsProps> = ({
             bar1.stopAnimation();
             bar2.stopAnimation();
             bar3.stopAnimation();
-            
+
             // Reset to static state
             Animated.parallel([
                 Animated.timing(bar1, { toValue: 0.3, duration: 200, useNativeDriver: true }),
@@ -60,11 +60,11 @@ export const VoiceBars: React.FC<VoiceBarsProps> = ({
     const gap = size === 'small' ? 1.5 : 2;
 
     return (
-        <View style={{ 
-            flexDirection: 'row', 
-            alignItems: 'center', 
+        <View style={{
+            flexDirection: 'row',
+            alignItems: 'center',
             gap,
-            height: barHeight 
+            height: barHeight
         }}>
             <Animated.View style={{
                 width: barWidth,

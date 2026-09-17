@@ -183,7 +183,7 @@ const gates = new Map();
 const reached = new Set();
 const gateKey = (session, name) => `${session}:${name}`;
 export function release(name, session) {
-    for (const key of [...gates.keys()]) {
+    for (const key of gates.keys()) {
         const matches =
             session === undefined ? key.endsWith(`:${name}`) : key === gateKey(session, name);
         if (!matches) continue;
@@ -197,7 +197,7 @@ export function hasReached(name, session) {
         : reached.has(gateKey(session, name));
 }
 export function close() {
-    for (const key of [...gates.keys()]) {
+    for (const key of gates.keys()) {
         gates.get(key)?.();
         gates.delete(key);
     }
