@@ -17,6 +17,9 @@ import type {
     HappyAgentConversationSnapshot,
     HappyAgentFileLayout,
     HappyAgentWorkspaceFiles,
+    HappyAgentCommentDraft,
+    HappyAgentCommentId,
+    HappyAgentFileComment,
     HappyAgentFileScope,
     HappyAgentFileSearch,
     HappyAgentFileViewMode,
@@ -3385,6 +3388,13 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             key={`${file.id}:${file.kind}`}
             {...(props.mediaWindow ? { mediaWindow: props.mediaWindow } : {})}
             mode={workspace.fileViewMode}
+            comments={workspace.fileComments.comments.filter(
+                (comment) => comment.anchor.path === file.path,
+            )}
+            {...(workspace.fileComments.draft?.anchor.path === file.path
+                ? { commentDraft: workspace.fileComments.draft }
+                : {})}
+            commentTotal={workspace.fileComments.comments.length}
             happyAgentOnline={happyAgentOnline}
             onMainFileOpen={(path, kind) =>
                 props.onFileSelect(file.groupId, props.chatId, path, kind)
@@ -4153,6 +4163,11 @@ function HappyAgentFileBody(props: {
     writeRefusal?: string;
     /** Why the current local draft cannot be persisted to the Happy Agent. */
     saveRefusal?: string;
+    /** Review notes on this file, and the one being written if it is on this file. */
+    comments: readonly HappyAgentFileComment[];
+    commentDraft?: HappyAgentCommentDraft;
+    /** How many notes are waiting across every file, for the hand-over control. */
+    commentTotal: number;
     workspace: HappyAgentWorkspaceStore;
 }) {
     const { file, workspace } = props;
@@ -4305,6 +4320,47 @@ function HappyAgentFileBody(props: {
                           }
                         : {})}
                     saveDisabled={saveDisabled}
+                    {...(writable
+                        ? {
+                              // Notes are about this file, so only this file's
+                              // ones are drawn; the rest belong to their own
+                              // tabs and travel together only when sent.
+                              comments: props.comments.map((comment) => ({
+                                  id: comment.id,
+                                  lineNumber: comment.anchor.lineNumber,
+                                  side: comment.anchor.side,
+                                  text: comment.text,
+                                  stale: comment.stale,
+                              })),
+                              ...(props.commentDraft === undefined
+                                  ? {}
+                                  : {
+                                        commentDraft: {
+                                            lineNumber: props.commentDraft.anchor.lineNumber,
+                                            side: props.commentDraft.anchor.side,
+                                            text: props.commentDraft.text,
+                                        },
+                                    }),
+                              onCommentDraftOpen: (
+                                  lineNumber: number,
+                                  side: "deletions" | "additions",
+                              ) =>
+                                  workspace.commentDraftOpen({
+                                      path: file.path,
+                                      lineNumber,
+                                      side,
+                                      ...(change.hash === undefined ? {} : { hash: change.hash }),
+                                  }),
+                              onCommentDraftUpdate: (text: string) =>
+                                  workspace.commentDraftUpdate(text),
+                              onCommentDraftCancel: () => workspace.commentDraftCancel(),
+                              onCommentDraftSubmit: () => workspace.commentDraftSubmit(),
+                              onCommentRemove: (commentId: string) =>
+                                  workspace.commentRemove(commentId as HappyAgentCommentId),
+                              commentTotal: props.commentTotal,
+                              onCommentsSubmit: () => workspace.commentsSubmit(),
+                          }
+                        : {})}
                     onModeChange={(mode) => workspace.fileViewModeUpdate(mode)}
                     onWrapChange={(wrap) => workspace.fileViewWrapUpdate(wrap)}
                     wrap={props.wrap}

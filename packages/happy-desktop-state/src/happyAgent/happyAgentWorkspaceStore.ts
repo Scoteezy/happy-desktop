@@ -628,6 +628,8 @@ export interface HappyAgentWorkspaceSnapshot {
     readonly fileLayout: HappyAgentFileLayout;
     /** What the reader is looking for in the file listing, and what was found. */
     readonly fileSearch: HappyAgentFileSearch;
+    /** Review notes left on this checkout's files, and the one being written. */
+    readonly fileComments: HappyAgentFileComments;
     /**
      * How wide the right panel is in the addressed checkout, in CSS pixels, or
      * nothing where this reader has never sized it and the product's own default
@@ -793,6 +795,91 @@ export interface HappyAgentFileSearch {
     readonly results?: readonly HappyAgentFileSearchResult[];
     /** True while an answer for the current query is still outstanding. */
     readonly searching: boolean;
+}
+
+/**
+ * Which column of a diff a comment is attached to. The same line number means
+ * two different lines on the two sides, so the side is part of the address
+ * rather than a detail of how it is drawn.
+ */
+export type HappyAgentCommentSide = "deletions" | "additions";
+
+export type HappyAgentCommentId = string & { readonly __brand: "HappyAgentCommentId" };
+
+/**
+ * Where a comment is attached, and to which text.
+ *
+ * The hash is what makes the anchor honest. A line number alone is a claim
+ * about a file that an agent may already have rewritten: it would still point
+ * somewhere, just not at the line that was being talked about. Recording the
+ * content the comment was written against lets the surface say "this was left
+ * on an older version of this file" instead of silently pointing at whatever
+ * now occupies that row.
+ *
+ * `lineNumber: 0` addresses the file rather than a line in it, which is the
+ * renderer's own convention for a file-level annotation.
+ */
+export interface HappyAgentCommentAnchor {
+    readonly path: string;
+    readonly lineNumber: number;
+    readonly side: HappyAgentCommentSide;
+    /** The file's content hash when the comment was written, when one was known. */
+    readonly hash?: string;
+}
+
+export interface HappyAgentFileComment {
+    readonly id: HappyAgentCommentId;
+    readonly anchor: HappyAgentCommentAnchor;
+    readonly text: string;
+    /**
+     * The file has changed since this was written, so the anchor no longer
+     * describes the text on screen. Stated rather than repaired: guessing where
+     * the line went is exactly the kind of reconstruction that produces a
+     * comment confidently attached to the wrong code.
+     */
+    readonly stale: boolean;
+}
+
+/** A comment being written, before it becomes one. */
+export interface HappyAgentCommentDraft {
+    readonly anchor: HappyAgentCommentAnchor;
+    readonly text: string;
+}
+
+/**
+ * The review notes left on this checkout's changed files.
+ *
+ * Memory-only and deliberately so: a note here exists to become a request to
+ * the agent, and it is spent when it does. Nothing about it is worth surviving
+ * a restart, and persisting it would make an unsent remark look like a record.
+ */
+export interface HappyAgentFileComments {
+    readonly comments: readonly HappyAgentFileComment[];
+    readonly draft?: HappyAgentCommentDraft;
+}
+
+const FILE_COMMENTS_IDLE: HappyAgentFileComments = { comments: [] };
+
+/**
+ * The review notes written out as one request an agent can act on.
+ *
+ * Each note names the file and the line it was left on, because that address is
+ * the whole reason a note beats a sentence in the composer: "this is wrong"
+ * about a named line is actionable, and the same words about a changed file are
+ * a guess. A note whose file moved underneath it says so rather than quietly
+ * offering a line number that no longer means anything.
+ */
+function happyAgentCommentsRequestWrite(comments: readonly HappyAgentFileComment[]): string {
+    const lines = comments.map((comment) => {
+        const { path, lineNumber, side } = comment.anchor;
+        const place =
+            lineNumber === 0
+                ? path
+                : `${path}:${String(lineNumber)}${side === "deletions" ? " (removed line)" : ""}`;
+        const caveat = comment.stale ? " — written before the file changed again" : "";
+        return `- ${place}${caveat}\n  ${comment.text.split("\n").join("\n  ")}`;
+    });
+    return `Please address these review comments:\n\n${lines.join("\n")}`;
 }
 
 /** How many ranked matches the file listing asks the daemon for. */
@@ -1185,6 +1272,25 @@ export interface HappyAgentWorkspaceStore {
      * on screen is only the part of it that has been opened.
      */
     fileSearchUpdate(query: string): void;
+    /**
+     * Starts a review note on one line of a file, or on the file itself with
+     * `lineNumber: 0`. One note is written at a time, so opening a second
+     * replaces an untouched first rather than leaving two composers open.
+     */
+    commentDraftOpen(anchor: HappyAgentCommentAnchor): void;
+    commentDraftUpdate(text: string): void;
+    commentDraftCancel(): void;
+    /** Keeps the written note. An empty one is a cancel, not an empty comment. */
+    commentDraftSubmit(): void;
+    commentRemove(commentId: HappyAgentCommentId): void;
+    /**
+     * Hands every note to the agent as one change request and clears them.
+     *
+     * It lands in the composer rather than being sent, because the reader is
+     * the one asking and should see the request and be able to add to it before
+     * it goes. Answers whether there was anything to hand over.
+     */
+    commentsSubmit(): boolean;
     /** Records how wide the reader left the right panel in this checkout. */
     panelWidthUpdate(groupId: HappyAgentGroupId, width: number): void;
     /**
@@ -1579,6 +1685,13 @@ export function happyAgentWorkspaceStoreCreate(
     /** Which search request is still wanted; a later query retires an earlier one. */
     let fileSearchGeneration = 0;
     /**
+     * Review notes on this checkout. Like the search, this is what the reader is
+     * doing rather than how they like things, so it is neither persisted nor
+     * carried to another checkout.
+     */
+    let fileComments: HappyAgentFileComments = FILE_COMMENTS_IDLE;
+    let commentSequence = 0;
+    /**
      * How each checkout this window has arranged is arranged, read once here.
      *
      * Per checkout rather than per workspace: how someone wants to look at a
@@ -1909,6 +2022,7 @@ export function happyAgentWorkspaceStoreCreate(
         fileScope: "changed",
         fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
         fileSearch: FILE_SEARCH_IDLE,
+        fileComments: FILE_COMMENTS_IDLE,
         fileTreeExpanded,
         fileTreeCollapsed,
         workspaceFilesLoading,
@@ -2210,6 +2324,7 @@ export function happyAgentWorkspaceStoreCreate(
                 snapshot.fileScope === nextFileScope &&
                 snapshot.fileLayout === nextFileLayout &&
                 snapshot.fileSearch === fileSearch &&
+                snapshot.fileComments === fileComments &&
                 snapshot.panelWidth === nextPanelWidth &&
                 snapshot.fileTreeExpanded === fileTreeExpanded &&
                 snapshot.fileTreeCollapsed === fileTreeCollapsed &&
@@ -2235,6 +2350,7 @@ export function happyAgentWorkspaceStoreCreate(
                           fileScope: nextFileScope,
                           fileLayout: nextFileLayout,
                           fileSearch,
+                          fileComments,
                           ...(nextPanelWidth === undefined ? {} : { panelWidth: nextPanelWidth }),
                           fileTreeExpanded,
                           fileTreeCollapsed,
@@ -2345,6 +2461,34 @@ export function happyAgentWorkspaceStoreCreate(
     const fileSearchReset = (): void => {
         fileSearchGeneration += 1;
         fileSearch = FILE_SEARCH_IDLE;
+    };
+
+    /** Review notes belong to the checkout they were written about. */
+    const fileCommentsReset = (): void => {
+        fileComments = FILE_COMMENTS_IDLE;
+    };
+
+    /**
+     * Marks the notes on changed paths as written against older text.
+     *
+     * Deliberately a statement and not a repair. Once the bytes move, where a
+     * commented line went is a question only a diff of the two versions could
+     * answer, and answering it by guessing is how a note ends up confidently
+     * attached to code nobody meant. A note that knows it is stale can still be
+     * sent — it carries the caveat with it.
+     */
+    const fileCommentsStale = (paths: readonly string[] | null): void => {
+        if (fileComments.comments.length === 0) return;
+        const changed = paths === null ? undefined : new Set(paths);
+        const affected = (path: string): boolean => changed === undefined || changed.has(path);
+        let touched = false;
+        const comments = fileComments.comments.map((comment) => {
+            if (comment.stale || !affected(comment.anchor.path)) return comment;
+            touched = true;
+            return { ...comment, stale: true };
+        });
+        if (!touched) return;
+        fileComments = { ...fileComments, comments };
     };
 
     /**
@@ -2848,6 +2992,7 @@ export function happyAgentWorkspaceStoreCreate(
         const affected = (path: string): boolean =>
             change.paths === null || change.paths.includes(path);
         fileAddressesInvalidate(change.groupId, change.paths);
+        fileCommentsStale(change.paths);
         for (const tab of fileTabs) {
             if (tab.groupId !== change.groupId || !affected(tab.path)) continue;
             fileTabLoadedIdentities.delete(tab.id);
@@ -4500,6 +4645,7 @@ export function happyAgentWorkspaceStoreCreate(
                     fileScope: "changed",
                     fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
                     fileSearch,
+                    fileComments,
                     fileTreeExpanded,
                     fileTreeCollapsed,
                     ...(workspaceFiles ? { workspaceFiles } : {}),
@@ -4714,6 +4860,7 @@ export function happyAgentWorkspaceStoreCreate(
             if (groupId !== addressedGroupId) {
                 fileTreeExpansionReset();
                 fileSearchReset();
+                fileCommentsReset();
             }
             releaseGroup();
             if (groupId !== undefined && fileScopeOf(groupId) === "all")
@@ -4746,6 +4893,7 @@ export function happyAgentWorkspaceStoreCreate(
                 displayedMainViewId = undefined;
                 fileTreeExpansionReset();
                 fileSearchReset();
+                fileCommentsReset();
             }
             // The panel belongs to this group, so it learns the address before
             // the conversation is released rather than after.
@@ -4821,6 +4969,7 @@ export function happyAgentWorkspaceStoreCreate(
             addressedGroupSeen = undefined;
             displayedMainViewId = undefined;
             fileSearchReset();
+            fileCommentsReset();
             openConversation(undefined);
         },
         conversationListRetry: () => {
@@ -5279,6 +5428,62 @@ export function happyAgentWorkspaceStoreCreate(
             if (fileSearch.query === query) return;
             fileSearchApply(query);
             recompute();
+        },
+        commentDraftOpen(anchor) {
+            fileComments = { ...fileComments, draft: { anchor, text: "" } };
+            recompute();
+        },
+        commentDraftUpdate(text) {
+            if (fileComments.draft === undefined) return;
+            fileComments = { ...fileComments, draft: { ...fileComments.draft, text } };
+            recompute();
+        },
+        commentDraftCancel() {
+            if (fileComments.draft === undefined) return;
+            fileComments = { comments: fileComments.comments };
+            recompute();
+        },
+        commentDraftSubmit() {
+            const draft = fileComments.draft;
+            if (draft === undefined) return;
+            const text = draft.text.trim();
+            // Nothing was written, so there is nothing to keep. Closing the
+            // composer is the whole of what was asked for.
+            if (text === "") {
+                fileComments = { comments: fileComments.comments };
+                recompute();
+                return;
+            }
+            const comment: HappyAgentFileComment = {
+                id: `comment:${String(++commentSequence)}` as HappyAgentCommentId,
+                anchor: draft.anchor,
+                text,
+                stale: false,
+            };
+            fileComments = { comments: [...fileComments.comments, comment] };
+            recompute();
+        },
+        commentRemove(commentId) {
+            const remaining = fileComments.comments.filter(
+                (candidate) => candidate.id !== commentId,
+            );
+            if (remaining.length === fileComments.comments.length) return;
+            fileComments = { ...fileComments, comments: remaining };
+            recompute();
+        },
+        commentsSubmit() {
+            if (fileComments.comments.length === 0) return false;
+            const target = groupComposer ?? composer;
+            if (target === undefined) return false;
+            const existing = target.getState().text;
+            const request = happyAgentCommentsRequestWrite(fileComments.comments);
+            // Appended rather than substituted: whatever the reader had already
+            // started saying is part of the same request, and replacing it would
+            // throw away the only copy of it.
+            target.getState().textUpdate(existing === "" ? request : `${existing}\n\n${request}`);
+            fileComments = FILE_COMMENTS_IDLE;
+            recompute();
+            return true;
         },
         panelWidthUpdate(groupId, width) {
             const next = Math.round(width);

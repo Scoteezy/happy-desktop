@@ -1,10 +1,12 @@
 import { parseDiffFromFile } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { Button } from "./Button";
 import { CodeEditor } from "./CodeEditor";
 import { CODE_BLOCK_HIGHLIGHT_CACHE_MAX_TEXT_LENGTH } from "./CodeBlock";
 import { ScrollArea } from "./Scrollbar";
 import { PIERRE_PANE_CSS } from "./pierreCodeSurface";
+import { ReviewComment } from "./ReviewComment";
 import { SegmentedControl } from "./SegmentedControl";
 
 /**
@@ -86,7 +88,55 @@ export type ChangedFileDiffProps = {
      * change deleted, which no longer has a copy to look at.
      */
     preview?: ReactNode;
+    /**
+     * Review notes to draw under the lines they are about, and the one being
+     * written. Without `onCommentDraftOpen` there is nobody to hand a new note
+     * to, so the gutter offers none and the diff reads exactly as it does now.
+     */
+    comments?: readonly ChangedFileDiffComment[];
+    commentDraft?: ChangedFileDiffCommentDraft;
+    onCommentDraftOpen?: (lineNumber: number, side: ChangedFileDiffCommentSide) => void;
+    onCommentDraftUpdate?: (text: string) => void;
+    onCommentDraftCancel?: () => void;
+    onCommentDraftSubmit?: () => void;
+    onCommentRemove?: (commentId: string) => void;
+    /** Who the notes are from, for the line they are stated on. */
+    commentAuthorInitials?: string;
+    commentAuthorName?: string;
+    /**
+     * How many notes are waiting across every file, and what hands them over.
+     * Stated here because this is where they are written, even though the set
+     * is the whole review rather than this one file — so the control says how
+     * many there are rather than implying it is only about what is on screen.
+     */
+    commentTotal?: number;
+    onCommentsSubmit?: () => void;
 };
+
+export type ChangedFileDiffCommentSide = "deletions" | "additions";
+
+export type ChangedFileDiffComment = {
+    readonly id: string;
+    readonly lineNumber: number;
+    readonly side: ChangedFileDiffCommentSide;
+    readonly text: string;
+    readonly stale?: boolean;
+};
+
+export type ChangedFileDiffCommentDraft = {
+    readonly lineNumber: number;
+    readonly side: ChangedFileDiffCommentSide;
+    readonly text: string;
+};
+
+/**
+ * What one annotation carries. The renderer is generic over this and hands it
+ * back verbatim, so a note travels to its own row as itself rather than being
+ * looked up again by the position it was drawn at.
+ */
+type ChangedFileDiffAnnotation =
+    | { readonly type: "comment"; readonly comment: ChangedFileDiffComment }
+    | { readonly type: "draft"; readonly draft: ChangedFileDiffCommentDraft };
 
 /**
  * C-237 ChangedFileDiff — a complete working-tree diff surface. Pierre Diffs
@@ -116,6 +166,7 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
     // left to read. It falls back to the diff, which is the only thing such a
     // file still has, rather than leaving the switch pointing at a mode this
     // pane cannot draw.
+    const commenting = props.onCommentDraftOpen !== undefined;
     const requested = props.mode ?? "unified";
     const mode = segments.some((segment) => segment.value === requested) ? requested : "unified";
     // Parsing the patch is synchronous. Keep its inputs stable across unrelated
@@ -175,9 +226,33 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             },
             themeType: props.appearance,
             unsafeCSS: PIERRE_PANE_CSS,
+            // The gutter affordance exists only where a note can actually be
+            // started, so a surface with no handler shows no plus.
+            enableGutterUtility: commenting,
         }),
-        [mode, props.appearance, props.wrap],
+        [commenting, mode, props.appearance, props.wrap],
     );
+    // One annotation per note, plus the one being written. Pierre addresses
+    // them by side and line, which is the same address the notes carry, so
+    // nothing here reconstructs a position.
+    const lineAnnotations = useMemo(() => {
+        if (!commenting) return undefined;
+        const built = (props.comments ?? []).map((comment) => ({
+            side: comment.side,
+            lineNumber: comment.lineNumber,
+            metadata: { type: "comment" as const, comment },
+        }));
+        return props.commentDraft === undefined
+            ? built
+            : [
+                  ...built,
+                  {
+                      side: props.commentDraft.side,
+                      lineNumber: props.commentDraft.lineNumber,
+                      metadata: { type: "draft" as const, draft: props.commentDraft },
+                  },
+              ];
+    }, [commenting, props.commentDraft, props.comments]);
     return (
         <section
             aria-label={`Changes in ${props.path}`}
@@ -199,6 +274,18 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                     value={mode}
                 />
                 <span className="happy-changed-file-diff__bar-end">
+                    {/* Present only once there is something to hand over, so
+                        the bar of a diff nobody has commented on is unchanged. */}
+                    {props.onCommentsSubmit && (props.commentTotal ?? 0) > 0 ? (
+                        <Button
+                            data-testid="changed-file-diff-request"
+                            onClick={() => props.onCommentsSubmit?.()}
+                            size="small"
+                            variant="secondary"
+                        >
+                            {`Request changes (${String(props.commentTotal ?? 0)})`}
+                        </Button>
+                    ) : null}
                     {props.loading || props.saving ? (
                         <span
                             aria-live="polite"
@@ -252,10 +339,65 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                         wrap={props.wrap}
                     />
                 ) : diff === undefined ? null : (
-                    <FileDiff
+                    <FileDiff<ChangedFileDiffAnnotation>
                         className="happy-changed-file-diff__renderer"
                         fileDiff={diff}
                         options={diffOptions}
+                        {...(lineAnnotations === undefined ? {} : { lineAnnotations })}
+                        {...(commenting
+                            ? {
+                                  renderAnnotation: (annotation) => {
+                                      const held = annotation.metadata;
+                                      const author = {
+                                          authorInitials: props.commentAuthorInitials ?? "You",
+                                          authorName: props.commentAuthorName ?? "You",
+                                      };
+                                      if (held.type === "draft")
+                                          return (
+                                              <ReviewComment
+                                                  {...author}
+                                                  draft={held.draft.text}
+                                                  lineNumber={held.draft.lineNumber}
+                                                  onCancel={() => props.onCommentDraftCancel?.()}
+                                                  onDraftChange={(text) =>
+                                                      props.onCommentDraftUpdate?.(text)
+                                                  }
+                                                  onSubmit={() => props.onCommentDraftSubmit?.()}
+                                                  side={held.draft.side}
+                                              />
+                                          );
+                                      return (
+                                          <ReviewComment
+                                              {...author}
+                                              lineNumber={held.comment.lineNumber}
+                                              onRemove={() =>
+                                                  props.onCommentRemove?.(held.comment.id)
+                                              }
+                                              side={held.comment.side}
+                                              stale={held.comment.stale}
+                                              text={held.comment.text}
+                                          />
+                                      );
+                                  },
+                                  renderGutterUtility: (getHoveredLine) => (
+                                      <button
+                                          aria-label="Comment on this line"
+                                          className="happy-changed-file-diff__comment-button"
+                                          onClick={() => {
+                                              const line = getHoveredLine();
+                                              if (line)
+                                                  props.onCommentDraftOpen?.(
+                                                      line.lineNumber,
+                                                      line.side,
+                                                  );
+                                          }}
+                                          type="button"
+                                      >
+                                          +
+                                      </button>
+                                  ),
+                              }
+                            : {})}
                     />
                 )}
             </ScrollArea>

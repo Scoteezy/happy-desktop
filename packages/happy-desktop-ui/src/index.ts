@@ -1,7 +1,19 @@
 import "./styles.css";
 
 export { happyLogoBlackUrl, happyLogoWhiteUrl } from "./assets";
-export { ChangedFileDiff, type ChangedFileDiffProps } from "./ChangedFileDiff";
+export {
+    ChangedFileDiff,
+    type ChangedFileDiffComment,
+    type ChangedFileDiffCommentDraft,
+    type ChangedFileDiffCommentSide,
+    type ChangedFileDiffProps,
+} from "./ChangedFileDiff";
+export {
+    ReviewComment,
+    reviewCommentPlace,
+    type ReviewCommentProps,
+    type ReviewCommentSide,
+} from "./ReviewComment";
 export { CompactActivityRow, type CompactActivityRowProps } from "./CompactActivityRow";
 export { compactCount } from "./countText";
 export { CodeBlock, codeBlockLanguage, type CodeBlockProps } from "./CodeBlock";
