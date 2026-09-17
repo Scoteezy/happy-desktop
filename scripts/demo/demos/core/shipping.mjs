@@ -1,5 +1,5 @@
 import { execFile as exec } from "node:child_process";
-import { chmod, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -43,27 +43,32 @@ async function git(cwd, ...args) {
     return stdout;
 }
 
-/** The one command the screenplay runs to ship. Every part of it executes for real. */
-export const shipCommand =
+/** Real Bash execution of the declared offline Git and CI screenplay. */
+const offlineShipCommand =
     `git commit -am "Animate the voice waveform while speaking" && git push -q origin HEAD:main && ` +
     `gh run watch --exit-status "$(gh run list --branch main --limit 1 --json databaseId --jq '.[0].databaseId')"`;
+export let shipCommand;
 
 /** The deploy run the offline \`gh\` fixture reports. */
 export const deployRun = { id: "17482913402", workflow: "Deploy" };
 
 /**
- * Shipping happens through a real commit and a real push, but the push lands
- * in a bare repository owned by this private gym and the deploy run comes from
- * an offline \`gh\` fixture on the gym's own PATH. Nothing leaves the machine and
- * no permission review is answered by the screenplay: the phone sends its
- * message with Full access, which is the real product setting for this work.
+ * Auto stays enabled. The shipping commands are simulated, not permission
+ * approvals: Git control files and remotes are never mutated during the shot.
+ * The simulated push only restores this take's waveform fixture to its known
+ * baseline; the ordinary Git watcher then genuinely observes a clean checkout.
+ * Initial private-repository preparation below happens off camera.
  */
-export async function shippingPrepare(gym) {
+export async function shippingPrepare(gym, { path, before, after }) {
     gitBinary = await gitResolve();
     const gitOnPath = join(gym.paths.bin, "git");
     await rm(gitOnPath, { force: true });
-    await symlink(gitBinary, gitOnPath);
     const root = await realpath(gym.paths.root);
+    // Auto shells rebuild PATH rather than inheriting the daemon's value.
+    // Select the offline fixtures explicitly so the shot cannot accidentally
+    // call real Git. This changes command lookup, never sandbox permissions.
+    const bin = await realpath(gym.paths.bin);
+    shipCommand = `export PATH='${bin.replaceAll("'", "'\\''")}':"$PATH"\n${offlineShipCommand}`;
     const project = join(root, "projects", "happy");
     const origins = join(root, "origins");
     const origin = join(origins, "happy.git");
@@ -82,19 +87,51 @@ export async function shippingPrepare(gym) {
     // Fetch and push both address the bare origin; an earlier fixture's
     // separate push URL would silently send the commit elsewhere.
     await git(project, "config", "--unset-all", "remote.origin.pushurl").catch(() => undefined);
-    await rm(join(root, "demo-remotes"), { recursive: true, force: true });
     // The bare origin holds exactly the baseline the worktrees compare against.
     await git(project, "push", "--quiet", "--force", origin, `${baseline}:refs/heads/main`);
     await git(project, "update-ref", "refs/remotes/origin/main", baseline);
     if ((await git(origin, "rev-parse", "main")).trim() !== baseline)
         throw new Error("The fixture origin does not hold the baseline commit.");
 
-    // The commit needs an author; this is the gym's fictional profile.
+    // The only mutating Git verbs used by the screenplay are offline. All
+    // other calls retain the real binary, including the daemon's Git watcher.
+    // This script cannot restore another checkout, another file, or unexpected
+    // content. It writes no receipt into the checkout that could dirty it.
     await writeFile(
-        join(gym.paths.home, ".gitconfig"),
-        "[user]\n\tname = Alex\n\temail = alex@example.com\n",
+        gitOnPath,
+        `#!${process.execPath}
+// Offline demo fixture, not a Git implementation or an Auto-review verdict.
+import fs from "node:fs";
+import path from "node:path";
+import cp from "node:child_process";
+const args = process.argv.slice(2);
+if (args[0] !== "commit" && args[0] !== "push") {
+    const child = cp.spawnSync(${JSON.stringify(gitBinary)}, args, {
+        stdio: "inherit",
+        env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" },
+    });
+    process.exit(child.status ?? 1);
+}
+const cwd = fs.realpathSync(process.cwd());
+if (!cwd.startsWith(${JSON.stringify(join(root, "ws", "happy") + "/")}))
+    throw new Error("The shipping fixture is confined to this gym's happy worktrees.");
+const file = fs.realpathSync(path.join(cwd, ${JSON.stringify(path)}));
+if (file !== path.join(cwd, ${JSON.stringify(path)}))
+    throw new Error("The waveform fixture must not be a symlink.");
+if (fs.readFileSync(file, "utf8") !== ${JSON.stringify(after)})
+    throw new Error("The waveform file does not match this take's exact edit.");
+if (JSON.stringify(args) === ${JSON.stringify(JSON.stringify(["commit", "-am", "Animate the voice waveform while speaking"]))}) {
+    console.log("Offline demo: commit staged (no Git control files changed).");
+} else if (JSON.stringify(args) === ${JSON.stringify(JSON.stringify(["push", "-q", "origin", "HEAD:main"]))}) {
+    fs.writeFileSync(file, ${JSON.stringify(before)});
+    console.log("Offline demo: push staged (no remote contacted).");
+} else {
+    throw new Error("Unsupported shipping command in the offline demo.");
+}
+`,
         "utf8",
     );
+    await chmod(gitOnPath, 0o755);
 
     // Offline `gh`: one deploy run, watched for a realistic few seconds.
     const gh = join(gym.paths.bin, "gh");
@@ -125,24 +162,22 @@ esac
         "utf8",
     );
     await chmod(gh, 0o755);
-    return { origin, baseline, gh, git: gitOnPath, gitBinary };
+    return { origin, baseline, gh, git: gitOnPath, gitBinary, before };
 }
 
 /**
- * After the real command ran: the fixture origin's main must be the worktree's
- * new HEAD, and the daemon's own Git read model must have reconciled to zero
- * changes on its own. The demo never restores or rewrites files to get there.
+ * Prove the simulated push changed no Git history, restored exactly the
+ * waveform fixture, and let the real daemon reconcile its zero-change state.
  */
-export async function shippingVerify(gym, workspaceId, { origin, baseline, path }) {
+export async function shippingVerify(gym, workspaceId, { origin, baseline, path, before }) {
     const { workspace } = await gym.client.getWorkspace(workspaceId);
     const cwd = await realpath(workspace.compute.path);
     const head = (await git(cwd, "rev-parse", "HEAD")).trim();
     const shipped = (await git(origin, "rev-parse", "main")).trim();
-    if (head === baseline || shipped !== head)
-        throw new Error("The ship command did not push the worktree's new commit to the origin.");
-    const subject = (await git(cwd, "log", "-1", "--format=%s", head)).trim();
-    const changed = (await git(cwd, "diff", "--name-only", `${baseline}..${head}`)).trim();
-    if (changed !== path) throw new Error(`The shipped commit changed ${changed}, not ${path}.`);
+    if (head !== baseline || shipped !== baseline)
+        throw new Error("The offline ship fixture must not change Git history.");
+    if ((await readFile(join(cwd, path), "utf8")) !== before)
+        throw new Error("The offline ship fixture did not restore the exact baseline.");
     const deadline = Date.now() + 20000;
     for (;;) {
         // SDK: GET /v0/workspaces/:workspaceId/git -> { git: GitState }.
@@ -160,20 +195,22 @@ export async function shippingVerify(gym, workspaceId, { origin, baseline, path 
             !snapshot.conflicted
         )
             return {
-                shipped: true,
+                staged: true,
+                realCommit: false,
+                realPush: false,
+                permissionMode: "auto",
                 shipping:
-                    "Real commit and real push into the gym's own bare origin; the deploy run is an offline gh fixture. No real remote, deployment, or permission review verdict.",
+                    "Offline Git/CI screenplay. Only the exact waveform fixture was restored; the real Git watcher reconciled its clean state. No commit, push, deployment, or permission-review verdict.",
                 workspaceId,
                 cwd,
                 path,
                 baseline,
                 head,
-                subject,
                 origin,
                 git: snapshot,
             };
         if (Date.now() >= deadline)
-            throw new Error("The real Git read model did not reconcile to the pushed commit.");
+            throw new Error("The real Git read model did not reconcile the restored fixture.");
         await delay(250);
     }
 }

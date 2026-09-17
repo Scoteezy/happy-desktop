@@ -13,14 +13,18 @@ It is a copy of the original `demos/resume/artifacts/v13/resume.mp4`; the
 original and other generated takes remain gitignored. Recording a new take
 does not overwrite this selected video.
 
-The landing-page story lives in [`demos/core/`](./demos/core/BRIEF.md): start
-inside a workspace, send the waveform task, let Steve steer the active run
-toward a Grok sub-agent, then show the edit, Astra review, and Split diff.
-Steve's completed message arrives without draft synchronization. This take
-uses its own explicit screenplay and fictional participant identity; it does
-not demonstrate live vendor inference or real team authentication. Record it
-with `pnpm demo reset` followed by `pnpm demo record core`. Core supports
-screenplay inference only.
+The current landing-page story is defined in
+[`demos/core/SCRIPT.md`](./demos/core/SCRIPT.md): one static window, choose
+Fable, send the waveform task, let the real workspace naming run, then show
+the edit and Astra delegation. Steve inspects the diff and sends “ship it” on
+the paired native phone, staying in Auto. Git/CI in the ending are explicitly
+offline fixtures; the real Git watcher observes the prepared file restored to
+baseline. No permission approval is scripted. Inference and Steve's identity
+are screenplay fixtures, not live vendor inference or real team authentication.
+The sidebar and phone include Chief of Staff and the real Release Coordinator
+bot, whose selected DiceBear avatar is transported by ordinary encrypted avatar
+sync. Core supports screenplay inference only. Use `pnpm demo record core`; preserve
+the paired `.d` world for phone takes as described below.
 
 ## The shape of it
 

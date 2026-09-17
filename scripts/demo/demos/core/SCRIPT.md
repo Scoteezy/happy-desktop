@@ -3,7 +3,108 @@
 This script supersedes `BRIEF.md` for the current revision. Write and verify the
 recording against these criteria before publishing to `/tmp/happy-one/`.
 
-## Current revision — v18 (take `v18-r3`)
+## Current follow-up — v21 (take `v21-r2`)
+
+- Add a real non-admin bot named `Release Coordinator` beside Chief of Staff
+  on desktop and in the phone list. Use the exact user-selected DiceBear
+  Adventurer Neutral avatar, seed `Celia`, with attribution in the asset folder.
+  Use the upstream encrypted bot-avatar sync, not a phone-only image mapping.
+- Keep v20's finished-review ending and focused-phone positioning below.
+- Put `Free and open source` closely under the Happy Harness heading in the
+  existing download-caption style without moving the movie down.
+- Put secondary Windows/Linux links beneath the Homebrew command, with their
+  logos at the text's cap height. Detect the desktop OS for the primary badge;
+  Windows does not show Homebrew. All desktop download links resolve directly
+  to production installers, using the latest stable release with a verified
+  production fallback if the public release lookup is unavailable.
+
+The v21-r2 capture passes with 3,867 frames at 60fps (64.45s). Both actual
+messages remain Auto. Phone focus is 34.783333–49.566667s; Astra finishes at
+52.1s before Deployed at 59.283333s. The selected avatar was visually verified
+on the real phone list. Exact cues and bot identity are retained with the take.
+
+## Previous follow-up — v20 (take `v20-r1`)
+
+- App Store and Google Play share one centered row below the macOS installation
+  controls. At 480px and narrower, retain the requested vertical stack.
+- Keep the parked phone placement unchanged. On focus, enlarge by the existing
+  1.18 scale and shift left only enough to keep its right bezel inside the
+  viewport, with at least the parked desktop-to-phone gap as its right margin.
+  It may overlap the desktop. Wide viewports that already satisfy this margin
+  need no translation. The desktop and macOS download remain exactly centered.
+- Astra finishes its real review during the shipping beat, before Deployed.
+  Assert the child is idle and the final UI has no Working in subagents status;
+  do not hide a still-running agent cosmetically. A concise review report may
+  arrive naturally. This supersedes the older off-camera completion rule.
+
+The capture passed with 3,877 frames at 60fps (64.616667s). Phone focus starts
+at 34.95s and ends at 50.166667s. Astra actually becomes idle at 52.433s;
+Deployed arrives at 59.433s. The final UI assertion confirms there is no
+Working in subagents status. Exact times are in `artifacts/v20-r1/cues.json`.
+
+## Previous revision — v19 (take `v19-r3`)
+
+This revision supersedes the v18 record below.
+
+- Auto remains enabled throughout desktop and phone. Never open the phone's
+  permission menu or switch the session to Full access for filming.
+- The real automatic naming request receives both `Add voice waveform` as
+  the chat title and `voice-waveform` as the workspace slug. Wait for the
+  ordinary naming service to apply it; do not rename manually or overlay text.
+- Steve's greeting is `Hi, Steve 👋 Pushing to main. Waiting for CI to deploy.`
+  The emoji is static inline text beside his name. No wave sticker.
+- Shipping returns to the previously authorized offline screenplay: the Bash
+  process uses explicitly documented Git/CI fixtures. The simulated push
+  restores only the prepared waveform file to its exact baseline and the real
+  Git watcher clears the counters. No Git history, remote, deployment, or
+  permission decision is changed by the simulated shipping command.
+- Native mobile: an idle online send appears immediately as a normal message,
+  without a temporary Sending/Queued banner or dimmed bubble. A message truly
+  queued behind a working parent retains its queue indicator. Errors and
+  offline state remain visible; transport receipt state is not fabricated.
+- Keep the desktop video centered, and put the macOS download on that exact
+  centerline. The decorative phone yields space, including clipping up to 70%
+  off the right edge. Its video slightly overlaps beneath the bezel to prevent
+  a subpixel seam during transitions. Narrow screens stack the store badges.
+- Preserve the rebased marketing copy-command update; use a researched compact
+  overlapping-square copy glyph. Native video controls and paired seeking stay.
+
+| Beat            | Viewer sees                                                  | Minimum settled reading time         |
+| --------------- | ------------------------------------------------------------ | ------------------------------------ |
+| Opening/model   | Full static window, actual Fable picker and hover path       | Preserve v18 picker pacing           |
+| Prompt/thinking | Request sends, Thinking, automatic workspace naming          | At least 2.5s Thinking               |
+| Work            | Reads, edit +3/−1, Astra spawn, concise completion           | 1.6s edit; 2.8s spawn; 3s completion |
+| Phone           | Unread session, open concise native diff, Auto unchanged     | 2.2s home; 4s diff                   |
+| Send            | Native keyboard types ship it; normal optimistic bubble      | Brisk typing; no permission detour   |
+| Ending          | Static inline greeting; staged Git/CI; real cleared counters | 3.6s completed result                |
+
+The full capture and its assertions passed. Both submitted messages carry
+`permissionMode: auto`. The Git read model reports zero changes after the
+offline fixture, with HEAD and the fixture origin still at their baseline.
+
+### Measured viewer timeline — 63.833s / 3,830 frames at 60fps
+
+| Interval       | What the viewer sees / connects                                |
+| -------------- | -------------------------------------------------------------- |
+| 0–4.067s       | Full stable window and the model control                       |
+| 4.067–8.733s   | Actual model menu, deliberate hover path, Fable selected       |
+| 8.733–15.533s  | The waveform/Astra request typed and submitted                 |
+| 15.533–20.283s | Thinking; workspace automatically becomes voice-waveform       |
+| 20.283–26.333s | Real reads and Edit; sidebar +3/−1                             |
+| 26.333–34.817s | Astra spawn, short completion, settled reading hold            |
+| 34.817–39s     | Phone forward, unread session, enter and reveal diff           |
+| 39–44.767s     | Concise native diff, Auto unchanged, no permission menu        |
+| 44.767–47.283s | Native keyboard types ship it and sends                        |
+| 47.283–49.1s   | Normal sent message; return to the session list                |
+| 49.1–53.583s   | Steve on desktop, static inline greeting, Bash; counters clear |
+| 53.583–58.9s   | Offline CI watch continues in the visible running command      |
+| 58.9–63.833s   | Completed result, confetti, final product hold                 |
+
+The exact source is `artifacts/v19-r3/cues.json`. The phone and desktop share
+one continuous real-time clock; export and browser inspection are recorded in
+`REVIEW.md` after verification.
+
+## Previous revision — v18 (take `v18-r3`)
 
 The user's revision of the v17 script. Everything below this section is the
 v17 record and stays for history; where the two disagree, this section wins.
@@ -31,26 +132,26 @@ v17 record and stays for history; where the two disagree, this section wins.
 
 ### Measured viewer-experience timeline — v18-r3 (69.9 s, 4,194 frames)
 
-| Time    | Event                                                     |
-| ------- | --------------------------------------------------------- |
-| 0.0 s   | Settled window on the fresh workspace, Astra selected     |
-| 4.1 s   | Model menu opens; pointer passes Astra and Opus           |
-| 8.7 s   | Fable 5.1 chosen                                          |
-| 15.5 s  | Prompt sent; Thinking visible                             |
-| 20.3 s  | First file read visible                                   |
-| 23.5 s  | Real Edit lands; sidebar shows +3 −1                      |
-| 26.4 s  | "Spawned GPT-6 Astra sub-agent"; footer shows 1 Agent     |
-| 31.6 s  | Completion text; "Completed in 15s"                       |
-| 35.0 s  | Phone forward: session unread on the real list            |
-| 38.7 s  | Session open; 39.2 s diff visible                         |
-| 45.3 s  | Permission menu; 48.3 s Full access chosen                |
-| 50.7 s  | Native keyboard typing "ship it"; 53.3 s Send             |
-| 55.1 s  | Phone back home; Steve's message on the desktop           |
-| 55.9 s  | Greeting and wave                                         |
-| 57.2 s  | Bash row running the real ship command                    |
-| 59.7 s  | Sidebar counters clear (real Git watcher)                 |
-| 65.0 s  | "Deployed. The waveform is live."; confetti               |
-| 69.9 s  | End hold after "Completed in 12s"                         |
+| Time   | Event                                                 |
+| ------ | ----------------------------------------------------- |
+| 0.0 s  | Settled window on the fresh workspace, Astra selected |
+| 4.1 s  | Model menu opens; pointer passes Astra and Opus       |
+| 8.7 s  | Fable 5.1 chosen                                      |
+| 15.5 s | Prompt sent; Thinking visible                         |
+| 20.3 s | First file read visible                               |
+| 23.5 s | Real Edit lands; sidebar shows +3 −1                  |
+| 26.4 s | "Spawned GPT-6 Astra sub-agent"; footer shows 1 Agent |
+| 31.6 s | Completion text; "Completed in 15s"                   |
+| 35.0 s | Phone forward: session unread on the real list        |
+| 38.7 s | Session open; 39.2 s diff visible                     |
+| 45.3 s | Permission menu; 48.3 s Full access chosen            |
+| 50.7 s | Native keyboard typing "ship it"; 53.3 s Send         |
+| 55.1 s | Phone back home; Steve's message on the desktop       |
+| 55.9 s | Greeting and wave                                     |
+| 57.2 s | Bash row running the real ship command                |
+| 59.7 s | Sidebar counters clear (real Git watcher)             |
+| 65.0 s | "Deployed. The waveform is live."; confetti           |
+| 69.9 s | End hold after "Completed in 12s"                     |
 
 ## Rollback points and scope
 

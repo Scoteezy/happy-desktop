@@ -91,6 +91,17 @@ export async function simulatorOpen({
             throw error;
         }
     };
+    const groupAlive = async () => {
+        if (child.pid === undefined) return false;
+        // On macOS kill(-pgid, 0) can report EPERM after XCTest exits, even
+        // when the owned group has no live members. Inspect process state
+        // read-only; zombies cannot hold a driver port or need another signal.
+        const { stdout } = await execFile("/bin/ps", ["-axo", "pgid=,stat="]);
+        return stdout.split("\n").some((line) => {
+            const [group, state] = line.trim().split(/\s+/u);
+            return Number(group) === child.pid && state && !state.startsWith("Z");
+        });
+    };
     const closeDriver = async () => {
         closing = true;
         fail(new Error("The recorder's native driver is closing."));
@@ -98,12 +109,12 @@ export async function simulatorOpen({
         const deadline = Date.now() + 5000;
         // The parent can exit before its children. Wait for the owned group,
         // not just Java's exit event, before allowing another native driver.
-        while (signalGroup(0) && Date.now() < deadline) await delay(50);
-        if (!signalGroup(0)) return;
+        while ((await groupAlive()) && Date.now() < deadline) await delay(50);
+        if (!(await groupAlive())) return;
         signalGroup("SIGKILL");
         const killDeadline = Date.now() + 2000;
-        while (signalGroup(0) && Date.now() < killDeadline) await delay(50);
-        if (signalGroup(0)) throw new Error("The recorder's native driver group did not stop.");
+        while ((await groupAlive()) && Date.now() < killDeadline) await delay(50);
+        if (await groupAlive()) throw new Error("The recorder's native driver group did not stop.");
     };
     try {
         await call("initialize", {

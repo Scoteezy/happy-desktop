@@ -1,5 +1,167 @@
 # Core demo — local review
 
+## Release Coordinator and current upstream avatar sync — v21-r2
+
+Release Coordinator is a real non-admin bot in the isolated daemon, with the
+exact user-selected DiceBear Adventurer Neutral `Celia` avatar. The desktop
+sidebar and real iPhone list both show the bot and the selected face. The main
+agent inspected the native `phone-home.png`; no native image mapping, overlay,
+or new avatar API was introduced. The image source and CC BY 4.0 attribution
+are retained beside `assets/release-coordinator.png`.
+
+At the user's request, the clean local Agent branch was fetched and rebased
+onto `origin/main` at `6bda0269`, yielding `b0c27015` with the local clean-Git
+transition fix preserved. Upstream already supplied encrypted bot-avatar sync
+(`059c649a`) and the archive echo fix (`df615786`). A fresh disposable build
+uses those sources directly, version `0.4.70-local.core`; nothing was installed
+into or restarted in the user's real Electron/Agent host.
+
+The native workspace was also rebased to `f75999ee` on `a1eae8de`, preserving
+the four message-status edits byte-for-byte. Its paired private database was
+backed up before the existing upstream session-avatar migration ran. Native
+typecheck, server build, and iOS export passed. The first v21 attempt stopped
+off camera because the tool runtime restart had stopped the private server.
+Restoring that same server recovered the session list without resetting or
+re-pairing; the second attempt passed.
+
+The captured v21-r2 timeline is 3,867 frames at 60fps (64.45s). Phone focus runs
+from 34.783333s to 49.566667s. Astra is genuinely idle by 52.1s, before Deployed
+at 59.283333s; final child activity and the final UI assertions pass. Both
+actual human messages retain Auto. `core.evidence.json` includes the real bot
+identity/avatar and the authoritative activity. The real phone list retains
+one older rehearsal session whose archival happened while the server was
+offline; the recording does not cosmetically hide or replace that row.
+
+The website's focused-phone motion and download-row checks passed at 390,
+1440, and 1920px, including no lateral move where the enlarged phone already
+fits. Seven further offline Chromium scenarios verified detected-platform
+primary downloads, direct production URLs, shared latest-release lookup,
+future stable resolution, safe production fallback, and rejection of preview
+or foreign download URLs. The Windows/Linux logos use the existing platform
+glyphs at `1cap`. The new hero subtitle matches the footer's caption style;
+the measured movie position is unchanged. Main inspected the desktop website
+screenshot. These are bounded offline checks, not a new HTTP preview or a
+publication.
+
+The six v21 website assets were exported and checksum-verified. Both HQ movies
+contain 3,867 frames at 60fps (64.45s); both standard movies contain 1,934 frames
+at 30fps (64.466667s). The standard pair's shared final-frame quantization is
+1/60s. Main inspected the encoded phone at 48.1s: a normal ship-it bubble,
+no Sending/Queued line, and Auto visible. The final desktop frame shows both
+bots and the completed review/deployment ending with no working subagent.
+Export evidence is `.context/v18/web-export-IQ0iFx/export-report.json`.
+
+The final v21 website build passed. Main inspected actual-playing screenshots
+at 1440 and 390px around 36.6s: the selected face appears on both devices,
+the focused phone is fully visible and overlaps the centered desktop, the
+right margin meets the parked gap, and there is no loading spinner or page
+overflow. Both videos are decoded and playing, with untouched native desktop
+controls. Images and measurements are in `.context/v21/clean-hero/`.
+The recording command exited successfully, and the private native server and
+Metro were stopped after export; pairing and data remain preserved.
+
+## Finished review and focused-phone follow-up — v20-r1
+
+The website places App Store and Google Play in one centered row below the
+macOS installation controls, retaining a vertical stack at 480px and narrower.
+The parked phone stays unchanged. On focus it grows by 1.18 and translates left
+only enough to preserve a right viewport margin at least equal to its parked
+gap from the desktop. It can overlap the desktop; sufficiently wide viewports
+need no translation. This replaces v19's always-clear-composer focus rule.
+
+The previous screenplay deliberately held Astra until after the take. It now
+releases the review during the shipping command and waits for authoritative
+idle child activity before allowing the Deployed reply. The final UI must also
+contain no Working in subagents status. A short real collaborator report is
+allowed to arrive naturally; no running status is hidden cosmetically.
+
+The v20-r1 capture passed: Astra completed at 52.433s, before Deployed at
+59.433s. The final activity has an idle child, zero running descendant agents,
+and zero running child processes. The parent shipping turn also completed and
+the visible final transcript has no Working in subagents. The take contains
+3,877 frames at 60fps (64.616667s), with phone focus from 34.95s to 50.166667s.
+Auto and the disclosed offline shipping fixture remain unchanged.
+
+## Auto-mode revision — final take v19-r3
+
+The current acceptance is the v19 section in `SCRIPT.md`. The v18 Full-access
+phone interaction and animated wave below are historical, not approved
+behavior for this revision.
+
+Root causes addressed:
+
+- The screenplay omitted `<slug>` from its automatic naming response. It now
+  supplies `Add voice waveform` and `voice-waveform` through the ordinary
+  naming service. Prior active rehearsal names are moved to unique take IDs
+  before archival so they do not reserve the next take's generated name.
+- Full access was previously used to make the demo's real Git push execute.
+  It is removed. Shipping uses the earlier user-authorized offline simulation:
+  explicit fixture command lookup inside an ordinary Auto shell, no Git
+  history/remote writes during the filmed command, and only the known waveform
+  file restored to baseline. The real Git watcher publishes the clean state.
+  The fixture is not a permission reviewer and emits no approval verdict.
+- The wave sticker is removed; `Hi, Steve 👋` is ordinary static inline text.
+- Native pending meant awaiting acceptance, not necessarily queued. The mobile
+  client now captures the parent run's activity at submission in typed message
+  metadata. Online idle sends render normally while still awaiting the actual
+  receipt. A later run started by that message cannot make it look queued.
+  Offline and failure status remain visible. Native typecheck/iOS export pass.
+- In v19-r2 the full recorded flow and shipping assertions passed, but macOS
+  process-group existence probing failed during teardown after the driver
+  exited. Teardown now inspects live process-group membership read-only, and
+  native synchronization timing is persisted before cleanup. No user host
+  Electron process was changed or restarted.
+
+The website was fetched and rebased onto `origin/main` at `08feba1`, preserving
+the Homebrew command change. The macOS service runtime cannot host the new
+sandboxed workspace preview, so browser verification uses only offline
+interception of the built public site; no substitute web listener is exposed.
+The final [desktop video](./artifacts/v19-r3/core.mp4) and
+[phone video](./artifacts/v19-r3/phone-screen.mp4) contain exactly **3,830
+frames at 60fps / 63.833333s**. The website's two 30fps derivatives each
+contain **1,915 frames**, with the identical endpoint and no frame-quantization
+extension. All four are limited-range BT.709 H.264; the desktop alone has AAC
+audio. The six exported assets were checksum-verified after copying into the
+website's new `public/video/happy-one/v19/` directory; previous versions remain.
+
+`core.evidence.json` proves both the desktop request and Steve's native message
+carry `permissionMode: auto`. `shipping-verified.json` proves baseline HEAD and
+origin are unchanged while the real Git read model has no changed files.
+`phone-capture.json` preserves a 0.000152542s start trim on the shared clock.
+The full recording command, including driver cleanup and screen/bezel export,
+exited successfully.
+
+Encoded phone frames at 46.9, 47.3, 47.4, 47.5, 47.8, and 48.1 seconds were
+inspected: native typing, then a normal ship-it bubble with no Sending/Queued
+line; Auto remains visible. The desktop's 50s frame shows the static inline
+emoji beside Steve, no sticker, and the generated voice-waveform name.
+Local inspection images are in `.context/v19/`.
+
+The final website build and offline Chromium, Firefox, and WebKit checks pass:
+111 records across 11 widths from 320 to 1920px at device scale 2, including
+parked/focused geometry and actual continuous playback through both phone cues.
+Desktop and macOS-download center errors are at most 0.0078125 and 0.015625 CSS
+pixels respectively. The phone clears the composer by at least 6px, clips at
+most 48.46% against the viewport (below the allowed 70%), and causes no page
+overflow. Both Homebrew copy controls preserve the exact updated command.
+Maximum sampled paired-video drift during the handoff is 41.3ms; both pause
+together. Native full-resolution seam crops and continuous transition contact
+sheets were visually inspected, with no exposed light seam. Main also inspected
+the clean desktop/mobile browser screenshots.
+
+Loading overlays in immediate paused-seek diagnostic screenshots were transient
+browser controls, not baked into the movies. Follow-up captures after normal
+decoded playback retain unmodified native controls and show no spinner. Chrome
+and WebKit report no waiting/stalled/error events in that follow-up; Firefox's
+HQ phone reports brief startup waiting at the seek and once shortly afterward
+on the narrow viewport, then continues normally, with no stall/error. This is
+not a claim that every device or network can decode without buffering.
+
+Evidence is in `.context/v19/site-review/` and `.context/v19/site-clean/`.
+Offline interception intentionally blocked external Google fonts, so these
+checks use font fallback. No replacement HTTP listener, public preview,
+commit, push, or deployment was performed for this revision.
+
 ## Static-window revision — final take v18-r3
 
 The final [desktop video](./artifacts/v18-r3/core.mp4) and

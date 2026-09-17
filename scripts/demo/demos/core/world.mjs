@@ -4,6 +4,8 @@ import { stevePhoneMessage } from "./protocol.mjs";
 
 export const prompt =
     "Add a waveform to the voice agent that animates when speaking. Review control flow with Astra.";
+export const sessionTitle = "Add voice waveform";
+export const workspaceSlug = "voice-waveform";
 export const voicePath = "packages/happy-app/sources/components/VoiceAssistantStatusBar.tsx";
 export const barsPath = "packages/happy-app/sources/components/VoiceBars.tsx";
 export const logicPath = "packages/happy-app/sources/realtime/waveformActive.ts";
@@ -217,7 +219,7 @@ const paced = (content, timing = {}) => ({
     ...timing,
 });
 export const astraTask = "Astra · Review control flow";
-export const shipGreeting = "Hi Steve, pushing to main. Waiting for CI to deploy.";
+export const shipGreeting = "Hi, Steve 👋 Pushing to main. Waiting for CI to deploy.";
 export const shipResult = "Deployed. The waveform is live.";
 export const shipFailure = "The push did not go through. Leaving main untouched.";
 
@@ -270,11 +272,7 @@ export async function reply(payload, emitted) {
     if (sessionId.endsWith(":title")) {
         if (input.includes(prompt))
             return {
-                content: [
-                    text(
-                        "<title>Voice waveform</title>\n<recap>Restore the speaking indicator and review the control flow.</recap>",
-                    ),
-                ],
+                content: [text(`<title>${sessionTitle}</title>\n<slug>${workspaceSlug}</slug>`)],
             };
         return undefined;
     }
@@ -289,12 +287,12 @@ export async function reply(payload, emitted) {
                     max_output_tokens: 2000,
                 }),
             ]);
-        // The review keeps running until the take releases it after the end,
-        // so its report never adds a collaborator row to the filmed transcript.
+        // Finish the real review during the shipping beat. The final deployed
+        // state must not retain a running collaborator.
         await gate(sessionId, "astra-running");
         return paced([
             text(
-                "The waveform activates only while connected, for either speaker, and rests in silence. Connecting and error states cannot animate it. The timer and tap-to-end handler are unchanged.",
+                "Review complete. Speaking animates the waveform; silence, connecting, and errors leave it idle.",
             ),
         ]);
     }
@@ -302,9 +300,8 @@ export async function reply(payload, emitted) {
         const shipKey = `${key}:ship`;
         const shipStep = emitted.get(shipKey) ?? 0;
         emitted.set(shipKey, shipStep + 1);
-        // Steve's message arrives with Full access from the phone. The command
-        // is real: the commit and push land in the gym's own bare origin and the
-        // deploy run comes from the offline gh fixture on the gym's PATH.
+        // Steve stays in Auto. Git/CI are explicitly offline screenplay
+        // fixtures; no Git control files, remote, or permission verdict change.
         if (shipStep === 0)
             return paced(
                 [
@@ -316,12 +313,13 @@ export async function reply(payload, emitted) {
                     }),
                 ],
                 // The greeting waits for the phone to settle back into the
-                // shot; the command follows once the wave has landed.
+                // shot; the small inline emoji is ordinary, static text.
                 { delayMs: 2200, textDeltaDelayMs: 1400, toolCallDeltaDelayMs: 400 },
             );
         // The screenplay only claims a deploy the daemon actually reported.
         if (shipCommandFailed(messages))
             return paced([text(shipFailure)], { textDeltaDelayMs: 700, completionDelayMs: 800 });
+        await gate(sessionId, "review-finished");
         return paced([text(shipResult)], { textDeltaDelayMs: 700, completionDelayMs: 800 });
     }
     if (!input.includes(prompt)) return undefined;

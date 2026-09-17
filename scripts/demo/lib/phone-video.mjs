@@ -229,12 +229,32 @@ export async function phoneVideoOpen({ udid, output, work, frame }) {
                 await simulator.close();
                 return;
             }
+            // Persist the shared clock before native-driver teardown. An
+            // unrelated cleanup failure must not discard an otherwise valid
+            // take's exact synchronization evidence.
+            if (clock) {
+                clock.desktopStartedAt = timing.startedAt;
+                clock.trimSeconds = (timing.startedAt - clock.acknowledgedAt) / 1000;
+                clock.desktopFinishedAt = performance.now();
+                await writeFile(
+                    join(output, "phone-capture.json"),
+                    JSON.stringify(
+                        {
+                            source: "Concurrent iPhone 17 Pro Simulator capture, connected through the real Happy encrypted integration",
+                            clock,
+                            cues,
+                            nativeScreens,
+                        },
+                        null,
+                        2,
+                    ),
+                );
+            }
             try {
                 // Simulator writes only changed frames. A real, off-camera
                 // navigation after the desktop ends flushes its idle tail;
                 // the export trims before this navigation, with no freeze pad.
                 if (clock) {
-                    clock.desktopFinishedAt = performance.now();
                     await execFile("xcrun", ["simctl", "openurl", udid, "happy:///"]);
                     await simulator.inspect();
                     // The final shot can already be home. A real off-camera
@@ -251,22 +271,6 @@ export async function phoneVideoOpen({ udid, output, work, frame }) {
                     await captureExit;
                 }
             }
-            if (!clock) return;
-            clock.desktopStartedAt = timing.startedAt;
-            clock.trimSeconds = (timing.startedAt - clock.acknowledgedAt) / 1000;
-            await writeFile(
-                join(output, "phone-capture.json"),
-                JSON.stringify(
-                    {
-                        source: "Concurrent iPhone 17 Pro Simulator capture, connected through the real Happy encrypted integration",
-                        clock,
-                        cues,
-                        nativeScreens,
-                    },
-                    null,
-                    2,
-                ),
-            );
         },
         async export({ fps, frames }) {
             if (!clock) throw new Error("No native phone capture was started.");
