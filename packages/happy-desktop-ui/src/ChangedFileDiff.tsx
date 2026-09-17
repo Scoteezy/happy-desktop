@@ -161,6 +161,11 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             diffIndicators: "bars" as const,
             diffStyle: mode === "split" ? ("split" as const) : ("unified" as const),
             hunkSeparators: "line-info-basic" as const,
+            // Off by default in the renderer, which leaves a long line of code
+            // with nothing tying it to its own line number across the width of
+            // the pane. Both, so the number and the row light up together and
+            // the eye can travel between them.
+            lineHoverHighlight: "both" as const,
             lineDiffType: "word-alt" as const,
             overflow: props.wrap === true ? ("wrap" as const) : ("scroll" as const),
             stickyHeader: true,

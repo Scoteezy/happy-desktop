@@ -327,6 +327,13 @@ export interface HappyAgentFileTabSnapshot {
      * revision.
      */
     readonly revalidationError?: UserError;
+    /**
+     * Why the last attempt to write this tab's edit back failed. The draft is
+     * still here and still the only copy of what was typed; this is what says
+     * so, because a save that reports nothing is indistinguishable from one
+     * that worked.
+     */
+    readonly saveError?: UserError;
 }
 
 type HappyAgentFileDocument =
@@ -619,6 +626,8 @@ export interface HappyAgentWorkspaceSnapshot {
     readonly fileScope: HappyAgentFileScope;
     /** Whether Changes nests paths into folders or lists them whole. All Files is always lazy. */
     readonly fileLayout: HappyAgentFileLayout;
+    /** What the reader is looking for in the file listing, and what was found. */
+    readonly fileSearch: HappyAgentFileSearch;
     /**
      * How wide the right panel is in the addressed checkout, in CSS pixels, or
      * nothing where this reader has never sized it and the product's own default
@@ -756,6 +765,41 @@ export type HappyAgentFileScope = "changed" | "all";
  * shape is the point.
  */
 export type HappyAgentFileLayout = "tree" | "flat";
+
+/**
+ * How Changes arranges itself before the reader says otherwise.
+ *
+ * A tree, because a change is read as "what did this touch", and the folders
+ * are the answer's shape: a flat run of paths makes the reader rebuild that
+ * shape by comparing prefixes down the column. Someone working through a
+ * handful of files can still ask for the list, and that choice is remembered
+ * per checkout.
+ */
+const HAPPY_AGENT_FILE_LAYOUT_DEFAULT: HappyAgentFileLayout = "tree";
+
+/**
+ * What the reader typed into the file listing, and what the checkout answered.
+ *
+ * The two scopes answer it from different places, which is why the results are
+ * optional rather than always present. Changes is already complete in memory,
+ * so a query there is filtered where the rows are built and needs nothing from
+ * the daemon. All Files is a lazy directory tree, so filtering the part of it
+ * that happens to be loaded would quietly hide most of the checkout; the daemon
+ * ranks the whole thing instead, and `results` is its answer.
+ */
+export interface HappyAgentFileSearch {
+    readonly query: string;
+    /** Ranked whole-checkout matches, absent until the daemon has answered one. */
+    readonly results?: readonly HappyAgentFileSearchResult[];
+    /** True while an answer for the current query is still outstanding. */
+    readonly searching: boolean;
+}
+
+/** How many ranked matches the file listing asks the daemon for. */
+const FILE_SEARCH_LIMIT = 50;
+
+/** Nothing typed, nothing found — the listing's resting state. */
+const FILE_SEARCH_IDLE: HappyAgentFileSearch = { query: "", searching: false };
 
 /** How a changed file is displayed. Mirrors the UI's `ChangedFileDiffMode`. */
 export type HappyAgentFileViewMode = "preview" | "unified" | "split" | "edit";
@@ -1135,6 +1179,12 @@ export interface HappyAgentWorkspaceStore {
     fileScopeUpdate(groupId: HappyAgentGroupId, scope: HappyAgentFileScope): void;
     /** Chooses whether the panel nests paths into folders, for this checkout. */
     fileLayoutUpdate(groupId: HappyAgentGroupId, layout: HappyAgentFileLayout): void;
+    /**
+     * Records what the reader is looking for in the file listing. Under All
+     * Files this asks the daemon to rank the whole checkout, because the tree
+     * on screen is only the part of it that has been opened.
+     */
+    fileSearchUpdate(query: string): void;
     /** Records how wide the reader left the right panel in this checkout. */
     panelWidthUpdate(groupId: HappyAgentGroupId, width: number): void;
     /**
@@ -1521,6 +1571,14 @@ export function happyAgentWorkspaceStoreCreate(
     let fileViewMode: HappyAgentFileViewMode = "unified";
     let fileViewWrap = false;
     /**
+     * Looking for a file is not a preference, so it is neither written to the
+     * view preferences nor carried to the next checkout: it is what this reader
+     * is doing right now, and moving to another project ends it.
+     */
+    let fileSearch: HappyAgentFileSearch = FILE_SEARCH_IDLE;
+    /** Which search request is still wanted; a later query retires an earlier one. */
+    let fileSearchGeneration = 0;
+    /**
      * How each checkout this window has arranged is arranged, read once here.
      *
      * Per checkout rather than per workspace: how someone wants to look at a
@@ -1849,7 +1907,8 @@ export function happyAgentWorkspaceStoreCreate(
         fileViewMode,
         fileViewWrap,
         fileScope: "changed",
-        fileLayout: "flat",
+        fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
+        fileSearch: FILE_SEARCH_IDLE,
         fileTreeExpanded,
         fileTreeCollapsed,
         workspaceFilesLoading,
@@ -2102,7 +2161,10 @@ export function happyAgentWorkspaceStoreCreate(
         // The daemon's all-files contract is a lazy directory tree. Flattening
         // it would require recursively opening every directory before the first
         // row could be truthful, which turns one panel open into a request storm.
-        const nextFileLayout = nextFileScope === "all" ? "tree" : (nextView.fileLayout ?? "flat");
+        const nextFileLayout =
+            nextFileScope === "all"
+                ? "tree"
+                : (nextView.fileLayout ?? HAPPY_AGENT_FILE_LAYOUT_DEFAULT);
         const nextPanelWidth = nextView.panelWidth;
         // Recomputed here rather than remembered: it is derived from the same
         // list snapshot this projection is built from, so it cannot lag behind
@@ -2147,6 +2209,7 @@ export function happyAgentWorkspaceStoreCreate(
                 snapshot.fileViewWrap === fileViewWrap &&
                 snapshot.fileScope === nextFileScope &&
                 snapshot.fileLayout === nextFileLayout &&
+                snapshot.fileSearch === fileSearch &&
                 snapshot.panelWidth === nextPanelWidth &&
                 snapshot.fileTreeExpanded === fileTreeExpanded &&
                 snapshot.fileTreeCollapsed === fileTreeCollapsed &&
@@ -2171,6 +2234,7 @@ export function happyAgentWorkspaceStoreCreate(
                           fileViewWrap,
                           fileScope: nextFileScope,
                           fileLayout: nextFileLayout,
+                          fileSearch,
                           ...(nextPanelWidth === undefined ? {} : { panelWidth: nextPanelWidth }),
                           fileTreeExpanded,
                           fileTreeCollapsed,
@@ -2270,6 +2334,51 @@ export function happyAgentWorkspaceStoreCreate(
     const fileTreeExpansionReset = (): void => {
         fileTreeExpanded = new Set();
         fileTreeCollapsed = new Set();
+    };
+
+    /**
+     * Ends the search when the listing stops being about the same checkout. A
+     * query is about the files in front of the reader, and carrying it to
+     * another project would filter that project by what was wanted from this
+     * one. Any answer still in flight is retired with it.
+     */
+    const fileSearchReset = (): void => {
+        fileSearchGeneration += 1;
+        fileSearch = FILE_SEARCH_IDLE;
+    };
+
+    /**
+     * Sets what is being looked for and, where the answer has to come from the
+     * daemon, asks for it. Only All Files does: Changes is already whole in
+     * memory and is filtered where its rows are built, so a query there is
+     * recorded and nothing is fetched for it.
+     *
+     * Does not `recompute` — the caller publishes, because switching scope
+     * changes more than the search and should announce once.
+     */
+    const fileSearchApply = (query: string): void => {
+        // A later query retires whatever an earlier one is still waiting for,
+        // so a slow answer to an abandoned prefix cannot land on a newer one.
+        const generation = ++fileSearchGeneration;
+        const groupId = addressedGroupId;
+        const ask = query !== "" && groupId !== undefined && fileScopeOf(groupId) === "all";
+        fileSearch = { query, searching: ask };
+        if (!ask || groupId === undefined) return;
+        void client.filesSearch(groupId, query, FILE_SEARCH_LIMIT).then(
+            (results) => {
+                if (generation !== fileSearchGeneration) return;
+                fileSearch = { query, results, searching: false };
+                recompute();
+            },
+            () => {
+                // A refused search leaves the query showing with no claim about
+                // what it matched, which is the honest answer: an empty result
+                // list would say the checkout holds nothing by that name.
+                if (generation !== fileSearchGeneration) return;
+                fileSearch = { query, searching: false };
+                recompute();
+            },
+        );
     };
 
     const fileChangeFind = (
@@ -2733,7 +2842,8 @@ export function happyAgentWorkspaceStoreCreate(
         );
     };
 
-    /** Reconciles durable bytes after the daemon reports a filesystem change. */
+    /** Reconciles durable bytes once a filesystem change is known — reported by
+     *  the daemon's watcher, or done by a write of our own. */
     const workspaceFilesChanged = (change: HappyAgentWorkspaceFilesChanged): void => {
         const affected = (path: string): boolean =>
             change.paths === null || change.paths.includes(path);
@@ -4388,7 +4498,8 @@ export function happyAgentWorkspaceStoreCreate(
                     // Nothing is addressed here, so there is no checkout whose
                     // arrangement this could be: the defaults stand in.
                     fileScope: "changed",
-                    fileLayout: "flat",
+                    fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
+                    fileSearch,
                     fileTreeExpanded,
                     fileTreeCollapsed,
                     ...(workspaceFiles ? { workspaceFiles } : {}),
@@ -4600,7 +4711,10 @@ export function happyAgentWorkspaceStoreCreate(
 
         conversationOpen: (conversationId, groupId) => {
             addressApply(groupId, conversationId);
-            if (groupId !== addressedGroupId) fileTreeExpansionReset();
+            if (groupId !== addressedGroupId) {
+                fileTreeExpansionReset();
+                fileSearchReset();
+            }
             releaseGroup();
             if (groupId !== undefined && fileScopeOf(groupId) === "all")
                 workspaceFilesEnsure(groupId);
@@ -4631,6 +4745,7 @@ export function happyAgentWorkspaceStoreCreate(
             if (groupId !== addressedGroupId) {
                 displayedMainViewId = undefined;
                 fileTreeExpansionReset();
+                fileSearchReset();
             }
             // The panel belongs to this group, so it learns the address before
             // the conversation is released rather than after.
@@ -4705,6 +4820,7 @@ export function happyAgentWorkspaceStoreCreate(
             addressedGroupId = undefined;
             addressedGroupSeen = undefined;
             displayedMainViewId = undefined;
+            fileSearchReset();
             openConversation(undefined);
         },
         conversationListRetry: () => {
@@ -5146,12 +5262,22 @@ export function happyAgentWorkspaceStoreCreate(
             if (scope === "all") workspaceFilesEnsure(groupId);
             if (fileScopeOf(groupId) === scope) return;
             viewPreferencesWrite(groupId, { fileScope: scope });
+            // The query survives the switch — the reader is still looking for
+            // the same thing — but the two scopes answer it from different
+            // places, so it is asked again against the one now showing.
+            if (fileSearch.query !== "") fileSearchApply(fileSearch.query);
             recompute();
         },
         fileLayoutUpdate(groupId, layout) {
             if (fileScopeOf(groupId) === "all") return;
-            if ((groupView(groupId).fileLayout ?? "flat") === layout) return;
+            if ((groupView(groupId).fileLayout ?? HAPPY_AGENT_FILE_LAYOUT_DEFAULT) === layout)
+                return;
             viewPreferencesWrite(groupId, { fileLayout: layout });
+            recompute();
+        },
+        fileSearchUpdate(query) {
+            if (fileSearch.query === query) return;
+            fileSearchApply(query);
             recompute();
         },
         panelWidthUpdate(groupId, width) {
@@ -5207,9 +5333,11 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
         },
         fileDraftRevert(tabId) {
+            // Reverting leaves nothing to write back, so the reason the last
+            // write failed is about text that no longer exists.
             fileTabs = fileTabs.map((tab) =>
                 tab.id === tabId && !tab.saving && tab.draft !== undefined
-                    ? { ...tab, draft: undefined }
+                    ? { ...tab, draft: undefined, saveError: undefined }
                     : tab,
             );
             recompute();
@@ -5221,7 +5349,9 @@ export function happyAgentWorkspaceStoreCreate(
             if (refusal) throw new Error(refusal);
             const draft = tab.draft;
             fileTabs = fileTabs.map((candidate) =>
-                candidate.id === tabId ? { ...candidate, saving: true } : candidate,
+                candidate.id === tabId
+                    ? { ...candidate, saving: true, saveError: undefined }
+                    : candidate,
             );
             recompute();
             try {
@@ -5234,20 +5364,34 @@ export function happyAgentWorkspaceStoreCreate(
                 // leave the tab showing text nothing had confirmed.
                 fileTabs = fileTabs.map((candidate) =>
                     candidate.id === tabId
-                        ? { ...candidate, draft: undefined, saving: false }
+                        ? { ...candidate, draft: undefined, saving: false, saveError: undefined }
                         : candidate,
                 );
                 recompute();
-                fileLoad(tabId, fileChangeFind(tab.groupId, tab.path)?.revision ?? tab.revision);
+                // An accepted write is first-hand knowledge that the bytes on
+                // disk changed, so it reconciles on its own rather than waiting
+                // for the watcher to mention what we already did. A write to the
+                // working tree moves no revision, so the cached document cannot
+                // be told apart from the one read before it: reloading without
+                // retiring it scores a hit on the pre-save text and the tab
+                // silently reverts what was just saved. Every tab on the path
+                // reconciles, not only the one saved from, because one file
+                // opened twice is still one file.
+                workspaceFilesChanged({ groupId: tab.groupId, paths: [tab.path] });
             } catch (error) {
                 // The draft survives a failed write. It is the only copy of what
                 // was typed, and throwing it away to report an error would cost
-                // more than the error is worth.
+                // more than the error is worth. The reason is kept beside it,
+                // because the tab is the only place the reader is looking and a
+                // rejected promise alone shows them nothing.
+                const failure = happyAgentUserError(error);
                 fileTabs = fileTabs.map((candidate) =>
-                    candidate.id === tabId ? { ...candidate, saving: false } : candidate,
+                    candidate.id === tabId
+                        ? { ...candidate, saving: false, saveError: failure }
+                        : candidate,
                 );
                 recompute();
-                throw error;
+                throw failure;
             }
         },
 
