@@ -78,6 +78,10 @@ let fontGeneration = 0;
 const fontListeners = new Set<() => void>();
 type Dictionary<T> = Record<string, T | undefined>;
 const dictionaryCreate = <T>(): Dictionary<T> => Object.create(null) as Dictionary<T>;
+// Prepared glyph/segment objects can occupy over 100 times their source text.
+// Keep exact final heights, but bound the expensive width-independent preparation.
+const PREPARED_SOURCE_CAPACITY = 128 * 1_024;
+type PreparedCacheEntry = { readonly key: string; readonly font?: string; readonly size: number };
 export interface MessageTextLayoutCache {
     /** Font generation this cache was measured against. */
     generation: number;
@@ -97,6 +101,8 @@ export interface MessageTextLayoutCache {
     richPrepared: Dictionary<PreparedRichInline>;
     /** Natural widths, grouped by font then source text. */
     naturalWidths: Dictionary<Dictionary<number>>;
+    preparedOrder: PreparedCacheEntry[];
+    preparedSourceSize: number;
 }
 /**
  * One conversation's text-layout cache. Settled transcript text is retained so
@@ -116,6 +122,8 @@ export function messageTextLayoutCacheCreate(): MessageTextLayoutCache {
         runHeights: dictionaryCreate(),
         richPrepared: dictionaryCreate(),
         naturalWidths: dictionaryCreate(),
+        preparedOrder: [],
+        preparedSourceSize: 0,
     };
 }
 /** Standalone callers keep the old no-setup API; chat surfaces supply their own cache. */
@@ -161,6 +169,8 @@ export function messageTextLayoutCacheRefresh(cache: MessageTextLayoutCache): bo
     cache.runHeights = dictionaryCreate();
     cache.richPrepared = dictionaryCreate();
     cache.naturalWidths = dictionaryCreate();
+    cache.preparedOrder = [];
+    cache.preparedSourceSize = 0;
     cache.generation = fontGeneration;
     return true;
 }
@@ -188,6 +198,20 @@ function cacheReady(cache: MessageTextLayoutCache): MessageTextLayoutCache {
     messageTextLayoutCacheRefresh(cache);
     return cache;
 }
+/** Retain a bounded recent set; oversized runs are measured exactly and then released. */
+function preparationRetain(cache: MessageTextLayoutCache, key: string, font?: string): boolean {
+    const size = key.length + (font?.length ?? 0);
+    if (size > PREPARED_SOURCE_CAPACITY) return false;
+    while (cache.preparedSourceSize + size > PREPARED_SOURCE_CAPACITY) {
+        const oldest = cache.preparedOrder.shift()!;
+        if (oldest.font === undefined) delete cache.richPrepared[oldest.key];
+        else delete cache.prepared[oldest.font]?.[oldest.key];
+        cache.preparedSourceSize -= oldest.size;
+    }
+    cache.preparedOrder.push({ key, font, size });
+    cache.preparedSourceSize += size;
+    return true;
+}
 function preparedText(text: string, font: string, cache: MessageTextLayoutCache): PreparedText {
     const ready = cacheReady(cache);
     let byText = ready.prepared[font];
@@ -198,7 +222,7 @@ function preparedText(text: string, font: string, cache: MessageTextLayoutCache)
     const hit = byText[text];
     if (hit !== undefined) return hit;
     const value = prepare(text, font, { whiteSpace: "normal" });
-    byText[text] = value;
+    if (preparationRetain(ready, text, font)) byText[text] = value;
     return value;
 }
 /** Painted height of one wrapped run, never less than a single line box. */
@@ -211,7 +235,6 @@ function runHeight(
 ): number {
     if (measure <= 0 || text.trim().length === 0) return lineHeight;
     const ready = cacheReady(cache);
-    const value = preparedText(text, font, ready);
     let byText = ready.runHeights[font];
     if (!byText) {
         byText = dictionaryCreate();
@@ -225,6 +248,7 @@ function runHeight(
     const key = `${String(measure)}:${String(lineHeight)}`;
     const hit = layouts[key];
     if (hit !== undefined) return hit;
+    const value = preparedText(text, font, ready);
     const height = Math.max(lineHeight, layout(value, measure, lineHeight).height);
     layouts[key] = height;
     return height;
@@ -247,7 +271,7 @@ function preparedRichItems(
     const hit = ready.richPrepared[key];
     if (hit !== undefined) return hit;
     const value = prepareRichInline([...items]);
-    ready.richPrepared[key] = value;
+    if (preparationRetain(ready, key)) ready.richPrepared[key] = value;
     return value;
 }
 function richItemsHeight(
