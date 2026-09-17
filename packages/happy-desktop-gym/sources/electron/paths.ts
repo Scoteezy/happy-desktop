@@ -53,6 +53,7 @@ const SAFE_PROFILE_ENVIRONMENT = new Set([
     "LOCALAPPDATA",
     "TEMP",
     "TMP",
+    "BUN_OPTIONS",
 ]);
 
 export function workspaceRootResolve(): string {

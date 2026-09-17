@@ -717,6 +717,54 @@ async function workloadRun(
     };
 
     await mark("scenario-start");
+    if (workload === "background-drafts") {
+        const targets = await mixedSessionTargetsRead(
+            options.manifest.publicRepository?.sessionIds ?? options.clusterSessionIds,
+            options.runtime,
+        );
+        if (targets.length < 2)
+            throw new Error("Background drafts need two durable conversations.");
+        const [visible, background] = targets;
+        await navigateRoute(page, visible!.route);
+        await waitForSessionUiReady(page, visible!.route, visible!.id);
+        await page.waitForTimeout(500);
+        const original = await options.runtime.client.draftRead(background!.id);
+        await options.profilerStart();
+        await mark("background-drafts-start");
+        const before = await performanceCapture(page, app, options.profilerActive());
+        const updateStarted = performance.now();
+        try {
+            for (let index = 0; index < 100; index += 1) {
+                await options.runtime.client.draftSave(background!.id, {
+                    text: `A phone edits a background conversation: ${"review ".repeat(index + 1)}`,
+                    providerId: "gym",
+                    modelId: "openai/gym",
+                    effort: "medium",
+                    permissionMode: "full_access",
+                    serviceTier: null,
+                });
+            }
+        } finally {
+            await options.runtime.client.draftSave(background!.id, original);
+        }
+        const updateDurationMs = performance.now() - updateStarted;
+        await page.waitForTimeout(500);
+        await mark("background-drafts-complete");
+        const selected = await page
+            .locator(`[data-happy-desktop-ui="tab"][data-tab-id="${visible!.id}"]`)
+            .first()
+            .getAttribute("aria-selected");
+        if (selected !== "true")
+            throw new Error("Background drafts changed the selected conversation.");
+        await page.screenshot({ path: join(options.paths.artifacts, "background-drafts.png") });
+        return finish({
+            updates: 100,
+            updateDurationMs,
+            before,
+            after: await performanceCapture(page, app, options.profilerActive()),
+            selectedSessionPreserved: true,
+        });
+    }
     if (workload === "boot") {
         await options.profilerStart();
         await mark("profiler-started");

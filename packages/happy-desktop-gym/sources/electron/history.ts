@@ -222,9 +222,11 @@ export async function catalogSnapshotRead(
     const workspaces = workspaceLists
         .flatMap((result) => result.workspaces)
         .filter((workspace) => !projectPaths.has(workspace.path));
-    const agentCount = (await client.agentIds()).length;
+    const agentIds = new Set(await client.agentIds());
     if (expectedSessionIds !== undefined) {
-        await persistedSessionIdsVerify(client, expectedSessionIds);
+        const missing = expectedSessionIds.filter((id) => !agentIds.has(id));
+        if (missing.length > 0)
+            throw new Error(`The durable catalog is missing ${missing.length} seeded sessions.`);
     }
     return {
         // The home project is implicit and omitted by the project list.
@@ -236,19 +238,8 @@ export async function catalogSnapshotRead(
         archivedWorktreeCount: workspaces.filter(
             (workspace) => workspace.status === "archived" || workspace.archivedAt != null,
         ).length,
-        sessionCount: agentCount,
+        sessionCount: agentIds.size,
     };
-}
-
-async function persistedSessionIdsVerify(
-    client: GymHappyAgentClient,
-    sessionIds: readonly string[],
-): Promise<void> {
-    const batchSize = 32;
-    for (let offset = 0; offset < sessionIds.length; offset += batchSize) {
-        const batch = sessionIds.slice(offset, offset + batchSize);
-        await Promise.all(batch.map((sessionId) => client.getAgent(sessionId)));
-    }
 }
 
 async function readyCheckouts(

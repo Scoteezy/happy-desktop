@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 export type GymProfile = "smoke" | "realistic" | "stress";
 
 export type GymWorkloadName =
+    | "background-drafts"
     | "public-repository"
     | "boot"
     | "catalog-switch"

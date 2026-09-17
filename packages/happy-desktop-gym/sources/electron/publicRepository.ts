@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -38,15 +38,30 @@ export async function gymPublicRepositoryAttach(root: string, source: string): P
         ).stdout;
     const commit = (await git(source, ["rev-parse", "HEAD"])).trim();
     // Local-only clone: no remote writes, hard links, source mutations, or repo scripts.
-    await git(paths.root, [
-        "-c",
-        "core.longpaths=true",
-        "clone",
-        "--no-hardlinks",
-        "--no-checkout",
-        source,
-        checkout,
-    ]);
+    const exists = await stat(checkout)
+        .then(() => true)
+        .catch((error) => {
+            if (error.code === "ENOENT") return false;
+            throw error;
+        });
+    if (exists) {
+        if (
+            (await git(checkout, ["rev-parse", "HEAD"])).trim() !== commit ||
+            (await git(checkout, ["status", "--porcelain"])).trim()
+        )
+            throw new Error(
+                "An interrupted public fixture must still be clean at the pinned commit.",
+            );
+    } else
+        await git(paths.root, [
+            "-c",
+            "core.longpaths=true",
+            "clone",
+            "--no-hardlinks",
+            "--no-checkout",
+            source,
+            checkout,
+        ]);
     await git(checkout, [
         "-c",
         "core.longpaths=true",

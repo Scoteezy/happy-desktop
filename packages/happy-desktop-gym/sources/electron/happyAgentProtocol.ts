@@ -155,6 +155,18 @@ export class GymHappyAgentClient {
         await this.#client.compactAgent(cuid(agentId), { mutationId: randomUUID() });
     }
 
+    async draftRead(agentId: string): Promise<happyAgentProtocol.AgentDraft | null> {
+        return (await this.#client.getAgentDraft(cuid(agentId))).draft.value;
+    }
+
+    async draftSave(agentId: string, draft: happyAgentProtocol.AgentDraft | null): Promise<void> {
+        await this.#client.saveAgentDraft(cuid(agentId), {
+            draft,
+            updatedAt: Date.now(),
+            mutationId: randomUUID(),
+        });
+    }
+
     async getAgent(agentId: string): Promise<{ readonly agent: HappyAgent }> {
         const response = await this.#client.getAgent(cuid(agentId));
         return { agent: await this.#agentProject(response.agent) };

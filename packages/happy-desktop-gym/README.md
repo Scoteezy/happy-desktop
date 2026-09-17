@@ -45,6 +45,14 @@ Use identical fixtures and profiler settings for before/after comparisons.
 Deterministic inference makes performance repeatable; it does not replace a
 separate test with an authenticated real provider.
 
+`--workload background-drafts` opens a seeded long conversation and applies 100
+real API draft updates to another conversation, then restores its original draft.
+It verifies that the visible conversation stays selected and captures the native
+profile and screenshot. This lane preserves history for repeated comparisons.
+History preparation waits on durable run-completion events rather than repeatedly
+downloading transcripts. Its `seed-progress.json` records completed turns; the
+catalog check verifies all seeded identities from one authoritative bootstrap.
+
 The gym creates one disposable run under `<system-temp>/hdg/g-<run-id>` by
 default. Every mutable path belongs to that one short root: `HOME`, `TMPDIR`,
 `HAPPY_HOME_DIR`, the Happy Agent socket and token, Electron user data,
