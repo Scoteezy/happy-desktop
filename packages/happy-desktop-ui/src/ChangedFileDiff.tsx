@@ -1,8 +1,8 @@
 import { parseDiffFromFile } from "@pierre/diffs";
-import { FileDiff } from "@pierre/diffs/react";
+import { Editor } from "@pierre/diffs/edit";
+import { EditProvider, FileDiff, useStableCallback } from "@pierre/diffs/react";
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
-import { CodeEditor } from "./CodeEditor";
 import { CODE_BLOCK_HIGHLIGHT_CACHE_MAX_TEXT_LENGTH } from "./CodeBlock";
 import { ScrollArea } from "./Scrollbar";
 import { PIERRE_PANE_CSS } from "./pierreCodeSurface";
@@ -17,7 +17,10 @@ import { SegmentedControl } from "./SegmentedControl";
  *   result reads like, which is the one question a diff cannot answer.
  * - `unified` — additions and deletions interleaved in one column.
  * - `split` — old and new side by side.
- * - `edit` — the working-tree text, editable.
+ * - `edit` — the same diff, with its working-tree column typed into in place.
+ *   Editing used to swap the whole pane for a plain editor, which answered
+ *   "what does this say now" by throwing away "what did it say before" — the
+ *   one question the reader opened a diff to ask.
  */
 export type ChangedFileDiffMode = "preview" | "unified" | "split" | "edit";
 
@@ -46,8 +49,6 @@ export type ChangedFileDiffProps = {
     /** Stable identity for the saved/base side of the diff, when known. */
     oldCacheKey?: string;
     path: string;
-    /** Stable loaded-document identity used by the edit mode's bounded state cache. */
-    documentKey?: string;
     /** Stable identity for the working-tree side of the diff, when clean. */
     newCacheKey?: string;
     style?: CSSProperties;
@@ -198,7 +199,10 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
         [oldCacheKey, props.oldContent, props.oldPath, props.path],
     );
     const diff = useMemo(() => {
-        if (mode !== "unified" && mode !== "split") return undefined;
+        // Edit is a diff too now: the working-tree column is typed into where it
+        // is drawn, rather than the change being swapped for a plain editor that
+        // cannot say what any of the text was before.
+        if (mode === "preview") return undefined;
         const value = parseDiffFromFile(oldFile, newFile);
         // Keep unkeyed documents out of Happy's reusable warm-cache gate. Pierre
         // may assign an internal fallback key once it renders them, so this path
@@ -235,6 +239,23 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
     // One annotation per note, plus the one being written. Pierre addresses
     // them by side and line, which is the same address the notes carry, so
     // nothing here reconstructs a position.
+    // Typing in the diff reports the whole working-tree file, which is the same
+    // thing the plain editor used to report, so nothing above this component
+    // learns that editing moved.
+    // The renderer reads these once, when the edit session attaches, and keeps
+    // what it was given for the life of that session. A plain closure would
+    // therefore freeze whichever handler happened to be current at that moment;
+    // the stable wrapper keeps one identity and always calls the latest.
+    const contentChanged = useStableCallback((file: { contents: string }) => {
+        props.onContentChange?.(file.contents);
+    });
+    const editorOptions = useMemo(() => ({ onChange: contentChanged }), [contentChanged]);
+    // The renderer owns the instance's lifetime — it attaches when the session
+    // starts and cleans up when it ends — so this only builds one.
+    const editorCreate = useStableCallback(
+        (options: ConstructorParameters<typeof Editor<ChangedFileDiffAnnotation>>[0]) =>
+            new Editor<ChangedFileDiffAnnotation>(options),
+    );
     const lineAnnotations = useMemo(() => {
         if (!commenting) return undefined;
         const built = (props.comments ?? []).map((comment) => ({
@@ -260,6 +281,14 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             data-happy-desktop-ui="changed-file-diff"
             data-mode={mode}
             data-testid={props["data-testid"]}
+            // The shortcut every editor has. It lives on the surface rather than
+            // inside the renderer's own keymap because saving is the product's
+            // act, not the editor's: what a write means here is the caller's.
+            onKeyDown={(event) => {
+                if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+                event.preventDefault();
+                if (!props.saveDisabled) props.onSave?.();
+            }}
             style={props.style}
         >
             <div
@@ -322,83 +351,75 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             >
                 {mode === "preview" ? (
                     props.preview
-                ) : mode === "edit" ? (
-                    <CodeEditor
-                        className="happy-changed-file-diff__editor"
-                        documentKey={props.documentKey}
-                        name={props.path}
-                        // The shortcut every editor has. Without it the only way
-                        // to save is to stop typing and reach for a button,
-                        // which is not how anyone edits a file.
-                        onSave={() => {
-                            if (!props.saveDisabled) props.onSave?.();
-                        }}
-                        onValueChange={(content) => props.onContentChange?.(content)}
-                        readOnly={props.saving === true}
-                        value={props.newContent}
-                        wrap={props.wrap}
-                    />
                 ) : diff === undefined ? null : (
-                    <FileDiff<ChangedFileDiffAnnotation>
-                        className="happy-changed-file-diff__renderer"
-                        fileDiff={diff}
-                        options={diffOptions}
-                        {...(lineAnnotations === undefined ? {} : { lineAnnotations })}
-                        {...(commenting
-                            ? {
-                                  renderAnnotation: (annotation) => {
-                                      const held = annotation.metadata;
-                                      const author = {
-                                          authorInitials: props.commentAuthorInitials ?? "You",
-                                          authorName: props.commentAuthorName ?? "You",
-                                      };
-                                      if (held.type === "draft")
+                    <EditProvider<ChangedFileDiffAnnotation> createEditor={editorCreate}>
+                        <FileDiff<ChangedFileDiffAnnotation>
+                            edit={mode === "edit"}
+                            editorOptions={editorOptions}
+                            className="happy-changed-file-diff__renderer"
+                            fileDiff={diff}
+                            options={diffOptions}
+                            {...(lineAnnotations === undefined ? {} : { lineAnnotations })}
+                            {...(commenting
+                                ? {
+                                      renderAnnotation: (annotation) => {
+                                          const held = annotation.metadata;
+                                          const author = {
+                                              authorInitials: props.commentAuthorInitials ?? "You",
+                                              authorName: props.commentAuthorName ?? "You",
+                                          };
+                                          if (held.type === "draft")
+                                              return (
+                                                  <ReviewComment
+                                                      {...author}
+                                                      draft={held.draft.text}
+                                                      lineNumber={held.draft.lineNumber}
+                                                      onCancel={() =>
+                                                          props.onCommentDraftCancel?.()
+                                                      }
+                                                      onDraftChange={(text) =>
+                                                          props.onCommentDraftUpdate?.(text)
+                                                      }
+                                                      onSubmit={() =>
+                                                          props.onCommentDraftSubmit?.()
+                                                      }
+                                                      side={held.draft.side}
+                                                  />
+                                              );
                                           return (
                                               <ReviewComment
                                                   {...author}
-                                                  draft={held.draft.text}
-                                                  lineNumber={held.draft.lineNumber}
-                                                  onCancel={() => props.onCommentDraftCancel?.()}
-                                                  onDraftChange={(text) =>
-                                                      props.onCommentDraftUpdate?.(text)
+                                                  lineNumber={held.comment.lineNumber}
+                                                  onRemove={() =>
+                                                      props.onCommentRemove?.(held.comment.id)
                                                   }
-                                                  onSubmit={() => props.onCommentDraftSubmit?.()}
-                                                  side={held.draft.side}
+                                                  side={held.comment.side}
+                                                  stale={held.comment.stale}
+                                                  text={held.comment.text}
                                               />
                                           );
-                                      return (
-                                          <ReviewComment
-                                              {...author}
-                                              lineNumber={held.comment.lineNumber}
-                                              onRemove={() =>
-                                                  props.onCommentRemove?.(held.comment.id)
-                                              }
-                                              side={held.comment.side}
-                                              stale={held.comment.stale}
-                                              text={held.comment.text}
-                                          />
-                                      );
-                                  },
-                                  renderGutterUtility: (getHoveredLine) => (
-                                      <button
-                                          aria-label="Comment on this line"
-                                          className="happy-changed-file-diff__comment-button"
-                                          onClick={() => {
-                                              const line = getHoveredLine();
-                                              if (line)
-                                                  props.onCommentDraftOpen?.(
-                                                      line.lineNumber,
-                                                      line.side,
-                                                  );
-                                          }}
-                                          type="button"
-                                      >
-                                          +
-                                      </button>
-                                  ),
-                              }
-                            : {})}
-                    />
+                                      },
+                                      renderGutterUtility: (getHoveredLine) => (
+                                          <button
+                                              aria-label="Comment on this line"
+                                              className="happy-changed-file-diff__comment-button"
+                                              onClick={() => {
+                                                  const line = getHoveredLine();
+                                                  if (line)
+                                                      props.onCommentDraftOpen?.(
+                                                          line.lineNumber,
+                                                          line.side,
+                                                      );
+                                              }}
+                                              type="button"
+                                          >
+                                              +
+                                          </button>
+                                      ),
+                                  }
+                                : {})}
+                        />
+                    </EditProvider>
                 )}
             </ScrollArea>
         </section>

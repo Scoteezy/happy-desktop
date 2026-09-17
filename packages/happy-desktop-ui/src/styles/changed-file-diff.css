@@ -47,6 +47,7 @@
 }
 
 .happy-changed-file-diff[data-mode="unified"] .happy-changed-file-diff__body,
+.happy-changed-file-diff[data-mode="edit"] .happy-changed-file-diff__body,
 .happy-changed-file-diff[data-mode="split"] .happy-changed-file-diff__body {
     /*
      * The renderer owns both scroll axes: Pierre keeps horizontal scrolling
@@ -64,6 +65,7 @@
 }
 
 .happy-changed-file-diff[data-mode="unified"] .happy-changed-file-diff__viewport,
+.happy-changed-file-diff[data-mode="edit"] .happy-changed-file-diff__viewport,
 .happy-changed-file-diff[data-mode="split"] .happy-changed-file-diff__viewport {
     --happy-code-trailing-clearance: calc(var(--happy-scrollbar-track) + 1ch);
     display: block;
@@ -117,13 +119,6 @@
        the tokens themselves already switch with the theme. */
     --diffs-addition-color: var(--diff-added-border);
     --diffs-deletion-color: var(--diff-removed-border);
-}
-
-/* The same code editor the file tab uses: editing a change should not look like
-   a different application from editing the file it is a change to. */
-.happy-changed-file-diff__editor {
-    width: 100%;
-    height: 100%;
 }
 
 .happy-changed-file-diff__updating {
