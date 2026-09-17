@@ -2076,6 +2076,22 @@ async function longChatScrollRun(
     targets: readonly MixedSessionTarget[],
     mark: (name: string) => Promise<void>,
 ): Promise<Record<string, unknown>> {
+    const target = targets[0]!;
+    await navigateRoute(page, target.route);
+    await waitForSessionUiReady(page, target.route, target.id);
+    const initialViewport = await transcriptViewportRead(page);
+    if (!initialViewport.virtualized || initialViewport.renderedRows === 0) {
+        throw new Error(
+            `Long-chat scroll needs a hydrated virtual transcript: ${JSON.stringify(initialViewport)}.`,
+        );
+    }
+    if (initialViewport.scrollHeight <= initialViewport.clientHeight) {
+        throw new Error(
+            `Long-chat scroll needs scrollable content: ${JSON.stringify(initialViewport)}.`,
+        );
+    }
+    await mark("virtualized-transcript-ready");
+    // Hydrate first so the streams overlap scrolling instead of finishing during cold layout.
     const before = await performanceCapture(page, app, options.profilerActive());
     const submission = await concurrentSubmissions(
         options.runtime.client,
@@ -2092,21 +2108,6 @@ async function longChatScrollRun(
             submission.collectors.get(entry.sessionId),
         ),
     );
-    const target = targets[0]!;
-    await navigateRoute(page, target.route);
-    await waitForSessionUiReady(page, target.route, target.id);
-    const initialViewport = await transcriptViewportRead(page);
-    if (!initialViewport.virtualized || initialViewport.renderedRows === 0) {
-        throw new Error(
-            `Long-chat scroll needs a hydrated virtual transcript: ${JSON.stringify(initialViewport)}.`,
-        );
-    }
-    if (initialViewport.scrollHeight <= initialViewport.clientHeight) {
-        throw new Error(
-            `Long-chat scroll needs scrollable content: ${JSON.stringify(initialViewport)}.`,
-        );
-    }
-    await mark("virtualized-transcript-ready");
     const scrollInteractions = await transcriptScrollSequence(
         page,
         [1, 0, 0.78, 0.22, 0.92, 0.08, 0.64, 0],
@@ -2331,6 +2332,7 @@ async function transcriptScrollSequence(
     const interactions: ScrollInteractionMeasurement[] = [];
     let historyLoadAttempted = false;
     for (const [index, requestedFraction] of fractions.entries()) {
+        if (requestedFraction < 1) await transcriptReaderControlTake(page);
         const startedAt = new Date().toISOString();
         const measurement = await page.evaluate(async (fraction) => {
             const list = document.querySelector<HTMLElement>(
@@ -2390,6 +2392,11 @@ async function transcriptScrollSequence(
                 historyScrollHeightAfter: list.scrollHeight,
             };
         }, requestedFraction);
+        if (Math.abs(measurement.scrollTop - measurement.maxScrollTop * requestedFraction) > 8) {
+            throw new Error(
+                `The transcript did not reach the requested scroll position: ${JSON.stringify(measurement)}.`,
+            );
+        }
         if (
             requestedFraction === 0 &&
             !historyLoadAttempted &&
@@ -2442,23 +2449,25 @@ async function transcriptScrollSequence(
     return interactions;
 }
 
+async function transcriptReaderControlTake(page: Page): Promise<void> {
+    const list = page
+        .locator('[data-happy-desktop-ui="message-list"] [data-scrollbar-viewport]')
+        .first();
+    const box = await list.boundingBox();
+    if (!box) throw new Error("The conversation message list has no wheel target.");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    /*
+     * Programmatic positioning is only fixture setup. Give the reader the
+     * viewport first through the same trusted upward intent that parks a
+     * real transcript; a synthetic scroll event cannot stand in for that
+     * ownership boundary while follow mode is active.
+     */
+    await page.mouse.wheel(0, -4);
+    await page.waitForTimeout(16);
+}
+
 async function scrollListToFraction(page: Page, fraction: number): Promise<void> {
-    if (fraction < 1) {
-        const list = page
-            .locator('[data-happy-desktop-ui="message-list"] [data-scrollbar-viewport]')
-            .first();
-        const box = await list.boundingBox();
-        if (!box) throw new Error("The conversation message list has no wheel target.");
-        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-        /*
-         * Programmatic positioning is only fixture setup. Give the reader the
-         * viewport first through the same trusted upward intent that parks a
-         * real transcript; a synthetic scroll event cannot stand in for that
-         * ownership boundary while follow mode is active.
-         */
-        await page.mouse.wheel(0, -4);
-        await page.waitForTimeout(16);
-    }
+    if (fraction < 1) await transcriptReaderControlTake(page);
     await page.evaluate(
         (requestedFraction) =>
             new Promise<void>((resolve, reject) => {

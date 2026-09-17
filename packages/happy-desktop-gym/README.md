@@ -45,6 +45,11 @@ Use identical fixtures and profiler settings for before/after comparisons.
 Deterministic inference makes performance repeatable; it does not replace a
 separate test with an authenticated real provider.
 
+The public-repository scroll lane hydrates its long transcript before starting
+the concurrent streams. Trusted upward wheel input releases follow mode before
+each deterministic position jump; the measured position must reach its target
+within eight pixels. A run pinned at the latest message fails this check.
+
 `--workload background-drafts` opens a seeded long conversation and applies 100
 real API draft updates to another conversation, then restores its original draft.
 It verifies that the visible conversation stays selected and captures the native
