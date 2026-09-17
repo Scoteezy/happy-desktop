@@ -5481,7 +5481,12 @@ export function happyAgentWorkspaceStoreCreate(
             // started saying is part of the same request, and replacing it would
             // throw away the only copy of it.
             target.getState().textUpdate(existing === "" ? request : `${existing}\n\n${request}`);
-            fileComments = FILE_COMMENTS_IDLE;
+            // A note still being written was not part of the request, so it
+            // survives it rather than being spent with the ones that were.
+            fileComments =
+                fileComments.draft === undefined
+                    ? FILE_COMMENTS_IDLE
+                    : { comments: [], draft: fileComments.draft };
             recompute();
             return true;
         },
@@ -5535,6 +5540,11 @@ export function happyAgentWorkspaceStoreCreate(
                     ? { ...candidate, draft, preview: false }
                     : candidate,
             );
+            // Typing in the file moves its lines just as surely as the agent
+            // rewriting it does, so notes left on it stop describing where they
+            // were left. That the reader did it themselves changes nothing about
+            // whether the recorded line numbers still hold.
+            fileCommentsStale([tab.path]);
             recompute();
         },
         fileDraftRevert(tabId) {

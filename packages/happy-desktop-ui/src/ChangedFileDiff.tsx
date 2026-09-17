@@ -1,7 +1,7 @@
 import { parseDiffFromFile } from "@pierre/diffs";
 import { Editor } from "@pierre/diffs/edit";
 import { EditProvider, FileDiff, useStableCallback } from "@pierre/diffs/react";
-import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
 import { CODE_BLOCK_HIGHLIGHT_CACHE_MAX_TEXT_LENGTH } from "./CodeBlock";
 import { ScrollArea } from "./Scrollbar";
@@ -137,7 +137,7 @@ export type ChangedFileDiffCommentDraft = {
  */
 type ChangedFileDiffAnnotation =
     | { readonly type: "comment"; readonly comment: ChangedFileDiffComment }
-    | { readonly type: "draft"; readonly draft: ChangedFileDiffCommentDraft };
+    | { readonly type: "draft" };
 
 /**
  * C-237 ChangedFileDiff — a complete working-tree diff surface. Pierre Diffs
@@ -170,12 +170,28 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
     const commenting = props.onCommentDraftOpen !== undefined;
     const requested = props.mode ?? "unified";
     const mode = segments.some((segment) => segment.value === requested) ? requested : "unified";
+    // The text an active edit session is working on, held still for as long as
+    // it lasts.
+    //
+    // The renderer re-renders the diff on every render it is given, with no
+    // dependency gate. Typing reports a change, which becomes a new working-tree
+    // content prop, which would parse into a new diff and re-render the document
+    // out from under the caret that produced it — once per keystroke. The
+    // session owns its document while it is open, so the diff beneath it is
+    // parsed from the text the session began with and the typing leaves through
+    // `onChange` only. Leaving the mode releases the hold, and the diff is then
+    // parsed from everything that was typed.
+    const editing = mode === "edit";
+    const [editBaseline, editBaselineSet] = useState<string>();
+    if (editing && editBaseline === undefined) editBaselineSet(props.newContent);
+    if (!editing && editBaseline !== undefined) editBaselineSet(undefined);
+    const newContent = editing ? (editBaseline ?? props.newContent) : props.newContent;
     // Parsing the patch is synchronous. Keep its inputs stable across unrelated
     // workspace notifications while this diff remains mounted; switching files
     // remounts it intentionally, and Pierre cache keys cover that lifetime
     // boundary. Contents, names, and cache keys are the identity contract.
     const newCacheKey =
-        props.newContent.length <= CODE_BLOCK_HIGHLIGHT_CACHE_MAX_TEXT_LENGTH
+        newContent.length <= CODE_BLOCK_HIGHLIGHT_CACHE_MAX_TEXT_LENGTH
             ? props.newCacheKey
             : undefined;
     const oldCacheKey =
@@ -185,10 +201,10 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
     const newFile = useMemo(
         () => ({
             name: props.path,
-            contents: props.newContent,
+            contents: newContent,
             ...(newCacheKey === undefined ? {} : { cacheKey: newCacheKey }),
         }),
-        [newCacheKey, props.newContent, props.path],
+        [newCacheKey, newContent, props.path],
     );
     const oldFile = useMemo(
         () => ({
@@ -256,6 +272,13 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
         (options: ConstructorParameters<typeof Editor<ChangedFileDiffAnnotation>>[0]) =>
             new Editor<ChangedFileDiffAnnotation>(options),
     );
+    // Where the notes go. Only their positions live here, never the text being
+    // typed into one: the renderer re-places every annotation whenever this
+    // array changes, so carrying the draft's characters in it would redraw the
+    // whole file's annotations on each keystroke. The note itself is ordinary
+    // React below, and reads the current draft straight from props.
+    const draftLine = props.commentDraft?.lineNumber;
+    const draftSide = props.commentDraft?.side;
     const lineAnnotations = useMemo(() => {
         if (!commenting) return undefined;
         const built = (props.comments ?? []).map((comment) => ({
@@ -263,17 +286,17 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             lineNumber: comment.lineNumber,
             metadata: { type: "comment" as const, comment },
         }));
-        return props.commentDraft === undefined
+        return draftLine === undefined || draftSide === undefined
             ? built
             : [
                   ...built,
                   {
-                      side: props.commentDraft.side,
-                      lineNumber: props.commentDraft.lineNumber,
-                      metadata: { type: "draft" as const, draft: props.commentDraft },
+                      side: draftSide,
+                      lineNumber: draftLine,
+                      metadata: { type: "draft" as const },
                   },
               ];
-    }, [commenting, props.commentDraft, props.comments]);
+    }, [commenting, draftLine, draftSide, props.comments]);
     return (
         <section
             aria-label={`Changes in ${props.path}`}
@@ -368,12 +391,16 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                                               authorInitials: props.commentAuthorInitials ?? "You",
                                               authorName: props.commentAuthorName ?? "You",
                                           };
+                                          // The draft's characters are read here
+                                          // rather than carried through the
+                                          // annotation, so typing one redraws
+                                          // this note and nothing else.
                                           if (held.type === "draft")
-                                              return (
+                                              return props.commentDraft === undefined ? null : (
                                                   <ReviewComment
                                                       {...author}
-                                                      draft={held.draft.text}
-                                                      lineNumber={held.draft.lineNumber}
+                                                      draft={props.commentDraft.text}
+                                                      lineNumber={props.commentDraft.lineNumber}
                                                       onCancel={() =>
                                                           props.onCommentDraftCancel?.()
                                                       }
@@ -383,7 +410,7 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                                                       onSubmit={() =>
                                                           props.onCommentDraftSubmit?.()
                                                       }
-                                                      side={held.draft.side}
+                                                      side={props.commentDraft.side}
                                                   />
                                               );
                                           return (
