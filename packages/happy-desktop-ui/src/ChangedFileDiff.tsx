@@ -1,4 +1,4 @@
-import { parseDiffFromFile } from "@pierre/diffs";
+import { parseDiffFromFile, type SelectedLineRange } from "@pierre/diffs";
 import { Editor } from "@pierre/diffs/edit";
 import { EditProvider, FileDiff, useStableCallback } from "@pierre/diffs/react";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
@@ -227,6 +227,13 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
         if (oldCacheKey === undefined || newCacheKey === undefined) value.cacheKey = undefined;
         return value;
     }, [mode, newCacheKey, newFile, oldCacheKey, oldFile]);
+    // The gutter button reports the line it was pressed beside as a one-line
+    // selection. A note is about one line, so the range's start is its address;
+    // the unified column with no side of its own is the working-tree column,
+    // which is where a note left on an unchanged line belongs.
+    const gutterUtilityClicked = useStableCallback((range: SelectedLineRange) => {
+        props.onCommentDraftOpen?.(range.start, range.side ?? "additions");
+    });
     const diffOptions = useMemo(
         () => ({
             diffIndicators: "bars" as const,
@@ -247,10 +254,14 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             themeType: props.appearance,
             unsafeCSS: PIERRE_PANE_CSS,
             // The gutter affordance exists only where a note can actually be
-            // started, so a surface with no handler shows no plus.
+            // started, so a surface with no handler shows no plus. The renderer
+            // draws and places the button itself — a filled chip over the line
+            // number, the way one is drawn everywhere else this gesture exists —
+            // so only where it leads is ours.
             enableGutterUtility: commenting,
+            onGutterUtilityClick: gutterUtilityClicked,
         }),
-        [commenting, mode, props.appearance, props.wrap],
+        [commenting, gutterUtilityClicked, mode, props.appearance, props.wrap],
     );
     // One annotation per note, plus the one being written. Pierre addresses
     // them by side and line, which is the same address the notes carry, so
@@ -388,7 +399,11 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                                       renderAnnotation: (annotation) => {
                                           const held = annotation.metadata;
                                           const author = {
-                                              authorInitials: props.commentAuthorInitials ?? "You",
+                                              // One letter, because that is what
+                                              // fits an avatar and what an
+                                              // initial is; the whole word is
+                                              // for the line beside it.
+                                              authorInitials: props.commentAuthorInitials ?? "Y",
                                               authorName: props.commentAuthorName ?? "You",
                                           };
                                           // The draft's characters are read here
@@ -426,23 +441,6 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                                               />
                                           );
                                       },
-                                      renderGutterUtility: (getHoveredLine) => (
-                                          <button
-                                              aria-label="Comment on this line"
-                                              className="happy-changed-file-diff__comment-button"
-                                              onClick={() => {
-                                                  const line = getHoveredLine();
-                                                  if (line)
-                                                      props.onCommentDraftOpen?.(
-                                                          line.lineNumber,
-                                                          line.side,
-                                                      );
-                                              }}
-                                              type="button"
-                                          >
-                                              +
-                                          </button>
-                                      ),
                                   }
                                 : {})}
                         />

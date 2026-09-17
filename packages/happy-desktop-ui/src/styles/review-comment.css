@@ -83,20 +83,7 @@
     word-break: break-word;
 }
 
-/* The gutter affordance. Pierre reserves and positions the slot and paints the
-   button body through `[data-utility-button]` in its own shadow tree, so this
-   is only the label sitting inside it: transparent, inheriting, filling. */
-.happy-changed-file-diff__comment-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: inherit;
-    font: inherit;
-    line-height: 1;
-    cursor: pointer;
-}
+/* The gutter affordance has no rule here on purpose: the renderer draws its own
+   button, a filled chip with a plus sitting over the line number, and reports
+   where it was pressed. Restyling it from out here would only put a second
+   answer beside the one the diff already gives. */

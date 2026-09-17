@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { ChangedFileDiff } from "../../src/ChangedFileDiff";
 import { FilePreview } from "../../src/FilePreview";
 import { TabbedPane } from "../../src/TabbedPane";
@@ -102,6 +102,59 @@ function tabbedDiff(mode: "preview" | "unified") {
                 preview={preview("master-plans/03-file-viewer.md", newContent)}
             />
         </TabbedPane>
+    );
+}
+
+/* Notes are written, not posed: this specimen owns the same little state the
+   product's store owns, so the gutter affordance, the composer, and the
+   handover control can be exercised here rather than only described. */
+function CommentedDiff() {
+    const [comments, commentsSet] = useState<
+        readonly { id: string; lineNumber: number; side: "additions"; text: string }[]
+    >([
+        {
+            id: "c1",
+            lineNumber: 4,
+            side: "additions",
+            text: "Say this in the same voice as the sentence above it.",
+        },
+    ]);
+    const [draft, draftSet] = useState<
+        { lineNumber: number; side: "deletions" | "additions"; text: string } | undefined
+    >(undefined);
+
+    return (
+        <ChangedFileDiff
+            appearance="light"
+            commentDraft={draft}
+            commentTotal={comments.length}
+            comments={comments}
+            mode="unified"
+            newContent={newContent}
+            oldContent={oldContent}
+            onCommentDraftCancel={() => draftSet(undefined)}
+            onCommentDraftOpen={(lineNumber, side) => draftSet({ lineNumber, side, text: "" })}
+            onCommentDraftSubmit={() => {
+                if (draft === undefined || draft.text.trim() === "") return;
+                commentsSet([
+                    ...comments,
+                    {
+                        id: `c${String(comments.length + 1)}`,
+                        lineNumber: draft.lineNumber,
+                        side: "additions",
+                        text: draft.text,
+                    },
+                ]);
+                draftSet(undefined);
+            }}
+            onCommentDraftUpdate={(text) => draftSet(draft && { ...draft, text })}
+            onCommentRemove={(commentId) =>
+                commentsSet(comments.filter((comment) => comment.id !== commentId))
+            }
+            onCommentsSubmit={() => undefined}
+            path="master-plans/03-file-viewer.md"
+            preview={preview("master-plans/03-file-viewer.md", newContent)}
+        />
     );
 }
 
@@ -336,6 +389,15 @@ export function ChangedFileDiffPage() {
                     />,
                     300,
                 )}
+            </Specimen>
+
+            <Specimen
+                detail="The gutter offers a note where the pointer is; a written note sits under its line, and the bar says how many are waiting"
+                label="Review notes"
+                number="12"
+                stage="surface"
+            >
+                {frame(<CommentedDiff />, 420)}
             </Specimen>
 
             <Specimen
