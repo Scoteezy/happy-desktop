@@ -4,7 +4,11 @@ import { useCallback, useMemo, useRef, useState, type CSSProperties } from "reac
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { DiffFileTitle } from "./DiffFileTitle";
-import { PIERRE_DIFF_HEADER_CSS, PIERRE_PANE_CSS } from "./pierreCodeSurface";
+import {
+    PIERRE_DIFF_HEADER_CLICK_CSS,
+    PIERRE_DIFF_HEADER_CSS,
+    PIERRE_PANE_CSS,
+} from "./pierreCodeSurface";
 import { ReviewComment } from "./ReviewComment";
 import { SegmentedControl } from "./SegmentedControl";
 import { ReviewStreamFileActions } from "./ReviewStreamFileActions";
@@ -257,44 +261,31 @@ export function ReviewStream(props: ReviewStreamProps) {
     // its hunks begin, so this is read from it rather than from whichever rows
     // happen to be on screen — which is what lets a stop far below the drawn
     // window still be somewhere to go.
+    // A closed file is not on the walk: its hunks are drawn nowhere, so stepping
+    // into one lands on a line the reader cannot see and the step looks like it
+    // did nothing.
     const stops = useMemo<ReviewStreamStop[]>(
         () =>
-            items.flatMap((item) =>
-                item.fileDiff.hunks.map((hunk) =>
-                    hunk.additionCount > 0
-                        ? {
-                              id: item.id,
-                              lineNumber: hunk.additionStart,
-                              side: "additions" as const,
-                          }
-                        : {
-                              id: item.id,
-                              lineNumber: hunk.deletionStart,
-                              side: "deletions" as const,
-                          },
+            items
+                .filter((item) => collapsedFiles?.has(item.id) !== true)
+                .flatMap((item) =>
+                    item.fileDiff.hunks.map((hunk) =>
+                        hunk.additionCount > 0
+                            ? {
+                                  id: item.id,
+                                  lineNumber: hunk.additionStart,
+                                  side: "additions" as const,
+                              }
+                            : {
+                                  id: item.id,
+                                  lineNumber: hunk.deletionStart,
+                                  side: "deletions" as const,
+                              },
+                    ),
                 ),
-            ),
-        [items],
+        [collapsedFiles, items],
     );
-    // Which stop the reader is on. The walk is a sequence, so where the last
-    // step landed is the only thing that says what "next" means; nothing else
-    // on screen reports it.
-    const [stopAt, stopAtSet] = useState(-1);
-    const stopGo = (direction: -1 | 1): void => {
-        if (stops.length === 0) return;
-        const next = Math.min(Math.max(stopAt + direction, 0), stops.length - 1);
-        const stop = stops[next];
-        if (stop === undefined) return;
-        stopAtSet(next);
-        view.current?.scrollTo({
-            type: "line",
-            id: stop.id,
-            lineNumber: stop.lineNumber,
-            side: stop.side,
-            align: "start",
-            behavior: "smooth",
-        });
-    };
+    const fileOrder = useMemo(() => new Map(items.map((item, index) => [item.id, index])), [items]);
 
     // The renderer reports where its button was pressed as a one-line selection,
     // and hands back the item it belongs to — which is the file, because the
@@ -315,11 +306,21 @@ export function ReviewStream(props: ReviewStreamProps) {
             stickyHeader: true,
             theme: { dark: "pierre-dark" as const, light: "pierre-light" as const },
             themeType: props.appearance,
-            unsafeCSS: PIERRE_PANE_CSS + PIERRE_DIFF_HEADER_CSS,
+            unsafeCSS:
+                PIERRE_PANE_CSS +
+                PIERRE_DIFF_HEADER_CSS +
+                (props.onFileCollapsedToggle === undefined ? "" : PIERRE_DIFF_HEADER_CLICK_CSS),
             enableGutterUtility: commenting,
             onGutterUtilityClick: gutterUtilityClicked,
         }),
-        [commenting, gutterUtilityClicked, props.appearance, props.view, props.wrap],
+        [
+            commenting,
+            gutterUtilityClicked,
+            props.appearance,
+            props.onFileCollapsedToggle,
+            props.view,
+            props.wrap,
+        ],
     );
 
     const author = {
@@ -341,6 +342,42 @@ export function ReviewStream(props: ReviewStreamProps) {
     // computed from scroll arithmetic, because the renderer owns where its rows
     // actually are.
     const [reading, readingSet] = useState<string | undefined>(undefined);
+    // A file's header is the whole row it occupies, so the whole row opens and
+    // closes it — the chevron says what a click does, it is not the only place
+    // that does it. The renderer draws that row in its own shadow tree and does
+    // not say which item it belongs to, so the file is read back from the title
+    // slotted into it.
+    const headerClicked = useStableCallback((event: MouseEvent) => {
+        const toggle = props.onFileCollapsedToggle;
+        if (toggle === undefined) return;
+        let header: HTMLElement | undefined;
+        for (const node of event.composedPath()) {
+            if (!(node instanceof HTMLElement)) continue;
+            // Anything on the header that does its own thing keeps the click.
+            if (node.matches("button, a, input, textarea, select, [role='button']")) return;
+            if (node.hasAttribute("data-diffs-header")) {
+                header = node;
+                break;
+            }
+        }
+        if (header === undefined) return;
+        // Reading the path out of a header is not worth closing a file the
+        // reader was only selecting text in.
+        const selection = window.getSelection();
+        if (selection !== null && !selection.isCollapsed) return;
+        for (const slot of header.querySelectorAll("slot")) {
+            for (const assigned of slot.assignedElements()) {
+                const title = assigned.querySelector<HTMLElement>(
+                    '[data-happy-desktop-ui="diff-file-title"]',
+                );
+                const path = title?.dataset.path;
+                if (path !== undefined) {
+                    toggle(path);
+                    return;
+                }
+            }
+        }
+    });
     const endWatch = useCallback(
         (node: HTMLDivElement | null) => {
             const port = node?.querySelector<HTMLElement>(".happy-review-stream__renderer");
@@ -367,6 +404,7 @@ export function ReviewStream(props: ReviewStreamProps) {
                 readingSet(inside);
             };
             port.addEventListener("scroll", ask, { passive: true });
+            port.addEventListener("click", headerClicked);
             const sizes = new ResizeObserver(() => {
                 requestAnimationFrame(ask);
             });
@@ -378,14 +416,66 @@ export function ReviewStream(props: ReviewStreamProps) {
             requestAnimationFrame(ask);
             return () => {
                 port.removeEventListener("scroll", ask);
+                port.removeEventListener("click", headerClicked);
                 sizes.disconnect();
             };
         },
         // Deliberately re-attached whenever another file has arrived: that is
         // the moment the question "is the end within reach" has a new answer.
-        [endAsk, props.files.length],
+        [endAsk, headerClicked, props.files.length],
     );
     const readingPath = reading ?? props.files[0]?.path;
+
+    // Where the last step landed. The walk is a sequence, so it has to be
+    // remembered — but only as long as the reader is still where it left them:
+    // once they have scrolled somewhere else, or closed the file they were in,
+    // "next" means the next change from where they are now, not from a stop
+    // they have long since left behind.
+    const [walked, walkedSet] = useState<ReviewStreamStop | undefined>(undefined);
+    const stopGo = (direction: -1 | 1): void => {
+        if (stops.length === 0) return;
+        const held = stops.findIndex(
+            (stop) =>
+                stop.id === walked?.id &&
+                stop.lineNumber === walked.lineNumber &&
+                stop.side === walked.side,
+        );
+        let next: number;
+        if (held >= 0 && stops[held]?.id === readingPath) next = held + direction;
+        else {
+            // Re-anchored on the file the reader is inside, by position in the
+            // review: the file itself may have no stops left on the walk.
+            const at = fileOrder.get(readingPath ?? "") ?? 0;
+            next = -1;
+            for (let index = 0; index < stops.length; index += 1) {
+                const stop = stops[index];
+                if (stop === undefined) continue;
+                const place = fileOrder.get(stop.id) ?? 0;
+                if (direction === 1) {
+                    if (place >= at) {
+                        next = index;
+                        break;
+                    }
+                } else if (place <= at) next = index;
+            }
+            if (next === -1) next = direction === 1 ? stops.length - 1 : 0;
+        }
+        const stop = stops[Math.min(Math.max(next, 0), stops.length - 1)];
+        if (stop === undefined) return;
+        walkedSet(stop);
+        view.current?.scrollTo({
+            type: "line",
+            id: stop.id,
+            lineNumber: stop.lineNumber,
+            side: stop.side,
+            align: "start",
+            // Not animated: each step may cross files the renderer has not drawn
+            // yet, and a queued animation through them arrives late and stutters
+            // where the reader wanted to simply be at the next change.
+            behavior: "instant",
+        });
+    };
+
     const allCollapsed =
         props.files.length > 0 && props.files.every((file) => props.collapsed?.has(file.path));
 
