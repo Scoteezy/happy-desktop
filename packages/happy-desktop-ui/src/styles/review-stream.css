@@ -47,6 +47,15 @@
     align-items: center;
 }
 
+/* Holds the renderer so the stream has something of its own to watch: a scroll
+   event does not bubble, and the scrollport is the renderer's element. */
+.happy-review-stream__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+}
+
 /* The renderer virtualizes the whole review against this box, so this box is
    the scrollport: it measures what is visible and draws around it. One
    scrollport for every file together is the point — a scroll per file would be

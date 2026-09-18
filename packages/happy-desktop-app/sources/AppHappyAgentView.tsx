@@ -3504,6 +3504,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 }))}
                 files={files}
                 onCommentDraftCancel={() => props.workspace.commentDraftCancel()}
+                // Approaching the end of what has been read is what asks for the
+                // rest of the change: a review of thirty files is opened to read
+                // it from the top, not to wait for its last file.
+                onEndReach={() => props.workspace.reviewExtend(review.groupId)}
+                total={review.files.length}
                 {...(access.writeRefusal === undefined
                     ? {
                           onCommentDraftOpen: (path, lineNumber, side) => {

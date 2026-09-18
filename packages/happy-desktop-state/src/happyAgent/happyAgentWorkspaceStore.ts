@@ -878,24 +878,40 @@ export interface HappyAgentReviewFile {
 }
 
 /**
- * Every changed file in one checkout, read together.
+ * Every changed file in one checkout, read in the order they will be read in.
  *
  * A change is rarely about one file, so the review is the unit: this exists
- * while the reader has the stream open, and holds the files themselves rather
- * than a list of paths to fetch one at a time as each scrolls into view. It is
- * memory-only — it is a read of the working tree, and the working tree is the
- * durable thing.
+ * while the reader has the stream open. What it does not do is read the whole
+ * working tree before showing anything. Each file costs two reads — its base
+ * revision and its current bytes — so a review of thirty files spent sixty
+ * round trips before the first line appeared, and the first screen holds three
+ * of them. So the review knows how far it has been asked to read, and reads
+ * that far; scrolling toward the end asks for more.
+ *
+ * It is memory-only — it is a read of the working tree, and the working tree is
+ * the durable thing.
  */
 export interface HappyAgentReview {
     readonly id: string;
     readonly groupId: HappyAgentGroupId;
     readonly files: readonly HappyAgentReviewFile[];
-    /** True while any file in it has never yet had a document. */
+    /** How many files from the start have been asked for. */
+    readonly reach: number;
+    /** True while a file this far in has never yet had a document. */
     readonly loading: boolean;
 }
 
 /** The strip id a checkout's review stream occupies. */
 const reviewIdOf = (groupId: HappyAgentGroupId): string => `review:${groupId}`;
+
+/**
+ * How many files a review reads at a time.
+ *
+ * Enough to fill the first screen and a little past it, so the reader is
+ * already looking at the next file by the time it is asked for, and few enough
+ * that opening a review is a handful of reads rather than all of them.
+ */
+const REVIEW_READ_PAGE = 4;
 
 /**
  * The review notes written out as one request an agent can act on.
@@ -1299,6 +1315,12 @@ export interface HappyAgentWorkspaceStore {
      */
     reviewOpen(groupId: HappyAgentGroupId): void;
     reviewClose(groupId: HappyAgentGroupId): void;
+    /**
+     * Asks a review for its next page of files, which is what approaching the
+     * end of the stream means. Saying it when everything has been asked for
+     * does nothing.
+     */
+    reviewExtend(groupId: HappyAgentGroupId): void;
     /** Chooses how changed files are displayed, for every tab. */
     fileViewModeUpdate(mode: HappyAgentFileViewMode): void;
     /** Chooses whether long diff lines wrap or scroll, for every tab. */
@@ -3065,6 +3087,12 @@ export function happyAgentWorkspaceStoreCreate(
     const reviewReconcile = (groupId: HappyAgentGroupId, moved: readonly string[] | null): void => {
         const open = reviews.get(groupId);
         if (open === undefined) return;
+        // A rebuild is a different review from the one whose reads are in
+        // flight: they answer for files at addresses that may no longer exist.
+        reviewGenerations.set(
+            reviewIdOf(groupId),
+            (reviewGenerations.get(reviewIdOf(groupId)) ?? 0) + 1,
+        );
         const changes = groupChangesRead(groupId) ?? [];
         const held = new Map(open.files.map((file) => [file.path, file]));
         const stale = (path: string): boolean => moved === null || moved.includes(path);
@@ -3080,32 +3108,65 @@ export function happyAgentWorkspaceStoreCreate(
                 ...(change.previousPath === undefined ? {} : { oldPath: change.previousPath }),
                 status: change.status,
                 revision: change.revision,
-                document: reusable ? previous.document : { type: "loading" },
+                document: reusable ? previous.document : { type: "unloaded" },
             };
         });
+        const reach = Math.min(files.length, Math.max(open.reach, REVIEW_READ_PAGE));
         reviews = new Map(reviews).set(groupId, {
             ...open,
             files,
-            loading: files.some((file) => file.document.type !== "ready"),
+            reach,
+            loading: files.slice(0, reach).some((file) => file.document.type !== "ready"),
         });
         reviewLoad(groupId);
     };
 
     /**
-     * Reads every file in an open review that does not have its document yet.
+     * Asks for the next page of a review, which is what scrolling toward its end
+     * means. Asking again once everything has been asked for does nothing, so
+     * the surface may say it freely.
+     */
+    const reviewExtend = (groupId: HappyAgentGroupId): void => {
+        const open = reviews.get(groupId);
+        if (open === undefined || open.reach >= open.files.length) return;
+        const reach = Math.min(open.files.length, open.reach + REVIEW_READ_PAGE);
+        reviews = new Map(reviews).set(groupId, {
+            ...open,
+            reach,
+            // A file inside the new reach may already have been read — its bytes
+            // did not move through the last rebuild — so this is asked of the
+            // files rather than assumed from having extended.
+            loading: open.files.slice(0, reach).some((file) => file.document.type !== "ready"),
+        });
+        reviewLoad(groupId);
+        recompute();
+    };
+
+    /**
+     * Reads the files a review has been asked for and has not read yet.
      *
-     * Each read answers for one path, and a read that lands after the review it
-     * belonged to was rebuilt is dropped rather than written into whatever the
-     * stream holds now.
+     * Only the ones nobody has asked about: a file already being read stays
+     * being read, so extending the reach adds requests rather than restarting
+     * the ones in flight. A read that lands after the review it belonged to was
+     * rebuilt is dropped rather than written into whatever the stream holds now.
      */
     const reviewLoad = (groupId: HappyAgentGroupId): void => {
         const id = reviewIdOf(groupId);
-        const generation = (reviewGenerations.get(id) ?? 0) + 1;
-        reviewGenerations.set(id, generation);
+        const generation = reviewGenerations.get(id) ?? 0;
         const open = reviews.get(groupId);
         if (open === undefined) return;
-        for (const file of open.files) {
-            if (file.document.type === "ready") continue;
+        const asked = open.files
+            .slice(0, open.reach)
+            .filter((file) => file.document.type === "unloaded");
+        if (asked.length === 0) return;
+        const reading = new Set(asked.map((file) => file.path));
+        reviews = new Map(reviews).set(groupId, {
+            ...open,
+            files: open.files.map((file) =>
+                reading.has(file.path) ? { ...file, document: { type: "loading" as const } } : file,
+            ),
+        });
+        for (const file of asked) {
             const change = fileChangeFind(groupId, file.path);
             if (change === undefined) continue;
             const settle = (document: Loadable<HappyAgentChangedFileDocument>): void => {
@@ -3120,7 +3181,9 @@ export function happyAgentWorkspaceStoreCreate(
                 reviews = new Map(reviews).set(groupId, {
                     ...current,
                     files,
-                    loading: files.some((candidate) => candidate.document.type !== "ready"),
+                    loading: files
+                        .slice(0, current.reach)
+                        .some((candidate) => candidate.document.type !== "ready"),
                 });
                 recompute();
             };
@@ -3309,7 +3372,13 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
             return;
         }
-        reviews = new Map(reviews).set(groupId, { id, groupId, files: [], loading: true });
+        reviews = new Map(reviews).set(groupId, {
+            id,
+            groupId,
+            files: [],
+            reach: REVIEW_READ_PAGE,
+            loading: true,
+        });
         groupTabRemember(groupId, id);
         reviewReconcile(groupId, null);
         recompute();
@@ -5578,6 +5647,7 @@ export function happyAgentWorkspaceStoreCreate(
         fileClose: (tabId) => fileTabClose(tabId),
         reviewOpen: (groupId) => reviewTabOpen(groupId),
         reviewClose: (groupId) => reviewTabClose(groupId),
+        reviewExtend: (groupId) => reviewExtend(groupId),
         fileRetry(tabId) {
             const tab = fileTabs.find((candidate) => candidate.id === tabId);
             if (tab)

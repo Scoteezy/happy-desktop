@@ -139,6 +139,23 @@ function CommentedStream() {
     );
 }
 
+/**
+ * A change whose files are still arriving. Reaching the end of what has been
+ * read asks for the next one, which is exactly what the product does against a
+ * checkout — here the files are already at hand, so the ask is answered at once.
+ */
+function ArrivingStream() {
+    const [read, readSet] = useState(1);
+    return (
+        <ReviewStream
+            appearance="light"
+            files={files.slice(0, read)}
+            onEndReach={() => readSet((held) => Math.min(files.length, held + 1))}
+            total={files.length}
+        />
+    );
+}
+
 export function ReviewStreamPage() {
     return (
         <ComponentPage
@@ -180,6 +197,15 @@ export function ReviewStreamPage() {
                 stage="surface"
             >
                 {frame(<ReviewStream appearance="light" files={files.slice(0, 1)} />, 260)}
+            </Specimen>
+
+            <Specimen
+                detail="A change is read from the top, so only the first files are read to begin with and the rest are asked for on the way down. The count belongs to the change; what has arrived is said beside it"
+                label="Still arriving"
+                number="05"
+                stage="surface"
+            >
+                {frame(<ArrivingStream />, 260)}
             </Specimen>
         </ComponentPage>
     );

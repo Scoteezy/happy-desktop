@@ -47,6 +47,17 @@ export type ReviewStreamProps = {
      * change that spans four files is read the way it was made.
      */
     files: readonly ReviewStreamFile[];
+    /**
+     * How many files the change has in total, when that is more than have been
+     * read. The count belongs to the change, not to how much of it has arrived.
+     */
+    total?: number;
+    /**
+     * Said when the reader approaches the end of what has been read, so more of
+     * the change can be asked for. Said freely — whoever answers decides whether
+     * there is anything left to ask for.
+     */
+    onEndReach?: () => void;
     /** Whether long lines wrap to the pane instead of scrolling out of it. */
     wrap?: boolean;
     onWrapChange?: (wrap: boolean) => void;
@@ -80,6 +91,9 @@ type ReviewStreamAnnotation =
  * own hunks begin, so travelling to one does not depend on it having been
  * drawn yet.
  */
+/** How close to the end of what has been read counts as approaching it. */
+const END_REACH_DISTANCE = 600;
+
 type ReviewStreamStop = {
     readonly id: string;
     readonly lineNumber: number;
@@ -270,6 +284,31 @@ export function ReviewStream(props: ReviewStreamProps) {
         authorName: props.commentAuthorName ?? "You",
     };
 
+    // Reading a change is reading it from the top, so the rest of it is asked
+    // for as the reader travels toward the end rather than before the first
+    // line is drawn. Two things can bring the end within reach: scrolling, and
+    // the content itself being shorter than the pane — a first page of four
+    // files that does not fill the screen has to ask for the next one without
+    // waiting for a scroll that will never happen.
+    const endWatch = useStableCallback((node: HTMLDivElement | null) => {
+        const port = node?.querySelector<HTMLElement>(".happy-review-stream__renderer");
+        if (port == null) return;
+        const ask = (): void => {
+            if (port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE)
+                props.onEndReach?.();
+        };
+        port.addEventListener("scroll", ask, { passive: true });
+        const sizes = new ResizeObserver(() => {
+            requestAnimationFrame(ask);
+        });
+        sizes.observe(port);
+        if (port.firstElementChild !== null) sizes.observe(port.firstElementChild);
+        return () => {
+            port.removeEventListener("scroll", ask);
+            sizes.disconnect();
+        };
+    });
+
     return (
         <section
             aria-label="Changes in this workspace"
@@ -280,9 +319,17 @@ export function ReviewStream(props: ReviewStreamProps) {
         >
             <div className="happy-review-stream__bar" data-happy-desktop-ui="review-stream-bar">
                 <span className="happy-review-stream__count">
-                    {props.files.length === 1
-                        ? "1 changed file"
-                        : `${String(props.files.length)} changed files`}
+                    {(() => {
+                        const total = Math.max(
+                            props.total ?? props.files.length,
+                            props.files.length,
+                        );
+                        const read =
+                            total === props.files.length
+                                ? ""
+                                : ` · ${String(props.files.length)} read`;
+                        return `${total === 1 ? "1 changed file" : `${String(total)} changed files`}${read}`;
+                    })()}
                 </span>
                 <span className="happy-review-stream__bar-end">
                     {props.onCommentsSubmit && (props.commentTotal ?? 0) > 0 ? (
@@ -328,60 +375,62 @@ export function ReviewStream(props: ReviewStreamProps) {
                 </span>
             </div>
 
-            <CodeView<ReviewStreamAnnotation>
-                className="happy-review-stream__renderer happy-diff-surface"
-                items={annotated}
-                options={options}
-                ref={view}
-                // The parsed diff carries the new path as its name and the old
-                // one as `prevName`, so the header reads the same here as it
-                // does on one file's own diff.
-                renderHeaderPrefix={(item) =>
-                    item.type !== "diff" ? null : (
-                        <DiffFileTitle
-                            path={item.fileDiff.name}
-                            {...(item.fileDiff.prevName === undefined ||
-                            item.fileDiff.prevName === item.fileDiff.name
-                                ? {}
-                                : { previousPath: item.fileDiff.prevName })}
-                        />
-                    )
-                }
-                {...(commenting
-                    ? {
-                          renderAnnotation: (annotation) => {
-                              const held = annotation.metadata;
-                              // The draft's characters are read here rather than
-                              // carried through the annotation, so typing one
-                              // redraws this note and nothing else.
-                              if (held.type === "draft")
-                                  return props.commentDraft === undefined ? null : (
+            <div className="happy-review-stream__body" ref={endWatch}>
+                <CodeView<ReviewStreamAnnotation>
+                    className="happy-review-stream__renderer happy-diff-surface"
+                    items={annotated}
+                    options={options}
+                    ref={view}
+                    // The parsed diff carries the new path as its name and the old
+                    // one as `prevName`, so the header reads the same here as it
+                    // does on one file's own diff.
+                    renderHeaderPrefix={(item) =>
+                        item.type !== "diff" ? null : (
+                            <DiffFileTitle
+                                path={item.fileDiff.name}
+                                {...(item.fileDiff.prevName === undefined ||
+                                item.fileDiff.prevName === item.fileDiff.name
+                                    ? {}
+                                    : { previousPath: item.fileDiff.prevName })}
+                            />
+                        )
+                    }
+                    {...(commenting
+                        ? {
+                              renderAnnotation: (annotation) => {
+                                  const held = annotation.metadata;
+                                  // The draft's characters are read here rather than
+                                  // carried through the annotation, so typing one
+                                  // redraws this note and nothing else.
+                                  if (held.type === "draft")
+                                      return props.commentDraft === undefined ? null : (
+                                          <ReviewComment
+                                              {...author}
+                                              draft={props.commentDraft.text}
+                                              lineNumber={props.commentDraft.lineNumber}
+                                              onCancel={() => props.onCommentDraftCancel?.()}
+                                              onDraftChange={(text) =>
+                                                  props.onCommentDraftUpdate?.(text)
+                                              }
+                                              onSubmit={() => props.onCommentDraftSubmit?.()}
+                                              side={props.commentDraft.side}
+                                          />
+                                      );
+                                  return (
                                       <ReviewComment
                                           {...author}
-                                          draft={props.commentDraft.text}
-                                          lineNumber={props.commentDraft.lineNumber}
-                                          onCancel={() => props.onCommentDraftCancel?.()}
-                                          onDraftChange={(text) =>
-                                              props.onCommentDraftUpdate?.(text)
-                                          }
-                                          onSubmit={() => props.onCommentDraftSubmit?.()}
-                                          side={props.commentDraft.side}
+                                          lineNumber={held.comment.lineNumber}
+                                          onRemove={() => props.onCommentRemove?.(held.comment.id)}
+                                          side={held.comment.side}
+                                          stale={held.comment.stale}
+                                          text={held.comment.text}
                                       />
                                   );
-                              return (
-                                  <ReviewComment
-                                      {...author}
-                                      lineNumber={held.comment.lineNumber}
-                                      onRemove={() => props.onCommentRemove?.(held.comment.id)}
-                                      side={held.comment.side}
-                                      stale={held.comment.stale}
-                                      text={held.comment.text}
-                                  />
-                              );
-                          },
-                      }
-                    : {})}
-            />
+                              },
+                          }
+                        : {})}
+                />
+            </div>
         </section>
     );
 }
