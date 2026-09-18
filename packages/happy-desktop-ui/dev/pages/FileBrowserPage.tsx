@@ -219,6 +219,7 @@ export function FileBrowserPage() {
                             deletedLines={totals.deleted}
                             layout="flat"
                             nodes={fileTreeFlatten(changed)}
+                            onReviewOpen={() => undefined}
                             scope="changed"
                             selectedId="packages/happy-desktop-ui/src/FileTree.tsx"
                         />,
