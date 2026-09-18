@@ -3,9 +3,10 @@ import { FileDiff, useStableCallback } from "@pierre/diffs/react";
 import { useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
 import { CodeEditor } from "./CodeEditor";
+import { DiffFileTitle } from "./DiffFileTitle";
 import { CODE_BLOCK_HIGHLIGHT_CACHE_MAX_TEXT_LENGTH } from "./CodeBlock";
 import { ScrollArea } from "./Scrollbar";
-import { PIERRE_PANE_CSS } from "./pierreCodeSurface";
+import { PIERRE_DIFF_HEADER_CSS, PIERRE_PANE_CSS } from "./pierreCodeSurface";
 import { ReviewComment } from "./ReviewComment";
 import { SegmentedControl } from "./SegmentedControl";
 
@@ -233,7 +234,7 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                 light: "pierre-light" as const,
             },
             themeType: props.appearance,
-            unsafeCSS: PIERRE_PANE_CSS,
+            unsafeCSS: PIERRE_PANE_CSS + PIERRE_DIFF_HEADER_CSS,
             // The gutter affordance exists only where a note can actually be
             // started, so a surface with no handler shows no plus. The renderer
             // draws and places the button itself — a filled chip over the line
@@ -426,6 +427,17 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                         className="happy-changed-file-diff__renderer happy-diff-surface"
                         fileDiff={diff}
                         options={diffOptions}
+                        // The whole header name, ours, through the slot the
+                        // renderer leaves ahead of its own. The renderer's mark
+                        // and title stand down in `PIERRE_DIFF_HEADER_CSS`.
+                        renderHeaderPrefix={() => (
+                            <DiffFileTitle
+                                path={props.path}
+                                {...(props.oldPath === undefined || props.oldPath === props.path
+                                    ? {}
+                                    : { previousPath: props.oldPath })}
+                            />
+                        )}
                         {...(lineAnnotations === undefined ? {} : { lineAnnotations })}
                         {...(commenting
                             ? {

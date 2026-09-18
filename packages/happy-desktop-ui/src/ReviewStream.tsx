@@ -2,7 +2,8 @@ import { parseDiffFromFile, type SelectedLineRange } from "@pierre/diffs";
 import { CodeView, useStableCallback, type CodeViewHandle } from "@pierre/diffs/react";
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { Button } from "./Button";
-import { PIERRE_PANE_CSS } from "./pierreCodeSurface";
+import { DiffFileTitle } from "./DiffFileTitle";
+import { PIERRE_DIFF_HEADER_CSS, PIERRE_PANE_CSS } from "./pierreCodeSurface";
 import { ReviewComment } from "./ReviewComment";
 import type { ChangedFileDiffCommentSide } from "./ChangedFileDiff";
 
@@ -224,7 +225,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             stickyHeader: true,
             theme: { dark: "pierre-dark" as const, light: "pierre-light" as const },
             themeType: props.appearance,
-            unsafeCSS: PIERRE_PANE_CSS,
+            unsafeCSS: PIERRE_PANE_CSS + PIERRE_DIFF_HEADER_CSS,
             enableGutterUtility: commenting,
             onGutterUtilityClick: gutterUtilityClicked,
         }),
@@ -299,6 +300,20 @@ export function ReviewStream(props: ReviewStreamProps) {
                 items={annotated}
                 options={options}
                 ref={view}
+                // The parsed diff carries the new path as its name and the old
+                // one as `prevName`, so the header reads the same here as it
+                // does on one file's own diff.
+                renderHeaderPrefix={(item) =>
+                    item.type !== "diff" ? null : (
+                        <DiffFileTitle
+                            path={item.fileDiff.name}
+                            {...(item.fileDiff.prevName === undefined ||
+                            item.fileDiff.prevName === item.fileDiff.name
+                                ? {}
+                                : { previousPath: item.fileDiff.prevName })}
+                        />
+                    )
+                }
                 {...(commenting
                     ? {
                           renderAnnotation: (annotation) => {
