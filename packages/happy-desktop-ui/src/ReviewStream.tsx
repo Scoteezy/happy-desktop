@@ -211,7 +211,14 @@ export function ReviewStream(props: ReviewStreamProps) {
     const draftLine = props.commentDraft?.lineNumber;
     const draftSide = props.commentDraft?.side;
     const collapsedFiles = props.collapsed;
+    // What was last handed to the renderer for each file, and under which
+    // version. A version means nothing on its own — it only has to differ from
+    // the one before it whenever the file's notes do.
+    const signatures = useRef(new Map<string, { signature: string; version: number }>());
     const annotated = useMemo(() => {
+        // A file the review no longer has takes its history with it.
+        for (const id of signatures.current.keys())
+            if (!items.some((item) => item.id === id)) signatures.current.delete(id);
         return items.map((item) => {
             const collapsed = collapsedFiles?.has(item.id) === true;
             const held = !commenting
@@ -238,19 +245,33 @@ export function ReviewStream(props: ReviewStreamProps) {
                       ]
                     : held;
             // The renderer is controlled: it keeps what it last drew for an item
-            // unless the item says it changed. What can change here is where the
-            // notes are — a note's characters are read where it is drawn — and
-            // whether the file is closed, so the version is those two things.
+            // unless the item says it changed. What can change here is which
+            // notes are on the file and where — a note's characters are read
+            // where it is drawn — and whether the file is closed. So the file
+            // says exactly that, and a version is counted off each time the
+            // answer differs from the last one drawn.
+            //
+            // Written out rather than folded into a number: a note submitted on
+            // the line its draft was on turns one annotation into another at the
+            // same address, and any arithmetic over addresses alone gives those
+            // two states the same version — which leaves the composer on screen
+            // over a note that has already been kept.
+            const signature = [
+                collapsed ? "closed" : "open",
+                ...annotations.map((annotation) =>
+                    annotation.metadata.type === "draft"
+                        ? `draft:${annotation.side}:${String(annotation.lineNumber)}`
+                        : `note:${annotation.metadata.comment.id}:${annotation.side}:${String(annotation.lineNumber)}:${annotation.metadata.comment.stale === true ? "stale" : "fresh"}`,
+                ),
+            ].join("|");
+            const drawn = signatures.current.get(item.id);
             const version =
-                annotations.reduce(
-                    (carried, annotation) =>
-                        carried * 31 +
-                        annotation.lineNumber * 2 +
-                        (annotation.side === "additions" ? 1 : 0),
-                    annotations.length,
-                ) *
-                    2 +
-                (collapsed ? 1 : 0);
+                drawn === undefined
+                    ? 0
+                    : drawn.signature === signature
+                      ? drawn.version
+                      : drawn.version + 1;
+            signatures.current.set(item.id, { signature, version });
             return {
                 ...item,
                 ...(annotations.length === 0 ? {} : { annotations }),
@@ -748,6 +769,12 @@ export function ReviewStream(props: ReviewStreamProps) {
                     ref={view}
                     renderHeaderMetadata={headerMetadata}
                     renderHeaderPrefix={headerPrefix}
+                    // No selected lines in a review, ever. The renderer selects
+                    // the line whose gutter was clicked and then pins the gutter
+                    // button to that selection rather than to the pointer, so
+                    // after one note every other line stops offering one.
+                    // Nothing here reads a selected range.
+                    selectedLines={null}
                     {...(commenting
                         ? {
                               renderAnnotation: (annotation) => {
