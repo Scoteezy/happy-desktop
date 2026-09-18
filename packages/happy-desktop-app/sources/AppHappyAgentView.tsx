@@ -4300,6 +4300,7 @@ function HappyAgentFileBody(props: {
                 {happyAgentFileNotices(file)}
                 <ChangedFileDiff
                     appearance={props.appearance}
+                    documentKey={fileDocumentKey(file.id, file.document.value)}
                     key={`${file.id}:${file.kind}`}
                     loading={file.revalidating}
                     mode={props.mode}
