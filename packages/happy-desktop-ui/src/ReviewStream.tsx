@@ -6,6 +6,7 @@ import { Button } from "./Button";
 import { DiffFileTitle } from "./DiffFileTitle";
 import { PIERRE_DIFF_HEADER_CSS, PIERRE_PANE_CSS } from "./pierreCodeSurface";
 import { ReviewComment } from "./ReviewComment";
+import { ReviewStreamFileActions } from "./ReviewStreamFileActions";
 import type { ChangedFileDiffCommentSide } from "./ChangedFileDiff";
 
 /** One changed file, as the stream needs it: both sides and where it came from. */
@@ -67,6 +68,20 @@ export type ReviewStreamProps = {
     failures?: readonly string[];
     /** Reads the failed files again. */
     onFailuresRetry?: () => void;
+    /** Files shown as a header only, by path. */
+    collapsed?: ReadonlySet<string>;
+    /** Files the reviewer has said they are done with, by path. */
+    viewed?: ReadonlySet<string>;
+    /** Closes an open file or opens a closed one. */
+    onFileCollapsedToggle?: (path: string) => void;
+    /**
+     * Marks a file reviewed or takes the mark off. Whoever answers decides what
+     * that does to the file being open, which is not the same in both
+     * directions.
+     */
+    onFileViewedToggle?: (path: string) => void;
+    /** Opens one file of the change on its own, away from the stream. */
+    onFileOpen?: (path: string) => void;
     /** Whether long lines wrap to the pane instead of scrolling out of it. */
     wrap?: boolean;
     onWrapChange?: (wrap: boolean) => void;
@@ -182,18 +197,24 @@ export function ReviewStream(props: ReviewStreamProps) {
     const draftPath = props.commentDraft?.path;
     const draftLine = props.commentDraft?.lineNumber;
     const draftSide = props.commentDraft?.side;
+    const collapsedFiles = props.collapsed;
     const annotated = useMemo(() => {
-        if (!commenting) return items;
         return items.map((item) => {
-            const held = (props.comments ?? [])
-                .filter((comment) => comment.path === item.id)
-                .map((comment) => ({
-                    side: comment.side,
-                    lineNumber: comment.lineNumber,
-                    metadata: { type: "comment" as const, comment },
-                }));
+            const collapsed = collapsedFiles?.has(item.id) === true;
+            const held = !commenting
+                ? []
+                : (props.comments ?? [])
+                      .filter((comment) => comment.path === item.id)
+                      .map((comment) => ({
+                          side: comment.side,
+                          lineNumber: comment.lineNumber,
+                          metadata: { type: "comment" as const, comment },
+                      }));
             const annotations =
-                draftPath === item.id && draftLine !== undefined && draftSide !== undefined
+                commenting &&
+                draftPath === item.id &&
+                draftLine !== undefined &&
+                draftSide !== undefined
                     ? [
                           ...held,
                           {
@@ -203,21 +224,28 @@ export function ReviewStream(props: ReviewStreamProps) {
                           },
                       ]
                     : held;
-            if (annotations.length === 0) return item;
             // The renderer is controlled: it keeps what it last drew for an item
-            // unless the item says it changed. Only the addresses can change
-            // here — a note's characters are read where it is drawn — so the
-            // version is those addresses and nothing else.
-            const version = annotations.reduce(
-                (carried, annotation) =>
-                    carried * 31 +
-                    annotation.lineNumber * 2 +
-                    (annotation.side === "additions" ? 1 : 0),
-                annotations.length,
-            );
-            return { ...item, annotations, version };
+            // unless the item says it changed. What can change here is where the
+            // notes are — a note's characters are read where it is drawn — and
+            // whether the file is closed, so the version is those two things.
+            const version =
+                annotations.reduce(
+                    (carried, annotation) =>
+                        carried * 31 +
+                        annotation.lineNumber * 2 +
+                        (annotation.side === "additions" ? 1 : 0),
+                    annotations.length,
+                ) *
+                    2 +
+                (collapsed ? 1 : 0);
+            return {
+                ...item,
+                ...(annotations.length === 0 ? {} : { annotations }),
+                collapsed,
+                version,
+            };
         });
-    }, [commenting, draftLine, draftPath, draftSide, items, props.comments]);
+    }, [collapsedFiles, commenting, draftLine, draftPath, draftSide, items, props.comments]);
 
     // Every hunk in the review, in reading order. The parsed diff knows where
     // its hunks begin, so this is read from it rather than from whichever rows
@@ -433,6 +461,24 @@ export function ReviewStream(props: ReviewStreamProps) {
                             />
                         )
                     }
+                    // What can be done with one file of the change, beside the
+                    // counts the renderer already draws there.
+                    renderHeaderMetadata={(item) => (
+                        <ReviewStreamFileActions
+                            collapsed={props.collapsed?.has(item.id) === true}
+                            {...(props.onFileCollapsedToggle === undefined
+                                ? {}
+                                : { onCollapsedToggle: props.onFileCollapsedToggle })}
+                            {...(props.onFileOpen === undefined
+                                ? {}
+                                : { onOpen: props.onFileOpen })}
+                            {...(props.onFileViewedToggle === undefined
+                                ? {}
+                                : { onViewedToggle: props.onFileViewedToggle })}
+                            path={item.id}
+                            viewed={props.viewed?.has(item.id) === true}
+                        />
+                    )}
                     {...(commenting
                         ? {
                               renderAnnotation: (annotation) => {
