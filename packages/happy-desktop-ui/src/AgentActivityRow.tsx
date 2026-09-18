@@ -182,7 +182,7 @@ function toolVerb(
     // as success; the verb describes the wait rather than a generic tool use.
     if (lower === "wait_agent") return active ? "Waiting" : "Waited";
     if (presentation?.type === "execCommand" || /(bash|exec|shell|command|run)/.test(lower))
-        return "Bash";
+        return lower === "powershell" ? "PowerShell" : lower === "bash" ? "Bash" : "Shell";
     if (/(grep|find|glob|^ls$|list|search)/.test(lower)) return active ? "Exploring" : "Explored";
     if (/(read|view|cat|open)/.test(lower)) return active ? "Reading" : "Read";
     if (/(write|edit|patch|update|apply)/.test(lower)) return active ? "Editing" : "Edited";
