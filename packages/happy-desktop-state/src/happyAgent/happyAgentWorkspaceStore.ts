@@ -2411,6 +2411,7 @@ export function happyAgentWorkspaceStoreCreate(
                 snapshot.fileLayout === nextFileLayout &&
                 snapshot.fileSearch === fileSearch &&
                 snapshot.fileComments === fileComments &&
+                snapshot.reviews === reviews &&
                 snapshot.panelWidth === nextPanelWidth &&
                 snapshot.fileTreeExpanded === fileTreeExpanded &&
                 snapshot.fileTreeCollapsed === fileTreeCollapsed &&
