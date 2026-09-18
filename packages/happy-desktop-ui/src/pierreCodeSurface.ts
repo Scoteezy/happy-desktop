@@ -108,6 +108,18 @@ export const PIERRE_DIFF_HEADER_CSS = `
     }
 `;
 
+/**
+ * Says a header row opens and closes its own file.
+ *
+ * Only a surface that actually answers a click on the header adds this — the
+ * pointer is a promise, and a diff of one file has nothing to fold.
+ */
+export const PIERRE_DIFF_HEADER_CLICK_CSS = `
+    [data-diffs-header] {
+        cursor: pointer;
+    }
+`;
+
 type PierrePhase = "mount" | "update" | "unmount";
 type Timers = { clear?: number; idle?: number };
 
