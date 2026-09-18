@@ -14,6 +14,13 @@ export {
     type ReviewCommentProps,
     type ReviewCommentSide,
 } from "./ReviewComment";
+export {
+    ReviewStream,
+    type ReviewStreamComment,
+    type ReviewStreamCommentDraft,
+    type ReviewStreamFile,
+    type ReviewStreamProps,
+} from "./ReviewStream";
 export { CompactActivityRow, type CompactActivityRowProps } from "./CompactActivityRow";
 export { compactCount } from "./countText";
 export { CodeBlock, codeBlockLanguage, type CodeBlockProps } from "./CodeBlock";
