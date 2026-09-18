@@ -453,19 +453,49 @@ export function ReviewStream(props: ReviewStreamProps) {
     // What the bar's controls act on: the file being read, or the first one
     // while the reader is still at the top of its own header.
     const readingPath = reading ?? props.files[0]?.path;
-    // The header picked up from the file being read: its counts, so the row is
-    // that file's own header rather than a second, thinner label for it.
+    // The header picked up from the file being read — the file itself, handed
+    // to the same renderer closed. Not a row built to look like a header: a
+    // header, so its name, its counts, and its type are drawn by whatever draws
+    // every other strip in the stream, and stay that way when that changes.
     const picked = useMemo(() => {
         const item = items.find((entry) => entry.id === reading);
-        if (item === undefined) return undefined;
-        let additions = 0;
-        let deletions = 0;
-        for (const hunk of item.fileDiff.hunks) {
-            additions += hunk.additionLines;
-            deletions += hunk.deletionLines;
-        }
-        return { path: item.id, additions, deletions };
+        return item === undefined ? undefined : [{ ...item, collapsed: true, version: 0 }];
     }, [items, reading]);
+
+    // How a file's header reads, wherever it is drawn: in the stream, and in
+    // the row that picks it up once it has scrolled away. One renderer, one
+    // header — the picked-up row is not a second thing that has to be kept
+    // looking like the first.
+    //
+    // The parsed diff carries the new path as its name and the old one as
+    // `prevName`, so the header reads the same here as it does on one file's
+    // own diff.
+    const headerPrefix = (item: ReviewStreamItem) =>
+        item.type !== "diff" ? null : (
+            <DiffFileTitle
+                path={item.fileDiff.name}
+                {...(item.fileDiff.prevName === undefined ||
+                item.fileDiff.prevName === item.fileDiff.name
+                    ? {}
+                    : { previousPath: item.fileDiff.prevName })}
+            />
+        );
+    // What can be done with one file of the change, beside the counts the
+    // renderer already draws there.
+    const headerMetadata = (item: ReviewStreamItem) => (
+        <ReviewStreamFileActions
+            collapsed={props.collapsed?.has(item.id) === true}
+            {...(props.onFileCollapsedToggle === undefined
+                ? {}
+                : { onCollapsedToggle: props.onFileCollapsedToggle })}
+            {...(props.onFileOpen === undefined ? {} : { onOpen: props.onFileOpen })}
+            {...(props.onFileViewedToggle === undefined
+                ? {}
+                : { onViewedToggle: props.onFileViewedToggle })}
+            path={item.id}
+            viewed={props.viewed?.has(item.id) === true}
+        />
+    );
 
     // Where the last step landed. The walk is a sequence, so it has to be
     // remembered — but only as long as the reader is still where it left them:
@@ -643,33 +673,16 @@ export function ReviewStream(props: ReviewStreamProps) {
                             event.target.closest("button, a") !== null
                         )
                             return;
-                        props.onFileCollapsedToggle?.(picked.path);
+                        const file = picked[0]?.id;
+                        if (file !== undefined) props.onFileCollapsedToggle?.(file);
                     }}
                 >
-                    <DiffFileTitle path={picked.path} />
-                    <span className="happy-review-stream__reading-counts">
-                        {picked.deletions > 0 || picked.additions === 0 ? (
-                            <span className="happy-review-stream__deletions">
-                                {`-${String(picked.deletions)}`}
-                            </span>
-                        ) : null}
-                        {picked.additions > 0 || picked.deletions === 0 ? (
-                            <span className="happy-review-stream__additions">
-                                {`+${String(picked.additions)}`}
-                            </span>
-                        ) : null}
-                    </span>
-                    <ReviewStreamFileActions
-                        collapsed={props.collapsed?.has(picked.path) === true}
-                        {...(props.onFileCollapsedToggle === undefined
-                            ? {}
-                            : { onCollapsedToggle: props.onFileCollapsedToggle })}
-                        {...(props.onFileOpen === undefined ? {} : { onOpen: props.onFileOpen })}
-                        {...(props.onFileViewedToggle === undefined
-                            ? {}
-                            : { onViewedToggle: props.onFileViewedToggle })}
-                        path={picked.path}
-                        viewed={props.viewed?.has(picked.path) === true}
+                    <CodeView<ReviewStreamAnnotation>
+                        className="happy-diff-surface"
+                        items={picked}
+                        options={options}
+                        renderHeaderMetadata={headerMetadata}
+                        renderHeaderPrefix={headerPrefix}
                     />
                 </div>
             )}
@@ -699,38 +712,8 @@ export function ReviewStream(props: ReviewStreamProps) {
                     items={annotated}
                     options={options}
                     ref={view}
-                    // The parsed diff carries the new path as its name and the old
-                    // one as `prevName`, so the header reads the same here as it
-                    // does on one file's own diff.
-                    renderHeaderPrefix={(item) =>
-                        item.type !== "diff" ? null : (
-                            <DiffFileTitle
-                                path={item.fileDiff.name}
-                                {...(item.fileDiff.prevName === undefined ||
-                                item.fileDiff.prevName === item.fileDiff.name
-                                    ? {}
-                                    : { previousPath: item.fileDiff.prevName })}
-                            />
-                        )
-                    }
-                    // What can be done with one file of the change, beside the
-                    // counts the renderer already draws there.
-                    renderHeaderMetadata={(item) => (
-                        <ReviewStreamFileActions
-                            collapsed={props.collapsed?.has(item.id) === true}
-                            {...(props.onFileCollapsedToggle === undefined
-                                ? {}
-                                : { onCollapsedToggle: props.onFileCollapsedToggle })}
-                            {...(props.onFileOpen === undefined
-                                ? {}
-                                : { onOpen: props.onFileOpen })}
-                            {...(props.onFileViewedToggle === undefined
-                                ? {}
-                                : { onViewedToggle: props.onFileViewedToggle })}
-                            path={item.id}
-                            viewed={props.viewed?.has(item.id) === true}
-                        />
-                    )}
+                    renderHeaderMetadata={headerMetadata}
+                    renderHeaderPrefix={headerPrefix}
                     {...(commenting
                         ? {
                               renderAnnotation: (annotation) => {
