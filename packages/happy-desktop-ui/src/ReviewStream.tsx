@@ -532,6 +532,50 @@ export function ReviewStream(props: ReviewStreamProps) {
                             variant="ghost"
                         />
                     </span>
+                    {readingPath === undefined ? null : (
+                        <Button
+                            aria-label="Back to the top of this file"
+                            data-testid="review-stream-reading-locate"
+                            icon="locate"
+                            iconOnly
+                            onClick={() =>
+                                view.current?.scrollTo({
+                                    type: "item",
+                                    id: readingPath,
+                                    align: "start",
+                                    behavior: "smooth",
+                                })
+                            }
+                            size="small"
+                            variant="ghost"
+                        />
+                    )}
+                    {props.onFilesCollapsedSet === undefined ? null : (
+                        <Button
+                            aria-label={allCollapsed ? "Open every file" : "Close every file"}
+                            data-testid="review-stream-collapse-all"
+                            icon={allCollapsed ? "unfold" : "fold"}
+                            iconOnly
+                            onClick={() => props.onFilesCollapsedSet?.(!allCollapsed)}
+                            size="small"
+                            variant="ghost"
+                        />
+                    )}
+                    {props.onViewChange === undefined ? null : (
+                        <SegmentedControl
+                            aria-label="How every diff in this review is drawn"
+                            data-testid="review-stream-view"
+                            onChange={(value) =>
+                                props.onViewChange?.(value === "split" ? "split" : "unified")
+                            }
+                            segments={[
+                                { value: "unified", label: "Unified" },
+                                { value: "split", label: "Split" },
+                            ]}
+                            size="compact"
+                            value={props.view === "split" ? "split" : "unified"}
+                        />
+                    )}
                     {props.onWrapChange === undefined ? null : (
                         <Button
                             data-testid="review-stream-wrap"
@@ -551,50 +595,6 @@ export function ReviewStream(props: ReviewStreamProps) {
                     data-happy-desktop-ui="review-stream-reading"
                 >
                     <DiffFileTitle path={readingPath} />
-                    <span className="happy-review-stream__reading-end">
-                        <Button
-                            aria-label="Back to the top of this file"
-                            data-testid="review-stream-reading-locate"
-                            icon="locate"
-                            iconOnly
-                            onClick={() =>
-                                view.current?.scrollTo({
-                                    type: "item",
-                                    id: readingPath,
-                                    align: "start",
-                                    behavior: "smooth",
-                                })
-                            }
-                            size="small"
-                            variant="ghost"
-                        />
-                        {props.onFilesCollapsedSet === undefined ? null : (
-                            <Button
-                                aria-label={allCollapsed ? "Open every file" : "Close every file"}
-                                data-testid="review-stream-collapse-all"
-                                icon={allCollapsed ? "unfold" : "fold"}
-                                iconOnly
-                                onClick={() => props.onFilesCollapsedSet?.(!allCollapsed)}
-                                size="small"
-                                variant="ghost"
-                            />
-                        )}
-                        {props.onViewChange === undefined ? null : (
-                            <SegmentedControl
-                                aria-label="How every diff in this review is drawn"
-                                data-testid="review-stream-view"
-                                onChange={(value) =>
-                                    props.onViewChange?.(value === "split" ? "split" : "unified")
-                                }
-                                segments={[
-                                    { value: "unified", label: "Unified" },
-                                    { value: "split", label: "Split" },
-                                ]}
-                                size="compact"
-                                value={props.view === "split" ? "split" : "unified"}
-                            />
-                        )}
-                    </span>
                 </div>
             )}
 
