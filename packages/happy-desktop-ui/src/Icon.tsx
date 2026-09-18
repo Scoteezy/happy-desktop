@@ -21,6 +21,7 @@ export type IconName =
     | "copy"
     | "chevron-down"
     | "chevron-right"
+    | "chevron-up"
     | "close"
     | "branch"
     | "merge"
@@ -131,6 +132,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     copy: { set: "ionicons", name: "copy-outline" },
     "chevron-down": { set: "ionicons", name: "chevron-down-outline" },
     "chevron-right": { set: "ionicons", name: "chevron-forward-outline" },
+    "chevron-up": { set: "ionicons", name: "chevron-up-outline" },
     // A bare cross: dismissing a thing where it is an affordance, and what went
     // wrong where it is not. In a danger or warning tone beside a failure it is
     // the house mark for trouble; `shield` says the opposite and is never it.

@@ -119,6 +119,14 @@
     --diffs-deletion-color: var(--diff-removed-border);
 }
 
+/* The two steps through the change read as one control, so they sit together
+   with no gap between them and a normal one to whatever is beside them. */
+.happy-changed-file-diff__steps {
+    display: flex;
+    flex: none;
+    align-items: center;
+}
+
 /* The same code editor the file tab uses: editing a change should not look like
    a different application from editing the file it is a change to. */
 .happy-changed-file-diff__editor {
