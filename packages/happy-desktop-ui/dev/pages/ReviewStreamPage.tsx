@@ -156,6 +156,38 @@ function ArrivingStream() {
     );
 }
 
+/**
+ * Reading a change file by file: closing the ones that are done, and keeping
+ * the record of which those were. The same small state the product's store
+ * owns, so the header's controls can be exercised here rather than described.
+ */
+function ReviewedStream() {
+    const [collapsed, collapsedSet] = useState<ReadonlySet<string>>(new Set([files[0].path]));
+    const [viewed, viewedSet] = useState<ReadonlySet<string>>(new Set([files[0].path]));
+    const toggle = (held: ReadonlySet<string>, path: string): ReadonlySet<string> => {
+        const next = new Set(held);
+        if (!next.delete(path)) next.add(path);
+        return next;
+    };
+    return (
+        <ReviewStream
+            appearance="light"
+            collapsed={collapsed}
+            files={files}
+            onFileCollapsedToggle={(path) => collapsedSet(toggle(collapsed, path))}
+            onFileOpen={() => undefined}
+            onFileViewedToggle={(path) => {
+                const marking = !viewed.has(path);
+                viewedSet(toggle(viewed, path));
+                // Marking closes the file; taking the mark off leaves it as it
+                // is, which is what the product does.
+                if (marking) collapsedSet(new Set(collapsed).add(path));
+            }}
+            viewed={viewed}
+        />
+    );
+}
+
 export function ReviewStreamPage() {
     return (
         <ComponentPage
@@ -170,6 +202,15 @@ export function ReviewStreamPage() {
                 stage="surface"
             >
                 {frame(<ReviewStream appearance="light" files={files} />)}
+            </Specimen>
+
+            <Specimen
+                detail="Each header carries what can be done with that one file: copy its path, close it, open it on its own. They wait for the pointer; the reviewed mark does not, because it is the answer to where the reader had got to"
+                label="File by file"
+                number="07"
+                stage="surface"
+            >
+                {frame(<ReviewedStream />)}
             </Specimen>
 
             <Specimen

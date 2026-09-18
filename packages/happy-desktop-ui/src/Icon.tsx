@@ -44,6 +44,7 @@ export type IconName =
     | "lock"
     | "eye"
     | "link"
+    | "open-external"
     | "mobile"
     | "smile"
     | "paperclip"
@@ -171,6 +172,9 @@ const glyphs: Record<IconName, IconGlyph> = {
     lock: { set: "ionicons", name: "lock-closed-outline" },
     eye: { set: "ionicons", name: "eye-outline" },
     link: { set: "ionicons", name: "link-outline" },
+    // A box with an arrow leaving it: the same thing, opened somewhere of its
+    // own. Never "a link" — `link` is that — and never a navigation arrow.
+    "open-external": { set: "ionicons", name: "open-outline" },
     mobile: { set: "ionicons", name: "phone-portrait-outline" },
     smile: { set: "ionicons", name: "happy-outline" },
     paperclip: { set: "ionicons", name: "attach-outline" },

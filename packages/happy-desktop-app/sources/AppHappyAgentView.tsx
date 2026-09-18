@@ -3515,6 +3515,23 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     .map((file) => file.path)}
                 onFailuresRetry={() => props.workspace.reviewRetry(review.groupId)}
                 total={review.files.length}
+                collapsed={review.collapsed}
+                viewed={review.viewed}
+                onFileCollapsedToggle={(path) =>
+                    props.workspace.reviewFileCollapsedToggle(review.groupId, path)
+                }
+                onFileViewedToggle={(path) =>
+                    props.workspace.reviewFileViewedToggle(review.groupId, path)
+                }
+                // Opening one file of a change gives it its own tab, the same
+                // one the listing opens — a file is a file wherever it is
+                // reached from.
+                onFileOpen={(path) => {
+                    if (!happyAgentOnline()) return;
+                    const kind = fileTabKind(path);
+                    props.workspace.fileOpen(review.groupId, path, kind);
+                    props.onFileSelect(review.groupId, props.chatId, path, kind);
+                }}
                 {...(access.writeRefusal === undefined
                     ? {
                           onCommentDraftOpen: (path, lineNumber, side) => {

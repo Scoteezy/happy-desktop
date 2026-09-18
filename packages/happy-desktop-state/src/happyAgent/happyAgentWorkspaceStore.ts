@@ -919,6 +919,18 @@ export interface HappyAgentReview {
     readonly files: readonly HappyAgentReviewFile[];
     /** How many files from the start have been asked for. */
     readonly reach: number;
+    /**
+     * Files shown as a header only, by path. A reviewer closes a file they have
+     * finished with so the ones they have not stay together.
+     */
+    readonly collapsed: ReadonlySet<string>;
+    /**
+     * Files the reviewer has said they are done with, by path. Marking one
+     * closes it; unmarking only takes the mark off, because a reviewer who
+     * changes their mind about a file is not asking to read it again this
+     * second.
+     */
+    readonly viewed: ReadonlySet<string>;
     /** True while a file this far in has never yet had a document. */
     readonly loading: boolean;
 }
@@ -1355,6 +1367,13 @@ export interface HappyAgentWorkspaceStore {
     reviewExtend(groupId: HappyAgentGroupId): void;
     /** Reads the files in a review whose last read failed, again. */
     reviewRetry(groupId: HappyAgentGroupId): void;
+    /** Shows one file in a review as a header only, or opens it again. */
+    reviewFileCollapsedToggle(groupId: HappyAgentGroupId, path: string): void;
+    /**
+     * Marks one file in a review as reviewed, or takes the mark off. Marking
+     * closes the file; unmarking leaves it as it is.
+     */
+    reviewFileViewedToggle(groupId: HappyAgentGroupId, path: string): void;
     /** Chooses how changed files are displayed, for every tab. */
     fileViewModeUpdate(mode: HappyAgentFileViewMode): void;
     /** Chooses whether long diff lines wrap or scroll, for every tab. */
@@ -3147,10 +3166,20 @@ export function happyAgentWorkspaceStoreCreate(
             };
         });
         const reach = Math.min(files.length, Math.max(open.reach, REVIEW_READ_PAGE));
+        // What was said about a file belongs to that file. A file that has left
+        // the change takes its mark with it, so a path that comes back is not
+        // met by a decision made about an older version of it.
+        const present = new Set(files.map((file) => file.path));
+        const kept = (paths: ReadonlySet<string>): ReadonlySet<string> =>
+            [...paths].every((path) => present.has(path))
+                ? paths
+                : new Set([...paths].filter((path) => present.has(path)));
         reviews = new Map(reviews).set(groupId, {
             ...open,
             files,
             reach,
+            collapsed: kept(open.collapsed),
+            viewed: kept(open.viewed),
             loading: reviewWaiting(files, reach),
         });
         reviewLoad(groupId);
@@ -3174,6 +3203,35 @@ export function happyAgentWorkspaceStoreCreate(
             loading: reviewWaiting(open.files, reach),
         });
         reviewLoad(groupId);
+        recompute();
+    };
+
+    /** Opens a closed file in the review, or closes an open one. */
+    const reviewFileCollapsedToggle = (groupId: HappyAgentGroupId, path: string): void => {
+        const open = reviews.get(groupId);
+        if (open === undefined) return;
+        const collapsed = new Set(open.collapsed);
+        if (!collapsed.delete(path)) collapsed.add(path);
+        reviews = new Map(reviews).set(groupId, { ...open, collapsed });
+        recompute();
+    };
+
+    /**
+     * Says a file has been reviewed, or takes that back.
+     *
+     * Marking one closes it, because saying "done with this" and still looking
+     * at it is two different answers. Taking the mark off does not reopen it: a
+     * reviewer correcting the record is not asking to read the file again, and
+     * a file that sprang open under the pointer would move everything below it.
+     */
+    const reviewFileViewedToggle = (groupId: HappyAgentGroupId, path: string): void => {
+        const open = reviews.get(groupId);
+        if (open === undefined) return;
+        const viewed = new Set(open.viewed);
+        const marking = !viewed.delete(path);
+        if (marking) viewed.add(path);
+        const collapsed = marking ? new Set(open.collapsed).add(path) : open.collapsed;
+        reviews = new Map(reviews).set(groupId, { ...open, viewed, collapsed });
         recompute();
     };
 
@@ -3450,6 +3508,8 @@ export function happyAgentWorkspaceStoreCreate(
             groupId,
             files: [],
             reach: REVIEW_READ_PAGE,
+            collapsed: new Set(),
+            viewed: new Set(),
             loading: true,
         });
         groupTabRemember(groupId, id);
@@ -5722,6 +5782,8 @@ export function happyAgentWorkspaceStoreCreate(
         reviewClose: (groupId) => reviewTabClose(groupId),
         reviewExtend: (groupId) => reviewExtend(groupId),
         reviewRetry: (groupId) => reviewRetry(groupId),
+        reviewFileCollapsedToggle: (groupId, path) => reviewFileCollapsedToggle(groupId, path),
+        reviewFileViewedToggle: (groupId, path) => reviewFileViewedToggle(groupId, path),
         fileRetry(tabId) {
             const tab = fileTabs.find((candidate) => candidate.id === tabId);
             if (tab)

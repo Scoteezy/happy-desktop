@@ -90,6 +90,16 @@ export const PIERRE_PANE_CSS = `
  * keeps the renderer's own, must not inherit this.
  */
 export const PIERRE_DIFF_HEADER_CSS = `
+    /* Whether the pointer is on this header. Only the shadow root can know it —
+       the controls slotted into the header are light DOM, and a page rule
+       cannot ask about an element it cannot see. Inherited properties do cross
+       into slotted content, so the answer is left here for them to read. */
+    [data-diffs-header] {
+        --happy-header-pointer: 0;
+    }
+    [data-diffs-header]:hover {
+        --happy-header-pointer: 1;
+    }
     [data-change-icon],
     [data-header-content] [data-title],
     [data-header-content] [data-prev-name],
