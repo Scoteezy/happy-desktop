@@ -20,7 +20,14 @@ export function DiffFileTitle(props: { path: string; previousPath?: string }) {
     const directory = cut === -1 ? "" : props.path.slice(0, cut + 1);
     const name = props.path.slice(cut + 1);
     return (
-        <span className="happy-diff-file-title" data-happy-desktop-ui="diff-file-title">
+        <span
+            className="happy-diff-file-title"
+            data-happy-desktop-ui="diff-file-title"
+            // Which file this header belongs to, readable from the header
+            // itself: a stream of them has to be able to say which one the
+            // reader is currently inside.
+            data-path={props.path}
+        >
             <FileKindIcon path={props.path} size={16} />
             {props.previousPath === undefined ? null : (
                 <>

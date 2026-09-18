@@ -164,6 +164,7 @@ function ArrivingStream() {
 function ReviewedStream() {
     const [collapsed, collapsedSet] = useState<ReadonlySet<string>>(new Set([files[0].path]));
     const [viewed, viewedSet] = useState<ReadonlySet<string>>(new Set([files[0].path]));
+    const [view, viewSet] = useState<"unified" | "split">("unified");
     const toggle = (held: ReadonlySet<string>, path: string): ReadonlySet<string> => {
         const next = new Set(held);
         if (!next.delete(path)) next.add(path);
@@ -183,6 +184,11 @@ function ReviewedStream() {
                 // is, which is what the product does.
                 if (marking) collapsedSet(new Set(collapsed).add(path));
             }}
+            onFilesCollapsedSet={(all) =>
+                collapsedSet(all ? new Set(files.map((file) => file.path)) : new Set())
+            }
+            onViewChange={viewSet}
+            view={view}
             viewed={viewed}
         />
     );
