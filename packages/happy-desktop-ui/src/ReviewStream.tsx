@@ -128,6 +128,9 @@ type ReviewStreamAnnotation =
 /** How close to the end of what has been read counts as approaching it. */
 const END_REACH_DISTANCE = 600;
 
+/** How long the stream leaves the browser alone between measurements, in ms. */
+const MEASURE_REST = 120;
+
 type ReviewStreamStop = {
     readonly id: string;
     readonly lineNumber: number;
@@ -382,9 +385,17 @@ export function ReviewStream(props: ReviewStreamProps) {
         (node: HTMLDivElement | null) => {
             const port = node?.querySelector<HTMLElement>(".happy-review-stream__renderer");
             if (port == null) return;
+            // Asked once for each time the end comes within reach, not once per
+            // scroll event: a reader who keeps a fingertip on the trackpad at
+            // the bottom of what has been read produces a hundred of those a
+            // second, and answering each one is a hundred rounds of reading and
+            // redrawing while they are trying to read.
+            let asked = false;
             const ask = (): void => {
-                if (port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE)
-                    endAsk();
+                const near =
+                    port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE;
+                if (near && !asked) endAsk();
+                asked = near;
                 const edge = port.getBoundingClientRect().top;
                 // Nothing laid out yet reports every header at the same place,
                 // and an answer read from that is not an answer.
@@ -413,16 +424,38 @@ export function ReviewStream(props: ReviewStreamProps) {
                 if (measured === 0) return;
                 readingSet(inside);
             };
-            // At most one measurement per frame, whatever asked for it.
-            let pending = 0;
-            const soon = (): void => {
-                if (pending !== 0) return;
-                pending = requestAnimationFrame(() => {
-                    pending = 0;
-                    ask();
-                });
+            // Measuring means reading the geometry of a pane the renderer has
+            // just written to, which makes the browser lay the whole stream out
+            // then and there. Once a frame is far more often than the answer can
+            // change usefully — it is which file the reader is in, and they are
+            // in one for seconds at a time — so it is asked on a leading edge
+            // and then no more often than this, with the last ask always
+            // honoured.
+            let frame = 0;
+            let timer = 0;
+            let last = 0;
+            const run = (): void => {
+                frame = 0;
+                last = performance.now();
+                ask();
             };
-            port.addEventListener("scroll", ask, { passive: true });
+            const soon = (): void => {
+                if (frame !== 0 || timer !== 0) return;
+                const since = performance.now() - last;
+                if (since >= MEASURE_REST) {
+                    frame = requestAnimationFrame(run);
+                    return;
+                }
+                timer = window.setTimeout(() => {
+                    timer = 0;
+                    frame = requestAnimationFrame(run);
+                }, MEASURE_REST - since);
+            };
+            // Scrolling asks through the same one-per-frame gate as everything
+            // else: a scroll event arrives far more often than the screen is
+            // drawn, and each answer reads layout the renderer is in the middle
+            // of writing.
+            port.addEventListener("scroll", soon, { passive: true });
             port.addEventListener("click", headerClicked);
             const sizes = new ResizeObserver(soon);
             sizes.observe(port);
@@ -438,12 +471,13 @@ export function ReviewStream(props: ReviewStreamProps) {
             shown.observe(port);
             soon();
             return () => {
-                port.removeEventListener("scroll", ask);
+                port.removeEventListener("scroll", soon);
                 port.removeEventListener("click", headerClicked);
                 sizes.disconnect();
                 drawn.disconnect();
                 shown.disconnect();
-                if (pending !== 0) cancelAnimationFrame(pending);
+                if (frame !== 0) cancelAnimationFrame(frame);
+                if (timer !== 0) window.clearTimeout(timer);
             };
         },
         // Deliberately re-attached whenever another file has arrived: that is
