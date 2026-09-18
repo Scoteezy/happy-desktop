@@ -105,6 +105,20 @@ function tabbedDiff(mode: "preview" | "unified") {
     );
 }
 
+/* A file long enough that its changes are not all on screen at once, which is
+   the only condition under which stepping through them means anything. Three
+   edits, far apart, with plenty of untouched code between them. */
+const longBefore = Array.from(
+    { length: 120 },
+    (_, index) => `export const value${String(index)} = ${String(index)};`,
+).join("\n");
+const longAfter = longBefore
+    .split("\n")
+    .map((line, index) =>
+        index === 4 || index === 60 || index === 110 ? `${line} // revisited` : line,
+    )
+    .join("\n");
+
 /* Notes are written, not posed: this specimen owns the same little state the
    product's store owns, so the gutter affordance, the composer, and the
    handover control can be exercised here rather than only described. */
@@ -388,6 +402,24 @@ export function ChangedFileDiffPage() {
                         saveDisabled
                     />,
                     300,
+                )}
+            </Specimen>
+
+            <Specimen
+                detail="Three edits far apart in a long file; the steps travel between them instead of the scrollbar travelling past everything else"
+                label="Walking the change"
+                number="13"
+                stage="surface"
+            >
+                {frame(
+                    <ChangedFileDiff
+                        appearance="light"
+                        mode="unified"
+                        newContent={longAfter}
+                        oldContent={longBefore}
+                        path="packages/happy-desktop-ui/src/values.ts"
+                    />,
+                    320,
                 )}
             </Specimen>
 

@@ -1,6 +1,6 @@
 import { parseDiffFromFile, type SelectedLineRange } from "@pierre/diffs";
 import { FileDiff, useStableCallback } from "@pierre/diffs/react";
-import { useMemo, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useRef, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
 import { CodeEditor } from "./CodeEditor";
 import { CODE_BLOCK_HIGHLIGHT_CACHE_MAX_TEXT_LENGTH } from "./CodeBlock";
@@ -244,6 +244,44 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
         }),
         [commenting, gutterUtilityClicked, mode, props.appearance, props.wrap],
     );
+    // Walking the change itself, rather than the scrollbar. A long file is
+    // mostly unchanged, so scrolling it is scrolling past everything nobody
+    // opened it for.
+    //
+    // The renderer draws the rows and owns them, so the runs of changed lines it
+    // drew are read back from what is on screen rather than a position being
+    // computed for a row and hoped to be where it landed. Consecutive changed
+    // rows are one change: a deletion and the addition replacing it are the same
+    // edit, and counting them apart would make every rewritten line two stops.
+    const viewportRef = useRef<HTMLDivElement>(null);
+    const changeStarts = (): HTMLElement[] => {
+        const host = viewportRef.current?.querySelector(".happy-changed-file-diff__renderer");
+        const shadow = host?.shadowRoot;
+        if (!shadow) return [];
+        const starts: HTMLElement[] = [];
+        let inRun = false;
+        for (const row of shadow.querySelectorAll<HTMLElement>("[data-column-number]")) {
+            const changed = row.getAttribute("data-line-type")?.startsWith("change-") === true;
+            if (changed && !inRun) starts.push(row);
+            inRun = changed;
+        }
+        return starts;
+    };
+    const changeGo = (direction: -1 | 1): void => {
+        const viewport = viewportRef.current;
+        if (viewport === null) return;
+        // A change already at the top of the pane is the one being read, not the
+        // one to travel to, so "next" is the first that begins below it.
+        const edge = viewport.getBoundingClientRect().top + 4;
+        const starts = changeStarts();
+        const above = starts.filter((start) => start.getBoundingClientRect().top < edge - 4);
+        const target =
+            direction === 1
+                ? starts.find((start) => start.getBoundingClientRect().top > edge + 4)
+                : above[above.length - 1];
+        if (target === undefined) return;
+        viewport.scrollTop += target.getBoundingClientRect().top - edge;
+    };
     // One annotation per note, plus the one being written. Pierre addresses
     // them by side and line, which is the same address the notes carry, so
     // nothing here reconstructs a position.
@@ -314,6 +352,31 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                             {props.saving ? "Saving…" : "Updating…"}
                         </span>
                     ) : null}
+                    {/* Only where there is a diff drawn to walk. Preview has no
+                        rows, and the editor is being typed in rather than read
+                        through. */}
+                    {mode === "unified" || mode === "split" ? (
+                        <span className="happy-changed-file-diff__steps">
+                            <Button
+                                aria-label="Previous change"
+                                data-testid="changed-file-diff-previous-change"
+                                icon="chevron-up"
+                                iconOnly
+                                onClick={() => changeGo(-1)}
+                                size="small"
+                                variant="ghost"
+                            />
+                            <Button
+                                aria-label="Next change"
+                                data-testid="changed-file-diff-next-change"
+                                icon="chevron-down"
+                                iconOnly
+                                onClick={() => changeGo(1)}
+                                size="small"
+                                variant="ghost"
+                            />
+                        </span>
+                    ) : null}
                     {/* Wrap is a fact about lines of source — the diff's or the
                         editor's — so the toggle leaves only for Preview, whose
                         rendered face has no lines to wrap. */}
@@ -338,6 +401,7 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                 data-happy-desktop-ui="changed-file-diff-body"
                 placement="overlay"
                 viewportClassName="happy-changed-file-diff__viewport"
+                viewportRef={viewportRef}
             >
                 {mode === "preview" ? (
                     props.preview
