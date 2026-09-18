@@ -1,6 +1,6 @@
 import { parseDiffFromFile, type SelectedLineRange } from "@pierre/diffs";
 import { FileDiff, useStableCallback } from "@pierre/diffs/react";
-import { useMemo, useRef, type CSSProperties, type ReactNode } from "react";
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
 import { CodeEditor } from "./CodeEditor";
 import { DiffFileTitle } from "./DiffFileTitle";
@@ -215,6 +215,22 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
     const gutterUtilityClicked = useStableCallback((range: SelectedLineRange) => {
         props.onCommentDraftOpen?.(range.start, range.side ?? "additions");
     });
+    /**
+     * Which lines are marked, held here rather than inside the renderer.
+     *
+     * Selecting lines is how a note is aimed: dragging the line numbers, or
+     * dragging the gutter button down a run of them. The renderer then keeps its
+     * button on that selection rather than under the pointer — right while the
+     * note is being written, wrong once it is done, because every other line
+     * stops offering one until something lets go. This surface draws a diff
+     * rather than a code view and so has no handle to let go with, so the
+     * selection is ours to hold and ours to drop.
+     */
+    const [selection, selectionSet] = useState<SelectedLineRange | null>(null);
+    const selectionChanged = useStableCallback((range: SelectedLineRange | null) => {
+        selectionSet(range);
+    });
+
     const diffOptions = useMemo(
         () => ({
             diffIndicators: "bars" as const,
@@ -241,8 +257,12 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             // so only where it leads is ours.
             enableGutterUtility: commenting,
             onGutterUtilityClick: gutterUtilityClicked,
+            // Reported while the selection is being dragged and again when it
+            // settles, so what is marked on screen is what this holds.
+            onLineSelectionChange: selectionChanged,
+            onLineSelected: selectionChanged,
         }),
-        [commenting, gutterUtilityClicked, mode, props.appearance, props.wrap],
+        [commenting, gutterUtilityClicked, mode, props.appearance, props.wrap, selectionChanged],
     );
     // Walking the change itself, rather than the scrollbar. A long file is
     // mostly unchanged, so scrolling it is scrolling past everything nobody
@@ -254,6 +274,10 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
     // rows are one change: a deletion and the addition replacing it are the same
     // edit, and counting them apart would make every rewritten line two stops.
     const viewportRef = useRef<HTMLDivElement>(null);
+    /** Drops the marked lines, once the note they were aimed at is done with. */
+    const selectionRelease = (): void => {
+        selectionSet(null);
+    };
     const changeStarts = (): HTMLElement[] => {
         const host = viewportRef.current?.querySelector(".happy-changed-file-diff__renderer");
         const shadow = host?.shadowRoot;
@@ -430,13 +454,7 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                         className="happy-changed-file-diff__renderer happy-diff-surface"
                         fileDiff={diff}
                         options={diffOptions}
-                        // No selected lines on this surface, ever. The renderer
-                        // selects the line whose gutter was clicked and then
-                        // pins the gutter button to that selection rather than
-                        // to the pointer, so after one note every other line
-                        // stops offering one. Nothing here reads a selected
-                        // range, and saying so is the whole fix.
-                        selectedLines={null}
+                        selectedLines={selection}
                         // The whole header name, ours, through the slot the
                         // renderer leaves ahead of its own. The renderer's mark
                         // and title stand down in `PIERRE_DIFF_HEADER_CSS`.
@@ -471,11 +489,17 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                                                   {...author}
                                                   draft={props.commentDraft.text}
                                                   lineNumber={props.commentDraft.lineNumber}
-                                                  onCancel={() => props.onCommentDraftCancel?.()}
+                                                  onCancel={() => {
+                                                      selectionRelease();
+                                                      props.onCommentDraftCancel?.();
+                                                  }}
                                                   onDraftChange={(text) =>
                                                       props.onCommentDraftUpdate?.(text)
                                                   }
-                                                  onSubmit={() => props.onCommentDraftSubmit?.()}
+                                                  onSubmit={() => {
+                                                      selectionRelease();
+                                                      props.onCommentDraftSubmit?.();
+                                                  }}
                                                   side={props.commentDraft.side}
                                               />
                                           );

@@ -311,8 +311,21 @@ export function ReviewStream(props: ReviewStreamProps) {
     );
     const fileOrder = useMemo(() => new Map(items.map((item, index) => [item.id, index])), [items]);
 
-    // The renderer reports where its button was pressed as a one-line selection,
-    // and hands back the item it belongs to — which is the file, because the
+    /**
+     * Lets go of the renderer's selected lines.
+     *
+     * Selecting lines is how a note is aimed: pressing the gutter button, or
+     * dragging it down a run of lines, selects them. The renderer then keeps its
+     * button on that selection rather than under the pointer — right while the
+     * note is being written, wrong the moment it is done, because every other
+     * line stops offering one until something clears it.
+     */
+    const selectionRelease = (): void => {
+        view.current?.setSelectedLines(null);
+    };
+
+    // The renderer reports where its button was pressed as a selected range, and
+    // hands back the item it belongs to — which is the file, because the
     // stream's item ids are paths.
     const gutterUtilityClicked = useStableCallback(
         (range: SelectedLineRange, context: { item: { id: string } }) => {
@@ -769,12 +782,6 @@ export function ReviewStream(props: ReviewStreamProps) {
                     ref={view}
                     renderHeaderMetadata={headerMetadata}
                     renderHeaderPrefix={headerPrefix}
-                    // No selected lines in a review, ever. The renderer selects
-                    // the line whose gutter was clicked and then pins the gutter
-                    // button to that selection rather than to the pointer, so
-                    // after one note every other line stops offering one.
-                    // Nothing here reads a selected range.
-                    selectedLines={null}
                     {...(commenting
                         ? {
                               renderAnnotation: (annotation) => {
@@ -788,11 +795,17 @@ export function ReviewStream(props: ReviewStreamProps) {
                                               {...author}
                                               draft={props.commentDraft.text}
                                               lineNumber={props.commentDraft.lineNumber}
-                                              onCancel={() => props.onCommentDraftCancel?.()}
+                                              onCancel={() => {
+                                                  selectionRelease();
+                                                  props.onCommentDraftCancel?.();
+                                              }}
                                               onDraftChange={(text) =>
                                                   props.onCommentDraftUpdate?.(text)
                                               }
-                                              onSubmit={() => props.onCommentDraftSubmit?.()}
+                                              onSubmit={() => {
+                                                  selectionRelease();
+                                                  props.onCommentDraftSubmit?.();
+                                              }}
                                               side={props.commentDraft.side}
                                           />
                                       );
