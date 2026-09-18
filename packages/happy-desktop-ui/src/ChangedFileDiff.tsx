@@ -430,6 +430,13 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                         className="happy-changed-file-diff__renderer happy-diff-surface"
                         fileDiff={diff}
                         options={diffOptions}
+                        // No selected lines on this surface, ever. The renderer
+                        // selects the line whose gutter was clicked and then
+                        // pins the gutter button to that selection rather than
+                        // to the pointer, so after one note every other line
+                        // stops offering one. Nothing here reads a selected
+                        // range, and saying so is the whole fix.
+                        selectedLines={null}
                         // The whole header name, ours, through the slot the
                         // renderer leaves ahead of its own. The renderer's mark
                         // and title stand down in `PIERRE_DIFF_HEADER_CSS`.
