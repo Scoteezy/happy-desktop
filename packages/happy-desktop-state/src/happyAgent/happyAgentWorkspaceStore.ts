@@ -3200,6 +3200,11 @@ export function happyAgentWorkspaceStoreCreate(
     const reviewExtend = (groupId: HappyAgentGroupId): void => {
         const open = reviews.get(groupId);
         if (open === undefined || open.reach >= open.files.length) return;
+        // One page is read at a time. Extending again while the last page is
+        // still being read races the reads it is waiting for: the surface says
+        // this freely, and a reader at the end of what has arrived would
+        // otherwise pull the whole change through in a single scroll.
+        if (open.loading) return;
         const reach = Math.min(open.files.length, open.reach + REVIEW_READ_PAGE);
         reviews = new Map(reviews).set(groupId, {
             ...open,
