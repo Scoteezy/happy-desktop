@@ -1,6 +1,7 @@
 import { parseDiffFromFile, type SelectedLineRange } from "@pierre/diffs";
 import { CodeView, useStableCallback, type CodeViewHandle } from "@pierre/diffs/react";
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { DiffFileTitle } from "./DiffFileTitle";
 import { PIERRE_DIFF_HEADER_CSS, PIERRE_PANE_CSS } from "./pierreCodeSurface";
@@ -58,6 +59,14 @@ export type ReviewStreamProps = {
      * there is anything left to ask for.
      */
     onEndReach?: () => void;
+    /**
+     * Files the checkout would not give up, by path. A file that failed to read
+     * has no diff to draw, and a stream that simply leaves it out is a review
+     * quietly missing part of its own change.
+     */
+    failures?: readonly string[];
+    /** Reads the failed files again. */
+    onFailuresRetry?: () => void;
     /** Whether long lines wrap to the pane instead of scrolling out of it. */
     wrap?: boolean;
     onWrapChange?: (wrap: boolean) => void;
@@ -290,24 +299,34 @@ export function ReviewStream(props: ReviewStreamProps) {
     // the content itself being shorter than the pane — a first page of four
     // files that does not fill the screen has to ask for the next one without
     // waiting for a scroll that will never happen.
-    const endWatch = useStableCallback((node: HTMLDivElement | null) => {
-        const port = node?.querySelector<HTMLElement>(".happy-review-stream__renderer");
-        if (port == null) return;
-        const ask = (): void => {
-            if (port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE)
-                props.onEndReach?.();
-        };
-        port.addEventListener("scroll", ask, { passive: true });
-        const sizes = new ResizeObserver(() => {
+    const endAsk = useStableCallback(() => props.onEndReach?.());
+    const endWatch = useCallback(
+        (node: HTMLDivElement | null) => {
+            const port = node?.querySelector<HTMLElement>(".happy-review-stream__renderer");
+            if (port == null) return;
+            const ask = (): void => {
+                if (port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE)
+                    endAsk();
+            };
+            port.addEventListener("scroll", ask, { passive: true });
+            const sizes = new ResizeObserver(() => {
+                requestAnimationFrame(ask);
+            });
+            sizes.observe(port);
+            if (port.firstElementChild !== null) sizes.observe(port.firstElementChild);
+            // Asked once for this many files, because a file arriving is itself
+            // a reason to look: the renderer's content grew inside a pane whose
+            // own box did not change, which no observer here would report.
             requestAnimationFrame(ask);
-        });
-        sizes.observe(port);
-        if (port.firstElementChild !== null) sizes.observe(port.firstElementChild);
-        return () => {
-            port.removeEventListener("scroll", ask);
-            sizes.disconnect();
-        };
-    });
+            return () => {
+                port.removeEventListener("scroll", ask);
+                sizes.disconnect();
+            };
+        },
+        // Deliberately re-attached whenever another file has arrived: that is
+        // the moment the question "is the end within reach" has a new answer.
+        [endAsk, props.files.length],
+    );
 
     return (
         <section
@@ -374,6 +393,25 @@ export function ReviewStream(props: ReviewStreamProps) {
                     )}
                 </span>
             </div>
+
+            {props.failures === undefined || props.failures.length === 0 ? null : (
+                <Banner
+                    className="happy-review-stream__failures"
+                    data-testid="review-stream-failures"
+                    icon="alert"
+                    {...(props.onFailuresRetry === undefined
+                        ? {}
+                        : { action: { label: "Try again", onClick: props.onFailuresRetry } })}
+                    title={
+                        props.failures.length === 1
+                            ? "One file could not be read"
+                            : `${String(props.failures.length)} files could not be read`
+                    }
+                    tone="warning"
+                >
+                    {props.failures.join(", ")}
+                </Banner>
+            )}
 
             <div className="happy-review-stream__body" ref={endWatch}>
                 <CodeView<ReviewStreamAnnotation>

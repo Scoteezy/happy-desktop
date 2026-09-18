@@ -3508,6 +3508,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 // rest of the change: a review of thirty files is opened to read
                 // it from the top, not to wait for its last file.
                 onEndReach={() => props.workspace.reviewExtend(review.groupId)}
+                // A file the checkout would not give up is named rather than
+                // left out, or the review is quietly short of part of itself.
+                failures={review.files
+                    .filter((file) => file.document.type === "error")
+                    .map((file) => file.path)}
+                onFailuresRetry={() => props.workspace.reviewRetry(review.groupId)}
                 total={review.files.length}
                 {...(access.writeRefusal === undefined
                     ? {

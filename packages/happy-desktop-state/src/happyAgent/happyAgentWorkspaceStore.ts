@@ -914,6 +914,16 @@ const reviewIdOf = (groupId: HappyAgentGroupId): string => `review:${groupId}`;
 const REVIEW_READ_PAGE = 4;
 
 /**
+ * Whether a review is still waiting on anything it asked for. A file that
+ * failed has an answer — the wrong one, which the stream says out loud — so it
+ * is not something still being waited for.
+ */
+const reviewWaiting = (files: readonly HappyAgentReviewFile[], reach: number): boolean =>
+    files
+        .slice(0, reach)
+        .some((file) => file.document.type === "loading" || file.document.type === "unloaded");
+
+/**
  * The review notes written out as one request an agent can act on.
  *
  * Each note names the file and the line it was left on, because that address is
@@ -1321,6 +1331,8 @@ export interface HappyAgentWorkspaceStore {
      * does nothing.
      */
     reviewExtend(groupId: HappyAgentGroupId): void;
+    /** Reads the files in a review whose last read failed, again. */
+    reviewRetry(groupId: HappyAgentGroupId): void;
     /** Chooses how changed files are displayed, for every tab. */
     fileViewModeUpdate(mode: HappyAgentFileViewMode): void;
     /** Chooses whether long diff lines wrap or scroll, for every tab. */
@@ -3116,7 +3128,7 @@ export function happyAgentWorkspaceStoreCreate(
             ...open,
             files,
             reach,
-            loading: files.slice(0, reach).some((file) => file.document.type !== "ready"),
+            loading: reviewWaiting(files, reach),
         });
         reviewLoad(groupId);
     };
@@ -3136,7 +3148,31 @@ export function happyAgentWorkspaceStoreCreate(
             // A file inside the new reach may already have been read — its bytes
             // did not move through the last rebuild — so this is asked of the
             // files rather than assumed from having extended.
-            loading: open.files.slice(0, reach).some((file) => file.document.type !== "ready"),
+            loading: reviewWaiting(open.files, reach),
+        });
+        reviewLoad(groupId);
+        recompute();
+    };
+
+    /**
+     * Reads again the files whose last read failed.
+     *
+     * A read that fails leaves its file with no diff to draw, and the stream
+     * says so rather than quietly showing a change short of a file. This is what
+     * saying "try again" there does.
+     */
+    const reviewRetry = (groupId: HappyAgentGroupId): void => {
+        const open = reviews.get(groupId);
+        if (open === undefined) return;
+        if (!open.files.some((file) => file.document.type === "error")) return;
+        reviews = new Map(reviews).set(groupId, {
+            ...open,
+            files: open.files.map((file) =>
+                file.document.type === "error"
+                    ? { ...file, document: { type: "unloaded" as const } }
+                    : file,
+            ),
+            loading: true,
         });
         reviewLoad(groupId);
         recompute();
@@ -3168,7 +3204,6 @@ export function happyAgentWorkspaceStoreCreate(
         });
         for (const file of asked) {
             const change = fileChangeFind(groupId, file.path);
-            if (change === undefined) continue;
             const settle = (document: Loadable<HappyAgentChangedFileDocument>): void => {
                 if (reviewGenerations.get(id) !== generation) return;
                 const current = reviews.get(groupId);
@@ -3181,20 +3216,35 @@ export function happyAgentWorkspaceStoreCreate(
                 reviews = new Map(reviews).set(groupId, {
                     ...current,
                     files,
-                    loading: files
-                        .slice(0, current.reach)
-                        .some((candidate) => candidate.document.type !== "ready"),
+                    loading: reviewWaiting(files, current.reach),
                 });
                 recompute();
             };
-            void client
-                .changedFileRead(groupId, file.path, change)
-                .then((value) => {
-                    settle({ type: "ready", value });
-                })
-                .catch((error: unknown) => {
-                    settle({ type: "error", error: happyAgentUserError(error) });
+            // Each file answers for itself. Whatever one of them does — refused
+            // by the checkout, or refusing even to start — the others are still
+            // asked for, and the one that failed says so rather than staying
+            // open forever as a file the review is silently short of.
+            if (change === undefined) {
+                settle({
+                    type: "error",
+                    error: happyAgentUserError(
+                        new Error(`${file.path} is no longer among this checkout's changes.`),
+                    ),
                 });
+                continue;
+            }
+            try {
+                void client
+                    .changedFileRead(groupId, file.path, change)
+                    .then((value) => {
+                        settle({ type: "ready", value });
+                    })
+                    .catch((error: unknown) => {
+                        settle({ type: "error", error: happyAgentUserError(error) });
+                    });
+            } catch (error: unknown) {
+                settle({ type: "error", error: happyAgentUserError(error) });
+            }
         }
     };
 
@@ -5648,6 +5698,7 @@ export function happyAgentWorkspaceStoreCreate(
         reviewOpen: (groupId) => reviewTabOpen(groupId),
         reviewClose: (groupId) => reviewTabClose(groupId),
         reviewExtend: (groupId) => reviewExtend(groupId),
+        reviewRetry: (groupId) => reviewRetry(groupId),
         fileRetry(tabId) {
             const tab = fileTabs.find((candidate) => candidate.id === tabId);
             if (tab)

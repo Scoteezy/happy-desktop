@@ -207,6 +207,24 @@ export function ReviewStreamPage() {
             >
                 {frame(<ArrivingStream />, 260)}
             </Specimen>
+
+            <Specimen
+                detail="A file the checkout would not give up is named, with the way to ask again — a review short of one of its files must not look like a review of fewer files"
+                label="Would not read"
+                number="06"
+                stage="surface"
+            >
+                {frame(
+                    <ReviewStream
+                        appearance="light"
+                        failures={["packages/happy-desktop-ui/src/Composer.tsx"]}
+                        files={files.slice(1)}
+                        onFailuresRetry={() => undefined}
+                        total={3}
+                    />,
+                    300,
+                )}
+            </Specimen>
         </ComponentPage>
     );
 }
