@@ -1,0 +1,59 @@
+/*
+ * Every changed file in one scroll. The chrome is deliberately the same as one
+ * changed file's: a review that opens one file and a review that opens all of
+ * them should not look like two different products.
+ */
+
+.happy-review-stream {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    background: var(--surface);
+    color: var(--text);
+}
+
+.happy-review-stream__bar {
+    box-sizing: border-box;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    height: var(--happy-subheader-height);
+    padding: 0 8px;
+    background: var(--surface);
+    box-shadow: inset 0 -1px var(--divider);
+}
+
+/* What is being reviewed, said plainly. It is the only label the stream has:
+   the files name themselves in their own headers below. */
+.happy-review-stream__count {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.happy-review-stream__bar-end {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* The two steps read as one control, so they sit together with no gap. */
+.happy-review-stream__steps {
+    display: flex;
+    flex: none;
+    align-items: center;
+}
+
+/* The renderer virtualizes the whole review against this box, so this box is
+   the scrollport: it measures what is visible and draws around it. One
+   scrollport for every file together is the point — a scroll per file would be
+   the pane-at-a-time reading this replaces. */
+.happy-review-stream__renderer {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
