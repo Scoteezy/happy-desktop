@@ -55,6 +55,7 @@ export * from "./happyAgent/happyAgentSupport.js";
 export * from "./happyAgent/happyAgentTerminalStore.js";
 export * from "./happyAgent/happyAgentHostServices.js";
 export * from "./happyAgent/happyAgentTypes.js";
+export { happyAgentBotSubtasks } from "./happyAgent/happyAgentBotSubtasks.js";
 export * from "./happyAgent/happyAgentWindowStore.js";
 export * from "./happyAgent/happyAgentWorkspaceMemory.js";
 export * from "./happyAgent/happyAgentWorkspaceStore.js";

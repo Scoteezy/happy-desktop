@@ -1,3 +1,4 @@
+import { agentTreeFind, agentTreeUpdate } from "./agentSubtasks.js";
 import {
     applyMessageDelta,
     HappyAgentClient,
@@ -538,6 +539,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
 
     const agentOf = (agentId: string): Agent | undefined => {
         const { bots, projects, workspaces } = groupsStore.getState();
+        for (const bot of bots) {
+            const agent = agentTreeFind(bot.agent, agentId);
+            if (agent !== undefined) return agent;
+        }
         for (const workspace of workspaces) {
             const agent = workspace.agents.find((candidate) => candidate.id === agentId);
             if (agent !== undefined) return agent;
@@ -545,11 +550,6 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         for (const project of projects) {
             const agent = project.agents.find((candidate) => candidate.id === agentId);
             if (agent !== undefined) return agent;
-        }
-        // A bot carries its one agent itself, and on a daemon that lists the
-        // bot's workspace without its agents this is the only copy there is.
-        for (const bot of bots) {
-            if (bot.agent.id === agentId) return bot.agent;
         }
         const materialized = sessions.get(agentId)?.agent;
         if (materialized !== undefined) return materialized;
@@ -585,7 +585,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             // A bot's row is drawn from the agent embedded in the bot, so the
             // same versioned agent event has to reach that copy too — otherwise
             // the bot keeps reporting the status it was created with.
-            bots: current.bots.map((bot) => (bot.agent.id === agent.id ? { ...bot, agent } : bot)),
+            bots: current.bots.map((bot) => {
+                const next = agentTreeUpdate(bot.agent, agent);
+                return next === bot.agent ? bot : { ...bot, agent: next };
+            }),
         }));
         const entry = sessions.get(agent.id);
         if (entry !== undefined) {

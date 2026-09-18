@@ -1,6 +1,7 @@
 import type { MutationRejectedDelta, HappyAgentConnection } from "../happyAgentConnection/index.js";
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import { createStore } from "zustand/vanilla";
+import { happyAgentBotSubtasks } from "./happyAgentBotSubtasks.js";
 import type { Loadable } from "../conversation/loadable.js";
 import { UserError } from "../types.js";
 import {
@@ -22,6 +23,7 @@ import { happyAgentWorkspaceGeneratedName } from "./happyAgentWorkspaceNames.js"
 import type {
     HappyAgentBot,
     HappyAgentBotId,
+    HappyAgentBotSubtask,
     HappyAgentGroupId,
     HappyAgentProjectCatalog,
     HappyAgentProjectCompute,
@@ -1175,7 +1177,8 @@ export function happyAgentSessionListStoreCreate(
             // A bot is addressed through its own workspace, which belongs to no
             // project and so appears in neither list above. It is listed for as
             // long as the bot is.
-            catalog.bots.some((bot) => bot.workspaceId === groupId)
+            catalog.bots.some((bot) => bot.workspaceId === groupId) ||
+            happyAgentBotSubtasks(catalog.bots).some((task) => task.workspaceId === groupId)
         );
     };
 
@@ -1298,7 +1301,11 @@ export function happyAgentSessionListStoreCreate(
             if (worktree !== undefined) return happyAgentWorktreeWriteRefusal(worktree);
             const project = catalog.projects.find((entry) => entry.id === groupId);
             if (project !== undefined) return happyAgentProjectWriteRefusal(project);
-            if (catalog.bots.some((bot) => bot.workspaceId === groupId)) return undefined;
+            if (
+                catalog.bots.some((bot) => bot.workspaceId === groupId) ||
+                happyAgentBotSubtasks(catalog.bots).some((task) => task.workspaceId === groupId)
+            )
+                return undefined;
             return catalogListed
                 ? HAPPY_AGENT_GROUP_UNLISTED_REFUSAL
                 : HAPPY_AGENT_GROUP_UNREAD_REFUSAL;
@@ -1316,12 +1323,22 @@ export function happyAgentSessionListStoreCreate(
             // makes the two together — so there is no phase in which it is being
             // prepared and nothing to refuse. It answers both questions the same
             // way for the same reason a project does.
-            if (catalog.bots.some((bot) => bot.workspaceId === groupId)) return undefined;
+            if (
+                catalog.bots.some((bot) => bot.workspaceId === groupId) ||
+                happyAgentBotSubtasks(catalog.bots).some((task) => task.workspaceId === groupId)
+            )
+                return undefined;
             return catalogListed
                 ? HAPPY_AGENT_GROUP_UNLISTED_REFUSAL
                 : HAPPY_AGENT_GROUP_UNREAD_REFUSAL;
         },
         sessionDelegated(sessionId) {
+            if (
+                happyAgentBotSubtasks(internal.getState().catalog.bots).some(
+                    (task) => task.conversation.id === sessionId,
+                )
+            )
+                return false;
             const known = internal
                 .getState()
                 .sessions.find((candidate) => candidate.id === sessionId);
@@ -1358,9 +1375,12 @@ export function happyAgentSessionListStoreCreate(
             // reply arrives while its chat is on screen would keep its dot
             // until something else cleared it.
             const bot = catalog.bots.find((candidate) => candidate.conversation.id === sessionId);
+            const subtask = happyAgentBotSubtasks(catalog.bots).find(
+                (task) => task.conversation.id === sessionId,
+            );
             const unread =
                 session === undefined
-                    ? bot?.conversation.unread === true
+                    ? bot?.conversation.unread === true || subtask?.conversation.unread === true
                     : session.unreadReason !== undefined;
             if (!unread && knownUnread !== true) return;
             if (session?.unreadReason !== undefined) {
@@ -1372,18 +1392,43 @@ export function happyAgentSessionListStoreCreate(
                     ),
                 });
                 publish();
-            } else if (bot?.conversation.unread === true) {
+            } else if (bot?.conversation.unread === true || subtask?.conversation.unread === true) {
+                const tasksRead = (
+                    tasks: readonly HappyAgentBotSubtask[],
+                ): readonly HappyAgentBotSubtask[] => {
+                    let changed = false;
+                    const next = tasks.map((task) => {
+                        const children = tasksRead(task.subtasks);
+                        if (task.conversation.id !== sessionId && children === task.subtasks)
+                            return task;
+                        changed = true;
+                        return {
+                            ...task,
+                            subtasks: children,
+                            conversation:
+                                task.conversation.id === sessionId
+                                    ? { ...task.conversation, unread: false }
+                                    : task.conversation,
+                        };
+                    });
+                    return changed ? next : tasks;
+                };
                 internal.setState((state) => ({
                     catalog: {
                         ...state.catalog,
-                        bots: state.catalog.bots.map((candidate) =>
-                            candidate.id === bot.id
-                                ? {
-                                      ...candidate,
-                                      conversation: { ...candidate.conversation, unread: false },
-                                  }
-                                : candidate,
-                        ),
+                        bots: state.catalog.bots.map((candidate) => {
+                            const subtasks = tasksRead(candidate.subtasks);
+                            if (candidate.id !== bot?.id && subtasks === candidate.subtasks)
+                                return candidate;
+                            return {
+                                ...candidate,
+                                subtasks,
+                                conversation:
+                                    candidate.id === bot?.id
+                                        ? { ...candidate.conversation, unread: false }
+                                        : candidate.conversation,
+                            };
+                        }),
                     },
                 }));
                 publish();

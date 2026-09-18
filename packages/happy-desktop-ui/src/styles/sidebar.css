@@ -633,6 +633,7 @@
 
 .happy-sidebar__item-branch::after {
     position: absolute;
+    pointer-events: none;
     background: var(--text-secondary);
     content: "";
     opacity: 0.28;
@@ -783,6 +784,14 @@
     color: var(--text);
 }
 
+/* An avatar-less row borrows the existing branch box for disclosure instead
+   of adding an empty identity slot. Hide only the elbow under the overlay. */
+.happy-sidebar__item[data-fold-in-branch]:hover .happy-sidebar__item-branch::after,
+.happy-sidebar__item[data-fold-in-branch]:focus-visible .happy-sidebar__item-branch::after,
+.happy-sidebar__item[data-fold-in-branch][data-collapsed] .happy-sidebar__item-branch::after {
+    opacity: 0;
+}
+
 .happy-sidebar__item-leading-unread {
     position: absolute;
     top: 1px;
@@ -814,6 +823,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     transform: translateY(var(--happy-sidebar-label-optical-y, 0px));
+}
+
+.happy-sidebar__item-context-avatar {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+}
+
+.happy-sidebar__item-leading[data-context] {
+    width: auto;
+    min-width: 20px;
+    gap: 4px;
 }
 
 /*

@@ -1,4 +1,5 @@
 import { createStore } from "zustand/vanilla";
+import { happyAgentBotSubtasks } from "./happyAgentBotSubtasks.js";
 import type { ConversationEntry } from "../conversation/conversationEntry.js";
 import type { ConversationSummary } from "../conversation/conversationSummary.js";
 import type { Loadable } from "../conversation/loadable.js";
@@ -3201,7 +3202,14 @@ export function happyAgentWorkspaceStoreCreate(
     const conversationGroupId = (
         conversationId: HappyAgentSessionId,
     ): HappyAgentGroupId | undefined => {
-        const projects = list.get().projects;
+        const snapshot = list.get();
+        const bot = snapshot.bots.find((entry) => entry.conversation.id === conversationId);
+        if (bot) return bot.workspaceId;
+        const subtask = happyAgentBotSubtasks(snapshot.bots).find(
+            (task) => task.conversation.id === conversationId,
+        );
+        if (subtask) return subtask.workspaceId;
+        const projects = snapshot.projects;
         if (projects.type === "ready")
             for (const project of projects.value) {
                 if (project.conversations.some((summary) => summary.id === conversationId))
@@ -3222,6 +3230,10 @@ export function happyAgentWorkspaceStoreCreate(
         // chat could be, and the loop below would never reach it.
         const bot = listSnapshot.bots.find((entry) => entry.conversation.id === conversationId);
         if (bot) return bot.conversation;
+        const subtask = happyAgentBotSubtasks(listSnapshot.bots).find(
+            (task) => task.conversation.id === conversationId,
+        );
+        if (subtask) return subtask.conversation;
         const projects = listSnapshot.projects;
         if (projects.type !== "ready") return undefined;
         for (const project of projects.value) {
@@ -3996,6 +4008,8 @@ export function happyAgentWorkspaceStoreCreate(
         // than as an address the host has never answered for, and so archiving
         // one moves the reader off it the way archiving a project does.
         for (const bot of listSnapshot.bots) listedIds.add(bot.workspaceId);
+        for (const subtask of happyAgentBotSubtasks(listSnapshot.bots))
+            listedIds.add(subtask.workspaceId);
         authoritativeGroupIds = listedIds;
         if (addressedGroupId !== undefined) {
             const listed = listedIds.has(addressedGroupId);

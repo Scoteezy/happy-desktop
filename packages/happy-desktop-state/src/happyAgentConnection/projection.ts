@@ -24,6 +24,7 @@ import {
 import type { UserProfile } from "./userProfiles.js";
 import type {
     BotGroup,
+    BotSubtaskGroup,
     ChatElement,
     GroupSession,
     ProjectGroup,
@@ -479,6 +480,28 @@ export function projectBots(
     modes: ReadonlyMap<string, MessageMode | null> = new Map(),
 ): readonly BotGroup[] {
     const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
+    const subtasksProject = (agent: Agent, bot: Bot): readonly BotSubtaskGroup[] =>
+        (agent.subtasks ?? [])
+            .filter((child) => child.archivedAt === null)
+            .map((child) => {
+                const workspace = workspaceById.get(child.workspaceId);
+                return {
+                    workspaceId: child.workspaceId,
+                    path:
+                        child.workspaceId === bot.workspaceId
+                            ? computePath(bot.compute)
+                            : workspacePath(workspace),
+                    session: projectAgent(
+                        child,
+                        workspace,
+                        endpoint,
+                        config,
+                        drafts.get(child.id),
+                        modes.get(child.id),
+                    ),
+                    subtasks: subtasksProject(child, bot),
+                };
+            });
     return bots
         .filter((bot) => bot.archivedAt === null && bot.status === "active")
         .sort(orderCompare)
@@ -509,6 +532,7 @@ export function projectBots(
                     modes.get(bot.agent.id),
                 ),
                 unread: unreadOf([bot.agent]),
+                subtasks: subtasksProject(bot.agent, bot),
             };
         });
 }

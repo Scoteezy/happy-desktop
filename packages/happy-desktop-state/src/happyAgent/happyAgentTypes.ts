@@ -62,6 +62,7 @@ export interface HappyAgentBot {
      * out again from a narrower field.
      */
     readonly conversation: ConversationSummary;
+    readonly subtasks: readonly HappyAgentBotSubtask[];
     readonly name: string;
     /** Immutable local snake_case name, also the folder the bot works in. */
     readonly username: string;
@@ -77,6 +78,14 @@ export interface HappyAgentBot {
      * and the row draws it at whatever size the row is.
      */
     readonly avatar?: { readonly url: string; readonly thumbhash: string };
+}
+
+/** An active interactive task; its workspace may be shared with its parent. */
+export interface HappyAgentBotSubtask {
+    readonly workspaceId: HappyAgentWorktreeId;
+    readonly path: string;
+    readonly conversation: ConversationSummary;
+    readonly subtasks: readonly HappyAgentBotSubtask[];
 }
 
 /** The one application collection containing a visible primary chat. */

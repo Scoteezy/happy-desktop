@@ -1,5 +1,6 @@
 import {
     type BotGroup,
+    type HappyAgentBotSubtask,
     type GitChangeSnapshot,
     type GroupSession,
     type ProjectGroup,
@@ -162,10 +163,18 @@ function catalogProject(
     // A bot's conversation is stated on the bot and deliberately kept out of the
     // flat session list: that list is grouped under projects, and a bot is not
     // one. The chat itself is opened by id, which needs no catalog entry.
+    const subtasksProject = (tasks: BotGroup["subtasks"]): readonly HappyAgentBotSubtask[] =>
+        tasks.map((task) => ({
+            workspaceId: task.workspaceId as HappyAgentWorktreeId,
+            path: task.path,
+            conversation: happyAgentConversationSummaryProject(conversationProject(task.session)),
+            subtasks: subtasksProject(task.subtasks),
+        }));
     const bots: HappyAgentBot[] = botGroups.map((bot) => ({
         id: bot.id as HappyAgentBotId,
         workspaceId: bot.workspaceId as HappyAgentWorktreeId,
         conversation: happyAgentConversationSummaryProject(conversationProject(bot.session)),
+        subtasks: subtasksProject(bot.subtasks),
         name: bot.name,
         username: bot.username,
         ...(bot.systemKey === undefined ? {} : { systemKey: bot.systemKey }),

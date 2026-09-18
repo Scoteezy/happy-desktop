@@ -603,7 +603,16 @@ export interface BotGroup {
     avatar?: { url: string; thumbhash: string };
     /** The bot's one permanent conversation. */
     session: GroupSession;
+    /** Active, user-interactive child tasks in the daemon's explicit tree order. */
+    subtasks: readonly BotSubtaskGroup[];
     unread: { count: number; attentionCount: number; reason?: string; since?: number };
+}
+
+export interface BotSubtaskGroup {
+    workspaceId: string;
+    path: string;
+    session: GroupSession;
+    subtasks: readonly BotSubtaskGroup[];
 }
 
 export interface GroupsState {

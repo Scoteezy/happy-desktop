@@ -41,6 +41,8 @@ export type SidebarItemAction = {
     shortcut?: KeyboardShortcut;
 };
 export type SidebarItem = {
+    /** False for parent-owned entries whose ordering cannot be changed locally. */
+    reorderable?: boolean;
     /** Marks a row as archived; the row keeps its position but paints muted. */
     archived?: boolean;
     badge?: number;
@@ -81,6 +83,15 @@ export type SidebarItem = {
      * are marks something chose, and this one is only ever a stand-in.
      */
     avatarId?: string;
+    /** Small owner/location avatars in the leading lane, rather than the row's own face. */
+    contextAvatars?: readonly {
+        id: string;
+        label: string;
+        avatarId?: string;
+        imageUrl?: string;
+        initials?: string;
+        icon?: IconName;
+    }[];
     /** The row's glyph. A `person`/`agent`/`project` row paints it inside the avatar tile. */
     icon?: IconName;
     id: string;
@@ -378,6 +389,7 @@ function leadingIcon(item: SidebarItem): IconName {
  * carries it.
  */
 function showsLeadingSlot(item: SidebarItem): boolean {
+    if (item.contextAvatars?.length) return true;
     if ((item.depth ?? 0) === 0) return true;
     if (item.kind === "person" || item.kind === "agent" || item.kind === "project") return true;
     return item.icon !== undefined || item.emoji !== undefined;
@@ -1112,6 +1124,23 @@ function SidebarRow({
             ? 0
             : controls * SIDEBAR_SLOT_CELL + (controls - 1) * SIDEBAR_CONTROL_GAP;
     };
+    const foldInBranch = () => !showsLeadingSlot(item()) && !activityLeading();
+    // The row is already a button, so its pointer disclosure stays a span.
+    const foldControl = () =>
+        props.onCollapseToggle ? (
+            <span
+                aria-hidden="true"
+                className="happy-sidebar__item-fold"
+                data-happy-desktop-ui="sidebar-item-fold"
+                onClick={(event) => {
+                    event.stopPropagation();
+                    props.onCollapseToggle?.();
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+            >
+                <Icon name={item().collapsed ? "chevron-right" : "chevron-down"} size={12} />
+            </span>
+        ) : null;
     return (
         <button
             aria-current={props.active ? "page" : undefined}
@@ -1127,6 +1156,7 @@ function SidebarRow({
                is shut while the pointer is elsewhere. */
             data-collapsed={props.onCollapseToggle && item().collapsed ? "" : undefined}
             data-foldable={props.onCollapseToggle ? "" : undefined}
+            data-fold-in-branch={props.onCollapseToggle && foldInBranch() ? "" : undefined}
             data-depth={depth() > 0 ? String(depth()) : undefined}
             data-item-id={item().id}
             data-kind={item().kind}
@@ -1163,12 +1193,15 @@ function SidebarRow({
                     aria-hidden="true"
                     className="happy-sidebar__item-branch"
                     data-happy-desktop-ui="sidebar-item-branch"
-                />
+                >
+                    {foldInBranch() ? foldControl() : null}
+                </span>
             ) : null}
-            {showsLeadingSlot(item()) || activityLeading() || props.onCollapseToggle ? (
+            {showsLeadingSlot(item()) || activityLeading() ? (
                 <span
                     className="happy-sidebar__item-leading"
                     data-happy-desktop-ui="sidebar-item-leading"
+                    data-context={item().contextAvatars?.length ? "" : undefined}
                 >
                     {/* Identity, unless the window asked for work to be reported
                         here. By default it is not: what the row is doing is
@@ -1185,6 +1218,30 @@ function SidebarRow({
                         put back the glyph that line replaced. */}
                     {activityLeading() ? (
                         activityMark()
+                    ) : item().contextAvatars?.length ? (
+                        item().contextAvatars?.map((avatar) => (
+                            <span
+                                key={avatar.id}
+                                aria-label={avatar.label}
+                                role="img"
+                                title={avatar.label}
+                                className="happy-sidebar__item-context-avatar"
+                                data-happy-desktop-ui="sidebar-item-context-avatar"
+                            >
+                                {avatar.avatarId !== undefined && avatar.imageUrl === undefined ? (
+                                    <AvatarBrutalist id={avatar.avatarId} size={16} />
+                                ) : (
+                                    <Avatar
+                                        imageUrl={avatar.imageUrl}
+                                        initials={avatar.initials ?? ""}
+                                        icon={avatar.icon}
+                                        size="xs"
+                                        style={{ width: 16, height: 16, borderRadius: 4 }}
+                                        type="agent"
+                                    />
+                                )}
+                            </span>
+                        ))
                     ) : !showsLeadingSlot(item()) ? null : item().kind === "person" ||
                       item().kind === "agent" ||
                       item().kind === "project" ? (
@@ -1227,25 +1284,7 @@ function SidebarRow({
                         row. A row that is shut keeps it showing: the reader has
                         to be able to find the work they folded away without
                         sweeping the column to see which rows answer. */}
-                    {props.onCollapseToggle ? (
-                        /* A `span`, because the row itself is the button and a
-                           button inside a button is invalid. */
-                        <span
-                            aria-hidden="true"
-                            className="happy-sidebar__item-fold"
-                            data-happy-desktop-ui="sidebar-item-fold"
-                            onClick={(event) => {
-                                event.stopPropagation();
-                                props.onCollapseToggle?.();
-                            }}
-                            onPointerDown={(event) => event.stopPropagation()}
-                        >
-                            <Icon
-                                name={item().collapsed ? "chevron-right" : "chevron-down"}
-                                size={12}
-                            />
-                        </span>
-                    ) : null}
+                    {foldControl()}
                 </span>
             ) : null}
             <span className="happy-sidebar__item-label" data-happy-desktop-ui="sidebar-item-label">
@@ -2234,6 +2273,9 @@ export function Sidebar(props: SidebarProps) {
                                             }}
                                         />
                                         {shown.map(({ foldable, item }, index) => {
+                                            const reorderable =
+                                                local.onItemReorder !== undefined &&
+                                                item.reorderable !== false;
                                             const drag = sectionDrag;
                                             const dragging = drag?.moved === true;
                                             const shortcut = shortcutByRow.get(
@@ -2262,7 +2304,7 @@ export function Sidebar(props: SidebarProps) {
                                                     item={item}
                                                     onContextMenu={openItemMenu}
                                                     onKeyDown={
-                                                        local.onItemReorder
+                                                        reorderable
                                                             ? (event) =>
                                                                   moveByKey(
                                                                       event,
@@ -2273,7 +2315,7 @@ export function Sidebar(props: SidebarProps) {
                                                             : undefined
                                                     }
                                                     onPointerDown={
-                                                        local.onItemReorder
+                                                        reorderable
                                                             ? (event) =>
                                                                   dragStart(
                                                                       event,
@@ -2284,17 +2326,17 @@ export function Sidebar(props: SidebarProps) {
                                                             : undefined
                                                     }
                                                     onPointerCancel={
-                                                        local.onItemReorder ? dragCancel : undefined
+                                                        reorderable ? dragCancel : undefined
                                                     }
                                                     onPointerMove={
-                                                        local.onItemReorder ? dragMove : undefined
+                                                        reorderable ? dragMove : undefined
                                                     }
                                                     onPointerUp={
-                                                        local.onItemReorder
+                                                        reorderable
                                                             ? (event) => dragEnd(event, shownItems)
                                                             : undefined
                                                     }
-                                                    reorderable={local.onItemReorder !== undefined}
+                                                    reorderable={reorderable}
                                                     shortcutActive={numberShortcutNavigation}
                                                     shortcut={shortcut}
                                                     onCollapseToggle={

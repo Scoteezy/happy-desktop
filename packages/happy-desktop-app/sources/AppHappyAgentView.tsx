@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { happyAgentBotSubtasks } from "happy-desktop-state";
 import type {
     AppearanceStore,
     CommandPaletteStore,
@@ -45,6 +46,7 @@ import type {
     HappyAgentProviderUsageStore,
     HappyAgentProvidersStore,
     HappyAgentBot,
+    HappyAgentBotSubtask,
     HappyAgentGroupLifecycle,
     HappyAgentProjectGroup,
     HappyAgentProjectId,
@@ -519,6 +521,8 @@ export interface AppHappyAgentViewProps {
  */
 interface OpenGroup {
     readonly id: HappyAgentGroupId;
+    /** Bots and subtasks expose one pinned chat, regardless of their shared checkout. */
+    readonly singleConversationId?: string;
     readonly name: string;
     /**
      * The catch-all project for sessions started outside any repository. It is
@@ -566,8 +570,7 @@ const HISTORY_SESSION_PREFIX = "session:";
  * so the row is the bot's face, its name, and whatever that one conversation is
  * doing — and nothing else to press.
  *
- * The row is top level like a project and nests nothing, because there is
- * nothing under a bot to nest.
+ * The row is top level like a project; active interactive subtasks nest under it.
  *
  * It is a `project` row in the sidebar's own vocabulary, and that is not a
  * hedge: that kind is how the sidebar draws a place work runs inside — an
@@ -602,8 +605,52 @@ function botSidebarItem(bot: HappyAgentBot, titleShimmerEnabled: boolean): Sideb
     };
 }
 
+function botSubtaskSidebarItems(
+    tasks: readonly HappyAgentBotSubtask[],
+    projects: readonly HappyAgentProjectGroup[],
+    titleShimmerEnabled: boolean,
+    depth = 1,
+): SidebarItem[] {
+    return tasks.flatMap((task) => {
+        const project = projects.find((candidate) =>
+            candidate.worktrees.some((worktree) => worktree.id === task.workspaceId),
+        );
+        return [
+            {
+                id: task.conversation.id,
+                kind: "workspace" as const,
+                depth,
+                reorderable: false,
+                label: task.conversation.title,
+                labelShimmer: titleShimmerEnabled,
+                ...(project
+                    ? {
+                          contextAvatars: [
+                              {
+                                  id: project.id,
+                                  label: `Project: ${project.name}`,
+                                  initials: project.name.slice(0, 1).toUpperCase(),
+                                  ...(project.kind === "home" ? { icon: "home" as const } : {}),
+                                  ...(project.avatar ? { imageUrl: project.avatar.url } : {}),
+                              },
+                          ],
+                      }
+                    : {}),
+                ...(task.conversation.activity === "running"
+                    ? { status: "working" as const }
+                    : task.conversation.activity === "waiting"
+                      ? { status: "waiting" as const }
+                      : {}),
+                ...(task.conversation.unread ? { unread: true } : {}),
+            },
+            ...botSubtaskSidebarItems(task.subtasks, projects, titleShimmerEnabled, depth + 1),
+        ];
+    });
+}
+
 function sidebarItems(
     project: HappyAgentProjectGroup,
+    bots: readonly HappyAgentBot[],
     titleShimmerEnabled: boolean,
     newWorkspaceShortcut: boolean,
 ): SidebarItem[] {
@@ -667,6 +714,16 @@ function sidebarItems(
             depth: 1,
             label: worktree.name,
             labelShimmer: titleShimmerEnabled,
+            contextAvatars: bots
+                .filter((bot) =>
+                    happyAgentBotSubtasks([bot]).some((task) => task.workspaceId === worktree.id),
+                )
+                .map((bot) => ({
+                    id: bot.id,
+                    label: `Bot: ${bot.name}`,
+                    avatarId: bot.id,
+                    ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
+                })),
             // Archiving throws away a checkout, so it stays out of sight until
             // the reader is actually on the row.
             action: {
@@ -879,13 +936,17 @@ function previewToolFind(
 }
 
 /** One tab per session in the open group, marked while the agent is working. */
-function sessionTabs(group: OpenGroup, titleShimmerEnabled: boolean): TabItem[] {
+function sessionTabs(
+    group: OpenGroup,
+    titleShimmerEnabled: boolean,
+    hideAvatar = false,
+): TabItem[] {
     return group.conversations.map((summary) => ({
         id: summary.id,
         label: summary.title,
         labelShimmer: titleShimmerEnabled,
         // The session's own id, so the mark survives every rename of the title.
-        avatarId: summary.id,
+        ...(hideAvatar ? {} : { avatarId: summary.id }),
         // Both are stated even when false: a session tab holds its leading lane
         // open, so work starting or finishing makes the mark appear and go
         // without sliding the title sideways under the reader.
@@ -1121,12 +1182,37 @@ function openGroupFind(
     projects: readonly HappyAgentProjectGroup[],
     bots: readonly HappyAgentBot[],
     groupId: string | undefined,
+    conversationId?: string,
 ): OpenGroup | undefined {
     if (groupId === undefined) return undefined;
+    const tasks = happyAgentBotSubtasks(bots).filter((task) => task.workspaceId === groupId);
     const bot = bots.find((candidate) => candidate.workspaceId === groupId);
+    const task =
+        tasks.find((entry) => entry.conversation.id === conversationId) ??
+        (conversationId === undefined && bot === undefined ? tasks[0] : undefined);
+    if (task) {
+        const worktree = projects
+            .flatMap((project) => project.worktrees)
+            .find((entry) => entry.id === groupId);
+        return {
+            id: task.workspaceId,
+            singleConversationId: task.conversation.id,
+            name: task.conversation.title,
+            home: false,
+            conversations: [task.conversation],
+            changes: worktree?.changes ?? [],
+            ...(worktree?.changesStatus === undefined
+                ? {}
+                : { changesStatus: worktree.changesStatus }),
+            ...(worktree === undefined ? {} : { lifecycle: worktree.lifecycle }),
+            create: { cwd: task.path, worktreeId: task.workspaceId },
+            path: task.path,
+        };
+    }
     if (bot)
         return {
             id: bot.workspaceId,
+            singleConversationId: bot.conversation.id,
             name: bot.name,
             home: false,
             conversations: [bot.conversation],
@@ -1333,10 +1419,19 @@ function happyAgentSections(
                   {
                       id: happyAgentBotsSectionId(happyAgent.id),
                       label: "Bots",
-                      items: happyAgent.bots.map((bot) => {
-                          const item = botSidebarItem(bot, titleShimmerEnabled);
-                          return { ...item, id: happyAgentItemId(happyAgent.id, item.id) };
-                      }),
+                      items: happyAgent.bots
+                          .flatMap((bot) => [
+                              botSidebarItem(bot, titleShimmerEnabled),
+                              ...botSubtaskSidebarItems(
+                                  bot.subtasks,
+                                  happyAgent.projects,
+                                  titleShimmerEnabled,
+                              ),
+                          ])
+                          .map((item) => ({
+                              ...item,
+                              id: happyAgentItemId(happyAgent.id, item.id),
+                          })),
                   },
               ]),
         happyAgentProjectsSection(happyAgent, titleShimmerEnabled, shortcutProject),
@@ -1358,6 +1453,7 @@ function happyAgentProjectsSection(
             .flatMap((project) =>
                 sidebarItems(
                     project,
+                    happyAgent.bots,
                     titleShimmerEnabled,
                     shortcutProject?.happyAgentId === happyAgent.id &&
                         shortcutProject.projectId === project.id,
@@ -1658,7 +1754,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 experimental && props.inboxOpen
                     ? INBOX_ITEM
                     : props.groupId
-                      ? happyAgentItemId(props.happyAgentId, props.groupId)
+                      ? happyAgentItemId(
+                            props.happyAgentId,
+                            happyAgentBotSubtasks(active?.bots ?? []).find(
+                                (task) => task.conversation.id === props.chatId,
+                            )?.conversation.id ?? props.groupId,
+                        )
                       : ""
             }
             // The desktop window puts the traffic lights and the sidebar
@@ -1790,6 +1891,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (!happyAgent) return;
                 const groupId = row.id as HappyAgentGroupId;
+                const subtask = happyAgentBotSubtasks(happyAgent.bots).find(
+                    (task) => task.conversation.id === row.id,
+                );
+                if (subtask) {
+                    props.onChatSelect(happyAgent.id, subtask.workspaceId, subtask.conversation.id);
+                    return;
+                }
+                const bot = happyAgent.bots.find((entry) => entry.workspaceId === row.id);
+                if (bot) {
+                    props.onChatSelect(happyAgent.id, bot.workspaceId, bot.conversation.id);
+                    return;
+                }
                 props.onChatSelect(
                     happyAgent.id,
                     row.id,
@@ -2243,12 +2356,19 @@ function paletteFacts(
     online: boolean,
 ): HappyAgentPaletteFacts {
     const rows = workspace.list.projects.type === "ready" ? workspace.list.projects.value : [];
-    const openGroup = openGroupFind(rows, workspace.list.bots, groupId);
+    const openGroup = openGroupFind(
+        rows,
+        workspace.list.bots,
+        groupId,
+        workspace.address.conversationId,
+    );
     return {
         archivedSessions: workspace.list.archivedSessions,
         groupResume: workspace.groupResume,
         sessionCreateAvailable:
             online &&
+            !workspace.conversationDelegated &&
+            openGroup?.singleConversationId === undefined &&
             openGroup?.create !== undefined &&
             workspace.groupAccess.conversationRefusal === undefined &&
             workspaceLifecyclePhase(openGroup.lifecycle) !== "creating",
@@ -2631,8 +2751,14 @@ function paletteCommandRun(
             return;
         case "sessionCreate": {
             const workspace = props.workspace;
-            const group = openGroupFind(props.projects, props.bots, props.groupId);
-            if (!workspace || !group?.create || !props.happyAgentOnline()) return;
+            const group = openGroupFind(props.projects, props.bots, props.groupId, props.chatId);
+            if (
+                !workspace ||
+                !group?.create ||
+                group.singleConversationId !== undefined ||
+                !props.happyAgentOnline()
+            )
+                return;
             void workspace.conversationCreate(group.id, group.create).catch(() => undefined);
             return;
         }
@@ -2841,10 +2967,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
     // reasons are kept apart all the way down to the controls: a composer reads
     // this one, while file and terminal actions read the write refusal above it.
     const openGroupChatRefusal = access.conversationRefusal;
-    const openGroup = openGroupFind(rows, workspace.list.bots, props.groupId);
-    // A bot is opened as its own dedicated workspace, so the open group is a bot
-    // exactly when one of them owns this workspace.
-    const openBot = workspace.list.bots.find((bot) => bot.workspaceId === props.groupId);
+    const openGroup = openGroupFind(rows, workspace.list.bots, props.groupId, props.chatId);
+    // A bot and each subtask are separate single-chat destinations, even when
+    // they share a workspace. Only the root bot gets bot-specific content.
+    const openBot = workspace.list.bots.find(
+        (bot) => bot.conversation.id === openGroup?.singleConversationId,
+    );
     // Whether another session may be added here. A workspace whose checkout is
     // still being prepared already has the one it was made with and can take no
     // second: Happy Agent does not queue an agent against a checkout that is not there,
@@ -2854,7 +2982,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         openGroup?.create !== undefined &&
         // A bot has exactly one conversation and can never have a second, so
         // the control that would start one is not offered here at all.
-        openBot === undefined &&
+        openGroup.singleConversationId === undefined &&
         connectionRefusal === undefined &&
         openGroupChatRefusal === undefined &&
         workspaceLifecyclePhase(openGroup.lifecycle) !== "creating";
@@ -2939,12 +3067,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
     const detachedConversationTab: TabItem | undefined = detachedConversationId
         ? {
               id: detachedConversationId,
-              // The chat's own mark and the chat's own name, exactly as every
-              // other session tab wears them. A shared glyph and the word
-              // "Subagent" told the reader which category of thing they had
-              // opened, which they already knew, while taking away the one thing
-              // that tells this chat apart from the next one.
-              avatarId: detachedConversationId,
+              // Child chats identify themselves by their title, not a generated face.
               label: detachedConversation?.title ?? "Untitled",
               labelShimmer: props.titleShimmerEnabled,
               ...(detachedConversation !== undefined &&
@@ -2972,26 +3095,32 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
     // work they can see, cannot write to, and cannot stop either.
     const conversationCanAbort =
         availability.online && detachedConversationId === undefined && access.canAbort;
-    // One strip, holding the group's sessions and its open files together in
-    // the single order the reader arranged. A detached subagent is addressed by
-    // id rather than listed, so it is not part of that order and follows it.
+    const singleChat =
+        openGroup?.singleConversationId !== undefined || detachedConversationId !== undefined;
+    // Child agents expose one chat, even when they share a checkout. Files and
+    // tools can still sit beside that pinned conversation.
     const groupTabs: TabItem[] = [
         ...botTabPin(
             tabsOrdered(
                 openGroup
                     ? [
-                          ...sessionTabs(openGroup, props.titleShimmerEnabled).map((tab) =>
-                              availability.online ? tab : { ...tab, closable: false },
-                          ),
+                          ...(detachedConversationTab
+                              ? [detachedConversationTab]
+                              : sessionTabs(
+                                    openGroup,
+                                    props.titleShimmerEnabled,
+                                    openGroup.singleConversationId !== undefined &&
+                                        openBot === undefined,
+                                )
+                          ).map((tab) => (availability.online ? tab : { ...tab, closable: false })),
                           ...groupFileTabs.map(fileTabItem),
                           ...toolTabItems(mainTools),
                       ]
                     : [],
                 workspace.tabOrder,
             ),
-            openBot?.conversation.id,
+            detachedConversationId ?? openGroup?.singleConversationId,
         ),
-        ...(detachedConversationTab ? [detachedConversationTab] : []),
     ];
     const historyMenuItems = (): readonly MenuItem[] => {
         if (!openGroup) return [];
@@ -3055,7 +3184,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         const current = props.workspace.get();
         const currentRows =
             current.list.projects.type === "ready" ? current.list.projects.value : [];
-        const currentGroup = openGroupFind(currentRows, current.list.bots, current.address.groupId);
+        const currentGroup = openGroupFind(
+            currentRows,
+            current.list.bots,
+            current.address.groupId,
+            current.address.conversationId,
+        );
         if (!currentGroup) return;
         const panelNow = props.workspace.panel.get();
         const online = happyAgentOnline();
@@ -3072,7 +3206,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             (tabId) =>
                 fileIds.has(tabId) ||
                 toolIds.has(tabId) ||
-                (online && sessionIds.has(tabId as HappyAgentSessionId)),
+                (online &&
+                    tabId !== currentGroup.singleConversationId &&
+                    sessionIds.has(tabId as HappyAgentSessionId)),
         );
         const targets = new Set(closeableIds);
         const rest = currentGroup.conversations.filter((summary) => !targets.has(summary.id));
@@ -3626,7 +3762,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                    take a session, while a bot can never take a
                                    second one at all, and a control that will
                                    never come back is a control to leave out. */
-                                openBot ? null : (
+                                singleChat ? null : (
                                     <Button
                                         aria-label="Create a session in this project"
                                         disabled={!sessionCreateAvailable}
@@ -3646,41 +3782,45 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                    open. So it holds the bar's far edge, in the
                                    same column as the header control above it,
                                    instead of sliding along with the tabs. */
-                                <MenuButton
-                                    align="end"
-                                    icon="history"
-                                    iconSize={12}
-                                    items={historyMenuItems}
-                                    label="Show recent sessions"
-                                    menuMaxHeight={420}
-                                    menuLabel="Recent sessions"
-                                    menuPageSize={100}
-                                    menuWidth={300}
-                                    onSelect={(id) => {
-                                        if (!id.startsWith(HISTORY_SESSION_PREFIX)) return;
-                                        const sessionId = id.slice(
-                                            HISTORY_SESSION_PREFIX.length,
-                                        ) as HappyAgentSessionId;
-                                        // A session still in the strip is a
-                                        // plain selection. A closed one is asked
-                                        // of the host by id: it stopped listing
-                                        // the agent when it was archived, so
-                                        // there is no catalog entry left to
-                                        // check the request against first.
-                                        if (
-                                            openGroup.conversations.some(
-                                                (summary) => summary.id === sessionId,
-                                            )
-                                        ) {
-                                            props.onChatSelect(openGroup.id, sessionId);
-                                            return;
-                                        }
-                                        void props.workspace
-                                            .conversationRestore(sessionId)
-                                            .then(() => props.onChatSelect(openGroup.id, sessionId))
-                                            .catch(() => undefined);
-                                    }}
-                                />
+                                singleChat ? null : (
+                                    <MenuButton
+                                        align="end"
+                                        icon="history"
+                                        iconSize={12}
+                                        items={historyMenuItems}
+                                        label="Show recent sessions"
+                                        menuMaxHeight={420}
+                                        menuLabel="Recent sessions"
+                                        menuPageSize={100}
+                                        menuWidth={300}
+                                        onSelect={(id) => {
+                                            if (!id.startsWith(HISTORY_SESSION_PREFIX)) return;
+                                            const sessionId = id.slice(
+                                                HISTORY_SESSION_PREFIX.length,
+                                            ) as HappyAgentSessionId;
+                                            // A session still in the strip is a
+                                            // plain selection. A closed one is asked
+                                            // of the host by id: it stopped listing
+                                            // the agent when it was archived, so
+                                            // there is no catalog entry left to
+                                            // check the request against first.
+                                            if (
+                                                openGroup.conversations.some(
+                                                    (summary) => summary.id === sessionId,
+                                                )
+                                            ) {
+                                                props.onChatSelect(openGroup.id, sessionId);
+                                                return;
+                                            }
+                                            void props.workspace
+                                                .conversationRestore(sessionId)
+                                                .then(() =>
+                                                    props.onChatSelect(openGroup.id, sessionId),
+                                                )
+                                                .catch(() => undefined);
+                                        }}
+                                    />
+                                )
                             }
                             activeId={workspace.activeMainViewId ?? props.chatId ?? ""}
                             closeLabel="Close tab"
