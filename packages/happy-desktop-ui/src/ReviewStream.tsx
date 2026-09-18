@@ -385,46 +385,87 @@ export function ReviewStream(props: ReviewStreamProps) {
             const ask = (): void => {
                 if (port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE)
                     endAsk();
-                const edge = port.getBoundingClientRect().top + 8;
-                // The lowest header that has not yet passed the top of the pane
-                // is the file the reader is inside. Strictly lowest, because
-                // before the renderer has laid anything out every header reports
-                // the same position, and the honest answer then is the first
-                // file rather than the last one to be asked.
+                const edge = port.getBoundingClientRect().top;
+                // Nothing laid out yet reports every header at the same place,
+                // and an answer read from that is not an answer.
+                if (port.clientHeight === 0) return;
+                // The file whose own header has gone off the top of the pane —
+                // the lowest one of those, since the reader is inside the last
+                // header they passed. A file whose header is still on screen
+                // says its own name perfectly well, so it is not picked up:
+                // that is what made the name appear twice.
                 let found = Number.NEGATIVE_INFINITY;
                 let inside: string | undefined;
+                let measured = 0;
                 for (const title of port.querySelectorAll<HTMLElement>(
                     '[data-happy-desktop-ui="diff-file-title"]',
                 )) {
-                    const top = title.getBoundingClientRect().top;
-                    if (top > edge || top <= found) continue;
-                    found = top;
+                    const box = title.getBoundingClientRect();
+                    // A header the browser has not drawn — the pane is off
+                    // screen, or the row has not been laid out — reports an
+                    // empty box at the origin, which is not where it is.
+                    if (box.height === 0) continue;
+                    measured += 1;
+                    if (box.bottom > edge || box.top <= found) continue;
+                    found = box.top;
                     inside = title.dataset.path;
                 }
+                if (measured === 0) return;
                 readingSet(inside);
+            };
+            // At most one measurement per frame, whatever asked for it.
+            let pending = 0;
+            const soon = (): void => {
+                if (pending !== 0) return;
+                pending = requestAnimationFrame(() => {
+                    pending = 0;
+                    ask();
+                });
             };
             port.addEventListener("scroll", ask, { passive: true });
             port.addEventListener("click", headerClicked);
-            const sizes = new ResizeObserver(() => {
-                requestAnimationFrame(ask);
-            });
+            const sizes = new ResizeObserver(soon);
             sizes.observe(port);
             if (port.firstElementChild !== null) sizes.observe(port.firstElementChild);
-            // Asked once for this many files, because a file arriving is itself
-            // a reason to look: the renderer's content grew inside a pane whose
-            // own box did not change, which no observer here would report.
-            requestAnimationFrame(ask);
+            // The renderer draws, virtualizes, and folds rows on its own clock:
+            // the pane's own box never changes for any of it, so what is where
+            // is asked again whenever it has redrawn something.
+            const drawn = new MutationObserver(soon);
+            drawn.observe(port, { childList: true, subtree: true });
+            // A pane that was off screen when it drew has nothing to measure
+            // until it is on screen, which nothing else here would report.
+            const shown = new IntersectionObserver(soon);
+            shown.observe(port);
+            soon();
             return () => {
                 port.removeEventListener("scroll", ask);
                 port.removeEventListener("click", headerClicked);
                 sizes.disconnect();
+                drawn.disconnect();
+                shown.disconnect();
+                if (pending !== 0) cancelAnimationFrame(pending);
             };
         },
         // Deliberately re-attached whenever another file has arrived: that is
         // the moment the question "is the end within reach" has a new answer.
         [endAsk, headerClicked, props.files.length],
     );
+    // What the bar's controls act on: the file being read, or the first one
+    // while the reader is still at the top of its own header.
     const readingPath = reading ?? props.files[0]?.path;
+    // The header picked up from the file being read: its counts, so the row is
+    // that file's own header rather than a second, thinner label for it.
+    const picked = useMemo(() => {
+        const item = items.find((entry) => entry.id === reading);
+        if (item === undefined) return undefined;
+        let additions = 0;
+        let deletions = 0;
+        for (const hunk of item.fileDiff.hunks) {
+            additions += hunk.additionLines;
+            deletions += hunk.deletionLines;
+        }
+        return { path: item.id, additions, deletions };
+    }, [items, reading]);
 
     // Where the last step landed. The walk is a sequence, so it has to be
     // remembered — but only as long as the reader is still where it left them:
@@ -589,12 +630,47 @@ export function ReviewStream(props: ReviewStreamProps) {
                 </span>
             </div>
 
-            {readingPath === undefined ? null : (
+            {picked === undefined ? null : (
                 <div
                     className="happy-review-stream__reading"
+                    data-clickable={props.onFileCollapsedToggle === undefined ? undefined : ""}
                     data-happy-desktop-ui="review-stream-reading"
+                    onClick={(event) => {
+                        // The controls in this row keep their own clicks, the
+                        // same way they do in the header it stands in for.
+                        if (
+                            event.target instanceof HTMLElement &&
+                            event.target.closest("button, a") !== null
+                        )
+                            return;
+                        props.onFileCollapsedToggle?.(picked.path);
+                    }}
                 >
-                    <DiffFileTitle path={readingPath} />
+                    <DiffFileTitle path={picked.path} />
+                    <span className="happy-review-stream__reading-counts">
+                        {picked.deletions > 0 || picked.additions === 0 ? (
+                            <span className="happy-review-stream__deletions">
+                                {`-${String(picked.deletions)}`}
+                            </span>
+                        ) : null}
+                        {picked.additions > 0 || picked.deletions === 0 ? (
+                            <span className="happy-review-stream__additions">
+                                {`+${String(picked.additions)}`}
+                            </span>
+                        ) : null}
+                    </span>
+                    <ReviewStreamFileActions
+                        collapsed={props.collapsed?.has(picked.path) === true}
+                        {...(props.onFileCollapsedToggle === undefined
+                            ? {}
+                            : { onCollapsedToggle: props.onFileCollapsedToggle })}
+                        {...(props.onFileOpen === undefined ? {} : { onOpen: props.onFileOpen })}
+                        {...(props.onFileViewedToggle === undefined
+                            ? {}
+                            : { onViewedToggle: props.onFileViewedToggle })}
+                        path={picked.path}
+                        viewed={props.viewed?.has(picked.path) === true}
+                    />
                 </div>
             )}
 
