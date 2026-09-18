@@ -22,6 +22,7 @@ export type IconName =
     | "chevron-down"
     | "chevron-right"
     | "chevron-up"
+    | "file-diff"
     | "close"
     | "branch"
     | "merge"
@@ -137,6 +138,9 @@ const glyphs: Record<IconName, IconGlyph> = {
     // wrong where it is not. In a danger or warning tone beside a failure it is
     // the house mark for trouble; `shield` says the opposite and is never it.
     close: { set: "ionicons", name: "close-outline" },
+    // The whole change read as one thing, rather than one file's diff: the mark
+    // for the review stream and nothing else.
+    "file-diff": { set: "octicons", name: "file-diff" },
     branch: { set: "octicons", name: "git-branch" },
     merge: { set: "octicons", name: "git-merge" },
     spark: { set: "ionicons", name: "sparkles-outline" },

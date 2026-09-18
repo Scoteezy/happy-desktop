@@ -23,6 +23,7 @@ import type {
     HappyAgentFileScope,
     HappyAgentFileSearch,
     HappyAgentFileViewMode,
+    HappyAgentReview,
     HappyAgentHost,
     HappyAgentIntegrationStore,
     HappyAgentGroupId,
@@ -125,6 +126,7 @@ import {
     MenuButton,
     Modal,
     ModalOverlay,
+    ReviewStream,
     HappyAgentActivityControl,
     HappyAgentActivityPanel,
     HappyAgentControlMenu,
@@ -1135,6 +1137,15 @@ function fileTabItem(tab: HappyAgentFileTabSnapshot): TabItem {
         dirty: fileTabDirty(tab),
         icon: fileTabIcon(tab.path, tab.kind),
         preview: tab.preview,
+    };
+}
+
+/** The whole change, as one tab. It names the checkout's change, not a file. */
+function reviewTabItem(review: HappyAgentReview): TabItem {
+    return {
+        id: review.id,
+        label: "All changes",
+        icon: "file-diff",
     };
 }
 
@@ -3082,6 +3093,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
               (tab) => tab.groupId === openGroup.id && tab.placement === "main",
           )
         : [];
+    // The checkout's whole change, where the reader has it open. It is one per
+    // checkout, so the addressed group names it outright rather than the strip
+    // being searched for it.
+    const openReview = openGroup ? workspace.reviews.get(openGroup.id) : undefined;
+    const activeReview = openReview?.id === workspace.activeMainViewId ? openReview : undefined;
     const activeFile = groupFileTabs.find((tab) => tab.id === workspace.activeMainViewId);
     const displayedFileTab = groupFileTabs.find((tab) => tab.id === workspace.displayedMainViewId);
     const displayedFile =
@@ -3172,6 +3188,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                         openBot === undefined,
                                 )
                           ).map((tab) => (availability.online ? tab : { ...tab, closable: false })),
+                          ...(openReview ? [reviewTabItem(openReview)] : []),
                           ...groupFileTabs.map(fileTabItem),
                           ...toolTabItems(mainTools),
                       ]
@@ -3320,6 +3337,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             props.onChatSelect(currentGroup.id, fallbackSessionId, true);
     };
     const groupTabClose = (tabId: string) => {
+        // The review is one tab of one checkout, and the state knows it by that
+        // checkout rather than by a strip id, so it closes by name.
+        if (openReview?.id === tabId && openGroup) {
+            props.workspace.reviewClose(openGroup.id);
+            return;
+        }
         // A detached subagent's tab is an address, not a member of the list:
         // closing it only steps back to the sessions that are listed.
         if (tabId === detachedConversationId) {
@@ -3405,6 +3428,84 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             workspace={props.workspace}
         />
     );
+    /**
+     * The checkout's whole change, in one scroll.
+     *
+     * Only the files whose two sides have actually been read are handed over: a
+     * file still being loaded has no diff to draw, and the stream says how many
+     * it is showing, so a file arriving simply joins them. Notes are the same
+     * notes the single-file diff leaves — they carry their path already, so
+     * nothing here re-addresses them.
+     */
+    const mainReviewBody = (review: HappyAgentReview): ReactNode => {
+        const files = review.files.flatMap((file) =>
+            file.document.type === "ready"
+                ? [
+                      {
+                          path: file.path,
+                          ...(file.oldPath === undefined ? {} : { oldPath: file.oldPath }),
+                          oldContent: file.document.value.oldContent,
+                          newContent: file.document.value.newContent,
+                      },
+                  ]
+                : [],
+        );
+        if (files.length === 0)
+            return (
+                <EmptyState
+                    animation={review.loading ? "snail" : undefined}
+                    description={
+                        review.loading
+                            ? "Reading every changed file."
+                            : "Nothing in this checkout has changed."
+                    }
+                    icon="file-diff"
+                    size="panel"
+                    title={review.loading ? "Opening the change…" : "No changes"}
+                />
+            );
+        return (
+            <ReviewStream
+                appearance={appearance.appearance}
+                commentTotal={workspace.fileComments.comments.length}
+                {...(workspace.fileComments.draft === undefined
+                    ? {}
+                    : {
+                          commentDraft: {
+                              path: workspace.fileComments.draft.anchor.path,
+                              lineNumber: workspace.fileComments.draft.anchor.lineNumber,
+                              side: workspace.fileComments.draft.anchor.side,
+                              text: workspace.fileComments.draft.text,
+                          },
+                      })}
+                comments={workspace.fileComments.comments.map((comment) => ({
+                    id: comment.id,
+                    path: comment.anchor.path,
+                    lineNumber: comment.anchor.lineNumber,
+                    side: comment.anchor.side,
+                    text: comment.text,
+                    stale: comment.stale,
+                }))}
+                files={files}
+                onCommentDraftCancel={() => props.workspace.commentDraftCancel()}
+                {...(access.writeRefusal === undefined
+                    ? {
+                          onCommentDraftOpen: (path, lineNumber, side) => {
+                              props.workspace.commentDraftOpen({ path, lineNumber, side });
+                          },
+                      }
+                    : {})}
+                onCommentDraftSubmit={() => props.workspace.commentDraftSubmit()}
+                onCommentDraftUpdate={(text) => props.workspace.commentDraftUpdate(text)}
+                onCommentRemove={(commentId) =>
+                    props.workspace.commentRemove(commentId as HappyAgentCommentId)
+                }
+                onCommentsSubmit={() => props.workspace.commentsSubmit()}
+                onWrapChange={(wrap) => props.workspace.fileViewWrapUpdate(wrap)}
+                wrap={workspace.fileViewWrap}
+            />
+        );
+    };
     const mainConversationBody =
         openGroup === undefined ? undefined : openGroup.conversations.length === 0 &&
           workspace.groupComposer ? (
@@ -3602,6 +3703,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                   happyAgentAvailability: terminalHappyAgentAvailability,
                                   happyAgentAvailabilityReason: availability.message,
                               })}
+                        onReviewOpen={() => {
+                            if (openGroup) props.workspace.reviewOpen(openGroup.id);
+                        }}
                         scope={workspace.fileScope}
                         search={workspace.fileSearch}
                         onSearchQueryChange={(query) => props.workspace.fileSearchUpdate(query)}
@@ -3913,6 +4017,10 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 props.workspace.tabReorder(move.id, move.afterId);
                             }}
                             onSelect={(tabId) => {
+                                if (openReview?.id === tabId) {
+                                    props.workspace.reviewOpen(openGroup.id);
+                                    return;
+                                }
                                 const file = groupFileTabs.find((tab) => tab.id === tabId);
                                 if (file) {
                                     props.onFileSelect(
@@ -4007,17 +4115,22 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                     current={
                                         displayedMainTool
                                             ? undefined
-                                            : displayedFile
+                                            : activeReview
                                               ? {
-                                                    id:
-                                                        displayedFile.displayedPresentationId ??
-                                                        displayedFile.presentationId,
-                                                    content: mainFileBody(displayedFile),
+                                                    id: activeReview.id,
+                                                    content: mainReviewBody(activeReview),
                                                 }
-                                              : {
-                                                    id: `conversation:${openGroup.id}:${props.chatId ?? "empty"}`,
-                                                    content: mainConversationBody,
-                                                }
+                                              : displayedFile
+                                                ? {
+                                                      id:
+                                                          displayedFile.displayedPresentationId ??
+                                                          displayedFile.presentationId,
+                                                      content: mainFileBody(displayedFile),
+                                                  }
+                                                : {
+                                                      id: `conversation:${openGroup.id}:${props.chatId ?? "empty"}`,
+                                                      content: mainConversationBody,
+                                                  }
                                     }
                                     fallback={
                                         <EmptyState
@@ -5683,6 +5796,8 @@ function HappyAgentPanelBody(props: {
     onFilePreprocess: (path: string) => void;
     onFileSelect: (path: string) => void;
     onLayoutChange: (layout: HappyAgentFileLayout) => void;
+    /** Opens every change in this checkout as one stream. */
+    onReviewOpen: () => void;
     onPanelClose: () => void;
     /** The file the viewer tab is on, read out of the transcript beside it. */
     panelFile?: HappyAgentFileTabSnapshot;
@@ -5979,6 +6094,7 @@ function HappyAgentPanelBody(props: {
                             onLayoutChange={(layout: HappyAgentFileLayout) =>
                                 props.onLayoutChange(layout)
                             }
+                            onReviewOpen={props.onReviewOpen}
                             onDirectoryPrefetch={props.onDirectoryPrefetch}
                             onFilePrefetch={props.onFilePreprocess}
                             onLoadMore={props.onLoadMore}

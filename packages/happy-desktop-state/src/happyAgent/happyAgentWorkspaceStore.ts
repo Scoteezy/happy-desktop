@@ -631,6 +631,12 @@ export interface HappyAgentWorkspaceSnapshot {
     /** Review notes left on this checkout's files, and the one being written. */
     readonly fileComments: HappyAgentFileComments;
     /**
+     * The open review streams, by the group whose changes each is. One per
+     * checkout, because a review is about a working tree rather than about a
+     * session, and it stays open across the sessions read beside it.
+     */
+    readonly reviews: ReadonlyMap<HappyAgentGroupId, HappyAgentReview>;
+    /**
      * How wide the right panel is in the addressed checkout, in CSS pixels, or
      * nothing where this reader has never sized it and the product's own default
      * applies. Absent rather than pre-filled, because a remembered width and a
@@ -859,6 +865,37 @@ export interface HappyAgentFileComments {
 }
 
 const FILE_COMMENTS_IDLE: HappyAgentFileComments = { comments: [] };
+
+/** One changed file in the review stream: its address and both of its sides. */
+export interface HappyAgentReviewFile {
+    readonly path: string;
+    /** The path before a rename, when Git reports one. */
+    readonly oldPath?: string;
+    readonly status: HappyAgentGitChangedFile["status"];
+    /** Disk identity the loaded document answers for, so a stale read is known. */
+    readonly revision: string;
+    readonly document: Loadable<HappyAgentChangedFileDocument>;
+}
+
+/**
+ * Every changed file in one checkout, read together.
+ *
+ * A change is rarely about one file, so the review is the unit: this exists
+ * while the reader has the stream open, and holds the files themselves rather
+ * than a list of paths to fetch one at a time as each scrolls into view. It is
+ * memory-only — it is a read of the working tree, and the working tree is the
+ * durable thing.
+ */
+export interface HappyAgentReview {
+    readonly id: string;
+    readonly groupId: HappyAgentGroupId;
+    readonly files: readonly HappyAgentReviewFile[];
+    /** True while any file in it has never yet had a document. */
+    readonly loading: boolean;
+}
+
+/** The strip id a checkout's review stream occupies. */
+const reviewIdOf = (groupId: HappyAgentGroupId): string => `review:${groupId}`;
 
 /**
  * The review notes written out as one request an agent can act on.
@@ -1254,6 +1291,14 @@ export interface HappyAgentWorkspaceStore {
     mainViewDisplay(presentationId: string): void;
     fileClose(tabId: string): void;
     fileRetry(tabId: string): void;
+    /**
+     * Opens the checkout's whole change as one stream, in the main content.
+     *
+     * One per checkout, and selecting it again brings the one already open
+     * forward rather than starting a second read of the same working tree.
+     */
+    reviewOpen(groupId: HappyAgentGroupId): void;
+    reviewClose(groupId: HappyAgentGroupId): void;
     /** Chooses how changed files are displayed, for every tab. */
     fileViewModeUpdate(mode: HappyAgentFileViewMode): void;
     /** Chooses whether long diff lines wrap or scroll, for every tab. */
@@ -1690,6 +1735,9 @@ export function happyAgentWorkspaceStoreCreate(
      * carried to another checkout.
      */
     let fileComments: HappyAgentFileComments = FILE_COMMENTS_IDLE;
+    let reviews: ReadonlyMap<HappyAgentGroupId, HappyAgentReview> = new Map();
+    /** Retires reads belonging to a review that has since been rebuilt or closed. */
+    const reviewGenerations = new Map<string, number>();
     let commentSequence = 0;
     /**
      * How each checkout this window has arranged is arranged, read once here.
@@ -2023,6 +2071,7 @@ export function happyAgentWorkspaceStoreCreate(
         fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
         fileSearch: FILE_SEARCH_IDLE,
         fileComments: FILE_COMMENTS_IDLE,
+        reviews: new Map(),
         fileTreeExpanded,
         fileTreeCollapsed,
         workspaceFilesLoading,
@@ -2146,6 +2195,9 @@ export function happyAgentWorkspaceStoreCreate(
         if (groupId === undefined) return [];
         const arrival = [
             ...groupConversationIdList(groupId),
+            // The whole change, where it is open. It belongs to the checkout the
+            // same way a file of it does, so it is arranged in the same strip.
+            ...(reviews.has(groupId) ? [reviewIdOf(groupId)] : []),
             ...fileTabs
                 .filter((tab) => tab.groupId === groupId && tab.placement === "main")
                 .map((tab) => tab.id),
@@ -2351,6 +2403,7 @@ export function happyAgentWorkspaceStoreCreate(
                           fileLayout: nextFileLayout,
                           fileSearch,
                           fileComments,
+                          reviews,
                           ...(nextPanelWidth === undefined ? {} : { panelWidth: nextPanelWidth }),
                           fileTreeExpanded,
                           fileTreeCollapsed,
@@ -2536,6 +2589,20 @@ export function happyAgentWorkspaceStoreCreate(
                 return project.changes?.find((change) => change.path === path);
             const worktree = project.worktrees.find((candidate) => candidate.id === groupId);
             if (worktree) return worktree.changes?.find((change) => change.path === path);
+        }
+        return undefined;
+    };
+
+    /** Every changed file in one checkout, as the live Git snapshot has them. */
+    const groupChangesRead = (
+        groupId: HappyAgentGroupId,
+    ): readonly HappyAgentGitChangedFile[] | undefined => {
+        const projects = list.get().projects;
+        if (projects.type !== "ready") return undefined;
+        for (const project of projects.value) {
+            if (project.id === groupId) return project.changes;
+            const worktree = project.worktrees.find((candidate) => candidate.id === groupId);
+            if (worktree) return worktree.changes;
         }
         return undefined;
     };
@@ -2986,6 +3053,88 @@ export function happyAgentWorkspaceStoreCreate(
         );
     };
 
+    /**
+     * Rebuilds an open review against the checkout's current changes, keeping
+     * every document already read for a file whose bytes have not moved.
+     *
+     * The set of changed files is itself a moving thing: the agent adds one,
+     * the reader reverts another. So the stream is recomputed from the live Git
+     * snapshot rather than from what it held when it opened, and a file that
+     * stopped being changed leaves it.
+     */
+    const reviewReconcile = (groupId: HappyAgentGroupId, moved: readonly string[] | null): void => {
+        const open = reviews.get(groupId);
+        if (open === undefined) return;
+        const changes = groupChangesRead(groupId) ?? [];
+        const held = new Map(open.files.map((file) => [file.path, file]));
+        const stale = (path: string): boolean => moved === null || moved.includes(path);
+        const files = changes.map<HappyAgentReviewFile>((change) => {
+            const previous = held.get(change.path);
+            const reusable =
+                previous !== undefined &&
+                previous.revision === change.revision &&
+                !stale(change.path) &&
+                previous.document.type === "ready";
+            return {
+                path: change.path,
+                ...(change.previousPath === undefined ? {} : { oldPath: change.previousPath }),
+                status: change.status,
+                revision: change.revision,
+                document: reusable ? previous.document : { type: "loading" },
+            };
+        });
+        reviews = new Map(reviews).set(groupId, {
+            ...open,
+            files,
+            loading: files.some((file) => file.document.type !== "ready"),
+        });
+        reviewLoad(groupId);
+    };
+
+    /**
+     * Reads every file in an open review that does not have its document yet.
+     *
+     * Each read answers for one path, and a read that lands after the review it
+     * belonged to was rebuilt is dropped rather than written into whatever the
+     * stream holds now.
+     */
+    const reviewLoad = (groupId: HappyAgentGroupId): void => {
+        const id = reviewIdOf(groupId);
+        const generation = (reviewGenerations.get(id) ?? 0) + 1;
+        reviewGenerations.set(id, generation);
+        const open = reviews.get(groupId);
+        if (open === undefined) return;
+        for (const file of open.files) {
+            if (file.document.type === "ready") continue;
+            const change = fileChangeFind(groupId, file.path);
+            if (change === undefined) continue;
+            const settle = (document: Loadable<HappyAgentChangedFileDocument>): void => {
+                if (reviewGenerations.get(id) !== generation) return;
+                const current = reviews.get(groupId);
+                if (current === undefined) return;
+                const files = current.files.map((candidate) =>
+                    candidate.path === file.path && candidate.revision === file.revision
+                        ? { ...candidate, document }
+                        : candidate,
+                );
+                reviews = new Map(reviews).set(groupId, {
+                    ...current,
+                    files,
+                    loading: files.some((candidate) => candidate.document.type !== "ready"),
+                });
+                recompute();
+            };
+            void client
+                .changedFileRead(groupId, file.path, change)
+                .then((value) => {
+                    settle({ type: "ready", value });
+                })
+                .catch((error: unknown) => {
+                    settle({ type: "error", error: happyAgentUserError(error) });
+                });
+        }
+    };
+
     /** Reconciles durable bytes once a filesystem change is known — reported by
      *  the daemon's watcher, or done by a write of our own. */
     const workspaceFilesChanged = (change: HappyAgentWorkspaceFilesChanged): void => {
@@ -2993,6 +3142,7 @@ export function happyAgentWorkspaceStoreCreate(
             change.paths === null || change.paths.includes(path);
         fileAddressesInvalidate(change.groupId, change.paths);
         fileCommentsStale(change.paths);
+        reviewReconcile(change.groupId, change.paths);
         for (const tab of fileTabs) {
             if (tab.groupId !== change.groupId || !affected(tab.path)) continue;
             fileTabLoadedIdentities.delete(tab.id);
@@ -3141,6 +3291,41 @@ export function happyAgentWorkspaceStoreCreate(
         fileTabCacheStore(held);
         fileTabRelease(held.id);
         fileTabs = fileTabs.filter((tab) => tab.id !== held.id);
+    };
+
+    /**
+     * Opens the whole change as one stream and selects it.
+     *
+     * The stream is built from the checkout's current changes and then read, so
+     * selecting it a second time is only a selection — the files it already
+     * holds are not read again.
+     */
+    const reviewTabOpen = (groupId: HappyAgentGroupId): void => {
+        const id = reviewIdOf(groupId);
+        activeMainViewId = id;
+        activeMainViewGroupId = undefined;
+        if (reviews.has(groupId)) {
+            groupTabRemember(groupId, id);
+            recompute();
+            return;
+        }
+        reviews = new Map(reviews).set(groupId, { id, groupId, files: [], loading: true });
+        groupTabRemember(groupId, id);
+        reviewReconcile(groupId, null);
+        recompute();
+    };
+
+    const reviewTabClose = (groupId: HappyAgentGroupId): void => {
+        const id = reviewIdOf(groupId);
+        if (!reviews.has(groupId)) return;
+        // Whatever is still in flight for it belongs to nothing now.
+        reviewGenerations.set(id, (reviewGenerations.get(id) ?? 0) + 1);
+        const next = new Map(reviews);
+        next.delete(groupId);
+        reviews = next;
+        if (activeMainViewId === id) activeMainViewId = undefined;
+        if (displayedMainViewId === id) displayedMainViewId = undefined;
+        recompute();
     };
 
     const fileTabClose = (tabId: string): void => {
@@ -4646,6 +4831,7 @@ export function happyAgentWorkspaceStoreCreate(
                     fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
                     fileSearch,
                     fileComments,
+                    reviews,
                     fileTreeExpanded,
                     fileTreeCollapsed,
                     ...(workspaceFiles ? { workspaceFiles } : {}),
@@ -5390,6 +5576,8 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
         },
         fileClose: (tabId) => fileTabClose(tabId),
+        reviewOpen: (groupId) => reviewTabOpen(groupId),
+        reviewClose: (groupId) => reviewTabClose(groupId),
         fileRetry(tabId) {
             const tab = fileTabs.find((candidate) => candidate.id === tabId);
             if (tab)

@@ -66,6 +66,29 @@
     color: var(--text);
 }
 
+/* Reading the whole change. It is a sibling of the layout choices rather than
+   one of them — those say how this listing is arranged, this leaves it — so it
+   wears the same quiet shape without ever being the pressed one. */
+.happy-file-browser__review {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: var(--happy-subheader-control-height);
+    margin: 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.happy-file-browser__review:hover {
+    color: var(--text);
+}
+
 .happy-file-browser__layout[data-active] {
     border-color: var(--surface-selected);
     background: var(--surface-selected);

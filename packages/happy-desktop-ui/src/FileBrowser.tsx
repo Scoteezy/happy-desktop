@@ -19,6 +19,11 @@ export type FileBrowserProps = {
     scopeUnavailable?: Partial<Readonly<Record<FileBrowserScope, string>>>;
     layout: FileBrowserLayout;
     onLayoutChange?: (layout: FileBrowserLayout) => void;
+    /**
+     * Opens every change as one stream. Without it the listing offers no such
+     * control, because there would be nobody to open it.
+     */
+    onReviewOpen?: () => void;
     /** Rows to list. Passed straight through to FileTree. */
     nodes: readonly FileTreeNode[];
     selectedId?: FileTreeProps["selectedId"];
@@ -81,6 +86,7 @@ export function FileBrowser(props: FileBrowserProps) {
         "scopeUnavailable",
         "layout",
         "onLayoutChange",
+        "onReviewOpen",
         "nodes",
         "selectedId",
         "onSelect",
@@ -191,6 +197,22 @@ export function FileBrowser(props: FileBrowserProps) {
                                 <Icon name="branch" size={14} />
                             </button>
                         </div>
+                        {/* Reading the change as a whole, rather than a file at
+                            a time. It sits with the listing it is about; where
+                            nothing has changed there is nothing to read, so the
+                            control is not offered. */}
+                        {local.onReviewOpen && (local.count ?? 0) > 0 ? (
+                            <button
+                                aria-label="Read every change in one scroll"
+                                className="happy-file-browser__review"
+                                data-happy-desktop-ui="file-browser-review"
+                                data-testid="file-browser-review"
+                                onClick={() => local.onReviewOpen?.()}
+                                type="button"
+                            >
+                                <Icon name="file-diff" size={14} />
+                            </button>
+                        ) : null}
                     </>
                 ) : null}
             </div>
