@@ -82,6 +82,7 @@
 @import "./styles/file-tree.css";
 @import "./styles/file-panel.css";
 @import "./styles/file-browser.css";
+@import "./styles/diff-surface.css";
 @import "./styles/review-comment.css";
 @import "./styles/review-stream.css";
 @import "./styles/file-path-label.css";

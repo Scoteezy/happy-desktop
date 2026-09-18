@@ -63,10 +63,10 @@ const files: readonly ReviewStreamFile[] = [
     },
 ];
 
-function frame(children: React.ReactNode, height = 520) {
+function frame(children: React.ReactNode, height = 520, appearance: "dark" | "light" = "light") {
     return (
         <div
-            className="happy-theme-light"
+            className={appearance === "dark" ? "happy-theme-dark" : "happy-theme-light"}
             style={{
                 background: "var(--surface)",
                 border: "1px solid var(--divider)",
@@ -162,6 +162,15 @@ export function ReviewStreamPage() {
                 stage="surface"
             >
                 {frame(<CommentedStream />)}
+            </Specimen>
+
+            <Specimen
+                detail="The same type, spacing, and green a single changed file is drawn with — the surface a review opens from must not change what a diff looks like"
+                label="Dark"
+                number="04"
+                stage="surface"
+            >
+                {frame(<ReviewStream appearance="dark" files={files} />, 360, "dark")}
             </Specimen>
 
             <Specimen

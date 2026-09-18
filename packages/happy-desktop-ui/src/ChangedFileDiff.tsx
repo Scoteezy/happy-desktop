@@ -423,7 +423,7 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                     />
                 ) : diff === undefined ? null : (
                     <FileDiff<ChangedFileDiffAnnotation>
-                        className="happy-changed-file-diff__renderer"
+                        className="happy-changed-file-diff__renderer happy-diff-surface"
                         fileDiff={diff}
                         options={diffOptions}
                         {...(lineAnnotations === undefined ? {} : { lineAnnotations })}

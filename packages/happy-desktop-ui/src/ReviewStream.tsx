@@ -295,7 +295,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             </div>
 
             <CodeView<ReviewStreamAnnotation>
-                className="happy-review-stream__renderer"
+                className="happy-review-stream__renderer happy-diff-surface"
                 items={annotated}
                 options={options}
                 ref={view}
