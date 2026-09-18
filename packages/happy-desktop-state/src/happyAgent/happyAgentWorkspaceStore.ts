@@ -1374,6 +1374,8 @@ export interface HappyAgentWorkspaceStore {
     reviewRetry(groupId: HappyAgentGroupId): void;
     /** Shows one file in a review as a header only, or opens it again. */
     reviewFileCollapsedToggle(groupId: HappyAgentGroupId, path: string): void;
+    /** Shows every file in a review as a header only, or opens them all. */
+    reviewFilesCollapsedSet(groupId: HappyAgentGroupId, collapsed: boolean): void;
     /**
      * Marks one file in a review as reviewed, or takes the mark off. Marking
      * closes the file; unmarking leaves it as it is.
@@ -3208,6 +3210,23 @@ export function happyAgentWorkspaceStoreCreate(
             loading: reviewWaiting(open.files, reach),
         });
         reviewLoad(groupId);
+        recompute();
+    };
+
+    /**
+     * Closes every file in the review, or opens every one.
+     *
+     * Which it is, is the reader's to say rather than a guess from the current
+     * mix: a review half closed has both answers, and only one of them is the
+     * one being asked for.
+     */
+    const reviewFilesCollapsedSet = (groupId: HappyAgentGroupId, collapsedAll: boolean): void => {
+        const open = reviews.get(groupId);
+        if (open === undefined) return;
+        reviews = new Map(reviews).set(groupId, {
+            ...open,
+            collapsed: collapsedAll ? new Set(open.files.map((file) => file.path)) : new Set(),
+        });
         recompute();
     };
 
@@ -5788,6 +5807,8 @@ export function happyAgentWorkspaceStoreCreate(
         reviewExtend: (groupId) => reviewExtend(groupId),
         reviewRetry: (groupId) => reviewRetry(groupId),
         reviewFileCollapsedToggle: (groupId, path) => reviewFileCollapsedToggle(groupId, path),
+        reviewFilesCollapsedSet: (groupId, collapsed) =>
+            reviewFilesCollapsedSet(groupId, collapsed),
         reviewFileViewedToggle: (groupId, path) => reviewFileViewedToggle(groupId, path),
         fileRetry(tabId) {
             const tab = fileTabs.find((candidate) => candidate.id === tabId);

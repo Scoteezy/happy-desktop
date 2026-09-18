@@ -3524,6 +3524,15 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 onFileViewedToggle={(path) =>
                     props.workspace.reviewFileViewedToggle(review.groupId, path)
                 }
+                onFilesCollapsedSet={(collapsed) =>
+                    props.workspace.reviewFilesCollapsedSet(review.groupId, collapsed)
+                }
+                // One preference for how a diff is drawn, wherever it is drawn:
+                // choosing Split here is choosing it for a single file's diff
+                // too. The file face belongs to a file, not to a review, so a
+                // review opened while it was chosen reads as Unified.
+                view={workspace.fileViewMode === "split" ? "split" : "unified"}
+                onViewChange={(view) => props.workspace.fileViewModeUpdate(view)}
                 // Opening one file of a change gives it its own tab, the same
                 // one the listing opens — a file is a file wherever it is
                 // reached from.

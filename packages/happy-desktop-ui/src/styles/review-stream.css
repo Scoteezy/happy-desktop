@@ -47,6 +47,29 @@
     align-items: center;
 }
 
+/* The file being read, and what can be done to the stream as a whole.
+   A stream is one scroll through many files, and the header of the file being
+   read scrolls away underneath its own hunks. This says it where it cannot. */
+.happy-review-stream__reading {
+    box-sizing: border-box;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    height: var(--happy-subheader-height);
+    padding: 0 8px;
+    background: var(--surface);
+    box-shadow: inset 0 -1px var(--divider);
+}
+
+.happy-review-stream__reading-end {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+}
+
 /* Named files the checkout would not give up. It sits above the stream rather
    than inside it: what is missing from a review is not something to scroll to. */
 .happy-review-stream__failures {

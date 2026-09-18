@@ -45,6 +45,9 @@ export type IconName =
     | "eye"
     | "link"
     | "open-external"
+    | "fold"
+    | "unfold"
+    | "locate"
     | "mobile"
     | "smile"
     | "paperclip"
@@ -175,6 +178,14 @@ const glyphs: Record<IconName, IconGlyph> = {
     // A box with an arrow leaving it: the same thing, opened somewhere of its
     // own. Never "a link" — `link` is that — and never a navigation arrow.
     "open-external": { set: "ionicons", name: "open-outline" },
+    // Collapsing many things to their headers and opening them again. Octicons
+    // draws the pair as arrows meeting a line and leaving it, which reads as
+    // what happens to a list rather than to one row.
+    fold: { set: "octicons", name: "fold" },
+    unfold: { set: "octicons", name: "unfold" },
+    // Finding your own place again: the crosshair that centres on where you
+    // already are, not an arrow that takes you somewhere else.
+    locate: { set: "ionicons", name: "locate-outline" },
     mobile: { set: "ionicons", name: "phone-portrait-outline" },
     smile: { set: "ionicons", name: "happy-outline" },
     paperclip: { set: "ionicons", name: "attach-outline" },

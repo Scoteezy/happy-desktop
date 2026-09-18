@@ -6,6 +6,7 @@ import { Button } from "./Button";
 import { DiffFileTitle } from "./DiffFileTitle";
 import { PIERRE_DIFF_HEADER_CSS, PIERRE_PANE_CSS } from "./pierreCodeSurface";
 import { ReviewComment } from "./ReviewComment";
+import { SegmentedControl } from "./SegmentedControl";
 import { ReviewStreamFileActions } from "./ReviewStreamFileActions";
 import type { ChangedFileDiffCommentSide } from "./ChangedFileDiff";
 
@@ -82,6 +83,11 @@ export type ReviewStreamProps = {
     onFileViewedToggle?: (path: string) => void;
     /** Opens one file of the change on its own, away from the stream. */
     onFileOpen?: (path: string) => void;
+    /** Closes every file at once, or opens every one. */
+    onFilesCollapsedSet?: (collapsed: boolean) => void;
+    /** How every diff in the stream is drawn. */
+    view?: "unified" | "split";
+    onViewChange?: (view: "unified" | "split") => void;
     /** Whether long lines wrap to the pane instead of scrolling out of it. */
     wrap?: boolean;
     onWrapChange?: (wrap: boolean) => void;
@@ -301,7 +307,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     const options = useMemo(
         () => ({
             diffIndicators: "bars" as const,
-            diffStyle: "unified" as const,
+            diffStyle: props.view === "split" ? ("split" as const) : ("unified" as const),
             hunkSeparators: "line-info-basic" as const,
             lineHoverHighlight: "both" as const,
             lineDiffType: "word-alt" as const,
@@ -313,7 +319,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             enableGutterUtility: commenting,
             onGutterUtilityClick: gutterUtilityClicked,
         }),
-        [commenting, gutterUtilityClicked, props.appearance, props.wrap],
+        [commenting, gutterUtilityClicked, props.appearance, props.view, props.wrap],
     );
 
     const author = {
@@ -328,6 +334,13 @@ export function ReviewStream(props: ReviewStreamProps) {
     // files that does not fill the screen has to ask for the next one without
     // waiting for a scroll that will never happen.
     const endAsk = useStableCallback(() => props.onEndReach?.());
+    // Which file the reader is currently inside. A stream is one scroll through
+    // many files, and the header of the file being read is the one thing that
+    // scrolls away underneath its own hunks — so it is said again where it
+    // cannot: pinned above the stream. Read from the drawn headers rather than
+    // computed from scroll arithmetic, because the renderer owns where its rows
+    // actually are.
+    const [reading, readingSet] = useState<string | undefined>(undefined);
     const endWatch = useCallback(
         (node: HTMLDivElement | null) => {
             const port = node?.querySelector<HTMLElement>(".happy-review-stream__renderer");
@@ -335,6 +348,23 @@ export function ReviewStream(props: ReviewStreamProps) {
             const ask = (): void => {
                 if (port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE)
                     endAsk();
+                const edge = port.getBoundingClientRect().top + 8;
+                // The lowest header that has not yet passed the top of the pane
+                // is the file the reader is inside. Strictly lowest, because
+                // before the renderer has laid anything out every header reports
+                // the same position, and the honest answer then is the first
+                // file rather than the last one to be asked.
+                let found = Number.NEGATIVE_INFINITY;
+                let inside: string | undefined;
+                for (const title of port.querySelectorAll<HTMLElement>(
+                    '[data-happy-desktop-ui="diff-file-title"]',
+                )) {
+                    const top = title.getBoundingClientRect().top;
+                    if (top > edge || top <= found) continue;
+                    found = top;
+                    inside = title.dataset.path;
+                }
+                readingSet(inside);
             };
             port.addEventListener("scroll", ask, { passive: true });
             const sizes = new ResizeObserver(() => {
@@ -355,6 +385,9 @@ export function ReviewStream(props: ReviewStreamProps) {
         // the moment the question "is the end within reach" has a new answer.
         [endAsk, props.files.length],
     );
+    const readingPath = reading ?? props.files[0]?.path;
+    const allCollapsed =
+        props.files.length > 0 && props.files.every((file) => props.collapsed?.has(file.path));
 
     return (
         <section
@@ -421,6 +454,59 @@ export function ReviewStream(props: ReviewStreamProps) {
                     )}
                 </span>
             </div>
+
+            {readingPath === undefined ? null : (
+                <div
+                    className="happy-review-stream__reading"
+                    data-happy-desktop-ui="review-stream-reading"
+                >
+                    <DiffFileTitle path={readingPath} />
+                    <span className="happy-review-stream__reading-end">
+                        <Button
+                            aria-label="Back to the top of this file"
+                            data-testid="review-stream-reading-locate"
+                            icon="locate"
+                            iconOnly
+                            onClick={() =>
+                                view.current?.scrollTo({
+                                    type: "item",
+                                    id: readingPath,
+                                    align: "start",
+                                    behavior: "smooth",
+                                })
+                            }
+                            size="small"
+                            variant="ghost"
+                        />
+                        {props.onFilesCollapsedSet === undefined ? null : (
+                            <Button
+                                aria-label={allCollapsed ? "Open every file" : "Close every file"}
+                                data-testid="review-stream-collapse-all"
+                                icon={allCollapsed ? "unfold" : "fold"}
+                                iconOnly
+                                onClick={() => props.onFilesCollapsedSet?.(!allCollapsed)}
+                                size="small"
+                                variant="ghost"
+                            />
+                        )}
+                        {props.onViewChange === undefined ? null : (
+                            <SegmentedControl
+                                aria-label="How every diff in this review is drawn"
+                                data-testid="review-stream-view"
+                                onChange={(value) =>
+                                    props.onViewChange?.(value === "split" ? "split" : "unified")
+                                }
+                                segments={[
+                                    { value: "unified", label: "Unified" },
+                                    { value: "split", label: "Split" },
+                                ]}
+                                size="compact"
+                                value={props.view === "split" ? "split" : "unified"}
+                            />
+                        )}
+                    </span>
+                </div>
+            )}
 
             {props.failures === undefined || props.failures.length === 0 ? null : (
                 <Banner
