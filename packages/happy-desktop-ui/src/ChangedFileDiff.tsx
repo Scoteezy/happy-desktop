@@ -13,27 +13,24 @@ import { SegmentedControl } from "./SegmentedControl";
 /**
  * How a changed file is being looked at.
  *
- * - `preview` — the file as it now stands, in the product's own file preview:
- *   the document rendered, the picture shown, the source read whole. What the
+ * - `file` — the file as it now stands rather than the change to it: the
+ *   document rendered, the picture shown, the text read and written. What the
  *   result reads like, which is the one question a diff cannot answer.
  * - `unified` — additions and deletions interleaved in one column.
  * - `split` — old and new side by side.
- * - `edit` — the working-tree text, editable.
+ *
+ * There is no separate editing face. Reading a file and writing it were two
+ * choices showing the same characters, one of which refused to accept any: a
+ * reader who noticed a typo had to find the other tab to fix it.
  */
-export type ChangedFileDiffMode = "preview" | "unified" | "split" | "edit";
+export type ChangedFileDiffMode = "file" | "unified" | "split";
 
-export const CHANGED_FILE_DIFF_MODES: readonly ChangedFileDiffMode[] = [
-    "preview",
-    "unified",
-    "split",
-    "edit",
-];
+export const CHANGED_FILE_DIFF_MODES: readonly ChangedFileDiffMode[] = ["file", "unified", "split"];
 
 const MODE_LABELS: Record<ChangedFileDiffMode, string> = {
-    preview: "Preview",
+    file: "File",
     unified: "Unified",
     split: "Split",
-    edit: "Edit",
 };
 
 export type ChangedFileDiffProps = {
@@ -159,8 +156,10 @@ type ChangedFileDiffAnnotation =
 export function ChangedFileDiff(props: ChangedFileDiffProps) {
     const editable = props.onContentChange !== undefined;
     const previewable = props.preview !== undefined;
+    // A change that deleted the file left no copy of it: nothing to read and
+    // nothing to write, so the file itself is not offered.
     const segments = CHANGED_FILE_DIFF_MODES.filter((candidate) =>
-        candidate === "edit" ? editable : candidate === "preview" ? previewable : true,
+        candidate === "file" ? previewable || editable : true,
     ).map((candidate) => ({ value: candidate, label: MODE_LABELS[candidate] }));
     // Which view is on is remembered across files, so the one that was chosen
     // may not exist for the file that is now open — a deleted file has no copy
@@ -379,9 +378,10 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                         </span>
                     ) : null}
                     {/* Wrap is a fact about lines of source — the diff's or the
-                        editor's — so the toggle leaves only for Preview, whose
-                        rendered face has no lines to wrap. */}
-                    {props.onWrapChange !== undefined && mode !== "preview" ? (
+                        editor's — and the file face is mostly source, so the
+                        toggle stays. A rendered document ignores it, having no
+                        lines to wrap. */}
+                    {props.onWrapChange !== undefined ? (
                         <SegmentedControl
                             aria-label="Whether long lines wrap"
                             data-testid="changed-file-diff-wrap"
@@ -404,24 +404,27 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                 viewportClassName="happy-changed-file-diff__viewport"
                 viewportRef={viewportRef}
             >
-                {mode === "preview" ? (
-                    props.preview
-                ) : mode === "edit" ? (
-                    <CodeEditor
-                        className="happy-changed-file-diff__editor"
-                        documentKey={props.documentKey}
-                        name={props.path}
-                        // The shortcut every editor has. Without it the only way
-                        // to save is to stop typing and reach for a button,
-                        // which is not how anyone edits a file.
-                        onSave={() => {
-                            if (!props.saveDisabled) props.onSave?.();
-                        }}
-                        onValueChange={(content) => props.onContentChange?.(content)}
-                        readOnly={props.saving === true}
-                        value={props.newContent}
-                        wrap={props.wrap}
-                    />
+                {mode === "file" ? (
+                    // The caller's preview is the whole file surface — rendered
+                    // face, source, and the editor inside it — so it wins where
+                    // there is one. Without it, the file is its text.
+                    (props.preview ?? (
+                        <CodeEditor
+                            className="happy-changed-file-diff__editor"
+                            documentKey={props.documentKey}
+                            name={props.path}
+                            // The shortcut every editor has. Without it the only way
+                            // to save is to stop typing and reach for a button,
+                            // which is not how anyone edits a file.
+                            onSave={() => {
+                                if (!props.saveDisabled) props.onSave?.();
+                            }}
+                            onValueChange={(content) => props.onContentChange?.(content)}
+                            readOnly={props.saving === true}
+                            value={props.newContent}
+                            wrap={props.wrap}
+                        />
+                    ))
                 ) : diff === undefined ? null : (
                     <FileDiff<ChangedFileDiffAnnotation>
                         className="happy-changed-file-diff__renderer happy-diff-surface"

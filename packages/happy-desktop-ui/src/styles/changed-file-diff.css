@@ -71,11 +71,11 @@
     overflow-y: auto;
 }
 
-/* A preview is a whole viewer that owns its own scrolling — a document with a
-   reading measure, a picture on a stage, a recording that fills its frame — so
-   the pane hands it the region rather than scrolling it from outside, which
-   would give the same content two scrollbars. */
-.happy-changed-file-diff[data-mode="preview"] .happy-changed-file-diff__body {
+/* The file itself is a whole viewer that owns its own scrolling — a document
+   with a reading measure, a picture on a stage, an editor — so the pane hands
+   it the region rather than scrolling it from outside, which would give the
+   same content two scrollbars. */
+.happy-changed-file-diff[data-mode="file"] .happy-changed-file-diff__body {
     display: flex;
     overflow: hidden;
 }

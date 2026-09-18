@@ -110,6 +110,7 @@ import {
     commandPaletteResultsRows,
     ContextMeter,
     ChangedFileDiff,
+    CodeEditor,
     ComposerFooterBar,
     ComposerModelControl,
     ConversationView,
@@ -4533,6 +4534,42 @@ function HappyAgentFileBody(props: {
                                       onFileOpen={linkedFileOpen}
                                       openDisabled={props.saveRefusal !== undefined}
                                       text={current}
+                                      // The file's characters, where they can be
+                                      // written: the same editor the file's own
+                                      // tab uses, so reading a change and fixing
+                                      // what it says are one place.
+                                      {...(writable
+                                          ? {
+                                                editor: (
+                                                    <CodeEditor
+                                                        className="happy-changed-file-editor"
+                                                        documentKey={fileDocumentKey(
+                                                            file.id,
+                                                            file.document.value,
+                                                        )}
+                                                        name={file.path}
+                                                        onSave={() => {
+                                                            if (
+                                                                !saveDisabled &&
+                                                                props.happyAgentOnline()
+                                                            )
+                                                                void workspace
+                                                                    .fileDraftSave(file.id)
+                                                                    .catch(() => undefined);
+                                                        }}
+                                                        onValueChange={(content) =>
+                                                            workspace.fileDraftUpdate(
+                                                                file.id,
+                                                                content,
+                                                            )
+                                                        }
+                                                        readOnly={file.saving}
+                                                        value={current}
+                                                        wrap={props.wrap}
+                                                    />
+                                                ),
+                                            }
+                                          : {})}
                                   />
                               ),
                           })}
@@ -4602,6 +4639,8 @@ function HappyAgentChangedFilePreview(props: {
     /** Opens a linked file on the side this one is being read on. */
     onFileOpen: (path: string) => void;
     text: string;
+    /** The file's characters, editable, where this checkout can be written. */
+    editor?: ReactNode;
 }) {
     const { file } = props;
     // A picture, a recording, or an archive opens as itself rather than as a
@@ -4621,6 +4660,7 @@ function HappyAgentChangedFilePreview(props: {
         <FilePreview
             content={readable ? { type: "text", text: props.text } : { type: "unavailable" }}
             {...(cacheKey === undefined ? {} : { cacheKey })}
+            {...(props.editor === undefined || !readable ? {} : { editor: props.editor })}
             // A document followed out of the changed list lands beside it as the
             // file itself, the same way one followed out of a file tab does.
             onFileOpen={(href) => {

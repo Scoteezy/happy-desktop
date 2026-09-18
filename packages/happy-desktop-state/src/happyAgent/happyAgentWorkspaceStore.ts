@@ -985,8 +985,13 @@ const FILE_SEARCH_LIMIT = 50;
 /** Nothing typed, nothing found — the listing's resting state. */
 const FILE_SEARCH_IDLE: HappyAgentFileSearch = { query: "", searching: false };
 
-/** How a changed file is displayed. Mirrors the UI's `ChangedFileDiffMode`. */
-export type HappyAgentFileViewMode = "preview" | "unified" | "split" | "edit";
+/**
+ * How a changed file is displayed. Mirrors the UI's `ChangedFileDiffMode`.
+ *
+ * `file` is the file itself rather than the change to it — read or written, one
+ * face. Reading a file and writing it are not two places to be.
+ */
+export type HappyAgentFileViewMode = "file" | "unified" | "split";
 
 /**
  * A rename the reader has opened but not committed. The draft lives here rather

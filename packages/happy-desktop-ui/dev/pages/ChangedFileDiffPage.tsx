@@ -1,5 +1,6 @@
 import { type ReactNode, useState } from "react";
 import { ChangedFileDiff } from "../../src/ChangedFileDiff";
+import { CodeEditor } from "../../src/CodeEditor";
 import { FilePreview } from "../../src/FilePreview";
 import { TabbedPane } from "../../src/TabbedPane";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -55,6 +56,41 @@ function preview(path: string, text: string) {
     return <FilePreview content={{ type: "text", text }} path={path} />;
 }
 
+/**
+ * The same surface where the checkout can be written: the file's characters are
+ * the editor rather than a second read-only copy of them. This is what the
+ * product hands in for a writable file, and why there is no editing mode beside
+ * this one.
+ */
+function EditableFile(props: { path: string; text: string }) {
+    const [text, textSet] = useState(props.text);
+    return (
+        <ChangedFileDiff
+            appearance="light"
+            mode="file"
+            newContent={text}
+            oldContent={sourceBefore}
+            onContentChange={textSet}
+            onSave={() => undefined}
+            path={props.path}
+            preview={
+                <FilePreview
+                    content={{ type: "text", text }}
+                    editor={
+                        <CodeEditor
+                            className="happy-changed-file-editor"
+                            name={props.path}
+                            onValueChange={textSet}
+                            value={text}
+                        />
+                    }
+                    path={props.path}
+                />
+            }
+        />
+    );
+}
+
 /* The diff renderer is told which appearance to draw in, so each specimen pins
    the face it names rather than following the workbench and disagreeing with
    the surface underneath it. */
@@ -80,7 +116,7 @@ function frame(children: ReactNode, height = 420, appearance: "dark" | "light" =
 
 /** The real three-layer file surface, used twice so Preview and Pierre can be
  * compared without either specimen quietly changing the surrounding chrome. */
-function tabbedDiff(mode: "preview" | "unified") {
+function tabbedDiff(mode: "file" | "unified") {
     return (
         <TabbedPane
             activeId="master-plans/03-file-viewer.md"
@@ -186,7 +222,7 @@ export function ChangedFileDiffPage() {
                 stage="surface"
             >
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {frame(tabbedDiff("preview"), 280)}
+                    {frame(tabbedDiff("file"), 280)}
                     {frame(tabbedDiff("unified"), 280)}
                     <DimensionRule label="Preview ↔ Unified · consecutive 32 px bands · 16 px icon at x16 · path at x42 · diff stats right" />
                 </div>
@@ -201,7 +237,7 @@ export function ChangedFileDiffPage() {
                 {frame(
                     <ChangedFileDiff
                         appearance="light"
-                        mode="preview"
+                        mode="file"
                         newContent={source}
                         oldContent={sourceBefore}
                         path="packages/happy-desktop-ui/src/elapsed.ts"
@@ -245,22 +281,13 @@ export function ChangedFileDiffPage() {
             </Specimen>
 
             <Specimen
-                detail="Offered only with somewhere to hand an edit; Command-S saves without adding another button to the mode bar"
-                label="Edit"
+                detail="The file face of a writable file is the editor: one place to read the result and fix what it says, with Command-S to save and no second mode showing the same lines read-only"
+                label="File, written"
                 number="05"
                 stage="surface"
             >
                 {frame(
-                    <ChangedFileDiff
-                        appearance="light"
-                        mode="edit"
-                        newContent={source}
-                        oldContent={sourceBefore}
-                        onContentChange={() => {}}
-                        onSave={() => {}}
-                        path="packages/happy-desktop-ui/src/elapsed.ts"
-                        preview={preview("packages/happy-desktop-ui/src/elapsed.ts", source)}
-                    />,
+                    <EditableFile path="packages/happy-desktop-ui/src/elapsed.ts" text={source} />,
                     300,
                 )}
             </Specimen>
@@ -275,7 +302,7 @@ export function ChangedFileDiffPage() {
                     {frame(
                         <ChangedFileDiff
                             appearance="light"
-                            mode="preview"
+                            mode="file"
                             newContent={source}
                             oldContent=""
                             path="packages/happy-desktop-ui/src/elapsed.ts"
@@ -301,7 +328,7 @@ export function ChangedFileDiffPage() {
                     {frame(
                         <ChangedFileDiff
                             appearance="light"
-                            mode="preview"
+                            mode="file"
                             newContent=""
                             oldContent={source}
                             path="packages/happy-desktop-ui/src/elapsed.ts"
@@ -321,7 +348,7 @@ export function ChangedFileDiffPage() {
                 {frame(
                     <ChangedFileDiff
                         appearance="light"
-                        mode="preview"
+                        mode="file"
                         newContent=""
                         oldContent={oldContent}
                         path="master-plans/03-file-viewer.md"
@@ -340,7 +367,7 @@ export function ChangedFileDiffPage() {
                     <ChangedFileDiff
                         appearance="light"
                         loading
-                        mode="preview"
+                        mode="file"
                         newContent={newContent}
                         oldContent={oldContent}
                         path="master-plans/03-file-viewer.md"
@@ -360,7 +387,7 @@ export function ChangedFileDiffPage() {
                     {frame(
                         <ChangedFileDiff
                             appearance="dark"
-                            mode="preview"
+                            mode="file"
                             newContent={newContent}
                             oldContent={oldContent}
                             path="master-plans/03-file-viewer.md"
@@ -392,7 +419,7 @@ export function ChangedFileDiffPage() {
                 {frame(
                     <ChangedFileDiff
                         appearance="light"
-                        mode="edit"
+                        mode="file"
                         newContent={source}
                         oldContent={sourceBefore}
                         onContentChange={() => {}}
