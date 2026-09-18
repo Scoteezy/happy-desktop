@@ -3446,6 +3446,22 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                           ...(file.oldPath === undefined ? {} : { oldPath: file.oldPath }),
                           oldContent: file.document.value.oldContent,
                           newContent: file.document.value.newContent,
+                          // The same two identities one file's diff gives its
+                          // sides. Without them the renderer has nothing to file
+                          // a tokenized result under, so every file here would
+                          // be highlighted from scratch each time the stream is
+                          // opened or rebuilt — and a review is many files at
+                          // once, which is exactly where that is felt.
+                          ...(file.document.value.oldHash === undefined
+                              ? {}
+                              : {
+                                    oldCacheKey: `d:old:${review.groupId}:${file.document.value.oldHash}:${fileHighlightLanguageKey(file.document.value.oldPath)}`,
+                                }),
+                          ...(file.document.value.hash === undefined
+                              ? {}
+                              : {
+                                    newCacheKey: `d:new:${review.groupId}:${file.document.value.hash}:${fileHighlightLanguageKey(file.path)}`,
+                                }),
                       },
                   ]
                 : [],
