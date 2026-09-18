@@ -1415,7 +1415,9 @@ export interface HappyAgentWorkspaceStore {
      *
      * It lands in the composer rather than being sent, because the reader is
      * the one asking and should see the request and be able to add to it before
-     * it goes. Answers whether there was anything to hand over.
+     * it goes — so the conversation is also what the main content then shows,
+     * since that is where the request is. Answers whether there was anything to
+     * hand over.
      */
     commentsSubmit(): boolean;
     /** Records how wide the reader left the right panel in this checkout. */
@@ -5260,6 +5262,20 @@ export function happyAgentWorkspaceStoreCreate(
         projectCompute = undefined;
     };
 
+    /**
+     * Puts the open conversation back on screen: no file tab, no tool tab.
+     *
+     * Selecting nothing is what "the conversation" means here, and the tab the
+     * group is then being read on is remembered as such.
+     */
+    const mainViewClear = (): void => {
+        activeMainViewId = undefined;
+        displayedMainViewId = undefined;
+        activeMainViewGroupId = undefined;
+        if (addressedGroupId !== undefined && openId !== undefined)
+            groupTabRemember(addressedGroupId, openId);
+    };
+
     return {
         get: () => snapshotStore.getState(),
         panel,
@@ -5754,6 +5770,11 @@ export function happyAgentWorkspaceStoreCreate(
         },
         mainViewSelect(viewId) {
             if (disposed) return;
+            if (viewId === undefined) {
+                mainViewClear();
+                recompute();
+                return;
+            }
             const file =
                 viewId !== undefined ? fileTabs.find((tab) => tab.id === viewId) : undefined;
             const tool =
@@ -5912,6 +5933,10 @@ export function happyAgentWorkspaceStoreCreate(
                 fileComments.draft === undefined
                     ? FILE_COMMENTS_IDLE
                     : { comments: [], draft: fileComments.draft };
+            // The request is now a message waiting to be sent, so the reader is
+            // taken to where it is: reading the change is over, and the next
+            // thing they do is say it.
+            mainViewClear();
             recompute();
             return true;
         },
