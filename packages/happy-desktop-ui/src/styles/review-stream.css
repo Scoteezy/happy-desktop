@@ -47,10 +47,14 @@
     align-items: center;
 }
 
-/* The file being read, and nothing else. A stream is one scroll through many
-   files, and the header of the file being read scrolls away underneath its own
-   hunks; this says it where it cannot. What can be done to the stream as a
-   whole belongs to the bar above, with the count of what is being reviewed. */
+/* The header of the file being read, picked up.
+
+   A stream is one scroll through many files, and a file's own header scrolls
+   away underneath its own hunks. This row is that header once it has gone: the
+   same name, the same counts, the same things that can be done to that one
+   file. It is not drawn while the file's own header is still on screen — two
+   rows saying the same name is what this replaced. What can be done to the
+   review as a whole belongs to the bar above, with the count of files. */
 .happy-review-stream__reading {
     box-sizing: border-box;
     flex: none;
@@ -61,6 +65,38 @@
     padding: 0 8px;
     background: var(--surface);
     box-shadow: inset 0 -1px var(--divider);
+    /* The same answer the shadow header leaves for its slotted controls, so the
+       file's actions behave here exactly as they do in the header itself. */
+    --happy-header-pointer: 0;
+}
+
+.happy-review-stream__reading:hover {
+    --happy-header-pointer: 1;
+}
+
+/* Closes and opens its file, as the header it stands in for does. */
+.happy-review-stream__reading[data-clickable] {
+    cursor: pointer;
+}
+
+/* Pushed to the end, as the renderer draws them in a header of its own. */
+.happy-review-stream__reading-counts {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    font-family: var(--happy-font-mono);
+    font-size: 12px;
+    line-height: 1;
+}
+
+.happy-review-stream__additions {
+    color: var(--diff-added-border);
+}
+
+.happy-review-stream__deletions {
+    color: var(--diff-removed-border);
 }
 
 /* Named files the checkout would not give up. It sits above the stream rather
