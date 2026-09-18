@@ -95,30 +95,63 @@ type ReviewStreamStop = {
  * and asked to virtualize them, plus the two steps that travel between the
  * changes themselves rather than between scroll positions.
  */
+/** One file's place in the stream: what it is, and the diff drawn for it. */
+type ReviewStreamItem = {
+    readonly id: string;
+    readonly type: "diff";
+    readonly fileDiff: ReturnType<typeof parseDiffFromFile>;
+};
+
 export function ReviewStream(props: ReviewStreamProps) {
     const view = useRef<CodeViewHandle<ReviewStreamAnnotation>>(null);
     const commenting = props.onCommentDraftOpen !== undefined;
 
-    const items = useMemo(
-        () =>
-            props.files.map((file) => ({
-                id: file.path,
-                type: "diff" as const,
-                fileDiff: parseDiffFromFile(
-                    {
-                        name: file.oldPath ?? file.path,
-                        contents: file.oldContent,
-                        ...(file.oldCacheKey === undefined ? {} : { cacheKey: file.oldCacheKey }),
-                    },
-                    {
-                        name: file.path,
-                        contents: file.newContent,
-                        ...(file.newCacheKey === undefined ? {} : { cacheKey: file.newCacheKey }),
-                    },
-                ),
-            })),
-        [props.files],
-    );
+    // Parsing a diff is work proportional to the file, and a review arrives one
+    // file at a time: without this, the twenty-seventh file landing re-parses
+    // the twenty-six already on screen, as does every unrelated notification
+    // while the review is open. A file whose bytes have not moved keeps the
+    // diff already parsed for it, which also keeps the renderer's own item
+    // identity — it redraws what changed and leaves the rest alone.
+    const parsed = useRef(new Map<string, { file: ReviewStreamFile; item: ReviewStreamItem }>());
+    const items = useMemo(() => {
+        const kept = new Map<string, { file: ReviewStreamFile; item: ReviewStreamItem }>();
+        const built = props.files.map((file) => {
+            const previous = parsed.current.get(file.path);
+            const unchanged =
+                previous !== undefined &&
+                previous.file.oldContent === file.oldContent &&
+                previous.file.newContent === file.newContent &&
+                previous.file.oldPath === file.oldPath;
+            const item = unchanged
+                ? previous.item
+                : {
+                      id: file.path,
+                      type: "diff" as const,
+                      fileDiff: parseDiffFromFile(
+                          {
+                              name: file.oldPath ?? file.path,
+                              contents: file.oldContent,
+                              ...(file.oldCacheKey === undefined
+                                  ? {}
+                                  : { cacheKey: file.oldCacheKey }),
+                          },
+                          {
+                              name: file.path,
+                              contents: file.newContent,
+                              ...(file.newCacheKey === undefined
+                                  ? {}
+                                  : { cacheKey: file.newCacheKey }),
+                          },
+                      ),
+                  };
+            kept.set(file.path, { file, item });
+            return item;
+        });
+        // Files no longer in the review are dropped with it, so the map holds
+        // exactly what is on screen.
+        parsed.current = kept;
+        return built;
+    }, [props.files]);
 
     // Where the notes go, per file. Only positions live here, never the text
     // being typed: the renderer re-places annotations whenever this changes, so

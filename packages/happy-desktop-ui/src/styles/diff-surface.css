@@ -9,7 +9,20 @@
  * opened it.
  */
 
-.happy-diff-surface {
+/*
+ * Both the element itself and any renderer host inside it, and that second
+ * selector is not belt and braces. Pierre writes the Shiki theme's own colours
+ * into its shadow root as declarations on `:host` — including the two
+ * backgrounds. A declaration on the host beats a value merely inherited into
+ * it, so setting these on an ancestor changes nothing: the theme's near-black
+ * wins and the code sits on a different material from the pane around it. Where
+ * the class lands on the host element itself, as it does on a single file's
+ * diff, ours wins and the surface is right. The review stream puts its class on
+ * the scrollport instead, because that is what it owns. Naming the host as well
+ * makes the two agree.
+ */
+.happy-diff-surface,
+.happy-diff-surface diffs-container {
     --diffs-font-family: var(--happy-font-mono);
     --diffs-header-font-family: var(--happy-font-ui);
     --diffs-font-size: 12px;
