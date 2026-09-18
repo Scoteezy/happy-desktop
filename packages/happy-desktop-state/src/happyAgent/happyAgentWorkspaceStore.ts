@@ -439,6 +439,28 @@ function happyAgentFileDocumentCanonical(document: HappyAgentFileDocument): Happ
     return document;
 }
 
+/**
+ * The same document, as an accepted write leaves it: the bytes that were
+ * written and the identity the checkout gave them.
+ *
+ * A write is first-hand knowledge of what a file says, so the tab that made it
+ * is told directly rather than shown the bytes read before it while a reload
+ * catches up. A document of a kind a write cannot describe — a picture, a
+ * recording — is left exactly as it was.
+ */
+function fileDocumentSaved(
+    document: Loadable<HappyAgentFileDocument>,
+    content: string,
+    hash: string,
+): Loadable<HappyAgentFileDocument> {
+    if (document.type !== "ready") return document;
+    const value = document.value;
+    if ("oldContent" in value)
+        return { type: "ready", value: { ...value, newContent: content, hash } };
+    if ("content" in value) return { type: "ready", value: { ...value, content, hash } };
+    return document;
+}
+
 function happyAgentReadyDocumentCacheBaseKey(
     groupId: HappyAgentGroupId,
     path: string,
@@ -5882,14 +5904,31 @@ export function happyAgentWorkspaceStoreCreate(
             try {
                 const expectedHash =
                     tab.document.type === "ready" ? (tab.document.value.hash ?? null) : null;
-                await client.workspaceFileWrite(tab.groupId, tab.path, draft, expectedHash);
-                // The draft is dropped on success, not kept as the new content:
-                // what the file now says is the checkout's answer, and the
-                // reload below is what asks for it. Keeping the draft would
-                // leave the tab showing text nothing had confirmed.
+                const written = await client.workspaceFileWrite(
+                    tab.groupId,
+                    tab.path,
+                    draft,
+                    expectedHash,
+                );
+                // An accepted write says what the file now contains and what its
+                // identity now is, so the tab is told both at once rather than
+                // dropping the draft and showing the bytes read before it until
+                // a reload answers. That gap was visible: the editor was handed
+                // the old text, replaced what was on screen, and the caret and
+                // scroll the person was holding went with it.
                 fileTabs = fileTabs.map((candidate) =>
-                    candidate.id === tabId
-                        ? { ...candidate, draft: undefined, saving: false, saveError: undefined }
+                    candidate.groupId === tab.groupId && candidate.path === tab.path
+                        ? {
+                              ...candidate,
+                              document: fileDocumentSaved(candidate.document, draft, written.hash),
+                              ...(candidate.id === tabId
+                                  ? {
+                                        draft: undefined,
+                                        saving: false,
+                                        saveError: undefined,
+                                    }
+                                  : {}),
+                          }
                         : candidate,
                 );
                 recompute();
