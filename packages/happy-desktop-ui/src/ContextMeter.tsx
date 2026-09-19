@@ -183,7 +183,7 @@ export function ContextMeter(props: ContextMeterProps) {
                  */}
                 <span
                     className="happy-context-meter__threshold"
-                    style={{ left: `calc(${String(compactFraction * 100)}% - 1.5px)` }}
+                    style={{ left: `calc(${String(compactFraction * 100)}% - 0.5px)` }}
                 />
             </span>
         </div>
