@@ -84,6 +84,15 @@ export {
     type ToneName,
 } from "./Avatar";
 export { AvatarBrutalist, type AvatarBrutalistProps } from "./AvatarBrutalist";
+export {
+    BotFace,
+    botFaceCredit,
+    botFaceDataUri,
+    botFacePaint,
+    botFaceSvg,
+    type BotFacePainting,
+    type BotFaceProps,
+} from "./BotFace";
 export { AutomatedTag, type AutomatedTagProps } from "./AutomatedTag";
 export {
     Badge,
@@ -312,10 +321,10 @@ export {
     type HappyAgentProjectSettingsDialogProps,
 } from "./HappyAgentProjectSettingsDialog";
 export {
-    HappyAgentCreateSessionPage,
-    type HappyAgentCreateSessionDestination,
-    type HappyAgentCreateSessionPageProps,
-} from "./HappyAgentCreateSessionPage";
+    HappyAgentCreateBotPage,
+    type HappyAgentCreateBotFaceSlot,
+    type HappyAgentCreateBotPageProps,
+} from "./HappyAgentCreateBotPage";
 export {
     HappyAgentProjectCloneDialog,
     type HappyAgentProjectCloneDialogProps,

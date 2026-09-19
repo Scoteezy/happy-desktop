@@ -351,3 +351,17 @@
     gap: 8px;
     min-width: 0;
 }
+
+/* The quiet size, one line, giving way before the controls beside it do. */
+.happy-composer-footer-bar__note {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

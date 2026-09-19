@@ -3117,6 +3117,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             // dropped answer settles on the bot that was already made.
             const botId = nextId();
             const { bot } = await client.createBot(
+                // Left out rather than sent blank: the daemon reads an absent
+                // name as "name it from the first message", and an empty
+                // string as a name it must refuse.
                 { id: botId, mutationId: botId, ...(name === undefined ? {} : { name }) },
                 { signal: rootController.signal },
             );
@@ -3126,6 +3129,43 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             // the bot in the catalog for the caller that is about to open it.
             publishGroups([{ type: "bot_added", botId: bot.id, workspaceId: bot.workspaceId }]);
             return bot;
+        },
+        setBotAvatar(botId, image) {
+            const mutationId = nextId();
+            const bot = botOf(botId);
+            if (bot === undefined) {
+                return mutation(
+                    "set_bot_avatar",
+                    mutationId,
+                    () => Promise.reject(new Error("The bot is not loaded.")),
+                    undefined,
+                    undefined,
+                    undefined,
+                    `bot:${botId}`,
+                );
+            }
+            return mutation(
+                "set_bot_avatar",
+                mutationId,
+                () =>
+                    client.setBotAvatar(
+                        botId,
+                        { contentType: image.contentType, data: image.data },
+                        {
+                            ifMatch: botOf(botId)?.version ?? bot.version,
+                            signal: rootController.signal,
+                        },
+                    ),
+                ({ bot: updated }) => {
+                    groupsStore.setState((state) => ({
+                        bots: replaceResource(state.bots, updated),
+                    }));
+                    publishGroups();
+                },
+                undefined,
+                undefined,
+                `bot:${botId}`,
+            );
         },
         archiveBot(botId) {
             const mutationId = nextId();

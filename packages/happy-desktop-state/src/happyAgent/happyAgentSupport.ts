@@ -1,5 +1,6 @@
 import { UserError } from "../types.js";
 import type {
+    HappyAgentAvatarImage,
     HappyAgentPermissionMode,
     HappyAgentServiceTier,
     HappyAgentThinkingLevel,
@@ -103,4 +104,24 @@ export function happyAgentPermissionLabel(mode: HappyAgentPermissionMode): strin
 
 export function happyAgentServiceTierLabel(tier: HappyAgentServiceTier | null): string {
     return tier === "fast" ? "Fast" : "Regular";
+}
+
+/**
+ * Bytes per base64 chunk. Divisibility by three means each chunk can be encoded
+ * independently without padding in the middle of the joined result.
+ */
+const BASE64_CHUNK = 0x6000;
+
+/**
+ * A picture being sent to the host, as a URL this client can already draw. It
+ * is what an optimistic row shows while the upload is in flight: the bytes are
+ * in hand, so the face need not wait for the host to serve them back.
+ */
+export function happyAgentAvatarImageDataUrl(image: HappyAgentAvatarImage): string {
+    const bytes = new Uint8Array(image.data);
+    const encoded: string[] = [];
+    for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK) {
+        encoded.push(btoa(String.fromCharCode(...bytes.subarray(offset, offset + BASE64_CHUNK))));
+    }
+    return `data:${image.contentType};base64,${encoded.join("")}`;
 }

@@ -306,6 +306,12 @@ export type ComposerFooterBarProps = {
     "data-testid"?: string;
     /** Sits at the start of the row: the session's own controls. */
     leading?: ReactNode;
+    /**
+     * One quiet sentence at the end of the row, for what sending here does when
+     * that is not the obvious thing — a send that also makes the bot it is
+     * addressed to. Kept to a few words: it is read in the moment before Enter.
+     */
+    note?: string;
     style?: CSSProperties;
     /** Sits at the end of the row: what the message is being written into. */
     trailing?: ReactNode;
@@ -326,7 +332,17 @@ export function ComposerFooterBar(props: ComposerFooterBarProps) {
             style={props.style}
         >
             <div className="happy-composer-footer-bar__group">{props.leading}</div>
-            <div className="happy-composer-footer-bar__group">{props.trailing}</div>
+            <div className="happy-composer-footer-bar__group">
+                {props.note ? (
+                    <span
+                        className="happy-composer-footer-bar__note"
+                        data-happy-desktop-ui="composer-footer-bar-note"
+                    >
+                        {props.note}
+                    </span>
+                ) : null}
+                {props.trailing}
+            </div>
         </div>
     );
 }

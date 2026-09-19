@@ -30,7 +30,6 @@ import type {
     HappyAgentSidebarVisibilityStore,
     HappyAgentPanelSnapshot,
     HappyAgentProjectAddSnapshot,
-    HappyAgentBotAddSnapshot,
     HappyAgentPanelStore,
     HappyAgentPanelTabId,
     HappyAgentPanelTabSnapshot,
@@ -130,7 +129,7 @@ import {
     fileNameCompare,
     type FileTreeExpansion,
     type FileTreeBuildEntry,
-    HappyAgentCreateSessionPage,
+    HappyAgentCreateBotPage,
     HappyAgentProjectCloneDialog,
     HappyAgentProjectSettingsDialog,
     HappyAgentSessionControls,
@@ -269,7 +268,6 @@ export interface AppHappyAgentEntry {
      * a host with no live stores supplies no `session`.
      */
     readonly projectAdd?: HappyAgentProjectAddSnapshot;
-    readonly botAdd?: HappyAgentBotAddSnapshot;
     /** The live stores for this Happy Agent, present once its connection is up. */
     readonly session?: AppHappyAgentSession;
     /** Authenticated setup is available before protected product stores load. */
@@ -498,10 +496,10 @@ export interface AppHappyAgentViewProps {
      * them. Absent in a host whose settings surface has no sections of its own.
      */
     onSettingsSectionOpen?(section: string): void;
-    /** Whether the URL addresses the addressed Happy Agent's Create surface. */
-    createOpen?: boolean;
-    /** Addresses that surface. Absent in a host with nowhere to put it. */
-    onCreateOpen?(): void;
+    /** Whether the URL addresses the naming surface for a new bot. */
+    botCreateOpen?: boolean;
+    /** Addresses that surface on one machine. Absent in a host with nowhere to put it. */
+    onBotCreateOpen?(happyAgentId: string): void;
     /** Whether the URL addresses the addressed Happy Agent's inbox of agent questions. */
     inboxOpen?: boolean;
     /** Addresses that inbox. */
@@ -1412,28 +1410,36 @@ function happyAgentSections(
     shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
 ): SidebarSection[] {
     return directory.happyAgents.flatMap((happyAgent) => [
-        // Creation lives on the Create page; the heading only groups existing bots.
-        ...(happyAgent.bots.length === 0
-            ? []
-            : [
-                  {
-                      id: happyAgentBotsSectionId(happyAgent.id),
-                      label: "Bots",
-                      items: happyAgent.bots
-                          .flatMap((bot) => [
-                              botSidebarItem(bot, titleShimmerEnabled),
-                              ...botSubtaskSidebarItems(
-                                  bot.subtasks,
-                                  happyAgent.projects,
-                                  titleShimmerEnabled,
-                              ),
-                          ])
-                          .map((item) => ({
-                              ...item,
-                              id: happyAgentItemId(happyAgent.id, item.id),
-                          })),
-                  },
-              ]),
+        // Keep the heading even with no bots: its action is where the first
+        // one is named, and a machine with none is exactly where that is wanted.
+        {
+            id: happyAgentBotsSectionId(happyAgent.id),
+            label: "Bots",
+            items: happyAgent.bots
+                .flatMap((bot) => [
+                    botSidebarItem(bot, titleShimmerEnabled),
+                    ...botSubtaskSidebarItems(
+                        bot.subtasks,
+                        happyAgent.projects,
+                        titleShimmerEnabled,
+                    ),
+                ])
+                .map((item) => ({
+                    ...item,
+                    id: happyAgentItemId(happyAgent.id, item.id),
+                })),
+            // Naming a bot belongs to the Happy Agent named by this section, the
+            // same way adding a project does.
+            ...(happyAgent.status === "connected" && happyAgent.session
+                ? {
+                      action: {
+                          icon: "plus" as const,
+                          label: "New bot",
+                          reveal: "always" as const,
+                      },
+                  }
+                : {}),
+        },
         happyAgentProjectsSection(happyAgent, titleShimmerEnabled, shortcutProject),
     ]);
 }
@@ -1770,8 +1776,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             // top-left corner empty. Beside a connection rail the mark stands
             // down again: the rail's tiles already identify the window.
             brand={desktop ? windowState.fullScreen && !windowState.connectionRail : true}
-            composeActive={props.createOpen === true}
-            composeLabel="Create"
             footer={
                 <SidebarFooter
                     actions={sidebarUpdate}
@@ -1828,14 +1832,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     id: row.id,
                 });
             }}
-            // Drafting remains available offline once this machine has a workspace.
-            {...(active?.session?.workspace && props.onCreateOpen
-                ? { onCompose: props.onCreateOpen }
-                : {})}
-            // Only project headings offer an inline creation action.
+            // Each heading makes its own kind of thing on the Happy Agent it
+            // names: a bot is named on a surface of its own, a project is chosen
+            // from this machine's folders.
             onSectionAction={(sectionId) => {
                 const section = happyAgentSectionParse(sectionId);
-                if (section?.kind !== "projects") return;
+                if (!section) return;
                 const happyAgent = happyAgentOf(section.happyAgentId);
                 if (happyAgent?.status !== "connected") {
                     props.onSettingsOpen();
@@ -1843,7 +1845,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 }
                 const workspace = happyAgent.session?.workspace;
                 if (!workspace) return;
-                workspace.projectAdd();
+                if (section.kind === "bots") props.onBotCreateOpen?.(happyAgent.id);
+                else workspace.projectAdd();
             }}
             onItemMenuSelect={(item, actionId) => {
                 const row = happyAgentItemParse(item.id);
@@ -2063,15 +2066,15 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 </>
             );
 
-        // Create belongs to the addressed machine — the projects a session can be
-        // started in are that machine's — so it is shown only while that machine
-        // has a workspace to answer through. There is deliberately nothing else
-        // on the surface: the task is the only thing being decided here.
-        if (props.createOpen && active?.session?.workspace)
+        // Naming a bot belongs to the addressed machine — it is the machine the
+        // bot will live on — so it is shown only while that machine has a
+        // workspace to answer through. There is deliberately nothing else on the
+        // surface: what it is called is the only thing being decided here.
+        if (props.botCreateOpen && active?.session?.workspace)
             return (
                 <>
                     {desktop ? <WindowDragRegion /> : null}
-                    <HappyAgentCreateSurface
+                    <HappyAgentCreateBotSurface
                         happyAgentOnline={activeHappyAgentOnline}
                         workspace={active.session.workspace}
                         {...(activeAvailability?.refusal === undefined
@@ -5331,65 +5334,79 @@ function happyAgentNamingDialog(
 }
 
 /**
- * Create, as the whole content region. The store owns what is being written, so
- * this is only a projection of `workspace.create` into the shared surface and
- * its callbacks back into the same store — including the task, which lives there
- * so that going elsewhere in the window puts the draft down rather than
- * destroying it.
+ * Where a bot is made: the conversation it is about to become, with nothing in
+ * it yet. The body holds what is decided beforehand — the face, the name, and
+ * Create — and the composer underneath is already the bot's own, standing
+ * where it will stand once the bot exists. Sending from it makes the bot and
+ * says the first thing to it; Create makes the bot and carries the words into
+ * the conversation as its draft, so making the bot moves nothing.
  *
- * The route addressing this surface is what materialized the draft, so a render
- * without one is the frame after a session started and before the window has
- * followed it into the new conversation.
+ * The composer is the one the store materialized with the draft, addressed
+ * through the draft's own actions rather than the workspace's shared ones: a
+ * group left open behind this route may still hold a composer of its own, and
+ * this one must never be mistaken for it.
  */
-function HappyAgentCreateSurface(props: {
+function HappyAgentCreateBotSurface(props: {
     happyAgentOnline: () => boolean;
     unavailable?: string;
     workspace: HappyAgentWorkspaceStore;
 }) {
-    const create = useSyncExternalStore(
+    const botCreate = useSyncExternalStore(
         reactFrameSubscribe(props.workspace),
         props.workspace.get,
         props.workspace.get,
-    ).create;
-    if (!create) return null;
+    ).botCreate;
+    if (!botCreate) return null;
     const store = props.workspace;
     return (
-        <HappyAgentCreateSessionPage
-            botName={create.botName}
-            destinations={create.groups.map((group) => ({
-                displayPath: group.displayPath,
-                id: group.id,
-                label: group.label,
-                ...(group.parentLabel === undefined ? {} : { parentLabel: group.parentLabel }),
-            }))}
-            destinationsLoading={create.groupsLoading}
-            {...(create.groupId === undefined ? {} : { destinationId: create.groupId })}
-            {...(create.draft ? { menus: create.draft.menus } : {})}
-            {...(create.error === undefined ? {} : { error: create.error })}
-            kind={create.kind}
-            onBotNameChange={(name) =>
-                reactFrameInputUpdate(store, () => store.createBotNameUpdate(name))
+        <ConversationView
+            agentAuthor={agentAuthor}
+            composer={botCreate.composer}
+            // Both ways of making the bot are one act on the same draft, so
+            // while either is under way the composer waits with the panel.
+            composerDisabled={botCreate.submitting}
+            composerFocusOnType
+            composerFocusKey={botCreate.composer.scopeId}
+            composerFooterControl={<ComposerFooterBar note="Sending also creates the bot" />}
+            composerPlaceholder="What should it work on?"
+            composerSubmitDisabled={props.unavailable !== undefined}
+            emptyContent={
+                <HappyAgentCreateBotPage
+                    {...(botCreate.error === undefined ? {} : { error: botCreate.error })}
+                    faceSlot={botCreate.faceSlot}
+                    faces={botCreate.faces}
+                    name={botCreate.name}
+                    onFacePick={(slot) => store.botCreateFacePick(slot)}
+                    onFacesRoll={() => store.botCreateFacesRoll()}
+                    // The name is a controlled field, so its new value has to
+                    // reach React inside the event that produced it; left in
+                    // the frame queue, React restores the old value and takes
+                    // the caret to the end of it.
+                    onNameChange={(name) =>
+                        reactFrameInputUpdate(store, () => store.botCreateNameUpdate(name))
+                    }
+                    onSubmit={() => {
+                        if (props.happyAgentOnline())
+                            void store.botCreateSubmit().catch(() => undefined);
+                    }}
+                    submitting={botCreate.submitting}
+                    {...(props.unavailable === undefined
+                        ? {}
+                        : { submitDisabledReason: props.unavailable })}
+                />
             }
-            onKindSelect={(kind) => store.createKindUpdate(kind)}
-            onDestinationSelect={(id) => store.createGroupUpdate(id as HappyAgentGroupId)}
-            onEffortChange={(effort) => store.createEffortUpdate(effort)}
-            onModelChange={(selection) => store.createModelUpdate(selection)}
-            onPermissionModeChange={(mode) => store.createPermissionModeUpdate(mode)}
-            onServiceTierChange={(tier) => store.createServiceTierUpdate(tier)}
-            onSubmit={() => {
-                if (props.happyAgentOnline()) void store.createSubmit().catch(() => undefined);
+            entries={NO_ENTRIES}
+            onComposerAttachmentRemove={(attachmentId) =>
+                store.botCreateAttachmentRemove(attachmentId)
+            }
+            onComposerAttachmentsSelect={(files) => store.botCreateAttachmentsAdd(files)}
+            onComposerFocusChange={(focused) => store.botCreateTaskFocusUpdate(focused)}
+            onComposerSend={() => {
+                if (props.happyAgentOnline()) store.botCreateTaskSend();
             }}
-            // The task is a controlled field, so its new value has to reach React
-            // inside the event that produced it; left in the frame queue, React
-            // restores the old value and takes the caret to the end of it.
-            onTextChange={(text) =>
-                reactFrameInputUpdate(store, () => store.createTextUpdate(text))
+            onComposerValueChange={(value) =>
+                reactFrameInputUpdate(store, () => store.botCreateTaskUpdate(value))
             }
-            submitting={create.submitting}
-            {...(props.unavailable === undefined
-                ? {}
-                : { submitDisabledReason: props.unavailable })}
-            text={create.text}
         />
     );
 }

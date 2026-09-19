@@ -30,6 +30,7 @@ import type {
     HappyAgentWorkspaceStore,
 } from "happy-desktop-state";
 import {
+    botFacePaint,
     SplashScreen,
     type BrowserContentRenderer,
     type HtmlPreviewRenderer,
@@ -307,19 +308,20 @@ const chatFileRoute = createRoute({
 });
 
 /**
- * Where a session is started on one machine. Arriving materializes the draft —
- * the task written on a previous visit is offered back, because the store keeps
- * it until a session actually starts — and the surface then holds the whole
- * content region until the reader goes somewhere else or the new session takes
- * them there.
+ * Where a new bot is named on one machine. Arriving materializes the draft — a
+ * name written on a previous visit is offered back, because the store keeps it
+ * until the bot is actually made — and the surface then holds the whole content
+ * region until the reader goes somewhere else or the new bot takes them there.
  */
-const sessionCreateRoute = createRoute({
-    component: HappyAgentCreateRoute,
+const botCreateRoute = createRoute({
+    component: HappyAgentBotCreateRoute,
     getParentRoute: () => rootRoute,
     loader: ({ context, params }) => {
-        happyAgentWorkspace(context, params.happyAgentId)?.createOpen();
+        // The store owns the seeds and the order of what happens; the painter
+        // is lent to it because a canvas lives here, not there.
+        happyAgentWorkspace(context, params.happyAgentId)?.botCreateOpen(botFacePaint);
     },
-    path: "/create/$happyAgentId",
+    path: "/bots/new/$happyAgentId",
 });
 
 /**
@@ -387,7 +389,7 @@ const routeTree = rootRoute.addChildren([
         chatFileRoute,
     ]),
     inboxRoute,
-    sessionCreateRoute,
+    botCreateRoute,
     ...(import.meta.env.DEV ? [blueprintRoute] : []),
     settingsIndexRoute,
     settingsSectionRoute,
@@ -403,12 +405,12 @@ function HappyAgentInboxRoute() {
 }
 
 /**
- * The Create address renders the same window a conversation does: the shell and
- * its sidebar stay, and only the content area changes, so starting a session is
- * not leaving the workspace.
+ * The naming address renders the same window a conversation does: the shell and
+ * its sidebar stay, and only the content area changes, so making a bot is not
+ * leaving the workspace.
  */
-function HappyAgentCreateRoute() {
-    return <HappyAgentWorkspaceLayout create />;
+function HappyAgentBotCreateRoute() {
+    return <HappyAgentWorkspaceLayout botCreate />;
 }
 
 /**
@@ -422,7 +424,7 @@ function HappyAgentBlueprintRoute() {
 function HappyAgentWorkspaceLayout(
     props: {
         blueprint?: boolean;
-        create?: boolean;
+        botCreate?: boolean;
         inbox?: boolean;
     } = {},
 ) {
@@ -456,7 +458,7 @@ function HappyAgentWorkspaceLayout(
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
             {...(context.sidebarCollapse ? { sidebarCollapse: context.sidebarCollapse } : {})}
             {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
-            createOpen={props.create}
+            botCreateOpen={props.botCreate}
             inboxOpen={props.inbox}
             blueprintOpen={props.blueprint}
             // Offered only where the route exists, which is what puts the
@@ -464,11 +466,8 @@ function HappyAgentWorkspaceLayout(
             {...(import.meta.env.DEV
                 ? { onBlueprintOpen: () => void navigate({ to: "/blueprint" }) }
                 : {})}
-            onCreateOpen={() =>
-                void navigate({
-                    params: { happyAgentId: params.happyAgentId ?? happyAgentDefaultId(context) },
-                    to: "/create/$happyAgentId",
-                })
+            onBotCreateOpen={(happyAgentId) =>
+                void navigate({ params: { happyAgentId }, to: "/bots/new/$happyAgentId" })
             }
             onInboxOpen={() =>
                 void navigate({

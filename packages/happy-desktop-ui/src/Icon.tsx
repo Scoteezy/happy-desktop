@@ -66,6 +66,7 @@ export type IconName =
     | "unlink"
     | "plugin"
     | "package"
+    | "dice"
     | "dot";
 export type IconProps = {
     name: IconName;
@@ -197,6 +198,8 @@ const glyphs: Record<IconName, IconGlyph> = {
     // The thing is still listed but what it pointed at is no longer there: a
     // checkout removed outside Happy, a link with nothing on the other end.
     unlink: { set: "ionicons", name: "unlink-outline" },
+    // Chance, asked for: rolling a new set of faces for a bot.
+    dice: { set: "ionicons", name: "dice-outline" },
     dot: { set: "ionicons", name: "ellipse" },
 };
 export const iconNames = Object.keys(glyphs) as IconName[];

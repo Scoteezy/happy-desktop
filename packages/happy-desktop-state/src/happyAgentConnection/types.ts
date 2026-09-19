@@ -10,6 +10,7 @@ import type {
     SlashCommand,
 } from "@slopus/happy-agent-client";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
+import type { HappyAgentAvatarImage } from "../happyAgent/happyAgentTypes.js";
 import type { HappyAgentServiceTier } from "../happyAgentServiceTier.js";
 import type { HappyAgentSync } from "./happyAgentSync.js";
 import type { UserProfile } from "./userProfiles.js";
@@ -635,6 +636,7 @@ export type MutationAction =
     | "create_project"
     | "archive_project"
     | "archive_bot"
+    | "set_bot_avatar"
     | "create_workspace"
     | "archive_workspace"
     | "create_session"
@@ -832,13 +834,19 @@ export interface HappyAgentConnection {
      * Creates a bot, its dedicated workspace, and its one agent, and answers
      * with the bot itself.
      *
-     * A promise rather than a named mutation, because nothing here can be named
+     * A promise rather than a named mutation, because nothing here can be known
      * in advance: the daemon derives the folder name and makes the one agent
      * that *is* the bot's conversation, and a caller opening the bot it just
      * asked for needs both. The id is supplied so a repeated attempt creates
      * the same bot rather than a second one.
+     *
+     * Without a name the daemon makes the bot as "New Bot" and names it from
+     * the first user message it accepts, so a bot can be asked for and put to
+     * work in one breath.
      */
     createBot(name?: string): Promise<Bot>;
+    /** Puts a picture on a bot, guarded by its version like every other bot mutation. */
+    setBotAvatar(botId: string, image: HappyAgentAvatarImage): MutationId;
     archiveBot(botId: string): MutationId;
     reorderBot(botId: string, afterId: string | null): MutationId;
     reorderProject(projectId: string, afterId: string | null): MutationId;

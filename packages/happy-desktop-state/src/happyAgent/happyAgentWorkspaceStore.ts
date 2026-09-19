@@ -60,6 +60,7 @@ import { happyAgentUserError } from "./happyAgentSupport.js";
 import { orderKeyAfter } from "../utils/orderKeyAfter.js";
 import { orderKeySequence } from "../utils/orderKeySequence.js";
 import type {
+    HappyAgentBotCreation,
     HappyAgentProjectArchiveResult,
     HappyAgentWorktreeArchiveResult,
     HappyAgentSessionListSnapshot,
@@ -67,6 +68,7 @@ import type {
     HappyAgentSessionLocation,
 } from "./happyAgentSessionListStore.js";
 import type {
+    HappyAgentAvatarImage,
     HappyAgentBackgroundProcess,
     HappyAgentChangedFileDocument,
     HappyAgentFileSearchResult,
@@ -641,12 +643,10 @@ export interface HappyAgentWorkspaceSnapshot {
     readonly workspaceFiles?: HappyAgentWorkspaceFiles;
     /** True while the all-files root directory is being read. */
     readonly workspaceFilesLoading: boolean;
-    /** The create dialog, when it is open. */
-    readonly create?: HappyAgentCreateSnapshot;
+    /** The bot being made, while that surface is open. */
+    readonly botCreate?: HappyAgentBotCreateSnapshot;
     /** Where adding a folder to this machine as a project stands. */
     readonly projectAdd: HappyAgentProjectAddSnapshot;
-    /** Where reserving a new unnamed bot on this machine stands. */
-    readonly botAdd: HappyAgentBotAddSnapshot;
     /** GitHub project being cloned onto a peer Happy Agent, while its dialog is open. */
     readonly projectClone?: HappyAgentProjectCloneSnapshot;
 }
@@ -676,12 +676,6 @@ export interface HappyAgentProjectAddSnapshot {
     readonly error?: string;
 }
 
-/** Creating an immediately usable placeholder bot from the sidebar. */
-export interface HappyAgentBotAddSnapshot {
-    readonly pending: boolean;
-    readonly error?: string;
-}
-
 /** Controlled draft for creating one managed project on another Happy Agent. */
 export interface HappyAgentProjectCloneSnapshot {
     readonly repository: string;
@@ -696,67 +690,53 @@ export interface HappyAgentProjectCloneSnapshot {
  */
 export const HAPPY_AGENT_PANEL_FILE_VIEW_ID = "file";
 
-/**
- * What the Create surface is currently making.
- *
- * A task is work in a project that ends: a session, its first message, and the
- * checkout it runs in. A bot is a colleague that does not end: one permanent
- * conversation with a folder of its own, named from its first message. They are the
- * two things this machine can be asked for, so they are one closed choice
- * rather than two surfaces.
- */
-export type HappyAgentCreateKind = "task" | "bot";
+/** One of the four faces offered for a new bot, by position. */
+export type HappyAgentBotFaceSlot = 0 | 1 | 2 | 3;
 
 /**
- * A session being composed before it exists. Everything a first message needs —
- * where to run, how it is configured, and what to say — decided in one place
- * rather than by starting a session and then correcting it.
- *
- * Switching between task and bot creation preserves both drafts. A bot starts
- * with the chosen name and opens directly into its permanent conversation.
+ * The four faces rolled together for a new bot. Each is a seed: the picture is
+ * a pure function of it, drawn wherever it is shown, so the draft carries no
+ * pixels and a face survives a reload as eight characters.
  */
-export interface HappyAgentCreateSnapshot {
-    /** Which of the two things the surface is currently making. */
-    readonly kind: HappyAgentCreateKind;
-    /** The bot's chosen display name, kept independently of the task draft. */
-    readonly botName: string;
-    /** The group it will start in; the last one used, until changed. */
-    readonly groupId?: HappyAgentGroupId;
+export type HappyAgentBotFaceSeeds = readonly [string, string, string, string];
+
+/**
+ * A bot being made.
+ *
+ * A bot is a colleague that does not end: one permanent conversation with a
+ * folder of its own. Nothing here is required. A face is always chosen, because
+ * four are rolled and one is picked from the start; a name left blank is given
+ * by the host from the first message; and the first message is what most of a
+ * bot's making is, so it is written here and sent the moment the bot exists.
+ */
+export interface HappyAgentBotCreateSnapshot {
+    /** The chosen display name. Blank, the host names the bot from its first message. */
+    readonly name: string;
+    /** The four faces on offer; `faceSlot` says which one the bot gets. */
+    readonly faces: HappyAgentBotFaceSeeds;
+    /** The picked position. It is the position that is kept when the four are re-rolled. */
+    readonly faceSlot: HappyAgentBotFaceSlot;
     /**
-     * Every project and worktree it could start in, in list order. Kept current
-     * while the surface is materialized: it may be reached from a route that has
-     * not read the machine's projects yet, and a list frozen at that moment
-     * would never offer anywhere to run.
+     * The composer the first message is written in. It is the same composer the
+     * bot's conversation will have, standing where that one will stand: sending
+     * from it makes the bot and says the first thing to it in one act, and
+     * making the bot without sending carries its text into the conversation as
+     * the draft, so nothing the reader wrote moves or disappears.
      */
-    readonly groups: readonly HappyAgentCreateGroupOption[];
-    /**
-     * True while this machine's project list is still being read, which is what
-     * tells an empty list apart from a machine that has nothing to offer.
-     */
-    readonly groupsLoading: boolean;
-    /** The first message. An empty one is not a task, and cannot be submitted. */
-    readonly text: string;
-    /** Model, effort, access mode, tier, plus the menus behind them. */
-    readonly draft?: HappyAgentSessionDraftSnapshot;
-    /** True while a session or bot is being made; the surface stays up and inert. */
+    readonly composer: ComposerSnapshot;
+    /** True while the bot is being made; the surface stays up and inert. */
     readonly submitting: boolean;
-    /** A failed start, said on the surface rather than thrown away. */
+    /** A refused creation, said on the surface rather than thrown away. */
     readonly error?: string;
 }
 
-export interface HappyAgentCreateGroupOption {
-    readonly id: HappyAgentGroupId;
-    readonly label: string;
-    /** True for a worktree, which is listed under the project it belongs to. */
-    readonly nested: boolean;
-    /**
-     * The project a worktree belongs to, so its bare name is never ambiguous
-     * across projects. Absent on a project itself.
-     */
-    readonly parentLabel?: string;
-    /** Where a session started here runs, as the host presents the path. */
-    readonly displayPath: string;
-}
+/**
+ * Paints the chosen face as the raster the host stores. The seed is product
+ * state and the drawing is a pure function of it, but the drawing needs a
+ * canvas, which the store does not have; the caller that does lends it here,
+ * and the store decides when it is used.
+ */
+export type HappyAgentBotFacePaint = (seed: string) => Promise<HappyAgentAvatarImage>;
 
 /** Which files the panel lists. */
 export type HappyAgentFileScope = "changed" | "all";
@@ -1239,35 +1219,51 @@ export interface HappyAgentWorkspaceStore {
      */
     openIn(groupId: HappyAgentGroupId, target: HappyAgentOpenInTarget): Promise<void>;
     /**
-     * Materializes the Create surface, on the group last created in — or the one
-     * given, when it is asked for from somewhere that already knows where. A task
-     * written on a previous visit is offered back: leaving the surface is how a
-     * draft is put down, not how it is thrown away, and only a session actually
-     * starting clears it.
+     * Materializes the surface for a new bot, with four faces rolled and the
+     * first of them picked. A draft from a previous visit is offered back:
+     * leaving the surface is how a draft is put down, not how it is thrown
+     * away, and only the bot actually being made clears it.
+     *
+     * The painter turns the picked seed into the raster the host stores. It is
+     * lent here because a canvas lives with the caller, and kept for the whole
+     * visit because both ways of making the bot need it.
      */
-    createOpen(groupId?: HappyAgentGroupId): void;
-    /** Creates an unnamed bot and opens its permanent conversation. */
-    botCreate(): void;
-    /** Chooses whether the surface is making a task or a bot. */
-    createKindUpdate(kind: HappyAgentCreateKind): void;
-    /** Edits the name of the bot being created. */
-    createBotNameUpdate(name: string): void;
-    /** Chooses which project or worktree the session will start in. */
-    createGroupUpdate(groupId: HappyAgentGroupId): void;
-    /** Edits the first message. */
-    createTextUpdate(text: string): void;
-    /** Chooses how the session will be configured. */
-    createModelUpdate(input: HappyAgentModelSelection): void;
-    createEffortUpdate(effort?: HappyAgentThinkingLevel): void;
-    createPermissionModeUpdate(permissionMode: HappyAgentPermissionMode): void;
-    createServiceTierUpdate(serviceTier?: HappyAgentServiceTier): void;
+    botCreateOpen(paint: HappyAgentBotFacePaint): void;
+    /** Edits the name of the bot being made. */
+    botCreateNameUpdate(name: string): void;
+    /** Picks one of the four faces by position. */
+    botCreateFacePick(slot: HappyAgentBotFaceSlot): void;
+    /** Rolls four new faces. The picked position stays picked, now wearing its new face. */
+    botCreateFacesRoll(): void;
+    /** Edits the first message, in the composer that will become the conversation's. */
+    botCreateTaskUpdate(text: string): void;
+    /** Whether that composer's text control owns focus. */
+    botCreateTaskFocusUpdate(focused: boolean): void;
     /**
-     * Makes whatever the surface currently is: a task starts its session and
-     * sends the first message, a bot starts with its chosen name. Either way the
-     * conversation it produced is reported through `conversationOpenRequested`,
-     * so the window lands in what it just made.
+     * Attaches picked, pasted, or dropped files to the first message, exactly
+     * as `composerAttachmentsAdd` does for a conversation's: the composer here
+     * is the one the conversation will have, and takes the same things.
      */
-    createSubmit(): Promise<void>;
+    botCreateAttachmentsAdd(files: readonly File[]): void;
+    /** Removes one attachment from the first message. */
+    botCreateAttachmentRemove(attachmentId: string): void;
+    /**
+     * Sends the first message, which makes the bot on the way: its one
+     * conversation is reported through `conversationOpenRequested` the moment
+     * it exists, the face is put on it, and the message is said to it — its
+     * images inline and its files placed in the bot's workspace, as any
+     * conversation's are — which is also what names an unnamed bot. A creation
+     * the host refuses is reported as an unsent message, with the host's
+     * reason, and can be retried from the composer.
+     */
+    botCreateTaskSend(): void;
+    /**
+     * Makes the bot without saying anything to it. The composer's text and
+     * attachments follow the reader into the conversation as its draft, in the
+     * same composer in the same place, so making the bot changes nothing about
+     * what they were writing. A refused creation is reported on the surface.
+     */
+    botCreateSubmit(): Promise<void>;
     /** Starts renaming a project, or one of its worktrees, from its current name. */
     renameOpen(projectId: HappyAgentProjectId, worktreeId: HappyAgentWorktreeId | undefined): void;
     /** Opens the same name dialog for a bot's persistent identity. */
@@ -1342,7 +1338,6 @@ function noOpenConversation(): Promise<never> {
 
 /** Nothing is being added and nothing was refused: one shared idle value. */
 const PROJECT_ADD_IDLE: HappyAgentProjectAddSnapshot = { pending: false };
-const BOT_ADD_IDLE: HappyAgentBotAddSnapshot = { pending: false };
 
 function githubRepositoryParse(
     value: string,
@@ -1392,6 +1387,19 @@ function selectionCreateFields(
  * is owned by the host (the desktop connection loader) and read separately, so
  * this framework-free product store depends only on the injected `HappyAgentWorkspaceClient`.
  */
+/**
+ * Four fresh face seeds. A seed is any short string; eight base-36 characters
+ * is far more faces than there are bots, and short enough to read in a debug
+ * snapshot.
+ */
+/** The composer scope of a bot being made; one per workspace, so one id. */
+const BOT_CREATE_COMPOSER_SCOPE = "bot-create";
+
+function botFaceSeedsRoll(): HappyAgentBotFaceSeeds {
+    const one = () => Math.random().toString(36).slice(2, 10).padEnd(8, "0");
+    return [one(), one(), one(), one()];
+}
+
 export function happyAgentWorkspaceStoreCreate(
     client: HappyAgentWorkspaceClient,
     deps: HappyAgentWorkspaceDeps = {},
@@ -1542,14 +1550,29 @@ export function happyAgentWorkspaceStoreCreate(
     };
     let fileTreeExpanded: ReadonlySet<string> = new Set();
     let fileTreeCollapsed: ReadonlySet<string> = new Set();
-    let create: HappyAgentCreateSnapshot | undefined;
+    /** The parts of a new bot the store holds itself; the composer is a store of its own. */
+    interface BotCreateDraft {
+        readonly name: string;
+        readonly faces: HappyAgentBotFaceSeeds;
+        readonly faceSlot: HappyAgentBotFaceSlot;
+        readonly submitting: boolean;
+        readonly error?: string;
+    }
+    let botCreateDraft: BotCreateDraft | undefined;
+    let botCreateComposer: ComposerStore | undefined;
+    let unsubscribeBotCreateComposer: (() => void) | undefined;
+    let botCreatePaint: HappyAgentBotFacePaint | undefined;
+    /** The two composed for the snapshot, rebuilt only when either has changed. */
+    let botCreate: HappyAgentBotCreateSnapshot | undefined;
+    let botCreateComposedFrom:
+        | { readonly draft: BotCreateDraft; readonly composer: ComposerSnapshot }
+        | undefined;
     /**
      * Where adding a folder as a project stands. One value for the workspace
      * rather than one per attempt, because exactly one add is ever in flight —
      * which is the thing `pending` both reports and enforces.
      */
     let projectAdd: HappyAgentProjectAddSnapshot = PROJECT_ADD_IDLE;
-    let botAdd: HappyAgentBotAddSnapshot = BOT_ADD_IDLE;
     let projectClone: HappyAgentProjectCloneSnapshot | undefined;
     /** Clone requests awaiting either a durable lifecycle or a mutation refusal. */
     const pendingProjectClones = new Map<
@@ -1557,24 +1580,6 @@ export function happyAgentWorkspaceStoreCreate(
         { readonly generation: number; readonly repository: string }
     >();
     let projectCloneGeneration = 0;
-    let createDraft: HappyAgentSessionDraftStore | undefined;
-    let unsubscribeCreateDraft: (() => void) | undefined;
-    let createDraftGeneration = 0;
-    /** The group the last created session started in, offered as the next default. */
-    let lastCreateGroupId: HappyAgentGroupId | undefined;
-    /**
-     * A task written on the Create surface and then put down. The surface is
-     * released with the machine it belongs to, so the writing outlives it;
-     * starting the session is what clears it.
-     */
-    let createTextKept = "";
-    /**
-     * Counts the Create surfaces that have been materialized. A start is slow
-     * enough for the surface to be released and another materialized while it is
-     * still in flight, and the one that comes back must not clear, or put its
-     * error on, a surface someone is now writing in.
-     */
-    let createInstance = 0;
     let workspaceFiles: HappyAgentWorkspaceFiles | undefined;
     let workspaceFilesLoading = false;
     let workspaceFilesGroupId: HappyAgentGroupId | undefined;
@@ -1820,7 +1825,6 @@ export function happyAgentWorkspaceStoreCreate(
         fileTreeCollapsed,
         workspaceFilesLoading,
         projectAdd,
-        botAdd,
         ...(projectClone ? { projectClone } : {}),
     }));
 
@@ -2014,107 +2018,12 @@ export function happyAgentWorkspaceStoreCreate(
         return next;
     };
 
-    /**
-     * Every project and worktree a session could start in, in the order the
-     * sidebar lists them, with worktrees under the project they belong to.
-     */
-    const createGroupsRead = (): readonly HappyAgentCreateGroupOption[] => {
-        const projects = list.get().projects;
-        if (projects.type !== "ready") return [];
-        const options: HappyAgentCreateGroupOption[] = [];
-        for (const project of projects.value) {
-            options.push({
-                displayPath: project.displayPath,
-                id: project.id,
-                label: project.name,
-                nested: false,
-            });
-            for (const worktree of project.worktrees)
-                options.push({
-                    displayPath: worktree.displayPath,
-                    id: worktree.id,
-                    label: worktree.name,
-                    nested: true,
-                    parentLabel: project.name,
-                });
-        }
-        return options;
-    };
-
-    /** True while the machine has not yet said which projects it holds. */
-    const createGroupsLoading = (): boolean => list.get().projects.type === "loading";
-
-    /** Same options in the same order, field for field. */
-    const createGroupsEqual = (
-        left: readonly HappyAgentCreateGroupOption[],
-        right: readonly HappyAgentCreateGroupOption[],
-    ): boolean =>
-        left.length === right.length &&
-        left.every((option, index) => {
-            const other = right[index];
-            return (
-                other !== undefined &&
-                option.id === other.id &&
-                option.label === other.label &&
-                option.nested === other.nested &&
-                option.parentLabel === other.parentLabel &&
-                option.displayPath === other.displayPath
-            );
-        });
-
-    /**
-     * Where a session starts when the reader has not said: the group last
-     * created in, then the one currently open, then whatever is listed first.
-     * Opening the dialog should not usually require answering "where", because
-     * usually it is where it was last time.
-     */
-    const createGroupDefault = (
-        groups: readonly HappyAgentCreateGroupOption[],
-    ): HappyAgentGroupId | undefined =>
-        (groups.some((group) => group.id === lastCreateGroupId) ? lastCreateGroupId : undefined) ??
-        (groups.some((group) => group.id === openGroupId) ? openGroupId : undefined) ??
-        groups[0]?.id;
-
-    /**
-     * Keeps the open dialog's destinations current with the machine's list. The
-     * dialog is a window-level surface that can be opened before the projects
-     * have been read, and a project can be archived from another window while it
-     * is open, so both the options and the chosen one are reconciled here rather
-     * than captured when it opened.
-     */
-    const createGroupsReconcile = (): void => {
-        if (!create) return;
-        const groups = createGroupsRead();
-        const groupsLoading = createGroupsLoading();
-        const chosen =
-            create.groupId !== undefined && groups.some((group) => group.id === create?.groupId)
-                ? create.groupId
-                : createGroupDefault(groups);
-        if (
-            createGroupsEqual(groups, create.groups) &&
-            groupsLoading === create.groupsLoading &&
-            chosen === create.groupId
-        )
-            return;
-        const { groupId: _dropped, ...rest } = create;
-        create = {
-            ...rest,
-            groups,
-            groupsLoading,
-            ...(chosen === undefined ? {} : { groupId: chosen }),
-        };
-    };
-
     // Rebuilds the combined snapshot only when a component snapshot actually
     // changed, so `get()` stays referentially stable across no-op ticks.
     const recompute = (): void => {
         if (composing > 0) return;
         const listSnapshot = list.get();
         groupResume = groupResumeCompute();
-        // The create dialog outlives the surface it was opened from, so the
-        // places it can start a session are read here rather than captured when
-        // it opened.
-        createGroupsReconcile();
         const nextTabOrder = groupTabOrderCompute(addressedGroupId);
         // The strip keeps its identity across ticks that did not move anything,
         // so a transcript frame does not re-render every tab in it.
@@ -2153,6 +2062,7 @@ export function happyAgentWorkspaceStoreCreate(
         }
         const groupComposerDraft = groupComposer?.getState();
         const groupSessionDraft = groupDraft?.get();
+        botCreateCompose();
         const nextAddress = addressPublic();
         const recentTabs = client.memory.recentTabsRead();
         // How this checkout is arranged travels with the address: moving to
@@ -2213,9 +2123,8 @@ export function happyAgentWorkspaceStoreCreate(
                 snapshot.fileTreeCollapsed === fileTreeCollapsed &&
                 snapshot.workspaceFiles === workspaceFiles &&
                 snapshot.workspaceFilesLoading === workspaceFilesLoading &&
-                snapshot.create === create &&
+                snapshot.botCreate === botCreate &&
                 snapshot.projectAdd === projectAdd &&
-                snapshot.botAdd === botAdd &&
                 snapshot.projectClone === projectClone
                     ? snapshot
                     : {
@@ -2240,9 +2149,8 @@ export function happyAgentWorkspaceStoreCreate(
                           ...(openInRecent ? { openInRecent } : {}),
                           workspaceFilesLoading,
                           projectAdd,
-                          botAdd,
                           ...(projectClone ? { projectClone } : {}),
-                          ...(create ? { create } : {}),
+                          ...(botCreate ? { botCreate } : {}),
                           ...(activeMainViewId ? { activeMainViewId } : {}),
                           ...(displayedMainViewId ? { displayedMainViewId } : {}),
                           ...(panelFile ? { panelFile } : {}),
@@ -3194,6 +3102,54 @@ export function happyAgentWorkspaceStoreCreate(
     };
 
     /**
+     * Attaches picked, dropped, or pasted files to one composer's draft. Every
+     * composer here takes files the same way, whichever conversation — or
+     * conversation to be — it writes into.
+     */
+    const attachmentsAddTo = (target: ComposerStore, files: readonly File[]): void => {
+        for (const file of files) {
+            const id = `attachment:${++attachmentSequence}`;
+            // Asked for now, while the browser still has the object the host
+            // can answer about, and kept with the draft: the send that needs
+            // it may be minutes later and in another surface.
+            const sourcePath = client.attachmentSourcePath(file);
+            target
+                .getState()
+                .attachmentAdd(happyAgentComposerAttachmentCreate(id, file, sourcePath));
+        }
+    };
+
+    /** Takes one attachment out of a composer's draft, letting go of its preview. */
+    const attachmentRemoveFrom = (target: ComposerStore, attachmentId: string): void => {
+        const attachment = target
+            .getState()
+            .attachments.find((candidate) => candidate.id === attachmentId);
+        target.getState().attachmentRemove(attachmentId);
+        if (attachment) happyAgentComposerAttachmentPreviewRelease(attachment);
+    };
+
+    /**
+     * Puts attachments into a conversation's draft: into its composer when that
+     * is live, otherwise held for the composer built when it is opened. The
+     * open case adds rather than replaces, so what the reader has attached
+     * since is kept beside what arrives.
+     */
+    const conversationAttachmentsCarry = (
+        conversationId: HappyAgentSessionId,
+        attachments: readonly ComposerAttachment[],
+    ): void => {
+        if (attachments.length === 0) return;
+        if (conversationId === openId && composer) {
+            for (const attachment of attachments) composer.getState().attachmentAdd(attachment);
+            return;
+        }
+        conversationAttachments.set(conversationId, [
+            ...(conversationAttachments.get(conversationId) ?? []),
+            ...attachments,
+        ]);
+    };
+
+    /**
      * The checkout one conversation runs in. Attachments land there and mentions
      * are searched there, and both are properties of the directory rather than
      * of the agent: a subagent addressed on its own still belongs to the project
@@ -3688,42 +3644,154 @@ export function happyAgentWorkspaceStoreCreate(
         });
     };
 
-    const createRelease = (): void => {
-        unsubscribeCreateDraft?.();
-        unsubscribeCreateDraft = undefined;
-        createDraft = undefined;
-        // Invalidates a catalog read still in flight, so its draft cannot attach
-        // itself to a surface that has since been released.
-        createDraftGeneration += 1;
+    /** Composes the published draft from its two parts, keeping identity while neither moved. */
+    const botCreateCompose = (): void => {
+        const composerState = botCreateComposer?.getState();
+        if (botCreateDraft === undefined || composerState === undefined) {
+            botCreate = undefined;
+            botCreateComposedFrom = undefined;
+            return;
+        }
+        if (
+            botCreateComposedFrom?.draft === botCreateDraft &&
+            botCreateComposedFrom.composer === composerState
+        )
+            return;
+        botCreateComposedFrom = { draft: botCreateDraft, composer: composerState };
+        botCreate = { ...botCreateDraft, composer: composerState };
     };
 
     /**
-     * Attaches the model/effort/access draft to the materialized Create surface
-     * from the one daemon-lifetime model store.
+     * Puts the whole draft down: the next arrival meets four new faces and an
+     * empty composer. The composer's attachments go on living where the bot
+     * was made — in its first message or its conversation's draft — so their
+     * previews are let go of only when the draft is dropped unsent.
      */
-    const createDraftEnsure = (): void => {
-        createRelease();
-        const current = createDraftGeneration;
-        void client.models.load().then(
-            ({ catalog, lastUsedSelection }) => {
-                if (disposed || current !== createDraftGeneration || !create) return;
-                const store = happyAgentSessionDraftStoreCreate({
-                    catalog,
-                    selection: lastUsedSelection,
-                    modelSelect: (current, input) => client.models.modelSelect(current, input),
-                });
-                createDraft = store;
-                unsubscribeCreateDraft = store.subscribe(() => {
-                    if (!create) return;
-                    client.models.selectionUsed(store.get().selection);
-                    create = { ...create, draft: store.get() };
-                    recompute();
-                });
-                create = { ...create, draft: store.get() };
-                recompute();
-            },
-            () => undefined,
+    const botCreateRelease = (dropped: boolean): void => {
+        if (dropped)
+            for (const attachment of botCreateComposer?.getState().attachments ?? [])
+                happyAgentComposerAttachmentPreviewRelease(attachment);
+        unsubscribeBotCreateComposer?.();
+        unsubscribeBotCreateComposer = undefined;
+        botCreateComposer = undefined;
+        botCreateDraft = undefined;
+    };
+
+    /** A first message as the composer hands it over: the words and what is attached to them. */
+    interface BotCreateMessage {
+        readonly text: string;
+        readonly attachments: readonly ComposerAttachment[];
+    }
+
+    /** Puts a whole draft, words and files, into a conversation ahead of the reader. */
+    const conversationDraftCarry = async (
+        conversationId: HappyAgentSessionId,
+        draft: BotCreateMessage,
+    ): Promise<void> => {
+        conversationAttachmentsCarry(conversationId, draft.attachments);
+        if (draft.text.trim().length === 0) return;
+        await withAddressedChat(conversationId, (store) =>
+            store.draftSet(draft.text, nextDraftUpdatedAt(), draftOrigin),
         );
+    };
+
+    /**
+     * Makes the bot from the draft. With a `message`, that is said to the bot
+     * as its first message once it exists — its images inline, its files
+     * placed in the bot's workspace, as a conversation's send does; without
+     * one, whatever the composer holds, text and attachments alike, follows
+     * the reader into the conversation as its draft. Rejects with the host's
+     * reason when the bot could not be made, having put the draft back the way
+     * it was so the reader can try again rather than retype.
+     */
+    const botCreateRun = async (message: BotCreateMessage | undefined): Promise<void> => {
+        const pending = botCreateDraft;
+        const paint = botCreatePaint;
+        // Thrown rather than returned: a send that resolved here would be
+        // taken by its composer as confirmed, and clear the words it holds.
+        if (!pending || paint === undefined) throw new Error("No bot is being made.");
+        if (pending.submitting) throw new Error("The bot is already being made.");
+        // Judged before anything is made, as a group's first message is: a
+        // file too large to carry, found out once the bot exists, would leave
+        // a bot behind that nobody asked for.
+        if (message !== undefined) happyAgentComposerAttachmentsValidate(message.attachments);
+        const name = pending.name.trim();
+        const seed = pending.faces[pending.faceSlot];
+        const composerState = botCreateComposer?.getState();
+        const carried: BotCreateMessage =
+            message === undefined
+                ? {
+                      text: composerState?.text ?? "",
+                      attachments: composerState?.attachments ?? [],
+                  }
+                : { text: "", attachments: [] };
+        botCreateDraft = { ...pending, submitting: true, error: undefined };
+        recompute();
+        // The face is painted before anything is asked of the host. It is a
+        // few milliseconds of local work, and having the bytes in hand when
+        // the host answers is what lets the new row wear its face from its
+        // first frame. A face that cannot be painted is the one thing here
+        // allowed to fail quietly: it leaves a working bot.
+        let image: HappyAgentAvatarImage | undefined;
+        try {
+            image = await paint(seed);
+        } catch {
+            image = undefined;
+        }
+        if (disposed) return;
+        let created: HappyAgentBotCreation;
+        try {
+            // Blank is left out, not sent: an absent name is what asks the
+            // host to name the bot from its first message.
+            created = await list.botCreate(name.length === 0 ? undefined : name);
+        } catch (error) {
+            if (disposed) return;
+            botCreateDraft = { ...pending, submitting: false };
+            recompute();
+            throw happyAgentUserError(error);
+        }
+        if (disposed) return;
+        // Put down rather than kept. The window follows the bot that was just
+        // made, and the next arrival here should meet four new faces rather
+        // than the ones already given away.
+        botCreateRelease(false);
+        recompute();
+        const { botId, location } = created;
+        // The face goes on before the window turns to the bot: the list lays it
+        // over the row the moment the row exists, and a refused upload is
+        // reported by the list like any other refused act.
+        if (image !== undefined) await list.botAvatarSet(botId, image);
+        if (disposed) return;
+        // Before the window turns, so the conversation's composer finds the
+        // draft already there: same text, same files, same place, still
+        // waiting to be sent.
+        await conversationDraftCarry(location.sessionId, carried);
+        if (disposed) return;
+        output({ type: "conversationOpenRequested", location });
+        // The first message is the last thing, and the one that cannot be
+        // undone: it is what the host names an unnamed bot from.
+        if (
+            message === undefined ||
+            (message.text.trim().length === 0 && message.attachments.length === 0)
+        )
+            return;
+        try {
+            const images = await happyAgentImageInputsOf(message.attachments);
+            const text = await attachmentsPlace(
+                location.groupId,
+                message.text,
+                message.attachments,
+            );
+            await withAddressedChat(location.sessionId, (store) => store.messageSend(text, images));
+        } catch (error) {
+            // The bot exists and the window has turned to it, but its first
+            // message did not go. The composer that held the message is gone
+            // with the surface, so the message is put down in the conversation
+            // — the one place the reader is now looking — for them to send
+            // again, and the refusal is still reported as an unsent message.
+            if (!disposed) await conversationDraftCarry(location.sessionId, message);
+            throw error;
+        }
     };
 
     const releaseGroup = (): void => {
@@ -4219,9 +4287,8 @@ export function happyAgentWorkspaceStoreCreate(
                     ...(openInRecent ? { openInRecent } : {}),
                     workspaceFilesLoading,
                     projectAdd,
-                    botAdd,
                     ...(projectClone ? { projectClone } : {}),
-                    ...(create ? { create } : {}),
+                    ...(botCreate ? { botCreate } : {}),
                     ...(activeMainViewId ? { activeMainViewId } : {}),
                     ...(displayedMainViewId ? { displayedMainViewId } : {}),
                 },
@@ -5083,25 +5150,11 @@ export function happyAgentWorkspaceStoreCreate(
         composerCommandInvoke: (commandId) => composer?.getState().commandInvoke(commandId),
         composerAttachmentsAdd(files) {
             const target = groupComposer ?? composer;
-            if (!target) return;
-            for (const file of files) {
-                const id = `attachment:${++attachmentSequence}`;
-                // Asked for now, while the browser still has the object the host
-                // can answer about, and kept with the draft: the send that needs
-                // it may be minutes later and in another surface.
-                const sourcePath = client.attachmentSourcePath(file);
-                target
-                    .getState()
-                    .attachmentAdd(happyAgentComposerAttachmentCreate(id, file, sourcePath));
-            }
+            if (target) attachmentsAddTo(target, files);
         },
         composerAttachmentRemove(attachmentId) {
             const target = groupComposer ?? composer;
-            const attachment = target
-                ?.getState()
-                .attachments.find((candidate) => candidate.id === attachmentId);
-            target?.getState().attachmentRemove(attachmentId);
-            if (attachment) happyAgentComposerAttachmentPreviewRelease(attachment);
+            if (target) attachmentRemoveFrom(target, attachmentId);
         },
 
         sessionModelUpdate(input) {
@@ -5172,143 +5225,80 @@ export function happyAgentWorkspaceStoreCreate(
             }
             return client.openIn(groupId, target);
         },
-        botCreate() {
-            if (disposed || botAdd.pending) return;
-            botAdd = { pending: true };
-            recompute();
-            void (async () => {
-                try {
-                    const location = await list.botCreate();
-                    if (disposed) return;
-                    botAdd = BOT_ADD_IDLE;
-                    recompute();
-                    output({ type: "conversationOpenRequested", location });
-                } catch (error) {
-                    if (disposed) return;
-                    botAdd = { pending: false, error: happyAgentUserError(error).message };
-                    recompute();
-                }
-            })();
-        },
-        createOpen(groupId) {
+        botCreateOpen(paint) {
+            if (disposed) return;
+            botCreatePaint = paint;
             // Asking for the surface while it is already materialized — coming
-            // back to it, or the row action behind it — must not throw away what
-            // is being written into it. Only the addressed group is taken from
-            // the second ask, since that is the one thing it can be more
-            // specific about than the surface already is.
-            if (create) {
-                if (groupId !== undefined && groupId !== create.groupId) {
-                    create = { ...create, groupId };
-                    recompute();
-                }
-                return;
-            }
-            const groups = createGroupsRead();
-            const chosen = groupId ?? createGroupDefault(groups);
-            createInstance += 1;
-            create = {
-                ...(chosen ? { groupId: chosen } : {}),
-                groups,
-                groupsLoading: createGroupsLoading(),
-                // A task is what this surface is for nearly every time it is
-                // reached; a bot is the deliberate other choice.
-                kind: "task",
-                botName: "",
-                // What was written the last time this was put down without
-                // starting anything. Usually empty; only a session actually
-                // starting clears it.
-                text: createTextKept,
+            // back to it, or the heading action behind it — must not throw away
+            // what is being written into it.
+            if (botCreateDraft) return;
+            botCreateDraft = {
+                name: "",
+                faces: botFaceSeedsRoll(),
+                faceSlot: 0,
                 submitting: false,
             };
-            createDraftEnsure();
+            const created: ComposerStore = composerStoreCreate(BOT_CREATE_COMPOSER_SCOPE, {
+                capabilities: { shellMode: false, commands: [], mentions: false },
+                output: (event) => {
+                    if (event.type !== "textSubmitted") return;
+                    // The composer's own submission lifecycle carries the
+                    // whole act: pending while the bot is made and the message
+                    // sent, and failed — with the host's reason and a retry —
+                    // when the bot could not be made.
+                    submitting(
+                        created,
+                        event.revision,
+                        () => botCreateRun({ text: event.text, attachments: event.attachments }),
+                        event.attachments,
+                    );
+                },
+            });
+            botCreateComposer = created;
+            unsubscribeBotCreateComposer = created.subscribe(recompute);
             recompute();
         },
-        createKindUpdate(kind) {
-            if (!create || create.submitting || create.kind === kind) return;
-            // Keep both drafts while switching; an error belongs only to
-            // the kind of creation that failed.
-            create = { ...create, kind, error: undefined };
+        botCreateNameUpdate(name) {
+            if (!botCreateDraft || botCreateDraft.submitting) return;
+            botCreateDraft = { ...botCreateDraft, name };
             recompute();
         },
-        createBotNameUpdate(botName) {
-            if (!create || create.submitting) return;
-            create = { ...create, botName };
+        botCreateFacePick(slot) {
+            if (!botCreateDraft || botCreateDraft.submitting || botCreateDraft.faceSlot === slot)
+                return;
+            botCreateDraft = { ...botCreateDraft, faceSlot: slot };
             recompute();
         },
-        createGroupUpdate(groupId) {
-            if (!create || create.submitting) return;
-            create = { ...create, groupId };
+        botCreateFacesRoll() {
+            if (!botCreateDraft || botCreateDraft.submitting) return;
+            botCreateDraft = { ...botCreateDraft, faces: botFaceSeedsRoll() };
             recompute();
         },
-        createTextUpdate(text) {
-            if (!create || create.submitting) return;
-            create = { ...create, text };
-            recompute();
+        botCreateTaskUpdate: (text) => botCreateComposer?.getState().textUpdate(text),
+        botCreateTaskFocusUpdate: (focused) => botCreateComposer?.getState().focusUpdate(focused),
+        botCreateAttachmentsAdd(files) {
+            if (botCreateComposer && !botCreateDraft?.submitting)
+                attachmentsAddTo(botCreateComposer, files);
         },
-        createModelUpdate: (input) => createDraft?.modelUpdate(input),
-        createEffortUpdate: (effort) => createDraft?.effortUpdate(effort),
-        createPermissionModeUpdate: (mode) => createDraft?.permissionModeUpdate(mode),
-        createServiceTierUpdate: (tier) => createDraft?.serviceTierUpdate(tier),
-        async createSubmit() {
-            const pending = create;
-            if (!pending || pending.submitting) return;
-            const text = pending.text.trim();
-            const botName = pending.botName.trim();
-            const groupId = pending.groupId;
-            const instance = createInstance;
-            // The one act this submit performs, or nothing at all. A surface
-            // with nothing to say and nowhere to run is not a session waiting to
-            // be started. A bot requires a deliberate name.
-            let commit: (() => Promise<void>) | undefined;
-            if (pending.kind === "bot") {
-                if (botName.length === 0) return;
-                commit = async () => {
-                    // The bot's one conversation is where the reader wanted
-                    // to end up: it is what they will say the first thing to.
-                    const location = await list.botCreate(botName);
-                    if (instance !== createInstance) return;
-                    output({ type: "conversationOpenRequested", location });
-                    if (create) create = { ...create, botName: "", submitting: false };
-                };
-            } else if (text.length > 0 && groupId !== undefined) {
-                commit = async () => {
-                    await groupSubmit(groupId, text, [], createDraft?.get().selection);
-                    lastCreateGroupId = groupId;
-                    // Released and materialized again while this was in flight:
-                    // the surface on screen is a different one, holding a task of
-                    // its own, and this start has nothing to say to it.
-                    if (instance !== createInstance) return;
-                    // The task has been filed, so there is nothing left to offer
-                    // back the next time this surface is reached — including when
-                    // it was released while the start was still in flight.
-                    createTextKept = "";
-                    // Cleared rather than released. The window follows the
-                    // session that just started, so what is left here is what
-                    // Create looks like when it is next arrived at: the same
-                    // project and the same configuration, ready for the next task.
-                    if (create) create = { ...create, text: "", submitting: false };
-                };
-            }
-            if (!commit) return;
-            create = { ...pending, submitting: true, error: undefined };
-            recompute();
+        botCreateAttachmentRemove(attachmentId) {
+            if (botCreateComposer && !botCreateDraft?.submitting)
+                attachmentRemoveFrom(botCreateComposer, attachmentId);
+        },
+        botCreateTaskSend: () => {
+            if (botCreateDraft?.submitting) return;
+            botCreateComposer?.getState().textSubmit();
+        },
+        async botCreateSubmit() {
             try {
-                await commit();
+                await botCreateRun(undefined);
             } catch (error) {
                 // The surface stays up holding what was typed. It is the only
-                // copy of the task or the name, and something that failed to be
-                // made is something the reader will want to try again rather
-                // than retype. A surface materialized since is a different
-                // draft, and this failure is not its failure to report.
-                if (instance !== createInstance) return;
-                if (create)
-                    create = {
-                        ...create,
-                        submitting: false,
-                        error: happyAgentUserError(error).message,
-                    };
+                // copy of it, and something that failed to be made is something
+                // the reader will want to try again rather than retype.
+                if (disposed || !botCreateDraft) return;
+                botCreateDraft = { ...botCreateDraft, error: happyAgentUserError(error).message };
+                recompute();
             }
-            recompute();
         },
         botRenameOpen(botId) {
             if (projectArchive?.submitting) return;
@@ -5656,6 +5646,7 @@ export function happyAgentWorkspaceStoreCreate(
             if (disposed) return;
             disposed = true;
             stop();
+            botCreateRelease(true);
             const released = new Set<string>();
             for (const attachments of [
                 ...groupAttachments.values(),
@@ -5668,7 +5659,6 @@ export function happyAgentWorkspaceStoreCreate(
                 }
             groupAttachments.clear();
             conversationAttachments.clear();
-            createRelease();
             // Disposing the panel stops every terminal it opened: this connection is
             // going away, and a shell nobody can reach again is an orphan.
             unsubscribePanel();

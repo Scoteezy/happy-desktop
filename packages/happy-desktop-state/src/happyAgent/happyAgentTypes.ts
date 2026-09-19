@@ -76,8 +76,12 @@ export interface HappyAgentBot {
      * The bot's picture. Unlike a project avatar it has no intrinsic size: the
      * daemon serves the bytes and a thumbhash to stand in until they arrive,
      * and the row draws it at whatever size the row is.
+     *
+     * The thumbhash is absent while the picture is one this client painted and
+     * is still sending up. Its bytes are already here as the URL, so nothing
+     * needs to stand in for them; the host's own record replaces it.
      */
-    readonly avatar?: { readonly url: string; readonly thumbhash: string };
+    readonly avatar?: { readonly url: string; readonly thumbhash?: string };
 }
 
 /** An active interactive task; its workspace may be shared with its parent. */
@@ -207,6 +211,17 @@ export interface HappyAgentModelCatalog {
 export interface HappyAgentImageInput {
     readonly mediaType: string;
     readonly data: string;
+}
+
+/**
+ * A picture being put on something the host keeps — a bot's face. The host
+ * stores encoded bytes and answers with a thumbhash and a URL, so this is the
+ * one shape a picture has on its way up: raster bytes in one of the three
+ * encodings the host accepts, never an SVG or a data URL.
+ */
+export interface HappyAgentAvatarImage {
+    readonly contentType: "image/png" | "image/jpeg" | "image/webp";
+    readonly data: ArrayBuffer;
 }
 
 // ---------------------------------------------------------------------------

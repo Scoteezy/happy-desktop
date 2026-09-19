@@ -8,7 +8,6 @@ import {
 } from "happy-desktop-state";
 import type {
     HappyAgentBot,
-    HappyAgentBotAddSnapshot,
     HappyAgentConnectionSnapshot,
     HappyAgentHost,
     HappyAgentModelPreferencePersistence,
@@ -29,7 +28,6 @@ import type { DesktopRuntimeStore } from "./runtimeStore";
 
 export const LOCAL_HAPPY_AGENT_ID = "local";
 const PROJECT_ADD_IDLE: HappyAgentProjectAddSnapshot = { pending: false };
-const BOT_ADD_IDLE: HappyAgentBotAddSnapshot = { pending: false };
 
 export interface HappyAgentDirectoryEntry {
     readonly id: string;
@@ -46,7 +44,6 @@ export interface HappyAgentDirectoryEntry {
     readonly bots: readonly HappyAgentBot[];
     readonly projectsStatus: "loading" | "ready" | "error";
     readonly projectAdd: HappyAgentProjectAddSnapshot;
-    readonly botAdd: HappyAgentBotAddSnapshot;
     readonly session?: HappyAgentSession;
     readonly setup?: HappyAgentConnectionHandle["setup"];
 }
@@ -111,10 +108,7 @@ interface LocalHappyAgent {
 
 function projectsRead(
     session: HappyAgentSession,
-): Pick<
-    HappyAgentDirectoryEntry,
-    "bots" | "projects" | "projectsStatus" | "projectAdd" | "botAdd"
-> {
+): Pick<HappyAgentDirectoryEntry, "bots" | "projects" | "projectsStatus" | "projectAdd"> {
     const workspace = session.workspace.get();
     const projects = workspace.list.projects;
     return {
@@ -123,23 +117,18 @@ function projectsRead(
         projectsStatus:
             projects.type === "ready" ? "ready" : projects.type === "error" ? "error" : "loading",
         projectAdd: workspace.projectAdd,
-        botAdd: workspace.botAdd,
     };
 }
 
 function projectsMatch(
     entry: HappyAgentDirectoryEntry,
-    next: Pick<
-        HappyAgentDirectoryEntry,
-        "bots" | "projects" | "projectsStatus" | "projectAdd" | "botAdd"
-    >,
+    next: Pick<HappyAgentDirectoryEntry, "bots" | "projects" | "projectsStatus" | "projectAdd">,
 ): boolean {
     return (
         entry.bots === next.bots &&
         entry.projects === next.projects &&
         entry.projectsStatus === next.projectsStatus &&
-        entry.projectAdd === next.projectAdd &&
-        entry.botAdd === next.botAdd
+        entry.projectAdd === next.projectAdd
     );
 }
 
@@ -199,7 +188,6 @@ export function happyAgentDirectoryStoreCreate(
             projects: [],
             projectsStatus: "loading",
             projectAdd: PROJECT_ADD_IDLE,
-            botAdd: BOT_ADD_IDLE,
             status: "connecting",
         },
     };
@@ -263,7 +251,6 @@ export function happyAgentDirectoryStoreCreate(
             projects: [],
             projectsStatus: "loading",
             projectAdd: PROJECT_ADD_IDLE,
-            botAdd: BOT_ADD_IDLE,
             session: undefined,
             setup: undefined,
         };
@@ -493,7 +480,6 @@ export function happyAgentDirectoryStoreCreate(
                                 projects: [],
                                 projectsStatus: "loading",
                                 projectAdd: PROJECT_ADD_IDLE,
-                                botAdd: BOT_ADD_IDLE,
                                 status: "connecting",
                             },
                         };

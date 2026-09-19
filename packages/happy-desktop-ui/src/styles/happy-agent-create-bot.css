@@ -1,0 +1,154 @@
+/*
+ * C-238 HappyAgentCreateBotPage — what is decided about a bot before it exists,
+ * standing in the body of the conversation it is about to become.
+ *
+ * The panel is the empty content of a conversation view, so it is laid out
+ * like the messages that will follow it: inside the chat measure, flush with
+ * the composer's left edge, and gathered at the bottom of the body directly
+ * above that composer, so the face, the name and the first message read as one
+ * short form. The well, hairline, radius, focus ring and placeholder are
+ * TextField's and Button's own — this file only decides where each thing stands.
+ */
+
+.happy-agent-create-bot,
+.happy-agent-create-bot * {
+    box-sizing: border-box;
+}
+
+.happy-agent-create-bot {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+    /* Gathered at the bottom, above the composer, with the body's spare
+       height above it — the way a fresh chat's first words sit. */
+    margin: auto auto 0;
+    /* The dock's own measure and gutters, so the panel's left edge is the
+       composer's left edge. */
+    padding: 24px 20px 12px 12px;
+    width: 100%;
+    max-width: var(--happy-chat-measure);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-create-bot__title {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 32px;
+    letter-spacing: -0.2px;
+}
+
+/* ---- The faces ---------------------------------------------------------- */
+
+/* Four faces, then the die a little apart from them: the die acts on all four
+   and is not a fifth choice. The credit follows directly, closer than the
+   column's gap, because it belongs to the faces rather than to the page. */
+.happy-agent-create-bot__faces {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+}
+
+.happy-agent-create-bot__face-row {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+}
+
+/*
+ * A face is a 56px square of picture with nothing of its own — no well, no
+ * hairline — so that four of them read as four faces rather than four
+ * controls. The picked one wears the selection ring, offset so the ring sits
+ * outside the picture instead of over its edge.
+ */
+.happy-agent-create-bot__face {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    width: 56px;
+    height: 56px;
+    border: 0;
+    border-radius: var(--happy-radius-md);
+    background: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.happy-agent-create-bot__face:disabled {
+    cursor: default;
+}
+
+.happy-agent-create-bot__face[data-picked] {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+.happy-agent-create-bot__face:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+.happy-bot-face {
+    display: block;
+    border-radius: var(--happy-radius-md);
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.happy-agent-create-bot__credit {
+    margin: -8px 0 0;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+    letter-spacing: 0;
+}
+
+.happy-agent-create-bot__artist {
+    color: var(--text-link);
+    text-decoration: none;
+}
+
+.happy-agent-create-bot__artist:hover {
+    text-decoration: underline;
+}
+
+/* ---- The name, and making the bot without a word -------------------------- */
+
+/* The name is three or four words, so its field stops at 288px rather than
+   inviting a paragraph; Create stands beside it because the name is the last
+   thing decided up here. */
+.happy-agent-create-bot__name-row {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+}
+
+.happy-agent-create-bot__name {
+    width: 288px;
+}
+
+/* Why the bot cannot be made right now, in the quiet size, directly under the
+   control it disables. */
+.happy-agent-create-bot__reason {
+    margin: -8px 0 0;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+}

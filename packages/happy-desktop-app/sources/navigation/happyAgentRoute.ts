@@ -14,6 +14,13 @@ import type { HappyAgentFileTabKind } from "happy-desktop-state";
  */
 export type HappyAgentRoute =
     | { readonly kind: "blueprint" }
+    /**
+     * Where a new bot is named. The machine is in the address because the bot
+     * will live on that machine, so the window's back and forward move between
+     * machines' naming surfaces rather than between two views of one ambiguous
+     * form.
+     */
+    | { readonly kind: "botCreate"; readonly happyAgentId: string }
     | {
           readonly kind: "chat";
           readonly happyAgentId: string;
@@ -21,13 +28,6 @@ export type HappyAgentRoute =
           readonly chatId: string;
       }
     | { readonly kind: "chats" }
-    /**
-     * Where a session is started. The machine is in the address because the
-     * projects it can run in are that machine's, so the window's back and
-     * forward move between machines' Create surfaces rather than between two
-     * views of one ambiguous form.
-     */
-    | { readonly kind: "create"; readonly happyAgentId: string }
     | {
           readonly kind: "file";
           readonly happyAgentId: string;
@@ -57,12 +57,12 @@ export function happyAgentRoutePath(route: HappyAgentRoute): string {
     switch (route.kind) {
         case "blueprint":
             return "/blueprint";
+        case "botCreate":
+            return `/bots/new/${part(route.happyAgentId)}`;
         case "chat":
             return `/chats/${part(route.happyAgentId)}/${part(route.groupId)}/${part(route.chatId)}`;
         case "chats":
             return "/chats";
-        case "create":
-            return `/create/${part(route.happyAgentId)}`;
         case "file": {
             const parent = route.chatId ? `/${part(route.chatId)}` : "";
             return `/chats/${part(route.happyAgentId)}/${part(route.groupId)}${parent}/file/${part(route.fileKind)}/${part(route.path)}`;
@@ -116,6 +116,10 @@ export function happyAgentRoutePathParse(pathname: string): HappyAgentRoute | un
     switch (head) {
         case "blueprint":
             return segments.length === 1 ? { kind: "blueprint" } : undefined;
+        case "bots":
+            return first === "new" && second !== undefined && segments.length === 3
+                ? { kind: "botCreate", happyAgentId: second }
+                : undefined;
         case "chats":
             if (first === undefined) return { kind: "chats" };
             if (second === undefined) return { kind: "happyAgent", happyAgentId: first };
@@ -148,10 +152,6 @@ export function happyAgentRoutePathParse(pathname: string): HappyAgentRoute | un
                     : undefined;
             }
             return undefined;
-        case "create":
-            return first !== undefined && segments.length === 2
-                ? { kind: "create", happyAgentId: first }
-                : undefined;
         case "inbox":
             return first !== undefined && segments.length === 2
                 ? { kind: "inbox", happyAgentId: first }
@@ -181,6 +181,10 @@ export function happyAgentRouteParse(value: unknown): HappyAgentRoute | undefine
     switch (record["kind"]) {
         case "blueprint":
             return { kind: "blueprint" };
+        case "botCreate": {
+            const happyAgentId = fieldOf(record, "happyAgentId");
+            return happyAgentId ? { kind: "botCreate", happyAgentId } : undefined;
+        }
         case "chat": {
             const happyAgentId = fieldOf(record, "happyAgentId");
             const groupId = fieldOf(record, "groupId");
@@ -191,10 +195,6 @@ export function happyAgentRouteParse(value: unknown): HappyAgentRoute | undefine
         }
         case "chats":
             return { kind: "chats" };
-        case "create": {
-            const happyAgentId = fieldOf(record, "happyAgentId");
-            return happyAgentId ? { kind: "create", happyAgentId } : undefined;
-        }
         case "file": {
             const happyAgentId = fieldOf(record, "happyAgentId");
             const groupId = fieldOf(record, "groupId");
