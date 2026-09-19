@@ -101,5 +101,8 @@ jobs:
                   if-no-files-found: error
 
     windows:
+        permissions:
+            contents: read
+            id-token: write
         if: ${{ inputs.platform != 'linux' }}
         uses: ./.github/workflows/build-windows.yml

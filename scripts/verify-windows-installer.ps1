@@ -11,9 +11,21 @@ $release = Join-Path $PSScriptRoot "../packages/happy-desktop-electron/release/$
 $installers = @(Get-ChildItem -LiteralPath $release -Filter 'Happy-*-x64.exe')
 if ($installers.Count -ne 1) { throw 'Expected exactly one Windows x64 installer.' }
 $installer = $installers[0].FullName
-if ((Get-AuthenticodeSignature -LiteralPath $installer).Status -ne 'NotSigned') {
-    throw 'This workflow must produce an unsigned installer until signing is configured.'
+function Assert-ReleaseSignature([string]$Path) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    if ($env:HAPPY_WINDOWS_SIGNING_ENABLED -ne 'true') {
+        if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned validation artifact: $Path" }
+        return
+    }
+    if ($signature.Status -ne 'Valid' -or $null -eq $signature.TimeStamperCertificate) {
+        throw "Expected a valid timestamped signature: $Path ($($signature.Status))"
+    }
+    $publisher = $signature.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
+    if ($signature.SignerCertificate.Subject -ne $env:WINDOWS_SIGNING_PUBLISHER -and $publisher -ne $env:WINDOWS_SIGNING_PUBLISHER) {
+        throw "Unexpected signing publisher on $Path"
+    }
 }
+Assert-ReleaseSignature $installer
 foreach ($required in @(($definition.channel + '.yml'), ($installers[0].Name + '.blockmap'))) {
     if (-not (Test-Path -LiteralPath (Join-Path $release $required))) {
         throw "Missing updater artifact: $required"
@@ -31,8 +43,10 @@ if (-not $process.WaitForExit(180000)) { throw 'The silent installer timed out.'
 if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
 $executable = Join-Path $installation ($definition.productName + '.exe')
 if (-not (Test-Path -LiteralPath $executable)) { throw "The installer did not install $executable." }
-if ((Get-AuthenticodeSignature -LiteralPath $executable).Status -ne 'NotSigned') {
-    throw 'The installed app unexpectedly has a signing identity.'
+Assert-ReleaseSignature $executable
+if ($env:HAPPY_WINDOWS_SIGNING_ENABLED -eq 'true') {
+    $nativeFiles = @(Get-ChildItem -LiteralPath $installation -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll', '.node' })
+    foreach ($file in $nativeFiles) { Assert-ReleaseSignature $file.FullName }
 }
 "HAPPY_DESKTOP_ELECTRON_EXECUTABLE=$executable" >> $env:GITHUB_ENV
-'Unsigned NSIS installer completed successfully; the next step launches the installed Happy.exe.' >> $env:GITHUB_STEP_SUMMARY
+'NSIS installer and signing policy verified; the next step launches the installed application.' >> $env:GITHUB_STEP_SUMMARY

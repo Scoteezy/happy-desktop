@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,6 +15,20 @@ const desktop = join(workspace, "packages", "happy-desktop-electron");
 const require = createRequire(join(desktop, "package.json"));
 const { build, Platform, Arch } = require("electron-builder");
 const metadata = JSON.parse(await readFile(join(desktop, "package.json"), "utf8"));
+const signingEnabled = process.env.HAPPY_WINDOWS_SIGNING_ENABLED === "true";
+const signing = {};
+if (signingEnabled) {
+    for (const [option, variable] of Object.entries({
+        publisherName: "WINDOWS_SIGNING_PUBLISHER",
+        endpoint: "WINDOWS_SIGNING_ENDPOINT",
+        certificateProfileName: "WINDOWS_SIGNING_PROFILE",
+        codeSigningAccountName: "WINDOWS_SIGNING_ACCOUNT",
+    })) {
+        const value = process.env[variable]?.trim();
+        if (!value) throw new Error(`Signed Windows builds require ${variable}.`);
+        signing[option] = value;
+    }
+}
 const pnpm = process.env.npm_execpath;
 if (!pnpm) throw new Error("Run this builder through pnpm desktop:win:release.");
 const environment = {
@@ -41,6 +56,16 @@ await build({
     targets: Platform.WINDOWS.createTarget(["nsis"], Arch.x64),
     config: {
         ...structuredClone(metadata.build),
+        ...(signingEnabled
+            ? {
+                  forceCodeSigning: true,
+                  win: {
+                      ...metadata.build.win,
+                      signExts: [".exe", ".dll", ".node"],
+                      azureSignOptions: signing,
+                  },
+              }
+            : {}),
         appId: flavor.appId,
         productName: flavor.productName,
         artifactName: `${flavor.artifactPrefix}-\${version}-\${arch}.\${ext}`,
@@ -68,13 +93,23 @@ if (
 ) {
     throw new Error(`Packaged updater configuration does not match ${flavor.productName}.`);
 }
+if (signingEnabled && ![updater.publisherName].flat().includes(signing.publisherName)) {
+    throw new Error("The signed app must verify its publisher when downloading updates.");
+}
 const manifest = parse(await readFile(join(output, `${flavor.channel}.yml`), "utf8"));
 const installer = `${flavor.artifactPrefix}-${metadata.version}-x64.exe`;
+const installerBytes = await readFile(join(output, installer));
+const installerHash = createHash("sha512").update(installerBytes).digest("base64");
 if (
     manifest.version !== metadata.version ||
-    !manifest.files.some((file) => file.url === installer)
+    !manifest.files.some(
+        (file) =>
+            file.url === installer &&
+            file.sha512 === installerHash &&
+            file.size === installerBytes.length,
+    )
 ) {
-    throw new Error(`Windows updater manifest does not reference ${installer}.`);
+    throw new Error(`Windows updater metadata does not match the final installer ${installer}.`);
 }
 console.log(
     `Built ${flavor.productName} ${metadata.version}; installer and ${flavor.channel}.yml agree.`,
