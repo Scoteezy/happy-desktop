@@ -349,7 +349,9 @@ function HappyAgentBoundary(props: {
  */
 function DesktopOnboardingGate(props: {
     appearance: AppearanceStore;
+    bridge: HappyDesktopBridge;
     children: ReactNode;
+    platform: "desktop" | "web";
     store: LocalOnboardingStore;
     welcome: WelcomeStore;
 }) {
@@ -418,9 +420,12 @@ function DesktopOnboardingGate(props: {
                 if (stage === "setup" || stage === "subscriptions" || stage === "profile")
                     props.store.stepBack(stage);
             }}
-            onSubscriptionsRefresh={() => props.store.subscriptionsRecheck()}
             {...(reached ? { reachedStage: reached } : {})}
-            onExternalOpen={(url) => window.open(url, "_blank", "noopener,noreferrer")}
+            onExternalOpen={
+                props.platform === "desktop"
+                    ? desktopExternalLinkOpen(props.bridge)
+                    : (url) => window.open(url, "_blank", "noopener,noreferrer")
+            }
             view={view}
         />
     );
@@ -677,6 +682,8 @@ function DesktopLocalScreens(props: DesktopRendererProps) {
         ) : (
             <DesktopOnboardingGate
                 appearance={props.appearance}
+                bridge={props.bridge}
+                platform={props.platform}
                 store={props.onboarding}
                 welcome={props.welcome}
             >

@@ -26,12 +26,6 @@ interface ProviderAuthenticationSnapshot {
     readonly complete: boolean;
     readonly grok?: ProviderAuthenticationResult;
     readonly key?: string;
-    /**
-     * A pass is running now. Results already shown stay exactly as they are
-     * while it runs, so a screen someone is reading does not flicker back to
-     * "checking" every couple of seconds.
-     */
-    readonly refreshing?: boolean;
 }
 
 export interface LocalOnboardingViewSnapshot {
@@ -63,8 +57,6 @@ export interface LocalOnboardingStore {
     chiefOfStaffSetup(): void;
     assistantsContinue(): void;
     stepBack(step: LocalOnboardingStepBack): void;
-    /** Runs the subscription check now instead of waiting for the next pass. */
-    subscriptionsRecheck(): void;
     profileNameUpdate(value: string): void;
     profileEmailUpdate(value: string): void;
     profileCreate(): void;
@@ -459,11 +451,10 @@ export function localOnboardingStoreCreate(
      * Asks the daemon what it can authenticate with, now.
      *
      * A repeat pass leaves the results already on screen exactly where they
-     * are and only says that it is running: the report is read while it
-     * updates, and rewriting every column to "checking" twice a second would
-     * make a settled answer look unsettled. The first pass for a set of
-     * binaries is different — there is nothing to preserve, so it starts at
-     * checking.
+     * are while it runs: the report is read while it updates, and rewriting
+     * every column to "checking" twice a second would make a settled answer
+     * look unsettled. The first pass for a set of binaries is different —
+     * there is nothing to preserve, so it starts at checking.
      */
     function providerAuthenticationRun(key: string, runtime: DesktopRuntimeSnapshot) {
         if (runtime.phase !== "ready" || verificationRunning) return;
@@ -474,34 +465,20 @@ export function localOnboardingStoreCreate(
         verificationAbort?.abort();
         const abort = new AbortController();
         verificationAbort = abort;
-        publish({
-            ...snapshot,
-            providerAuthentication: first
-                ? {
-                      claude: binaryAuthenticationInitial(assistants, "claude"),
-                      codex: binaryAuthenticationInitial(assistants, "codex"),
-                      complete: binaries.length === 0,
-                      grok: binaryAuthenticationInitial(assistants, "grok"),
-                      key,
-                      refreshing: binaries.length > 0,
-                  }
-                : { ...snapshot.providerAuthentication, refreshing: true },
-        });
+        if (first)
+            publish({
+                ...snapshot,
+                providerAuthentication: {
+                    claude: binaryAuthenticationInitial(assistants, "claude"),
+                    codex: binaryAuthenticationInitial(assistants, "codex"),
+                    complete: binaries.length === 0,
+                    grok: binaryAuthenticationInitial(assistants, "grok"),
+                    key,
+                },
+            });
         // There is no asynchronous provider check to wait for when every CLI
-        // is missing. A repeat/manual pass therefore finishes in this same
-        // call instead of leaving the refresh glyph spinning forever.
-        if (binaries.length === 0) {
-            if (!first)
-                publish({
-                    ...snapshot,
-                    providerAuthentication: {
-                        ...snapshot.providerAuthentication,
-                        complete: true,
-                        refreshing: false,
-                    },
-                });
-            return;
-        }
+        // is missing, so the automatic pass finishes in this same call.
+        if (binaries.length === 0) return;
 
         const client = new HappyAgentClient({
             endpoint: runtime.activeTarget.happyAgentHttpUrl,
@@ -680,10 +657,6 @@ export function localOnboardingStoreCreate(
         stepBack(step) {
             attempt(bridge.onboardingStepBack(step), "Happy could not go back to that step.");
         },
-        subscriptionsRecheck() {
-            const live = providerAuthenticationLive();
-            if (live) providerAuthenticationRun(live.key, live.runtime);
-        },
         profileNameUpdate(value) {
             profileDraftDirty = true;
             publish({ ...snapshot, profileName: value });
@@ -758,7 +731,6 @@ export function localOnboardingView(
                 ),
                 complete: snapshot.providerAuthentication.complete,
                 kind: "provider-authentication",
-                ...(snapshot.providerAuthentication.refreshing ? { refreshing: true } : {}),
             };
         case "agentReady":
             return {

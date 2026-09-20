@@ -5,7 +5,8 @@
 First-run setup is one linear sequence: **Setup**, **Subscriptions**,
 **Profile**, **Get app**, and **Connect phone**. It has one progress bar, not a
 second onboarding flow nested inside the mobile steps. The current step is
-clear from its highlighted label; it needs no rounded outline and no separate
+clear from its highlighted label and half-filled segment, exactly between a
+completed and untouched step; it needs no rounded outline and no separate
 “complete / remaining” count.
 
 Completed steps are real navigation. The segment and its label are one button
@@ -17,7 +18,8 @@ Every screen keeps its title and subtitle at the same coordinates. Below them
 comes flexible space, the step's core content and primary action, more flexible
 space, and then auxiliary material such as progress, notes, or the option to
 skip mobile setup. “Get help” stays in the bottom-right throughout onboarding
-and offers Discord, the two support accounts on X, and the filed GitHub issues.
+and opens above and to the left without moving the page. It offers Discord, the
+two support accounts on X, and the filed GitHub issues in the system browser.
 
 ## Subscriptions
 
@@ -32,9 +34,9 @@ marketing page. A missing assistant links to its official CLI installation
 instructions. A valid assistant needs no action.
 
 While this screen is visible, Happy checks again every two seconds without
-flickering away the last result. A refresh control sits beside
-“Subscriptions” for an immediate check, and the screen advances only after at
-least one subscription is valid.
+flickering away the last result or showing a manual refresh control. Once the
+user logs in, Happy detects it automatically, and the screen advances only
+after at least one subscription is valid.
 
 ## Mobile and help
 
@@ -59,8 +61,11 @@ setup**, and every pairing QR code has **Copy auth link** directly beneath it.
 - Claude Code, Codex, and Grok each show the correct sign-in command or official
   installation link, and commands are visibly terminal commands that copy in
   one action.
-- Subscription status refreshes every two seconds only while visible, can be
-  refreshed immediately, and cannot be skipped when none is valid.
+- Subscription status refreshes every two seconds only while visible,
+  automatically detects a completed login without a manual refresh control,
+  and cannot be skipped when none is valid.
 - Mobile onboarding remains optional but is no longer nested; its QR screens
   expose the exact authentication link for copying.
-- The same bottom-right help menu is available throughout onboarding.
+- The same bottom-right help menu is available throughout onboarding, opens
+  above and to the left inside the window, and sends every destination to the
+  system browser.

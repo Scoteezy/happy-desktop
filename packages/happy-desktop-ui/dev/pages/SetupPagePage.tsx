@@ -523,7 +523,6 @@ export function SetupPagePage() {
                             onProfileEmailChange={noop}
                             onProfileNameChange={noop}
                             onProjectChoose={noop}
-                            onSubscriptionsRefresh={noop}
                             view={{
                                 assistants: [
                                     {

@@ -1,6 +1,5 @@
 import { AssistantMark, type AssistantMarkName } from "./AssistantMark";
 import { SetupCommand } from "./SetupCommand";
-import { Ionicon } from "./vectorIcons/VectorIcon";
 
 /**
  * What to do about an assistant that is not usable yet: run something, or go
@@ -41,12 +40,6 @@ export interface SetupAssistantEntry {
 export interface SetupAssistantsProps {
     readonly assistants: readonly SetupAssistantEntry[];
     readonly "data-testid"?: string;
-    /** A heading over the row, with the live check beside it. */
-    readonly title?: string;
-    /** A check is in flight: the mark beside the heading turns while it runs. */
-    readonly refreshing?: boolean;
-    /** Asks for the check now, without waiting for the next automatic one. */
-    onRefresh?(): void;
 }
 
 /**
@@ -93,28 +86,6 @@ export function SetupAssistants(props: SetupAssistantsProps) {
             data-happy-desktop-ui="setup-assistants"
             data-testid={props["data-testid"]}
         >
-            {props.title === undefined ? null : (
-                <div
-                    className="happy-setup-assistants__header"
-                    data-happy-desktop-ui="setup-assistants-header"
-                >
-                    <span className="happy-setup-assistants__title">{props.title}</span>
-                    {props.onRefresh ? (
-                        <button
-                            aria-label={
-                                props.refreshing ? "Checking now" : "Check subscriptions now"
-                            }
-                            className="happy-setup-assistants__refresh"
-                            data-happy-desktop-ui="setup-assistants-refresh"
-                            data-refreshing={props.refreshing ? "" : undefined}
-                            onClick={props.onRefresh}
-                            type="button"
-                        >
-                            <Ionicon name="refresh" size={14} />
-                        </button>
-                    ) : null}
-                </div>
-            )}
             <div className="happy-setup-assistants__row">
                 {props.assistants.map((assistant) => (
                     <article

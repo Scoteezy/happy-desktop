@@ -27,3 +27,10 @@
     right: 0;
     left: auto;
 }
+
+.happy-menu-button__popover[data-placement="above"] {
+    top: auto;
+    bottom: 100%;
+    padding-top: 0;
+    padding-bottom: 4px;
+}

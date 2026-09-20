@@ -228,10 +228,8 @@
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__mark,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__name,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__detail,
-.happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__title,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__note,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__link,
-.happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__refresh,
 .happy-setup-page[data-backdrop="sky"] .happy-copy-button[data-captioned],
 .happy-setup-page[data-backdrop="sky"] .happy-local-onboarding__facts,
 .happy-setup-page[data-backdrop="sky"] .happy-text-field__label {
@@ -240,7 +238,6 @@
 
 /* Quiet controls on the photograph take the same white ink, and the same
    translucent hover the ghost buttons beside them use. */
-.happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__refresh:hover,
 .happy-setup-page[data-backdrop="sky"] .happy-copy-button[data-captioned]:hover {
     color: white;
     background: color-mix(in srgb, white 12%, transparent);

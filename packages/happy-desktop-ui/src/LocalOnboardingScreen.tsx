@@ -64,8 +64,6 @@ export type LocalOnboardingView =
           readonly kind: "provider-authentication";
           readonly assistants: readonly LocalOnboardingAssistant[];
           readonly complete: boolean;
-          /** A check is running right now, after the first one has settled. */
-          readonly refreshing?: boolean;
       }
     | {
           /**
@@ -118,8 +116,6 @@ export interface LocalOnboardingScreenProps {
     onConnectRetry(): void;
     /** Returns to an earlier step. Absent where stepping back is not offered. */
     onStageSelect?(stage: OnboardingStage): void;
-    /** Asks for the subscription check now rather than at the next pass. */
-    onSubscriptionsRefresh?(): void;
     /** Opens an external page: the host owns how a link leaves the app. */
     onExternalOpen?(url: string): void;
     onHappyMobileConnect(): void;
@@ -223,8 +219,6 @@ const ASSISTANTS: Record<
         install: string;
         /** What signs you in, taken from each vendor's own documentation. */
         signIn: string;
-        /** Only where the command alone does not finish the job. */
-        signInNote?: string;
     }
 > = {
     claude: {
@@ -248,7 +242,6 @@ const ASSISTANTS: Record<
         name: "Grok",
         // Grok has no login subcommand: running it is the sign-in.
         signIn: "grok",
-        signInNote: "Sign in when the browser opens.",
     },
 };
 
@@ -303,7 +296,6 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
                 return {
                     command: vendor.signIn,
                     kind: "command",
-                    ...(vendor.signInNote ? { note: vendor.signInNote } : {}),
                 };
             case "checking":
             case "valid":
@@ -343,7 +335,6 @@ interface MachineSetupProjection {
     readonly label: string;
     readonly progress: SetupPageProgress;
     readonly ready: boolean;
-    readonly refreshing: boolean;
     readonly title: string;
 }
 
@@ -355,7 +346,6 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             label: agentSetupProgressLabel(view.phase),
             progress: agentSetupProgress(view.phase),
             ready: false,
-            refreshing: false,
             title: "Launching Happy Agent",
         };
     if (view.kind === "connecting")
@@ -365,7 +355,6 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             label: "Waiting for Happy Agent…",
             progress: { kind: "waiting" },
             ready: false,
-            refreshing: false,
             title: "Launching Happy Agent",
         };
     if (view.kind === "examining")
@@ -376,7 +365,6 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             label: "Preparing authentication checks…",
             progress: { kind: "waiting" },
             ready: false,
-            refreshing: true,
             title: "Checking your subscriptions",
         };
     if (view.kind === "provider-authentication") {
@@ -386,13 +374,12 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             copy: view.complete
                 ? valid
                     ? "Happy will use these subscriptions for its work."
-                    : "Happy works by running Claude Code, Codex, or Grok on your own subscription, so it needs at least one of them installed and signed in. Set one up below — this screen continues on its own."
+                    : "Happy needs at least one. Set one up below. Once you log in, Happy will automatically detect it."
                 : "Happy is checking your Claude, Codex, and Grok sign-ins on this machine.",
             hasValidAuthentication: valid,
             label: "Checking subscription authentication…",
             progress: { fraction: 1, kind: "measured" },
             ready: view.complete,
-            refreshing: !view.complete || view.refreshing === true,
             title: view.complete
                 ? valid
                     ? "Subscriptions ready"
@@ -406,7 +393,6 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
 function MachineSetupStatus(props: {
     readonly projection: MachineSetupProjection;
     onContinue(): void;
-    onRefresh?(): void;
 }) {
     const showAssistants = props.projection.assistants !== undefined;
     return (
@@ -433,9 +419,6 @@ function MachineSetupStatus(props: {
                 <SetupAssistants
                     assistants={props.projection.assistants ?? CHECKING_ASSISTANTS}
                     data-testid={showAssistants ? "local-onboarding-assistants" : undefined}
-                    refreshing={props.projection.refreshing}
-                    title="Subscriptions"
-                    {...(props.onRefresh ? { onRefresh: props.onRefresh } : {})}
                 />
                 <div
                     aria-hidden={!props.projection.hasValidAuthentication}
@@ -535,9 +518,6 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 <MachineSetupStatus
                     onContinue={props.onAssistantsContinue}
                     projection={machineSetup}
-                    {...(props.onSubscriptionsRefresh
-                        ? { onRefresh: props.onSubscriptionsRefresh }
-                        : {})}
                 />
             </SetupPage>
         );
@@ -836,6 +816,7 @@ function OnboardingHelp(props: { onExternalOpen?(url: string): void }) {
             items={HELP_LINKS.map((link) => ({ id: link.id, kind: "item", label: link.label }))}
             label="Get help"
             menuLabel="Get help"
+            placement="above"
             onSelect={(id) => {
                 const link = HELP_LINKS.find((candidate) => candidate.id === id);
                 if (link) props.onExternalOpen?.(link.url);

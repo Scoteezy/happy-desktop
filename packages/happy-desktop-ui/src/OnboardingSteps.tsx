@@ -53,9 +53,8 @@ function segments(
         currentIndex,
         stages.findIndex((stage) => stage.id === reached),
     );
-    return stages.map((stage, index) => ({
-        ...stage,
-        state: complete
+    return stages.map((stage, index) => {
+        const state = complete
             ? ("done" as const)
             : index === currentIndex
               ? failed
@@ -65,13 +64,20 @@ function segments(
                 // stepped back to an earlier one: both are finished work.
                 index < currentIndex || index <= reachedIndex
                 ? ("done" as const)
-                : ("pending" as const),
-        // Only a step already passed can be returned to, and only when the flow
-        // says it has somewhere to send you.
-        ...(onStageSelect && index < currentIndex
-            ? { onSelect: () => onStageSelect(stage.id) }
-            : {}),
-    }));
+                : ("pending" as const);
+        return {
+            ...stage,
+            state,
+            // In a user-paced sequence the current step is visually halfway
+            // between work already completed and work not begun yet.
+            ...(state === "running" ? { fraction: 0.5 } : {}),
+            // Only a step already passed can be returned to, and only when the flow
+            // says it has somewhere to send you.
+            ...(onStageSelect && index < currentIndex
+                ? { onSelect: () => onStageSelect(stage.id) }
+                : {}),
+        };
+    });
 }
 
 /** One flat sequence of named steps; earlier ones are clickable when re-entrant. */

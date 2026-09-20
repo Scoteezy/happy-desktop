@@ -20,6 +20,8 @@ export interface MenuButtonProps {
     readonly items: readonly MenuItem[] | (() => readonly MenuItem[]);
     readonly onSelect: (id: string) => void;
     readonly align?: "start" | "end";
+    /** Which edge of the trigger the popover opens from. */
+    readonly placement?: "above" | "below";
     readonly disabled?: boolean;
     /** Caps a long menu to a scrollable viewport while keeping its trigger fixed. */
     readonly menuMaxHeight?: number;
@@ -42,6 +44,7 @@ export function MenuButton(props: MenuButtonProps) {
     const [materializedItems, setMaterializedItems] = useState<readonly MenuItem[]>([]);
     const [menuPage, setMenuPage] = useState(0);
     const [triggerBottom, setTriggerBottom] = useState(0);
+    const [triggerTop, setTriggerTop] = useState(0);
     const root = useRef<HTMLDivElement>(null);
     const menuId = useId();
     const expanded = open && !props.disabled;
@@ -147,7 +150,9 @@ export function MenuButton(props: MenuButtonProps) {
                             typeof props.items === "function" ? props.items() : props.items,
                         );
                         setMenuPage(0);
-                        setTriggerBottom(event.currentTarget.getBoundingClientRect().bottom);
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        setTriggerBottom(bounds.bottom);
+                        setTriggerTop(bounds.top);
                         setOpen(true);
                     }
                 }}
@@ -172,6 +177,7 @@ export function MenuButton(props: MenuButtonProps) {
                     <div
                         className="happy-menu-button__popover"
                         data-happy-desktop-ui="menu-button-popover"
+                        data-placement={props.placement === "above" ? "above" : undefined}
                         ref={popoverRef}
                     >
                         <Menu
@@ -196,7 +202,10 @@ export function MenuButton(props: MenuButtonProps) {
                                 ? {}
                                 : {
                                       style: {
-                                          maxHeight: `max(0px, min(${String(props.menuMaxHeight)}px, calc(100vh - ${String(triggerBottom)}px - 8px)))`,
+                                          maxHeight:
+                                              props.placement === "above"
+                                                  ? `max(0px, min(${String(props.menuMaxHeight)}px, calc(${String(triggerTop)}px - 8px)))`
+                                                  : `max(0px, min(${String(props.menuMaxHeight)}px, calc(100vh - ${String(triggerBottom)}px - 8px)))`,
                                       },
                                   })}
                             width={props.menuWidth}
