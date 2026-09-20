@@ -1,5 +1,5 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
-import { copyFile, mkdir, rm, symlink } from "node:fs/promises";
+import { chmod, copyFile, mkdir, rm, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
@@ -89,7 +89,13 @@ async function patchedSourcePrepare(patches, assets) {
         await execFile(
             "/usr/bin/patch",
             ["--batch", "--forward", "--input", patch, "--strip", "1"],
-            { cwd: mirror, env: { ...process.env, TMPDIR: temporary } },
+            {
+                cwd: mirror,
+                env: {
+                    PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+                    TMPDIR: temporary,
+                },
+            },
         );
     }
     for (const asset of assets) {
@@ -113,6 +119,30 @@ const gymRequire = createRequire(resolve(workspace, "packages/happy-desktop-gym/
 /** Starts Vite in browser-local mode and resolves once it has told us its URL. */
 async function viteStart(options) {
     const renderer = join(options.source, "packages", "happy-desktop-electron");
+    const processHome = join(workspace, ".context", "demo-vite-home");
+    const processTemp = join(workspace, ".context", "demo-vite-tmp");
+    await mkdir(processHome, { recursive: true, mode: 0o700 });
+    await mkdir(processTemp, { recursive: true, mode: 0o700 });
+    await chmod(processHome, 0o700);
+    await chmod(processTemp, 0o700);
+    const allowedDaemonKeys = [
+        "HAPPY_HOME_DIR",
+        "HAPPY_AGENT_SERVER_SOCKET_PATH",
+        "HAPPY_AGENT_SERVER_TOKEN_PATH",
+    ];
+    const daemonEnvironment = Object.fromEntries(
+        allowedDaemonKeys.flatMap((key) =>
+            options.environment?.[key] === undefined ? [] : [[key, options.environment[key]]],
+        ),
+    );
+    const unsupportedDaemonKeys = Object.keys(options.environment ?? {}).filter(
+        (key) => !allowedDaemonKeys.includes(key),
+    );
+    if (unsupportedDaemonKeys.length > 0) {
+        throw new Error(
+            `Demo Vite environment contains unsupported keys: ${unsupportedDaemonKeys.join(", ")}`,
+        );
+    }
     const child = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1"], {
         // Vite resolves absolute entry URLs such as
         // `/sources/renderer/renderer.tsx` against process.cwd(). Keep
@@ -124,11 +154,21 @@ async function viteStart(options) {
         // grandchild holding the output pipes and loopback port open.
         detached: process.platform !== "win32",
         env: {
-            ...process.env,
+            // The Vite process serves a disposable recording mirror. Keep
+            // ambient cloud, Git, SSH, and package credentials out of it;
+            // only the exact daemon variables supplied by the gym/protocol
+            // cross this boundary.
+            PATH: process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin",
+            HOME: processHome,
+            TMPDIR: processTemp,
+            LANG: process.env.LANG,
+            LC_ALL: process.env.LC_ALL,
+            TERM: process.env.TERM,
+            CI: process.env.CI,
             FORCE_COLOR: "0",
             // Names one exact daemon — the gym's — so the dev bridge can
             // never fall back to the user's own Happy Agent.
-            ...options.environment,
+            ...daemonEnvironment,
             // The mirror links to the workspace's existing pnpm install.
             // Its literal Vite patch admits exactly that dependency root
             // while keeping the rest of Vite's filesystem guard enabled.

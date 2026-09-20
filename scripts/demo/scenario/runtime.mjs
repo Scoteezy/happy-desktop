@@ -1,5 +1,5 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { copyFile, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
@@ -430,6 +430,11 @@ export async function gymOpen(options = {}) {
             await fixtureWrite(p, project);
         }
     }
+
+    // Inference capture contains the full screenplay request/response body.
+    // Keep it private even when reusing a prepared world.
+    await writeFile(p.ioPath, "", { encoding: "utf8", mode: 0o600, flag: "a" });
+    await chmod(p.ioPath, 0o600);
 
     const gateway = await gatewayCreate({
         ioPath: p.ioPath,

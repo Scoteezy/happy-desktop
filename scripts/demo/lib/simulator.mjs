@@ -12,12 +12,29 @@ export async function simulatorOpen({
     udid,
     executable = join(homedir(), ".maestro", "bin", "maestro"),
 }) {
+    const childEnvironment = Object.fromEntries(
+        [
+            "PATH",
+            "HOME",
+            "TMPDIR",
+            "TMP",
+            "TEMP",
+            "LANG",
+            "LC_ALL",
+            "TERM",
+            "CI",
+            "JAVA_HOME",
+            "DEVELOPER_DIR",
+        ].flatMap((key) => (process.env[key] === undefined ? [] : [[key, process.env[key]]])),
+    );
     const child = spawn(executable, ["mcp"], {
         // Own the whole driver lifetime, including xcodebuild's restart loop.
         // Killing only Java leaves XCTest alive to collide with the next take.
         detached: true,
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, MAESTRO_CLI_NO_ANALYTICS: "true" },
+        // Maestro is a third-party child process. Do not hand it ambient
+        // GitHub, cloud, vendor, EXPO_PUBLIC, VITE, or Happy credentials.
+        env: { ...childEnvironment, MAESTRO_CLI_NO_ANALYTICS: "true" },
     });
     let next = 0;
     let diagnostics = "";

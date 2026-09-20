@@ -3,6 +3,16 @@
 This script supersedes `BRIEF.md` for the current revision. Write and verify the
 recording against these criteria before publishing to `/tmp/happy-one/`.
 
+## Pending human feedback — read before the next take
+
+[`FEEDBACK.md`](FEEDBACK.md) records the latest human feedback and next-take
+TODOs. These requests are pending, not changes already present in the verified
+takes below. In particular, the owner confirms the “ship it” message-jump fix
+is already on mobile main: use that code and re-record, rather than implement
+another fix. Audit and isolate the phone-workspace's remaining demo patches
+before preparing the next take. The durable pipeline direction is in
+[`06-demo-video-pipeline.md`](../../../../master-plans/06-demo-video-pipeline.md).
+
 ## Current follow-up — v21 (take `v21-r2`)
 
 - Add a real non-admin bot named `Release Coordinator` beside Chief of Staff
