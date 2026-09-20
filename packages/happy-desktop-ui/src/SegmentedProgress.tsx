@@ -23,6 +23,12 @@ export interface SegmentedProgressSegment {
      * there is a share of it to show.
      */
     readonly fraction?: number;
+    /**
+     * Returns to this step. Present only on a step the sequence can actually go
+     * back to; the track and its label become one button, because they name one
+     * place and two hit targets for one destination is two chances to miss.
+     */
+    onSelect?(): void;
 }
 
 export interface SegmentedProgressProps {
@@ -73,9 +79,14 @@ export function SegmentedProgress(props: SegmentedProgressProps) {
         >
             {props.segments.map((segment) => {
                 const fraction = segmentFraction(segment);
+                const Segment = segment.onSelect ? "button" : "div";
                 return (
-                    <div
+                    <Segment
                         className="happy-segmented-progress__segment"
+                        {...(segment.onSelect
+                            ? { onClick: segment.onSelect, type: "button" as const }
+                            : {})}
+                        data-selectable={segment.onSelect ? "" : undefined}
                         data-happy-desktop-ui="segmented-progress-segment"
                         // Whether this segment has any ink in it, which is what
                         // decides between a position and a sweep. Zero counts as
@@ -96,7 +107,7 @@ export function SegmentedProgress(props: SegmentedProgressProps) {
                         }
                         aria-label={
                             props.mode === "steps"
-                                ? `${segment.label}: ${segment.state === "done" ? "complete" : segment.state === "pending" ? "upcoming" : segment.state === "failed" ? "needs attention" : "current step"}`
+                                ? `${segment.label}: ${segment.state === "done" ? "complete" : segment.state === "pending" ? "upcoming" : segment.state === "failed" ? "needs attention" : "current step"}${segment.onSelect ? ", go back to this step" : ""}`
                                 : undefined
                         }
                         key={segment.id}
@@ -131,7 +142,7 @@ export function SegmentedProgress(props: SegmentedProgressProps) {
                         >
                             {segment.label}
                         </span>
-                    </div>
+                    </Segment>
                 );
             })}
         </div>

@@ -216,6 +216,15 @@ export class DesktopRuntime implements AsyncDisposable {
         });
     }
 
+    localOnboardingProfileRead(expectedConnectionId: number): Promise<LocalHappyAgentProfile> {
+        return this.serial(async () => {
+            this.localConnectionRequire(expectedConnectionId);
+            const client = this.localHappyAgentClient();
+            if (!client) throw new Error("The local Happy Agent daemon is unavailable.");
+            return (await client.getProfile()).profile;
+        });
+    }
+
     localOnboardingFreshness(expectedConnectionId: number): Promise<"fresh" | "used"> {
         return this.serial(async () => {
             this.localConnectionRequire(expectedConnectionId);

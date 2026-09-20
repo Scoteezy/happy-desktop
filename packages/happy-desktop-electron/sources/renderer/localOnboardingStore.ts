@@ -1,4 +1,8 @@
-import type { LocalOnboardingAssistant, LocalOnboardingView } from "happy-desktop-ui";
+import type {
+    LocalOnboardingAssistant,
+    LocalOnboardingView,
+    OnboardingStage,
+} from "happy-desktop-ui";
 import {
     HappyAgentClient,
     type HappyAgentWorkspaceStore,
@@ -11,6 +15,7 @@ import type {
     HappyDesktopBridge,
     LocalAssistantState,
     LocalOnboardingSnapshot,
+    LocalOnboardingStepBack,
 } from "../shared/desktopContract";
 
 type ProviderAuthenticationResult = "checking" | "valid" | "invalid" | "error";
@@ -21,6 +26,12 @@ interface ProviderAuthenticationSnapshot {
     readonly complete: boolean;
     readonly grok?: ProviderAuthenticationResult;
     readonly key?: string;
+    /**
+     * A pass is running now. Results already shown stay exactly as they are
+     * while it runs, so a screen someone is reading does not flicker back to
+     * "checking" every couple of seconds.
+     */
+    readonly refreshing?: boolean;
 }
 
 export interface LocalOnboardingViewSnapshot {
@@ -51,6 +62,9 @@ export interface LocalOnboardingStore {
     projectChoose(): void;
     chiefOfStaffSetup(): void;
     assistantsContinue(): void;
+    stepBack(step: LocalOnboardingStepBack): void;
+    /** Runs the subscription check now instead of waiting for the next pass. */
+    subscriptionsRecheck(): void;
     profileNameUpdate(value: string): void;
     profileEmailUpdate(value: string): void;
     profileCreate(): void;
@@ -76,6 +90,14 @@ export interface LocalOnboardingStoreOptions {
     readonly agentSetupActive?: boolean;
 }
 
+/**
+ * How often the subscription report re-asks the daemon while it is on screen.
+ *
+ * Somebody signing in to Claude in another window is the whole point of this
+ * screen, and they should not have to tell Happy they did. The pass stops the
+ * moment the screen does.
+ */
+const providerRecheckMs = 2_000;
 const downloadRetryMinimumMs = 3_000;
 const downloadRetryMaximumMs = 30_000;
 const startRetryMinimumMs = 3_000;
@@ -116,7 +138,10 @@ export function localOnboardingStoreCreate(
     let eventReceived = false;
     let daemonEventReceived = false;
     let runtimeEventReceived = false;
+    let profileDraftDirty = false;
     let verificationAbort: AbortController | undefined;
+    let verificationRunning = false;
+    let providerRecheck: ReturnType<typeof setInterval> | undefined;
     let happyMobileStore: HappyMobileOnboardingStore | undefined;
     let happyMobileUnsubscribe: (() => void) | undefined;
     let happyMobileSourceUnsubscribe: (() => void) | undefined;
@@ -133,9 +158,14 @@ export function localOnboardingStoreCreate(
     };
     const onboardingSet = (next: LocalOnboardingSnapshot) => {
         if (Object.is(snapshot.onboarding, next)) return;
+        const savedProfileArrived =
+            next.profile !== undefined && snapshot.onboarding?.profile === undefined;
         publish({
             ...snapshot,
             onboarding: next,
+            ...(savedProfileArrived && !profileDraftDirty
+                ? { profileEmail: next.profile.email, profileName: next.profile.name }
+                : {}),
         });
         setupSynchronize();
     };
@@ -397,7 +427,10 @@ export function localOnboardingStoreCreate(
         chiefOfStaffSetupAutomatically();
     }
 
-    function providerAuthenticationSynchronize() {
+    /** The subscription report's own surface, while it is the one on screen. */
+    function providerAuthenticationLive():
+        | { readonly runtime: DesktopRuntimeSnapshot & { phase: "ready" }; readonly key: string }
+        | undefined {
         const onboarding = snapshot.onboarding;
         const runtime = snapshot.runtime;
         if (
@@ -405,37 +438,76 @@ export function localOnboardingStoreCreate(
             (onboarding?.stage !== "providersMissing" && onboarding?.stage !== "assistantsFound") ||
             runtime?.phase !== "ready" ||
             runtime.mode !== "local"
-        ) {
-            verificationAbort?.abort();
-            verificationAbort = undefined;
-            return;
-        }
+        )
+            return undefined;
         const assistants = onboarding.assistants ?? [];
+        return {
+            key: `${String(runtime.connectionId)}|${assistants
+                .map((assistant) => `${assistant.id}:${assistant.status}`)
+                .join(",")}`,
+            runtime,
+        };
+    }
+
+    function providerRecheckStop() {
+        if (!providerRecheck) return;
+        clearInterval(providerRecheck);
+        providerRecheck = undefined;
+    }
+
+    /**
+     * Asks the daemon what it can authenticate with, now.
+     *
+     * A repeat pass leaves the results already on screen exactly where they
+     * are and only says that it is running: the report is read while it
+     * updates, and rewriting every column to "checking" twice a second would
+     * make a settled answer look unsettled. The first pass for a set of
+     * binaries is different — there is nothing to preserve, so it starts at
+     * checking.
+     */
+    function providerAuthenticationRun(key: string, runtime: DesktopRuntimeSnapshot) {
+        if (runtime.phase !== "ready" || verificationRunning) return;
+        const assistants = snapshot.onboarding?.assistants ?? [];
         const binaries = assistants.filter((assistant) => assistant.status === "found");
-        const key = `${String(runtime.connectionId)}|${assistants
-            .map((assistant) => `${assistant.id}:${assistant.status}`)
-            .join(",")}`;
-        if (snapshot.providerAuthentication.key === key) return;
+        const first = snapshot.providerAuthentication.key !== key;
 
         verificationAbort?.abort();
         const abort = new AbortController();
         verificationAbort = abort;
         publish({
             ...snapshot,
-            providerAuthentication: {
-                claude: binaryAuthenticationInitial(assistants, "claude"),
-                codex: binaryAuthenticationInitial(assistants, "codex"),
-                complete: binaries.length === 0,
-                grok: binaryAuthenticationInitial(assistants, "grok"),
-                key,
-            },
+            providerAuthentication: first
+                ? {
+                      claude: binaryAuthenticationInitial(assistants, "claude"),
+                      codex: binaryAuthenticationInitial(assistants, "codex"),
+                      complete: binaries.length === 0,
+                      grok: binaryAuthenticationInitial(assistants, "grok"),
+                      key,
+                      refreshing: binaries.length > 0,
+                  }
+                : { ...snapshot.providerAuthentication, refreshing: true },
         });
-        if (binaries.length === 0) return;
+        // There is no asynchronous provider check to wait for when every CLI
+        // is missing. A repeat/manual pass therefore finishes in this same
+        // call instead of leaving the refresh glyph spinning forever.
+        if (binaries.length === 0) {
+            if (!first)
+                publish({
+                    ...snapshot,
+                    providerAuthentication: {
+                        ...snapshot.providerAuthentication,
+                        complete: true,
+                        refreshing: false,
+                    },
+                });
+            return;
+        }
 
         const client = new HappyAgentClient({
             endpoint: runtime.activeTarget.happyAgentHttpUrl,
             token: "happy-local-capability",
         });
+        verificationRunning = true;
         void client
             .scanProviders({ signal: abort.signal })
             // Scanning refreshes daemon discovery, but a failed scan does not
@@ -465,17 +537,44 @@ export function localOnboardingStoreCreate(
                 ),
             )
             .then((results) => {
-                if (
-                    abort.signal.aborted ||
-                    snapshot.providerAuthentication.key !== key ||
-                    listeners.size === 0
-                )
-                    return;
+                verificationRunning = false;
+                if (abort.signal.aborted || listeners.size === 0) return;
+                const live = providerAuthenticationLive();
+                if (live?.key !== key) return;
                 publish({
                     ...snapshot,
                     providerAuthentication: authenticationResultsProject(key, results),
                 });
+            })
+            .catch(() => {
+                verificationRunning = false;
             });
+    }
+
+    function providerAuthenticationSynchronize() {
+        const live = providerAuthenticationLive();
+        if (!live) {
+            providerRecheckStop();
+            verificationAbort?.abort();
+            verificationAbort = undefined;
+            verificationRunning = false;
+            return;
+        }
+        // While the report is on screen the machine is asked again on its own.
+        // The daemon has no channel for "somebody just signed in", so this is
+        // the stopgap poll the reactivity rule allows, and it stops with the
+        // screen.
+        if (!providerRecheck)
+            providerRecheck = setInterval(() => {
+                const current = providerAuthenticationLive();
+                if (!current) {
+                    providerRecheckStop();
+                    return;
+                }
+                providerAuthenticationRun(current.key, current.runtime);
+            }, providerRecheckMs);
+        if (snapshot.providerAuthentication.key === live.key) return;
+        providerAuthenticationRun(live.key, live.runtime);
     }
 
     return {
@@ -551,8 +650,10 @@ export function localOnboardingStoreCreate(
                 chiefOfStaffSourceUnsubscribe?.();
                 chiefOfStaffSourceUnsubscribe = undefined;
                 chiefOfStaffSynchronize();
+                providerRecheckStop();
                 verificationAbort?.abort();
                 verificationAbort = undefined;
+                verificationRunning = false;
                 happyMobileStop();
                 downloadRetryStop();
                 startRetryStop();
@@ -576,10 +677,19 @@ export function localOnboardingStoreCreate(
         assistantsContinue() {
             attempt(bridge.onboardingAssistantsContinue(), "Happy could not continue setup.");
         },
+        stepBack(step) {
+            attempt(bridge.onboardingStepBack(step), "Happy could not go back to that step.");
+        },
+        subscriptionsRecheck() {
+            const live = providerAuthenticationLive();
+            if (live) providerAuthenticationRun(live.key, live.runtime);
+        },
         profileNameUpdate(value) {
+            profileDraftDirty = true;
             publish({ ...snapshot, profileName: value });
         },
         profileEmailUpdate(value) {
+            profileDraftDirty = true;
             publish({ ...snapshot, profileEmail: value });
         },
         profileCreate() {
@@ -648,6 +758,15 @@ export function localOnboardingView(
                 ),
                 complete: snapshot.providerAuthentication.complete,
                 kind: "provider-authentication",
+                ...(snapshot.providerAuthentication.refreshing ? { refreshing: true } : {}),
+            };
+        case "agentReady":
+            return {
+                kind: "agent-ready",
+                ...(snapshot.daemon?.installedVersion
+                    ? { version: snapshot.daemon.installedVersion }
+                    : {}),
+                ...(onboarding.node ? { nodeVersion: onboarding.node.version } : {}),
             };
         case "profileRequired":
             return {
@@ -697,6 +816,31 @@ export function localOnboardingView(
             return undefined;
     }
     return undefined;
+}
+
+/**
+ * How far the sequence actually got, while a finished step is being looked at
+ * again. Absent when the step on screen is the live one, because then the bar
+ * already knows.
+ */
+export function localOnboardingReachedStage(
+    snapshot: LocalOnboardingViewSnapshot,
+): OnboardingStage | undefined {
+    switch (snapshot.onboarding?.reachedStage) {
+        case undefined:
+            return undefined;
+        case "providersMissing":
+        case "assistantsFound":
+        case "examining":
+            return "subscriptions";
+        case "profileRequired":
+            return "profile";
+        case "project":
+        case "complete":
+            return "connect-phone";
+        default:
+            return "setup";
+    }
 }
 
 function agentSetupProject(

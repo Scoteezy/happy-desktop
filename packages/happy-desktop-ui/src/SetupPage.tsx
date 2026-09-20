@@ -6,6 +6,7 @@ import type { Dimension } from "./dimensions";
 import { LottieScene, type LottieSceneName } from "./LottieScene";
 import { OnboardingSky } from "./OnboardingSky";
 import { ScrollArea } from "./Scrollbar";
+import { SetupCommand } from "./SetupCommand";
 import type { ThemeMode } from "./ThemeScope";
 import { WindowDragRegion } from "./TitleBar";
 
@@ -105,6 +106,15 @@ export interface SetupPageProps {
     /** This page's own body, when it has one: a fork, a terminal, a notice. */
     readonly children?: ReactNode;
     readonly action?: SetupPageAction;
+    /**
+     * Everything that is not what the page is for: how a background operation
+     * is going, a way out of an optional step, a footnote. It sits at the foot
+     * of the page, apart from the core, so the primary action is never one of
+     * several things competing at the same height.
+     */
+    readonly auxiliary?: ReactNode;
+    /** Pinned to the bottom-right corner, outside the page's own bands. */
+    readonly help?: ReactNode;
 }
 
 /**
@@ -143,6 +153,8 @@ export function SetupPage(props: SetupPageProps) {
         "command",
         "children",
         "action",
+        "auxiliary",
+        "help",
         "steps",
     ]);
     return (
@@ -169,77 +181,92 @@ export function SetupPage(props: SetupPageProps) {
                     data-happy-desktop-ui="setup-page-body"
                     key={local.transitionKey}
                 >
-                    <div className="happy-setup-page__heading">
-                        {local.scene ? (
-                            <span
-                                className="happy-setup-page__stage"
-                                data-happy-desktop-ui="setup-page-stage"
-                                style={
-                                    local.sceneSize === undefined
-                                        ? undefined
-                                        : { width: local.sceneSize, height: local.sceneSize }
-                                }
-                            >
+                    {/* The header band is the same height on every page, whether or
+                        not it has a scene and whatever size that scene is drawn at,
+                        so the title sits at one coordinate across the whole of
+                        setup rather than moving with the body beneath it. */}
+                    <div
+                        className="happy-setup-page__header"
+                        data-happy-desktop-ui="setup-page-header"
+                    >
+                        <span
+                            className="happy-setup-page__stage"
+                            data-happy-desktop-ui="setup-page-stage"
+                        >
+                            {local.scene ? (
                                 <LottieScene
                                     name={local.scene}
                                     // The picture repeats what the title already says, so
                                     // the only thing worth offering is one more play.
                                     replayLabel={local.title}
-                                    size={local.sceneSize ?? 120}
+                                    size={local.sceneSize ?? 96}
                                 />
-                            </span>
-                        ) : null}
+                            ) : null}
+                        </span>
                         <h1
                             className="happy-setup-page__title"
                             data-happy-desktop-ui="setup-page-title"
                         >
                             {local.title}
                         </h1>
+                        {local.copy === undefined ? null : (
+                            <p
+                                className="happy-setup-page__copy"
+                                data-happy-desktop-ui="setup-page-copy"
+                            >
+                                {local.copy}
+                            </p>
+                        )}
                     </div>
-                    {local.copy === undefined ? null : (
-                        <p
-                            className="happy-setup-page__copy"
-                            data-happy-desktop-ui="setup-page-copy"
-                        >
-                            {local.copy}
-                        </p>
-                    )}
-                    {local.command === undefined ? null : (
-                        <code
-                            className="happy-setup-page__command"
-                            data-happy-desktop-ui="setup-page-command"
-                        >
-                            {local.command}
-                        </code>
-                    )}
-                    {local.children === undefined ? null : (
-                        <div
-                            className="happy-setup-page__slot"
-                            data-happy-desktop-ui="setup-page-slot"
-                        >
-                            {local.children}
-                        </div>
-                    )}
-                    {local.action
-                        ? ((action) =>
-                              action.busy && action.progress ? (
-                                  <SetupProgress label={action.label} progress={action.progress} />
-                              ) : (
-                                  <Button
-                                      disabled={action.disabled}
-                                      loading={action.busy}
-                                      onClick={action.onSelect}
-                                      size="large"
-                                      {...(action.width === undefined
-                                          ? { fullWidth: true }
-                                          : { width: action.width })}
-                                  >
-                                      {action.label}
-                                  </Button>
-                              ))(local.action)
-                        : null}
+                    <div className="happy-setup-page__spacer" />
+                    <div className="happy-setup-page__core" data-happy-desktop-ui="setup-page-core">
+                        {local.command === undefined ? null : (
+                            <SetupCommand command={local.command} label="command" />
+                        )}
+                        {local.children === undefined ? null : (
+                            <div
+                                className="happy-setup-page__slot"
+                                data-happy-desktop-ui="setup-page-slot"
+                            >
+                                {local.children}
+                            </div>
+                        )}
+                        {local.action
+                            ? ((action) =>
+                                  action.busy && action.progress ? (
+                                      <SetupProgress
+                                          label={action.label}
+                                          progress={action.progress}
+                                      />
+                                  ) : (
+                                      <Button
+                                          disabled={action.disabled}
+                                          loading={action.busy}
+                                          onClick={action.onSelect}
+                                          size="large"
+                                          {...(action.width === undefined
+                                              ? { fullWidth: true }
+                                              : { width: action.width })}
+                                      >
+                                          {action.label}
+                                      </Button>
+                                  ))(local.action)
+                            : null}
+                    </div>
+                    <div className="happy-setup-page__spacer" />
+                    <div
+                        className="happy-setup-page__auxiliary"
+                        data-happy-desktop-ui="setup-page-auxiliary"
+                    >
+                        {local.auxiliary}
+                    </div>
                 </div>
             </ScrollArea>
+            {local.help ? (
+                <div className="happy-setup-page__help" data-happy-desktop-ui="setup-page-help">
+                    {local.help}
+                </div>
+            ) : null}
         </div>
     );
 }

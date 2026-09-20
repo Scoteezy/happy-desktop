@@ -40,3 +40,20 @@
     opacity: 1;
     color: var(--success);
 }
+
+/*
+ * The same action standing on its own rather than beside a row that already
+ * says what it holds: it names itself, so it is always visible and sized to
+ * its own words.
+ */
+.happy-copy-button[data-captioned] {
+    gap: 6px;
+    width: auto;
+    height: 28px;
+    padding: 0 10px;
+    font-family: var(--happy-font-ui);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    opacity: 1;
+}

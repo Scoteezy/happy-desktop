@@ -266,6 +266,29 @@ Pierre's horizontal code scrollport is the sole implementation exception: its
 markup lives inside third-party shadow DOM, so its native thumb is styled to the
 same visual contract without mutating vendor structure.
 
+## Setup page layout
+
+Every first-run setup screen is the same four bands, in this order, and
+`SetupPage` is the only component that lays them out:
+
+1. **Header** — the scene, title, and subtitle. Its height does not depend on
+   its contents: the scene box is a fixed 96 px square whether or not a page
+   has art and whatever size that art is drawn at, so the title sits at one
+   coordinate across the whole sequence.
+2. **Spacer** — flexible.
+3. **Core** — what the page is for, and its primary action. Nothing else.
+4. **Spacer** — flexible.
+5. **Auxiliary** — everything that is not the point of the page: how a
+   background operation is going, a way to skip an optional step, a footnote.
+
+Pass core content as `children` and everything in band five as `auxiliary`. A
+skip control, a progress bar, or a status note in `children` is a defect: it
+puts a secondary control at the same height as the primary one. Help is pinned
+to the window's bottom-right corner through `help`, outside the bands
+entirely.
+
+Moving between two setup screens must change the words, not where they are.
+
 ## Nested rounded corners
 
 Nested rounded corners must be true parallel curves. When a descendant edge

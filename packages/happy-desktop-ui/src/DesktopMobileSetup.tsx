@@ -1,4 +1,6 @@
+import type { ReactNode } from "react";
 import { Button } from "./Button";
+import { CopyButton } from "./CopyButton";
 import { OnboardingSteps, type MobileOnboardingStage } from "./OnboardingSteps";
 import { QRCode } from "./QRCode";
 import { SetupPage, SetupProgress } from "./SetupPage";
@@ -26,6 +28,12 @@ export type DesktopMobileSetupStep =
 export interface DesktopMobileSetupProps {
     /** Full first-run context; Settings shows only the opted-in mobile branch. */
     readonly onboarding?: boolean;
+    /** Pinned bottom-right on every step, the way the rest of setup carries it. */
+    readonly help?: ReactNode;
+    /** Returns to an earlier onboarding step from the shared step bar. */
+    onStageSelect?(
+        stage: "setup" | "subscriptions" | "profile" | "get-app" | "connect-phone",
+    ): void;
     readonly appearance: ThemeMode;
     readonly step: DesktopMobileSetupStep;
     readonly onContinue: () => void;
@@ -48,19 +56,27 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
             : step.kind === "get-app" || (step.kind === "link" && !step.appReady)
               ? "get-app"
               : step.kind === "link"
-                ? "connect"
+                ? "connect-phone"
                 : "complete";
     const failed =
         (step.kind === "get-app" && step.preparation === "failed") ||
         (step.kind === "link" && step.phase.kind === "failed");
     const steps = props.onboarding ? (
-        <OnboardingSteps scope="desktop" stage="mobile" mobile={mobile} failed={failed} />
+        <OnboardingSteps
+            scope="desktop"
+            stage={
+                mobile === "connect-phone" || mobile === "complete" ? "connect-phone" : "get-app"
+            }
+            failed={failed}
+            {...(props.onStageSelect ? { onStageSelect: props.onStageSelect } : {})}
+        />
     ) : mobile ? (
         <OnboardingSteps scope="mobile" stage={mobile} failed={failed} />
     ) : undefined;
     const frame = {
         backdrop: { appearance: props.appearance, kind: "sky" },
         className: "happy-desktop-mobile-setup",
+        ...(props.help ? { help: props.help } : {}),
         sceneSize: steps || step.kind === "get-app" || step.kind === "link" ? 48 : 80,
         steps,
         "data-testid": "local-onboarding-screen",
@@ -69,7 +85,7 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
     } as const;
     const skip = (
         <Button onClick={props.onSkip} size="medium" variant="ghost">
-            Not now
+            Skip mobile setup
         </Button>
     );
 
@@ -78,6 +94,12 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
             <SetupPage
                 {...frame}
                 scene="closed-lock"
+                auxiliary={
+                    <>
+                        <p className="happy-desktop-mobile-setup__note">{ENCRYPTION_COPY}</p>
+                        {skip}
+                    </>
+                }
                 title={step.alreadyLinked ? "Your phone is already linked" : "Take Happy with you"}
                 copy={
                     step.alreadyLinked
@@ -86,12 +108,10 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                 }
             >
                 <div className="happy-desktop-mobile-setup__body">
-                    <p className="happy-desktop-mobile-setup__note">{ENCRYPTION_COPY}</p>
                     <div className="happy-desktop-mobile-setup__actions">
                         <Button onClick={props.onContinue} size="large">
                             {step.alreadyLinked ? "Finish mobile setup" : "Connect phone"}
                         </Button>
-                        {skip}
                     </div>
                 </div>
             </SetupPage>
@@ -103,7 +123,38 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                 {...frame}
                 scene="open-hands"
                 title="Get Happy Coder"
-                copy="Scan with your phone’s camera to install the app."
+                copy="Install the app on your phone, then connect it here."
+                auxiliary={
+                    <>
+                        <div className="happy-desktop-mobile-setup__preparation" aria-live="polite">
+                            {step.preparation === "preparing" ? (
+                                <SetupProgress
+                                    label="Preparing mobile access…"
+                                    progress={{ kind: "waiting" }}
+                                    tone="inverse"
+                                />
+                            ) : null}
+                            {step.preparation === "ready" ? (
+                                <p className="happy-desktop-mobile-setup__note">
+                                    Ready to connect.
+                                </p>
+                            ) : null}
+                            {step.preparation === "failed" ? (
+                                <>
+                                    <p className="happy-desktop-mobile-setup__note" role="alert">
+                                        {step.message ??
+                                            "Mobile setup couldn’t finish. Your sign-in and sessions are unchanged."}
+                                    </p>
+                                    <Button onClick={props.onContinue} size="medium">
+                                        Try again
+                                    </Button>
+                                </>
+                            ) : null}
+                        </div>
+                        <p className="happy-desktop-mobile-setup__note">{ENCRYPTION_COPY}</p>
+                        {skip}
+                    </>
+                }
             >
                 <div className="happy-desktop-mobile-setup__body">
                     <div className="happy-desktop-mobile-setup__download">
@@ -144,30 +195,6 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                         >
                             I have the app open
                         </Button>
-                        {skip}
-                    </div>
-                    <div className="happy-desktop-mobile-setup__preparation" aria-live="polite">
-                        {step.preparation === "preparing" ? (
-                            <SetupProgress
-                                label="Preparing mobile access…"
-                                progress={{ kind: "waiting" }}
-                                tone="inverse"
-                            />
-                        ) : null}
-                        {step.preparation === "ready" ? (
-                            <p className="happy-desktop-mobile-setup__note">Ready to connect.</p>
-                        ) : null}
-                        {step.preparation === "failed" ? (
-                            <>
-                                <p className="happy-desktop-mobile-setup__note" role="alert">
-                                    {step.message ??
-                                        "Mobile setup couldn’t finish. Your sign-in and sessions are unchanged."}
-                                </p>
-                                <Button onClick={props.onContinue} size="medium">
-                                    Try again
-                                </Button>
-                            </>
-                        ) : null}
                     </div>
                 </div>
             </SetupPage>
@@ -182,11 +209,12 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                 title="Connect your phone"
                 copy={
                     pairing
-                        ? "Follow the onboarding instructions in Happy Coder. Scan this code when prompted."
+                        ? "Open Happy Coder and scan this code when it asks."
                         : step.phase.kind === "checking"
                           ? "Checking whether this computer is already linked."
                           : "Finishing your connection…"
                 }
+                auxiliary={skip}
             >
                 <div className="happy-desktop-mobile-setup__body">
                     {pairing ? (
@@ -196,6 +224,16 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                                 size={160}
                                 label="QR code to link your devices"
                                 data-testid="happy-mobile-pairing-qr"
+                            />
+                            {/* The payload is opaque by contract: a client either
+                                draws it as a QR code or hands it over as a deep
+                                link, and never reads or rebuilds it. */}
+                            <CopyButton
+                                caption="Copy auth link"
+                                copiedCaption="Link copied"
+                                data-testid="happy-mobile-pairing-copy"
+                                label="Copy auth link"
+                                text={pairing.data}
                             />
                             <p className="happy-desktop-mobile-setup__note" role="status">
                                 Waiting for your phone · expires{" "}
@@ -227,7 +265,6 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                             tone="inverse"
                         />
                     )}
-                    {skip}
                 </div>
             </SetupPage>
         );

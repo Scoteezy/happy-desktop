@@ -1773,6 +1773,12 @@ void app
             onboardingSenderRequire(event.sender);
             onboarding.assistantsContinue();
         });
+        ipcMain.handle(desktopIpc.onboardingStepBack, (event, step: unknown) => {
+            onboardingSenderRequire(event.sender);
+            if (step !== "setup" && step !== "subscriptions" && step !== "profile")
+                throw new Error("That is not a first-run setup step.");
+            onboarding.stepBack(step);
+        });
         ipcMain.handle(desktopIpc.onboardingProfileCreate, (event, input: unknown) => {
             onboardingSenderRequire(event.sender);
             if (

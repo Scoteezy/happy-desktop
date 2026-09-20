@@ -109,6 +109,7 @@
 @import "./styles/onboarding-steps.css";
 @import "./styles/setup-choice.css";
 @import "./styles/setup-assistants.css";
+@import "./styles/setup-command.css";
 @import "./styles/agent-install.css";
 @import "./styles/connection-header.css";
 @import "./styles/setup-option-card.css";

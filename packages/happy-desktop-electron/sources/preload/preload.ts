@@ -183,6 +183,7 @@ const bridge: HappyDesktopBridge = {
     onboardingChiefOfStaffComplete: () =>
         ipcRenderer.invoke(desktopIpc.onboardingChiefOfStaffComplete),
     onboardingAssistantsContinue: () => ipcRenderer.invoke(desktopIpc.onboardingAssistantsContinue),
+    onboardingStepBack: (step) => ipcRenderer.invoke(desktopIpc.onboardingStepBack, step),
     runtimeGet: () => ipcRenderer.invoke(desktopIpc.runtimeGet),
     runtimeReset: () => ipcRenderer.invoke(desktopIpc.runtimeReset),
     runtimeRetry: () => ipcRenderer.invoke(desktopIpc.runtimeRetry),

@@ -415,6 +415,12 @@ export type LocalOnboardingStage =
      * that answer is worth anybody's attention.
      */
     | "assistantsFound"
+    /**
+     * The first step of the sequence, revisited. Nothing is owed here: setup
+     * already finished this work, and the step exists so a person can go back
+     * and see what Happy put on their machine.
+     */
+    | "agentReady"
     /** Happy Agent requires a human identity before it can finish setup. */
     | "profileRequired"
     /** Happy Agent Connect is resolving the daemon-owned onboarding status. */
@@ -501,7 +507,21 @@ export interface LocalOnboardingSnapshot {
     readonly assistants?: readonly LocalAssistantState[];
     /** An attempt to reach Happy Agent is running, started from a failed stage. */
     readonly retrying?: boolean;
+    /**
+     * The identity this Happy Agent already holds, so a profile step reopened
+     * from the step bar shows what is saved rather than an empty form.
+     */
+    readonly profile?: { readonly email: string; readonly name: string };
+    /**
+     * Where the sequence actually stands, when `stage` is a finished step
+     * someone went back to. The step bar draws the work already done from
+     * this, so a revisit lights an earlier step without unwinding the rest.
+     */
+    readonly reachedStage?: LocalOnboardingStage;
 }
+
+/** A step of first-run setup a person may deliberately return to. */
+export type LocalOnboardingStepBack = "setup" | "subscriptions" | "profile";
 
 /**
  * One file a window of its own is showing, as that window is allowed to see it:
@@ -761,6 +781,8 @@ export interface HappyDesktopBridge {
     onboardingChiefOfStaffComplete(): Promise<void>;
     /** Leaves provider authentication setup after its report, or skips it while it runs. */
     onboardingAssistantsContinue(): Promise<void>;
+    /** Returns to an earlier step of first-run setup. */
+    onboardingStepBack(step: LocalOnboardingStepBack): Promise<void>;
     runtimeGet(): Promise<DesktopRuntimeSnapshot>;
     runtimeReset(): Promise<void>;
     runtimeRetry(): Promise<void>;
@@ -847,6 +869,7 @@ export const desktopIpc = {
     profilerReactMessage: "happy:profiler:react-message",
     applicationMenuOpen: "happy:application-menu:open",
     onboardingAssistantsContinue: "happy:onboarding:assistants-continue",
+    onboardingStepBack: "happy:onboarding:step-back",
     onboardingChanged: "happy:onboarding:changed",
     onboardingGet: "happy:onboarding:get",
     onboardingProfileCreate: "happy:onboarding:profile-create",

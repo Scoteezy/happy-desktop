@@ -69,6 +69,7 @@ import { desktopStartRequestFromValues, desktopStartupValues } from "./desktopSt
 import { dockUnreadPublish } from "./dockUnread";
 import { desktopRuntimeStoreCreate, type DesktopRuntimeStore } from "./runtimeStore";
 import {
+    localOnboardingReachedStage,
     localOnboardingStoreCreate,
     localOnboardingView,
     type LocalOnboardingStore,
@@ -369,6 +370,7 @@ function DesktopOnboardingGate(props: {
     // main process takes to say so. The boot cover holds the window meanwhile.
     if (!snapshot.onboarding) return null;
     const view = localOnboardingView(snapshot);
+    const reached = localOnboardingReachedStage(snapshot);
     // The welcome is only the deck. Entering setup acknowledges it and enables
     // the renderer-owned automatic download and launch; every machine operation
     // appears on the one setup surface that follows.
@@ -412,6 +414,13 @@ function DesktopOnboardingGate(props: {
             onProfileEmailChange={(value) => props.store.profileEmailUpdate(value)}
             onProfileNameChange={(value) => props.store.profileNameUpdate(value)}
             onProjectChoose={() => props.store.projectChoose()}
+            onStageSelect={(stage) => {
+                if (stage === "setup" || stage === "subscriptions" || stage === "profile")
+                    props.store.stepBack(stage);
+            }}
+            onSubscriptionsRefresh={() => props.store.subscriptionsRecheck()}
+            {...(reached ? { reachedStage: reached } : {})}
+            onExternalOpen={(url) => window.open(url, "_blank", "noopener,noreferrer")}
             view={view}
         />
     );

@@ -506,7 +506,80 @@ export function SetupPagePage() {
             </Specimen>
 
             <Specimen
-                detail="no valid local sign-in · Continue stays absent · Skip becomes the sole primary action"
+                detail="nothing installed · each column carries the vendor install link · no way forward without a subscription"
+                label="Subscriptions missing"
+                number="14a"
+                stage="surface"
+            >
+                <div style={frame}>
+                    <ThemeScope mode="dark">
+                        <LocalOnboardingScreen
+                            appearance="dark"
+                            onAssistantsContinue={noop}
+                            onConnectRetry={noop}
+                            onHappyMobileConnect={noop}
+                            onHappyMobileSkip={noop}
+                            onProfileCreate={noop}
+                            onProfileEmailChange={noop}
+                            onProfileNameChange={noop}
+                            onProjectChoose={noop}
+                            onSubscriptionsRefresh={noop}
+                            view={{
+                                assistants: [
+                                    {
+                                        authentication: "unavailable",
+                                        id: "claude",
+                                        status: "missing",
+                                    },
+                                    {
+                                        authentication: "unavailable",
+                                        id: "codex",
+                                        status: "missing",
+                                    },
+                                    {
+                                        authentication: "unavailable",
+                                        id: "grok",
+                                        status: "missing",
+                                    },
+                                ],
+                                complete: true,
+                                kind: "provider-authentication",
+                            }}
+                        />
+                    </ThemeScope>
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="the first step, revisited from the step bar · reports what is installed and returns to the live step"
+                label="Setup revisited"
+                number="14b"
+                stage="surface"
+            >
+                <div style={frame}>
+                    <ThemeScope mode="dark">
+                        <LocalOnboardingScreen
+                            appearance="dark"
+                            onAssistantsContinue={noop}
+                            onConnectRetry={noop}
+                            onHappyMobileConnect={noop}
+                            onHappyMobileSkip={noop}
+                            onProfileCreate={noop}
+                            onProfileEmailChange={noop}
+                            onProfileNameChange={noop}
+                            onProjectChoose={noop}
+                            view={{
+                                kind: "agent-ready",
+                                nodeVersion: "v22.11.0",
+                                version: "0.0.86",
+                            }}
+                        />
+                    </ThemeScope>
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="no valid local sign-in · every column says what to run · nothing to continue to"
                 label="Authentication unavailable"
                 number="14"
                 stage="surface"

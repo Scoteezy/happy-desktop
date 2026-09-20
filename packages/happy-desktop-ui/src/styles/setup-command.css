@@ -1,0 +1,74 @@
+/*
+ * C-284 SetupCommand — a shell line, drawn as a terminal.
+ *
+ * The well is the terminal surface in either appearance, because a command is
+ * a terminal thing and a themed grey box made it look like a disabled input.
+ * It shrink-wraps its own line so three of them in a row of columns are each
+ * as wide as what they say. Every dimension is on the 4px grid.
+ */
+
+.happy-setup-command,
+.happy-setup-command__text {
+    box-sizing: border-box;
+}
+
+.happy-setup-command {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    width: max-content;
+    max-width: 100%;
+    min-height: 44px;
+    padding-left: 12px;
+    border: 1px solid color-mix(in srgb, var(--terminal-command) 18%, transparent);
+    border-radius: var(--happy-radius-window);
+    background: var(--terminal-background);
+    color: var(--terminal-command);
+}
+
+.happy-setup-command__prompt {
+    flex: none;
+    color: var(--terminal-prompt);
+    font-family: var(--happy-font-mono);
+    font-size: 12px;
+    line-height: 20px;
+    user-select: none;
+}
+
+/* Only the command scrolls, and it never wraps: a shell line broken over two
+   rows reads as two commands. The scrollbar is hidden because the well is too
+   short to carry one without becoming the loudest thing in the column. */
+.happy-setup-command__text {
+    overflow-x: auto;
+    min-width: 0;
+    color: inherit;
+    font-family: var(--happy-font-mono);
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+    scrollbar-width: none;
+    user-select: text;
+}
+
+.happy-setup-command__text::-webkit-scrollbar {
+    display: none;
+}
+
+/* The copy action belongs to the terminal rather than to the page around it,
+   so it takes its ink from the terminal's own foreground. */
+.happy-setup-command__copy {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    margin-right: 4px;
+    color: color-mix(in srgb, var(--terminal-command) 70%, transparent);
+    /* Always present: the well exists so this command can be taken. */
+    opacity: 1;
+}
+
+.happy-setup-command__copy:hover,
+.happy-setup-command__copy:focus-visible {
+    color: var(--terminal-command);
+    background: color-mix(in srgb, var(--terminal-command) 8%, transparent);
+}

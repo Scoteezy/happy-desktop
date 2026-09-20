@@ -8,27 +8,8 @@
     font-family: var(--happy-font-ui);
 }
 
-.happy-onboarding-steps__summary {
-    display: flex;
-    justify-content: space-between;
-    gap: 16px;
-    font-size: 11px;
-    line-height: 16px;
-}
-
-.happy-onboarding-steps__branch {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-.happy-onboarding-steps__branch-label {
-    flex: none;
-    font-size: 11px;
-    line-height: 16px;
-}
-
-.happy-onboarding-steps__branch > .happy-segmented-progress {
-    flex: 1 1 0;
-    min-width: 0;
+/* Five steps on one line: the bar is the whole report, so nothing counts them
+   in words above it. */
+.happy-onboarding-steps {
+    max-width: 640px;
 }

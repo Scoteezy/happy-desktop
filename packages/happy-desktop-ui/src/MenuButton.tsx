@@ -6,6 +6,8 @@ import { Menu, type MenuItem } from "./Menu";
 export interface MenuButtonProps {
     readonly label: string;
     readonly icon: IconName;
+    /** Shown beside the glyph, for a trigger that names itself on the surface. */
+    readonly text?: string;
     /**
      * Optical size of the trigger glyph, for a name backed by the heavier of the
      * two families. An Octicons glyph is drawn across the full 16 box where an
@@ -137,7 +139,7 @@ export function MenuButton(props: MenuButtonProps) {
                 aria-label={props.label}
                 disabled={props.disabled}
                 {...(props.iconSize === undefined ? { icon: props.icon } : {})}
-                iconOnly
+                {...(props.text === undefined ? { iconOnly: true } : {})}
                 onClick={(event) => {
                     if (expanded) close(false);
                     else {
@@ -155,6 +157,7 @@ export function MenuButton(props: MenuButtonProps) {
                 {props.iconSize === undefined ? null : (
                     <Icon name={props.icon} size={props.iconSize} />
                 )}
+                {props.text}
             </Button>
             {expanded ? (
                 <>

@@ -1,9 +1,15 @@
 import { type AssistantMarkName } from "./AssistantMark";
 import { Button } from "./Button";
+import { CopyButton } from "./CopyButton";
 import { DesktopMobileSetup, type DesktopMobileSetupStep } from "./DesktopMobileSetup";
+import { MenuButton } from "./MenuButton";
 import { OnboardingSteps, type OnboardingStage } from "./OnboardingSteps";
 import { QRCode } from "./QRCode";
-import { SetupAssistants, type SetupAssistantEntry } from "./SetupAssistants";
+import {
+    SetupAssistants,
+    type SetupAssistantAction,
+    type SetupAssistantEntry,
+} from "./SetupAssistants";
 import { SetupPage, SetupProgress, type SetupPageProgress } from "./SetupPage";
 import { Spinner } from "./Spinner";
 import { TextField } from "./TextField";
@@ -58,6 +64,18 @@ export type LocalOnboardingView =
           readonly kind: "provider-authentication";
           readonly assistants: readonly LocalOnboardingAssistant[];
           readonly complete: boolean;
+          /** A check is running right now, after the first one has settled. */
+          readonly refreshing?: boolean;
+      }
+    | {
+          /**
+           * Setup, revisited. Nothing is owed here — it exists so the first
+           * step of the sequence is somewhere a person can go back to and see
+           * what Happy put on their machine.
+           */
+          readonly kind: "agent-ready";
+          readonly version?: string;
+          readonly nodeVersion?: string;
       }
     | { readonly kind: "examining" }
     | {
@@ -94,8 +112,16 @@ export interface LocalOnboardingScreenProps {
     readonly showSteps?: boolean;
     readonly appearance: ThemeMode;
     readonly view: LocalOnboardingView;
+    /** The furthest step setup has reached, for the bar's own drawing. */
+    readonly reachedStage?: OnboardingStage;
     onAssistantsContinue(): void;
     onConnectRetry(): void;
+    /** Returns to an earlier step. Absent where stepping back is not offered. */
+    onStageSelect?(stage: OnboardingStage): void;
+    /** Asks for the subscription check now rather than at the next pass. */
+    onSubscriptionsRefresh?(): void;
+    /** Opens an external page: the host owns how a link leaves the app. */
+    onExternalOpen?(url: string): void;
     onHappyMobileConnect(): void;
     onHappyMobileSkip(): void;
     onHappyMobilePlatformSelect?(platform: "ios" | "android"): void;
@@ -189,12 +215,54 @@ function pairingExpiration(expiresAt: number): string {
  */
 const ASSISTANTS: Record<
     LocalOnboardingAssistantId,
-    { command: string; mark: AssistantMarkName; name: string }
+    {
+        command: string;
+        mark: AssistantMarkName;
+        name: string;
+        /** Where the vendor tells you to get it, when the machine has not. */
+        install: string;
+        /** What signs you in, taken from each vendor's own documentation. */
+        signIn: string;
+        /** Only where the command alone does not finish the job. */
+        signInNote?: string;
+    }
 > = {
-    claude: { command: "claude", mark: "claude", name: "Claude Code" },
-    codex: { command: "codex", mark: "openai", name: "Codex" },
-    grok: { command: "grok", mark: "grok", name: "Grok" },
+    claude: {
+        command: "claude",
+        install: "https://code.claude.com/docs/en/setup",
+        mark: "claude",
+        name: "Claude Code",
+        signIn: "claude auth login",
+    },
+    codex: {
+        command: "codex",
+        install: "https://developers.openai.com/codex/cli",
+        mark: "openai",
+        name: "Codex",
+        signIn: "codex login",
+    },
+    grok: {
+        command: "grok",
+        install: "https://docs.x.ai/build/overview",
+        mark: "grok",
+        name: "Grok",
+        // Grok has no login subcommand: running it is the sign-in.
+        signIn: "grok",
+        signInNote: "Sign in when the browser opens.",
+    },
 };
+
+/** Where somebody stuck during first-run setup can go, and to whom. */
+const HELP_LINKS = [
+    { id: "discord", label: "Ask on Discord", url: "https://discord.gg/fX9WBAhyfD" },
+    { id: "bra1n_dump", label: "DM @bra1n_dump on X", url: "https://x.com/bra1n_dump" },
+    { id: "ex3ndr", label: "DM @Ex3NDR on X", url: "https://x.com/Ex3NDR" },
+    {
+        id: "issues",
+        label: "Browse known issues",
+        url: "https://github.com/slopus/happy/issues",
+    },
+] as const;
 
 /**
  * One card on the report that follows an install: what is on the machine, and
@@ -205,26 +273,49 @@ const ASSISTANTS: Record<
  * two versions on a PATH is the ordinary case, not the exotic one.
  */
 function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): SetupAssistantEntry {
-    const { mark, name } = ASSISTANTS[assistant.id];
+    const vendor = ASSISTANTS[assistant.id];
     const detail = (() => {
         switch (assistant.authentication) {
             case "checking":
-                return "Checking credentials…";
+                return "Checking…";
             case "valid":
-                return "Credentials valid";
+                return "Signed in";
             case "invalid":
-                return "Credentials invalid";
+                return "Not signed in";
             case "error":
-                return "Could not verify";
+                return "Couldn't check";
             case "unavailable":
                 return "Not installed";
         }
     })();
+    // What to do about it: get the thing, or sign in to the thing that is
+    // already here. A working assistant is asked for nothing.
+    const action: SetupAssistantAction | undefined = (() => {
+        switch (assistant.authentication) {
+            case "unavailable":
+                return {
+                    href: vendor.install,
+                    kind: "link",
+                    label: `Install ${vendor.name}`,
+                };
+            case "invalid":
+            case "error":
+                return {
+                    command: vendor.signIn,
+                    kind: "command",
+                    ...(vendor.signInNote ? { note: vendor.signInNote } : {}),
+                };
+            case "checking":
+            case "valid":
+                return undefined;
+        }
+    })();
     return {
+        ...(action ? { action } : {}),
         detail,
         id: assistant.id,
-        mark,
-        name,
+        mark: vendor.mark,
+        name: vendor.name,
         status:
             assistant.authentication === "valid"
                 ? "found"
@@ -237,7 +328,7 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
 /** The stable, dimmed three-vendor row shown before authentication resolves. */
 const CHECKING_ASSISTANTS: readonly SetupAssistantEntry[] = Object.entries(ASSISTANTS).map(
     ([id, assistant]) => ({
-        detail: "Checking credentials…",
+        detail: "Checking…",
         id,
         mark: assistant.mark,
         name: assistant.name,
@@ -252,6 +343,7 @@ interface MachineSetupProjection {
     readonly label: string;
     readonly progress: SetupPageProgress;
     readonly ready: boolean;
+    readonly refreshing: boolean;
     readonly title: string;
 }
 
@@ -263,6 +355,7 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             label: agentSetupProgressLabel(view.phase),
             progress: agentSetupProgress(view.phase),
             ready: false,
+            refreshing: false,
             title: "Launching Happy Agent",
         };
     if (view.kind === "connecting")
@@ -272,45 +365,48 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             label: "Waiting for Happy Agent…",
             progress: { kind: "waiting" },
             ready: false,
+            refreshing: false,
             title: "Launching Happy Agent",
         };
     if (view.kind === "examining")
         return {
             assistants: CHECKING_ASSISTANTS,
-            copy: "Happy is looking for existing Claude, Codex, and Grok subscriptions on this machine.",
+            copy: "Happy is checking your Claude, Codex, and Grok sign-ins on this machine.",
             hasValidAuthentication: false,
             label: "Preparing authentication checks…",
             progress: { kind: "waiting" },
             ready: false,
-            title: "Searching for existing subscriptions",
+            refreshing: true,
+            title: "Checking your subscriptions",
         };
-    if (view.kind === "provider-authentication")
+    if (view.kind === "provider-authentication") {
+        const valid = view.assistants.some((assistant) => assistant.authentication === "valid");
         return {
             assistants: view.assistants.map(assistantAuthenticationEntry),
             copy: view.complete
-                ? view.assistants.some((assistant) => assistant.authentication === "valid")
+                ? valid
                     ? "Happy will use these subscriptions for its work."
-                    : "Happy couldn't find a valid subscription on this machine. Install and sign in to Claude, Codex, or Grok later; Happy will detect it automatically, or you can rescan from Settings."
-                : "Happy is checking the existing authentication for your Claude, Codex, and Grok subscriptions.",
-            hasValidAuthentication: view.assistants.some(
-                (assistant) => assistant.authentication === "valid",
-            ),
+                    : "Happy works by running Claude Code, Codex, or Grok on your own subscription, so it needs at least one of them installed and signed in. Set one up below — this screen continues on its own."
+                : "Happy is checking your Claude, Codex, and Grok sign-ins on this machine.",
+            hasValidAuthentication: valid,
             label: "Checking subscription authentication…",
             progress: { fraction: 1, kind: "measured" },
             ready: view.complete,
+            refreshing: !view.complete || view.refreshing === true,
             title: view.complete
-                ? view.assistants.some((assistant) => assistant.authentication === "valid")
-                    ? "Found valid subscriptions"
-                    : "Unable to find valid subscriptions"
-                : "Searching for existing subscriptions",
+                ? valid
+                    ? "Subscriptions ready"
+                    : "Happy needs a coding subscription"
+                : "Checking your subscriptions",
         };
+    }
     return undefined;
 }
 
 function MachineSetupStatus(props: {
     readonly projection: MachineSetupProjection;
     onContinue(): void;
-    onSkip(): void;
+    onRefresh?(): void;
 }) {
     const showAssistants = props.projection.assistants !== undefined;
     return (
@@ -337,21 +433,20 @@ function MachineSetupStatus(props: {
                 <SetupAssistants
                     assistants={props.projection.assistants ?? CHECKING_ASSISTANTS}
                     data-testid={showAssistants ? "local-onboarding-assistants" : undefined}
+                    refreshing={props.projection.refreshing}
+                    title="Subscriptions"
+                    {...(props.onRefresh ? { onRefresh: props.onRefresh } : {})}
                 />
                 <div
-                    aria-hidden={!props.projection.ready}
+                    aria-hidden={!props.projection.hasValidAuthentication}
                     className="happy-local-onboarding__machine-actions"
                 >
-                    {props.projection.ready ? (
-                        props.projection.hasValidAuthentication ? (
-                            <Button onClick={props.onContinue} size="large" width={240}>
-                                Continue
-                            </Button>
-                        ) : (
-                            <Button onClick={props.onSkip} size="large" width={240}>
-                                Skip
-                            </Button>
-                        )
+                    {/* Nothing signed in is not a step to skip past: without a
+                        subscription there is no product to go on to. */}
+                    {props.projection.ready && props.projection.hasValidAuthentication ? (
+                        <Button onClick={props.onContinue} size="large" width={240}>
+                            Continue
+                        </Button>
                     ) : null}
                 </div>
             </div>
@@ -381,8 +476,10 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
         return (
             <DesktopMobileSetup
                 appearance={props.appearance}
+                help={<OnboardingHelp onExternalOpen={props.onExternalOpen} />}
                 step={view.step}
                 onboarding={props.showSteps}
+                {...(props.onStageSelect ? { onStageSelect: props.onStageSelect } : {})}
                 onContinue={props.onHappyMobileConnect}
                 onSkip={props.onHappyMobileSkip}
                 onPlatformSelect={props.onHappyMobilePlatformSelect}
@@ -408,10 +505,13 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
     const frame = {
         backdrop: { appearance: props.appearance, kind: "sky" },
         transitionKey,
+        help: <OnboardingHelp onExternalOpen={props.onExternalOpen} />,
         steps: props.showSteps ? (
             <OnboardingSteps
                 scope="desktop"
                 stage={onboardingStage(view)}
+                {...(props.reachedStage ? { reached: props.reachedStage } : {})}
+                {...(props.onStageSelect ? { onStageSelect: props.onStageSelect } : {})}
                 failed={
                     view.kind === "node-missing" ||
                     view.kind === "connect-failed" ||
@@ -434,10 +534,30 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
             >
                 <MachineSetupStatus
                     onContinue={props.onAssistantsContinue}
-                    onSkip={props.onAssistantsContinue}
                     projection={machineSetup}
+                    {...(props.onSubscriptionsRefresh
+                        ? { onRefresh: props.onSubscriptionsRefresh }
+                        : {})}
                 />
             </SetupPage>
+        );
+
+    if (view.kind === "agent-ready")
+        return (
+            <SetupPage
+                {...frame}
+                action={{ label: "Continue", onSelect: props.onAssistantsContinue, width: 240 }}
+                copy="Happy Agent runs your agents on this machine. It's installed and connected — nothing to do here."
+                data-testid="local-onboarding-screen"
+                scene="owl"
+                title="Happy Agent is running"
+                auxiliary={
+                    <div className="happy-local-onboarding__facts">
+                        {view.version ? <span>Happy Agent {view.version}</span> : null}
+                        {view.nodeVersion ? <span>Node {view.nodeVersion}</span> : null}
+                    </div>
+                }
+            />
         );
 
     if (view.kind === "checking")
@@ -485,6 +605,11 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 data-testid="local-onboarding-screen"
                 scene="alien-monster"
                 title="Take Happy with you"
+                auxiliary={
+                    <Button onClick={props.onHappyMobileSkip} size="medium" variant="ghost">
+                        Skip mobile setup
+                    </Button>
+                }
             >
                 <div className="happy-local-onboarding__mobile-actions">
                     <Button
@@ -494,9 +619,6 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                         width={240}
                     >
                         Connect Happy Mobile
-                    </Button>
-                    <Button onClick={props.onHappyMobileSkip} size="medium" variant="ghost">
-                        Skip
                     </Button>
                 </div>
             </SetupPage>
@@ -510,6 +632,11 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 copy="Open Happy Mobile, choose Pair Desktop, then scan this code. Happy continues automatically when your phone approves."
                 data-testid="local-onboarding-screen"
                 title="Scan with Happy Mobile"
+                auxiliary={
+                    <Button onClick={props.onHappyMobileSkip} size="medium" variant="ghost">
+                        Skip mobile setup
+                    </Button>
+                }
             >
                 <div className="happy-local-onboarding__mobile-pairing-body">
                     <QRCode
@@ -518,15 +645,13 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                         label="QR code to pair Happy Mobile"
                         size={240}
                     />
+                    <PairingLinkCopy data={view.data} />
                     <div className="happy-local-onboarding__mobile-waiting">
                         <Spinner label="Pairing in progress" size={16} tone="inverse" />
                         <span>
                             Waiting for your phone · expires {pairingExpiration(view.expiresAt)}
                         </span>
                     </div>
-                    <Button onClick={props.onHappyMobileSkip} size="medium" variant="ghost">
-                        Skip
-                    </Button>
                 </div>
             </SetupPage>
         );
@@ -540,6 +665,11 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 data-testid="local-onboarding-screen"
                 scene="owl"
                 title="Happy Mobile didn't connect"
+                auxiliary={
+                    <Button onClick={props.onHappyMobileSkip} size="medium" variant="ghost">
+                        Skip mobile setup
+                    </Button>
+                }
             >
                 <div className="happy-local-onboarding__mobile-actions">
                     <Button
@@ -549,9 +679,6 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                         width={240}
                     >
                         Try again
-                    </Button>
-                    <Button onClick={props.onHappyMobileSkip} size="medium" variant="ghost">
-                        Skip
                     </Button>
                 </div>
             </SetupPage>
@@ -638,13 +765,18 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 data-testid="local-onboarding-screen"
                 scene="wand"
                 title="Open your first project"
-            >
-                {props.onProjectSetupBack ? (
-                    <Button disabled={view.busy} onClick={props.onProjectSetupBack} variant="ghost">
-                        Back to setup options
-                    </Button>
-                ) : null}
-            </SetupPage>
+                auxiliary={
+                    props.onProjectSetupBack ? (
+                        <Button
+                            disabled={view.busy}
+                            onClick={props.onProjectSetupBack}
+                            variant="ghost"
+                        >
+                            Back to setup options
+                        </Button>
+                    ) : null
+                }
+            />
         );
 
     return null;
@@ -654,18 +786,63 @@ function onboardingStage(view: LocalOnboardingView): OnboardingStage {
     switch (view.kind) {
         case "examining":
         case "provider-authentication":
-            return "assistants";
+            return "subscriptions";
         case "profile-required":
             return "profile";
         case "happy-mobile-desktop":
+            return view.step.kind === "link" && view.step.appReady
+                ? "connect-phone"
+                : view.step.kind === "connected"
+                  ? "connect-phone"
+                  : "get-app";
         case "happy-mobile-checking":
         case "happy-mobile-offer":
+            return "get-app";
         case "happy-mobile-pairing":
         case "happy-mobile-failed":
         case "finishing":
         case "project":
-            return "mobile";
+            return "connect-phone";
         default:
             return "setup";
     }
+}
+
+/**
+ * The pairing payload, offered as a link for a phone that cannot see the
+ * screen. The daemon's contract says this string is either encoded as a QR
+ * code or handed over as a copyable deep link, and that it is opaque — so it
+ * is copied exactly as it arrived and nothing here reads it.
+ */
+function PairingLinkCopy(props: { readonly data: string }) {
+    return (
+        <CopyButton
+            caption="Copy auth link"
+            className="happy-local-onboarding__pairing-link"
+            copiedCaption="Link copied"
+            data-testid="happy-mobile-pairing-copy"
+            label="Copy auth link"
+            text={props.data}
+        />
+    );
+}
+
+/** Somewhere to turn on every screen, without leaving the step you are on. */
+function OnboardingHelp(props: { onExternalOpen?(url: string): void }) {
+    return (
+        <MenuButton
+            align="end"
+            icon="users"
+            items={HELP_LINKS.map((link) => ({ id: link.id, kind: "item", label: link.label }))}
+            label="Get help"
+            menuLabel="Get help"
+            onSelect={(id) => {
+                const link = HELP_LINKS.find((candidate) => candidate.id === id);
+                if (link) props.onExternalOpen?.(link.url);
+            }}
+            size="medium"
+            text="Get help"
+            variant="ghost"
+        />
+    );
 }

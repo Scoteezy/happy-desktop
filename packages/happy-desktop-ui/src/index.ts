@@ -508,9 +508,11 @@ export {
 export { SetupChoice, type SetupChoiceOption, type SetupChoiceProps } from "./SetupChoice";
 export {
     SetupAssistants,
+    type SetupAssistantAction,
     type SetupAssistantEntry,
     type SetupAssistantsProps,
 } from "./SetupAssistants";
+export { SetupCommand, type SetupCommandProps } from "./SetupCommand";
 export { AssistantMark, type AssistantMarkName, type AssistantMarkProps } from "./AssistantMark";
 export {
     SetupHandoff,

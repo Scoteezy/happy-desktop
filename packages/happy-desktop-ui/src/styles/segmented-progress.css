@@ -16,6 +16,11 @@
 }
 
 .happy-segmented-progress__segment {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
     display: flex;
     /* Equal tracks: the steps take wildly different times and are not
        comparable, so a bar weighted by any of them would be a schedule. */
@@ -139,11 +144,21 @@
     display: none;
 }
 
-.happy-segmented-progress[data-mode="steps"]
-    .happy-segmented-progress__segment[data-state="running"]
-    .happy-segmented-progress__track {
-    outline: 1px solid var(--text);
-    outline-offset: 2px;
+/* A step you can return to says so by responding to the pointer, not by
+   carrying a second control beside its label. */
+.happy-segmented-progress__segment[data-selectable] {
+    cursor: pointer;
+}
+
+.happy-segmented-progress__segment[data-selectable]:hover .happy-segmented-progress__label {
+    color: var(--text);
+    opacity: 1;
+}
+
+.happy-segmented-progress__segment[data-selectable]:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 4px;
+    border-radius: var(--happy-radius-sm);
 }
 
 .happy-segmented-progress[data-tone="inverse"] .happy-segmented-progress__track {
@@ -162,9 +177,14 @@
     color: var(--button-primary-tint);
 }
 
-.happy-segmented-progress[data-tone="inverse"][data-mode="steps"]
-    .happy-segmented-progress__segment[data-state="running"]
-    .happy-segmented-progress__track {
+.happy-segmented-progress[data-tone="inverse"]
+    .happy-segmented-progress__segment[data-selectable]:hover
+    .happy-segmented-progress__label {
+    color: var(--button-primary-tint);
+}
+
+.happy-segmented-progress[data-tone="inverse"]
+    .happy-segmented-progress__segment[data-selectable]:focus-visible {
     outline-color: var(--button-primary-tint);
 }
 

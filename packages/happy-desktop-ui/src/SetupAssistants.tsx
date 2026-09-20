@@ -1,4 +1,15 @@
 import { AssistantMark, type AssistantMarkName } from "./AssistantMark";
+import { SetupCommand } from "./SetupCommand";
+import { Ionicon } from "./vectorIcons/VectorIcon";
+
+/**
+ * What to do about an assistant that is not usable yet: run something, or go
+ * and get it. Absent on one that is already signed in, because there is
+ * nothing to do about it.
+ */
+export type SetupAssistantAction =
+    | { readonly kind: "command"; readonly command: string; readonly note?: string }
+    | { readonly kind: "link"; readonly label: string; readonly href: string };
 
 /** What setup found out about one assistant on this machine. */
 export interface SetupAssistantEntry {
@@ -23,11 +34,19 @@ export interface SetupAssistantEntry {
      * sentence and a column is narrower than most of them.
      */
     readonly detailKind?: "sentence" | "path";
+    /** The one thing that would make this assistant usable, when there is one. */
+    readonly action?: SetupAssistantAction;
 }
 
 export interface SetupAssistantsProps {
     readonly assistants: readonly SetupAssistantEntry[];
     readonly "data-testid"?: string;
+    /** A heading over the row, with the live check beside it. */
+    readonly title?: string;
+    /** A check is in flight: the mark beside the heading turns while it runs. */
+    readonly refreshing?: boolean;
+    /** Asks for the check now, without waiting for the next automatic one. */
+    onRefresh?(): void;
 }
 
 /**
@@ -74,36 +93,90 @@ export function SetupAssistants(props: SetupAssistantsProps) {
             data-happy-desktop-ui="setup-assistants"
             data-testid={props["data-testid"]}
         >
-            {props.assistants.map((assistant) => (
-                <article
-                    className="happy-setup-assistants__item"
-                    data-happy-desktop-ui="setup-assistants-item"
-                    data-status={assistant.status}
-                    key={assistant.id}
+            {props.title === undefined ? null : (
+                <div
+                    className="happy-setup-assistants__header"
+                    data-happy-desktop-ui="setup-assistants-header"
                 >
-                    <span
-                        className="happy-setup-assistants__mark"
-                        data-happy-desktop-ui="setup-assistants-mark"
+                    <span className="happy-setup-assistants__title">{props.title}</span>
+                    {props.onRefresh ? (
+                        <button
+                            aria-label={
+                                props.refreshing ? "Checking now" : "Check subscriptions now"
+                            }
+                            className="happy-setup-assistants__refresh"
+                            data-happy-desktop-ui="setup-assistants-refresh"
+                            data-refreshing={props.refreshing ? "" : undefined}
+                            onClick={props.onRefresh}
+                            type="button"
+                        >
+                            <Ionicon name="refresh" size={14} />
+                        </button>
+                    ) : null}
+                </div>
+            )}
+            <div className="happy-setup-assistants__row">
+                {props.assistants.map((assistant) => (
+                    <article
+                        className="happy-setup-assistants__item"
+                        data-happy-desktop-ui="setup-assistants-item"
+                        data-status={assistant.status}
+                        key={assistant.id}
                     >
-                        <AssistantMark name={assistant.mark} size={22} />
-                    </span>
-                    <span
-                        className="happy-setup-assistants__name"
-                        data-happy-desktop-ui="setup-assistants-name"
-                    >
-                        {assistant.name}
-                    </span>
-                    <span
-                        className="happy-setup-assistants__detail"
-                        data-happy-desktop-ui="setup-assistants-detail"
-                        data-kind={assistant.detailKind ?? "sentence"}
-                    >
-                        {assistant.detailKind === "path"
-                            ? pathBreakable(assistant.detail)
-                            : assistant.detail}
-                    </span>
-                </article>
-            ))}
+                        <span
+                            className="happy-setup-assistants__mark"
+                            data-happy-desktop-ui="setup-assistants-mark"
+                        >
+                            <AssistantMark name={assistant.mark} size={22} />
+                        </span>
+                        <span
+                            className="happy-setup-assistants__name"
+                            data-happy-desktop-ui="setup-assistants-name"
+                        >
+                            {assistant.name}
+                        </span>
+                        <span
+                            className="happy-setup-assistants__detail"
+                            data-happy-desktop-ui="setup-assistants-detail"
+                            data-kind={assistant.detailKind ?? "sentence"}
+                        >
+                            {assistant.detailKind === "path"
+                                ? pathBreakable(assistant.detail)
+                                : assistant.detail}
+                        </span>
+                        {assistant.action ? (
+                            <span
+                                className="happy-setup-assistants__action"
+                                data-happy-desktop-ui="setup-assistants-action"
+                            >
+                                {assistant.action.kind === "command" ? (
+                                    <>
+                                        <SetupCommand
+                                            command={assistant.action.command}
+                                            label={`${assistant.name} sign-in command`}
+                                        />
+                                        {assistant.action.note === undefined ? null : (
+                                            <span className="happy-setup-assistants__note">
+                                                {assistant.action.note}
+                                            </span>
+                                        )}
+                                    </>
+                                ) : (
+                                    <a
+                                        className="happy-setup-assistants__link"
+                                        data-happy-desktop-ui="setup-assistants-link"
+                                        href={assistant.action.href}
+                                        rel="noopener noreferrer"
+                                        target="_blank"
+                                    >
+                                        {assistant.action.label}
+                                    </a>
+                                )}
+                            </span>
+                        ) : null}
+                    </article>
+                ))}
+            </div>
         </div>
     );
 }
