@@ -1,0 +1,7 @@
+All three adjustments are in — screenshot attached, all 22 QA checks pass.
+
+- **Moon speed reverted**: the 2000ms slow-down rule is gone; the spinner runs at the original 480ms in every variant, including calm.
+- **Edit file names**: now monospace 13px, regular weight, subject-grey — `Edit qa-tool-motion-replay.mjs +26 −4` reads like `Bash cd …`, with only the verb bold. Before, the file name was bold 14px UI font, visually merging with the tool name.
+- **Review tint scoped**: reviewed calls now show amber on just the icon and the tool name; the command text stays normal grey. You can see it in the screenshot on the reviewed `Bash` rows — amber `<>` + `Bash`, grey command — next to unreviewed ones. The rationale I put in the CSS: a long line of amber shell text reads as a warning about the command's *content*, when the review is a fact about its *approval*.
+
+All three are in the shared production CSS (`agent-activity-row.css`), so they apply to every variant and the real app once the branch lands, not just the replay.

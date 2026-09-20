@@ -29,6 +29,11 @@ import {
     messageTextLayoutFontGenerationSubscribe,
 } from "./messageTextLayout";
 import { createRenderer } from "./testing";
+import goldFiveMinuteLists from "./fixtures/gold-five-minute-lists.txt?raw";
+import goldFiveMinuteSse from "./fixtures/gold-five-minute-sse.txt?raw";
+import goldSubagentDelegation from "./fixtures/gold-subagent-delegation.txt?raw";
+import nestedLinkList from "./fixtures/nested-link-list.txt?raw";
+import previewChannelsReport from "./fixtures/preview-channels-report.txt?raw";
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 const nextLayout = async () => {
@@ -68,6 +73,30 @@ function message(id: string, sender: "agent" | "human", text: string): Conversat
                           username: "steve",
                           kind: "human",
                       },
+            text,
+            attachments: [],
+            reactions: [],
+            createdAt: "2026-08-22T12:34:00.000Z",
+        },
+    };
+}
+
+function incomingMessage(id: string, text: string): ConversationMessageEntry {
+    return {
+        kind: "message",
+        source: "server",
+        delivery: "sent",
+        message: {
+            id,
+            chatId: "geometry",
+            sequence: id,
+            changePts: id,
+            sender: {
+                id: "geometry-collaborator",
+                displayName: "Agent",
+                username: "agent",
+                kind: "human",
+            },
             text,
             attachments: [],
             reactions: [],
@@ -172,6 +201,12 @@ const reviewText = [
 const richLeading = message("rich-leading", "agent", richText);
 const richGrouped = message("rich-grouped", "agent", richText);
 const reviewLeading = message("review-leading", "agent", reviewText);
+const nestedLinkListLeading = message("nested-link-list", "agent", nestedLinkList);
+const previewChannelsLeading = message("preview-channels-agent", "agent", previewChannelsReport);
+const previewChannelsIncoming = incomingMessage("preview-channels-incoming", previewChannelsReport);
+const goldListsLeading = message("gold-lists", "agent", goldFiveMinuteLists);
+const goldSseLeading = message("gold-sse", "agent", goldFiveMinuteSse);
+const goldDelegationLeading = message("gold-delegation", "agent", goldSubagentDelegation);
 const agentPrelude = message("agent-prelude", "agent", "I checked the release inputs.");
 const humanBoundary = message("human-boundary", "human", "Please verify the release.");
 const shellLeading: ConversationEntry = {
@@ -289,6 +324,16 @@ const specimens: readonly Specimen[] = [
         name: "failure-boundary",
         targetIndex: 1,
     },
+    { entries: [nestedLinkListLeading], name: "nested-link-list", targetIndex: 0 },
+];
+
+const realChatSpecimens: readonly Specimen[] = [
+    { entries: [nestedLinkListLeading], name: "nested-link-list-widths", targetIndex: 0 },
+    { entries: [previewChannelsLeading], name: "preview-channels-agent", targetIndex: 0 },
+    { entries: [previewChannelsIncoming], name: "preview-channels-incoming", targetIndex: 0 },
+    { entries: [goldListsLeading], name: "gold-lists", targetIndex: 0 },
+    { entries: [goldSseLeading], name: "gold-sse", targetIndex: 0 },
+    { entries: [goldDelegationLeading], name: "gold-delegation", targetIndex: 0 },
 ];
 
 function GeometrySpecimen(props: Specimen & { readonly width: number }) {
@@ -537,6 +582,24 @@ it.skipIf(server.browser === "firefox")(
             ).toBe(true);
         }
 
+        for (const specimen of specimens.filter(
+            (candidate) => candidate.name === "nested-link-list",
+        )) {
+            const target = view.$(`[data-testid="${specimen.name}"]`).element;
+            const nestedLists = [...target.querySelectorAll<HTMLElement>("li > ul")];
+            expect(nestedLists, `${specimen.name} nested lists`).toHaveLength(3);
+            for (const [index, nested] of nestedLists.entries()) {
+                expect(
+                    nested.previousElementSibling?.tagName.toLowerCase(),
+                    `${specimen.name} nested list ${String(index)} follows an inline element`,
+                ).toBe("a");
+                expect(
+                    Number.parseFloat(getComputedStyle(nested).marginTop),
+                    `${specimen.name} nested list ${String(index)} paints the child-block gap`,
+                ).toBe(6);
+            }
+        }
+
         for (let width = 1500; width >= 200; width -= 1) {
             flushSync(() => widthUpdate(width));
             await nextFrame();
@@ -576,4 +639,65 @@ it.skipIf(server.browser === "firefox")(
         }
     },
     60_000,
+);
+
+it.skipIf(server.browser === "firefox")(
+    "keeps modeled heights exact for real chat messages at conversation widths",
+    async () => {
+        /* Conversation measure is 880. Narrower widths still share that
+           Markdown body; 400px is omitted here because a classic scrollbar
+           in the 440px tester changes clientWidth enough to add wraps that
+           the outer `width={400}` style does not. */
+        const widths = [880, 720, 560] as const;
+        const view = createRenderer();
+        let widthUpdate!: (width: number) => void;
+        function RealChatHarness() {
+            const [width, setWidth] = useState(880);
+            widthUpdate = setWidth;
+            return (
+                <div
+                    style={{
+                        background: "#f5f5f5",
+                        display: "flex",
+                        flexDirection: "column",
+                        width: "100%",
+                    }}
+                >
+                    {realChatSpecimens.map((specimen) => (
+                        <GeometrySpecimen {...specimen} key={specimen.name} width={width} />
+                    ))}
+                </div>
+            );
+        }
+
+        view.render(RealChatHarness, {
+            width: 880,
+            height: realChatSpecimens.length * 440,
+        });
+        await view.ready();
+        await document.fonts.ready;
+        await nextLayout();
+
+        const previewTarget = view.$('[data-testid="preview-channels-agent"]').element;
+        const nestedLists = [...previewTarget.querySelectorAll<HTMLElement>("li > ul")];
+        expect(nestedLists.length, "preview-channels nested lists").toBe(10);
+        expect(
+            nestedLists.filter((nested) => nested.previousElementSibling?.tagName === "A").length,
+            "preview-channels nested lists after a link",
+        ).toBe(10);
+
+        for (const width of widths) {
+            flushSync(() => widthUpdate(width));
+            await nextFrame();
+            for (const specimen of realChatSpecimens) {
+                const container = view.$(`[data-testid="${specimen.name}-container"]`).element;
+                expectModeledRowsMatchPaint(
+                    container,
+                    specimen.entries.length,
+                    `${specimen.name} at ${String(width)}px`,
+                );
+            }
+        }
+    },
+    30_000,
 );

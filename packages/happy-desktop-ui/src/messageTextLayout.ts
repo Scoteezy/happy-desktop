@@ -686,6 +686,13 @@ function markdownInlineHeight(
     return height;
 }
 
+/** Tight-list paragraphs unwrap into the `<li>`. A following nested list is
+ * then an element sibling of whatever inline elements that phrasing painted,
+ * which is what `.happy-message__body--markdown li > * + *` matches. */
+function markdownPhrasingPaintsElement(children: readonly MarkdownPhrasing[]): boolean {
+    return children.some((node) => node.type !== "text" && node.type !== "html");
+}
+
 /** Empty cells have padding but no line box. Mirror the rendered inline tree:
  * skipped HTML and collapsed ASCII whitespace do not create one, whereas code
  * decoration, images-as-labels, references and explicit breaks do. */
@@ -899,13 +906,19 @@ function markdownListHeight(
         }
         let itemHeight = first.height;
         for (let index = 1; index < blocks.length; index += 1) {
-            /* Tight-list paragraphs render as bare phrasing inside `<li>`, not
-               as an element. Consequently `li > * + *` does not open a gap
-               before the following nested list. Spread items render `<p>` and
-               take the explicit child-block gap. */
+            /* Tight-list paragraphs unwrap into the `<li>`, so `li > * + *`
+               does not apply when that phrasing is only text nodes. Inline
+               elements (`a`, `code`, `strong`, …) still become element
+               siblings of a following nested list, and the 6px child-block
+               gap paints. Spread items keep `<p>` and always take the gap. */
             const previous = item.children[index - 1];
             const gap =
-                previous?.type === "paragraph" && !list.spread && !item.spread ? 0 : LIST_ITEM_GAP;
+                previous?.type === "paragraph" &&
+                !list.spread &&
+                !item.spread &&
+                !markdownPhrasingPaintsElement(previous.children)
+                    ? 0
+                    : LIST_ITEM_GAP;
             itemHeight += gap + blocks[index]!.height;
         }
         total += itemHeight;

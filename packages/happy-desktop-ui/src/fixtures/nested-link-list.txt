@@ -1,0 +1,14 @@
+Still-preview train:
+
+- [1.2.5-beta.0](https://github.com/slopus/happy/releases/tag/cli-1.2.5-beta.0)
+  - Session reliability and resume fixes
+  - Long Codex turns no longer appear aborted after ten minutes
+  - Later replies/diffs reach mobile
+- [1.2.5-beta.1](https://github.com/slopus/happy/releases/tag/cli-1.2.5-beta.1)
+  - Prevents duplicate resume processes
+  - Concurrent resumes share one attempt
+  - Cancelling preparation prevents launch
+- [1.2.5-beta.2](https://github.com/slopus/happy/releases/tag/cli-1.2.5-beta.2)
+  - Clearer expired-Claude-login errors
+  - Remote Claude plugins are preserved
+  - Session metadata now includes synchronized composer drafts and message mode

@@ -17,6 +17,7 @@ import {
     monoOutputTextHeight,
 } from "./messageTextLayout";
 import { createRenderer } from "./testing";
+import nestedLinkList from "./fixtures/nested-link-list.txt?raw";
 import richTablePayload from "./fixtures/streaming-layout-rich-table.txt?raw";
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -171,6 +172,56 @@ it("keeps live prose, tool, and status rows adjacent before and after settlement
         }
     }
 });
+
+for (const width of [800, 560, 360]) {
+    it(`keeps nested-link list geometry exact while it streams at ${String(width)}px`, async () => {
+        const view = createRenderer();
+        let update!: (text: string, streaming: boolean) => void;
+        function Harness() {
+            const [state, setState] = useState({ text: "", streaming: true });
+            update = (text, streaming) => setState({ text, streaming });
+            return (
+                <div className="happy-theme-dark" style={{ width, height: 700 }}>
+                    <ConversationView
+                        agentAuthor={agent}
+                        composer={composer}
+                        conversationId="nested-link-stream"
+                        entries={[message(state.text, state.streaming), tool]}
+                        motion="calm"
+                        onComposerSend={() => {}}
+                        onComposerValueChange={() => {}}
+                        running
+                    />
+                </div>
+            );
+        }
+        view.render(Harness, { width: 900, height: 700 });
+        await view.ready();
+        await nextFrame();
+        await nextFrame();
+        const row = view.container.querySelector(".happy-message-list__virtual-row")!;
+        const input = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+        input.focus();
+        const ends = [nestedLinkList.length];
+        for (let index = 0; index < nestedLinkList.length; index += 1)
+            if (nestedLinkList[index] === "\n") ends.push(index + 1);
+        for (const end of ends.sort((a, b) => a - b)) {
+            flushSync(() => update(nestedLinkList.slice(0, end), true));
+            await nextFrame();
+            expectRowGeometry(
+                view.container,
+                `nested-link prefix ${String(end)} at ${String(width)}px`,
+            );
+            expect(view.container.querySelector(".happy-message-list__virtual-row")).toBe(row);
+            expect(document.activeElement).toBe(input);
+        }
+        const liveHeight = row.getBoundingClientRect().height;
+        flushSync(() => update(nestedLinkList, false));
+        expectRowGeometry(view.container, `nested-link settled at ${String(width)}px`);
+        expect(row.getBoundingClientRect().height).toBe(liveHeight);
+        expect(row.querySelectorAll("li > ul")).toHaveLength(3);
+    });
+}
 
 it("keeps the transcript fixed when the live status becomes the completed summary", async () => {
     const view = createRenderer();

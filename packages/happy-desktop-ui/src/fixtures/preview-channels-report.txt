@@ -1,0 +1,209 @@
+As of 20 September 2026, I found seven preview lines that are still ahead of production across the active Happy projects:
+
+| Surface | Preview currently ahead | Production baseline |
+|---|---|---|
+| Mobile OTA | 16 preview OTA groups; latest Sept 20 | Production OTA from Sept 5 |
+| Happy CLI | `1.2.5-beta.0` → `.2` | `1.2.4` |
+| Happy Agent runtime | `v0.4.71-preview.1` → `.3` | `v0.4.70` |
+| Happy Desktop native | `v0.0.86-preview.1` → `.4` | `v0.0.85` |
+| Desktop hosted renderer | `v0.0.86-preview.1`, `.2`, `.3`, `.5`, `.6` | No separate production hosted renderer |
+| Native sandbox supervisor | `@slopus/happy-agent-supervisor@0.0.13-preview.1` | `0.0.12` |
+| Plugin SDK | `happy-plugins@0.0.7-canary.919.7adecc1` | `0.0.6` |
+
+## Mobile OTA
+
+The production channel is still at:
+
+- Group: `4745cb52-df32-416c-804e-77078d03cfce`
+- Published: `2026-09-05T10:14:58Z`
+- Commit: `5795677c42f3da10e8b34c01e995f4c3ddc79be1`
+- Runtime: `21`
+- iOS manifest: [01a07110-7405-7583-afe1-eb93fd966bb1](https://u.expo.dev/update/01a07110-7405-7583-afe1-eb93fd966bb1)
+- Android manifest: [01a07110-7405-738e-b0d4-dff8f51b5668](https://u.expo.dev/update/01a07110-7405-738e-b0d4-dff8f51b5668)
+
+There are 16 newer preview groups, all targeting both iOS and Android on runtime 21:
+
+| UTC | EAS group | Commit | Preview contents |
+|---|---|---|---|
+| Sep 20 05:05 | `3e8149bd-65f2-4aff-8bb6-ac289ac8cd5a` | `33790b616a892689b96edb89d3b0f52582cbc312` | Composer drafts and selections synced with Happy Agent |
+| Sep 19 07:08 | `3572eaf1-b883-40d6-b18f-b4ba49d3f969` | `d6ce89ecf8e3fed5c3abdddb53ffbca67d19baba` | Bot avatar and identity display fixes |
+| Sep 16 12:05 | `e63d122c-2bc8-442a-a608-af5a08b36ba6` | `a1eae8deabef8dc369d63b55d8d1b64db8efc15a` | Three-step onboarding on phones and tablets |
+| Sep 16 08:25 | `7e5e5844-6a43-408e-b1e3-02b4d42f99df` | `a99392edc4ad4cbffbb22fcc48805998932e3483` | Rebuilt phone first-run flow |
+| Sep 14 14:08 | `2edda99d-32fd-4b38-81fa-6b6621ab85aa` | `c8552c0d4ae31448e578994262025ec69af31bcb` | Harness setup help and cleaner agent choices |
+| Sep 14 06:57 | `47f81d9f-a351-402d-b883-7ced6106841e` | `1a73e704c2a32f1bcff7c615ff441387cbeb91aa` | First messages, preserved drafts, safe retries |
+| Sep 14 02:14 | `006d7bb0-3606-4bc5-8a3a-0ceac4dd2429` | `108a337e87a5653b604250a9ac3e3bd873dba551` | Photo uploads and session resume |
+| Sep 13 12:02 | `d95306d9-22e2-46e6-bb4c-f36c530214c7` | `902c4fbe95274468c9d20306485a6e5742fdd435` | Message acceptance, failure states, participant attribution |
+| Sep 12 06:29 | `9fc0c798-c3f2-4b7b-9c04-64afdc99208a` | `907cdad564d6773e3433d13488a62806b6d82924` | Stable headers, centered tools, terminal highlighting |
+| Sep 11 11:20 | `30dc3583-ea32-4601-8d07-01b7202a5c9b` | `a0143a17689b2471a5869015649a064cf42de377` | Background diff highlighting and file previews |
+| Sep 11 10:38 | `819dfb51-5872-4e0d-9605-85947137aaa5` | `f515ae2c6f7f7418882d49ac3d8a57161e82e26f` | Native changes viewer, persistent tool groups, offline help |
+| Sep 7 06:46 | `9eb277ff-1f87-4e64-a42e-3aeff9cb38b5` | `13c7d97810e16e15ebe9a03563130d4a4cd4e00a` | Persistent bots synced to mobile |
+| Sep 7 00:06 | `62562b3d-8764-4078-9f97-ae2aedacbf04` | `dcf38e1002c37d0daf327044a92bd69abed15352` | Session header/details improvements |
+| Sep 6 08:32 | `a775f0be-08c0-41ac-9950-b487d575c630` | `471965815786aea2b13d22b32f1b70ba53f7db2d` | Chat prewarming |
+| Sep 5 10:28 | `8e5cd1ce-dde3-4a78-8ba0-60d7a80e281d` | `f3836392272b1914304be5083b20d464df11d7e4` | Agent rendering fixes and Astra-first pickers |
+| Sep 5 10:22 | `d5ab6432-e135-4083-9e09-9599e99f8f93` | `071fdbbd5aebe69fe7d9444bcffbd4a40335540f` | Agent tool rendering and outcome fixes |
+
+The latest preview update IDs are:
+
+- iOS: [01a0bd34-d8dc-728b-ab0d-ee7e5a2ac15c](https://u.expo.dev/update/01a0bd34-d8dc-728b-ab0d-ee7e5a2ac15c)
+- Android: [01a0bd34-d8dc-7054-a9c4-5a17c724cfa6](https://u.expo.dev/update/01a0bd34-d8dc-7054-a9c4-5a17c724cfa6)
+
+The latest preview native shells were built on the production baseline commit:
+
+- iOS preview build: [63a3762c-5273-423e-b6ae-eff643e54260](https://expo.dev/artifacts/eas/Nhq3FIBSHkELvl0i7H6mgd3K-LCG6kAlNub4IqhgYdY.ipa)
+- Android preview build: [8e66f23a-1132-45e3-810f-20dacb609009](https://expo.dev/artifacts/eas/yLR06bgP0mF196WsvPizN4HCtPTZOigV34TuJZlS8-I.apk)
+
+All newer mobile changes are OTA-only; there has been no newer preview native build.
+
+The channel split is defined in the [mobile release scripts](/Users/kirilldubovitskiy/Developer/happy/packages/happy-app/package.json:20) and [production OTA workflow](/Users/kirilldubovitskiy/Developer/happy/packages/happy-app/.eas/workflows/ota.yaml:1).
+
+## Happy CLI
+
+Production:
+
+- npm `latest`: `1.2.4`
+- GitHub: [cli-1.2.4](https://github.com/slopus/happy/releases/tag/cli-1.2.4)
+
+Still-preview train:
+
+- [1.2.5-beta.0](https://github.com/slopus/happy/releases/tag/cli-1.2.5-beta.0)
+  - Session reliability and resume fixes
+  - Long Codex turns no longer appear aborted after ten minutes
+  - Later replies/diffs reach mobile
+- [1.2.5-beta.1](https://github.com/slopus/happy/releases/tag/cli-1.2.5-beta.1)
+  - Prevents duplicate resume processes
+  - Concurrent resumes share one attempt
+  - Cancelling preparation prevents launch
+- [1.2.5-beta.2](https://github.com/slopus/happy/releases/tag/cli-1.2.5-beta.2)
+  - Clearer expired-Claude-login errors
+  - Remote Claude plugins are preserved
+  - Session metadata now includes synchronized composer drafts and message mode
+
+npm currently reports `beta → 1.2.5-beta.2`; there is no stable `1.2.5`.
+
+## Happy Agent runtime
+
+Production: [v0.4.70](https://github.com/slopus/happy-agent/releases/tag/v0.4.70).
+
+Still-preview train:
+
+- [v0.4.71-preview.1](https://github.com/slopus/happy-agent/releases/tag/v0.4.71-preview.1)
+  - Native PowerShell behavior on Windows
+  - Windows tray icon and background-process improvements
+  - Reduced redundant Git scans and reconnect memory use
+- [v0.4.71-preview.2](https://github.com/slopus/happy-agent/releases/tag/v0.4.71-preview.2)
+  - Windows signing validation
+- [v0.4.71-preview.3](https://github.com/slopus/happy-agent/releases/tag/v0.4.71-preview.3)
+  - Cross-device composer drafts
+  - Syncs model, reasoning effort, permissions, and service tier
+  - Draft persistence and conflict protection
+  - Requires the matching mobile preview for the updated composer
+
+The latest preview has five platform archives plus checksums:
+
+- macOS arm64 and x64
+- Linux arm64 and x64
+- Windows x64
+
+There is no stable `v0.4.71`.
+
+## Happy Desktop native app
+
+Production: [v0.0.85](https://github.com/slopus/happy-desktop/releases/tag/v0.0.85).
+
+Still-preview train:
+
+- [v0.0.86-preview.1](https://github.com/slopus/happy-desktop/releases/tag/v0.0.86-preview.1)
+  - Private browser access to remote workspace services
+  - Improved onboarding and workspace stability
+- [v0.0.86-preview.2](https://github.com/slopus/happy-desktop/releases/tag/v0.0.86-preview.2)
+  - Restores ordinary local `localhost`, `127.0.0.1`, and `.localhost` browsing
+  - Keeps remote workspace services isolated
+- [v0.0.86-preview.3](https://github.com/slopus/happy-desktop/releases/tag/v0.0.86-preview.3)
+  - Context meter reflects the actual model compaction threshold
+- [v0.0.86-preview.4](https://github.com/slopus/happy-desktop/releases/tag/v0.0.86-preview.4)
+  - Lower memory use for large conversations
+  - Agent stop state survives reconnects
+  - PowerShell labels
+  - Live bot-subtask tree
+
+The latest native preview shipped only signed macOS Nightly artifacts: arm64/x64 DMG, ZIP, blockmap, and `nightly-mac.yml`. It did not ship production macOS, Windows, or Linux builds. There is no stable `v0.0.86`.
+
+## Hosted Desktop renderer
+
+The current hosted renderer is:
+
+```text
+https://local.app.happy.engineering/local-web-version.json
+```
+
+It reports:
+
+```json
+{
+  "buildId": "0.0.86-preview.6-e729d9939d97fa0da3d68fa60feca9fb72f63b4e",
+  "version": "0.0.86-preview.6"
+}
+```
+
+Successful current renderer deployments:
+
+| Version | Workflow run | Source / notable change |
+|---|---:|---|
+| `.preview.1` | [35062260206](https://github.com/slopus/happy-desktop/actions/runs/35062260206) | Remote workspace service browsing |
+| `.preview.2` | [35403667254](https://github.com/slopus/happy-desktop/actions/runs/35403667254) | PowerShell/neutral shell activity labels |
+| `.preview.3` | [35440762603](https://github.com/slopus/happy-desktop/actions/runs/35440762603) | Vendor-signed Windows dependencies |
+| `.preview.5` | [35473133527](https://github.com/slopus/happy-desktop/actions/runs/35473133527) | Bot creation from face, name, and first message |
+| `.preview.6` | [35495433665](https://github.com/slopus/happy-desktop/actions/runs/35495433665) | Centered bot creation page, optimistic bot row, first-message/draft preservation |
+
+There is no successful `.preview.4` renderer run in the live workflow history.
+
+This renderer is intentionally Nightly-only; it is not a production deployment. The standard Desktop app bundles its renderer, so production delivery requires a separate stable native Desktop release, as documented in [Desktop release rules](/Users/kirilldubovitskiy/Developer/happy-desktop/docs/releases.md:13).
+
+## Native supervisor package
+
+`@slopus/happy-agent-supervisor` is currently:
+
+- Stable/latest: `0.0.12`
+- Preview: `0.0.13-preview.1`
+- npm `preview`: `0.0.13-preview.1`
+- Published: `2026-09-14T20:06:02Z`
+
+The preview adds:
+
+- Strict native workspace service sessions
+- Authenticated service bridges
+- Native PTY foreground-input handling
+- Additional isolation and cleanup validation
+- Explicit prerelease distribution channels
+
+It includes platform variants for macOS arm64/x64, Linux arm64/x64, and Windows x64.
+
+Important: stable `@slopus/happy-agent-compute@0.1.19` explicitly depends on this supervisor preview, so the dependency graph is not fully stable even though Compute itself has a stable version.
+
+## Plugin SDK
+
+`happy-plugins` currently reports:
+
+- Stable/latest: `0.0.6`
+- Canary: `0.0.7-canary.919.7adecc1`
+- Canary published: `2026-08-20T03:19:41Z`
+
+Package: [happy-plugins 0.0.7-canary.919.7adecc1](https://www.npmjs.com/package/happy-plugins/v/0.0.7-canary.919.7adecc1)
+
+The canary includes the newer Happy Agent API shape, applet terminology, compute lifecycle changes, provider-usage changes, and updated plugin test/runtime contracts. There is no stable `0.0.7`.
+
+## Preview channels I checked but did not count as outstanding
+
+These have stale preview/canary tags, but a later stable version already exists:
+
+| Package | Preview/canary tag | Stable version |
+|---|---|---|
+| `@slopus/happy-agent-client` | `0.0.66-preview.3` | `0.0.67` |
+| `@slopus/happy-agent-compute` | `0.1.17-preview.1` | `0.1.19` |
+| `@slopus/happy-providers` | `0.0.12-canary.919.7adecc1` | `0.0.28` |
+| `@slopus/happy-terminal` | `0.3.0-beta.13` | `0.3.4` |
+| `happy-server-self-host` | `1.1.10-beta.6` | `1.1.11` |
+
+I found no separate versioned server preview channel still awaiting production, and no outstanding preview for `happy-wire` or the Ghostty packages.
+
+Classification follows the project’s release contracts: [Agent previews are binary/Nightly releases, not npm canaries](/Users/kirilldubovitskiy/Developer/happy-agent/master-plans/25-releases.md:25), while [Desktop native and hosted renderer previews are separate delivery paths](/Users/kirilldubovitskiy/Developer/happy-desktop/docs/releases.md:9).
