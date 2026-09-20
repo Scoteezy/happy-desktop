@@ -2,7 +2,6 @@ import type { CSSProperties, MouseEvent } from "react";
 import { Banner } from "./Banner";
 import { BotFace, botFaceCredit } from "./BotFace";
 import { Button } from "./Button";
-import { LottieScene } from "./LottieScene";
 import { TextField } from "./TextField";
 
 /** One of the four faces on offer, by position. */
@@ -40,9 +39,6 @@ export type HappyAgentCreateBotPageProps = {
 /** The size a face is offered at: big enough to have an expression, small enough for four. */
 const FACE_SIZE = 56;
 
-/** The hatching chick's stage, the same square the create page always gave it. */
-const STAGE_SIZE = 96;
-
 /**
  * C-238 HappyAgentCreateBotPage — what is decided about a bot before it exists,
  * standing in the body of the conversation it is about to become.
@@ -50,16 +46,16 @@ const STAGE_SIZE = 96;
  * It is reached from the "+" on the sidebar's Bots heading and rendered as the
  * empty content of a conversation view whose composer is the bot's own: the
  * first message is written down there, where every later one will be, and
- * sending it makes the bot on the way. This panel is everything else, as one
- * column standing in the middle of the body.
+ * sending it makes the bot on the way. This panel is everything else.
  *
- * The column opens with the chick hatching — something small and new is about
- * to come out of this — and the title, and then says in a sentence what a bot
- * is for, because arriving somewhere should say where you are and why. After a
- * breath comes the part that decides the bot: the face, with one already
- * picked from the four on offer and a die to roll four more; the credit for the
- * pack under the faces, with the artist linked; and the name, which may be left
- * blank for the host to give from the first message, beside Create, for making
+ * The four faces are the middle of the page, on both axes: the one thing that
+ * is decided by looking. Everything else is placed relative to them. Above,
+ * at the top of the body, the title and a sentence about what a bot is for,
+ * because arriving somewhere should say where you are and why; directly over
+ * the faces, the credit for the pack, flush with the leftmost face; to the
+ * right of the faces, the die that rolls four more, not counted in what is
+ * centred. Below, the name, as wide as the faces, which may be left blank for
+ * the host to give from the first message, and Create beside it for making
  * the bot without saying anything to it yet. Nothing here is required.
  *
  * Props only, and every state is directly renderable: fresh, filled in, a
@@ -85,82 +81,32 @@ export function HappyAgentCreateBotPage(props: HappyAgentCreateBotPageProps) {
             data-testid={props["data-testid"]}
             style={props.style}
         >
-            <header
-                className="happy-agent-create-bot__header"
-                data-happy-desktop-ui="happy-agent-create-bot-header"
-            >
-                {/* The one thing on the page that is not a control. The stage
-                    keeps its square whether the runtime arrives or not, so the
-                    column never moves under it. */}
-                <span
-                    className="happy-agent-create-bot__stage"
-                    data-happy-desktop-ui="happy-agent-create-bot-stage"
-                >
-                    <LottieScene name="hatching-chick" replayLabel="New bot" size={STAGE_SIZE} />
-                </span>
-                <h1
-                    className="happy-agent-create-bot__title"
-                    data-happy-desktop-ui="happy-agent-create-bot-title"
-                >
-                    Create a new bot
-                </h1>
-                <p
-                    className="happy-agent-create-bot__lede"
-                    data-happy-desktop-ui="happy-agent-create-bot-lede"
-                >
-                    A bot is a colleague that does not end: one permanent conversation with a folder
-                    of its own. Give it a standing job, come back to it whenever you like, and let
-                    it delegate work into your projects.
-                </p>
-            </header>
-
+            {/* Everything above the faces: the title and lede held to the top
+                of the body, the credit held to the bottom of the same track so
+                it sits directly on the faces. */}
             <div
-                className="happy-agent-create-bot__form"
-                data-happy-desktop-ui="happy-agent-create-bot-form"
+                className="happy-agent-create-bot__above"
+                data-happy-desktop-ui="happy-agent-create-bot-above"
             >
-                <div
-                    className="happy-agent-create-bot__faces"
-                    data-happy-desktop-ui="happy-agent-create-bot-faces"
+                <header
+                    className="happy-agent-create-bot__header"
+                    data-happy-desktop-ui="happy-agent-create-bot-header"
                 >
-                    {/* Four faces and the die that rolls four more. Picking is by
-                        position: the ring stays where it was put through a roll,
-                        wearing whatever face lands there. */}
-                    <div
-                        aria-label="Face"
-                        className="happy-agent-create-bot__face-row"
-                        data-happy-desktop-ui="happy-agent-create-bot-face-row"
-                        role="radiogroup"
+                    <h1
+                        className="happy-agent-create-bot__title"
+                        data-happy-desktop-ui="happy-agent-create-bot-title"
                     >
-                        {props.faces.map((seed, index) => {
-                            const slot = index as HappyAgentCreateBotFaceSlot;
-                            const picked = slot === props.faceSlot;
-                            return (
-                                <button
-                                    aria-checked={picked}
-                                    className="happy-agent-create-bot__face"
-                                    data-happy-desktop-ui="happy-agent-create-bot-face"
-                                    data-picked={picked ? "" : undefined}
-                                    disabled={submitting}
-                                    key={slot}
-                                    onClick={() => props.onFacePick(slot)}
-                                    role="radio"
-                                    type="button"
-                                >
-                                    <BotFace seed={seed} size={FACE_SIZE} />
-                                </button>
-                            );
-                        })}
-                    </div>
-                    <Button
-                        aria-label="Roll four new faces"
-                        disabled={submitting}
-                        icon="dice"
-                        iconOnly
-                        onClick={() => props.onFacesRoll()}
-                        title="Roll four new faces"
-                        variant="secondary"
-                    />
-                </div>
+                        Create a new bot
+                    </h1>
+                    <p
+                        className="happy-agent-create-bot__lede"
+                        data-happy-desktop-ui="happy-agent-create-bot-lede"
+                    >
+                        A bot is a colleague that does not end: one permanent conversation with a
+                        folder of its own. Give it a standing job, come back to it whenever you
+                        like, and let it delegate work into your projects.
+                    </p>
+                </header>
                 <p
                     className="happy-agent-create-bot__credit"
                     data-happy-desktop-ui="happy-agent-create-bot-credit"
@@ -176,34 +122,67 @@ export function HappyAgentCreateBotPage(props: HappyAgentCreateBotPageProps) {
                         {botFaceCredit.artist}
                     </a>
                 </p>
+            </div>
 
-                <div
-                    className="happy-agent-create-bot__name-row"
-                    data-happy-desktop-ui="happy-agent-create-bot-name-row"
-                >
-                    <TextField
-                        aria-label="Name"
-                        className="happy-agent-create-bot__name"
-                        data-testid="happy-agent-create-bot-name"
-                        disabled={submitting}
-                        onSubmit={submit}
-                        onValueChange={props.onNameChange}
-                        placeholder="Name, generated if left blank"
-                        value={props.name}
-                    />
-                    {/* Makes the bot with nothing said to it yet. It stands beside
-                        the name because that is the last thing decided up here;
-                        the other way of making the bot is the send below. */}
-                    <Button
-                        disabled={!submittable}
-                        onClick={submit}
-                        title={props.submitDisabledReason}
-                        variant="secondary"
-                    >
-                        {submitting ? "Creating…" : "Create"}
-                    </Button>
-                </div>
+            {/* Four faces, the centre of the page. Picking is by position: the
+                ring stays where it was put through a roll, wearing whatever
+                face lands there. */}
+            <div
+                aria-label="Face"
+                className="happy-agent-create-bot__face-row"
+                data-happy-desktop-ui="happy-agent-create-bot-face-row"
+                role="radiogroup"
+            >
+                {props.faces.map((seed, index) => {
+                    const slot = index as HappyAgentCreateBotFaceSlot;
+                    const picked = slot === props.faceSlot;
+                    return (
+                        <button
+                            aria-checked={picked}
+                            className="happy-agent-create-bot__face"
+                            data-happy-desktop-ui="happy-agent-create-bot-face"
+                            data-picked={picked ? "" : undefined}
+                            disabled={submitting}
+                            key={slot}
+                            onClick={() => props.onFacePick(slot)}
+                            role="radio"
+                            type="button"
+                        >
+                            <BotFace seed={seed} size={FACE_SIZE} />
+                        </button>
+                    );
+                })}
+            </div>
+            {/* The die acts on all four and is not a fifth choice: it stands
+                beside the faces, in the margin, outside what is centred. */}
+            <Button
+                aria-label="Roll four new faces"
+                className="happy-agent-create-bot__die"
+                disabled={submitting}
+                icon="dice"
+                iconOnly
+                onClick={() => props.onFacesRoll()}
+                title="Roll four new faces"
+                variant="secondary"
+            />
 
+            {/* Below the faces: the name, as wide as they are, and under it
+                why the bot cannot be made right now, or why it was not. */}
+            <div
+                className="happy-agent-create-bot__below"
+                data-happy-desktop-ui="happy-agent-create-bot-below"
+            >
+                <TextField
+                    aria-label="Name"
+                    className="happy-agent-create-bot__name"
+                    data-testid="happy-agent-create-bot-name"
+                    disabled={submitting}
+                    fullWidth
+                    onSubmit={submit}
+                    onValueChange={props.onNameChange}
+                    placeholder="Name, generated if left blank"
+                    value={props.name}
+                />
                 {props.submitDisabledReason ? (
                     <p
                         className="happy-agent-create-bot__reason"
@@ -214,6 +193,19 @@ export function HappyAgentCreateBotPage(props: HappyAgentCreateBotPageProps) {
                 ) : null}
                 {props.error ? <Banner tone="danger">{props.error}</Banner> : null}
             </div>
+            {/* Makes the bot with nothing said to it yet. It stands beside the
+                name, in the same margin as the die, because the name is the
+                last thing decided up here; the other way of making the bot is
+                the send below. */}
+            <Button
+                className="happy-agent-create-bot__create"
+                disabled={!submittable}
+                onClick={submit}
+                title={props.submitDisabledReason}
+                variant="secondary"
+            >
+                {submitting ? "Creating…" : "Create"}
+            </Button>
         </div>
     );
 }

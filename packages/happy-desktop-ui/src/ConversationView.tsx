@@ -524,9 +524,9 @@ export function ConversationView(props: ConversationViewProps) {
                 >
                     {props.emptyContent ?? (
                         <EmptyState
-                            // A conversation with nothing in it is an agent waiting
-                            // to be told what to do, so that is what it looks like.
-                            animation="robot"
+                            // A conversation with nothing in it is something small
+                            // about to come out, so that is what it looks like.
+                            animation="hatching-chick"
                             description="Send a message to start working in this conversation."
                             icon="chat"
                             size="panel"

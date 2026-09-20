@@ -157,11 +157,11 @@ export function HappyAgentCreateBotBlueprintPage() {
         <ComponentPage
             contract="Props only"
             number={componentNumber}
-            summary="What is decided about a bot before it exists — the chick, what a bot is for, a face already picked, a name that may be left blank, Create — one centred column over the composer that will be the bot's own."
+            summary="What is decided about a bot before it exists — what a bot is for, a face already picked, a name that may be left blank, Create — placed around the faces at the middle of the body, over the composer that will be the bot's own."
             title="HappyAgentCreateBotPage"
         >
             <Specimen
-                detail="the column stands in the middle of the empty body · the chick, the title and the sentence about bots, then the faces, the credit and the name · the first face is picked · the composer is the conversation's own, pickers and all, and has the focus on arrival"
+                detail="the four faces are the middle of the empty body on both axes · the title and the sentence about bots hold to the top · the credit sits on the faces, flush with the leftmost · the die and Create stand in the margin to the right, outside what is centred · the name is as wide as the faces · the first face is picked · the composer is the conversation's own, pickers and all, and has the focus on arrival"
                 label="Opened, in place"
                 number="01"
                 stage="app"
@@ -177,7 +177,7 @@ export function HappyAgentCreateBotBlueprintPage() {
                         "",
                     ),
                 )}
-                <DimensionRule label="stage 96px · title 32px · lede measure 440px · 32px breath · faces 56px · name field 288px" />
+                <DimensionRule label="grid 1fr · 248px · 1fr on both axes · title 32px · lede measure 440px · credit 8px over the faces · faces 56px, 8px apart · die 12px right · name 248px, Create 8px right" />
             </Specimen>
             <Specimen
                 detail="another face picked · a name three or four words long · a task written in the composer with a screenshot and a file attached, as any conversation's can be · Enter sends and makes the bot, Create makes it and keeps the words and the files as the draft"
