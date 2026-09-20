@@ -27,6 +27,7 @@ import { happyAgentWorkspaceGeneratedName } from "./happyAgentWorkspaceNames.js"
 import type {
     HappyAgentBot,
     HappyAgentAvatarImage,
+    HappyAgentBotCreating,
     HappyAgentBotId,
     HappyAgentBotSubtask,
     HappyAgentGroupId,
@@ -34,6 +35,7 @@ import type {
     HappyAgentProjectCompute,
     HappyAgentProjectComputeState,
     HappyAgentProjectId,
+    HappyAgentSelection,
     HappyAgentSession,
     HappyAgentSessionCreateInput,
     HappyAgentSessionId,
@@ -61,6 +63,14 @@ export interface HappyAgentSessionListSnapshot {
      * inside it.
      */
     readonly bots: readonly HappyAgentBot[];
+    /**
+     * Bots this window has asked for that the host has not listed yet, in the
+     * order they were asked for. Each stands under the Bots heading as a row
+     * being made — the way a worktree does while its checkout is prepared —
+     * and leaves the moment `bots` carries it. Never both at once: a bot the
+     * host lists is taken out of here in the same publication that lists it.
+     */
+    readonly botsCreating: readonly HappyAgentBotCreating[];
     /** Sessions the host still holds but has taken out of their workspace strips. */
     readonly archivedSessions: readonly HappyAgentSessionSummary[];
     /** Last failed create/fork/reset, surfaced without rejecting the action. */
@@ -161,6 +171,25 @@ export interface HappyAgentBotCreation {
     readonly location: HappyAgentSessionLocation;
 }
 
+/**
+ * Everything decided about a bot before the host is asked for it. Nothing is
+ * required: an absent name has the host call the bot "New Bot" until its first
+ * message says what it is for; an absent face leaves the row with its
+ * generated mark; an absent selection leaves the conversation on the host's
+ * own defaults.
+ */
+export interface HappyAgentBotCreateInput {
+    readonly name?: string;
+    /** The face, already painted. It goes on the row at once and up to the host once the bot exists. */
+    readonly avatar?: HappyAgentAvatarImage;
+    /**
+     * The model, effort, access mode, and speed the bot's conversation starts
+     * with — what the composer showed while the first message was written, so
+     * the bot runs the way the reader was told it would.
+     */
+    readonly selection?: HappyAgentSelection;
+}
+
 export type HappyAgentSessionListOutput = {
     readonly type: "sessionCreated";
     readonly location: HappyAgentSessionLocation;
@@ -224,24 +253,19 @@ export interface HappyAgentSessionListStore {
 
     /**
      * Creates a bot and answers with the address of the one conversation it is
-     * made of, so the caller can open what it just made. Given no name, the
-     * daemon calls it "New Bot" until its first message says what it is for.
+     * made of, so the caller can open what it just made.
      *
-     * Nothing about a bot can be made locally — the daemon derives its folder
-     * name and makes its agent — so this waits on the host rather than
-     * reserving a row, and rejects with a displayable reason when the host
-     * refuses creation.
+     * The row is in `botsCreating` before the host is asked, wearing the name
+     * and the face from its first frame, and the bot is handed back only once
+     * `bots` carries it — which is the same publication that takes the row out
+     * of `botsCreating`, so the reader never sees two. The face is sent up as
+     * soon as the host holds the bot, and the row keeps the local copy until
+     * the host serves its own back; the selection is applied to the bot's
+     * conversation the same way. Rejects with a displayable reason when the
+     * host refuses creation, having withdrawn the row.
      */
-    botCreate(name?: string): Promise<HappyAgentBotCreation>;
+    botCreate(input: HappyAgentBotCreateInput): Promise<HappyAgentBotCreation>;
     botRename(botId: string, name: string): Promise<void>;
-    /**
-     * Puts a picture on a bot. The row wears the picture at once, from the
-     * bytes in hand, and keeps it until the host serves its own copy back or
-     * refuses it. Unlike the other bot mutations this is not dropped for a bot
-     * the list does not carry: the intent is kept and laid over the row when
-     * it arrives, and the connection is what refuses a bot it does not hold.
-     */
-    botAvatarSet(botId: HappyAgentBotId, image: HappyAgentAvatarImage): Promise<void>;
     /** Archives a bot, preserving its dedicated folder for a later restore. */
     botArchive(botId: HappyAgentBotId): Promise<void>;
     /** Moves one bot after `afterId`, or to the front of the bot list when null. */
@@ -412,7 +436,11 @@ export interface HappyAgentSessionListDeps {
         | "reorderSession"
         | "reorderWorkspace"
         | "setBotAvatar"
+        | "setEffort"
+        | "setPermissionMode"
+        | "setServiceTier"
         | "setSessionArchived"
+        | "switchModel"
     > & {
         readonly projects: Pick<HappyAgentConnection["projects"], "archive" | "clone">;
     };
@@ -462,10 +490,12 @@ export function happyAgentSessionListStoreCreate(
     const NO_WORKTREE_CREATE_FAILURES: ReadonlyMap<HappyAgentWorktreeId, UserError> = new Map();
     const NO_PROJECT_CREATE_FAILURES: ReadonlyMap<HappyAgentProjectId, UserError> = new Map();
     const NO_SESSION_CREATE_FAILURES: ReadonlyMap<HappyAgentSessionId, UserError> = new Map();
+    const NO_BOTS_CREATING: readonly HappyAgentBotCreating[] = [];
 
     const store = createStore<HappyAgentSessionListSnapshot>()(() => ({
         archivedSessions: [],
         bots: [],
+        botsCreating: NO_BOTS_CREATING,
         catalogRevision: 0,
         projectCreateFailures: NO_PROJECT_CREATE_FAILURES,
         projects: { type: "loading" },
@@ -563,12 +593,17 @@ export function happyAgentSessionListStoreCreate(
     const sessionArchiveIntents = new Map<HappyAgentSessionId, SessionArchiveIntent>();
     const sessionArchiveMutationIds = new Map<string, HappyAgentSessionId>();
     /**
-     * A picture sent to the host and not yet served back by it. The row wears
+     * A picture for a bot that the host has not served back yet. The row wears
      * the local copy meanwhile, so a bot made and given a face in one act has
      * the face from its first frame rather than a moment later.
      */
     interface BotAvatarIntent {
-        readonly mutationId: string;
+        /**
+         * The mutation carrying the picture up. Absent while the bot itself is
+         * still being made: the picture is decided before the host is asked,
+         * and can only be sent once the host holds a bot to put it on.
+         */
+        readonly mutationId?: string;
         /** The local copy, as a URL the row can draw without the host. */
         readonly avatar: { readonly url: string };
         /**
@@ -580,6 +615,12 @@ export function happyAgentSessionListStoreCreate(
     }
     const botAvatarIntents = new Map<HappyAgentBotId, BotAvatarIntent>();
     const botAvatarMutationIds = new Map<string, HappyAgentBotId>();
+    /**
+     * Bots asked for and not yet listed, by their own id, in the order asked.
+     * Published as `botsCreating` less any the catalog has since come to
+     * carry, so the row is never shown twice.
+     */
+    const botCreations = new Map<HappyAgentBotId, HappyAgentBotCreating>();
     interface SessionRestoreWaiter {
         readonly resolve: (result: HappyAgentSessionRestoreResult) => void;
         stopObservation?: () => void;
@@ -760,7 +801,10 @@ export function happyAgentSessionListStoreCreate(
         const applied = bots.map((bot) => {
             const intent = botAvatarIntents.get(bot.id);
             if (intent === undefined) return bot;
-            if (bot.avatar?.thumbhash !== intent.replaced) {
+            // A picture not yet on its way up cannot have been taken by the
+            // host, whatever the host holds: the bot was made bare and the
+            // face follows. Only a sent picture is settled by the host's.
+            if (intent.mutationId !== undefined && bot.avatar?.thumbhash !== intent.replaced) {
                 botAvatarIntents.delete(bot.id);
                 botAvatarMutationIds.delete(intent.mutationId);
                 pendingMutationIds.delete(intent.mutationId);
@@ -770,6 +814,25 @@ export function happyAgentSessionListStoreCreate(
             return { ...bot, avatar: intent.avatar };
         });
         return changed ? applied : bots;
+    };
+
+    /**
+     * The rows still being made, less any the catalog has come to list. A bot
+     * the host lists has arrived; its creation row is dropped in the same
+     * publication so the two never stand together.
+     */
+    const botsCreatingProject = (
+        bots: readonly HappyAgentBot[],
+        previous: readonly HappyAgentBotCreating[],
+    ): readonly HappyAgentBotCreating[] => {
+        if (botCreations.size === 0) return NO_BOTS_CREATING;
+        for (const bot of bots) botCreations.delete(bot.id);
+        if (botCreations.size === 0) return NO_BOTS_CREATING;
+        const next = [...botCreations.values()];
+        return next.length === previous.length &&
+            next.every((row, index) => row === previous[index])
+            ? previous
+            : next;
     };
 
     /** Drops one pending local picture; the next read shows what the host actually holds. */
@@ -873,6 +936,7 @@ export function happyAgentSessionListStoreCreate(
                 previous.projects.type === "ready"
                     ? happyAgentProjectGroupsPreserve(previous.projects.value, ordered)
                     : ordered;
+            const botsCreating = botsCreatingProject(bots, previous.botsCreating);
             // The revision alone is worth a notification: a read that confirmed the
             // list is unchanged is still the host's answer, and it is what a
             // subscriber waiting on authoritative truth is waiting for. A
@@ -882,6 +946,7 @@ export function happyAgentSessionListStoreCreate(
                 previous.projects.type === "ready" &&
                 previous.projects.value === projects &&
                 previous.bots === bots &&
+                previous.botsCreating === botsCreating &&
                 previous.archivedSessions === archivedSessions &&
                 previous.catalogRevision === catalogRevision
             )
@@ -890,6 +955,7 @@ export function happyAgentSessionListStoreCreate(
                 ...previous,
                 archivedSessions,
                 bots,
+                botsCreating,
                 catalogRevision,
                 projects: { type: "ready", value: projects },
             };
@@ -1339,6 +1405,53 @@ export function happyAgentSessionListStoreCreate(
     };
 
     /**
+     * Sends a bot's picture up to the host. The row already wears the local
+     * copy; this records which mutation carries it, so the host's own copy
+     * coming back — or a refusal — is what finally takes the local one off.
+     */
+    const botAvatarSend = (botId: HappyAgentBotId, image: HappyAgentAvatarImage): void => {
+        const mutationId = connectMutationTrack(deps.connectActions.setBotAvatar(botId, image));
+        const current = internal.getState().catalog.bots.find((bot) => bot.id === botId);
+        botAvatarIntents.set(botId, {
+            avatar: botAvatarIntents.get(botId)?.avatar ?? {
+                url: happyAgentAvatarImageDataUrl(image),
+            },
+            mutationId,
+            replaced: current?.avatar?.thumbhash,
+        });
+        botAvatarMutationIds.set(mutationId, botId);
+        if (current === undefined) return;
+        internal.setState((state) => ({
+            catalog: { ...state.catalog, bots: botAvatarIntentsApply(state.catalog.bots) },
+        }));
+        publish();
+    };
+
+    /**
+     * Configures a bot's conversation the way its composer showed it: each of
+     * the four settings is its own mutation on the session, as the pickers in
+     * an open conversation send them. A refusal is reported the way any refused
+     * session mutation is, and leaves the bot on the host's defaults.
+     */
+    const botSelectionApply = (sessionId: string, selection: HappyAgentSelection): void => {
+        connectMutationTrack(
+            deps.connectActions.switchModel(sessionId, {
+                modelId: selection.modelId,
+                providerId: selection.providerId,
+            }),
+        );
+        if (selection.effort !== undefined)
+            connectMutationTrack(deps.connectActions.setEffort(sessionId, selection.effort));
+        connectMutationTrack(
+            deps.connectActions.setPermissionMode(sessionId, selection.permissionMode),
+        );
+        if (selection.serviceTier !== undefined)
+            connectMutationTrack(
+                deps.connectActions.setServiceTier(sessionId, selection.serviceTier),
+            );
+    };
+
+    /**
      * The synchronous shape of `mutate`, for the acts that only name things
      * locally. It exists so a caller can have the name in hand — and the row on
      * screen — in the same call stack as the click, with no interim frame where
@@ -1782,11 +1895,44 @@ export function happyAgentSessionListStoreCreate(
                 );
                 reorderMutations.set(mutationId, { kind: "project", order });
             }),
-        botCreate: async (name) => {
+        botCreate: async (input) => {
             store.setState({ ...store.getState(), mutationError: undefined });
+            const name = input.name?.trim();
+            // The connection names the bot, its workspace, and its agent in
+            // this call stack, so the row stands under the Bots heading before
+            // the request has left — wearing the name and the face it was
+            // given — and the reader is not made to wait on the host to see
+            // that anything happened.
+            const request = deps.connectActions.createBot(
+                name === undefined || name.length === 0 ? undefined : name,
+            );
+            const botId = request.botId as HappyAgentBotId;
+            const avatar =
+                input.avatar === undefined
+                    ? undefined
+                    : { url: happyAgentAvatarImageDataUrl(input.avatar) };
+            if (avatar !== undefined) botAvatarIntents.set(botId, { avatar, replaced: undefined });
+            botCreations.set(botId, {
+                id: botId,
+                workspaceId: request.workspaceId as HappyAgentWorktreeId,
+                // What the host will call it too, so the row does not change
+                // its name when the host's own listing takes over.
+                name: name === undefined || name.length === 0 ? "New Bot" : name,
+                ...(avatar === undefined ? {} : { avatar }),
+            });
+            publish();
             try {
-                const bot = await deps.connectActions.createBot(name);
-                const botId = bot.id as HappyAgentBotId;
+                const bot = await request.bot;
+                // The face is on its way up the moment the host holds a bot to
+                // put it on. The row already wears the local copy; this is what
+                // eventually replaces it with the host's, and what withdraws it
+                // if the host refuses.
+                if (input.avatar !== undefined) botAvatarSend(botId, input.avatar);
+                // What the composer showed while the first message was written
+                // is what the conversation runs with. The daemon knows the
+                // agent by now, so each setting lands as an ordinary session
+                // mutation.
+                if (input.selection !== undefined) botSelectionApply(bot.agent.id, input.selection);
                 // Handed back only once this list carries the bot. The address
                 // is judged by this list's own guards when a file is placed in
                 // the bot's workspace, and they refuse a group not listed here
@@ -1803,9 +1949,17 @@ export function happyAgentSessionListStoreCreate(
                     },
                 };
             } catch (error) {
-                // The creation surface reports why nothing was made.
+                // Nothing was made, so the row goes: what the reader watched
+                // being created is not there to open. The creation surface
+                // reports why.
                 const failure = happyAgentUserError(error);
-                if (!disposed) store.setState({ ...store.getState(), mutationError: failure });
+                if (!disposed) {
+                    botCreations.delete(botId);
+                    if (botAvatarIntents.get(botId)?.mutationId === undefined)
+                        botAvatarIntents.delete(botId);
+                    store.setState({ ...store.getState(), mutationError: failure });
+                    publish();
+                }
                 throw failure;
             }
         },
@@ -1822,28 +1976,6 @@ export function happyAgentSessionListStoreCreate(
                 }));
                 publish();
                 connectMutationTrack(deps.connectActions.renameGroup({ kind: "bot", botId }, name));
-            }),
-        botAvatarSet: (botId, image) =>
-            mutate(async () => {
-                const mutationId = connectMutationTrack(
-                    deps.connectActions.setBotAvatar(botId, image),
-                );
-                // The row wears the local copy from this call on. A bot the
-                // catalog has not listed yet — one made a moment ago, whose
-                // first read is still in flight — gets it the moment it lands,
-                // so its first frame already has the face.
-                const current = internal.getState().catalog.bots.find((bot) => bot.id === botId);
-                botAvatarIntents.set(botId, {
-                    avatar: { url: happyAgentAvatarImageDataUrl(image) },
-                    mutationId,
-                    replaced: current?.avatar?.thumbhash,
-                });
-                botAvatarMutationIds.set(mutationId, botId);
-                if (current === undefined) return;
-                internal.setState((state) => ({
-                    catalog: { ...state.catalog, bots: botAvatarIntentsApply(state.catalog.bots) },
-                }));
-                publish();
             }),
         botArchive: (botId) =>
             mutate(async () => {
@@ -2018,6 +2150,7 @@ export function happyAgentSessionListStoreCreate(
             sessionArchiveMutationIds.clear();
             botAvatarIntents.clear();
             botAvatarMutationIds.clear();
+            botCreations.clear();
             stop();
             storeUnsub();
             listeners.clear();

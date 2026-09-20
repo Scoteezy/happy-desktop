@@ -1,9 +1,13 @@
 import type { ComposerSnapshot } from "happy-desktop-state";
 import type { ReactNode } from "react";
+import { ComposerModelControl } from "../../src/ComposerModelControl";
 import { ComposerFooterBar } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import { HappyAgentCreateBotPage } from "../../src/HappyAgentCreateBotPage";
+import { HappyAgentSessionControls } from "../../src/HappyAgentSessionControls";
+import { happyAgentComposerModelControlProps } from "../../src/happyAgentComposerModelControl";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import { happyAgentMenus } from "./happyAgentChatFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-238";
@@ -19,6 +23,7 @@ const FACES = ["blueprint1", "blueprint2", "blueprint3", "blueprint4"] as const;
 const noop = () => {};
 
 const HANDLERS = {
+    onCreditOpen: noop,
     onFacePick: noop,
     onFacesRoll: noop,
     onNameChange: noop,
@@ -95,7 +100,9 @@ function region(children: ReactNode, size: { height: string; width: string } = R
 
 /**
  * The panel as the app shows it: the empty content of the conversation the bot
- * is about to become, over the composer that is already that conversation's.
+ * is about to become, over the composer that is already that conversation's —
+ * the same model, access, and speed pickers every composer carries, with the
+ * one sentence about what sending does standing where the context meter will.
  */
 function inPlace(
     panel: ReactNode,
@@ -107,8 +114,32 @@ function inPlace(
     return (
         <ConversationView
             composer={composerWith(text, attachments)}
+            composerControls={
+                <ComposerModelControl
+                    {...happyAgentComposerModelControlProps(happyAgentMenus, {
+                        onEffortChange: noop,
+                        onModelChange: noop,
+                    })}
+                />
+            }
             composerDisabled={disabled}
-            composerFooterControl={<ComposerFooterBar note="Sending also creates the bot" />}
+            composerFooterControl={
+                <ComposerFooterBar
+                    leading={
+                        <HappyAgentSessionControls
+                            fields={["permission", "tier"]}
+                            menuPlacement="above"
+                            variant="ghost"
+                            menus={happyAgentMenus}
+                            onEffortChange={noop}
+                            onModelChange={noop}
+                            onPermissionModeChange={noop}
+                            onServiceTierChange={noop}
+                        />
+                    }
+                    note="Sending also creates the bot"
+                />
+            }
             composerPlaceholder="What should it work on?"
             composerSubmitDisabled={submitDisabled}
             emptyContent={panel}
@@ -126,11 +157,11 @@ export function HappyAgentCreateBotBlueprintPage() {
         <ComponentPage
             contract="Props only"
             number={componentNumber}
-            summary="What is decided about a bot before it exists — a face already picked, a name that may be left blank, Create — standing over the composer that will be the bot's own."
+            summary="What is decided about a bot before it exists — the chick, what a bot is for, a face already picked, a name that may be left blank, Create — one centred column over the composer that will be the bot's own."
             title="HappyAgentCreateBotPage"
         >
             <Specimen
-                detail="the panel gathers at the bottom of the empty body, flush with the composer · the first face is picked · the composer has the focus on arrival"
+                detail="the column stands in the middle of the empty body · the chick, the title and the sentence about bots, then the faces, the credit and the name · the first face is picked · the composer is the conversation's own, pickers and all, and has the focus on arrival"
                 label="Opened, in place"
                 number="01"
                 stage="app"
@@ -146,7 +177,7 @@ export function HappyAgentCreateBotBlueprintPage() {
                         "",
                     ),
                 )}
-                <DimensionRule label="chat measure 880px · faces 56px · name field 288px · panel bottom 12px above the dock" />
+                <DimensionRule label="stage 96px · title 32px · lede measure 440px · 32px breath · faces 56px · name field 288px" />
             </Specimen>
             <Specimen
                 detail="another face picked · a name three or four words long · a task written in the composer with a screenshot and a file attached, as any conversation's can be · Enter sends and makes the bot, Create makes it and keeps the words and the files as the draft"

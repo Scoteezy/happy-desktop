@@ -3111,24 +3111,37 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         renameGroup(target, name) {
             return renameGroup(target, name);
         },
-        async createBot(name) {
-            // One id for the whole attempt: the daemon takes it as the bot's
-            // own id and as the mutation key, so a request repeated after a
-            // dropped answer settles on the bot that was already made.
+        createBot(name) {
+            // All three identities are named here and handed to the daemon,
+            // which takes them as the bot's own. The bot id doubles as the
+            // mutation key, so a request repeated after a dropped answer
+            // settles on the bot that was already made rather than a second.
             const botId = nextId();
-            const { bot } = await client.createBot(
-                // Left out rather than sent blank: the daemon reads an absent
-                // name as "name it from the first message", and an empty
-                // string as a name it must refuse.
-                { id: botId, mutationId: botId, ...(name === undefined ? {} : { name }) },
-                { signal: rootController.signal },
-            );
-            groupsStore.setState((state) => ({ bots: replaceResource(state.bots, bot) }));
-            // The same delta `bot.created` publishes. The event will arrive too
-            // and land on the identical record; announcing it here is what puts
-            // the bot in the catalog for the caller that is about to open it.
-            publishGroups([{ type: "bot_added", botId: bot.id, workspaceId: bot.workspaceId }]);
-            return bot;
+            const workspaceId = nextId();
+            const agentId = nextId();
+            const bot = (async () => {
+                const { bot } = await client.createBot(
+                    {
+                        agentId,
+                        id: botId,
+                        mutationId: botId,
+                        // Left out rather than sent blank: the daemon reads an
+                        // absent name as "name it from the first message", and
+                        // an empty string as a name it must refuse.
+                        ...(name === undefined ? {} : { name }),
+                        workspaceId,
+                    },
+                    { signal: rootController.signal },
+                );
+                groupsStore.setState((state) => ({ bots: replaceResource(state.bots, bot) }));
+                // The same delta `bot.created` publishes. The event will arrive
+                // too and land on the identical record; announcing it here is
+                // what puts the bot in the catalog for the caller that is about
+                // to open it.
+                publishGroups([{ type: "bot_added", botId: bot.id, workspaceId: bot.workspaceId }]);
+                return bot;
+            })();
+            return { agentId, bot, botId, workspaceId };
         },
         setBotAvatar(botId, image) {
             const mutationId = nextId();

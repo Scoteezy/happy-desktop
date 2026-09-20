@@ -2,12 +2,15 @@
  * C-238 HappyAgentCreateBotPage — what is decided about a bot before it exists,
  * standing in the body of the conversation it is about to become.
  *
- * The panel is the empty content of a conversation view, so it is laid out
- * like the messages that will follow it: inside the chat measure, flush with
- * the composer's left edge, and gathered at the bottom of the body directly
- * above that composer, so the face, the name and the first message read as one
- * short form. The well, hairline, radius, focus ring and placeholder are
- * TextField's and Button's own — this file only decides where each thing stands.
+ * The panel is the empty content of a conversation view: one column standing in
+ * the middle of the body, on both axes, the way the window's Create page always
+ * stood — the chick, the title, and a sentence about what a bot is for at the
+ * top of the column; a breath; then the faces, their credit, and the name with
+ * Create beside it. Everything is centred on the column's axis. The well,
+ * radius and placeholder are TextField's and Button's own; the name's focus
+ * follows the composer's rather than TextField's, so the two inputs on the
+ * page answer focus the same way. Otherwise this file only decides where
+ * each thing stands.
  */
 
 .happy-agent-create-bot,
@@ -19,19 +22,42 @@
     display: flex;
     flex: none;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-    /* Gathered at the bottom, above the composer, with the body's spare
-       height above it — the way a fresh chat's first words sit. */
-    margin: auto auto 0;
-    /* The dock's own measure and gutters, so the panel's left edge is the
-       composer's left edge. */
-    padding: 24px 20px 12px 12px;
+    align-items: center;
+    gap: 32px;
+    /* In the middle of the body: the spare height splits above and below, and
+       a body too short to hold the column scrolls rather than clipping it. */
+    margin: auto;
+    padding: 24px;
     width: 100%;
     max-width: var(--happy-chat-measure);
     color: var(--text);
     font-family: var(--happy-font-ui);
     font-synthesis: none;
+    text-align: center;
+}
+
+/* ---- The mark, the title, and what a bot is for ------------------------- */
+
+.happy-agent-create-bot__header {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+/*
+ * The chick's stage. A fixed square, held whether the animation's worker runtime
+ * arrives or not: `LottieScene` draws nothing until it does, and the column's
+ * geometry must not depend on when that happens.
+ */
+.happy-agent-create-bot__stage {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 96px;
+    height: 96px;
 }
 
 .happy-agent-create-bot__title {
@@ -44,7 +70,28 @@
     letter-spacing: -0.2px;
 }
 
-/* ---- The faces ---------------------------------------------------------- */
+/* Two sentences in the reading size, held to a measure a sentence can be
+   read across without the eye losing the line. */
+.happy-agent-create-bot__lede {
+    margin: 0;
+    max-width: 440px;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    letter-spacing: 0;
+}
+
+/* ---- The part that decides the bot -------------------------------------- */
+
+.happy-agent-create-bot__form {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
 
 /* Four faces, then the die a little apart from them: the die acts on all four
    and is not a fifth choice. The credit follows directly, closer than the
@@ -53,6 +100,7 @@
     display: flex;
     flex: none;
     align-items: center;
+    justify-content: center;
     gap: 12px;
 }
 
@@ -135,11 +183,27 @@
     display: flex;
     flex: none;
     align-items: center;
+    justify-content: center;
     gap: 8px;
 }
 
 .happy-agent-create-bot__name {
     width: 288px;
+}
+
+/*
+ * The name takes focus the way the composer under it does: no hairline at
+ * rest, the quiet divider hairline while typing, and no ring. Both are the
+ * same well on the same page, and the one the reader types into first must
+ * not light up harder than the one it hands off to.
+ */
+.happy-agent-create-bot__name .happy-text-field__control {
+    border-color: transparent;
+}
+
+.happy-agent-create-bot__name .happy-text-field__control:focus-within {
+    border-color: var(--divider);
+    outline: none;
 }
 
 /* Why the bot cannot be made right now, in the quiet size, directly under the

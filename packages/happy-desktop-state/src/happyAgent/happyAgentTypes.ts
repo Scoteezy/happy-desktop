@@ -84,6 +84,27 @@ export interface HappyAgentBot {
     readonly avatar?: { readonly url: string; readonly thumbhash?: string };
 }
 
+/**
+ * A bot this window has asked the host for and the host has not yet listed.
+ *
+ * It is not a `HappyAgentBot` with a phase: there is no conversation to
+ * report on and no folder to name until the host answers, and a row that
+ * claimed either would be claiming something the host has not said. What is
+ * here is exactly what was decided before asking — the identities the host
+ * will honour, the name, and the face — which is all a row waiting under the
+ * Bots heading has to show. The row leaves the moment the host's own listing
+ * carries the bot, and its `workspaceId` is that listing's row id, so the row
+ * the reader watched being made is the row the bot arrives as.
+ */
+export interface HappyAgentBotCreating {
+    readonly id: HappyAgentBotId;
+    readonly workspaceId: HappyAgentWorktreeId;
+    /** The chosen name, or what the host will call an unnamed bot until its first message. */
+    readonly name: string;
+    /** The face painted for it, as a URL the row can draw without the host. */
+    readonly avatar?: { readonly url: string };
+}
+
 /** An active interactive task; its workspace may be shared with its parent. */
 export interface HappyAgentBotSubtask {
     readonly workspaceId: HappyAgentWorktreeId;

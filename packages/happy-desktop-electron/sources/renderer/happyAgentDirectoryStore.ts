@@ -8,6 +8,7 @@ import {
 } from "happy-desktop-state";
 import type {
     HappyAgentBot,
+    HappyAgentBotCreating,
     HappyAgentConnectionSnapshot,
     HappyAgentHost,
     HappyAgentModelPreferencePersistence,
@@ -42,6 +43,8 @@ export interface HappyAgentDirectoryEntry {
     readonly projects: readonly HappyAgentProjectGroup[];
     /** This Happy Agent's bots, shown under their own heading above its projects. */
     readonly bots: readonly HappyAgentBot[];
+    /** Bots asked for and not yet listed, standing under the same heading as rows being made. */
+    readonly botsCreating: readonly HappyAgentBotCreating[];
     readonly projectsStatus: "loading" | "ready" | "error";
     readonly projectAdd: HappyAgentProjectAddSnapshot;
     readonly session?: HappyAgentSession;
@@ -108,11 +111,15 @@ interface LocalHappyAgent {
 
 function projectsRead(
     session: HappyAgentSession,
-): Pick<HappyAgentDirectoryEntry, "bots" | "projects" | "projectsStatus" | "projectAdd"> {
+): Pick<
+    HappyAgentDirectoryEntry,
+    "bots" | "botsCreating" | "projects" | "projectsStatus" | "projectAdd"
+> {
     const workspace = session.workspace.get();
     const projects = workspace.list.projects;
     return {
         bots: workspace.list.bots,
+        botsCreating: workspace.list.botsCreating,
         projects: projects.type === "ready" ? projects.value : [],
         projectsStatus:
             projects.type === "ready" ? "ready" : projects.type === "error" ? "error" : "loading",
@@ -122,10 +129,14 @@ function projectsRead(
 
 function projectsMatch(
     entry: HappyAgentDirectoryEntry,
-    next: Pick<HappyAgentDirectoryEntry, "bots" | "projects" | "projectsStatus" | "projectAdd">,
+    next: Pick<
+        HappyAgentDirectoryEntry,
+        "bots" | "botsCreating" | "projects" | "projectsStatus" | "projectAdd"
+    >,
 ): boolean {
     return (
         entry.bots === next.bots &&
+        entry.botsCreating === next.botsCreating &&
         entry.projects === next.projects &&
         entry.projectsStatus === next.projectsStatus &&
         entry.projectAdd === next.projectAdd
@@ -185,6 +196,7 @@ export function happyAgentDirectoryStoreCreate(
             id: LOCAL_HAPPY_AGENT_ID,
             label: "This Mac",
             bots: [],
+            botsCreating: [],
             projects: [],
             projectsStatus: "loading",
             projectAdd: PROJECT_ADD_IDLE,
@@ -248,6 +260,7 @@ export function happyAgentDirectoryStoreCreate(
         happyAgent.entry = {
             ...happyAgent.entry,
             bots: [],
+            botsCreating: [],
             projects: [],
             projectsStatus: "loading",
             projectAdd: PROJECT_ADD_IDLE,
@@ -477,6 +490,7 @@ export function happyAgentDirectoryStoreCreate(
                                 remoteId: item.remoteId,
                                 label: item.name,
                                 bots: [],
+                                botsCreating: [],
                                 projects: [],
                                 projectsStatus: "loading",
                                 projectAdd: PROJECT_ADD_IDLE,

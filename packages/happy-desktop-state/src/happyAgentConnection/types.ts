@@ -750,6 +750,21 @@ export interface CreateWorkspaceInput {
     projectId: string;
 }
 
+/**
+ * A bot asked for and not yet answered for. The three identities are the
+ * daemon's own from the moment they are named here — the bot's, its dedicated
+ * workspace's, and its one agent's — so the bot's row and its conversation can
+ * be addressed at once. The bot itself, with the folder the daemon chose for
+ * it, arrives through `bot`, which rejects with the daemon's reason when
+ * nothing was made.
+ */
+export interface BotCreationRequest {
+    readonly botId: string;
+    readonly workspaceId: string;
+    readonly agentId: string;
+    readonly bot: Promise<Bot>;
+}
+
 export interface ProjectAddOptions {
     projectId?: string;
     signal?: AbortSignal;
@@ -831,20 +846,21 @@ export interface HappyAgentConnection {
     setSessionArchived(sessionId: string, archived: boolean): MutationId;
     renameGroup(target: GroupTarget, name: string): MutationId;
     /**
-     * Creates a bot, its dedicated workspace, and its one agent, and answers
-     * with the bot itself.
+     * Creates a bot, its dedicated workspace, and its one agent.
      *
-     * A promise rather than a named mutation, because nothing here can be known
-     * in advance: the daemon derives the folder name and makes the one agent
-     * that *is* the bot's conversation, and a caller opening the bot it just
-     * asked for needs both. The id is supplied so a repeated attempt creates
-     * the same bot rather than a second one.
+     * The three identities are named here, in the caller's own call stack, and
+     * the daemon takes them as its own: a row can stand in the catalog and be
+     * addressed before the host has answered, and a request repeated after a
+     * dropped answer settles on the bot that was already made rather than a
+     * second one. What only the host can decide — the folder name, the agent
+     * itself — arrives through the promise, which rejects with the host's
+     * reason when nothing was made.
      *
      * Without a name the daemon makes the bot as "New Bot" and names it from
      * the first user message it accepts, so a bot can be asked for and put to
      * work in one breath.
      */
-    createBot(name?: string): Promise<Bot>;
+    createBot(name?: string): BotCreationRequest;
     /** Puts a picture on a bot, guarded by its version like every other bot mutation. */
     setBotAvatar(botId: string, image: HappyAgentAvatarImage): MutationId;
     archiveBot(botId: string): MutationId;

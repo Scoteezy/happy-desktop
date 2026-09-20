@@ -123,6 +123,33 @@ function desktopMediaWindowOpen(bridge: HappyDesktopBridge): MediaWindowOpener {
     };
 }
 
+/**
+ * Opens one HTTPS address in the machine's own browser.
+ *
+ * The shell routes every `window.open` from this window into an embedded
+ * browser tab, which needs a workspace behind it; a page reached from
+ * somewhere with no workspace — the surface a new bot is made on — has
+ * nowhere to open. The shell has exactly one door to the machine's browser,
+ * the one it opens the account login through, and it accepts any HTTPS
+ * address; it is used here for the same act, deliberately, because the shell
+ * is a host process and cannot gain a door of its own in a renderer release.
+ * Anything that is not HTTPS is refused rather than sent somewhere else.
+ */
+function desktopExternalLinkOpen(bridge: HappyDesktopBridge): (url: string) => void {
+    return (url) => {
+        let parsed: URL;
+        try {
+            parsed = new URL(url);
+        } catch {
+            return;
+        }
+        if (parsed.protocol !== "https:") return;
+        void bridge.cloudAuthOpen(parsed.href).catch((error: unknown) => {
+            console.error("Could not open the link in the browser.", error);
+        });
+    };
+}
+
 const desktopBrowserContentRender: BrowserContentRenderer = (props) => (
     <DesktopBrowserView {...props} />
 );
@@ -279,6 +306,11 @@ function HappyAgentBoundary(props: {
                 profiler: props.profiler,
                 htmlPreview: props.htmlPreview,
                 mediaWindow: props.mediaWindow,
+                // Only the packaged shell has a door to the machine's browser;
+                // a browser tab opens a link the way it opens any link.
+                ...(props.platform === "desktop"
+                    ? { externalLinkOpen: desktopExternalLinkOpen(props.bridge) }
+                    : {}),
                 ...(update
                     ? {
                           onUpdateApply: () => {

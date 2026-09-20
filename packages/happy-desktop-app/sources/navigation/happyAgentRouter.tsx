@@ -73,6 +73,12 @@ export interface HappyAgentRouterContext {
      * packaged Electron.
      */
     readonly mediaWindow?: MediaWindowOpener;
+    /**
+     * Opens one web address in the machine's own browser rather than in an
+     * embedded tab. Present only in a shell that can ask its host to, which is
+     * packaged Electron; a browser tab opens links its own way.
+     */
+    readonly externalLinkOpen?: (url: string) => void;
     readonly debug?: AppHappyAgentDebugStore;
     /** Live renderer diagnostics, present only in an explicitly debug-launched desktop window. */
     readonly performance?: LivePerformanceStore;
@@ -449,6 +455,7 @@ function HappyAgentWorkspaceLayout(
             performance={context.performance}
             htmlPreview={context.htmlPreview}
             mediaWindow={context.mediaWindow}
+            {...(context.externalLinkOpen ? { onExternalLinkOpen: context.externalLinkOpen } : {})}
             chatId={params.chatId}
             groupId={params.groupId}
             {...(context.daemon ? { daemon: context.daemon } : {})}

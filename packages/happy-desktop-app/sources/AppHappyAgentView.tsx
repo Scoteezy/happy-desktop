@@ -45,6 +45,7 @@ import type {
     HappyAgentProviderUsageStore,
     HappyAgentProvidersStore,
     HappyAgentBot,
+    HappyAgentBotCreating,
     HappyAgentBotSubtask,
     HappyAgentGroupLifecycle,
     HappyAgentProjectGroup,
@@ -261,6 +262,14 @@ export interface AppHappyAgentEntry {
      * conversation with nothing to configure.
      */
     readonly bots: readonly HappyAgentBot[];
+    /**
+     * Bots this window has asked this Happy Agent for that it has not listed
+     * yet. Each stands under the Bots heading as a row being made, the way a
+     * worktree does while its checkout is prepared, so asking for a bot shows
+     * at once rather than when the host answers. Absent on a host that does
+     * not report them, which reads as none.
+     */
+    readonly botsCreating?: readonly HappyAgentBotCreating[];
     readonly projectsStatus: "loading" | "ready" | "error";
     /**
      * Where adding a folder to this Happy Agent as a project stands. Absent on a host
@@ -451,6 +460,12 @@ export interface AppHappyAgentViewProps {
      */
     mediaWindow?: MediaWindowOpener;
     /**
+     * Opens one web address in the machine's own browser rather than in an
+     * embedded tab. Supplied only by a host that can ask its shell to; without
+     * one the address opens the way any link from this window does.
+     */
+    onExternalLinkOpen?(url: string): void;
+    /**
      * The addressed group — a project or one of its worktrees — and conversation,
      * read from the route by the caller. This surface never decides what is
      * shown; it renders the addressed group's sessions and asks for a different
@@ -600,6 +615,28 @@ function botSidebarItem(bot: HappyAgentBot, titleShimmerEnabled: boolean): Sideb
               ? { status: "waiting" as const }
               : {}),
         ...(bot.conversation.unread ? { unread: true } : {}),
+    };
+}
+
+/**
+ * A bot the host has been asked for and has not listed yet, as the row it is
+ * about to become: the same id, name, and face, spinning in the accent colour
+ * the way a worktree does while its checkout is prepared. Nothing is running
+ * in it and nothing is unread, because there is nothing yet for either to be.
+ */
+function botCreatingSidebarItem(
+    bot: HappyAgentBotCreating,
+    titleShimmerEnabled: boolean,
+): SidebarItem {
+    return {
+        id: bot.workspaceId,
+        kind: "project",
+        label: bot.name,
+        labelShimmer: titleShimmerEnabled,
+        avatarId: bot.id,
+        ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
+        lifecycle: "creating",
+        lifecycleLabel: "creating",
     };
 }
 
@@ -1415,19 +1452,24 @@ function happyAgentSections(
         {
             id: happyAgentBotsSectionId(happyAgent.id),
             label: "Bots",
-            items: happyAgent.bots
-                .flatMap((bot) => [
+            items: [
+                ...happyAgent.bots.flatMap((bot) => [
                     botSidebarItem(bot, titleShimmerEnabled),
                     ...botSubtaskSidebarItems(
                         bot.subtasks,
                         happyAgent.projects,
                         titleShimmerEnabled,
                     ),
-                ])
-                .map((item) => ({
-                    ...item,
-                    id: happyAgentItemId(happyAgent.id, item.id),
-                })),
+                ]),
+                // The host lists a new bot last, so a bot still being made
+                // stands where it will arrive.
+                ...(happyAgent.botsCreating ?? []).map((bot) =>
+                    botCreatingSidebarItem(bot, titleShimmerEnabled),
+                ),
+            ].map((item) => ({
+                ...item,
+                id: happyAgentItemId(happyAgent.id, item.id),
+            })),
             // Naming a bot belongs to the Happy Agent named by this section, the
             // same way adding a project does.
             ...(happyAgent.status === "connected" && happyAgent.session
@@ -1906,6 +1948,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     props.onChatSelect(happyAgent.id, bot.workspaceId, bot.conversation.id);
                     return;
                 }
+                // A bot still being made has no conversation to go to yet. The
+                // window follows it on its own the moment the host answers.
+                if (happyAgent.botsCreating?.some((entry) => entry.workspaceId === row.id)) return;
                 props.onChatSelect(
                     happyAgent.id,
                     row.id,
@@ -2076,6 +2121,11 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     {desktop ? <WindowDragRegion /> : null}
                     <HappyAgentCreateBotSurface
                         happyAgentOnline={activeHappyAgentOnline}
+                        // The artist's page is on the web, and this window has
+                        // no workspace behind it for an embedded tab to run in,
+                        // so it goes to the machine's own browser where the
+                        // host can send it there.
+                        onExternalLinkOpen={props.onExternalLinkOpen ?? openExternalLink}
                         workspace={active.session.workspace}
                         {...(activeAvailability?.refusal === undefined
                             ? {}
@@ -5337,7 +5387,9 @@ function happyAgentNamingDialog(
  * Where a bot is made: the conversation it is about to become, with nothing in
  * it yet. The body holds what is decided beforehand — the face, the name, and
  * Create — and the composer underneath is already the bot's own, standing
- * where it will stand once the bot exists. Sending from it makes the bot and
+ * where it will stand once the bot exists, with the same model, access, and
+ * speed pickers every composer carries and one sentence about what sending
+ * does where the context meter will stand. Sending from it makes the bot and
  * says the first thing to it; Create makes the bot and carries the words into
  * the conversation as its draft, so making the bot moves nothing.
  *
@@ -5348,6 +5400,7 @@ function happyAgentNamingDialog(
  */
 function HappyAgentCreateBotSurface(props: {
     happyAgentOnline: () => boolean;
+    onExternalLinkOpen: (url: string) => void;
     unavailable?: string;
     workspace: HappyAgentWorkspaceStore;
 }) {
@@ -5358,16 +5411,59 @@ function HappyAgentCreateBotSurface(props: {
     ).botCreate;
     if (!botCreate) return null;
     const store = props.workspace;
+    const menus = botCreate.menus;
     return (
         <ConversationView
             agentAuthor={agentAuthor}
             composer={botCreate.composer}
-            // Both ways of making the bot are one act on the same draft, so
-            // while either is under way the composer waits with the panel.
-            composerDisabled={botCreate.submitting}
+            // The composer stays live while the host makes the bot: what is
+            // typed meanwhile follows the reader into the conversation, and a
+            // composer that greyed out for the host's round trip would be the
+            // one thing on the screen that moved. The store refuses a second
+            // creation while one is under way.
             composerFocusOnType
             composerFocusKey={botCreate.composer.scopeId}
-            composerFooterControl={<ComposerFooterBar note="Sending also creates the bot" />}
+            // The pickers an open conversation carries, over the draft the
+            // bot's conversation will start from.
+            composerControls={
+                menus ? (
+                    <ComposerModelControl
+                        {...happyAgentComposerModelControlProps(menus, {
+                            onEffortChange: (effort?: HappyAgentThinkingLevel) =>
+                                store.botCreateEffortUpdate(effort),
+                            onModelChange: (selection: HappyAgentModelSelection) =>
+                                store.botCreateModelUpdate(selection),
+                        })}
+                    />
+                ) : undefined
+            }
+            composerFooterControl={
+                <ComposerFooterBar
+                    leading={
+                        menus ? (
+                            <HappyAgentSessionControls
+                                fields={["permission", "tier"]}
+                                menuPlacement="above"
+                                variant="ghost"
+                                menus={menus}
+                                onEffortChange={(effort?: HappyAgentThinkingLevel) =>
+                                    store.botCreateEffortUpdate(effort)
+                                }
+                                onModelChange={(selection: HappyAgentModelSelection) =>
+                                    store.botCreateModelUpdate(selection)
+                                }
+                                onPermissionModeChange={(mode: HappyAgentPermissionMode) =>
+                                    store.botCreatePermissionModeUpdate(mode)
+                                }
+                                onServiceTierChange={(tier?: HappyAgentServiceTier) =>
+                                    store.botCreateServiceTierUpdate(tier)
+                                }
+                            />
+                        ) : undefined
+                    }
+                    note="Sending also creates the bot"
+                />
+            }
             composerPlaceholder="What should it work on?"
             composerSubmitDisabled={props.unavailable !== undefined}
             emptyContent={
@@ -5376,6 +5472,7 @@ function HappyAgentCreateBotSurface(props: {
                     faceSlot={botCreate.faceSlot}
                     faces={botCreate.faces}
                     name={botCreate.name}
+                    onCreditOpen={props.onExternalLinkOpen}
                     onFacePick={(slot) => store.botCreateFacePick(slot)}
                     onFacesRoll={() => store.botCreateFacesRoll()}
                     // The name is a controlled field, so its new value has to
