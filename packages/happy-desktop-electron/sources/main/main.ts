@@ -872,7 +872,7 @@ function windowOptions(
         ...(bounds ? { x: bounds.x, y: bounds.y } : {}),
         /* Happy's native desktop minimum; AppShell states the same contract. */
         minWidth: 720,
-        minHeight: 480,
+        minHeight: 640,
         ...(applicationIconPath ? { icon: applicationIconPath } : {}),
         show: false,
         ...platformWindowChrome(),

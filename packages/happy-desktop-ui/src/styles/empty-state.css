@@ -132,7 +132,7 @@
 /*
  * A panel with a scene gives back some of its outer padding: the artwork
  * carries its own generous transparent margin inside a 512 box, so the same
- * 40px would read as a hole above the title — and at the 720x480 Electron
+ * 40px would read as a hole above the title — and at the 720x640 Electron
  * minimum those 32px are the difference between fitting and being cut.
  */
 .happy-empty-state[data-size="panel"][data-animated] {

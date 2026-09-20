@@ -32,7 +32,7 @@ const items: QuickActionsCardItem[] = [
  * without holding Command for 500ms.
  */
 const WINDOW_WIDTH = 720;
-const WINDOW_HEIGHT = 480;
+const WINDOW_HEIGHT = 640;
 
 export function QuickActionsCardPage() {
     return (
@@ -68,7 +68,7 @@ export function QuickActionsCardPage() {
 
             <div className="specimen-grid">
                 <Specimen
-                    detail="720 × 480 Electron minimum · the ModalOverlay top gutter the palette will occupy"
+                    detail="720 × 640 Electron minimum · the ModalOverlay top gutter the palette will occupy"
                     label="Window placement"
                     number="QA-03"
                     stage="chrome"

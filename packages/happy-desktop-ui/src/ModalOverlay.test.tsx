@@ -267,7 +267,7 @@ it("keeps explicit center byte-identical to the attribute-free default placement
     ).toEqual(view.$('[data-testid="default"] [data-happy-desktop-ui="modal-dialog"]').bounds());
 }, 120000);
 
-it("anchors top placement at the 720x480 Electron minimum and dismisses from real backdrop coordinates", async () => {
+it("anchors top placement in a constrained 720x480 host and dismisses from real backdrop coordinates", async () => {
     const dismissed: string[] = [];
     const view = createRenderer();
     view.render(

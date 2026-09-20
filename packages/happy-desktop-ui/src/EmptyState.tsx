@@ -60,7 +60,7 @@ const mediaIconSize: Record<EmptyStateSize, 18 | 20> = { panel: 20, inline: 18 }
 /* The scene's own region, on the 16px layout rhythm: 128 under a panel, 96 in
  * the tighter inline block. Large enough that the artwork is the first thing
  * read, small enough that a panel with a description and an action still fits
- * the 720x480 Electron minimum without clipping. */
+ * the 720x640 Electron minimum without clipping. */
 const sceneSize: Record<EmptyStateSize, 96 | 128> = { panel: 128, inline: 96 };
 /* The glyph held inside a scene region until the artwork paints is the same
  * glyph at the same size as the medallion's — it is a placeholder, not a second

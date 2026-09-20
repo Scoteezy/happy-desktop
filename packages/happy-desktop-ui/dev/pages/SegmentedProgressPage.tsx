@@ -160,6 +160,38 @@ export function SegmentedProgressPage() {
                     <DimensionRule label="Labels ellipsize rather than wrap · rows never change height" />
                 </div>
             </Specimen>
+
+            <Specimen
+                detail="User-paced sequence · current track is full-width at the median colour between completed and untouched"
+                label="Onboarding steps"
+                number="07"
+                stage="surface"
+            >
+                <div
+                    style={{
+                        ...column,
+                        background: "var(--button-primary-background)",
+                        padding: "24px",
+                    }}
+                >
+                    <SegmentedProgress
+                        label="Onboarding steps"
+                        mode="steps"
+                        segments={[
+                            { id: "setup", label: "Setup", state: "done" },
+                            {
+                                fraction: 1,
+                                id: "subscriptions",
+                                label: "Subscriptions",
+                                state: "running",
+                            },
+                            { id: "profile", label: "Profile", state: "pending" },
+                        ]}
+                        tone="inverse"
+                    />
+                    <DimensionRule label="complete 100% white · current 60% white · pending 20% white" />
+                </div>
+            </Specimen>
         </ComponentPage>
     );
 }

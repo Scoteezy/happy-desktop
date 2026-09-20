@@ -117,7 +117,7 @@ function windowStateValidate(candidate: unknown): DesktopWindowState {
         !integerValid(width) ||
         !integerValid(x) ||
         !integerValid(y) ||
-        height < 480 ||
+        height < 640 ||
         width < 720
     )
         throw new InvalidWindowStateError();

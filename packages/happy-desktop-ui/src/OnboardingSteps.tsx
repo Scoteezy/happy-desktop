@@ -68,9 +68,9 @@ function segments(
         return {
             ...stage,
             state,
-            // In a user-paced sequence the current step is visually halfway
-            // between work already completed and work not begun yet.
-            ...(state === "running" ? { fraction: 0.5 } : {}),
+            // A user-paced current step occupies its whole segment; colour,
+            // rather than width, places it between completed and untouched.
+            ...(state === "running" ? { fraction: 1 } : {}),
             // Only a step already passed can be returned to, and only when the flow
             // says it has somewhere to send you.
             ...(onStageSelect && index < currentIndex

@@ -14,8 +14,8 @@ export const componentNumber = "C-238";
 
 /** The content region this surface is given in the 1280×800 design reference. */
 const REGION = { height: "640px", width: "1000px" };
-/** The same region in the 720×480 Electron minimum window, sidebar deducted. */
-const MINIMUM_REGION = { height: "480px", width: "470px" };
+/** The same region in the 720×640 Electron minimum window, sidebar deducted. */
+const MINIMUM_REGION = { height: "640px", width: "470px" };
 
 /** Fixed seeds, so the four faces on the blueprint are the same four every time. */
 const FACES = ["blueprint1", "blueprint2", "blueprint3", "blueprint4"] as const;

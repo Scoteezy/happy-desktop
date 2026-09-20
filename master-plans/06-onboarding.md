@@ -5,9 +5,9 @@
 First-run setup is one linear sequence: **Setup**, **Subscriptions**,
 **Profile**, **Get app**, and **Connect phone**. It has one progress bar, not a
 second onboarding flow nested inside the mobile steps. The current step is
-clear from its highlighted label and half-filled segment, exactly between a
-completed and untouched step; it needs no rounded outline and no separate
-“complete / remaining” count.
+clear from its highlighted label and fully filled segment in the median colour
+between a completed and untouched step; it needs no rounded outline and no
+separate “complete / remaining” count.
 
 Completed steps are real navigation. The segment and its label are one button
 that returns to that step without undoing later progress. Leaving a revisited

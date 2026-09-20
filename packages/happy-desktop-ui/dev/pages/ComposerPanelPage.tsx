@@ -183,7 +183,7 @@ export function ComposerPanelPage() {
             </Specimen>
 
             <Specimen
-                detail="the activity reading at the narrow content measure available inside the 720×480 minimum desktop window"
+                detail="the activity reading at the narrow content measure available inside the 720×640 minimum desktop window"
                 label="Minimum desktop measure"
                 number="05"
                 stage="surface"

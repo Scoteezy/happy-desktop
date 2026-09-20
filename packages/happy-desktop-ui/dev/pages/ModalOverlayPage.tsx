@@ -139,14 +139,14 @@ export function ModalOverlayPage() {
 
             <div className="specimen-grid">
                 <Specimen
-                    detail="720 × 480 Electron minimum · 48px top · 24px bottom · palette shrinks to 408px"
+                    detail="720 × 640 Electron minimum · 128px top · full 461px palette frame"
                     label="Top — Electron minimum"
                     number="O-03"
                     stage="app"
                 >
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                        <DimensionRule label="720 × 480 host · top gutter 48" />
-                        <TopWindowFrame height={480} width={720}>
+                        <DimensionRule label="720 × 640 host · top gutter 128" />
+                        <TopWindowFrame height={640} width={720}>
                             <ModalOverlay
                                 onDismiss={() => {}}
                                 placement="top"

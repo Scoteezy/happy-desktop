@@ -98,7 +98,7 @@ it("keeps Happy's native desktop dimensions at the shared component boundary", a
     expect(
         view.$('[data-testid="light-shell"]').computedStyles(["min-height", "min-width"]),
     ).toEqual({
-        "min-height": "480px",
+        "min-height": "640px",
         "min-width": "720px",
     });
     expect(view.$('[data-testid="light-drag"]').bounds().height).toBe(56);

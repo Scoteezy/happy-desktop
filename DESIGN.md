@@ -93,7 +93,7 @@ Current reference dimensions are:
 | Element                   | Reference dimension             |
 | ------------------------- | ------------------------------- |
 | Design reference window   | 1280 × 800 px                   |
-| Electron minimum window   | 720 × 480 px                    |
+| Electron minimum window   | 720 × 640 px                    |
 | App title/navigation row  | 56 px high                      |
 | Feature rail              | 64 px wide                      |
 | Standard sidebar          | `clamp(250px, 30vw, 360px)`     |
@@ -140,10 +140,10 @@ dims with `--happy-scrim` at `--happy-z-overlay`, and keeps a 24 px minimum
 safe-area gutter. The default `center` placement is for dialogs and forms. The
 `top` placement is only for transient type-ahead surfaces, never forms; it uses
 an adaptive top gutter of
-`min(128px, max(48px, calc(100cqh - 552px)))` so the card sits 128 px from the
-top in the 1280 × 800 design reference and 48 px from the top at the actual
-720 × 480 Electron minimum. The `fill` placement drops the gutter and gives the
-whole window to one immersive surface that paints its own background over the
+`min(128px, max(24px, calc(100cqh - 485px)))` so the card sits 128 px from the
+top both in the 1280 × 800 design reference and at the actual 720 × 640
+Electron minimum. The `fill` placement drops the gutter and gives the whole
+window to one immersive surface that paints its own background over the
 dim. It is not a third way to show a card: use it only where looking at
 something is a mode the window enters rather than a panel floating above the
 app, which today means `Lightbox` alone. Such a surface owns its own way out —

@@ -48,7 +48,7 @@ it("composes Happy's flat desktop shell with clamped navigation and inspector su
     expect(shell.bounds()).toEqual({ height: 800, width: 1280, x: 0, y: 0 });
     expect(shell.computedStyles(["background-color", "min-height", "min-width"])).toEqual({
         "background-color": "rgb(255, 255, 255)",
-        "min-height": "480px",
+        "min-height": "640px",
         "min-width": "720px",
     });
     expect(view.$('[data-happy-desktop-ui="app-shell-title-bar"]').bounds()).toEqual({

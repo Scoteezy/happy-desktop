@@ -84,9 +84,9 @@ function windowAtMinimum(children: ReactNode) {
                 width: `${String(WINDOW_MIN)}px`,
             }}
         >
-            <div style={{ height: "480px", width: `${String(WINDOW_MIN)}px` }}>{children}</div>
+            <div style={{ height: "640px", width: `${String(WINDOW_MIN)}px` }}>{children}</div>
             <DimensionRule
-                label={`${String(WINDOW_MIN)}px × 480px — 64 rail + ${String(LANE_MIN)} + ${String(WORKSPACE_MIN)} + ${String(LANE_MIN)}`}
+                label={`${String(WINDOW_MIN)}px × 640px — 64 rail + ${String(LANE_MIN)} + ${String(WORKSPACE_MIN)} + ${String(LANE_MIN)}`}
             />
         </div>
     );
@@ -324,7 +324,7 @@ export function AppShellPage() {
             </Specimen>
 
             <Specimen
-                detail="Happy's 720×480 desktop minimum. The two side lanes shrink to their 250px floors and the workspace keeps the remaining 140px after the 64px rail. Drag the blueprint narrower and the shell stops here and the page scrolls instead, matching the native window contract."
+                detail="Happy's 720×640 desktop minimum. The two side lanes shrink to their 250px floors and the workspace keeps the remaining 140px after the 64px rail. Drag the blueprint narrower and the shell stops here and the page scrolls instead, matching the native window contract."
                 label="Every lane at its minimum"
                 number="10"
                 stage="chrome"

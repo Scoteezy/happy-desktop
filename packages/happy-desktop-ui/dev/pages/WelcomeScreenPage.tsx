@@ -149,11 +149,11 @@ export function WelcomeScreenPage() {
 
             <Specimen
                 detail="Electron minimum window · the column keeps its rhythm and the screen scrolls from the top rather than clipping the hero"
-                label="720 × 480 short window"
+                label="720 × 640 minimum window"
                 number="04"
                 stage="surface"
             >
-                <WindowFrame height={480} width={720}>
+                <WindowFrame height={640} width={720}>
                     <WelcomeScreen
                         appearance="dark"
                         onAction={noop}

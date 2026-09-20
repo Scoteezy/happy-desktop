@@ -88,10 +88,11 @@
 }
 
 /*
- * The fill is the page's full ink rather than an accent: this is usually the
- * only thing moving on the surface it sits on, and it means what the primary
- * action beside it means. The width is eased because the counts behind it
- * arrive in bursts; the ease never shows a position the step has not reached.
+ * A measured-progress fill is the page's full ink rather than an accent: this
+ * is usually the only thing moving on the surface it sits on, and it means what
+ * the primary action beside it means. User-paced steps refine that ink below.
+ * The width is eased because the counts behind it arrive in bursts; the ease
+ * never shows a position the step has not reached.
  */
 .happy-segmented-progress__fill {
     display: block;
@@ -167,6 +168,16 @@
 
 .happy-segmented-progress[data-tone="inverse"] .happy-segmented-progress__fill {
     background: var(--button-primary-tint);
+}
+
+/* A user-paced current step occupies the whole track, but its rendered white
+   strength sits exactly midway between an untouched 20% track and a completed
+   100% fill. The 50% fill paints over the 20% track beneath it, producing 60%
+   effective white: the midpoint between those two endpoint states. */
+.happy-segmented-progress[data-mode="steps"][data-tone="inverse"]
+    .happy-segmented-progress__segment[data-state="running"]
+    .happy-segmented-progress__fill {
+    background: color-mix(in srgb, var(--button-primary-tint) 50%, transparent);
 }
 
 .happy-segmented-progress[data-tone="inverse"] .happy-segmented-progress__track::after {

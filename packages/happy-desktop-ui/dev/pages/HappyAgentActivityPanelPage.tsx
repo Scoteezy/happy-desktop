@@ -198,7 +198,7 @@ export function HappyAgentActivityPanelPage() {
             </Specimen>
 
             <Specimen
-                detail="360px content measure inside the 720×480 minimum desktop window; long model, activity, and terminal text must wrap without horizontal overflow"
+                detail="360px content measure inside the 720×640 minimum desktop window; long model, activity, and terminal text must wrap without horizontal overflow"
                 label="Minimum desktop measure"
                 number="04"
                 stage="surface"
