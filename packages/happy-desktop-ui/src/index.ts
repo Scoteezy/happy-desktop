@@ -20,6 +20,7 @@ export {
     type ReviewStreamCommentDraft,
     type ReviewStreamFile,
     type ReviewStreamProps,
+    type ReviewStreamSingleFile,
 } from "./ReviewStream";
 export { CompactActivityRow, type CompactActivityRowProps } from "./CompactActivityRow";
 export { compactCount } from "./countText";

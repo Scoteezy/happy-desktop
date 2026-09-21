@@ -109,7 +109,6 @@ function CommentedStream() {
         <ReviewStream
             appearance="light"
             commentDraft={draft}
-            commentTotal={comments.length}
             comments={comments}
             files={files}
             onCommentDraftCancel={() => draftSet(undefined)}
@@ -134,23 +133,26 @@ function CommentedStream() {
             onCommentRemove={(commentId) =>
                 commentsSet(comments.filter((comment) => comment.id !== commentId))
             }
-            onCommentsSubmit={() => undefined}
         />
     );
 }
 
 /**
- * A change whose files are still arriving. Reaching the end of what has been
- * read asks for the next one, which is exactly what the product does against a
- * checkout — here the files are already at hand, so the ask is answered at once.
+ * A change too large to draw in one scroll: one file of it is on screen, and
+ * the steps beside the count move to the file before or after it. The same
+ * state the product's store owns, so the steps can be exercised here.
  */
-function ArrivingStream() {
-    const [read, readSet] = useState(1);
+function SingleFileStream() {
+    const [at, atSet] = useState(1);
     return (
         <ReviewStream
             appearance="light"
-            files={files.slice(0, read)}
-            onEndReach={() => readSet((held) => Math.min(files.length, held + 1))}
+            files={files.slice(at, at + 1)}
+            singleFile={{
+                index: at + 1,
+                onNext: () => atSet((held) => Math.min(files.length - 1, held + 1)),
+                onPrevious: () => atSet((held) => Math.max(0, held - 1)),
+            }}
             total={files.length}
         />
     );
@@ -247,12 +249,12 @@ export function ReviewStreamPage() {
             </Specimen>
 
             <Specimen
-                detail="A change is read from the top, so only the first files are read to begin with and the rest are asked for on the way down. The count belongs to the change; what has arrived is said beside it"
-                label="Still arriving"
+                detail="A change too large for one scroll is read a file at a time: the notice says why, the count says which file of how many, and the steps beside it move between them. Everything on screen is whole — nothing arrives under the reader"
+                label="One file at a time"
                 number="05"
                 stage="surface"
             >
-                {frame(<ArrivingStream />, 260)}
+                {frame(<SingleFileStream />, 320)}
             </Specimen>
 
             <Specimen
