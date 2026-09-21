@@ -43,6 +43,14 @@ export type ReviewStreamCommentDraft = {
     readonly text: string;
 };
 
+/** Which file of a too-large change is on screen, and how to leave it. */
+export type ReviewStreamSingleFile = {
+    /** Where this file sits in the change, counting from one. */
+    readonly index: number;
+    readonly onPrevious: () => void;
+    readonly onNext: () => void;
+};
+
 export type ReviewStreamProps = {
     appearance: "dark" | "light";
     className?: string;
@@ -55,16 +63,17 @@ export type ReviewStreamProps = {
      */
     files: readonly ReviewStreamFile[];
     /**
-     * How many files the change has in total, when that is more than have been
-     * read. The count belongs to the change, not to how much of it has arrived.
+     * How many files the change has in total. The same as the number of files
+     * given, except where the change is read one file at a time and the count
+     * belongs to the change rather than to what is on screen.
      */
     total?: number;
     /**
-     * Said when the reader approaches the end of what has been read, so more of
-     * the change can be asked for. Said freely — whoever answers decides whether
-     * there is anything left to ask for.
+     * Set when the change is too large to draw in one scroll and is being read
+     * a file at a time. `files` then holds that one file, and this says which
+     * of the change's files it is and what the steps either side of it do.
      */
-    onEndReach?: () => void;
+    singleFile?: ReviewStreamSingleFile;
     /**
      * Files the checkout would not give up, by path. A file that failed to read
      * has no diff to draw, and a stream that simply leaves it out is a review
@@ -109,9 +118,6 @@ export type ReviewStreamProps = {
     onCommentRemove?: (commentId: string) => void;
     commentAuthorInitials?: string;
     commentAuthorName?: string;
-    /** How many notes are waiting, and what hands them to the agent. */
-    commentTotal?: number;
-    onCommentsSubmit?: () => void;
 };
 
 /** What one annotation carries, handed back by the renderer verbatim. */
@@ -125,9 +131,6 @@ type ReviewStreamAnnotation =
  * own hunks begin, so travelling to one does not depend on it having been
  * drawn yet.
  */
-/** How close to the end of what has been read counts as approaching it. */
-const END_REACH_DISTANCE = 600;
-
 /** How long the stream leaves the browser alone between measurements, in ms. */
 const MEASURE_REST = 120;
 
@@ -365,13 +368,6 @@ export function ReviewStream(props: ReviewStreamProps) {
         authorName: props.commentAuthorName ?? "You",
     };
 
-    // Reading a change is reading it from the top, so the rest of it is asked
-    // for as the reader travels toward the end rather than before the first
-    // line is drawn. Two things can bring the end within reach: scrolling, and
-    // the content itself being shorter than the pane — a first page of four
-    // files that does not fill the screen has to ask for the next one without
-    // waiting for a scroll that will never happen.
-    const endAsk = useStableCallback(() => props.onEndReach?.());
     // Which file the reader is currently inside. A stream is one scroll through
     // many files, and the header of the file being read is the one thing that
     // scrolls away underneath its own hunks — so it is said again where it
@@ -415,21 +411,11 @@ export function ReviewStream(props: ReviewStreamProps) {
             }
         }
     });
-    const endWatch = useCallback(
+    const readingWatch = useCallback(
         (node: HTMLDivElement | null) => {
             const port = node?.querySelector<HTMLElement>(".happy-review-stream__renderer");
             if (port == null) return;
-            // Asked once for each time the end comes within reach, not once per
-            // scroll event: a reader who keeps a fingertip on the trackpad at
-            // the bottom of what has been read produces a hundred of those a
-            // second, and answering each one is a hundred rounds of reading and
-            // redrawing while they are trying to read.
-            let asked = false;
             const ask = (): void => {
-                const near =
-                    port.scrollHeight - port.scrollTop - port.clientHeight < END_REACH_DISTANCE;
-                if (near && !asked) endAsk();
-                asked = near;
                 const edge = port.getBoundingClientRect().top;
                 // Nothing laid out yet reports every header at the same place,
                 // and an answer read from that is not an answer.
@@ -514,9 +500,7 @@ export function ReviewStream(props: ReviewStreamProps) {
                 if (timer !== 0) window.clearTimeout(timer);
             };
         },
-        // Deliberately re-attached whenever another file has arrived: that is
-        // the moment the question "is the end within reach" has a new answer.
-        [endAsk, headerClicked, props.files.length],
+        [headerClicked],
     );
     // What the bar's controls act on: the file being read, or the first one
     // while the reader is still at the top of its own header.
@@ -525,8 +509,22 @@ export function ReviewStream(props: ReviewStreamProps) {
     // to the same renderer closed. Not a row built to look like a header: a
     // header, so its name, its counts, and its type are drawn by whatever draws
     // every other strip in the stream, and stay that way when that changes.
+    //
+    // It is drawn whether or not it is showing, and hidden rather than taken
+    // away: the row is a renderer of its own, and mounting one at the moment
+    // the file's own header leaves the screen — and again at the moment it
+    // comes back — is exactly where the reader was watching.
+    const pinned = reading !== undefined;
+    // The picked-up row is one strip, not a scroll of them, so the renderer's
+    // own spacing around its items is not wanted here: above the strip it was
+    // eight pixels of nothing lying over the stream, which the code underneath
+    // showed through, and below the strip the same again.
+    const pickedOptions = useMemo(
+        () => ({ ...options, layout: { paddingTop: 0, paddingBottom: 0, gap: 0 } }),
+        [options],
+    );
     const picked = useMemo(() => {
-        const item = items.find((entry) => entry.id === reading);
+        const item = items.find((entry) => entry.id === reading) ?? items[0];
         return item === undefined ? undefined : [{ ...item, collapsed: true, version: 0 }];
     }, [items, reading]);
 
@@ -633,24 +631,48 @@ export function ReviewStream(props: ReviewStreamProps) {
                             props.total ?? props.files.length,
                             props.files.length,
                         );
-                        const read =
-                            total === props.files.length
-                                ? ""
-                                : ` · ${String(props.files.length)} read`;
-                        return `${total === 1 ? "1 changed file" : `${String(total)} changed files`}${read}`;
+                        const counted =
+                            total === 1 ? "1 changed file" : `${String(total)} changed files`;
+                        // One file at a time says which one, because the count
+                        // on its own would read as a stream that lost the rest.
+                        return props.singleFile === undefined
+                            ? counted
+                            : `File ${String(props.singleFile.index)} of ${String(total)}`;
                     })()}
                 </span>
                 <span className="happy-review-stream__bar-end">
-                    {props.onCommentsSubmit && (props.commentTotal ?? 0) > 0 ? (
-                        <Button
-                            data-testid="review-stream-request"
-                            onClick={() => props.onCommentsSubmit?.()}
-                            size="small"
-                            variant="secondary"
-                        >
-                            {`Request changes (${String(props.commentTotal ?? 0)})`}
-                        </Button>
-                    ) : null}
+                    {props.singleFile === undefined ? null : (
+                        <span className="happy-review-stream__steps">
+                            <Button
+                                aria-label="Previous file"
+                                // The same chevron as the step forward, painted
+                                // the other way round: one step at both ends of
+                                // the change, the way the panel affordance is
+                                // one control at both edges of the window.
+                                className="happy-review-stream__step-back"
+                                data-testid="review-stream-previous-file"
+                                disabled={props.singleFile.index <= 1}
+                                icon="chevron-right"
+                                iconOnly
+                                onClick={() => props.singleFile?.onPrevious()}
+                                size="small"
+                                variant="ghost"
+                            />
+                            <Button
+                                aria-label="Next file"
+                                data-testid="review-stream-next-file"
+                                disabled={
+                                    props.singleFile.index >=
+                                    Math.max(props.total ?? props.files.length, 1)
+                                }
+                                icon="chevron-right"
+                                iconOnly
+                                onClick={() => props.singleFile?.onNext()}
+                                size="small"
+                                variant="ghost"
+                            />
+                        </span>
+                    )}
                     <span className="happy-review-stream__steps">
                         <Button
                             aria-label="Previous change"
@@ -728,31 +750,16 @@ export function ReviewStream(props: ReviewStreamProps) {
                 </span>
             </div>
 
-            {picked === undefined ? null : (
-                <div
-                    className="happy-review-stream__reading"
-                    data-clickable={props.onFileCollapsedToggle === undefined ? undefined : ""}
-                    data-happy-desktop-ui="review-stream-reading"
-                    onClick={(event) => {
-                        // The controls in this row keep their own clicks, the
-                        // same way they do in the header it stands in for.
-                        if (
-                            event.target instanceof HTMLElement &&
-                            event.target.closest("button, a") !== null
-                        )
-                            return;
-                        const file = picked[0]?.id;
-                        if (file !== undefined) props.onFileCollapsedToggle?.(file);
-                    }}
+            {props.singleFile === undefined ? null : (
+                <Banner
+                    className="happy-review-stream__oversize"
+                    data-testid="review-stream-oversize"
+                    icon="file-diff"
+                    tone="info"
                 >
-                    <CodeView<ReviewStreamAnnotation>
-                        className="happy-diff-surface"
-                        items={picked}
-                        options={options}
-                        renderHeaderMetadata={headerMetadata}
-                        renderHeaderPrefix={headerPrefix}
-                    />
-                </div>
+                    This change is too large to read in one scroll, so its files are shown one at a
+                    time.
+                </Banner>
             )}
 
             {props.failures === undefined || props.failures.length === 0 ? null : (
@@ -774,7 +781,35 @@ export function ReviewStream(props: ReviewStreamProps) {
                 </Banner>
             )}
 
-            <div className="happy-review-stream__body" ref={endWatch}>
+            <div className="happy-review-stream__body" ref={readingWatch}>
+                {picked === undefined ? null : (
+                    <div
+                        aria-hidden={pinned ? undefined : "true"}
+                        className="happy-review-stream__reading"
+                        data-clickable={props.onFileCollapsedToggle === undefined ? undefined : ""}
+                        data-happy-desktop-ui="review-stream-reading"
+                        data-pinned={pinned ? "" : undefined}
+                        onClick={(event) => {
+                            // The controls in this row keep their own clicks, the
+                            // same way they do in the header it stands in for.
+                            if (
+                                event.target instanceof HTMLElement &&
+                                event.target.closest("button, a") !== null
+                            )
+                                return;
+                            const file = picked[0]?.id;
+                            if (file !== undefined) props.onFileCollapsedToggle?.(file);
+                        }}
+                    >
+                        <CodeView<ReviewStreamAnnotation>
+                            className="happy-diff-surface"
+                            items={picked}
+                            options={pickedOptions}
+                            renderHeaderMetadata={headerMetadata}
+                            renderHeaderPrefix={headerPrefix}
+                        />
+                    </div>
+                )}
                 <CodeView<ReviewStreamAnnotation>
                     className="happy-review-stream__renderer happy-diff-surface"
                     items={annotated}

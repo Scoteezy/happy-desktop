@@ -3418,7 +3418,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             {...(workspace.fileComments.draft?.anchor.path === file.path
                 ? { commentDraft: workspace.fileComments.draft }
                 : {})}
-            commentTotal={workspace.fileComments.comments.length}
             happyAgentOnline={happyAgentOnline}
             onMainFileOpen={(path, kind) =>
                 props.onFileSelect(file.groupId, props.chatId, path, kind)
@@ -3430,16 +3429,24 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         />
     );
     /**
-     * The checkout's whole change, in one scroll.
+     * The checkout's whole change, in one scroll — or one file of it, when the
+     * change is too large for that and is read a file at a time instead.
      *
-     * Only the files whose two sides have actually been read are handed over: a
-     * file still being loaded has no diff to draw, and the stream says how many
-     * it is showing, so a file arriving simply joins them. Notes are the same
-     * notes the single-file diff leaves — they carry their path already, so
-     * nothing here re-addresses them.
+     * Only files whose two sides have been read are handed over, and the change
+     * is not drawn at all until every one of them has: what is on screen does
+     * not grow under the reader. Notes are the same notes the single-file diff
+     * leaves — they carry their path already, so nothing here re-addresses
+     * them.
      */
     const mainReviewBody = (review: HappyAgentReview): ReactNode => {
-        const files = review.files.flatMap((file) =>
+        // A change too large for one scroll is read a file at a time, so only
+        // that file is drawn. The ones read either side of it are read so that
+        // stepping is a step rather than a round trip, not so they are shown.
+        const drawn =
+            review.presentation === "one-file"
+                ? review.files.filter((file) => file.path === review.activePath)
+                : review.files;
+        const files = drawn.flatMap((file) =>
             file.document.type === "ready"
                 ? [
                       {
@@ -3467,7 +3474,13 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                   ]
                 : [],
         );
-        if (files.length === 0)
+        // Nothing is drawn until the whole change has been read once. A stream
+        // built up file by file as the reads land is a floor that moves while
+        // the reader is standing on it: the scroll slides, and the steps travel
+        // to addresses that were somewhere else a moment ago. One wait, then
+        // the change. After that the stream stays on screen — a file the agent
+        // has since written arrives in its own place when its read lands.
+        if ((review.loading && !review.drawn) || files.length === 0)
             return (
                 <EmptyState
                     animation={review.loading ? "snail" : undefined}
@@ -3484,7 +3497,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         return (
             <ReviewStream
                 appearance={appearance.appearance}
-                commentTotal={workspace.fileComments.comments.length}
                 {...(workspace.fileComments.draft === undefined
                     ? {}
                     : {
@@ -3505,10 +3517,18 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 }))}
                 files={files}
                 onCommentDraftCancel={() => props.workspace.commentDraftCancel()}
-                // Approaching the end of what has been read is what asks for the
-                // rest of the change: a review of thirty files is opened to read
-                // it from the top, not to wait for its last file.
-                onEndReach={() => props.workspace.reviewExtend(review.groupId)}
+                {...(review.presentation === "one-file"
+                    ? {
+                          singleFile: {
+                              index:
+                                  review.files.findIndex(
+                                      (file) => file.path === review.activePath,
+                                  ) + 1,
+                              onNext: () => props.workspace.reviewFileNext(review.groupId),
+                              onPrevious: () => props.workspace.reviewFilePrevious(review.groupId),
+                          },
+                      }
+                    : {})}
                 // A file the checkout would not give up is named rather than
                 // left out, or the review is quietly short of part of itself.
                 failures={review.files
@@ -3554,7 +3574,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 onCommentRemove={(commentId) =>
                     props.workspace.commentRemove(commentId as HappyAgentCommentId)
                 }
-                onCommentsSubmit={() => props.workspace.commentsSubmit()}
                 onWrapChange={(wrap) => props.workspace.fileViewWrapUpdate(wrap)}
                 wrap={workspace.fileViewWrap}
             />
@@ -4333,8 +4352,6 @@ function HappyAgentFileBody(props: {
     /** Review notes on this file, and the one being written if it is on this file. */
     comments: readonly HappyAgentFileComment[];
     commentDraft?: HappyAgentCommentDraft;
-    /** How many notes are waiting across every file, for the hand-over control. */
-    commentTotal: number;
     workspace: HappyAgentWorkspaceStore;
 }) {
     const { file, workspace } = props;
@@ -4524,8 +4541,6 @@ function HappyAgentFileBody(props: {
                               onCommentDraftSubmit: () => workspace.commentDraftSubmit(),
                               onCommentRemove: (commentId: string) =>
                                   workspace.commentRemove(commentId as HappyAgentCommentId),
-                              commentTotal: props.commentTotal,
-                              onCommentsSubmit: () => workspace.commentsSubmit(),
                           }
                         : {})}
                     onModeChange={(mode) => workspace.fileViewModeUpdate(mode)}

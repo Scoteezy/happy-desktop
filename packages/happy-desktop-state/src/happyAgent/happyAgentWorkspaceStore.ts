@@ -8,6 +8,7 @@ import {
     composerStoreCreate,
     type ComposerAttachment,
     type ComposerCommand,
+    type ComposerReviewComment,
     type ComposerSnapshot,
     type ComposerStore,
 } from "../modules/composer/composerState.js";
@@ -34,6 +35,7 @@ import type {
 } from "./happyAgentChatStore.js";
 import {
     happyAgentAttachmentTextAppend,
+    happyAgentCommentsTextAppend,
     happyAgentComposerAttachmentCreate,
     happyAgentComposerAttachmentPreviewRelease,
     happyAgentComposerAttachmentsValidate,
@@ -897,18 +899,36 @@ export interface HappyAgentReviewFile {
     /** Disk identity the loaded document answers for, so a stale read is known. */
     readonly revision: string;
     readonly document: Loadable<HappyAgentChangedFileDocument>;
+    /**
+     * True when this file's bytes have moved since the document here was read
+     * and a fresh read is due. The document it replaces stays until the new one
+     * lands: taking the file out of the stream while it is re-read moves every
+     * line below it, and the agent writes while the reader is reading.
+     */
+    readonly stale?: boolean;
 }
+
+/**
+ * How a change is shown: as one scroll, or one file at a time.
+ *
+ * Reading a change is reading it in order, so a change that can be drawn at
+ * once is drawn at once. A change that cannot — hundreds of files, or hundreds
+ * of thousands of lines — is not made readable by arriving in pieces while the
+ * reader scrolls: the ground moves under them and every address they were
+ * travelling to moves with it. Such a change is read a file at a time instead,
+ * which is a whole file with a next and a previous rather than a moving floor.
+ */
+export type HappyAgentReviewPresentation = "stream" | "one-file";
 
 /**
  * Every changed file in one checkout, read in the order they will be read in.
  *
  * A change is rarely about one file, so the review is the unit: this exists
- * while the reader has the stream open. What it does not do is read the whole
- * working tree before showing anything. Each file costs two reads — its base
- * revision and its current bytes — so a review of thirty files spent sixty
- * round trips before the first line appeared, and the first screen holds three
- * of them. So the review knows how far it has been asked to read, and reads
- * that far; scrolling toward the end asks for more.
+ * while the reader has the stream open. Everything it will draw is read before
+ * it is drawn — the stream's height, its file order, and the addresses its
+ * steps travel to are all settled from the first frame — and a change too large
+ * for that is shown one file at a time, where the same is true of the file on
+ * screen.
  *
  * It is memory-only — it is a read of the working tree, and the working tree is
  * the durable thing.
@@ -917,8 +937,13 @@ export interface HappyAgentReview {
     readonly id: string;
     readonly groupId: HappyAgentGroupId;
     readonly files: readonly HappyAgentReviewFile[];
-    /** How many files from the start have been asked for. */
-    readonly reach: number;
+    /** Whether this change is drawn as one scroll or a file at a time. */
+    readonly presentation: HappyAgentReviewPresentation;
+    /**
+     * Which file is on screen while the change is read one file at a time.
+     * A stream has every file on screen and names none of them here.
+     */
+    readonly activePath?: string;
     /**
      * Files shown as a header only, by path. A reviewer closes a file they have
      * finished with so the ones they have not stay together.
@@ -931,52 +956,104 @@ export interface HappyAgentReview {
      * second.
      */
     readonly viewed: ReadonlySet<string>;
-    /** True while a file this far in has never yet had a document. */
+    /** True while a file this review is meant to be showing has no document. */
     readonly loading: boolean;
+    /**
+     * True once everything the review was showing had been read at the same
+     * time — the change has been drawn whole at least once.
+     *
+     * Until then the surface waits rather than drawing a stream that grows
+     * under the reader. After it, a file the agent has just added arrives on
+     * its own when it is read, which moves one file's worth of the stream
+     * instead of taking the whole change off the screen and putting it back.
+     */
+    readonly drawn: boolean;
 }
 
 /** The strip id a checkout's review stream occupies. */
 const reviewIdOf = (groupId: HappyAgentGroupId): string => `review:${groupId}`;
 
 /**
- * How many files a review reads at a time.
+ * How much change one scroll holds.
  *
- * Enough to fill the first screen and a little past it, so the reader is
- * already looking at the next file by the time it is asked for, and few enough
- * that opening a review is a handful of reads rather than all of them.
+ * Both limits are about the same thing from two directions: a stream is read
+ * whole, so everything in it is read before any of it is drawn. Beyond this the
+ * wait to open it stops being a wait and the change is shown a file at a time
+ * instead. Git already counts the lines for every changed file, so which it is
+ * is known before a single file has been read.
  */
-const REVIEW_READ_PAGE = 4;
+const REVIEW_STREAM_FILE_LIMIT = 40;
+const REVIEW_STREAM_LINE_LIMIT = 20000;
+
+/** Which of the two ways this change is read, from the counts Git gives us. */
+const reviewPresentationOf = (
+    changes: readonly HappyAgentGitChangedFile[],
+): HappyAgentReviewPresentation => {
+    if (changes.length > REVIEW_STREAM_FILE_LIMIT) return "one-file";
+    const lines = changes.reduce(
+        (sum, change) => sum + (change.addedLines ?? 0) + (change.deletedLines ?? 0),
+        0,
+    );
+    return lines > REVIEW_STREAM_LINE_LIMIT ? "one-file" : "stream";
+};
+
+/** The files on screen: all of them in a stream, the current one otherwise. */
+const reviewShown = (review: HappyAgentReview): readonly HappyAgentReviewFile[] => {
+    if (review.presentation === "stream") return review.files;
+    const at = review.files.findIndex((file) => file.path === review.activePath);
+    return at < 0 ? review.files.slice(0, 1) : review.files.slice(at, at + 1);
+};
 
 /**
- * Whether a review is still waiting on anything it asked for. A file that
- * failed has an answer — the wrong one, which the stream says out loud — so it
- * is not something still being waited for.
+ * The files a review reads, which is what it shows plus, one file at a time,
+ * the files either side of it — so stepping through a change is a step rather
+ * than a round trip at every step.
  */
-const reviewWaiting = (files: readonly HappyAgentReviewFile[], reach: number): boolean =>
-    files
-        .slice(0, reach)
-        .some((file) => file.document.type === "loading" || file.document.type === "unloaded");
+const reviewRead = (review: HappyAgentReview): readonly HappyAgentReviewFile[] => {
+    if (review.presentation === "stream") return review.files;
+    const at = review.files.findIndex((file) => file.path === review.activePath);
+    if (at < 0) return review.files.slice(0, 1);
+    return review.files.slice(Math.max(at - 1, 0), at + 2);
+};
 
 /**
- * The review notes written out as one request an agent can act on.
- *
- * Each note names the file and the line it was left on, because that address is
- * the whole reason a note beats a sentence in the composer: "this is wrong"
- * about a named line is actionable, and the same words about a changed file are
- * a guess. A note whose file moved underneath it says so rather than quietly
- * offering a line number that no longer means anything.
+ * Whether a review is still waiting for something it is meant to be showing.
+ * A file read ahead of the reader is not one of those, and a file that failed
+ * has an answer — the wrong one, which the stream says out loud.
  */
-function happyAgentCommentsRequestWrite(comments: readonly HappyAgentFileComment[]): string {
-    const lines = comments.map((comment) => {
-        const { path, lineNumber, side } = comment.anchor;
-        const place =
-            lineNumber === 0
-                ? path
-                : `${path}:${String(lineNumber)}${side === "deletions" ? " (removed line)" : ""}`;
-        const caveat = comment.stale ? " — written before the file changed again" : "";
-        return `- ${place}${caveat}\n  ${comment.text.split("\n").join("\n  ")}`;
-    });
-    return `Please address these review comments:\n\n${lines.join("\n")}`;
+const reviewWaiting = (review: HappyAgentReview): boolean =>
+    reviewShown(review).some(
+        (file) => file.document.type === "loading" || file.document.type === "unloaded",
+    );
+
+/**
+ * The same review, saying what it is waiting for and whether it has ever been
+ * whole. Every write to a review goes through this, so those two answers are
+ * never something a caller can forget to keep true.
+ */
+const reviewSettle = (review: HappyAgentReview): HappyAgentReview => {
+    const waiting = reviewWaiting(review);
+    return { ...review, loading: waiting, drawn: review.drawn || !waiting };
+};
+
+/**
+ * The one attachment a draft carries its review notes in. Fixed rather than
+ * minted, so notes added while the chip is already waiting rewrite that chip
+ * in place instead of stacking a second one beside it.
+ */
+const HAPPY_AGENT_REVIEW_COMMENTS_ATTACHMENT_ID = "review-comments";
+
+/** The notes a draft carries, flattened out of their anchors for the composer. */
+function happyAgentCommentsAttach(
+    comments: readonly HappyAgentFileComment[],
+): readonly ComposerReviewComment[] {
+    return comments.map((comment) => ({
+        path: comment.anchor.path,
+        lineNumber: comment.anchor.lineNumber,
+        side: comment.anchor.side,
+        text: comment.text,
+        stale: comment.stale,
+    }));
 }
 
 /** How many ranked matches the file listing asks the daemon for. */
@@ -1365,11 +1442,12 @@ export interface HappyAgentWorkspaceStore {
     reviewOpen(groupId: HappyAgentGroupId): void;
     reviewClose(groupId: HappyAgentGroupId): void;
     /**
-     * Asks a review for its next page of files, which is what approaching the
-     * end of the stream means. Saying it when everything has been asked for
-     * does nothing.
+     * Shows the next or the previous file of a change being read one file at a
+     * time. Saying it about a stream, or past either end of the change, does
+     * nothing.
      */
-    reviewExtend(groupId: HappyAgentGroupId): void;
+    reviewFileNext(groupId: HappyAgentGroupId): void;
+    reviewFilePrevious(groupId: HappyAgentGroupId): void;
     /** Reads the files in a review whose last read failed, again. */
     reviewRetry(groupId: HappyAgentGroupId): void;
     /** Shows one file in a review as a header only, or opens it again. */
@@ -1410,16 +1488,6 @@ export interface HappyAgentWorkspaceStore {
     /** Keeps the written note. An empty one is a cancel, not an empty comment. */
     commentDraftSubmit(): void;
     commentRemove(commentId: HappyAgentCommentId): void;
-    /**
-     * Hands every note to the agent as one change request and clears them.
-     *
-     * It lands in the composer rather than being sent, because the reader is
-     * the one asking and should see the request and be able to add to it before
-     * it goes — so the conversation is also what the main content then shows,
-     * since that is where the request is. Answers whether there was anything to
-     * hand over.
-     */
-    commentsSubmit(): boolean;
     /** Records how wide the reader left the right panel in this checkout. */
     panelWidthUpdate(groupId: HappyAgentGroupId, width: number): void;
     /**
@@ -1823,6 +1891,8 @@ export function happyAgentWorkspaceStoreCreate(
     /** Retires reads belonging to a review that has since been rebuilt or closed. */
     const reviewGenerations = new Map<string, number>();
     let commentSequence = 0;
+    /** True while the chip is being written from the notes; see `commentsWrite`. */
+    let commentsProjecting = false;
     /**
      * How each checkout this window has arranged is arranged, read once here.
      *
@@ -2604,6 +2674,116 @@ export function happyAgentWorkspaceStoreCreate(
     /** Review notes belong to the checkout they were written about. */
     const fileCommentsReset = (): void => {
         fileComments = FILE_COMMENTS_IDLE;
+        fileCommentsProject();
+    };
+
+    /** Whether two projections of the notes say the same thing in the same order. */
+    const commentsSame = (
+        left: readonly ComposerReviewComment[],
+        right: readonly ComposerReviewComment[],
+    ): boolean =>
+        left.length === right.length &&
+        left.every((comment, index) => {
+            const other = right[index];
+            return (
+                other !== undefined &&
+                comment.path === other.path &&
+                comment.lineNumber === other.lineNumber &&
+                comment.side === other.side &&
+                comment.text === other.text &&
+                comment.stale === other.stale
+            );
+        });
+
+    /** The notes as the one chip a draft carries them in, or nothing to carry. */
+    const fileCommentsAttachments = (): readonly ComposerAttachment[] =>
+        fileComments.comments.length === 0
+            ? []
+            : [
+                  {
+                      kind: "reviewComments",
+                      id: HAPPY_AGENT_REVIEW_COMMENTS_ATTACHMENT_ID,
+                      comments: happyAgentCommentsAttach(fileComments.comments),
+                  },
+              ];
+
+    /**
+     * Keeps the draft's chip saying what the notes say.
+     *
+     * The notes live here, with the change they are about, because that is what
+     * the diff draws them under. The chip is how the same notes appear where
+     * they are going to be sent from, so it is written from them every time
+     * they change rather than kept alongside them.
+     */
+    const fileCommentsProject = (): void => {
+        const target = groupComposer ?? composer;
+        if (target === undefined) return;
+        const waiting = target
+            .getState()
+            .attachments.find(
+                (attachment) => attachment.id === HAPPY_AGENT_REVIEW_COMMENTS_ATTACHMENT_ID,
+            );
+        const next = fileCommentsAttachments()[0];
+        if (next === undefined) {
+            if (waiting) commentsWrite(() => target.getState().attachmentRemove(waiting.id));
+            return;
+        }
+        if (
+            waiting?.kind === "reviewComments" &&
+            next.kind === "reviewComments" &&
+            commentsSame(waiting.comments, next.comments)
+        )
+            return;
+        commentsWrite(() => {
+            if (waiting) target.getState().attachmentRemove(waiting.id);
+            target.getState().attachmentAdd(next);
+        });
+    };
+
+    /**
+     * Runs one write of the chip without hearing it back as the reader dropping
+     * it. Replacing the chip removes the old one first, and that removal is this
+     * store's own doing rather than the reader saying they are done with the
+     * notes — which is what dropping the chip means, and what it still means
+     * whenever this is not running.
+     */
+    const commentsWrite = (write: () => void): void => {
+        commentsProjecting = true;
+        try {
+            write();
+        } finally {
+            commentsProjecting = false;
+        }
+    };
+
+    /**
+     * The reader dropped the chip, so the notes are dropped with it. A note
+     * exists to become a request; taking the request out of the draft is saying
+     * that request is not going, and leaving the notes drawn on the diff would
+     * make that a lie the next send would tell.
+     */
+    const fileCommentsDrop = (attachmentId: string): void => {
+        if (commentsProjecting || attachmentId !== HAPPY_AGENT_REVIEW_COMMENTS_ATTACHMENT_ID)
+            return;
+        if (fileComments.comments.length === 0) return;
+        fileComments = { ...fileComments, comments: [] };
+        recompute();
+    };
+
+    /**
+     * The notes went with a message that was sent, so they are spent.
+     *
+     * The draft that carried them clears itself on confirmation, but a send
+     * from a group opens the conversation it created before it returns, and
+     * that new draft was built while the notes were still waiting. Projecting
+     * again is what takes the spent chip back out of it.
+     */
+    const fileCommentsSpend = (attachments: readonly ComposerAttachment[]): void => {
+        if (!attachments.some((attachment) => attachment.kind === "reviewComments")) return;
+        if (fileComments.comments.length === 0) return;
+        fileComments = { ...fileComments, comments: [] };
+        fileCommentsProject();
+        recompute();
     };
 
     /**
@@ -2627,6 +2807,8 @@ export function happyAgentWorkspaceStoreCreate(
         });
         if (!touched) return;
         fileComments = { ...fileComments, comments };
+        // The caveat travels with the note, so the chip is rewritten for it.
+        fileCommentsProject();
     };
 
     /**
@@ -3161,20 +3343,20 @@ export function happyAgentWorkspaceStoreCreate(
         const stale = (path: string): boolean => moved === null || moved.includes(path);
         const files = changes.map<HappyAgentReviewFile>((change) => {
             const previous = held.get(change.path);
-            const reusable =
-                previous !== undefined &&
-                previous.revision === change.revision &&
-                !stale(change.path) &&
-                previous.document.type === "ready";
+            const read = previous?.document.type === "ready";
+            const current = read && previous.revision === change.revision && !stale(change.path);
             return {
                 path: change.path,
                 ...(change.previousPath === undefined ? {} : { oldPath: change.previousPath }),
                 status: change.status,
                 revision: change.revision,
-                document: reusable ? previous.document : { type: "unloaded" },
+                // A file already read keeps what was read for it even when its
+                // bytes have moved on: it is replaced when the new read lands,
+                // rather than leaving a hole in the stream until then.
+                document: read ? previous.document : { type: "unloaded" },
+                ...(read && !current ? { stale: true as const } : {}),
             };
         });
-        const reach = Math.min(files.length, Math.max(open.reach, REVIEW_READ_PAGE));
         // What was said about a file belongs to that file. A file that has left
         // the change takes its mark with it, so a path that comes back is not
         // met by a decision made about an older version of it.
@@ -3183,39 +3365,54 @@ export function happyAgentWorkspaceStoreCreate(
             [...paths].every((path) => present.has(path))
                 ? paths
                 : new Set([...paths].filter((path) => present.has(path)));
-        reviews = new Map(reviews).set(groupId, {
-            ...open,
+        const presentation = reviewPresentationOf(changes);
+        // A change read one file at a time keeps the reader where they were.
+        // Where they were is a path, and a path that has left the change leaves
+        // them at the file that took its place in the order.
+        const was = open.files.findIndex((file) => file.path === open.activePath);
+        const activePath =
+            presentation === "stream"
+                ? undefined
+                : open.activePath !== undefined && present.has(open.activePath)
+                  ? open.activePath
+                  : (files[Math.min(Math.max(was, 0), Math.max(files.length - 1, 0))]?.path ??
+                    files[0]?.path);
+        // Written out rather than spread over the review it replaces: the file
+        // on screen is named only while the change is read one file at a time,
+        // and a stream that inherited a name would go on claiming one.
+        const next: HappyAgentReview = {
+            id: open.id,
+            groupId: open.groupId,
+            // A change that has grown past what one scroll holds, or shrunk
+            // back inside it, is drawn a different way: what was on screen is
+            // not what is going on screen, so it is waited for whole again.
+            drawn: open.drawn && presentation === open.presentation,
             files,
-            reach,
+            presentation,
+            ...(activePath === undefined ? {} : { activePath }),
             collapsed: kept(open.collapsed),
             viewed: kept(open.viewed),
-            loading: reviewWaiting(files, reach),
-        });
+            loading: false,
+        };
+        reviews = new Map(reviews).set(groupId, reviewSettle(next));
         reviewLoad(groupId);
     };
 
     /**
-     * Asks for the next page of a review, which is what scrolling toward its end
-     * means. Asking again once everything has been asked for does nothing, so
-     * the surface may say it freely.
+     * Moves to the file before or after the one on screen, in a change being
+     * read one file at a time.
+     *
+     * Said freely: a stream has no such step, and neither end of the change has
+     * one past it.
      */
-    const reviewExtend = (groupId: HappyAgentGroupId): void => {
+    const reviewFileStep = (groupId: HappyAgentGroupId, direction: -1 | 1): void => {
         const open = reviews.get(groupId);
-        if (open === undefined || open.reach >= open.files.length) return;
-        // One page is read at a time. Extending again while the last page is
-        // still being read races the reads it is waiting for: the surface says
-        // this freely, and a reader at the end of what has arrived would
-        // otherwise pull the whole change through in a single scroll.
-        if (open.loading) return;
-        const reach = Math.min(open.files.length, open.reach + REVIEW_READ_PAGE);
-        reviews = new Map(reviews).set(groupId, {
-            ...open,
-            reach,
-            // A file inside the new reach may already have been read — its bytes
-            // did not move through the last rebuild — so this is asked of the
-            // files rather than assumed from having extended.
-            loading: reviewWaiting(open.files, reach),
-        });
+        if (open === undefined || open.presentation !== "one-file") return;
+        const at = open.files.findIndex((file) => file.path === open.activePath);
+        const activePath = open.files[Math.max(at, 0) + direction]?.path;
+        if (activePath === undefined) return;
+        const next: HappyAgentReview = { ...open, activePath, loading: false };
+        reviews = new Map(reviews).set(groupId, reviewSettle(next));
         reviewLoad(groupId);
         recompute();
     };
@@ -3277,42 +3474,53 @@ export function happyAgentWorkspaceStoreCreate(
         const open = reviews.get(groupId);
         if (open === undefined) return;
         if (!open.files.some((file) => file.document.type === "error")) return;
-        reviews = new Map(reviews).set(groupId, {
+        const next: HappyAgentReview = {
             ...open,
             files: open.files.map((file) =>
                 file.document.type === "error"
                     ? { ...file, document: { type: "unloaded" as const } }
                     : file,
             ),
-            loading: true,
-        });
+            loading: false,
+        };
+        // A file nothing is going to draw is not something the review is
+        // waiting for, so asking again does not leave it saying it is loading.
+        reviews = new Map(reviews).set(groupId, reviewSettle(next));
         reviewLoad(groupId);
         recompute();
     };
 
     /**
-     * Reads the files a review has been asked for and has not read yet.
+     * Reads the files this review is going to draw and has not read yet.
      *
      * Only the ones nobody has asked about: a file already being read stays
-     * being read, so extending the reach adds requests rather than restarting
-     * the ones in flight. A read that lands after the review it belonged to was
-     * rebuilt is dropped rather than written into whatever the stream holds now.
+     * being read, so stepping to it adds no second request. A read that lands
+     * after the review it belonged to was rebuilt is dropped rather than
+     * written into whatever the stream holds now.
      */
     const reviewLoad = (groupId: HappyAgentGroupId): void => {
         const id = reviewIdOf(groupId);
         const generation = reviewGenerations.get(id) ?? 0;
         const open = reviews.get(groupId);
         if (open === undefined) return;
-        const asked = open.files
-            .slice(0, open.reach)
-            .filter((file) => file.document.type === "unloaded");
+        // Never read, or read before its bytes moved. A file already in flight
+        // is neither, so stepping to it adds no second request.
+        const asked = reviewRead(open).filter(
+            (file) => file.document.type === "unloaded" || file.stale === true,
+        );
         if (asked.length === 0) return;
         const reading = new Set(asked.map((file) => file.path));
         reviews = new Map(reviews).set(groupId, {
             ...open,
-            files: open.files.map((file) =>
-                reading.has(file.path) ? { ...file, document: { type: "loading" as const } } : file,
-            ),
+            files: open.files.map((file) => {
+                if (!reading.has(file.path)) return file;
+                // A file with something to show goes on showing it while it is
+                // read again; only a file with nothing says it is loading.
+                const { stale: _asked, ...rest } = file;
+                return file.document.type === "ready"
+                    ? rest
+                    : { ...rest, document: { type: "loading" as const } };
+            }),
         });
         for (const file of asked) {
             const change = fileChangeFind(groupId, file.path);
@@ -3320,16 +3528,13 @@ export function happyAgentWorkspaceStoreCreate(
                 if (reviewGenerations.get(id) !== generation) return;
                 const current = reviews.get(groupId);
                 if (current === undefined) return;
-                const files = current.files.map((candidate) =>
-                    candidate.path === file.path && candidate.revision === file.revision
-                        ? { ...candidate, document }
-                        : candidate,
-                );
-                reviews = new Map(reviews).set(groupId, {
-                    ...current,
-                    files,
-                    loading: reviewWaiting(files, current.reach),
+                const files = current.files.map((candidate) => {
+                    if (candidate.path !== file.path || candidate.revision !== file.revision)
+                        return candidate;
+                    const { stale: _answered, ...rest } = candidate;
+                    return { ...rest, document };
                 });
+                reviews = new Map(reviews).set(groupId, reviewSettle({ ...current, files }));
                 recompute();
             };
             // Each file answers for itself. Whatever one of them does — refused
@@ -3538,7 +3743,10 @@ export function happyAgentWorkspaceStoreCreate(
             id,
             groupId,
             files: [],
-            reach: REVIEW_READ_PAGE,
+            // What it is, is settled the moment the change's own counts are
+            // read, which is the next thing that happens.
+            presentation: "stream",
+            drawn: false,
             collapsed: new Set(),
             viewed: new Set(),
             loading: true,
@@ -3778,7 +3986,10 @@ export function happyAgentWorkspaceStoreCreate(
             if (refusal) throw new Error(refusal);
             paths.push(await attachmentReferenceOf(groupId, attachment));
         }
-        return happyAgentAttachmentTextAppend(text, paths);
+        return happyAgentAttachmentTextAppend(
+            happyAgentCommentsTextAppend(text, attachments),
+            paths,
+        );
     };
 
     /**
@@ -3807,7 +4018,12 @@ export function happyAgentWorkspaceStoreCreate(
         key: Key,
         target: ComposerStore,
     ): void => {
-        const attachments = target.getState().attachments;
+        // The notes are not held here. They belong to the checkout's review and
+        // are written into whichever draft is addressing it, so keeping a copy
+        // per conversation would hand the same notes to two drafts at once.
+        const attachments = target
+            .getState()
+            .attachments.filter((attachment) => attachment.kind !== "reviewComments");
         if (attachments.length === 0) held.delete(key);
         else held.set(key, attachments);
     };
@@ -3926,11 +4142,17 @@ export function happyAgentWorkspaceStoreCreate(
                 mentions: true,
             },
             ...(carriedText === undefined ? {} : { text: carriedText }),
-            attachments: conversationAttachments.get(conversationId) ?? [],
+            attachments: [
+                ...(conversationAttachments.get(conversationId) ?? []),
+                ...fileCommentsAttachments(),
+            ],
             output: (event) => {
                 switch (event.type) {
-                    case "attachmentAdded":
                     case "attachmentRemoved":
+                        fileCommentsDrop(event.attachmentId);
+                        attachmentsRemember(conversationAttachments, conversationId, created);
+                        return;
+                    case "attachmentAdded":
                         attachmentsRemember(conversationAttachments, conversationId, created);
                         return;
                     case "textUpdated":
@@ -3959,6 +4181,7 @@ export function happyAgentWorkspaceStoreCreate(
                                 );
                                 await withChatStore((store) => store.messageSend(text, images));
                                 conversationAttachments.delete(conversationId);
+                                fileCommentsSpend(event.attachments);
                             },
                             event.attachments,
                         );
@@ -5344,14 +5567,20 @@ export function happyAgentWorkspaceStoreCreate(
             const created: ComposerStore = composerStoreCreate(groupId, {
                 capabilities: { shellMode: false, commands: [], mentions: false },
                 text: client.memory.groupRead(groupId)?.draft ?? "",
-                attachments: groupAttachments.get(groupId) ?? [],
+                attachments: [
+                    ...(groupAttachments.get(groupId) ?? []),
+                    ...fileCommentsAttachments(),
+                ],
                 output: (event) => {
                     switch (event.type) {
                         case "textUpdated":
                             client.memory.groupDraftWrite(groupId, event.text);
                             return;
-                        case "attachmentAdded":
                         case "attachmentRemoved":
+                            fileCommentsDrop(event.attachmentId);
+                            attachmentsRemember(groupAttachments, groupId, created);
+                            return;
+                        case "attachmentAdded":
                             attachmentsRemember(groupAttachments, groupId, created);
                             return;
                         case "textSubmitted": {
@@ -5375,6 +5604,7 @@ export function happyAgentWorkspaceStoreCreate(
                                     // own record of the draft is cleared here.
                                     client.memory.groupDraftWrite(groupId, "");
                                     groupAttachments.delete(groupId);
+                                    fileCommentsSpend(event.attachments);
                                 },
                                 event.attachments,
                             );
@@ -5830,7 +6060,8 @@ export function happyAgentWorkspaceStoreCreate(
         fileClose: (tabId) => fileTabClose(tabId),
         reviewOpen: (groupId) => reviewTabOpen(groupId),
         reviewClose: (groupId) => reviewTabClose(groupId),
-        reviewExtend: (groupId) => reviewExtend(groupId),
+        reviewFileNext: (groupId) => reviewFileStep(groupId, 1),
+        reviewFilePrevious: (groupId) => reviewFileStep(groupId, -1),
         reviewRetry: (groupId) => reviewRetry(groupId),
         reviewFileCollapsedToggle: (groupId, path) => reviewFileCollapsedToggle(groupId, path),
         reviewFilesCollapsedSet: (groupId, collapsed) =>
@@ -5907,6 +6138,10 @@ export function happyAgentWorkspaceStoreCreate(
                 stale: false,
             };
             fileComments = { comments: [...fileComments.comments, comment] };
+            // A written note is already part of what the reader is asking for,
+            // so it joins the draft here rather than waiting behind a button
+            // that only repeats what writing it down already said.
+            fileCommentsProject();
             recompute();
         },
         commentRemove(commentId) {
@@ -5915,30 +6150,8 @@ export function happyAgentWorkspaceStoreCreate(
             );
             if (remaining.length === fileComments.comments.length) return;
             fileComments = { ...fileComments, comments: remaining };
+            fileCommentsProject();
             recompute();
-        },
-        commentsSubmit() {
-            if (fileComments.comments.length === 0) return false;
-            const target = groupComposer ?? composer;
-            if (target === undefined) return false;
-            const existing = target.getState().text;
-            const request = happyAgentCommentsRequestWrite(fileComments.comments);
-            // Appended rather than substituted: whatever the reader had already
-            // started saying is part of the same request, and replacing it would
-            // throw away the only copy of it.
-            target.getState().textUpdate(existing === "" ? request : `${existing}\n\n${request}`);
-            // A note still being written was not part of the request, so it
-            // survives it rather than being spent with the ones that were.
-            fileComments =
-                fileComments.draft === undefined
-                    ? FILE_COMMENTS_IDLE
-                    : { comments: [], draft: fileComments.draft };
-            // The request is now a message waiting to be sent, so the reader is
-            // taken to where it is: reading the change is over, and the next
-            // thing they do is say it.
-            mainViewClear();
-            recompute();
-            return true;
         },
         panelWidthUpdate(groupId, width) {
             const next = Math.round(width);

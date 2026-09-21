@@ -177,7 +177,6 @@ function CommentedDiff() {
         <ChangedFileDiff
             appearance="light"
             commentDraft={draft}
-            commentTotal={comments.length}
             comments={comments}
             mode="unified"
             newContent={newContent}
@@ -201,7 +200,6 @@ function CommentedDiff() {
             onCommentRemove={(commentId) =>
                 commentsSet(comments.filter((comment) => comment.id !== commentId))
             }
-            onCommentsSubmit={() => undefined}
             path="master-plans/03-file-viewer.md"
             preview={preview("master-plans/03-file-viewer.md", newContent)}
         />

@@ -101,14 +101,6 @@ export type ChangedFileDiffProps = {
     /** Who the notes are from, for the line they are stated on. */
     commentAuthorInitials?: string;
     commentAuthorName?: string;
-    /**
-     * How many notes are waiting across every file, and what hands them over.
-     * Stated here because this is where they are written, even though the set
-     * is the whole review rather than this one file — so the control says how
-     * many there are rather than implying it is only about what is on screen.
-     */
-    commentTotal?: number;
-    onCommentsSubmit?: () => void;
 };
 
 export type ChangedFileDiffCommentSide = "deletions" | "additions";
@@ -355,18 +347,6 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                     value={mode}
                 />
                 <span className="happy-changed-file-diff__bar-end">
-                    {/* Present only once there is something to hand over, so
-                        the bar of a diff nobody has commented on is unchanged. */}
-                    {props.onCommentsSubmit && (props.commentTotal ?? 0) > 0 ? (
-                        <Button
-                            data-testid="changed-file-diff-request"
-                            onClick={() => props.onCommentsSubmit?.()}
-                            size="small"
-                            variant="secondary"
-                        >
-                            {`Request changes (${String(props.commentTotal ?? 0)})`}
-                        </Button>
-                    ) : null}
                     {props.loading || props.saving ? (
                         <span
                             aria-live="polite"
