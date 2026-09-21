@@ -60,10 +60,16 @@ export type LocalOnboardingView =
     | { readonly kind: "connecting" }
     | { readonly kind: "connect-failed"; readonly message: string; readonly retrying: boolean }
     | {
-          /** Binary discovery followed by daemon-owned authentication checks. */
+          /**
+           * Binary discovery followed by daemon-owned inference verification.
+           *
+           * Each assistant carries its own answer, and one of them proving out
+           * is the whole condition for going on, so there is nothing here about
+           * a pass being finished: a second assistant still being checked does
+           * not make a subscription that already works any less usable.
+           */
           readonly kind: "provider-authentication";
           readonly assistants: readonly LocalOnboardingAssistant[];
-          readonly complete: boolean;
       }
     | {
           /**
@@ -276,7 +282,7 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
             case "invalid":
                 return "Not signed in";
             case "error":
-                return "Couldn't check";
+                return "Couldn't check — retrying";
             case "unavailable":
                 return "Not installed";
         }
@@ -289,14 +295,14 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
                 return {
                     href: vendor.install,
                     kind: "link",
-                    label: `Install ${vendor.name}`,
+                    label: `Install ${vendor.name} CLI`,
                 };
             case "invalid":
-            case "error":
                 return {
                     command: vendor.signIn,
                     kind: "command",
                 };
+            case "error":
             case "checking":
             case "valid":
                 return undefined;
@@ -311,9 +317,11 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
         status:
             assistant.authentication === "valid"
                 ? "found"
-                : assistant.authentication === "checking"
-                  ? "checking"
-                  : "missing",
+                : assistant.authentication === "invalid"
+                  ? "signed-out"
+                  : assistant.authentication === "unavailable"
+                    ? "missing"
+                    : "checking",
     };
 }
 
@@ -330,11 +338,12 @@ const CHECKING_ASSISTANTS: readonly SetupAssistantEntry[] = Object.entries(ASSIS
 
 interface MachineSetupProjection {
     readonly assistants?: readonly SetupAssistantEntry[];
+    readonly auxiliary?: string;
     readonly copy: string;
+    /** Whether anything found on this machine can actually be used to work. */
     readonly hasValidAuthentication: boolean;
     readonly label: string;
     readonly progress: SetupPageProgress;
-    readonly ready: boolean;
     readonly title: string;
 }
 
@@ -345,7 +354,6 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             hasValidAuthentication: false,
             label: agentSetupProgressLabel(view.phase),
             progress: agentSetupProgress(view.phase),
-            ready: false,
             title: "Launching Happy Agent",
         };
     if (view.kind === "connecting")
@@ -354,7 +362,6 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             hasValidAuthentication: false,
             label: "Waiting for Happy Agent…",
             progress: { kind: "waiting" },
-            ready: false,
             title: "Launching Happy Agent",
         };
     if (view.kind === "examining")
@@ -364,27 +371,35 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             hasValidAuthentication: false,
             label: "Preparing authentication checks…",
             progress: { kind: "waiting" },
-            ready: false,
             title: "Checking your subscriptions",
         };
     if (view.kind === "provider-authentication") {
         const valid = view.assistants.some((assistant) => assistant.authentication === "valid");
+        const checking = view.assistants.some(
+            (assistant) => assistant.authentication === "checking",
+        );
+        const failed = view.assistants.some((assistant) => assistant.authentication === "error");
         return {
             assistants: view.assistants.map(assistantAuthenticationEntry),
-            copy: view.complete
-                ? valid
-                    ? "Happy will use these subscriptions for its work."
-                    : "Happy needs at least one. Set one up below. Once you log in, Happy will automatically detect it."
-                : "Happy is checking your Claude, Codex, and Grok sign-ins on this machine.",
+            auxiliary:
+                "(The Claude, ChatGPT, and Grok desktop apps don't count here: Happy can only detect a signed-in CLI, even if the app is installed.) We're working on making this setup smoother.",
+            copy: valid
+                ? "Happy will use these subscriptions for its work."
+                : checking
+                  ? "Happy is checking your installed coding CLIs. Continue turns on as soon as one is ready."
+                  : failed
+                    ? "Happy couldn't finish checking your subscriptions. We'll retry automatically."
+                    : "Happy needs at least one coding CLI subscription. Install one of the CLIs below and sign in from your terminal — Happy detects it on its own, and Continue turns on.",
             hasValidAuthentication: valid,
-            label: "Checking subscription authentication…",
+            label: checking || failed ? "Checking subscriptions…" : "Waiting for sign-in…",
             progress: { fraction: 1, kind: "measured" },
-            ready: view.complete,
-            title: view.complete
-                ? valid
-                    ? "Subscriptions ready"
-                    : "Happy needs a coding subscription"
-                : "Checking your subscriptions",
+            title: valid
+                ? "Subscriptions ready"
+                : checking
+                  ? "Checking your subscriptions"
+                  : failed
+                    ? "Couldn't check subscriptions"
+                    : "Connect a coding CLI",
         };
     }
     return undefined;
@@ -393,6 +408,7 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
 function MachineSetupStatus(props: {
     readonly projection: MachineSetupProjection;
     onContinue(): void;
+    onExternalOpen?(url: string): void;
 }) {
     const showAssistants = props.projection.assistants !== undefined;
     return (
@@ -419,15 +435,21 @@ function MachineSetupStatus(props: {
                 <SetupAssistants
                     assistants={props.projection.assistants ?? CHECKING_ASSISTANTS}
                     data-testid={showAssistants ? "local-onboarding-assistants" : undefined}
+                    onExternalOpen={props.onExternalOpen}
                 />
-                <div
-                    aria-hidden={!props.projection.hasValidAuthentication}
-                    className="happy-local-onboarding__machine-actions"
-                >
-                    {/* Nothing signed in is not a step to skip past: without a
-                        subscription there is no product to go on to. */}
-                    {props.projection.ready && props.projection.hasValidAuthentication ? (
-                        <Button onClick={props.onContinue} size="large" width={240}>
+                {/* The way on is in the same place from the first moment this
+                    screen appears, and it turns on by itself as soon as one
+                    subscription is found. Nothing signed in is not a step to
+                    skip past: without a subscription there is no product to go
+                    on to, so until then the button is inert rather than absent. */}
+                <div className="happy-local-onboarding__machine-actions">
+                    {showAssistants ? (
+                        <Button
+                            disabled={!props.projection.hasValidAuthentication}
+                            onClick={props.onContinue}
+                            size="large"
+                            width={240}
+                        >
                             Continue
                         </Button>
                     ) : null}
@@ -514,9 +536,17 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 data-testid="local-onboarding-screen"
                 scene="owl"
                 title={machineSetup.title}
+                auxiliary={
+                    machineSetup.auxiliary ? (
+                        <p className="happy-local-onboarding__provider-note">
+                            {machineSetup.auxiliary}
+                        </p>
+                    ) : undefined
+                }
             >
                 <MachineSetupStatus
                     onContinue={props.onAssistantsContinue}
+                    onExternalOpen={props.onExternalOpen}
                     projection={machineSetup}
                 />
             </SetupPage>

@@ -390,7 +390,7 @@ export function SetupPagePage() {
             </Specimen>
 
             <Specimen
-                detail="subscription search begins with all three vendor columns already mounted and a reserved empty action slot"
+                detail="subscription search begins with all three vendor columns already mounted and Continue already standing there, inert"
                 label="Subscription discovery"
                 number="11"
                 stage="surface"
@@ -414,7 +414,7 @@ export function SetupPagePage() {
             </Specimen>
 
             <Specimen
-                detail="same retained vendor columns · daemon checks update their labels in place without moving the owl, title, copy, or action slot"
+                detail="same retained vendor columns · daemon checks update their labels in place without moving the owl, title, copy, or the inert Continue"
                 label="Authentication checking"
                 number="12"
                 stage="surface"
@@ -451,7 +451,6 @@ export function SetupPagePage() {
                                         status: "missing",
                                     },
                                 ],
-                                complete: false,
                                 kind: "provider-authentication",
                             }}
                         />
@@ -460,7 +459,7 @@ export function SetupPagePage() {
             </Specimen>
 
             <Specimen
-                detail="authentication-level daemon results only · no quota inference · Continue appears after every check settles"
+                detail="one successful inference proves a subscription works · local sign-in checks continue without repeating successful inference · Continue turns on without waiting for the rest"
                 label="Authentication verified"
                 number="13"
                 stage="surface"
@@ -497,7 +496,6 @@ export function SetupPagePage() {
                                         status: "missing",
                                     },
                                 ],
-                                complete: true,
                                 kind: "provider-authentication",
                             }}
                         />
@@ -506,7 +504,7 @@ export function SetupPagePage() {
             </Specimen>
 
             <Specimen
-                detail="nothing installed · each column carries the vendor install link · no way forward without a subscription"
+                detail="nothing installed · each column carries the vendor install link · Continue stays inert without a subscription"
                 label="Subscriptions missing"
                 number="14a"
                 stage="surface"
@@ -541,7 +539,6 @@ export function SetupPagePage() {
                                         status: "missing",
                                     },
                                 ],
-                                complete: true,
                                 kind: "provider-authentication",
                             }}
                         />
@@ -578,7 +575,7 @@ export function SetupPagePage() {
             </Specimen>
 
             <Specimen
-                detail="no valid local sign-in · every column says what to run · nothing to continue to"
+                detail="no valid local sign-in · every column says what to run · Continue stays inert, because there is nothing to continue to"
                 label="Authentication unavailable"
                 number="14"
                 stage="surface"
@@ -616,7 +613,6 @@ export function SetupPagePage() {
                                         status: "found",
                                     },
                                 ],
-                                complete: true,
                                 kind: "provider-authentication",
                             }}
                         />

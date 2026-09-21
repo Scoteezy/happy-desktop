@@ -130,6 +130,17 @@
     text-underline-offset: 3px;
 }
 
+.happy-setup-assistants__link-url {
+    max-width: 100%;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 10px;
+    font-weight: 400;
+    line-height: 14px;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .happy-setup-assistants__item {
         transition: none;

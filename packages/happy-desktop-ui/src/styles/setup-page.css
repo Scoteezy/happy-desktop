@@ -91,6 +91,15 @@
     align-self: center;
 }
 
+.happy-local-onboarding__provider-note {
+    max-width: 600px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 18px;
+    text-wrap: pretty;
+}
+
 .happy-setup-page {
     position: relative;
     display: flex;
@@ -230,8 +239,10 @@
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__detail,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__note,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__link,
+.happy-setup-page[data-backdrop="sky"] .happy-setup-assistants__link-url,
 .happy-setup-page[data-backdrop="sky"] .happy-copy-button[data-captioned],
 .happy-setup-page[data-backdrop="sky"] .happy-local-onboarding__facts,
+.happy-setup-page[data-backdrop="sky"] .happy-local-onboarding__provider-note,
 .happy-setup-page[data-backdrop="sky"] .happy-text-field__label {
     color: var(--button-primary-tint);
 }

@@ -32,7 +32,7 @@ export interface LocalOnboardingViewSnapshot {
     readonly onboarding?: LocalOnboardingSnapshot;
     readonly daemon?: DesktopDaemonSnapshot;
     readonly runtime?: DesktopRuntimeSnapshot;
-    /** Authentication-level daemon checks for the binaries the shell found. */
+    /** Successful inference and current credential discovery for the installed CLIs. */
     readonly providerAuthentication: ProviderAuthenticationSnapshot;
     /** The renderer has asked the verified first release to start. */
     readonly agentStarting: boolean;
@@ -90,6 +90,8 @@ export interface LocalOnboardingStoreOptions {
  * moment the screen does.
  */
 const providerRecheckMs = 2_000;
+/** A failed network check must not turn the local discovery poll into paid traffic. */
+const providerVerificationRetryMs = 30_000;
 const downloadRetryMinimumMs = 3_000;
 const downloadRetryMaximumMs = 30_000;
 const startRetryMinimumMs = 3_000;
@@ -133,6 +135,9 @@ export function localOnboardingStoreCreate(
     let profileDraftDirty = false;
     let verificationAbort: AbortController | undefined;
     let verificationRunning = false;
+    let verificationGeneration = 0;
+    let verificationConnectionId: number | undefined;
+    const verificationRetryAt = new Map<LocalAssistantState["id"], number>();
     let providerRecheck: ReturnType<typeof setInterval> | undefined;
     let happyMobileStore: HappyMobileOnboardingStore | undefined;
     let happyMobileUnsubscribe: (() => void) | undefined;
@@ -448,19 +453,35 @@ export function localOnboardingStoreCreate(
     }
 
     /**
-     * Asks the daemon what it can authenticate with, now.
+     * Discovers local sign-ins and proves each provider can work once.
      *
      * A repeat pass leaves the results already on screen exactly where they
      * are while it runs: the report is read while it updates, and rewriting
-     * every column to "checking" twice a second would make a settled answer
-     * look unsettled. The first pass for a set of binaries is different —
-     * there is nothing to preserve, so it starts at checking.
+     * every column to "checking" would make a settled answer look unsettled.
+     * Successful inference is not repeated while credentials remain present.
+     * Account-usage endpoints can be rate limited independently of inference,
+     * so their availability is not an authentication gate for onboarding.
      */
     function providerAuthenticationRun(key: string, runtime: DesktopRuntimeSnapshot) {
-        if (runtime.phase !== "ready" || verificationRunning) return;
+        if (runtime.phase !== "ready") return;
+        if (verificationRunning && snapshot.providerAuthentication.key === key) return;
+        if (verificationRunning) {
+            verificationAbort?.abort();
+            verificationRunning = false;
+        }
         const assistants = snapshot.onboarding?.assistants ?? [];
         const binaries = assistants.filter((assistant) => assistant.status === "found");
         const first = snapshot.providerAuthentication.key !== key;
+        const connectionChanged = verificationConnectionId !== runtime.connectionId;
+        if (connectionChanged) {
+            verificationConnectionId = runtime.connectionId;
+            verificationRetryAt.clear();
+        }
+        for (const assistant of assistants) {
+            if (assistant.status === "missing") verificationRetryAt.delete(assistant.id);
+        }
+        const previous = connectionChanged ? { complete: false } : snapshot.providerAuthentication;
+        const generation = ++verificationGeneration;
 
         verificationAbort?.abort();
         const abort = new AbortController();
@@ -469,10 +490,10 @@ export function localOnboardingStoreCreate(
             publish({
                 ...snapshot,
                 providerAuthentication: {
-                    claude: binaryAuthenticationInitial(assistants, "claude"),
-                    codex: binaryAuthenticationInitial(assistants, "codex"),
+                    claude: binaryAuthenticationInitial(assistants, "claude", previous),
+                    codex: binaryAuthenticationInitial(assistants, "codex", previous),
                     complete: binaries.length === 0,
-                    grok: binaryAuthenticationInitial(assistants, "grok"),
+                    grok: binaryAuthenticationInitial(assistants, "grok", previous),
                     key,
                 },
             });
@@ -485,46 +506,104 @@ export function localOnboardingStoreCreate(
             token: "happy-local-capability",
         });
         verificationRunning = true;
+        const current = () =>
+            generation === verificationGeneration &&
+            !abort.signal.aborted &&
+            listeners.size > 0 &&
+            providerAuthenticationLive()?.key === key;
+        const resultPublish = (
+            id: LocalAssistantState["id"],
+            result: Exclude<ProviderAuthenticationResult, "checking">,
+        ) => {
+            if (!current()) return;
+            publish({
+                ...snapshot,
+                providerAuthentication: authenticationResultsProject(
+                    key,
+                    [{ id, result }],
+                    snapshot.providerAuthentication,
+                    false,
+                ),
+            });
+        };
         void client
             .scanProviders({ signal: abort.signal })
-            // Scanning refreshes daemon discovery, but a failed scan does not
-            // answer whether an already configured provider authenticates.
+            // A failed local scan says nothing about an earlier successful check.
             .catch(() => undefined)
-            .then(() =>
+            .then((scan) =>
                 Promise.all(
                     binaries.map(async (assistant) => {
+                        if (!current()) return;
+                        const credentials = scan?.providers.find(
+                            (provider) => provider.providerId === assistant.id,
+                        )?.credentials;
+                        if (credentials === "missing") {
+                            verificationRetryAt.delete(assistant.id);
+                            resultPublish(assistant.id, "invalid");
+                            return;
+                        }
+                        if (credentials !== "available") {
+                            resultPublish(assistant.id, "error");
+                            return;
+                        }
+                        if (
+                            authenticationFor(snapshot.providerAuthentication, assistant.id) ===
+                            "valid"
+                        )
+                            return;
+                        if (Date.now() < (verificationRetryAt.get(assistant.id) ?? 0)) {
+                            resultPublish(assistant.id, "error");
+                            return;
+                        }
+                        // Back off failures; the two-second poll is only local discovery.
+                        verificationRetryAt.set(
+                            assistant.id,
+                            Date.now() + providerVerificationRetryMs,
+                        );
                         try {
                             const result = await client.verifyProvider(
                                 assistant.id,
-                                { level: "authentication" },
+                                { level: "inference" },
                                 { signal: abort.signal },
                             );
-                            return {
-                                id: assistant.id,
-                                result:
-                                    result.status === "passed" &&
-                                    result.performedLevel === "authentication"
-                                        ? ("valid" as const)
-                                        : ("invalid" as const),
-                            };
+                            if (!current()) return;
+                            if (
+                                result.status === "passed" &&
+                                result.performedLevel === "inference"
+                            ) {
+                                verificationRetryAt.delete(assistant.id);
+                                resultPublish(assistant.id, "valid");
+                            } else {
+                                // The API's failed result includes outages and rate limits;
+                                // it does not prove that the person needs to sign in.
+                                verificationRetryAt.set(
+                                    assistant.id,
+                                    Date.now() + providerVerificationRetryMs,
+                                );
+                                resultPublish(assistant.id, "error");
+                            }
                         } catch {
-                            return { id: assistant.id, result: "error" as const };
+                            if (!current()) return;
+                            verificationRetryAt.set(
+                                assistant.id,
+                                Date.now() + providerVerificationRetryMs,
+                            );
+                            resultPublish(assistant.id, "error");
                         }
                     }),
                 ),
             )
-            .then((results) => {
+            .then(() => {
+                if (generation !== verificationGeneration) return;
                 verificationRunning = false;
-                if (abort.signal.aborted || listeners.size === 0) return;
-                const live = providerAuthenticationLive();
-                if (live?.key !== key) return;
+                if (!current()) return;
                 publish({
                     ...snapshot,
-                    providerAuthentication: authenticationResultsProject(key, results),
+                    providerAuthentication: { ...snapshot.providerAuthentication, complete: true },
                 });
             })
             .catch(() => {
-                verificationRunning = false;
+                if (generation === verificationGeneration) verificationRunning = false;
             });
     }
 
@@ -534,6 +613,7 @@ export function localOnboardingStoreCreate(
             providerRecheckStop();
             verificationAbort?.abort();
             verificationAbort = undefined;
+            verificationGeneration += 1;
             verificationRunning = false;
             return;
         }
@@ -630,6 +710,7 @@ export function localOnboardingStoreCreate(
                 providerRecheckStop();
                 verificationAbort?.abort();
                 verificationAbort = undefined;
+                verificationGeneration += 1;
                 verificationRunning = false;
                 happyMobileStop();
                 downloadRetryStop();
@@ -729,7 +810,6 @@ export function localOnboardingView(
                     onboarding.assistants,
                     snapshot.providerAuthentication,
                 ),
-                complete: snapshot.providerAuthentication.complete,
                 kind: "provider-authentication",
             };
         case "agentReady":
@@ -857,10 +937,11 @@ function assistantsProject(
 function binaryAuthenticationInitial(
     assistants: readonly LocalAssistantState[],
     id: LocalAssistantState["id"],
+    previous: ProviderAuthenticationSnapshot,
 ): ProviderAuthenticationResult | undefined {
-    return assistants.some((assistant) => assistant.id === id && assistant.status === "found")
-        ? "checking"
-        : undefined;
+    if (!assistants.some((assistant) => assistant.id === id && assistant.status === "found"))
+        return undefined;
+    return authenticationFor(previous, id) === "valid" ? "valid" : "checking";
 }
 
 function authenticationFor(
@@ -883,30 +964,45 @@ function authenticationResultsProject(
         readonly id: LocalAssistantState["id"];
         readonly result: Exclude<ProviderAuthenticationResult, "checking">;
     }[],
+    previous: ProviderAuthenticationSnapshot,
+    complete: boolean,
 ): ProviderAuthenticationSnapshot {
-    let claude: ProviderAuthenticationResult | undefined;
-    let codex: ProviderAuthenticationResult | undefined;
-    let grok: ProviderAuthenticationResult | undefined;
+    let claude = previous.claude;
+    let codex = previous.codex;
+    let grok = previous.grok;
     for (const result of results) {
         switch (result.id) {
             case "claude":
-                claude = result.result;
+                claude = authenticationResultProject(previous.claude, result.result);
                 break;
             case "codex":
-                codex = result.result;
+                codex = authenticationResultProject(previous.codex, result.result);
                 break;
             case "grok":
-                grok = result.result;
+                grok = authenticationResultProject(previous.grok, result.result);
                 break;
         }
     }
     return {
         ...(claude ? { claude } : {}),
         ...(codex ? { codex } : {}),
-        complete: true,
+        complete,
         ...(grok ? { grok } : {}),
         key,
     };
+}
+
+/**
+ * A failed poll is not evidence that a previously verified CLI signed out.
+ * Keep the confirmed answer visible until a later completed verification
+ * finds the local credential missing, so a transient daemon/network error cannot
+ * ask for sign-in again or move the onboarding step backwards.
+ */
+function authenticationResultProject(
+    previous: ProviderAuthenticationResult | undefined,
+    next: Exclude<ProviderAuthenticationResult, "checking">,
+): Exclude<ProviderAuthenticationResult, "checking"> {
+    return previous === "valid" && next === "error" ? "valid" : next;
 }
 
 function errorMessage(error: unknown): string {

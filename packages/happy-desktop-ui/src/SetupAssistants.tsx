@@ -40,6 +40,8 @@ export interface SetupAssistantEntry {
 export interface SetupAssistantsProps {
     readonly assistants: readonly SetupAssistantEntry[];
     readonly "data-testid"?: string;
+    /** Opens an official install page in the host's external browser. */
+    readonly onExternalOpen?: (url: string) => void;
 }
 
 /**
@@ -74,8 +76,9 @@ function pathBreakable(path: string): string {
  * worth on a screen nobody reads for long. Only the case that asks for an action
  * says so in words, because it is the only one where words are the point.
  *
- * Nothing here is selectable. All three are set up outside Happy, in a terminal,
- * so this is a report on the machine rather than a set of choices.
+ * The install links point to the vendors' official instructions and leave Happy
+ * through the host's external browser. The report still owns no setup state:
+ * the terminal and the provider remain the source of truth.
  *
  * Props only: which assistants exist and what is true of them belongs to setup.
  */
@@ -115,36 +118,48 @@ export function SetupAssistants(props: SetupAssistantsProps) {
                                 ? pathBreakable(assistant.detail)
                                 : assistant.detail}
                         </span>
-                        {assistant.action ? (
-                            <span
-                                className="happy-setup-assistants__action"
-                                data-happy-desktop-ui="setup-assistants-action"
-                            >
-                                {assistant.action.kind === "command" ? (
-                                    <>
-                                        <SetupCommand
-                                            command={assistant.action.command}
-                                            label={`${assistant.name} sign-in command`}
-                                        />
-                                        {assistant.action.note === undefined ? null : (
-                                            <span className="happy-setup-assistants__note">
-                                                {assistant.action.note}
-                                            </span>
-                                        )}
-                                    </>
-                                ) : (
-                                    <a
-                                        className="happy-setup-assistants__link"
-                                        data-happy-desktop-ui="setup-assistants-link"
-                                        href={assistant.action.href}
-                                        rel="noopener noreferrer"
-                                        target="_blank"
-                                    >
-                                        {assistant.action.label}
-                                    </a>
-                                )}
-                            </span>
-                        ) : null}
+                        {assistant.action
+                            ? ((action) => (
+                                  <span
+                                      className="happy-setup-assistants__action"
+                                      data-happy-desktop-ui="setup-assistants-action"
+                                  >
+                                      {action.kind === "command" ? (
+                                          <>
+                                              <SetupCommand
+                                                  command={action.command}
+                                                  label={`${assistant.name} sign-in command`}
+                                              />
+                                              {action.note === undefined ? null : (
+                                                  <span className="happy-setup-assistants__note">
+                                                      {action.note}
+                                                  </span>
+                                              )}
+                                          </>
+                                      ) : (
+                                          <>
+                                              <a
+                                                  className="happy-setup-assistants__link"
+                                                  data-happy-desktop-ui="setup-assistants-link"
+                                                  href={action.href}
+                                                  onClick={(event) => {
+                                                      if (!props.onExternalOpen) return;
+                                                      event.preventDefault();
+                                                      props.onExternalOpen(action.href);
+                                                  }}
+                                                  rel="noopener noreferrer"
+                                                  target="_blank"
+                                              >
+                                                  {action.label}
+                                              </a>
+                                              <code className="happy-setup-assistants__link-url">
+                                                  {action.href}
+                                              </code>
+                                          </>
+                                      )}
+                                  </span>
+                              ))(assistant.action)
+                            : null}
                     </article>
                 ))}
             </div>
