@@ -26,6 +26,12 @@ bot, whose selected DiceBear avatar is transported by ordinary encrypted avatar
 sync. Core supports screenplay inference only. Use `pnpm demo record core`; preserve
 the paired `.d` world for phone takes as described below.
 
+App Store screenshot composition belongs to the `happy` mobile repository:
+`scripts/app-store/` contains the generator and capture guidance, and
+`marketing/app-store/en-US/{iphone,ipad}/` contains the selected five-image sets.
+This repository retains the desktop recording and isolated Agent scenario tools;
+it does not maintain a second copy of the store-image pipeline.
+
 ## The shape of it
 
 ```
