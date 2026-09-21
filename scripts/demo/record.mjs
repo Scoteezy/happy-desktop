@@ -11,6 +11,7 @@ import { viewport } from "./lib/scene.mjs";
 import { subtitlesSrt, timelineEdit } from "./lib/timeline.mjs";
 import { gymOpen, gymReset } from "./scenario/runtime.mjs";
 import { phoneVideoOpen } from "./lib/phone-video.mjs";
+import { mobileRunRead } from "./lib/mobile-run.mjs";
 
 /*
  * The demo recorder's front door.
@@ -50,6 +51,7 @@ function parse(argv) {
         else if (argument === "--inference") options.inference = rest.shift();
         else if (argument === "--replay-io") options.replayIo = resolve(rest.shift());
         else if (argument === "--mobile-server") options.mobileServerUrl = rest.shift();
+        else if (argument === "--mobile-run") options.mobileRun = resolve(rest.shift());
         else if (argument === "--phone-udid") options.phoneUdid = rest.shift();
         else if (argument === "--out") options.out = resolve(workspace, rest.shift());
         else if (argument.startsWith("--")) throw new Error(`Unknown option: ${argument}`);
@@ -63,8 +65,10 @@ function parse(argv) {
         throw new Error('--appearance must be either "dark" or "light".');
     if (!new Set(["screenplay", "live", "replay"]).has(options.inference))
         throw new Error('--inference must be "screenplay", "live", or "replay".');
-    if (options.phoneUdid && !options.mobileServerUrl)
-        throw new Error("A synchronized phone capture requires --mobile-server.");
+    if (options.mobileRun && options.mobileServerUrl)
+        throw new Error("Choose --mobile-run or --mobile-server, not both.");
+    if (options.phoneUdid && !options.mobileServerUrl && !options.mobileRun)
+        throw new Error("A synchronized phone capture requires --mobile-run or --mobile-server.");
     return options;
 }
 
@@ -130,6 +134,12 @@ async function record(demo, stage, gym, options) {
     await rm(work, { force: true, recursive: true });
     await mkdir(captured, { recursive: true });
     await mkdir(composed, { recursive: true });
+    if (options.mobileManifest) {
+        await writeFile(
+            join(output, "mobile-source.json"),
+            JSON.stringify(options.mobileManifest, null, 2) + "\n",
+        );
+    }
 
     process.stdout.write(`\n  ${demo.title}\n`);
     const sink = await sinkCreate({
@@ -330,6 +340,10 @@ async function probe(stage, options, demo) {
 }
 
 const options = parse(process.argv.slice(2));
+if (options.mobileRun) {
+    options.mobileManifest = await mobileRunRead(options.mobileRun);
+    options.mobileServerUrl = options.mobileManifest.serverUrl;
+}
 
 if (options.command === "reset") {
     await gymReset();

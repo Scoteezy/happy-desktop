@@ -143,10 +143,15 @@ Useful flags: `--fps <n>`, `--appearance dark|light`, `--out <dir>`,
 `--keep-frames`, `--verbose`, `--inference <mode>`, `--replay-io <path>`.
 
 For the core take with a real paired Simulator, add
-`--mobile-server http://127.0.0.1:<port> --phone-udid <dedicated-simulator-udid>`.
-Start the isolated Happy server and development app separately, then complete
+`--mobile-run <happy-mobile-gym-run-root> --phone-udid <dedicated-simulator-udid>`.
+Create/start the reusable `happy-mobile-gym` in the mobile repository, then complete
 the native encrypted pairing before recording. This opt-in changes only the
 demo daemon's Happy server URL; it never redirects the user's own daemon.
+The recorder reads the mobile gym's versioned non-secret manifest and records
+its source provenance beside the take. It does not inherit credentials or own
+the mobile server/Metro lifetime. `--mobile-server http://127.0.0.1:<port>` is
+also available for an explicitly managed local server; it does not provide
+mobile source provenance. Neither option may target a production server.
 The recorder exports synchronized `phone-screen.mp4`, transparent
 `phone-bezel.webm`, frame geometry, and focus cues beside the desktop MP4.
 Phone takes must keep the continuous 1× timeline with no intro or outro.

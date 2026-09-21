@@ -1,7 +1,7 @@
 import { execFile as execFileCallback, spawn } from "node:child_process";
 import { chmod, copyFile, mkdir, rm, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { deviceScaleFactor, viewport } from "./scene.mjs";
 import { demoDaemonBaseline, overlayInstall, overlayOptions } from "./overlay.mjs";
@@ -143,7 +143,11 @@ async function viteStart(options) {
             `Demo Vite environment contains unsupported keys: ${unsupportedDaemonKeys.join(", ")}`,
         );
     }
-    const child = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1"], {
+    // Resolve the installed tool directly. A package-manager shim can try to
+    // bootstrap itself recursively when HOME is deliberately isolated.
+    const rendererRequire = createRequire(join(renderer, "package.json"));
+    const viteEntry = join(dirname(rendererRequire.resolve("vite/package.json")), "bin/vite.js");
+    const child = spawn(process.execPath, [viteEntry, "--host", "127.0.0.1"], {
         // Vite resolves absolute entry URLs such as
         // `/sources/renderer/renderer.tsx` against process.cwd(). Keep
         // that root explicit when the package lives in a disposable
@@ -178,41 +182,66 @@ async function viteStart(options) {
         stdio: ["ignore", "pipe", "pipe"],
     });
     const log = [];
-    const url = await new Promise((settle, fail) => {
-        const timer = setTimeout(
-            () => fail(new Error(`Vite did not come up in time.\n${log.join("")}`)),
-            240_000,
-        );
-        const read = (chunk) => {
-            const text = String(chunk);
-            log.push(text);
-            if (options.verbose) process.stderr.write(text);
-            // Vite colours its own banner regardless of FORCE_COLOR, and it puts
-            // the escape codes *inside* the URL, around the port.
-            // oxlint-disable-next-line no-control-regex -- ANSI SGR starts with the ESC control character.
-            const plain = text.replace(/\u001B\[[0-9;]*m/gu, "");
-            const found = /(http:\/\/127\.0\.0\.1:\d+)\//u.exec(plain);
-            if (!found) return;
-            clearTimeout(timer);
-            settle(found[1]);
-        };
-        child.stdout.on("data", read);
-        child.stderr.on("data", read);
-        child.once("exit", (code) => {
-            clearTimeout(timer);
-            fail(new Error(`Vite exited with ${code} before serving.\n${log.join("")}`));
+    let url;
+    try {
+        url = await new Promise((settle, fail) => {
+            const timer = setTimeout(
+                () => fail(new Error(`Vite did not come up in time.\n${log.join("")}`)),
+                240_000,
+            );
+            const read = (chunk) => {
+                const text = String(chunk);
+                log.push(text);
+                if (options.verbose) process.stderr.write(text);
+                // Vite colours its own banner regardless of FORCE_COLOR, and it puts
+                // the escape codes *inside* the URL, around the port.
+                // oxlint-disable-next-line no-control-regex -- ANSI SGR starts with the ESC control character.
+                const plain = text.replace(/\u001B\[[0-9;]*m/gu, "");
+                const found = /(http:\/\/127\.0\.0\.1:\d+)\//u.exec(plain);
+                if (!found) return;
+                clearTimeout(timer);
+                settle(found[1]);
+            };
+            child.stdout.on("data", read);
+            child.stderr.on("data", read);
+            child.once("error", (error) => {
+                clearTimeout(timer);
+                fail(error);
+            });
+            child.once("exit", (code) => {
+                clearTimeout(timer);
+                fail(new Error(`Vite exited with ${code} before serving.\n${log.join("")}`));
+            });
         });
-    });
+    } catch (error) {
+        // A failed startup has no stage handle whose close() could own cleanup.
+        await processTreeStop(child);
+        throw error;
+    }
     return { child, url };
 }
 
 function processTreeSignal(child, signal) {
+    if (child.pid === undefined) return;
     try {
         if (process.platform === "win32") child.kill(signal);
         else process.kill(-child.pid, signal);
     } catch (error) {
         if (error?.code !== "ESRCH") throw error;
     }
+}
+
+async function processTreeStop(child) {
+    // Never signal a numeric group from an already-exited child handle.
+    if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise((settle) => {
+        const timer = setTimeout(() => processTreeSignal(child, "SIGKILL"), 4000);
+        child.once("exit", () => {
+            clearTimeout(timer);
+            settle();
+        });
+        processTreeSignal(child, "SIGTERM");
+    });
 }
 
 /**
@@ -230,72 +259,69 @@ export async function stageOpen(options) {
     const vite = options.url ? undefined : await viteStart({ ...options, source });
     const url = options.url ?? vite.url;
 
-    const browser = await chromium.launch({
-        args: [
-            // Native Metal keeps the recorder's Lottie/WebGL motion fluid on
-            // macOS. Other hosts retain the working software WebGL backend.
-            ...(process.platform === "darwin"
-                ? ["--use-gl=angle", "--use-angle=metal"]
-                : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
-            // Set the compositor's physical scale as well as the context DPR;
-            // otherwise CDP screencasting silently emits CSS-sized frames.
-            `--force-device-scale-factor=${deviceScaleFactor}`,
-            "--hide-scrollbars",
-            "--mute-audio",
-            "--force-color-profile=srgb",
-            "--font-render-hinting=none",
-            // Deterministic frames matter more than throughput here: without
-            // this the compositor can hand back a frame that the last DOM write
-            // has not landed in yet.
-            "--disable-lcd-text",
-        ],
-        headless: true,
-    });
-    const context = await browser.newContext({
-        colorScheme: options.appearance,
-        deviceScaleFactor,
-        locale: "en-US",
-        reducedMotion: "no-preference",
-        timezoneId: "America/Los_Angeles",
-        viewport,
-    });
-    await context.addInitScript(overlayInstall, {
-        ...overlayOptions(options.appearance),
-        daemon: demoDaemonBaseline,
-    });
-    const page = await context.newPage();
-    page.on("pageerror", (error) => {
-        if (options.verbose) process.stderr.write(`  page error: ${error.message}\n`);
-    });
-    await page.goto(url, { timeout: 180_000, waitUntil: "domcontentloaded" });
+    let browser;
+    let context;
+    try {
+        browser = await chromium.launch({
+            args: [
+                // Native Metal keeps the recorder's Lottie/WebGL motion fluid on
+                // macOS. Other hosts retain the working software WebGL backend.
+                ...(process.platform === "darwin"
+                    ? ["--use-gl=angle", "--use-angle=metal"]
+                    : ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"]),
+                // Set the compositor's physical scale as well as the context DPR;
+                // otherwise CDP screencasting silently emits CSS-sized frames.
+                `--force-device-scale-factor=${deviceScaleFactor}`,
+                "--hide-scrollbars",
+                "--mute-audio",
+                "--force-color-profile=srgb",
+                "--font-render-hinting=none",
+                // Deterministic frames matter more than throughput here: without
+                // this the compositor can hand back a frame that the last DOM write
+                // has not landed in yet.
+                "--disable-lcd-text",
+            ],
+            headless: true,
+        });
+        context = await browser.newContext({
+            colorScheme: options.appearance,
+            deviceScaleFactor,
+            locale: "en-US",
+            reducedMotion: "no-preference",
+            timezoneId: "America/Los_Angeles",
+            viewport,
+        });
+        await context.addInitScript(overlayInstall, {
+            ...overlayOptions(options.appearance),
+            daemon: demoDaemonBaseline,
+        });
+        const page = await context.newPage();
+        page.on("pageerror", (error) => {
+            if (options.verbose) process.stderr.write(`  page error: ${error.message}\n`);
+        });
+        await page.goto(url, { timeout: 180_000, waitUntil: "domcontentloaded" });
 
-    return {
-        page,
-        source,
-        url,
-        async close() {
-            await context.close().catch(() => undefined);
-            await browser.close().catch(() => undefined);
-            if (vite) {
-                processTreeSignal(vite.child, "SIGTERM");
-                await new Promise((settle) => {
-                    const timer = setTimeout(() => {
-                        processTreeSignal(vite.child, "SIGKILL");
-                        settle();
-                    }, 4000);
-                    vite.child.once("exit", () => {
-                        clearTimeout(timer);
-                        settle();
-                    });
+        return {
+            page,
+            source,
+            url,
+            async close() {
+                await context.close().catch(() => undefined);
+                await browser.close().catch(() => undefined);
+                if (vite) await processTreeStop(vite.child);
+            },
+            /** Returns the page to a known state between demos in one session. */
+            async reset() {
+                await page.evaluate(() => {
+                    window.location.hash = "#/";
                 });
-            }
-        },
-        /** Returns the page to a known state between demos in one session. */
-        async reset() {
-            await page.evaluate(() => {
-                window.location.hash = "#/";
-            });
-            await page.waitForTimeout(400);
-        },
-    };
+                await page.waitForTimeout(400);
+            },
+        };
+    } catch (error) {
+        await context?.close().catch(() => undefined);
+        await browser?.close().catch(() => undefined);
+        if (vite) await processTreeStop(vite.child);
+        throw error;
+    }
 }
