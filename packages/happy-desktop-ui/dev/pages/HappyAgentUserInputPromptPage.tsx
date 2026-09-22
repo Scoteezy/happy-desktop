@@ -42,7 +42,7 @@ export function HappyAgentUserInputPromptPage() {
             </Specimen>
 
             <Specimen
-                detail="an answer in flight: the options freeze rather than disappear, so a failed send can be retried with the same selections"
+                detail="an answer in flight: Submit shimmers at its unchanged size; options stay selected and disabled until the answer settles"
                 label="Sending"
                 number="03"
                 stage="surface"
@@ -52,6 +52,12 @@ export function HappyAgentUserInputPromptPage() {
                         onAnswer={() => undefined}
                         pending
                         request={happyAgentUserInput}
+                        selection={Object.fromEntries(
+                            happyAgentUserInput.questions.map((question) => [
+                                question.id,
+                                question.options.slice(0, 1).map((option) => option.label),
+                            ]),
+                        )}
                     />
                 </div>
             </Specimen>

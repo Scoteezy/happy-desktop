@@ -82,8 +82,8 @@ const SEND_ATTEMPTS = 3;
 const INITIAL_SEND_RETRY_MS = 250;
 /**
  * Draft text is optimistic, so it is projected immediately while persistence
- * waits for a short pause in typing. Emptying a draft stays immediate: submit
- * relies on that clear entering the agent mutation lane before the message.
+ * waits for a short pause in typing. Emptying a draft is persisted immediately,
+ * but message delivery never waits for draft persistence.
  */
 const DRAFT_SAVE_DEBOUNCE_MS = 300;
 
@@ -246,6 +246,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const unannouncedAgents = new Set<string>();
     const sendConfirmations = new Map<string, () => void>();
     const mutationQueues = new Map<string, Promise<void>>();
+    const sessionCreations = new Map<string, Promise<void>>();
     const sessionMutationCounts = new Map<string, number>();
     const gitStates = new Map<string, GitSnapshotState>();
     const processOwners = new Map<string, string>();
@@ -2184,10 +2185,15 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         if (sessionId !== undefined) {
             sessionMutationCounts.set(sessionId, (sessionMutationCounts.get(sessionId) ?? 0) + 1);
         }
-        void queued
-            .then((value) => {
-                if (!closed) applied?.(value);
-            })
+        const completed = queued.then((value) => {
+            if (!closed) applied?.(value);
+        });
+        // An optimistic conversation can accept input before its backend resource
+        // exists. Sends wait for this dependency only, not the agent's work queue.
+        if (action === "create_session" && sessionId !== undefined) {
+            sessionCreations.set(sessionId, completed);
+        }
+        void completed
             .catch((error: unknown) => {
                 if (!rootController.signal.aborted) {
                     const shouldReport = rejected?.() !== false;
@@ -2205,6 +2211,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             .finally(() => {
                 if (mutationQueues.get(queueKey) === settled) mutationQueues.delete(queueKey);
                 if (sessionId !== undefined) {
+                    if (sessionCreations.get(sessionId) === completed) {
+                        sessionCreations.delete(sessionId);
+                    }
                     const pending = (sessionMutationCounts.get(sessionId) ?? 1) - 1;
                     if (pending === 0) sessionMutationCounts.delete(sessionId);
                     else sessionMutationCounts.set(sessionId, pending);
@@ -2227,7 +2236,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         mutationId: save.mutationId,
                         updatedAt: save.updatedAt,
                     },
-                    { signal: rootController.signal },
+                    { signal: deadlineSignal() },
                 ),
             ({ draft: saved }) => {
                 if (draftRevisions.get(sessionId) !== save.revision) return;
@@ -2302,7 +2311,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         mutationId,
                         updatedAt,
                     },
-                    { signal: rootController.signal },
+                    { signal: deadlineSignal() },
                 ),
             ({ draft: saved }) => {
                 if (draftRevisions.get(sessionId) !== revision) return;
@@ -2746,12 +2755,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             return mutation(
                 "mark_session_read",
                 mutationId,
-                () =>
-                    client.markAgentRead(
-                        sessionId,
-                        { mutationId },
-                        { signal: rootController.signal },
-                    ),
+                () => client.markAgentRead(sessionId, { mutationId }, { signal: deadlineSignal() }),
                 ({ agent }) => adoptAgent(agent),
                 undefined,
                 sessionId,
@@ -2760,6 +2764,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         },
         sendMessage(sessionId, message) {
             const mutationId = nextId();
+            const created = sessionCreations.get(sessionId);
             const agent = sessions.get(sessionId)?.agent ?? agentOf(sessionId);
             if (agent === undefined || config === undefined) {
                 reportMutationFailure(
@@ -2832,6 +2837,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 "send_message",
                 mutationId,
                 async () => {
+                    if (created !== undefined) await created;
+                    rootController.signal.throwIfAborted();
                     const response = await sendMessageWithRetry(
                         sessionId,
                         {
@@ -2867,7 +2874,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     return message === undefined;
                 },
                 sessionId,
-                `agent:${sessionId}`,
+                // Each send starts independently, including while another send
+                // retries. Its mode is captured above and retries reuse its ID.
             );
         },
         invokeSlashCommand(sessionId, name, argumentsValue) {
@@ -3065,12 +3073,12 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             ),
                             mutationId,
                         },
-                        { signal: rootController.signal },
+                        { signal: deadlineSignal() },
                     ),
                 ({ question }) => updateQuestion(sessionId, question),
                 undefined,
                 sessionId,
-                `agent:${sessionId}`,
+                // A human answer must not wait behind unrelated agent work.
             );
         },
         setSessionArchived(sessionId, archived) {
@@ -3364,6 +3372,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             sendConfirmations.clear();
             draftRevisions.clear();
             mutationQueues.clear();
+            sessionCreations.clear();
             sessionMutationCounts.clear();
             processOwners.clear();
             hydrationBroadcastEvents.length = 0;

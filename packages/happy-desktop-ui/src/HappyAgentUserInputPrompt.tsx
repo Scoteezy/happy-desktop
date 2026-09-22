@@ -3,6 +3,7 @@ import type { HappyAgentUserInputRequest, UserError } from "happy-desktop-state"
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { Checkbox } from "./Checkbox";
+import { ShimmerText } from "./ShimmerText";
 
 export type HappyAgentUserInputAnswerMap = Record<string, string[]>;
 
@@ -256,6 +257,8 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
             {resolved ? null : (
                 <div className="happy-agent-input__footer">
                     <Button
+                        aria-busy={props.pending || undefined}
+                        className="happy-agent-input__submit"
                         data-action="submit"
                         disabled={
                             !complete ||
@@ -263,7 +266,6 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
                             props.submitDisabled ||
                             props.onAnswer === undefined
                         }
-                        loading={props.pending}
                         onClick={() => props.onAnswer?.(request.requestId, answers)}
                         size="small"
                         title={
@@ -272,7 +274,11 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
                         }
                         variant="secondary"
                     >
-                        Submit
+                        {props.pending ? (
+                            <ShimmerText tone="inherit">Submit</ShimmerText>
+                        ) : (
+                            "Submit"
+                        )}
                     </Button>
                 </div>
             )}

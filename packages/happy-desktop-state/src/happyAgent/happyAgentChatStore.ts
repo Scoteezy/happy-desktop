@@ -690,6 +690,7 @@ export function happyAgentChatStoreCreate(
     let activityPanelOpen = false;
     let openImageRef: HappyAgentImageRef | undefined;
     const requestSubmissions = new Map<string, ConversationRequestSubmission>();
+    const requestMutationIds = new Map<string, string>();
     const requestSelections = new Map<string, Readonly<Record<string, readonly string[]>>>();
 
     const sessionLoadable = (): Loadable<HappyAgentSession> =>
@@ -857,6 +858,21 @@ export function happyAgentChatStoreCreate(
                 transcriptElements = elements;
                 transcriptSession = connected;
                 transcriptAnsweredUserInputs = answeredUserInputs;
+                // Only authoritative question state settles the local submission.
+                // Keep selections through transport failure so Retry sends them again.
+                const pendingRequests = new Set(
+                    connected.pendingUserInputs.map((request) => request.requestId),
+                );
+                for (const requestId of requestSubmissions.keys()) {
+                    if (pendingRequests.has(requestId)) continue;
+                    requestSubmissions.delete(requestId);
+                    requestSelections.delete(requestId);
+                }
+                for (const [mutationId, requestId] of requestMutationIds) {
+                    if (pendingRequests.has(requestId)) continue;
+                    requestMutationIds.delete(mutationId);
+                    pendingMutationIds.delete(mutationId);
+                }
                 detachedBackgroundProcessIds = detachedProcessIdsUpdate(
                     detachedBackgroundProcessIds,
                     elements,
@@ -925,6 +941,17 @@ export function happyAgentChatStoreCreate(
 
     const unsubscribeMutationRejections = deps.connectMutationSubscribe((rejection) => {
         if (!pendingMutationIds.delete(rejection.mutationId)) return;
+        const requestId = requestMutationIds.get(rejection.mutationId);
+        if (requestId !== undefined) {
+            requestMutationIds.delete(rejection.mutationId);
+            requestSubmissions.set(requestId, {
+                requestId,
+                status: "failed",
+                error: new UserError(rejection.message),
+            });
+            commit();
+            return;
+        }
         mutationRejection = rejection;
         commit();
     });
@@ -955,18 +982,39 @@ export function happyAgentChatStoreCreate(
 
     const answerInputRun = (input: HappyAgentUserInputAnswers): Promise<void> =>
         rejecting(() => {
-            connectMutationTrack(
-                deps.connectActions.answerUserInput(sessionId, input.requestId, {
+            if (requestSubmissions.get(input.requestId)?.status === "pending") return;
+            requestSubmissions.set(input.requestId, {
+                requestId: input.requestId,
+                status: "pending",
+            });
+            commit();
+            try {
+                const mutationId = deps.connectActions.answerUserInput(sessionId, input.requestId, {
                     answers: input.answers,
-                }),
-            );
+                });
+                requestMutationIds.set(mutationId, input.requestId);
+                connectMutationTrack(mutationId);
+            } catch (error) {
+                requestSubmissions.set(input.requestId, {
+                    requestId: input.requestId,
+                    status: "failed",
+                    error: happyAgentUserError(error),
+                });
+                commit();
+                throw error;
+            }
             output({ type: "inputAnswered", sessionId, requestId: input.requestId });
         });
 
     const pendingQuestionAnswer = async (text: string): Promise<{ textUsed: boolean }> => {
         const request = store.getState().pendingUserInputs[0];
         const message = text.trim();
-        if (request === undefined || message.length === 0) return { textUsed: false };
+        if (
+            request === undefined ||
+            message.length === 0 ||
+            requestSubmissions.get(request.requestId)?.status === "pending"
+        )
+            return { textUsed: false };
         const ticked = requestSelections.get(request.requestId) ?? {};
         const answers: Record<string, readonly string[]> = {};
         let textUsed = false;
@@ -979,7 +1027,6 @@ export function happyAgentChatStoreCreate(
             }
         }
         await answerInputRun({ requestId: request.requestId, answers });
-        requestSelections.delete(request.requestId);
         return { textUsed };
     };
 
@@ -1217,6 +1264,7 @@ export function happyAgentChatStoreCreate(
             conversationCache.entries = undefined;
             conversationCache.groups = new Map();
             requestSubmissions.clear();
+            requestMutationIds.clear();
             requestSelections.clear();
         },
     };

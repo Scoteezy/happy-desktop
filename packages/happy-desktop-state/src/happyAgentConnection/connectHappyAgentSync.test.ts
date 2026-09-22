@@ -472,20 +472,21 @@ it("marks pending messages accepted and moves them under the run that took them"
     expect(chat.session?.status).toBe("running");
 });
 
-it("serializes concurrent sends to the same agent", async () => {
+it("starts sends without waiting for draft persistence or another send", async () => {
     const { connection, daemon, sessionId } = await liveHarness();
+    const releaseDraft = daemon.pause("saveAgentDraft");
     const release = daemon.pause("sendMessage");
+    connection.setDraft(sessionId, "");
+    await vi.waitFor(() => expect(daemon.callCount("saveAgentDraft")).toBe(1));
     connection.sendMessage(sessionId, "first");
     connection.sendMessage(sessionId, "second");
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    expect(daemon.callCount("sendMessage")).toBe(1);
-
-    release();
     await vi.waitFor(() => expect(daemon.callCount("sendMessage")).toBe(2));
     const texts = daemon.calls
         .filter((call) => call.method === "sendMessage")
         .map((call) => (call.args[1] as { text: string }).text);
     expect(texts).toEqual(["first", "second"]);
+    release();
+    releaseDraft();
 });
 
 // --- streaming content reconciliation --------------------------------------

@@ -168,6 +168,13 @@
     color: var(--text-secondary);
 }
 
+.happy-agent-input__submit[aria-busy="true"] {
+    /* The shimmer supplies the busy treatment. Keep its full contrast instead
+       of compounding it with the button's ordinary disabled opacity. */
+    opacity: 1;
+    cursor: progress;
+}
+
 .happy-agent-input__footer {
     display: flex;
     flex-direction: row;
