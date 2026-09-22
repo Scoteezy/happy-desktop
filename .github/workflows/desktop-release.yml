@@ -281,7 +281,7 @@ jobs:
 
             - name: Create architecture-aware updater manifests
               run: |
-                  if [[ "$RELEASE_PRERELEASE" != true ]]; then node scripts/create-mac-update-manifest.mjs standard; fi
+                  node scripts/create-mac-update-manifest.mjs standard
                   node scripts/create-mac-update-manifest.mjs local-web
 
             - name: Create tag and GitHub release
