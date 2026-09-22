@@ -10,11 +10,11 @@ For Agent/native versions, inspect GitHub releases and tags. Renderer previews
 have no release tag: inspect `gh run list --workflow local-web-pages.yml`; run
 names contain their versions and successful deployments identify what shipped.
 
-| Request                  | Dispatch from `main`                                                                  | Delivery                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Happy Agent preview      | Agent repository's `release-happy-agent.yml`: version, release_notes, prerelease=true | Agent binaries for Nightly                                    |
-| Desktop native preview   | `desktop-release.yml`: version, release_notes, prerelease=true                        | Signed arm64/x64 Nightly apps and updater manifests           |
-| Desktop renderer preview | `local-web-pages.yml`: version, release_notes                                         | Hosted renderer at `https://local.app.happy.engineering` only |
+| Request                  | Dispatch from `main`                                                                  | Delivery                                                         |
+| ------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Happy Agent preview      | Agent repository's `release-happy-agent.yml`: version, release_notes, prerelease=true | Agent binaries for Nightly                                       |
+| Desktop native preview   | `desktop-release.yml`: version, release_notes, prerelease=true                        | Signed arm64/x64 standard and Nightly apps and updater manifests |
+| Desktop renderer preview | `local-web-pages.yml`: version, release_notes                                         | Hosted renderer at `https://local.app.happy.engineering` only    |
 
 Each workflow validates and builds the requested source, then publishes in the same
 run. No prepare/publish coordinator, bump-after-build commit, or artifact promotion
@@ -37,13 +37,18 @@ because release tooling was changed.
 Production needs no prior preview. Native production uses the same workflow with
 `prerelease=false` and stable `X.Y.Z`, shipping both app flavors on macOS and Windows.
 Windows installers remain unsigned and retain their installed-app and Agent checks;
-native previews currently ship macOS Nightly only. Preserve the existing
+native previews ship both macOS app flavors. Preserve the existing
 requirement that root and Electron manifests match that stable version: update them
 before dispatch under normal Git authorization. Standard bundles its renderer, so
 production renderer delivery requires explicit native-release scope.
 
-Nightly accepts supported stable and numbered preview Agent/native versions;
-standard offers stable updates only. Existing Agent activation/drain controls,
+Every app flavor defaults to stable Agent/native updates. Settings → General →
+Updates → Preview updates explicitly opts into supported numbered preview releases
+as well as stable releases. The preference is persisted on this machine and takes
+effect without a restart. Turning it off removes preview offers, disarms pending
+native installs, and does not downgrade an installed version. Native updates retain
+the installed app flavor; the setting does not change Nightly's hosted renderer.
+Existing Agent activation/drain controls,
 native install-on-quit/install action, and compatibility guards remain unchanged.
 Ship an initial stable native update so older Nightly hosts gain preview support;
 a hosted renderer refresh cannot update Electron host code.

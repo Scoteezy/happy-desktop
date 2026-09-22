@@ -61,7 +61,7 @@ export class DesktopDaemonController {
         private readonly paths: HappyDaemonPaths,
         private readonly launchEnvironmentRead: () => Promise<NodeJS.ProcessEnv>,
         private readonly managed: boolean,
-        private readonly channel: HappyAgentUpdateChannel,
+        private channel: HappyAgentUpdateChannel,
         selected: HappyAgentBinary | undefined,
     ) {
         this.snapshotValue = {
@@ -107,6 +107,34 @@ export class DesktopDaemonController {
         return this.launchEnvironmentRead();
     }
 
+    /** Reconciles cached offers before any subsequent install or version selection. */
+    channelUpdate(channel: HappyAgentUpdateChannel): Promise<void> {
+        if (this.channel === channel) return Promise.resolve();
+        this.channel = channel;
+        this.latestRelease = undefined;
+        this.publishedCatalog = [];
+        this.publish({
+            ...this.snapshotValue,
+            availableVersion: undefined,
+            error: undefined,
+            message: undefined,
+            readyVersion: undefined,
+            updateAvailable: false,
+            versions: this.snapshotValue.versions.filter(
+                ({ version }) =>
+                    happyAgentVersionAllowed(version, channel) ||
+                    version === this.snapshotValue.installedVersion,
+            ),
+        });
+        return this.serial(async () => {
+            this.publish({
+                ...this.snapshotValue,
+                versions: await this.versionsProject(),
+                ...(await this.readyVersionRead()),
+            });
+        });
+    }
+
     checkForUpdate(): Promise<void> {
         return this.serial(async () => {
             if (!this.managed) return;
@@ -118,7 +146,12 @@ export class DesktopDaemonController {
                 operation: "checking",
             });
             try {
-                const catalog = await happyAgentReleasesList({ channel: this.channel });
+                const channel = this.channel;
+                const catalog = await happyAgentReleasesList({ channel });
+                if (channel !== this.channel) {
+                    this.publish({ ...this.snapshotValue, operation: "idle" });
+                    return;
+                }
                 const release = catalog[0]!;
                 this.latestRelease = release;
                 this.publishedCatalog = catalog;
@@ -146,7 +179,7 @@ export class DesktopDaemonController {
                 // A failed background download is not the check failing: the
                 // version it found is still real, and the next check tries the
                 // bytes again.
-                if (updateAvailable)
+                if (updateAvailable && happyAgentVersionAllowed(release.version, this.channel))
                     await this.stage(release).catch((error: unknown) => {
                         this.publish({
                             ...this.snapshotValue,
@@ -186,6 +219,8 @@ export class DesktopDaemonController {
     private async stage(release: HappyAgentRelease): Promise<void> {
         // Deliberately not serialized: every caller already holds the lock, and
         // taking it again here would make this wait on the work calling it.
+        if (!happyAgentVersionAllowed(release.version, this.channel))
+            throw new Error("This Happy Agent version is not available on this update channel.");
         if ((await happyAgentBinaryDownloaded(this.paths)).includes(release.version)) {
             this.publish({ ...this.snapshotValue, ...(await this.readyVersionRead()) });
             return;
@@ -209,10 +244,11 @@ export class DesktopDaemonController {
         this.publish({
             ...this.snapshotValue,
             error: undefined,
-            message:
-                this.snapshotValue.installation === "missing"
-                    ? `Happy Agent ${release.version} is ready to start.`
-                    : `Happy Agent ${release.version} is ready to install.`,
+            message: !happyAgentVersionAllowed(release.version, this.channel)
+                ? undefined
+                : this.snapshotValue.installation === "missing"
+                  ? `Happy Agent ${release.version} is ready to start.`
+                  : `Happy Agent ${release.version} is ready to install.`,
             operation: "idle",
             versions: await this.versionsProject(),
             ...(await this.readyVersionRead()),
@@ -309,6 +345,13 @@ export class DesktopDaemonController {
                 throw new Error("No Happy Agent update has been downloaded.");
             const selected = version ?? (await happyAgentBinarySelected(this.paths))?.version;
             if (selected === undefined) throw new Error("Happy Agent is not installed.");
+            if (reason === "install" && !happyAgentVersionAllowed(selected, this.channel)) {
+                const current = await happyAgentBinarySelected(this.paths);
+                if (current?.version !== selected)
+                    throw new Error(
+                        "This Happy Agent version is not available on this update channel.",
+                    );
+            }
             // The step the sequence is on, kept because a failure has to say
             // where it stopped and the error itself does not know. It starts on
             // the first step: everything before the drain is preparation for it,
@@ -474,8 +517,10 @@ export class DesktopDaemonController {
                 throw new Error("Happy Agent is already installed.");
             const release = await this.stageOrFail(async () => {
                 const found =
-                    this.latestRelease ??
-                    (await happyAgentReleaseLatest({ channel: this.channel }));
+                    (this.latestRelease &&
+                    happyAgentVersionAllowed(this.latestRelease.version, this.channel)
+                        ? this.latestRelease
+                        : undefined) ?? (await happyAgentReleaseLatest({ channel: this.channel }));
                 this.latestRelease = found;
                 await this.stage(found);
                 return found;
@@ -601,8 +646,10 @@ export class DesktopDaemonController {
             if (!this.managed) throw new Error("This Happy Agent is managed outside Happy.");
             const release = await this.stageOrFail(async () => {
                 const found =
-                    this.latestRelease ??
-                    (await happyAgentReleaseLatest({ channel: this.channel }));
+                    (this.latestRelease &&
+                    happyAgentVersionAllowed(this.latestRelease.version, this.channel)
+                        ? this.latestRelease
+                        : undefined) ?? (await happyAgentReleaseLatest({ channel: this.channel }));
                 this.latestRelease = found;
                 await this.stage(found);
                 return found;
@@ -647,6 +694,7 @@ export class DesktopDaemonController {
         const selected = await happyAgentBinarySelected(this.paths).catch(() => undefined);
         const rows = new Map<string, DesktopDaemonVersion>();
         for (const summary of this.publishedCatalog) {
+            if (!happyAgentVersionAllowed(summary.version, this.channel)) continue;
             rows.set(summary.version, {
                 downloaded: downloaded.includes(summary.version),
                 prerelease: happyAgentVersionKind(summary.version) === "preview",
@@ -673,6 +721,30 @@ export class DesktopDaemonController {
     }
 
     private publish(snapshot: DesktopDaemonSnapshot): void {
+        // A preference can change while a catalog or download is in flight.
+        // Never let that operation re-publish an offer the user just disabled.
+        const availableAllowed =
+            snapshot.availableVersion === undefined ||
+            happyAgentVersionAllowed(snapshot.availableVersion, this.channel);
+        const readyAllowed =
+            snapshot.readyVersion === undefined ||
+            happyAgentVersionAllowed(snapshot.readyVersion, this.channel);
+        snapshot = {
+            ...snapshot,
+            ...(!availableAllowed
+                ? {
+                      availableVersion: undefined,
+                      message: undefined,
+                      updateAvailable: false,
+                  }
+                : {}),
+            ...(!readyAllowed ? { readyVersion: undefined } : {}),
+            versions: snapshot.versions.filter(
+                ({ version }) =>
+                    happyAgentVersionAllowed(version, this.channel) ||
+                    version === snapshot.installedVersion,
+            ),
+        };
         this.snapshotValue = snapshot;
         for (const listener of this.listeners) listener(snapshot);
     }

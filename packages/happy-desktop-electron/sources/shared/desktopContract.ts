@@ -50,6 +50,8 @@ export interface DesktopConfig {
     readonly defaultPermissionMode: DesktopPermissionMode;
     readonly lastPickedModel?: DesktopModelIdentity;
     readonly modelPreferences: readonly DesktopModelPreference[];
+    /** Explicit opt-in to Desktop and Happy Agent preview releases, off when absent. */
+    readonly previewUpdatesEnabled?: boolean;
     readonly scrollbarVisibility: DesktopScrollbarVisibility;
     readonly titleShimmerEnabled?: boolean;
     readonly version: 1;

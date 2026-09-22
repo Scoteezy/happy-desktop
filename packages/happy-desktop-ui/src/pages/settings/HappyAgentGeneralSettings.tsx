@@ -32,6 +32,9 @@ export type HappyAgentGeneralSettingsProps = {
     experimentalFeaturesEnabled: boolean;
     /** Whether active session, project, and workspace titles shimmer. */
     titleShimmerEnabled: boolean;
+    /** Absent where the host does not manage updates. */
+    previewUpdatesEnabled?: boolean;
+    onPreviewUpdatesChange?: (enabled: boolean) => void;
     /** The managed Happy Agent installation, absent outside the native desktop shell. */
     agent?: {
         availableVersion?: string;
@@ -227,6 +230,27 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     label="Default access mode"
                 />
             </HappyAgentSettingsSection>
+            {props.onPreviewUpdatesChange ? (
+                <HappyAgentSettingsSection
+                    description="Stable releases only by default, including in Nightly."
+                    title="Updates"
+                >
+                    <FormRow
+                        control={
+                            <Switch
+                                aria-label="Preview updates"
+                                checked={props.previewUpdatesEnabled === true}
+                                id="happy-agent-settings-preview-updates"
+                                onChange={props.onPreviewUpdatesChange}
+                                size="small"
+                            />
+                        }
+                        description="Include preview Desktop and Happy Agent releases when checking for updates. Turning this off does not downgrade installed versions."
+                        htmlFor="happy-agent-settings-preview-updates"
+                        label="Preview updates"
+                    />
+                </HappyAgentSettingsSection>
+            ) : null}
             {props.agent ? (
                 <HappyAgentSettingsSection
                     description="The verified local runtime Happy uses for coding sessions. Updates are found and downloaded on their own, quietly and without interrupting anything. Running one is the part you decide, because it stops the agent."

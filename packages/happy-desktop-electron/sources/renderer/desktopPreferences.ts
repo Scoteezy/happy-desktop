@@ -116,7 +116,8 @@ export function desktopPreferencesCreate(
             if (
                 defaultEqual(config.defaultModel, nextDefault) &&
                 config.defaultEffort === nextEffort &&
-                config.defaultPermissionMode === nextPermissionMode
+                config.defaultPermissionMode === nextPermissionMode &&
+                (config.previewUpdatesEnabled === true) === snapshot.previewUpdatesEnabled
             )
                 return;
 
@@ -158,6 +159,7 @@ export function desktopPreferencesCreate(
                       ? { lastPickedModel: config.lastPickedModel }
                       : {}),
                 modelPreferences,
+                previewUpdatesEnabled: snapshot.previewUpdatesEnabled,
                 scrollbarVisibility: config.scrollbarVisibility,
                 ...(config.titleShimmerEnabled === undefined
                     ? {}
@@ -182,6 +184,7 @@ function settingsInitial(config: DesktopConfig): HappyAgentSettingsInitial {
             : {}),
         defaultEffort: effort,
         defaultPermissionMode: permissionMode(config.defaultPermissionMode),
+        previewUpdatesEnabled: config.previewUpdatesEnabled === true,
     };
 }
 
@@ -260,6 +263,9 @@ function configFromPreferenceDocument(
               : {}),
         ...(document.lastPickedModel ? { lastPickedModel: document.lastPickedModel } : {}),
         defaultPermissionMode: current.defaultPermissionMode,
+        ...(current.previewUpdatesEnabled === undefined
+            ? {}
+            : { previewUpdatesEnabled: current.previewUpdatesEnabled }),
         modelPreferences,
         scrollbarVisibility: current.scrollbarVisibility,
         ...(current.titleShimmerEnabled === undefined

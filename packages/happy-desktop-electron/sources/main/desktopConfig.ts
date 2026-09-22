@@ -117,11 +117,17 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
         "defaultPermissionMode",
         "lastPickedModel",
         "modelPreferences",
+        "previewUpdatesEnabled",
         "scrollbarVisibility",
         "titleShimmerEnabled",
         "version",
     ]);
     if (Object.keys(candidate).some((key) => !allowed.has(key))) throw invalidConfigError();
+    if (
+        candidate.previewUpdatesEnabled !== undefined &&
+        typeof candidate.previewUpdatesEnabled !== "boolean"
+    )
+        throw invalidConfigError();
     if (
         candidate.titleShimmerEnabled !== undefined &&
         typeof candidate.titleShimmerEnabled !== "boolean"
@@ -183,6 +189,9 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
         defaultPermissionMode,
         ...(lastPickedModel ? { lastPickedModel } : {}),
         modelPreferences,
+        ...(candidate.previewUpdatesEnabled === undefined
+            ? {}
+            : { previewUpdatesEnabled: candidate.previewUpdatesEnabled as boolean }),
         scrollbarVisibility,
         ...(titleShimmerEnabled === undefined ? {} : { titleShimmerEnabled }),
         version: CONFIG_VERSION,

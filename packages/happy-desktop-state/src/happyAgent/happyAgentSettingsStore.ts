@@ -24,6 +24,8 @@ export interface HappyAgentSettingsSnapshot {
     readonly defaultEffort: HappyAgentThinkingLevel;
     /** Access granted to a new session before its composer overrides the choice. */
     readonly defaultPermissionMode: HappyAgentPermissionMode;
+    /** Explicit machine-local opt-in to preview Desktop and Happy Agent releases. */
+    readonly previewUpdatesEnabled: boolean;
     /** Models switched off for this workspace. Absent from the set means enabled. */
     readonly disabledModels: ReadonlySet<HappyAgentModelKey>;
 }
@@ -42,6 +44,7 @@ export interface HappyAgentSettingsStore {
     defaultModelUpdate(providerId: string, modelId: string): void;
     defaultEffortUpdate(effort: HappyAgentThinkingLevel): void;
     defaultPermissionModeUpdate(mode: HappyAgentPermissionMode): void;
+    previewUpdatesUpdate(enabled: boolean): void;
     /** Offers or withholds one model in the session pickers. */
     modelEnabledUpdate(key: HappyAgentModelKey, enabled: boolean): void;
 }
@@ -53,6 +56,7 @@ export interface HappyAgentSettingsInitial {
     readonly defaultModelId?: string;
     readonly defaultEffort?: HappyAgentThinkingLevel;
     readonly defaultPermissionMode?: HappyAgentPermissionMode;
+    readonly previewUpdatesEnabled?: boolean;
 }
 
 /** Creates the workspace-lifetime preference store; it opens no transport or timers. */
@@ -64,6 +68,7 @@ export function happyAgentSettingsStoreCreate(
         ...initial,
         defaultEffort: initial.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
         defaultPermissionMode: initial.defaultPermissionMode ?? "auto",
+        previewUpdatesEnabled: initial.previewUpdatesEnabled ?? false,
         disabledModels: EMPTY_DISABLED,
     };
 
@@ -97,6 +102,10 @@ export function happyAgentSettingsStoreCreate(
             if (enabled) disabledModels.delete(key);
             else disabledModels.add(key);
             publish({ ...snapshot, disabledModels });
+        },
+        previewUpdatesUpdate(enabled) {
+            if (snapshot.previewUpdatesEnabled === enabled) return;
+            publish({ ...snapshot, previewUpdatesEnabled: enabled });
         },
     };
 }

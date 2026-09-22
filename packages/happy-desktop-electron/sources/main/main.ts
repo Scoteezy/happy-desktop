@@ -26,7 +26,7 @@ import {
 } from "./navigation";
 import { desktopFlavor } from "./desktopFlavor";
 import { dockBadgeApply, dockBadgeClear, dockUnreadCountRead } from "./dockBadge";
-import { desktopUpdaterCreate } from "./updater";
+import { desktopUpdaterCreate, type DesktopUpdater } from "./updater";
 import { DesktopWindowLifecycle, type DesktopWindowBounds } from "./windowLifecycle";
 import {
     desktopDaemonVersionValidate,
@@ -300,6 +300,7 @@ let desktopProfilerController: DesktopProfilerController;
 let desktopWindowStateStore: DesktopWindowStateStore;
 let onboarding: LocalOnboarding;
 let quitting = false;
+let desktopUpdater: DesktopUpdater | undefined;
 /** Each workspace keeps its own network profile, including while its tabs are hidden. */
 const browserProxies = new Map<string, HappyAgentServiceBrowser>();
 let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
@@ -1409,7 +1410,7 @@ void app
             launchEnvironment.HAPPY_AGENT_SERVER_TOKEN_PATH?.trim()
         );
         daemonController = await DesktopDaemonController.create({
-            channel: desktopFlavor.kind === "local-web" ? "preview" : "stable",
+            channel: desktopConfigStore.get().previewUpdatesEnabled === true ? "preview" : "stable",
             environment: launchEnvironment,
             launchEnvironment: async () => launchEnvironment,
             managed: managedDaemon,
@@ -1504,12 +1505,15 @@ void app
                 window.webContents.send(desktopIpc.onboardingChanged, snapshot);
         });
         const updater = desktopUpdaterCreate({
-            preview: desktopFlavor.kind === "local-web",
+            preview: desktopConfigStore.get().previewUpdatesEnabled === true,
+            flavor: desktopFlavor.kind,
             // Releases publish macOS update manifests only; a packaged Linux or
             // Windows build has nothing to check against yet.
             packaged: app.isPackaged && process.platform === "darwin",
             update: (snapshot) => runtime.updateSet(snapshot),
         });
+        desktopUpdater = updater;
+        let previewUpdatesEnabled = desktopConfigStore.get().previewUpdatesEnabled === true;
         runtime.subscribe((snapshot) => {
             daemonController.runtimeSet(snapshot);
             desktopDebugRuntimeLog(snapshot);
@@ -1535,9 +1539,17 @@ void app
         daemonController.runtimeSet(runtime.get());
         ipcMain.handle(desktopIpc.runtimeGet, () => runtime.get());
         ipcMain.handle(desktopIpc.desktopConfigGet, () => desktopConfigStore.get());
-        ipcMain.handle(desktopIpc.desktopConfigWrite, (_event, config: unknown) =>
-            desktopConfigStore.write(config),
-        );
+        ipcMain.handle(desktopIpc.desktopConfigWrite, async (_event, config: unknown) => {
+            await desktopConfigStore.write(config);
+            const enabled = desktopConfigStore.get().previewUpdatesEnabled === true;
+            if (previewUpdatesEnabled === enabled) return;
+            previewUpdatesEnabled = enabled;
+            updater.previewUpdate(enabled);
+            void daemonController
+                .channelUpdate(enabled ? "preview" : "stable")
+                .then(() => daemonController.checkForUpdate())
+                .catch(() => undefined);
+        });
         ipcMain.handle(desktopIpc.cloudAuthCallbackTake, (event) => {
             desktopDaemonSenderRequire(event.sender);
             const callback = cloudAuthCallback;
@@ -1799,7 +1811,9 @@ void app
         ipcMain.handle(desktopIpc.topologySelect, (_event, topologyId: unknown) =>
             runtime.topologySelect(desktopTopologyIdValidate(topologyId)),
         );
-        ipcMain.handle(desktopIpc.updateInstall, () => updater.install());
+        ipcMain.handle(desktopIpc.updateInstall, () => {
+            updater.install();
+        });
         ipcMain.handle(desktopIpc.windowStateGet, (event) => ({
             fullScreen: BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false,
         }));
@@ -1856,6 +1870,6 @@ app.on("before-quit", (event) => {
         mediaPreviewWindow = undefined;
         mediaPreviewSubject = undefined;
         quitting = true;
-        app.quit();
+        if (!desktopUpdater?.install(false)) app.quit();
     });
 });

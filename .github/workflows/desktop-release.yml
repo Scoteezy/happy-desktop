@@ -13,7 +13,7 @@ on:
                 required: true
                 type: string
             prerelease:
-                description: Preview (Nightly only); disable for a stable release of both apps
+                description: Preview of both macOS apps; disable for a stable release on all platforms
                 required: true
                 default: true
                 type: boolean
@@ -184,9 +184,7 @@ jobs:
               env:
                   RELEASE_ARCH: ${{ matrix.arch }}
               run: |
-                  FLAVOR=all
-                  if [[ "$RELEASE_PRERELEASE" == true ]]; then FLAVOR=local-web; fi
-                  pnpm desktop:mac:release -- --arch "$RELEASE_ARCH" --flavor "$FLAVOR"
+                  pnpm desktop:mac:release -- --arch "$RELEASE_ARCH" --flavor all
 
             - name: Remove App Store Connect API key
               if: always()
@@ -296,8 +294,7 @@ jobs:
                   node --input-type=module <<'NODE'
                   import { stat } from 'node:fs/promises';
                   import { desktopFlavorNames, desktopFlavorRead } from './scripts/desktopFlavors.mjs';
-                  const flavors = process.env.RELEASE_PRERELEASE === 'true' ? ['local-web'] : desktopFlavorNames;
-                  for (const name of flavors) {
+                  for (const name of desktopFlavorNames) {
                     const flavor = desktopFlavorRead(name);
                     const directory = `packages/happy-desktop-electron/release/${flavor.output}`;
                     const files = [`${flavor.channel}-mac.yml`, ...['arm64', 'x64'].flatMap(arch =>

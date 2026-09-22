@@ -737,6 +737,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                               onAgentRestart: daemonStore.daemonRestart,
                               onAgentUpgrade: daemonStore.daemonUpgrade,
                               onAgentVersionSelect: daemonStore.daemonVersionSelect,
+                              previewUpdatesEnabled: settings.previewUpdatesEnabled,
+                              onPreviewUpdatesChange: props.settings.previewUpdatesUpdate,
                           }
                         : {})}
                     appearance={appearance.mode}

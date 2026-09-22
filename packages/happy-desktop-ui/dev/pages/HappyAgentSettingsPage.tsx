@@ -476,6 +476,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         onAgentRestart={noop}
                         onAgentUpgrade={noop}
                         onAgentVersionSelect={noop}
+                        onPreviewUpdatesChange={noop}
+                        previewUpdatesEnabled
                         onExperimentalFeaturesChange={noop}
                         onDefaultModelChange={noop}
                         onEffortChange={noop}
@@ -923,6 +925,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         scrollbarVisibility="automatic"
                         titleShimmerEnabled={false}
                         unavailable="Happy Agent is offline. Showing the last synced defaults."
+                        onPreviewUpdatesChange={noop}
+                        previewUpdatesEnabled={false}
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
