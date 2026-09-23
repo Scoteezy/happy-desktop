@@ -145,12 +145,16 @@
     white-space: nowrap;
 }
 
+/* The glyph stands where the search field's magnifier and the tree's chevrons
+   stand — 8px in from the shared inset — so the column of rows reads as one
+   wrapper rather than as one row pushed to the edge. */
 .happy-file-browser__slice-title {
     display: flex;
     flex: 1 1 auto;
     align-items: center;
     gap: 6px;
     min-width: 0;
+    padding-left: 8px;
     color: var(--text);
     font-size: 12px;
     font-weight: 500;
@@ -211,10 +215,13 @@
 
 /* The picker is the name itself, so it wears the row's control height rather
    than a button's own, and no more chrome than the layout switch above it. */
+/* The button's own 6px padding plus this puts its glyph on the same 8px line
+   as the one-slice title's, so switching between one slice and several does
+   not move the glyph. */
 .happy-file-browser__slice .happy-menu-button {
     flex: 0 1 auto;
     min-width: 0;
-    margin-left: -6px;
+    margin-left: 2px;
 }
 
 .happy-file-browser__slice .happy-menu-button > .happy-button {
@@ -290,11 +297,12 @@
     opacity: 0.6;
 }
 
+/* Inset like every other row, then the same 8px the rows' first ink keeps. */
 .happy-file-browser__note {
     display: flex;
     flex: none;
     align-items: center;
-    padding: 0 12px 6px;
+    padding: 0 calc(var(--happy-panel-inset) + 8px) 6px;
     color: var(--text-secondary);
     font-size: 11px;
     font-weight: 500;
