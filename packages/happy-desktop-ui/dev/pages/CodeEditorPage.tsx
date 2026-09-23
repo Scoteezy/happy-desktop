@@ -90,6 +90,35 @@ function SavedEditor() {
     );
 }
 
+/**
+ * What a reference does when it is followed: the lines it named are scrolled to
+ * and banded, and asking again takes the reader back to them. The band is only
+ * ever put there by a fresh ask, so clicking into the text puts it away.
+ */
+function RevealedEditor() {
+    const [requestId, requestIdSet] = useState(1);
+    return (
+        <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+            <div style={{ flex: "none", padding: "6px" }}>
+                <Button
+                    data-testid="code-editor-reveal"
+                    onClick={() => requestIdSet(requestId + 1)}
+                    size="small"
+                    variant="secondary"
+                >
+                    Show lines 84–88
+                </Button>
+            </div>
+            <CodeEditor
+                name="sources/long.ts"
+                readOnly
+                reveal={{ startLine: 84, endLine: 88, requestId }}
+                value={long}
+            />
+        </div>
+    );
+}
+
 export function CodeEditorPage() {
     return (
         <ComponentPage
@@ -125,6 +154,15 @@ export function CodeEditorPage() {
                 stage="surface"
             >
                 {frame(<SavedEditor />, 320)}
+            </Specimen>
+
+            <Specimen
+                detail="A reference named these lines. The band outlives the scroll, because landing in the middle of a file says nothing about which lines were meant; clicking into the text puts it away, and asking again brings it back"
+                label="Referenced region"
+                number="06"
+                stage="surface"
+            >
+                {frame(<RevealedEditor />, 320)}
             </Specimen>
 
             <Specimen

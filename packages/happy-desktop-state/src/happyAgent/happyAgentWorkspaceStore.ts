@@ -98,6 +98,8 @@ import type {
     HappyAgentSessionCreateInput,
     HappyAgentSessionId,
     HappyAgentSessionUsage,
+    HappyAgentSlice,
+    HappyAgentSliceId,
     SubagentSummary,
     HappyAgentTask,
     HappyAgentThinkingLevel,
@@ -251,6 +253,31 @@ export interface HappyAgentConversationSnapshot {
  */
 export type HappyAgentFileTabKind = "file" | "diff" | "media" | "document";
 
+/**
+ * A run of lines in one file, counted from 1 and including both ends — the way
+ * every editor, every review, and every agent writing `Store.ts:120-148` counts
+ * them. A single line is a range whose ends are equal, so nothing downstream
+ * has to tell one line apart from several.
+ */
+export interface HappyAgentFileLineRange {
+    readonly startLine: number;
+    readonly endLine: number;
+}
+
+/**
+ * A region of an open file that something asked to be shown, and which asking
+ * it was.
+ *
+ * The region alone cannot say "show me this again": clicking the same reference
+ * twice, or following it back after scrolling away, hands the viewer the lines
+ * it is already holding and nothing happens. `requestId` is what makes each ask
+ * a distinct event, so the viewer scrolls every time it is asked to and never
+ * between times.
+ */
+export interface HappyAgentFileReveal extends HappyAgentFileLineRange {
+    readonly requestId: number;
+}
+
 /** One workspace text file opened as a main-content document tab. */
 export interface HappyAgentFileTabSnapshot {
     readonly id: string;
@@ -276,6 +303,12 @@ export interface HappyAgentFileTabSnapshot {
      * group. Opening it permanently or editing it clears this flag.
      */
     readonly preview: boolean;
+    /**
+     * The region this tab was last asked to show, for a file reached through a
+     * reference that named one. Absent for a file opened whole, which is every
+     * file opened from the listing.
+     */
+    readonly reveal?: HappyAgentFileReveal;
     readonly revision: string;
     readonly document: Loadable<
         | HappyAgentWorkspaceFileDocument
@@ -646,8 +679,20 @@ export interface HappyAgentWorkspaceSnapshot {
      * long lines, not a fact about any one file.
      */
     readonly fileViewWrap: boolean;
-    /** Whether the panel lists only changed files or every file in the checkout. */
+    /** Whether the panel lists changed files, every file in the checkout, or a slice of it. */
     readonly fileScope: HappyAgentFileScope;
+    /**
+     * The slices agents have built over the addressed checkout, newest first.
+     * Empty until they are known and empty when there are none: the panel
+     * offers the slice scope only while this holds something.
+     */
+    readonly slices: readonly HappyAgentSlice[];
+    /**
+     * The slice the panel lists under the slice scope: the one the reader last
+     * chose in this checkout, or the newest when they never chose or their
+     * choice has since been dropped. Absent exactly when `slices` is empty.
+     */
+    readonly slice?: HappyAgentSlice;
     /** Whether Changes nests paths into folders or lists them whole. All Files is always lazy. */
     readonly fileLayout: HappyAgentFileLayout;
     /** What the reader is looking for in the file listing, and what was found. */
@@ -788,8 +833,13 @@ export interface HappyAgentBotCreateSnapshot {
  */
 export type HappyAgentBotFacePaint = (seed: string) => Promise<HappyAgentAvatarImage>;
 
-/** Which files the panel lists. */
-export type HappyAgentFileScope = "changed" | "all";
+/**
+ * Which files the panel lists: the checkout's changes, every file in it, or
+ * one slice an agent built over it. A slice is offered only while the
+ * checkout has one, and a remembered slice scope over a checkout that has
+ * none reads as changes rather than as an empty listing.
+ */
+export type HappyAgentFileScope = "changed" | "all" | "slice";
 
 /**
  * How the panel arranges them. Flat suits a handful of changed files, where a
@@ -1374,8 +1424,19 @@ export interface HappyAgentWorkspaceStore {
      * replaces this group's previous preview without disturbing permanent tabs.
      */
     filePreview(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
-    /** Opens one workspace file permanently, promoting its preview when present. */
-    fileOpen(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
+    /**
+     * Opens one workspace file permanently, promoting its preview when present.
+     *
+     * `selection` is the region a reference named — the lines behind a
+     * `Store.ts:120-148` in a message. The tab scrolls to them and marks them;
+     * opening the same file with no region named puts the mark away.
+     */
+    fileOpen(
+        groupId: HappyAgentGroupId,
+        path: string,
+        kind: HappyAgentFileTabKind,
+        selection?: HappyAgentFileLineRange,
+    ): void;
     /** Warms one file after pointer or keyboard intent without opening a tab. */
     filePreprocess(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
     /**
@@ -1401,7 +1462,12 @@ export interface HappyAgentWorkspaceStore {
      * the same way, into the same editor. The panel holds one file at a time,
      * so this replaces whichever file was in it.
      */
-    filePanelOpen(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
+    filePanelOpen(
+        groupId: HappyAgentGroupId,
+        path: string,
+        kind: HappyAgentFileTabKind,
+        selection?: HappyAgentFileLineRange,
+    ): void;
     /** Closes the panel's file viewer and stops its pending read. */
     filePanelClose(): void;
     /**
@@ -1469,6 +1535,25 @@ export interface HappyAgentWorkspaceStore {
      * a reader who only ever looks at their own changes.
      */
     fileScopeUpdate(groupId: HappyAgentGroupId, scope: HappyAgentFileScope): void;
+    /**
+     * Looks through one slice of a checkout: makes it the slice the panel
+     * lists by and puts the panel's listing under the slice scope. The choice
+     * is remembered per checkout, like the scope itself.
+     */
+    sliceSelect(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
+    /**
+     * Opens one slice from where it was named — the card in a transcript —
+     * bringing the panel to its file listing under that slice. It is the one
+     * act that moves the panel's own tab: the reader asked to see the slice,
+     * and the slice is shown in exactly one place.
+     */
+    sliceOpen(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
+    /**
+     * Removes one slice the reader no longer needs. It leaves the listing at
+     * once; if it was the slice being listed by, the panel moves to the newest
+     * remaining one, or back to the changed files when none remain.
+     */
+    sliceDelete(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
     /** Chooses whether the panel nests paths into folders, for this checkout. */
     fileLayoutUpdate(groupId: HappyAgentGroupId, layout: HappyAgentFileLayout): void;
     /**
@@ -1707,6 +1792,26 @@ function noOpenConversation(): Promise<never> {
 /** Nothing is being added and nothing was refused: one shared idle value. */
 const PROJECT_ADD_IDLE: HappyAgentProjectAddSnapshot = { pending: false };
 
+/** No slices known, or none built: one shared value so the snapshot keeps its identity. */
+const SLICES_NONE: readonly HappyAgentSlice[] = [];
+
+/**
+ * The slice the panel lists by: the remembered one while it still exists, and
+ * otherwise the newest. Retention drops old slices on the daemon, so a choice
+ * made weeks ago can name a slice that is gone; the newest is what the reader
+ * would have reached for anyway.
+ */
+function sliceResolve(
+    slices: readonly HappyAgentSlice[],
+    sliceId: string | undefined,
+): HappyAgentSlice | undefined {
+    if (sliceId !== undefined) {
+        const chosen = slices.find((slice) => slice.id === sliceId);
+        if (chosen !== undefined) return chosen;
+    }
+    return slices[0];
+}
+
 function githubRepositoryParse(
     value: string,
 ): { readonly repository: string; readonly name: string } | undefined {
@@ -1793,6 +1898,14 @@ export function happyAgentWorkspaceStoreCreate(
     let unsubscribeWorkspaceFiles: (() => void) | undefined;
     /** Ready bytes may have changed while this store had no live file-hint subscription. */
     let fileDocumentsReconcileOnStart = false;
+    /**
+     * The addressed checkout's slices, as last reported, and which checkout
+     * they are of. Absent until the first report, so a checkout whose slices
+     * have not arrived is not mistaken for one that has none.
+     */
+    let slices: readonly HappyAgentSlice[] | undefined;
+    let slicesGroupId: HappyAgentGroupId | undefined;
+    let unsubscribeSlices: (() => void) | undefined;
 
     // Open conversation lease. `acquisitionGeneration` invalidates an in-flight
     // acquisition when the addressed conversation changes or the store stops.
@@ -1938,6 +2051,8 @@ export function happyAgentWorkspaceStoreCreate(
     };
     let fileTreeExpanded: ReadonlySet<string> = new Set();
     let fileTreeCollapsed: ReadonlySet<string> = new Set();
+    /** Counts the asks to show a region, so each one is its own event. */
+    let fileRevealRequests = 0;
     /** The parts of a new bot the store holds itself; the composer is a store of its own. */
     interface BotCreateDraft {
         readonly name: string;
@@ -2222,6 +2337,7 @@ export function happyAgentWorkspaceStoreCreate(
         fileViewMode,
         fileViewWrap,
         fileScope: "changed",
+        slices: SLICES_NONE,
         fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
         fileSearch: FILE_SEARCH_IDLE,
         fileComments: FILE_COMMENTS_IDLE,
@@ -2477,7 +2593,13 @@ export function happyAgentWorkspaceStoreCreate(
         // another project shows that project the way it was left, rather than
         // carrying the last one's panel width and listing across to it.
         const nextView = groupView(nextAddress.groupId);
-        const nextFileScope = nextView.fileScope ?? "changed";
+        const nextSlices = slices ?? SLICES_NONE;
+        const nextSlice = sliceResolve(nextSlices, nextView.sliceId);
+        // A remembered slice scope over a checkout with nothing to slice by
+        // shows the changes: an empty listing would say the checkout is clean.
+        const preferredScope = nextView.fileScope ?? "changed";
+        const nextFileScope =
+            preferredScope === "slice" && nextSlice === undefined ? "changed" : preferredScope;
         // The daemon's all-files contract is a lazy directory tree. Flattening
         // it would require recursively opening every directory before the first
         // row could be truthful, which turns one panel open into a request storm.
@@ -2528,6 +2650,8 @@ export function happyAgentWorkspaceStoreCreate(
                 snapshot.fileViewMode === fileViewMode &&
                 snapshot.fileViewWrap === fileViewWrap &&
                 snapshot.fileScope === nextFileScope &&
+                snapshot.slices === nextSlices &&
+                snapshot.slice === nextSlice &&
                 snapshot.fileLayout === nextFileLayout &&
                 snapshot.fileSearch === fileSearch &&
                 snapshot.fileComments === fileComments &&
@@ -2555,6 +2679,8 @@ export function happyAgentWorkspaceStoreCreate(
                           fileViewMode,
                           fileViewWrap,
                           fileScope: nextFileScope,
+                          slices: nextSlices,
+                          ...(nextSlice === undefined ? {} : { slice: nextSlice }),
                           fileLayout: nextFileLayout,
                           fileSearch,
                           fileComments,
@@ -2648,16 +2774,18 @@ export function happyAgentWorkspaceStoreCreate(
     });
 
     /**
-     * Forgets which directories were opened and which were closed. These are
-     * remembered by path for the same reason a selection is, and they stop
-     * meaning anything at the same moment: `src` in one checkout is not `src`
-     * in the next. Carrying them over would not merely open the wrong folders —
-     * a directory closed here would arrive in another repository already
-     * closed, and the listing there would open half shut for no stated reason.
+     * Loads the directories this checkout was left with, forgetting the last
+     * one's entirely. These are remembered by path for the same reason a
+     * selection is, and a path stops meaning anything at the checkout boundary:
+     * `src` in one repository is not `src` in the next, so carrying the sets
+     * across would not merely open the wrong folders — a directory closed here
+     * would arrive in another repository already closed, and the listing there
+     * would open half shut for no stated reason.
      */
-    const fileTreeExpansionReset = (): void => {
-        fileTreeExpanded = new Set();
-        fileTreeCollapsed = new Set();
+    const fileTreeExpansionLoad = (groupId: HappyAgentGroupId | undefined): void => {
+        const view = groupView(groupId);
+        fileTreeExpanded = new Set(view.fileTreeOpened ?? []);
+        fileTreeCollapsed = new Set(view.fileTreeClosed ?? []);
     };
 
     /**
@@ -3565,6 +3693,66 @@ export function happyAgentWorkspaceStoreCreate(
         }
     };
 
+    /**
+     * Takes one report of the addressed checkout's slices. A slice built while
+     * the reader is already looking through slices is the one they were waiting
+     * for, so it becomes the listed one; built while they are reading changes
+     * or a file, it waits in the picker rather than taking the screen.
+     */
+    const slicesReceive = (groupId: HappyAgentGroupId, next: readonly HappyAgentSlice[]): void => {
+        if (slicesGroupId !== groupId) return;
+        const previous = slices;
+        slices = next;
+        if (previous !== undefined && fileScopeOf(groupId) === "slice") {
+            const known = new Set(previous.map((slice) => slice.id));
+            const built = next.find((slice) => !known.has(slice.id));
+            if (built !== undefined) viewPreferencesWrite(groupId, { sliceId: built.id });
+        }
+        recompute();
+    };
+
+    /**
+     * Removes one slice. The listing drops it before the daemon answers, so the
+     * hand that clicked sees the row go; the daemon's confirmation and the
+     * event behind it find nothing left to remove. A refusal is reported as a
+     * mutation failure and the next slice read puts the row back.
+     */
+    const sliceDelete = (groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void => {
+        if (slicesGroupId === groupId && slices?.some((slice) => slice.id === sliceId)) {
+            slices = slices.filter((slice) => slice.id !== sliceId);
+            recompute();
+        }
+        client.sliceDelete(groupId, sliceId);
+    };
+
+    /** Lists the panel by one slice; shared by the picker and the transcript card. */
+    const sliceSelect = (groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void => {
+        const view = groupView(groupId);
+        if (view.fileScope === "slice" && view.sliceId === sliceId) return;
+        viewPreferencesWrite(groupId, { fileScope: "slice", sliceId });
+        // The query survives the switch, asked again against the slice.
+        if (fileSearch.query !== "") fileSearchApply(fileSearch.query);
+        recompute();
+    };
+
+    /**
+     * Keeps the slice subscription on the addressed checkout, and only while a
+     * surface is running: slices are read for the checkout on screen, not for
+     * every checkout the reader has ever opened.
+     */
+    const slicesFollow = (): void => {
+        const groupId = active ? addressedGroupId : undefined;
+        if (slicesGroupId === groupId) return;
+        unsubscribeSlices?.();
+        unsubscribeSlices = undefined;
+        slicesGroupId = groupId;
+        slices = undefined;
+        if (groupId === undefined) return;
+        unsubscribeSlices = client.workspaceSlicesSubscribe(groupId, (next) =>
+            slicesReceive(groupId, next),
+        );
+    };
+
     /** Reconciles durable bytes once a filesystem change is known — reported by
      *  the daemon's watcher, or done by a write of our own. */
     const workspaceFilesChanged = (change: HappyAgentWorkspaceFilesChanged): void => {
@@ -3590,8 +3778,27 @@ export function happyAgentWorkspaceStoreCreate(
         requestedKind: HappyAgentFileTabKind,
         preview: boolean,
         placement: HappyAgentViewPlacement = "main",
+        selection?: HappyAgentFileLineRange,
     ): void => {
         const kind = fileKindResolve(groupId, path, requestedKind);
+        // A fresh ask every time, so following the same reference twice scrolls
+        // back to it twice. Opening the file with no region named clears the
+        // last one rather than leaving a band marking lines nobody asked about.
+        const reveal =
+            selection === undefined
+                ? undefined
+                : { ...selection, requestId: (fileRevealRequests += 1) };
+        const revealApply = (tab: HappyAgentFileTabSnapshot): HappyAgentFileTabSnapshot => {
+            if (reveal !== undefined) return { ...tab, reveal };
+            // A preview is not a second decision about the file: it is what a
+            // click in the listing and the file's own address both resolve to,
+            // and the address is re-applied moments after a reference opens the
+            // file. Clearing here would take the region away from the reader
+            // who just asked for it. Opening the file outright does clear it.
+            if (tab.reveal === undefined || preview) return tab;
+            const { reveal: _cleared, ...rest } = tab;
+            return rest;
+        };
         if (!restoring)
             client.memory.recentTabRemember({ type: "file", groupId, path, fileKind: kind });
         const id = fileTabIdOf(groupId, path);
@@ -3611,6 +3818,7 @@ export function happyAgentWorkspaceStoreCreate(
         // Whatever the panel was holding steps aside: the viewer is one slot.
         if (placement === "panel") panelFileTabClose(id);
         if (existing) {
+            fileTabs = fileTabs.map((tab) => (tab.id === id ? revealApply(tab) : tab));
             if (existing.placement !== placement)
                 fileTabs = fileTabs.map((tab) => (tab.id === id ? { ...tab, placement } : tab));
             const change = fileChangeFind(groupId, path);
@@ -3654,6 +3862,7 @@ export function happyAgentWorkspaceStoreCreate(
             kind,
             placement,
             preview,
+            ...(reveal === undefined ? {} : { reveal }),
             revision,
             presentationId,
             saving: false,
@@ -5197,6 +5406,7 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
         });
         unsubscribeWorkspaceFiles = client.workspaceFilesSubscribe(workspaceFilesChanged);
+        slicesFollow();
         // The addressed conversation survives losing every subscriber (the URL
         // still names it), so remounting re-acquires it rather than opening
         // nothing.
@@ -5226,6 +5436,7 @@ export function happyAgentWorkspaceStoreCreate(
         unsubscribeList = undefined;
         unsubscribeWorkspaceFiles?.();
         unsubscribeWorkspaceFiles = undefined;
+        slicesFollow();
         fileDocumentsReconcileOnStart = true;
         // A workspace nobody is looking at does not go asking the host what is
         // installed; the next start reads it fresh anyway.
@@ -5284,6 +5495,7 @@ export function happyAgentWorkspaceStoreCreate(
                     // Nothing is addressed here, so there is no checkout whose
                     // arrangement this could be: the defaults stand in.
                     fileScope: "changed",
+                    slices: SLICES_NONE,
                     fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
                     fileSearch,
                     fileComments,
@@ -5514,7 +5726,7 @@ export function happyAgentWorkspaceStoreCreate(
         conversationOpen: (conversationId, groupId) => {
             addressApply(groupId, conversationId);
             if (groupId !== addressedGroupId) {
-                fileTreeExpansionReset();
+                fileTreeExpansionLoad(groupId);
                 fileSearchReset();
                 fileCommentsReset();
             }
@@ -5529,6 +5741,7 @@ export function happyAgentWorkspaceStoreCreate(
                 });
                 addressedGroupId = groupId;
                 addressedGroupSeenUpdate();
+                slicesFollow();
                 groupRestore(groupId);
                 // Restoration reopens the group's tabs, but this address names
                 // the session. A file address applies this action first and
@@ -5547,7 +5760,7 @@ export function happyAgentWorkspaceStoreCreate(
             addressApply(groupId, undefined);
             if (groupId !== addressedGroupId) {
                 displayedMainViewId = undefined;
-                fileTreeExpansionReset();
+                fileTreeExpansionLoad(groupId);
                 fileSearchReset();
                 fileCommentsReset();
             }
@@ -5555,6 +5768,7 @@ export function happyAgentWorkspaceStoreCreate(
             // the conversation is released rather than after.
             addressedGroupId = groupId;
             addressedGroupSeenUpdate();
+            slicesFollow();
             openConversation(undefined);
             groupRestore(groupId);
             // The scope belongs to this checkout, so a group left listing every
@@ -5630,7 +5844,9 @@ export function happyAgentWorkspaceStoreCreate(
             // ask the owner to navigate away from a list it is already on.
             addressedGroupId = undefined;
             addressedGroupSeen = undefined;
+            slicesFollow();
             displayedMainViewId = undefined;
+            fileTreeExpansionLoad(undefined);
             fileSearchReset();
             fileCommentsReset();
             openConversation(undefined);
@@ -5911,9 +6127,9 @@ export function happyAgentWorkspaceStoreCreate(
         worktreeReorder: (projectId, worktreeId, afterId) =>
             list.worktreeReorder(projectId, worktreeId, afterId),
 
-        filePanelOpen(groupId, path, kind) {
+        filePanelOpen(groupId, path, kind, selection) {
             if (disposed) return;
-            fileTabOpen(groupId, path, kind, false, "panel");
+            fileTabOpen(groupId, path, kind, false, "panel", selection);
             panel.fileViewOpen();
         },
         filePanelClose() {
@@ -5923,7 +6139,8 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
         },
         filePreview: (groupId, path, kind) => fileTabOpen(groupId, path, kind, true),
-        fileOpen: (groupId, path, kind) => fileTabOpen(groupId, path, kind, false),
+        fileOpen: (groupId, path, kind, selection) =>
+            fileTabOpen(groupId, path, kind, false, "main", selection),
         filePreprocess: (groupId, path, kind) => filePreprocessEnqueue(groupId, path, kind),
         attachmentFileOpen: (source, kind) => {
             const resolved = groupPathResolve(source);
@@ -6094,6 +6311,12 @@ export function happyAgentWorkspaceStoreCreate(
             if (fileSearch.query !== "") fileSearchApply(fileSearch.query);
             recompute();
         },
+        sliceSelect,
+        sliceDelete,
+        sliceOpen(groupId, sliceId) {
+            panel.filesSelect();
+            sliceSelect(groupId, sliceId);
+        },
         fileLayoutUpdate(groupId, layout) {
             if (fileScopeOf(groupId) === "all") return;
             if ((groupView(groupId).fileLayout ?? HAPPY_AGENT_FILE_LAYOUT_DEFAULT) === layout)
@@ -6177,6 +6400,14 @@ export function happyAgentWorkspaceStoreCreate(
             fileTreeExpanded = opened;
             fileTreeCollapsed = closed;
             const groupId = addressedGroupId;
+            // How this checkout's listing stands is part of how it is being
+            // looked at, so it is kept beside the panel width and the layout
+            // and comes back the way it was left.
+            if (groupId !== undefined)
+                viewPreferencesWrite(groupId, {
+                    fileTreeOpened: [...opened],
+                    fileTreeClosed: [...closed],
+                });
             if (expanded && groupId !== undefined && fileScopeOf(groupId) === "all")
                 workspaceFilesDirectoryEnsure(groupId, path);
             recompute();

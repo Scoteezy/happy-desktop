@@ -27,6 +27,7 @@ import type { HappyAgentHostServices } from "./happyAgentHostServices.js";
 import {
     happyAgentChangedFileProject,
     happyAgentModelCatalogProject,
+    happyAgentSliceProject,
     happyAgentTextDecodeBase64,
     happyAgentTextEncodeBase64,
 } from "./happyAgentProject.js";
@@ -37,6 +38,8 @@ import type {
     HappyAgentGroupId,
     HappyAgentOpenInTarget,
     HappyAgentOpenInTargets,
+    HappyAgentSlice,
+    HappyAgentSliceId,
     HappyAgentWorkspaceFileBytes,
     HappyAgentWorkspaceFileDocument,
     HappyAgentWorkspaceFileTreePage,
@@ -191,6 +194,22 @@ export interface HappyAgentWorkspaceClient {
     workspaceFilesSubscribe(
         listener: (change: HappyAgentWorkspaceFilesChanged) => void,
     ): () => void;
+    /**
+     * Follows one checkout's slices, newest first, for as long as a surface
+     * shows them. The listener is called once the list is known and again
+     * each time an agent builds a slice; a checkout that has none, or a
+     * Happy Agent that has never heard of slices, reports an empty list.
+     */
+    workspaceSlicesSubscribe(
+        groupId: HappyAgentGroupId,
+        listener: (slices: readonly HappyAgentSlice[]) => void,
+    ): () => void;
+    /**
+     * Removes one slice of a checkout. The slice leaves every subscribed
+     * listing when the daemon confirms; a refusal surfaces as a mutation
+     * failure like any other.
+     */
+    sliceDelete(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
     /**
      * Reads one workspace file as bytes, for showing it rather than editing it.
      * Makes no claim that the file is text, so an image or a video arrives whole.
@@ -545,6 +564,18 @@ export function happyAgentWorkspaceClientCreate(
                 },
             });
             return () => connection.close();
+        },
+        workspaceSlicesSubscribe(groupId, listener) {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            const connection = deps.connection.connectSlices({
+                workspaceId: groupId,
+                onChange: (slices) => listener(slices.map(happyAgentSliceProject)),
+            });
+            return () => connection.close();
+        },
+        sliceDelete(groupId, sliceId) {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            deps.connection.deleteSlice(groupId, sliceId);
         },
         workspaceFileBytesRead: (groupId, path, signal) =>
             deps.hostServices.workspaceFileBytesRead(groupId, path, signal),

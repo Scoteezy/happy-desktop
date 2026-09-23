@@ -124,6 +124,134 @@
     text-overflow: ellipsis;
 }
 
+/* ---- Slice ------------------------------------------------------------ */
+
+/* The slice's name, on a row of its own under the controls: three choices
+   fill the control row in a panel this narrow, and a name squeezed into what
+   is left would be no name at all. Prose rather than a figure, so it takes the
+   interface face; it gives way before the totals beside it do, since a name
+   cut short is still a name and half a diff stat is not. */
+.happy-file-browser__slice {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: var(--happy-subheader-control-height);
+    margin-bottom: 4px;
+    padding: 0 var(--happy-panel-inset);
+    /* Not clipped here: the picker's popover opens out of this row, and the
+       name and the totals each clip themselves. */
+    white-space: nowrap;
+}
+
+.happy-file-browser__slice-title {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+}
+
+.happy-file-browser__slice-title > span {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The one-slice row has no list to hold the act, so the cross sits on the
+   row itself and shows the same way a list row's does: on hover or focus. */
+.happy-file-browser__slice-delete {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    appearance: none;
+    transition:
+        opacity 120ms ease,
+        background-color 120ms ease,
+        color 120ms ease;
+}
+
+.happy-file-browser__slice:hover .happy-file-browser__slice-delete,
+.happy-file-browser__slice:focus-within .happy-file-browser__slice-delete {
+    opacity: 1;
+}
+
+.happy-file-browser__slice-delete:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-file-browser__slice-delete:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: -2px;
+}
+
+.happy-file-browser__slice-glyph {
+    display: flex;
+    flex: none;
+    color: var(--text-secondary);
+}
+
+/* The picker is the name itself, so it wears the row's control height rather
+   than a button's own, and no more chrome than the layout switch above it. */
+.happy-file-browser__slice .happy-menu-button {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: -6px;
+}
+
+.happy-file-browser__slice .happy-menu-button > .happy-button {
+    max-width: 100%;
+    height: var(--happy-subheader-control-height);
+    padding: 0 6px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+/* A long name gives way to an ellipsis before the glyph or the totals do. */
+.happy-file-browser__slice .happy-menu-button > .happy-button .happy-button__content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.happy-file-browser__slice .happy-menu-button > .happy-button .happy-button__label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-file-browser__slice .happy-menu-button .happy-menu-button__popover {
+    min-width: 220px;
+}
+
+.happy-file-browser__slice .happy-file-browser__lines {
+    margin-left: auto;
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    font-feature-settings: "tnum" 1;
+}
+
 /* The two totals travel together: half a diff stat is worse than none. */
 .happy-file-browser__lines {
     display: flex;

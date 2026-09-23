@@ -45,6 +45,34 @@ const states: MenuItem[] = [
     { kind: "item", id: "remove", label: "Remove", icon: "close", danger: true },
 ];
 
+const HOUR = 60 * 60 * 1000;
+const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const removable: MenuItem[] = [
+    { kind: "label", label: "Slices" },
+    {
+        kind: "item",
+        id: "one",
+        label: "File browser only",
+        icon: "check",
+        detail: clock.format(Date.now() - HOUR),
+        action: { icon: "close", label: "Delete slice" },
+    },
+    {
+        kind: "item",
+        id: "two",
+        label: "Daemon connection layer",
+        detail: clock.format(Date.now() - 2 * HOUR),
+        action: { icon: "close", label: "Delete slice" },
+    },
+    {
+        kind: "item",
+        id: "three",
+        label: "A long title that must give way to the time and the cross",
+        detail: "Sep 12",
+        action: { icon: "close", label: "Delete slice" },
+    },
+];
+
 export function MenuPage() {
     return (
         <ComponentPage
@@ -102,6 +130,17 @@ export function MenuPage() {
                 >
                     <div style={{ padding: "28px" }}>
                         <Menu items={states} width={200} />
+                    </div>
+                </Specimen>
+
+                <Specimen
+                    detail="trailing detail · cross on hover removes the row · long label yields"
+                    label="Removable rows"
+                    number="M-05"
+                    stage="app"
+                >
+                    <div style={{ padding: "28px" }}>
+                        <Menu items={removable} width={260} />
                     </div>
                 </Specimen>
             </div>

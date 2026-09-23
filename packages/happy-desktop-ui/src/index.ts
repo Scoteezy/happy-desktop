@@ -25,7 +25,7 @@ export {
 export { CompactActivityRow, type CompactActivityRowProps } from "./CompactActivityRow";
 export { compactCount } from "./countText";
 export { CodeBlock, codeBlockLanguage, type CodeBlockProps } from "./CodeBlock";
-export { CodeEditor, type CodeEditorProps } from "./CodeEditor";
+export { CodeEditor, type CodeEditorProps, type CodeEditorReveal } from "./CodeEditor";
 export {
     ScrollArea,
     ScrollbarTrack,
@@ -186,6 +186,7 @@ export {
     type FileBrowserLayout,
     type FileBrowserProps,
     type FileBrowserScope,
+    type FileBrowserSlice,
 } from "./FileBrowser";
 export { FilePathLabel, type FilePathLabelProps } from "./FilePathLabel";
 export {
@@ -213,8 +214,15 @@ export { HtmlPreviewError, type HtmlPreviewErrorProps } from "./HtmlPreviewError
 export {
     MarkdownDocument,
     markdownDocumentLinkPath,
+    markdownDocumentLinkTarget,
     type MarkdownDocumentProps,
 } from "./MarkdownDocument";
+export {
+    fileReferenceFragment,
+    fileReferenceSplit,
+    type FileOpenHandler,
+    type FileReference,
+} from "./fileReference";
 export { MermaidDiagram, type MermaidDiagramProps } from "./MermaidDiagram";
 export { Icon, type IconName, iconNames, type IconProps } from "./Icon";
 export {

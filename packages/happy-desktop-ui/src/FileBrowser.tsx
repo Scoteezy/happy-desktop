@@ -3,12 +3,37 @@ import { type CSSProperties } from "react";
 import { FileTree, type FileTreeNode, type FileTreeProps } from "./FileTree";
 import { compactCount, changeCountLabel } from "./countText";
 import { Icon } from "./Icon";
+import { MenuButton } from "./MenuButton";
 import { SearchField } from "./TitleBar";
 import { SegmentedControl } from "./SegmentedControl";
-/** Which files the listing is about: only what changed, or the whole checkout. */
-export type FileBrowserScope = "changed" | "all";
+/**
+ * Which files the listing is about: only what changed, the whole checkout, or
+ * one slice an agent cut out of it.
+ */
+export type FileBrowserScope = "changed" | "all" | "slice";
 /** Whether the listing nests into directories or reads as one flat run of files. */
 export type FileBrowserLayout = "flat" | "tree";
+/** One slice the listing can be scoped to: a named set of files an agent chose. */
+export type FileBrowserSlice = {
+    readonly id: string;
+    readonly title: string;
+    /** Epoch millis; shown beside the name so two same-named slices tell apart. */
+    readonly createdAt: number;
+};
+
+const SLICE_CLOCK = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const SLICE_DAY = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+/** The clock for a slice made today, the day for an older one: what a reader needs to tell them apart. */
+function sliceTime(createdAt: number): string {
+    const made = new Date(createdAt);
+    const now = new Date();
+    const today =
+        made.getFullYear() === now.getFullYear() &&
+        made.getMonth() === now.getMonth() &&
+        made.getDate() === now.getDate();
+    return today ? SLICE_CLOCK.format(made) : SLICE_DAY.format(made);
+}
 export type FileBrowserProps = {
     className?: string;
     "data-testid"?: string;
@@ -17,6 +42,22 @@ export type FileBrowserProps = {
     onScopeChange?: (scope: FileBrowserScope) => void;
     /** Per-scope refusal; a cached scope remains available while an uncached one can be disabled. */
     scopeUnavailable?: Partial<Readonly<Record<FileBrowserScope, string>>>;
+    /**
+     * The slices the checkout has, newest first. The slice scope is offered
+     * only while there is one; a checkout no agent has sliced shows the two
+     * choices it always had.
+     */
+    slices?: readonly FileBrowserSlice[];
+    /** The slice listed under the slice scope, by id. */
+    sliceId?: string;
+    /** Receives the slice chosen from the picker, when there are several. */
+    onSliceSelect?: (sliceId: string) => void;
+    /**
+     * Removes a slice the reader no longer needs. Offered as a cross on each
+     * picker row, or on the title row when there is only one; without it the
+     * listing offers no such act.
+     */
+    onSliceDelete?: (sliceId: string) => void;
     layout: FileBrowserLayout;
     onLayoutChange?: (layout: FileBrowserLayout) => void;
     /**
@@ -60,12 +101,22 @@ const SCOPES: { value: FileBrowserScope; label: string }[] = [
     { value: "all", label: "All Files" },
     { value: "changed", label: "Changes" },
 ];
+/** The third choice, offered only once the checkout has something to offer under it. */
+const SLICE_SCOPE: { value: FileBrowserScope; label: string } = { value: "slice", label: "Slice" };
+/** What the listing is called, for anyone who cannot see which choice is pressed. */
+function scopeLabel(scope: FileBrowserScope, sliceTitle: string | undefined): string {
+    if (scope === "all") return "All files";
+    if (scope === "slice") return sliceTitle === undefined ? "Slice" : `Slice: ${sliceTitle}`;
+    return "Changed files";
+}
 /**
  * C-168 FileBrowser — the file listing of a workspace panel.
  *
  * One 32px control row and a scrolling `FileTree` beneath it. The row carries
- * the one-layer All Files / Changes choice. Changes adds diff totals and the
- * flat List / Tree choice; All Files is always a lazy tree.
+ * the one-layer All Files / Changes choice, and a third, Slice, once an agent
+ * has cut one out of the checkout. Changes adds diff totals and the flat List
+ * / Tree choice; Slice puts the slice's title — or a picker, when there are
+ * several — where the totals go; All Files is always a lazy tree.
  *
  * Every exclusive control in the row is one layer: no enclosing track, and
  * only the selected option carries the shared selection fill and outline. No
@@ -84,6 +135,10 @@ export function FileBrowser(props: FileBrowserProps) {
         "scope",
         "onScopeChange",
         "scopeUnavailable",
+        "slices",
+        "sliceId",
+        "onSliceSelect",
+        "onSliceDelete",
         "layout",
         "onLayoutChange",
         "onReviewOpen",
@@ -110,9 +165,34 @@ export function FileBrowser(props: FileBrowserProps) {
     ]);
     const added = local.addedLines !== undefined && local.addedLines > 0;
     const deleted = local.deletedLines !== undefined && local.deletedLines > 0;
+    const slices = local.slices ?? [];
+    const slice = slices.find((candidate) => candidate.id === local.sliceId) ?? slices[0];
+    const scopes = slices.length > 0 ? [...SCOPES, SLICE_SCOPE] : SCOPES;
+    const label = scopeLabel(local.scope, slice?.title);
+    const lines =
+        added || deleted ? (
+            <span className="happy-file-browser__lines">
+                {added ? (
+                    <span
+                        aria-hidden="true"
+                        className="happy-file-browser__added"
+                    >{`+${compactCount(local.addedLines ?? 0)}`}</span>
+                ) : null}
+                {deleted ? (
+                    <span
+                        aria-hidden="true"
+                        className="happy-file-browser__deleted"
+                    >{`−${compactCount(local.deletedLines ?? 0)}`}</span>
+                ) : null}
+                {/* Out of flow, so the pair keeps the row's spacing. */}
+                <span className="happy-visually-hidden">
+                    {changeCountLabel(local.addedLines ?? 0, local.deletedLines ?? 0)}
+                </span>
+            </span>
+        ) : null;
     return (
         <section
-            aria-label={local.scope === "all" ? "All files" : "Changed files"}
+            aria-label={label}
             className={["happy-file-browser", local.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="file-browser"
             data-testid={local["data-testid"]}
@@ -126,7 +206,7 @@ export function FileBrowser(props: FileBrowserProps) {
                     aria-label="Files shown"
                     className="happy-file-browser__scopes"
                     onChange={(scope) => local.onScopeChange?.(scope as FileBrowserScope)}
-                    segments={SCOPES.map((scope) => ({
+                    segments={scopes.map((scope) => ({
                         ...scope,
                         ...(local.scopeUnavailable?.[scope.value] === undefined
                             ? {}
@@ -139,40 +219,20 @@ export function FileBrowser(props: FileBrowserProps) {
                     value={local.scope}
                 />
                 {local.scope === "changed" ? (
-                    <>
-                        <span
-                            className="happy-file-browser__summary"
-                            data-happy-desktop-ui="file-browser-summary"
-                        >
-                            <span className="happy-file-browser__count">
-                                {local.count === undefined
-                                    ? undefined
-                                    : `${compactCount(local.count)} ${local.count === 1 ? "file" : "files"}`}
-                            </span>
-                            {added || deleted ? (
-                                <span className="happy-file-browser__lines">
-                                    {added ? (
-                                        <span
-                                            aria-hidden="true"
-                                            className="happy-file-browser__added"
-                                        >{`+${compactCount(local.addedLines ?? 0)}`}</span>
-                                    ) : null}
-                                    {deleted ? (
-                                        <span
-                                            aria-hidden="true"
-                                            className="happy-file-browser__deleted"
-                                        >{`−${compactCount(local.deletedLines ?? 0)}`}</span>
-                                    ) : null}
-                                    {/* Out of flow, so the pair keeps the row's spacing. */}
-                                    <span className="happy-visually-hidden">
-                                        {changeCountLabel(
-                                            local.addedLines ?? 0,
-                                            local.deletedLines ?? 0,
-                                        )}
-                                    </span>
-                                </span>
-                            ) : null}
+                    <span
+                        className="happy-file-browser__summary"
+                        data-happy-desktop-ui="file-browser-summary"
+                    >
+                        <span className="happy-file-browser__count">
+                            {local.count === undefined
+                                ? undefined
+                                : `${compactCount(local.count)} ${local.count === 1 ? "file" : "files"}`}
                         </span>
+                        {lines}
+                    </span>
+                ) : null}
+                {local.scope !== "all" ? (
+                    <>
                         <div className="happy-file-browser__layouts" role="group">
                             <button
                                 aria-label="List files"
@@ -201,7 +261,9 @@ export function FileBrowser(props: FileBrowserProps) {
                             a time. It sits with the listing it is about; where
                             nothing has changed there is nothing to read, so the
                             control is not offered. */}
-                        {local.onReviewOpen && (local.count ?? 0) > 0 ? (
+                        {local.scope === "changed" &&
+                        local.onReviewOpen &&
+                        (local.count ?? 0) > 0 ? (
                             <button
                                 aria-label="Read every change in one scroll"
                                 className="happy-file-browser__review"
@@ -216,6 +278,72 @@ export function FileBrowser(props: FileBrowserProps) {
                     </>
                 ) : null}
             </div>
+            {local.scope === "slice" && slice !== undefined ? (
+                /* The slice's name: it is what this listing is, so it stands
+                   right under the choice that picked it. With several to
+                   choose from the name is the picker, so choosing another
+                   never costs a second control. */
+                <div
+                    className="happy-file-browser__slice"
+                    data-happy-desktop-ui="file-browser-slice"
+                >
+                    {slices.length > 1 && local.onSliceSelect ? (
+                        <MenuButton
+                            align="start"
+                            data-testid="file-browser-slice-picker"
+                            icon="filter"
+                            items={slices.map((candidate) => ({
+                                kind: "item" as const,
+                                id: candidate.id,
+                                label: candidate.title,
+                                /* When it was made tells two same-named slices
+                                   apart, and says which is the fresh one. */
+                                detail: sliceTime(candidate.createdAt),
+                                ...(candidate.id === slice.id ? { icon: "check" as const } : {}),
+                                ...(local.onSliceDelete
+                                    ? { action: { icon: "close" as const, label: "Delete slice" } }
+                                    : {}),
+                            }))}
+                            label={`Slice: ${slice.title}. Choose another slice`}
+                            menuLabel="Slices"
+                            menuMaxHeight={320}
+                            onAction={(id) => local.onSliceDelete?.(id)}
+                            onSelect={(id) => local.onSliceSelect?.(id)}
+                            size="small"
+                            text={slice.title}
+                            variant="ghost"
+                        />
+                    ) : (
+                        <span
+                            className="happy-file-browser__slice-title"
+                            data-happy-desktop-ui="file-browser-slice-title"
+                            title={slice.title}
+                        >
+                            <span aria-hidden="true" className="happy-file-browser__slice-glyph">
+                                <Icon name="filter" size={14} />
+                            </span>
+                            <span>{slice.title}</span>
+                        </span>
+                    )}
+                    {/* With one slice there is no list to hold the act, so it
+                        sits on the title row itself, shown the same way: when
+                        a hand is on the row. */}
+                    {slices.length <= 1 && local.onSliceDelete ? (
+                        <button
+                            aria-label={`Delete slice: ${slice.title}`}
+                            className="happy-file-browser__slice-delete"
+                            data-happy-desktop-ui="file-browser-slice-delete"
+                            data-testid="file-browser-slice-delete"
+                            onClick={() => local.onSliceDelete?.(slice.id)}
+                            title="Delete slice"
+                            type="button"
+                        >
+                            <Icon name="close" size={14} />
+                        </button>
+                    ) : null}
+                    {lines}
+                </div>
+            ) : null}
             {/* Directly above the rows it narrows, so the thing being typed
                 into and the thing changing under it read as one. The scope
                 choice stays at the top, because it says what this listing is
@@ -230,7 +358,11 @@ export function FileBrowser(props: FileBrowserProps) {
                         onChange={(query) => local.onSearchQueryChange?.(query)}
                         placeholder={
                             local.searchPlaceholder ??
-                            (local.scope === "all" ? "Search all files" : "Search changes")
+                            (local.scope === "all"
+                                ? "Search all files"
+                                : local.scope === "slice"
+                                  ? "Search slice"
+                                  : "Search changes")
                         }
                         shortcutHint={false}
                         value={local.searchQuery ?? ""}
@@ -248,7 +380,7 @@ export function FileBrowser(props: FileBrowserProps) {
             <div className="happy-file-browser__body" data-happy-desktop-ui="file-browser-body">
                 <FileTree
                     emptyLabel={local.emptyLabel}
-                    label={local.scope === "all" ? "All files" : "Changed files"}
+                    label={label}
                     loading={local.loading}
                     loadingLabel={local.loadingLabel}
                     nodes={local.nodes}

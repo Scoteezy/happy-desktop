@@ -1,6 +1,11 @@
 packages:
     - packages/*
 
+# Local only, never commit: the slices work builds against the unpublished
+# happy-agent-client from the sibling checkout until 0.0.68 is released.
+overrides:
+    "@slopus/happy-agent-client": link:../happy-agent/packages/happy-agent-client
+
 # Electron downloads its platform binary during installation.
 onlyBuiltDependencies:
     - electron
