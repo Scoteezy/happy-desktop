@@ -261,7 +261,11 @@ export {
     SystemNotice,
     type SystemNoticeSegment,
 } from "./Message";
-export { type MessageGenerationStatus } from "./MessageMarkdown";
+export {
+    type LinkOpenHandler,
+    type LinkOpenPlacement,
+    type MessageGenerationStatus,
+} from "./MessageMarkdown";
 export { Lightbox, type LightboxProps } from "./Lightbox";
 export { Rail, type RailItem, type RailProps } from "./Rail";
 export {
@@ -309,6 +313,7 @@ export {
 } from "./AgentActivityRow";
 export { ConversationEntryView, type ConversationEntryViewProps } from "./ConversationEntryView";
 export { DelegatedAgentActivity, type DelegatedAgentActivityProps } from "./DelegatedAgentActivity";
+export { ContextMenu, type ContextMenuProps } from "./ContextMenu";
 export { ContextMeter, type ContextMeterProps } from "./ContextMeter";
 export {
     fileTreeBuild,
@@ -629,6 +634,7 @@ export {
     HappyAgentGeneralSettings,
     type HappyAgentAppearanceChoice,
     type HappyAgentGeneralSettingsProps,
+    type HappyAgentLinkOpenPlacementChoice,
     type HappyAgentScrollbarVisibilityChoice,
 } from "./pages/settings/HappyAgentGeneralSettings";
 export {

@@ -4,11 +4,14 @@ import {
     createElement,
     memo,
     useContext,
+    useState,
     type ComponentPropsWithoutRef,
     type ReactNode,
 } from "react";
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
+import { ContextMenu } from "./ContextMenu";
 import { filePreviewKind } from "./FilePreview";
+import { type MenuItem } from "./Menu";
 import { markdownFence, markdownFenceIsMermaid } from "./markdownFence";
 import { type FileOpenHandler } from "./fileReference";
 import { markdownDocumentLinkTarget, markdownFileUrlTransform } from "./MarkdownDocument";
@@ -55,6 +58,46 @@ const MarkdownLinkContext = createContext(false);
  * the app cannot honour.
  */
 const MarkdownFileOpenContext = createContext<FileOpenHandler | undefined>(undefined);
+/** Where the reader asked a web link to open from its context menu. */
+export type LinkOpenPlacement = "browser" | "panel";
+/**
+ * Opens one web address where the reader chose: `browser` is the machine's own
+ * browser, `panel` is the side panel beside the conversation.
+ */
+export type LinkOpenHandler = (url: string, placement: LinkOpenPlacement) => void;
+/**
+ * Offers a web link a choice of where to open, on right-click. Without it a
+ * link is a plain click that goes wherever the host sends every link, and no
+ * menu is drawn — a surface that cannot honour the choice does not ask it.
+ */
+const MarkdownLinkOpenContext = createContext<LinkOpenHandler | undefined>(undefined);
+const LINK_MENU_BROWSER: LinkOpenPlacement = "browser";
+const LINK_MENU_PANEL: LinkOpenPlacement = "panel";
+/**
+ * Which of the two places a plain click already goes, so the menu can say so
+ * beside that row. Absent, neither row claims it.
+ */
+const MarkdownLinkDefaultContext = createContext<LinkOpenPlacement | undefined>(undefined);
+function linkMenuItems(defaultPlacement: LinkOpenPlacement | undefined): MenuItem[] {
+    const detail = (placement: LinkOpenPlacement) =>
+        placement === defaultPlacement ? { detail: "Default" } : {};
+    return [
+        {
+            kind: "item",
+            id: LINK_MENU_BROWSER,
+            label: "Open in browser",
+            icon: "open-external",
+            ...detail(LINK_MENU_BROWSER),
+        },
+        {
+            kind: "item",
+            id: LINK_MENU_PANEL,
+            label: "Open in side panel",
+            icon: "panel-expand",
+            ...detail(LINK_MENU_PANEL),
+        },
+    ];
+}
 const MarkdownTrailingContext = createContext<{
     endOffset: number;
     node: ReactNode;
@@ -110,6 +153,11 @@ const MarkdownLink = ({
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) => {
     const safe = safeHref(href);
     const onFileOpen = useContext(MarkdownFileOpenContext);
+    const onLinkOpen = useContext(MarkdownLinkOpenContext);
+    const linkOpenDefault = useContext(MarkdownLinkDefaultContext);
+    // The link's own context menu, while it is up: where the pointer asked
+    // for it. Local to the link because nothing else in the message reads it.
+    const [menuAt, setMenuAt] = useState<{ x: number; y: number }>();
     const target = safe === undefined ? markdownDocumentLinkTarget(href) : undefined;
     // Only a file this product can actually show is offered as a click. An
     // archive or an executable stays plain text rather than promising a preview
@@ -139,17 +187,45 @@ const MarkdownLink = ({
     // no workspace behind it and promise a click that is not coming.
     if (target !== undefined)
         return <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>;
+    // Only a web page has two places to open; a mail address has one, and it
+    // is not a place this product draws.
+    const webUrl =
+        safe !== undefined && !safe.toLowerCase().startsWith("mailto:") ? safe : undefined;
+    const menuOffered = onLinkOpen !== undefined && webUrl !== undefined;
     return (
-        <a
-            {...props}
-            className={["happy-message__md-link", className].filter(Boolean).join(" ")}
-            data-happy-desktop-ui="message-md-link"
-            href={safe}
-            rel="noopener noreferrer nofollow"
-            target="_blank"
-        >
-            <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>
-        </a>
+        <>
+            <a
+                {...props}
+                className={["happy-message__md-link", className].filter(Boolean).join(" ")}
+                data-happy-desktop-ui="message-md-link"
+                href={safe}
+                onContextMenu={
+                    menuOffered
+                        ? (event) => {
+                              event.preventDefault();
+                              setMenuAt({ x: event.clientX, y: event.clientY });
+                          }
+                        : undefined
+                }
+                rel="noopener noreferrer nofollow"
+                target="_blank"
+            >
+                <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>
+            </a>
+            {menuOffered && menuAt !== undefined ? (
+                <ContextMenu
+                    data-testid="message-md-link-menu"
+                    items={linkMenuItems(linkOpenDefault)}
+                    onClose={() => setMenuAt(undefined)}
+                    onSelect={(id) => {
+                        setMenuAt(undefined);
+                        onLinkOpen(webUrl, id === LINK_MENU_BROWSER ? "browser" : "panel");
+                    }}
+                    x={menuAt.x}
+                    y={menuAt.y}
+                />
+            ) : null}
+        </>
     );
 };
 function appendTrailingInline(children: ReactNode, trailing: ReactNode): ReactNode {
@@ -286,13 +362,16 @@ const markdownComponents: Components = {
  * content is injected into the final paragraph's inline flow so it cannot wrap
  * independently at the paragraph boundary. `onFileOpen` turns a link that names
  * a workspace file into a click that opens Happy's own viewer instead of an
- * inert anchor.
+ * inert anchor. `onLinkOpen` gives a web link a context menu offering the
+ * machine's browser or the side panel.
  */
 export function renderMessageMarkdown(
     text: string,
     trailing?: ReactNode,
     onFileOpen?: FileOpenHandler,
     generationStatus?: MessageGenerationStatus,
+    onLinkOpen?: LinkOpenHandler,
+    linkOpenDefault?: LinkOpenPlacement,
 ): ReactNode {
     return (
         <MarkdownGenerationStatusContext.Provider value={generationStatus}>
@@ -304,14 +383,18 @@ export function renderMessageMarkdown(
                 }
             >
                 <MarkdownFileOpenContext.Provider value={onFileOpen}>
-                    <MemoMarkdown
-                        components={markdownComponents}
-                        urlTransform={markdownFileUrlTransform}
-                        remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
-                        skipHtml
-                    >
-                        {text}
-                    </MemoMarkdown>
+                    <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
+                        <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
+                            <MemoMarkdown
+                                components={markdownComponents}
+                                urlTransform={markdownFileUrlTransform}
+                                remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
+                                skipHtml
+                            >
+                                {text}
+                            </MemoMarkdown>
+                        </MarkdownLinkDefaultContext.Provider>
+                    </MarkdownLinkOpenContext.Provider>
                 </MarkdownFileOpenContext.Provider>
             </MarkdownTrailingContext.Provider>
         </MarkdownGenerationStatusContext.Provider>

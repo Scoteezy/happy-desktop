@@ -1,5 +1,6 @@
 import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
 import type { FileOpenHandler } from "./fileReference";
+import type { LinkOpenHandler, LinkOpenPlacement } from "./MessageMarkdown";
 import {
     entryKey,
     type ComposerSnapshot,
@@ -197,6 +198,14 @@ export type ConversationViewProps = {
      * workspace behind it has nothing to open.
      */
     onFileOpen?: FileOpenHandler;
+    /**
+     * Opens a web link a message carries where the reader chose from the
+     * link's context menu: the machine's browser or the side panel. Absent
+     * offers no menu, and a click goes where the host sends every link.
+     */
+    onLinkOpen?: LinkOpenHandler;
+    /** Which of the two places a plain click on a link goes, marked in its menu. */
+    linkOpenDefault?: LinkOpenPlacement;
     /** Runs a command chosen from the `/` palette. */
     onCommandInvoke?: (commandId: string) => void;
     /** Stops the current run; the composer's send control becomes this while running. */
@@ -705,6 +714,10 @@ export function ConversationView(props: ConversationViewProps) {
                                 onDelegationSelect={props.onDelegationSelect}
                                 now={props.now}
                                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+                                {...(props.onLinkOpen ? { onLinkOpen: props.onLinkOpen } : {})}
+                                {...(props.linkOpenDefault
+                                    ? { linkOpenDefault: props.linkOpenDefault }
+                                    : {})}
                                 onTraceToggle={props.onTraceToggle}
                                 /* Either kind of row can be the one a turn hung
                                    its control on: the answer when the turn is
