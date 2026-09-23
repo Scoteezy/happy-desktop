@@ -35,6 +35,7 @@ import type {
     HappyAgentContextGauge,
     HappyAgentModel,
     HappyAgentModelCatalog,
+    HappyAgentModelEffortRemembered,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
     HappyAgentQueuedMessage,
@@ -607,6 +608,7 @@ export interface HappyAgentChatDeps {
         input: HappyAgentModelSelection,
     ) => HappyAgentSelection;
     readonly output?: (event: HappyAgentChatOutput) => void;
+    readonly effortRemembered?: HappyAgentModelEffortRemembered;
 }
 
 export interface HappyAgentChatTranscriptConnection {
@@ -849,7 +851,13 @@ export function happyAgentChatStoreCreate(
             ...(openImage === undefined ? {} : { openImage }),
             ...(connected === undefined
                 ? {}
-                : { menus: happyAgentMenusDerive(catalog, transcriptSelectionOf(connected)) }),
+                : {
+                      menus: happyAgentMenusDerive(
+                          catalog,
+                          transcriptSelectionOf(connected),
+                          deps.effortRemembered,
+                      ),
+                  }),
         };
         /* The transcript answers for itself: `entriesMerge` returns the very
            list it was given when nothing moved, so a new one is a change and

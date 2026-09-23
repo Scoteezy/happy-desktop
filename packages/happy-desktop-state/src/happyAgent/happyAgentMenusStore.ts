@@ -9,6 +9,7 @@ import type {
     HappyAgentEffortOption,
     HappyAgentMenusSnapshot,
     HappyAgentModelCatalog,
+    HappyAgentModelEffortRemembered,
     HappyAgentModelOption,
     HappyAgentPermissionMode,
     HappyAgentPermissionModeOption,
@@ -28,10 +29,12 @@ const PERMISSION_MODES: readonly HappyAgentPermissionMode[] = [
  * Pure derivation of picker options from the model catalog and the current
  * session selection. Kept side-effect free so both the standalone menus store
  * and the chat store can compute the same option lists from their own inputs.
+ * `remembered` reports the effort last chosen per model, when the caller keeps one.
  */
 export function happyAgentMenusDerive(
     catalog: HappyAgentModelCatalog,
     selection: HappyAgentSelection,
+    remembered?: HappyAgentModelEffortRemembered,
 ): HappyAgentMenusSnapshot {
     const modelOptions: HappyAgentModelOption[] = [];
     let selectedProvider = catalog.providers.find(
@@ -39,12 +42,23 @@ export function happyAgentMenusDerive(
     );
     for (const provider of catalog.providers) {
         for (const model of provider.models) {
+            const rememberedEffort = remembered?.(provider.id, model.id);
             modelOptions.push({
                 providerId: provider.id,
                 modelId: model.id,
                 name: model.name,
                 disabled: provider.disabledReason !== undefined,
                 current: provider.id === selection.providerId && model.id === selection.modelId,
+                efforts: model.thinkingLevels.map((level) => ({
+                    level,
+                    label: happyAgentThinkingLabel(level),
+                })),
+                defaultEffort: model.defaultThinkingLevel,
+                providerType: provider.type,
+                ...(rememberedEffort !== undefined &&
+                model.thinkingLevels.includes(rememberedEffort)
+                    ? { rememberedEffort }
+                    : {}),
             });
         }
     }
@@ -153,6 +167,7 @@ export function happyAgentMenusSelectionProject(
     catalog: HappyAgentModelCatalog,
     previous: HappyAgentMenusSnapshot,
     selection: HappyAgentSelection,
+    remembered?: HappyAgentModelEffortRemembered,
 ): HappyAgentMenusSnapshot {
     if (
         previous.currentProviderId === selection.providerId &&
@@ -169,7 +184,7 @@ export function happyAgentMenusSelectionProject(
     )
         return happyAgentMenusReferencesPreserve(
             previous,
-            happyAgentMenusDerive(catalog, selection),
+            happyAgentMenusDerive(catalog, selection, remembered),
         );
 
     return {
@@ -211,6 +226,7 @@ export interface HappyAgentMenusStore {
 export interface HappyAgentMenusStoreOptions {
     readonly catalog: HappyAgentModelCatalog;
     readonly selection: HappyAgentSelection;
+    readonly effortRemembered?: HappyAgentModelEffortRemembered;
 }
 
 /**
@@ -224,14 +240,22 @@ export function happyAgentMenusStoreCreate(
 ): HappyAgentMenusStore {
     const catalog = options.catalog;
     const store = createStore<HappyAgentMenusSnapshot>()(() =>
-        happyAgentMenusDerive(catalog, options.selection),
+        happyAgentMenusDerive(catalog, options.selection, options.effortRemembered),
     );
     return {
         get: () => store.getState(),
         subscribe: (listener) => store.subscribe(listener),
         menusSelectionUpdate(selection) {
             const previous = store.getState();
-            store.setState(happyAgentMenusSelectionProject(catalog, previous, selection), true);
+            store.setState(
+                happyAgentMenusSelectionProject(
+                    catalog,
+                    previous,
+                    selection,
+                    options.effortRemembered,
+                ),
+                true,
+            );
         },
     };
 }

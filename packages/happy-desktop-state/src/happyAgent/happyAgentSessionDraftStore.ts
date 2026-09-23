@@ -7,6 +7,7 @@ import {
 import type {
     HappyAgentMenusSnapshot,
     HappyAgentModelCatalog,
+    HappyAgentModelEffortRemembered,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
     HappyAgentSelection,
@@ -61,6 +62,7 @@ export interface HappyAgentSessionDraftOptions {
         current: HappyAgentSelection,
         input: HappyAgentModelSelection,
     ) => HappyAgentSelection;
+    readonly effortRemembered?: HappyAgentModelEffortRemembered;
     /**
      * What to open the draft on — the workspace's most recent selection, so a
      * new session starts configured the way the last one was. Absent for the
@@ -225,7 +227,7 @@ export function happyAgentSessionDraftStoreOwnedCreate(options: HappyAgentSessio
     const seed = options.selection ?? happyAgentSessionSelectionDefault(catalog);
     const snapshotOf = (selection: HappyAgentSelection): HappyAgentSessionDraftSnapshot => ({
         selection,
-        menus: happyAgentMenusDerive(catalog, selection),
+        menus: happyAgentMenusDerive(catalog, selection, options.effortRemembered),
     });
     const store = createStore<HappyAgentSessionDraftSnapshot>()(() => snapshotOf(seed));
     const selectionSet = (selection: HappyAgentSelection): void => {
@@ -234,7 +236,12 @@ export function happyAgentSessionDraftStoreOwnedCreate(options: HappyAgentSessio
         store.setState(
             {
                 selection,
-                menus: happyAgentMenusSelectionProject(catalog, previous.menus, selection),
+                menus: happyAgentMenusSelectionProject(
+                    catalog,
+                    previous.menus,
+                    selection,
+                    options.effortRemembered,
+                ),
             },
             true,
         );
@@ -271,7 +278,7 @@ export function happyAgentSessionDraftStoreOwnedCreate(options: HappyAgentSessio
                 const previous = store.getState();
                 const menus = happyAgentMenusReferencesPreserve(
                     previous.menus,
-                    happyAgentMenusDerive(catalog, previous.selection),
+                    happyAgentMenusDerive(catalog, previous.selection, options.effortRemembered),
                 );
                 if (menus === previous.menus) return;
                 store.setState({ selection: previous.selection, menus }, true);

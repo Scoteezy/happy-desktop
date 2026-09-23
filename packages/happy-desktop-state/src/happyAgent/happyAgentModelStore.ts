@@ -100,6 +100,8 @@ export interface HappyAgentModelStore {
     selectionUsed(selection: HappyAgentSelection): void;
     /** Selects a model with that model's last locally remembered effort and speed. */
     modelSelect(current: HappyAgentSelection, input: HappyAgentModelSelection): HappyAgentSelection;
+    /** The effort last chosen for a model on a provider, when this machine remembers one. */
+    effortRemembered(providerId: string, modelId: string): HappyAgentThinkingLevel | undefined;
     [Symbol.dispose](): void;
 }
 
@@ -150,6 +152,8 @@ export function happyAgentModelStoreCreate(
     let preferences = document.preferences;
     let preferenceUnsubscribe: (() => void) | undefined;
     let writingPreferences = false;
+    const effortRemembered = (providerId: string, modelId: string) =>
+        preferences[providerId]?.[modelId]?.effort ?? undefined;
 
     const publish = (next: HappyAgentModelStoreSnapshot): void => {
         snapshot = next;
@@ -165,7 +169,11 @@ export function happyAgentModelStoreCreate(
         publish({
             ...snapshot,
             ...selections,
-            menus: happyAgentMenusDerive(snapshot.catalog, selections.lastUsedSelection),
+            menus: happyAgentMenusDerive(
+                snapshot.catalog,
+                selections.lastUsedSelection,
+                effortRemembered,
+            ),
         });
     };
 
@@ -185,7 +193,7 @@ export function happyAgentModelStoreCreate(
             type: "ready",
             catalog,
             ...selections,
-            menus: happyAgentMenusDerive(catalog, selections.lastUsedSelection),
+            menus: happyAgentMenusDerive(catalog, selections.lastUsedSelection, effortRemembered),
         });
     };
 
@@ -338,7 +346,7 @@ export function happyAgentModelStoreCreate(
             publish({
                 ...snapshot,
                 lastUsedSelection: selection,
-                menus: happyAgentMenusDerive(snapshot.catalog, selection),
+                menus: happyAgentMenusDerive(snapshot.catalog, selection, effortRemembered),
             });
         },
         modelSelect(current, input) {
@@ -354,8 +362,11 @@ export function happyAgentModelStoreCreate(
                 (candidate) => candidate.id === selected.providerId,
             );
             const model = provider?.models.find((candidate) => candidate.id === selected.modelId);
+            // An effort named with the model is a choice, not a gap to fill from memory.
             const effort =
-                preference?.effort && model?.thinkingLevels.includes(preference.effort)
+                input.effort === undefined &&
+                preference?.effort &&
+                model?.thinkingLevels.includes(preference.effort)
                     ? preference.effort
                     : selected.effort;
             const serviceTier =
@@ -373,6 +384,7 @@ export function happyAgentModelStoreCreate(
                 ...(serviceTier !== undefined ? { serviceTier } : {}),
             };
         },
+        effortRemembered,
         [Symbol.dispose]() {
             disposed = true;
             catalogRetryCancel();

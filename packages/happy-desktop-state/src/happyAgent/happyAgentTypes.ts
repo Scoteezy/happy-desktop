@@ -206,6 +206,12 @@ export interface HappyAgentModel {
 
 export interface HappyAgentModelProvider {
     readonly id: string;
+    /**
+     * The canonical kind of service behind this provider, as configured: `"codex"`,
+     * `"claude"`, `"grok"`, `"bedrock"`, … Several providers may share one type,
+     * each being a separate account with that service.
+     */
+    readonly type: string;
     readonly models: readonly HappyAgentModel[];
     readonly serviceTiers: readonly HappyAgentServiceTier[];
     /**
@@ -723,6 +729,24 @@ export interface HappyAgentModelOption {
     readonly name: string;
     readonly disabled: boolean;
     readonly current: boolean;
+    /** The configured service type of the provider, shared by every account of that service. */
+    readonly providerType: string;
+    /** Every reasoning level this model supports, least to most; empty when it has none. */
+    readonly efforts: readonly HappyAgentModelEffortOption[];
+    readonly defaultEffort: HappyAgentThinkingLevel;
+    /** The effort last chosen for this model on this provider, when one is remembered. */
+    readonly rememberedEffort?: HappyAgentThinkingLevel;
+}
+
+/** Looks up the effort last chosen for one model on one provider. */
+export type HappyAgentModelEffortRemembered = (
+    providerId: string,
+    modelId: string,
+) => HappyAgentThinkingLevel | undefined;
+
+export interface HappyAgentModelEffortOption {
+    readonly level: HappyAgentThinkingLevel;
+    readonly label: string;
 }
 
 export interface HappyAgentEffortOption {

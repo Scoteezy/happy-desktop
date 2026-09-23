@@ -699,6 +699,8 @@ export function happyAgentWorkspaceClientCreate(
                         connectMutationSubscribe: deps.connectMutationSubscribe,
                         selectionUsed: (selection) => models.selectionUsed(selection),
                         modelSelect: (current, input) => models.modelSelect(current, input),
+                        effortRemembered: (providerId, modelId) =>
+                            models.effortRemembered(providerId, modelId),
                         output: deps.chatOutput
                             ? (event) => deps.chatOutput?.(sessionId, event)
                             : undefined,

@@ -3733,6 +3733,8 @@ export function happyAgentWorkspaceStoreCreate(
                     catalog: models.catalog,
                     selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
+                    effortRemembered: (providerId, modelId) =>
+                        client.models.effortRemembered(providerId, modelId),
                 });
                 botCreateSessionDraft = owned.store;
                 botCreateSessionDraftWriter = owned.writer;
@@ -3944,6 +3946,8 @@ export function happyAgentWorkspaceStoreCreate(
                     catalog: models.catalog,
                     selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
+                    effortRemembered: (providerId, modelId) =>
+                        client.models.effortRemembered(providerId, modelId),
                 });
                 groupDraft = owned.store;
                 groupDraftWriter = owned.writer;

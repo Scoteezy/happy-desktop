@@ -135,11 +135,23 @@ export {
     type ComposerAttachmentPreviewsProps,
 } from "./ComposerAttachmentPreviews";
 export {
+    COMPOSER_MODEL_BENCHMARKS_URL,
     ComposerModelControl,
+    type ComposerModelAccount,
+    type ComposerModelAccountUsage,
     type ComposerModelChoice,
+    type ComposerModelControlPreview,
     type ComposerModelControlProps,
+    type ComposerModelEffort,
+    type ComposerModelSelection,
+    type ComposerModelService,
+    type ComposerModelUsageWatch,
+    type ComposerModelUsageWindow,
 } from "./ComposerModelControl";
-export { happyAgentComposerModelControlProps } from "./happyAgentComposerModelControl";
+export {
+    happyAgentComposerModelControlProps,
+    happyAgentComposerModelUsageWatch,
+} from "./happyAgentComposerModelControl";
 export {
     DiffSnippet,
     type DiffLine,
