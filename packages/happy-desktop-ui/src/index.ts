@@ -272,6 +272,11 @@ export {
 } from "./Sidebar";
 export { SidebarFooter, type SidebarFooterProps } from "./SidebarFooter";
 export {
+    SidebarKeepAwakeMenu,
+    type SidebarKeepAwakeMenuProps,
+    type SidebarKeepAwakeMode,
+} from "./SidebarKeepAwakeMenu";
+export {
     SIDEBAR_SPACES_BAR_HEIGHT,
     SIDEBAR_SPACES_DOT_SIZE,
     SidebarSpaces,

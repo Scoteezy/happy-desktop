@@ -18,6 +18,7 @@ import type {
     CommandPaletteStore,
     ExperimentsStore,
     HappyAgentGroupId,
+    KeepAwakeStore,
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
@@ -108,6 +109,12 @@ export interface HappyAgentRouterContext {
      * in a host that remembers no such choice, which withholds them.
      */
     readonly experiments?: ExperimentsStore;
+    /**
+     * Whether this computer is held out of sleep, and the choice behind it.
+     * Absent in a host that cannot hold the machine awake, which leaves the
+     * footer without the control rather than with one wired to nothing.
+     */
+    readonly keepAwake?: KeepAwakeStore;
     /** Window-local preference for animated activity titles. */
     readonly titleShimmer?: TitleShimmerStore;
     /**
@@ -460,6 +467,7 @@ function HappyAgentWorkspaceLayout(
             groupId={params.groupId}
             {...(context.daemon ? { daemon: context.daemon } : {})}
             {...(context.experiments ? { experiments: context.experiments } : {})}
+            {...(context.keepAwake ? { keepAwake: context.keepAwake } : {})}
             {...(context.titleShimmer ? { titleShimmer: context.titleShimmer } : {})}
             {...(context.commandPalette ? { commandPalette: context.commandPalette } : {})}
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
@@ -575,6 +583,7 @@ function HappyAgentSettingsRoute() {
             {...(context.debug ? { debug: context.debug } : {})}
             {...(context.profiler ? { profiler: context.profiler } : {})}
             {...(context.experiments ? { experiments: context.experiments } : {})}
+            {...(context.keepAwake ? { keepAwake: context.keepAwake } : {})}
             onCategorySelect={(section) =>
                 void navigate({ params: { section }, to: "/settings/$section" })
             }
