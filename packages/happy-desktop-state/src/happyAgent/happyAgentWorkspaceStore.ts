@@ -46,9 +46,11 @@ import {
     type HappyAgentViewPlacement,
 } from "./happyAgentPanelStore.js";
 import {
-    happyAgentSessionDraftStoreCreate,
+    happyAgentSelectionOffered,
+    happyAgentSessionDraftStoreOwnedCreate,
     type HappyAgentSessionDraftSnapshot,
     type HappyAgentSessionDraftStore,
+    type HappyAgentSessionDraftWriter,
 } from "./happyAgentSessionDraftStore.js";
 import {
     happyAgentGroupAccessOf,
@@ -1385,6 +1387,10 @@ function selectionCreateFields(
     };
 }
 
+/** Why a session cannot be started on this selection, when the catalog offers no model for it. */
+export const HAPPY_AGENT_NO_MODEL_REFUSAL =
+    "No model is available on this Happy Agent. Switch on a provider in Settings → Providers.";
+
 /**
  * Owns the join between the conversation list and the open conversation for one
  * connected `HappyAgentWorkspaceClient`. Which conversation is open is decided by the URL and
@@ -1586,6 +1592,7 @@ export function happyAgentWorkspaceStoreCreate(
      * ones every composer has.
      */
     let botCreateSessionDraft: HappyAgentSessionDraftStore | undefined;
+    let botCreateSessionDraftWriter: HappyAgentSessionDraftWriter | undefined;
     let unsubscribeBotCreateSessionDraft: (() => void) | undefined;
     /** Invalidates a catalog read still in flight once the draft it was for is put down. */
     let botCreateSessionDraftGeneration = 0;
@@ -1623,6 +1630,7 @@ export function happyAgentWorkspaceStoreCreate(
     let unsubscribeGroupComposer: (() => void) | undefined;
     /** How the addressed group's first session will be configured. */
     let groupDraft: HappyAgentSessionDraftStore | undefined;
+    let groupDraftWriter: HappyAgentSessionDraftWriter | undefined;
     let unsubscribeGroupDraft: (() => void) | undefined;
     let groupDraftGeneration = 0;
     /**
@@ -3639,13 +3647,28 @@ export function happyAgentWorkspaceStoreCreate(
      * submission pending for the whole of that wait, so a second Enter cannot
      * start a second session against the same new workspace.
      */
+    /**
+     * Refuses a selection the connection's catalog does not offer. Reached
+     * only when no configured or catalog default was left to fall back to, so
+     * the honest answer is that there is no model, not a hidden substitute.
+     */
+    const selectionRefusalFind = (
+        selection: HappyAgentSelection | undefined,
+    ): string | undefined => {
+        const models = client.models.get();
+        if (selection === undefined || models.type !== "ready") return undefined;
+        return happyAgentSelectionOffered(models.catalog, selection)
+            ? undefined
+            : HAPPY_AGENT_NO_MODEL_REFUSAL;
+    };
+
     const groupSubmit = (
         groupId: HappyAgentGroupId,
         text: string,
         attachments: readonly ComposerAttachment[],
         selection: HappyAgentSelection | undefined,
     ): Promise<HappyAgentSessionLocation> => {
-        const refusal = groupConversationRefusalFind(groupId);
+        const refusal = groupConversationRefusalFind(groupId) ?? selectionRefusalFind(selection);
         if (refusal) return Promise.reject(new Error(refusal));
         try {
             happyAgentComposerAttachmentsValidate(attachments);
@@ -3726,11 +3749,13 @@ export function happyAgentWorkspaceStoreCreate(
                 // The catalog may have moved on since this load answered.
                 const latest = client.models.get();
                 const models = latest.type === "ready" ? latest : loaded;
-                botCreateSessionDraft = happyAgentSessionDraftStoreCreate({
+                const owned = happyAgentSessionDraftStoreOwnedCreate({
                     catalog: models.catalog,
                     selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
                 });
+                botCreateSessionDraft = owned.store;
+                botCreateSessionDraftWriter = owned.writer;
                 unsubscribeBotCreateSessionDraft = botCreateSessionDraft.subscribe(() => {
                     const selection = botCreateSessionDraft?.get().selection;
                     if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
@@ -3758,6 +3783,7 @@ export function happyAgentWorkspaceStoreCreate(
         unsubscribeBotCreateSessionDraft?.();
         unsubscribeBotCreateSessionDraft = undefined;
         botCreateSessionDraft = undefined;
+        botCreateSessionDraftWriter = undefined;
         botCreateSessionDraftGeneration += 1;
         botCreateDraft = undefined;
     };
@@ -3816,6 +3842,8 @@ export function happyAgentWorkspaceStoreCreate(
         const name = pending.name.trim();
         const seed = pending.faces[pending.faceSlot];
         const selection = botCreateSessionDraft?.get().selection;
+        const selectionRefusal = selectionRefusalFind(selection);
+        if (selectionRefusal) throw new Error(selectionRefusal);
         botCreateDraft = { ...pending, submitting: true, error: undefined };
         recompute();
         // The face is painted before anything is asked of the host. It is a
@@ -3915,6 +3943,7 @@ export function happyAgentWorkspaceStoreCreate(
         unsubscribeGroupDraft?.();
         unsubscribeGroupDraft = undefined;
         groupDraft = undefined;
+        groupDraftWriter = undefined;
         // Invalidates a catalog read still in flight, so its draft cannot attach
         // itself to a group that has since been left.
         groupDraftGeneration += 1;
@@ -3933,11 +3962,13 @@ export function happyAgentWorkspaceStoreCreate(
                 // The catalog may have moved on since this load answered.
                 const latest = client.models.get();
                 const models = latest.type === "ready" ? latest : loaded;
-                groupDraft = happyAgentSessionDraftStoreCreate({
+                const owned = happyAgentSessionDraftStoreOwnedCreate({
                     catalog: models.catalog,
                     selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
                 });
+                groupDraft = owned.store;
+                groupDraftWriter = owned.writer;
                 unsubscribeGroupDraft = groupDraft.subscribe(() => {
                     const selection = groupDraft?.get().selection;
                     if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
@@ -4289,15 +4320,18 @@ export function happyAgentWorkspaceStoreCreate(
     /**
      * Hands the connection's current catalog to the open drafts, so their
      * pickers list what the daemon offers now rather than what it offered when
-     * they were opened.
+     * they were opened. A chosen model it no longer offers falls back to the
+     * connection's configured default; that is not the reader's choice, so it
+     * is not remembered as one.
      */
     const draftsCatalogApply = (): void => {
         const models = client.models.get();
         if (models.type !== "ready") return;
+        const input = { catalog: models.catalog, fallback: models.defaultSelection };
         draftsCatalogApplying = true;
         try {
-            groupDraft?.catalogChanged(models.catalog);
-            botCreateSessionDraft?.catalogChanged(models.catalog);
+            groupDraftWriter?.catalogChanged(input);
+            botCreateSessionDraftWriter?.catalogChanged(input);
         } finally {
             draftsCatalogApplying = false;
         }
@@ -4839,10 +4873,12 @@ export function happyAgentWorkspaceStoreCreate(
         },
         // Anything the caller names wins over the connection's last selection.
         conversationCreate: (groupId, input) => {
-            const refusal = groupConversationRefusalFind(groupId);
-            if (refusal) return Promise.reject(new Error(refusal));
             const models = client.models.get();
             const selection = models.type === "ready" ? models.lastUsedSelection : undefined;
+            const refusal =
+                groupConversationRefusalFind(groupId) ??
+                (input.modelId === undefined ? selectionRefusalFind(selection) : undefined);
+            if (refusal) return Promise.reject(new Error(refusal));
             const create = selection ? { ...selectionCreateFields(selection), ...input } : input;
             // A worktree goes through the route that waits for the host to name
             // its directory, whatever the caller passed as `cwd`. The caller

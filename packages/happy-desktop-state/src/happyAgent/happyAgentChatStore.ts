@@ -21,9 +21,12 @@ import {
 } from "./happyAgentConversationProject.js";
 import { happyAgentMenusDerive } from "./happyAgentMenusStore.js";
 import {
+    happyAgentSelectionCatalogReconcile,
     happyAgentSelectionEffortUpdate,
     happyAgentSelectionModelUpdate,
+    happyAgentSelectionOffered,
     happyAgentSelectionServiceTierUpdate,
+    type HappyAgentSelectionCatalogInput,
 } from "./happyAgentSessionDraftStore.js";
 import { deepEqual, happyAgentUserError } from "./happyAgentSupport.js";
 import type {
@@ -543,12 +546,6 @@ export interface HappyAgentChatStore {
     /** True while an action still needs this store to surface a rejection. */
     hasPendingMutations(): boolean;
     subscribe(listener: () => void): () => void;
-    /**
-     * Private authoritative input: the connection's model catalog changed. The
-     * pickers and context gauge re-derive from it; the session's own selection
-     * is the daemon's and is left alone.
-     */
-    catalogChanged(catalog: HappyAgentModelCatalog): void;
     sessionRetry(): void;
     historyLoadMore(): void;
     messageSend(text: string, images?: readonly HappyAgentImageInput[]): Promise<void>;
@@ -581,6 +578,14 @@ export interface HappyAgentChatStore {
 
 export interface HappyAgentChatDeps {
     readonly catalog: HappyAgentModelCatalog;
+    /**
+     * Owner-only authoritative input: what the connection offers now. The
+     * listener is called with the current offer and again on every change;
+     * the returned function stops it, and the store calls it when disposed.
+     */
+    readonly catalogFollow?: (
+        listener: (input: HappyAgentSelectionCatalogInput) => void,
+    ) => () => void;
     readonly transcriptConnect: HappyAgentChatTranscriptConnect;
     readonly connectActions: Pick<
         HappyAgentConnection,
@@ -667,6 +672,11 @@ export function happyAgentChatStoreCreate(
     /* The connection's current model catalog; the daemon can change what it
        offers while this conversation is open. */
     let catalog = deps.catalog;
+    /* Where a session whose model the connection stopped offering moves to. */
+    let fallback: HappyAgentSelection | undefined;
+    /* The last move asked for, so a daemon still echoing the old model is not
+       asked again. */
+    let selectionReconciled: string | undefined;
     let disposed = false;
     let active = false;
     let status: "loading" | "ready" | "error" = "loading";
@@ -902,6 +912,7 @@ export function happyAgentChatStoreCreate(
                 status = "ready";
                 error = undefined;
                 commit();
+                selectionReconcile();
             },
             onError: (caught) => {
                 if (!active || disposed) return;
@@ -947,6 +958,54 @@ export function happyAgentChatStoreCreate(
         }
         return pendingMutationIds.size > 0;
     };
+
+    /**
+     * Moves the session off a model the connection no longer offers, onto the
+     * connection's configured default, before its next message. It asks the
+     * daemon through the same typed switch a reader's pick uses, but it is not
+     * the reader's pick, so nothing is remembered as last used. A run already
+     * underway is left to finish on what it started with; a session whose model
+     * is locked, or a connection with nothing to offer, is left as it is.
+     */
+    const selectionReconcile = (): void => {
+        const connected = transcriptSession;
+        if (
+            disposed ||
+            !active ||
+            status !== "ready" ||
+            connected === undefined ||
+            connected.modelLocked ||
+            runStatus !== "idle"
+        )
+            return;
+        const current = transcriptSelectionOf(connected);
+        if (happyAgentSelectionOffered(catalog, current)) return;
+        const next = happyAgentSelectionCatalogReconcile(catalog, current, fallback);
+        if (next === current) return;
+        const move = [current.providerId, current.modelId, next.providerId, next.modelId].join(
+            "\u0000",
+        );
+        if (move === selectionReconciled) return;
+        selectionReconciled = move;
+        connectMutationTrack(
+            deps.connectActions.switchModel(sessionId, {
+                providerId: next.providerId,
+                modelId: next.modelId,
+            }),
+        );
+        if (next.effort !== current.effort)
+            connectMutationTrack(deps.connectActions.setEffort(sessionId, next.effort));
+        if (next.serviceTier !== current.serviceTier)
+            connectMutationTrack(deps.connectActions.setServiceTier(sessionId, next.serviceTier));
+    };
+
+    const unsubscribeCatalog = deps.catalogFollow?.((input) => {
+        if (disposed) return;
+        catalog = input.catalog;
+        fallback = input.fallback;
+        commit();
+        selectionReconcile();
+    });
 
     const unsubscribeMutationRejections = deps.connectMutationSubscribe((rejection) => {
         if (!pendingMutationIds.delete(rejection.mutationId)) return;
@@ -1066,11 +1125,6 @@ export function happyAgentChatStoreCreate(
                 if (listeners.size === 0) stop();
             };
         },
-        catalogChanged(next) {
-            if (disposed || next === catalog) return;
-            catalog = next;
-            commit();
-        },
         sessionRetry() {
             if (!active || status !== "error") return;
             stop();
@@ -1088,6 +1142,19 @@ export function happyAgentChatStoreCreate(
             rejecting(async () => {
                 if ((await pendingQuestionAnswer(text)).textUsed) return;
                 const steered = runStatus === "running";
+                // A new turn runs on a model the connection offers, or not at
+                // all; steering joins a run that already has its model.
+                if (!steered && transcriptSession !== undefined) {
+                    selectionReconcile();
+                    const current = transcriptSelectionOf(transcriptSession);
+                    if (
+                        !happyAgentSelectionOffered(catalog, current) &&
+                        happyAgentSelectionCatalogReconcile(catalog, current, fallback) === current
+                    )
+                        throw new UserError(
+                            "No model is available on this Happy Agent. Switch on a provider in Settings → Providers.",
+                        );
+                }
                 const mutationId = deps.connectActions.sendMessage(
                     sessionId,
                     images && images.length > 0
@@ -1267,6 +1334,7 @@ export function happyAgentChatStoreCreate(
             disposed = true;
             stop();
             unsubscribeMutationRejections();
+            unsubscribeCatalog?.();
             storeUnsubscribe();
             listeners.clear();
             pendingMutationIds.clear();

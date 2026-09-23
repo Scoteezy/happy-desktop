@@ -45,7 +45,11 @@ import type {
     HappyAgentSessionId,
 } from "./happyAgentTypes.js";
 import { happyAgentModelStoreCreate, type HappyAgentModelStore } from "./happyAgentModelStore.js";
-import type { HappyAgentModelPreferencePersistence } from "./happyAgentModelStore.js";
+import type {
+    HappyAgentModelPreferencePersistence,
+    HappyAgentModelStoreReadySnapshot,
+} from "./happyAgentModelStore.js";
+import type { HappyAgentSelectionCatalogInput } from "./happyAgentSessionDraftStore.js";
 import {
     happyAgentWorkspaceMemoryStoreCreate,
     type HappyAgentWorkspaceMemoryPersistence,
@@ -438,15 +442,31 @@ export function happyAgentWorkspaceClientCreate(
     let disposed = false;
     let chatUseOrder = 0;
 
-    // Every materialized conversation derives its pickers from this
-    // connection's catalog, so a catalog the daemon changed reaches each one.
-    let chatCatalog: HappyAgentModelCatalog | undefined;
-    const modelsUnsubscribe = models.subscribe(() => {
-        const snapshot = models.get();
-        if (snapshot.type !== "ready" || snapshot.catalog === chatCatalog) return;
-        chatCatalog = snapshot.catalog;
-        for (const binding of chats.values()) binding.store?.catalogChanged(snapshot.catalog);
-    });
+    /**
+     * The owner-only catalog input every materialized conversation follows:
+     * this connection's catalog and configured default, as the model store
+     * holds them now and whenever either changes.
+     */
+    const catalogFollow = (
+        listener: (input: HappyAgentSelectionCatalogInput) => void,
+    ): (() => void) => {
+        let last: HappyAgentModelStoreReadySnapshot | undefined;
+        const deliver = (): void => {
+            const snapshot = models.get();
+            if (snapshot.type !== "ready") return;
+            if (
+                last !== undefined &&
+                last.catalog === snapshot.catalog &&
+                last.defaultSelection === snapshot.defaultSelection
+            )
+                return;
+            last = snapshot;
+            listener({ catalog: snapshot.catalog, fallback: snapshot.defaultSelection });
+        };
+        const unsubscribe = models.subscribe(deliver);
+        deliver();
+        return unsubscribe;
+    };
 
     /**
      * A released chat has no transcript listener, but its ChatStore used to
@@ -685,6 +705,7 @@ export function happyAgentWorkspaceClientCreate(
                     const latest = models.get();
                     const chatDeps: HappyAgentChatDeps = {
                         catalog: latest.type === "ready" ? latest.catalog : loaded.catalog,
+                        catalogFollow,
                         transcriptConnect: deps.transcriptConnect,
                         connectActions: deps.connection,
                         connectMutationSubscribe: deps.connectMutationSubscribe,
@@ -771,7 +792,6 @@ export function happyAgentWorkspaceClientCreate(
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
-            modelsUnsubscribe();
             models[Symbol.dispose]();
             sessionListStore?.[Symbol.dispose]();
             sessionListStore = undefined;

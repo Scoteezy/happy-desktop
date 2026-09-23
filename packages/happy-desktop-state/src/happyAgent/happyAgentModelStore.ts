@@ -116,6 +116,12 @@ export interface HappyAgentModelStoreOptions {
 }
 
 /**
+ * Waits before each re-read of a catalog whose last read failed. Bounded: past
+ * the last one, the next reconnect or configuration announcement asks again.
+ */
+const CATALOG_RETRY_MS: readonly number[] = [1_000, 2_000, 4_000, 8_000, 16_000];
+
+/**
  * The catalog read's failure as something a surface can show, without losing
  * what actually refused.
  *
@@ -187,13 +193,21 @@ export function happyAgentModelStoreCreate(
     // land: a read that was already in flight when the daemon changed its
     // configuration answers with what it was before.
     let catalogGeneration = 0;
-    // A re-read failed; the last confirmed catalog stays until the feed
-    // reconnects and it can be asked for again.
+    // A re-read failed. The last confirmed catalog stays on screen while the
+    // read is retried on a bounded backoff; past that, the next reconnect or
+    // configuration announcement asks again.
     let catalogReadFailed = false;
+    let catalogRetry: ReturnType<typeof setTimeout> | undefined;
     let follow: AbortController | undefined;
     let disposed = false;
 
-    const catalogReload = (signal: AbortSignal): void => {
+    const catalogRetryCancel = (): void => {
+        if (catalogRetry !== undefined) clearTimeout(catalogRetry);
+        catalogRetry = undefined;
+    };
+
+    const catalogReload = (signal: AbortSignal, attempt = 0): void => {
+        catalogRetryCancel();
         const generation = ++catalogGeneration;
         void options.catalogRead().then(
             (catalog) => {
@@ -204,6 +218,12 @@ export function happyAgentModelStoreCreate(
             () => {
                 if (signal.aborted || generation !== catalogGeneration) return;
                 catalogReadFailed = true;
+                const delay = CATALOG_RETRY_MS[attempt];
+                if (delay === undefined) return;
+                catalogRetry = setTimeout(() => {
+                    catalogRetry = undefined;
+                    if (!signal.aborted) catalogReload(signal, attempt + 1);
+                }, delay);
             },
         );
     };
@@ -225,6 +245,7 @@ export function happyAgentModelStoreCreate(
             })) {
                 if (input.kind === "error") continue;
                 if (input.kind === "bootstrap") {
+                    catalogRetryCancel();
                     ++catalogGeneration;
                     catalogReadFailed = false;
                     catalogAdopt(happyAgentModelCatalogProject(input.bootstrap.config));
@@ -260,6 +281,8 @@ export function happyAgentModelStoreCreate(
             loadPromise = options.catalogRead().then(
                 (catalog) => {
                     loadPromise = undefined;
+                    // A disposed store publishes nothing; its connection is gone.
+                    if (disposed) throw new UserError("This Happy Agent connection is closed.");
                     // A newer catalog already arrived while this read was out.
                     if (generation !== catalogGeneration && snapshot.type === "ready")
                         return snapshot;
@@ -270,6 +293,7 @@ export function happyAgentModelStoreCreate(
                 },
                 (error: unknown) => {
                     loadPromise = undefined;
+                    if (disposed) throw modelError(error);
                     if (snapshot.type === "ready") return snapshot;
                     const failure = modelError(error);
                     publish({ type: "error", error: failure });
@@ -279,6 +303,8 @@ export function happyAgentModelStoreCreate(
             return loadPromise;
         },
         catalogChanged(catalog) {
+            if (disposed) return;
+            catalogRetryCancel();
             ++catalogGeneration;
             catalogAdopt(catalog);
         },
@@ -349,6 +375,7 @@ export function happyAgentModelStoreCreate(
         },
         [Symbol.dispose]() {
             disposed = true;
+            catalogRetryCancel();
             follow?.abort();
             follow = undefined;
             preferenceUnsubscribe?.();

@@ -71,20 +71,24 @@ it("follows a daemon restarted behind the same endpoint onto its version and mod
             grok: { enabled: true, models: [{ enabled: true, id: "grok-4.7" }], type: "grok" },
         },
     });
-    // Its health answers last, after the feed is live on it again.
+    // Until the replacement's own health admits it, nothing of it is taken:
+    // the last confirmed version and models stay while the window reconnects.
     const healthRelease = daemon.pause("getHealth");
     daemon.daemonReplace({ version: "0.4.75" });
+    await vi.waitFor(() => expect(session.connection.get().connection).toBe("disconnected"));
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(session.connection.get().version).toBe("0.4.73-preview.4");
+    expect(modelIds()).toEqual(["test-provider/test-model"]);
 
-    await vi.waitFor(() =>
-        expect(modelIds()).toEqual(["test-provider/test-model", "grok/grok-4.7"]),
-    );
-    await vi.waitFor(() => expect(session.connection.get().connection).toBe("connected"));
     healthRelease();
     await vi.waitFor(() =>
         expect(session.connection.get()).toMatchObject({
             connection: "connected",
             version: "0.4.75",
         }),
+    );
+    await vi.waitFor(() =>
+        expect(modelIds()).toEqual(["test-provider/test-model", "grok/grok-4.7"]),
     );
     // Reconciled in place: the same session and stores, never a new one.
     expect(handle.get()).toBe(session);

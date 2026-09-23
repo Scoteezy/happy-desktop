@@ -301,41 +301,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     // `updates()` iterator, so a replacement that happened while the feed was
     // being reopened is still recognized as one.
     let daemonId: string | undefined;
-    // Invalidates an older health read when another replacement follows it.
-    let daemonHealthGeneration = 0;
-
-    /**
-     * Asks a daemon that replaced the one this connection verified what it is.
-     *
-     * Startup health is read once, but a restart behind the same endpoint swaps
-     * the process — and with it the version and the protocol — without this
-     * connection ever starting again. A failure is only diagnostic: the feed is
-     * already live, and the next replacement asks again.
-     */
-    const daemonHealthRefresh = async (): Promise<void> => {
-        const generation = ++daemonHealthGeneration;
-        try {
-            const health = await client.getHealth({
-                signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
-            });
-            if (rootController.signal.aborted || generation !== daemonHealthGeneration) return;
-            reportDebug({
-                detail: debugDetail(health),
-                level: "info",
-                message: "Replacement Happy Agent health read",
-                source: "connection",
-            });
-            reportCompatibility(serverCompatibility(health.version));
-        } catch (error) {
-            if (rootController.signal.aborted || generation !== daemonHealthGeneration) return;
-            reportDebug({
-                detail: errorDetail(error),
-                level: "warning",
-                message: "Replacement Happy Agent health read failed",
-                source: "connection",
-            });
-        }
-    };
+    // Set when the process answering may no longer be the one whose health
+    // admitted this connection. Until its own health is read and found
+    // compatible and ready, nothing is taken from it: no bootstrap, no feed.
+    let daemonVerify = false;
 
     const reportMutationFailure = (
         action: MutationAction,
@@ -1969,8 +1938,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 // Health gates startup because it is the only route guaranteed
                 // while the daemon is booting. Once the first bootstrap lands,
                 // the client's managed update feed owns reachability and
-                // reconnection.
-                if (config === undefined) {
+                // reconnection — until a different process may be answering
+                // it, which passes the same gate before anything of its is used.
+                if (config === undefined || daemonVerify) {
                     reportDebug({
                         level: "info",
                         message: "Checking Happy Agent health before managed updates",
@@ -1993,8 +1963,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     const nextCompatibility = serverCompatibility(health.version);
                     reportCompatibility(nextCompatibility);
                     if (nextCompatibility.status !== "compatible" || !health.ready) {
-                        sync.writer.onboardingUnavailable();
-                        publishConnection("connecting");
+                        if (config === undefined) sync.writer.onboardingUnavailable();
+                        publishConnection(config === undefined ? "connecting" : "reconnecting");
                         reportDebug({
                             detail: debugDetail({ delayMs: reconnectMs }),
                             level: "warning",
@@ -2005,6 +1975,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         reconnectMs = Math.min(reconnectMs * 2, MAXIMUM_RECONNECT_MS);
                         continue;
                     }
+                }
+                if (config === undefined) {
                     // Team members without a profile can read these endpoints,
                     // but cannot read config/bootstrap or open the event stream.
                     // Keep that authorization boundary identical for every route.
@@ -2027,6 +1999,15 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     }
                 }
                 if (config === undefined) await resync(false);
+                else if (daemonVerify) {
+                    // A replacement carries none of the previous process's
+                    // journal, so everything applied so far is only as good as
+                    // a snapshot taken again. Cleared only once that snapshot
+                    // lands; a failure goes back through the gate on the
+                    // ordinary reconnect backoff.
+                    await resync(true);
+                    daemonVerify = false;
+                }
                 let reopen = false;
                 reportDebug({
                     detail: debugDetail({ after: cursor ?? null }),
@@ -2065,9 +2046,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         });
                         publishConnection("reconnecting");
                         // A lost journal is also how a replacement that does
-                        // not name its process shows itself.
-                        background(daemonHealthRefresh());
-                        await resync(true);
+                        // not name its process shows itself, so the process is
+                        // verified before it is reconciled.
+                        daemonVerify = true;
                         reopen = true;
                         break;
                     } else if (update.kind === "daemon_started") {
@@ -2090,13 +2071,12 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                                 : "Managed update feed named its Happy Agent process",
                             source: "sse",
                         });
-                        // A replacement carries none of the previous process's
-                        // journal, so everything applied so far is only as good
-                        // as a snapshot taken again — its version included.
+                        // Nothing from a replacement is used until its own
+                        // health admits it; the gate at the top of the loop
+                        // reads that and then reconciles.
                         if (replaced) {
                             publishConnection("reconnecting");
-                            background(daemonHealthRefresh());
-                            await resync(true);
+                            daemonVerify = true;
                             reopen = true;
                             break;
                         }

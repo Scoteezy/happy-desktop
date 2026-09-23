@@ -214,6 +214,32 @@ it("reads a replacement daemon's health and reports its version after reconcilin
     expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
 });
 
+it("takes nothing from an incompatible replacement until its health admits it", async () => {
+    const { connection, daemon } = harnessOpen();
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+
+    daemon.daemonReplace({ version: "0.0.1" });
+    await vi.waitFor(() =>
+        expect(connection.compatibility()).toMatchObject({
+            status: "server_outdated",
+            serverVersion: "0.0.1",
+        }),
+    );
+    await vi.waitFor(() => expect(daemon.callCount("getHealth")).toBeGreaterThanOrEqual(3));
+    expect(groups.state.connection).toBe("reconnecting");
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(daemon.callCount("streamEvents")).toBe(2);
+
+    daemon.healthSet({ daemon: "0.4.75" });
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(connection.compatibility()).toMatchObject({
+        status: "compatible",
+        serverVersion: "0.4.75",
+    });
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(2);
+});
+
 it("does not read health again when the same daemon's feed only reconnects", async () => {
     const { connection, daemon } = harnessOpen();
     const groups = groupsWatch(connection);
