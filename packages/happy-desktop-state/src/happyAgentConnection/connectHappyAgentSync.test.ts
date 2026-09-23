@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { connectHappyAgent } from "./connectHappyAgent.js";
+import { MINIMUM_HAPPY_AGENT_VERSION } from "./compatibility.js";
 import { HAPPY_AGENT_PROTOCOL_VERSION, HappyAgentApiError } from "@slopus/happy-agent-client";
 import type {
     ChatDelta,
@@ -186,6 +187,43 @@ it("reports reconnecting after a server drop and resumes from the last applied c
     expect(daemon.streamOpens[1]).toBe(event.cursor);
     // The transcript survived the reconnect untouched.
     expect(userMessages(chat.elements)).toHaveLength(1);
+});
+
+it("reads a replacement daemon's health and reports its version after reconciling", async () => {
+    const { connection, daemon } = harnessOpen();
+    daemon.projectSeed({ id: "project-a" });
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(connection.compatibility()).toMatchObject({
+        status: "compatible",
+        serverVersion: MINIMUM_HAPPY_AGENT_VERSION,
+    });
+
+    // The same endpoint now answers from another process on another version.
+    daemon.daemonReplace({ version: "0.4.75" });
+
+    await vi.waitFor(() =>
+        expect(connection.compatibility()).toMatchObject({
+            status: "compatible",
+            serverVersion: "0.4.75",
+        }),
+    );
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(daemon.callCount("getHealth")).toBe(2);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(2);
+    expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
+});
+
+it("does not read health again when the same daemon's feed only reconnects", async () => {
+    const { connection, daemon } = harnessOpen();
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+
+    daemon.streamDropAll();
+    await vi.waitFor(() => expect(daemon.streamOpens).toHaveLength(2));
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(daemon.callCount("getHealth")).toBe(1);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
 });
 
 it("retries an unreachable daemon with exponential backoff and surfaces the error", async () => {

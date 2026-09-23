@@ -454,7 +454,11 @@ export function happyAgentDirectoryStoreCreate(
                           status: "connecting" as const,
                           message: "Connecting to this Happy Agent.",
                       }),
-            version: target.happyAgentVersion,
+            // The version the daemon itself last reported over this window's
+            // connection wins: a daemon restarted behind the same endpoint is
+            // read again there, while the host's figure is from when it
+            // connected. The host's stands in only until the daemon has said.
+            version: happyAgent.entry.session?.connection.get().version ?? target.happyAgentVersion,
         };
         const base = target.happyAgentHttpUrl.replace(/\/$/u, "");
         if (happyAgent.url !== base) {

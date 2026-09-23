@@ -543,6 +543,12 @@ export interface HappyAgentChatStore {
     /** True while an action still needs this store to surface a rejection. */
     hasPendingMutations(): boolean;
     subscribe(listener: () => void): () => void;
+    /**
+     * Private authoritative input: the connection's model catalog changed. The
+     * pickers and context gauge re-derive from it; the session's own selection
+     * is the daemon's and is left alone.
+     */
+    catalogChanged(catalog: HappyAgentModelCatalog): void;
     sessionRetry(): void;
     historyLoadMore(): void;
     messageSend(text: string, images?: readonly HappyAgentImageInput[]): Promise<void>;
@@ -658,6 +664,9 @@ export function happyAgentChatStoreCreate(
     }));
 
     const listeners = new Set<() => void>();
+    /* The connection's current model catalog; the daemon can change what it
+       offers while this conversation is open. */
+    let catalog = deps.catalog;
     let disposed = false;
     let active = false;
     let status: "loading" | "ready" | "error" = "loading";
@@ -825,7 +834,7 @@ export function happyAgentChatStoreCreate(
             ...(usage === undefined ? {} : { usage }),
             usageLoading: false,
             contextGauge: contextGaugeDerive(
-                deps.catalog,
+                catalog,
                 usage?.context,
                 connected === undefined
                     ? undefined
@@ -838,7 +847,7 @@ export function happyAgentChatStoreCreate(
             ...(openImage === undefined ? {} : { openImage }),
             ...(connected === undefined
                 ? {}
-                : { menus: happyAgentMenusDerive(deps.catalog, transcriptSelectionOf(connected)) }),
+                : { menus: happyAgentMenusDerive(catalog, transcriptSelectionOf(connected)) }),
         };
         /* The transcript answers for itself: `entriesMerge` returns the very
            list it was given when nothing moved, so a new one is a change and
@@ -1057,6 +1066,11 @@ export function happyAgentChatStoreCreate(
                 if (listeners.size === 0) stop();
             };
         },
+        catalogChanged(next) {
+            if (disposed || next === catalog) return;
+            catalog = next;
+            commit();
+        },
         sessionRetry() {
             if (!active || status !== "error") return;
             stop();
@@ -1153,7 +1167,7 @@ export function happyAgentChatStoreCreate(
             const current = transcriptSelectionOf(connected);
             const next =
                 deps.modelSelect?.(current, input) ??
-                happyAgentSelectionModelUpdate(deps.catalog, current, input);
+                happyAgentSelectionModelUpdate(catalog, current, input);
             deps.selectionUsed?.(next);
             connectMutationTrack(
                 deps.connectActions.switchModel(sessionId, {

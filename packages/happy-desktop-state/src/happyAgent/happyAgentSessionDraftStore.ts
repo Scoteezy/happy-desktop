@@ -1,5 +1,9 @@
 import { createStore } from "zustand/vanilla";
-import { happyAgentMenusDerive, happyAgentMenusSelectionProject } from "./happyAgentMenusStore.js";
+import {
+    happyAgentMenusDerive,
+    happyAgentMenusReferencesPreserve,
+    happyAgentMenusSelectionProject,
+} from "./happyAgentMenusStore.js";
 import type {
     HappyAgentMenusSnapshot,
     HappyAgentModelCatalog,
@@ -40,6 +44,12 @@ export interface HappyAgentSessionDraftStore {
     effortUpdate(effort?: HappyAgentThinkingLevel): void;
     permissionModeUpdate(permissionMode: HappyAgentPermissionMode): void;
     serviceTierUpdate(serviceTier?: HappyAgentServiceTier): void;
+    /**
+     * Private authoritative input: the daemon changed what it offers. The
+     * pickers re-derive from the new catalog, and a chosen model it no longer
+     * offers falls back to the catalog's default in the same access mode.
+     */
+    catalogChanged(catalog: HappyAgentModelCatalog): void;
 }
 
 export interface HappyAgentSessionDraftOptions {
@@ -196,7 +206,7 @@ export function happyAgentSelectionEqual(
 export function happyAgentSessionDraftStoreCreate(
     options: HappyAgentSessionDraftOptions,
 ): HappyAgentSessionDraftStore {
-    const catalog = options.catalog;
+    let catalog = options.catalog;
     const seed = options.selection ?? happyAgentSessionSelectionDefault(catalog);
     const snapshotOf = (selection: HappyAgentSelection): HappyAgentSessionDraftSnapshot => ({
         selection,
@@ -234,5 +244,28 @@ export function happyAgentSessionDraftStoreCreate(
             selectionSet(
                 happyAgentSelectionServiceTierUpdate(store.getState().selection, serviceTier),
             ),
+        catalogChanged(next) {
+            if (next === catalog) return;
+            catalog = next;
+            const previous = store.getState();
+            const offered = catalog.providers.some(
+                (provider) =>
+                    provider.id === previous.selection.providerId &&
+                    provider.disabledReason === undefined &&
+                    provider.models.some((model) => model.id === previous.selection.modelId),
+            );
+            const selection = offered
+                ? previous.selection
+                : happyAgentSelectionPermissionModeUpdate(
+                      happyAgentSessionSelectionDefault(catalog),
+                      previous.selection.permissionMode,
+                  );
+            const menus = happyAgentMenusReferencesPreserve(
+                previous.menus,
+                happyAgentMenusDerive(catalog, selection),
+            );
+            if (selection === previous.selection && menus === previous.menus) return;
+            store.setState({ selection, menus }, true);
+        },
     };
 }

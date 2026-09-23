@@ -1438,6 +1438,9 @@ export function happyAgentWorkspaceStoreCreate(
     let disposed = false;
     let unsubscribeList: (() => void) | undefined;
     let unsubscribeWorkspaceFiles: (() => void) | undefined;
+    let unsubscribeModels: (() => void) | undefined;
+    /** True while the drafts re-derive from a catalog the daemon changed, which nobody chose. */
+    let draftsCatalogApplying = false;
     /** Ready bytes may have changed while this store had no live file-hint subscription. */
     let fileDocumentsReconcileOnStart = false;
 
@@ -3717,17 +3720,20 @@ export function happyAgentWorkspaceStoreCreate(
     const botCreateSessionDraftEnsure = (): void => {
         const current = ++botCreateSessionDraftGeneration;
         void client.models.load().then(
-            ({ catalog, lastUsedSelection }) => {
+            (loaded) => {
                 if (disposed || botCreateSessionDraftGeneration !== current || !botCreateDraft)
                     return;
+                // The catalog may have moved on since this load answered.
+                const latest = client.models.get();
+                const models = latest.type === "ready" ? latest : loaded;
                 botCreateSessionDraft = happyAgentSessionDraftStoreCreate({
-                    catalog,
-                    selection: lastUsedSelection,
+                    catalog: models.catalog,
+                    selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
                 });
                 unsubscribeBotCreateSessionDraft = botCreateSessionDraft.subscribe(() => {
                     const selection = botCreateSessionDraft?.get().selection;
-                    if (selection) client.models.selectionUsed(selection);
+                    if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
                     recompute();
                 });
                 recompute();
@@ -3922,16 +3928,19 @@ export function happyAgentWorkspaceStoreCreate(
     const groupDraftEnsure = (groupId: HappyAgentGroupId): void => {
         const current = ++groupDraftGeneration;
         void client.models.load().then(
-            ({ catalog, lastUsedSelection }) => {
+            (loaded) => {
                 if (disposed || groupDraftGeneration !== current || openGroupId !== groupId) return;
+                // The catalog may have moved on since this load answered.
+                const latest = client.models.get();
+                const models = latest.type === "ready" ? latest : loaded;
                 groupDraft = happyAgentSessionDraftStoreCreate({
-                    catalog,
-                    selection: lastUsedSelection,
+                    catalog: models.catalog,
+                    selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
                 });
                 unsubscribeGroupDraft = groupDraft.subscribe(() => {
                     const selection = groupDraft?.get().selection;
-                    if (selection) client.models.selectionUsed(selection);
+                    if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
                     recompute();
                 });
                 recompute();
@@ -4277,6 +4286,23 @@ export function happyAgentWorkspaceStoreCreate(
         conversation = { type: "error", error: failure };
     };
 
+    /**
+     * Hands the connection's current catalog to the open drafts, so their
+     * pickers list what the daemon offers now rather than what it offered when
+     * they were opened.
+     */
+    const draftsCatalogApply = (): void => {
+        const models = client.models.get();
+        if (models.type !== "ready") return;
+        draftsCatalogApplying = true;
+        try {
+            groupDraft?.catalogChanged(models.catalog);
+            botCreateSessionDraft?.catalogChanged(models.catalog);
+        } finally {
+            draftsCatalogApplying = false;
+        }
+    };
+
     const start = (): void => {
         active = true;
         const reconcileFileDocuments = fileDocumentsReconcileOnStart;
@@ -4319,6 +4345,15 @@ export function happyAgentWorkspaceStoreCreate(
         // seconds because that is how often the answer can change.
         openInTargetsRefresh();
         openInTargetsTimer ??= setInterval(openInTargetsRefresh, OPEN_IN_TARGETS_REFRESH_MS);
+        // The daemon can change what it offers at any time — a provider
+        // switched on, or a restart onto another configuration — and the open
+        // drafts and a conversation still showing the machine's defaults list
+        // exactly that. A catalog that moved while nobody watched lands now.
+        unsubscribeModels = client.models.subscribe(() => {
+            draftsCatalogApply();
+            recompute();
+        });
+        draftsCatalogApply();
         recompute();
     };
 
@@ -4330,6 +4365,8 @@ export function happyAgentWorkspaceStoreCreate(
         unsubscribeList = undefined;
         unsubscribeWorkspaceFiles?.();
         unsubscribeWorkspaceFiles = undefined;
+        unsubscribeModels?.();
+        unsubscribeModels = undefined;
         fileDocumentsReconcileOnStart = true;
         // A workspace nobody is looking at does not go asking the host what is
         // installed; the next start reads it fresh anyway.

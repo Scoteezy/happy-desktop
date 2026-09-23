@@ -95,6 +95,17 @@ export interface FakeHappyAgentDaemon {
 
     /** Toggle daemon health readiness, protocol number, and product version. */
     healthSet(options: { daemon?: string; ready?: boolean; protocol?: number }): void;
+
+    /** The effective configuration `getConfig` and the desktop bootstrap serve. */
+    configGet(): DaemonConfig;
+    /** Replace the effective configuration; announcing it is up to the test. */
+    configSet(config: DaemonConfig): void;
+    /**
+     * Replace the daemon process behind the same client: every live stream
+     * ends, the next hello names a new daemon whose journal does not hold the
+     * old cursor, and health reports `version` when one is given.
+     */
+    daemonReplace(options?: { version?: string }): void;
 }
 
 export interface FakeDaemonCall {
@@ -242,7 +253,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     const versionOf = (value: number): string => `version-${String(value).padStart(12, "0")}`;
     let latestCursor = cursorOf((cursorCounter += 1));
 
-    const config = configDefault();
+    let config = configDefault();
     const onboarding = {
         completed: true,
         steps: {
@@ -271,6 +282,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     let healthReady = true;
     let protocol = HAPPY_AGENT_PROTOCOL_VERSION;
     let daemonVersion = MINIMUM_HAPPY_AGENT_VERSION;
+    let daemonGeneration = 1;
 
     const historyOf = (agentId: string): { runs: HistoryRun[]; pending: UserMessage[] } => {
         let history = histories.get(agentId);
@@ -341,6 +353,10 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
                 version: { daemon: daemonVersion, protocol },
             };
         },
+        async getConfig(...args: unknown[]) {
+            await record("getConfig", args);
+            return { config };
+        },
         async getOnboarding(...args: unknown[]) {
             await record("getOnboarding", args);
             return onboarding;
@@ -393,6 +409,8 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
                     hello: {
                         connectedAt: 1,
                         cursor: latestCursor,
+                        daemonId: `daemon-${String(daemonGeneration)}`,
+                        daemonStartedAt: daemonGeneration,
                         gap,
                         resumed: !gap && (options.after ?? options.lastEventId) !== undefined,
                     },
@@ -785,6 +803,15 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             if (options.ready !== undefined) healthReady = options.ready;
             if (options.protocol !== undefined) protocol = options.protocol;
             if (options.daemon !== undefined) daemonVersion = options.daemon;
+        },
+        configGet: () => config,
+        configSet(next) {
+            config = next;
+        },
+        daemonReplace(options = {}) {
+            daemonGeneration += 1;
+            if (options.version !== undefined) daemonVersion = options.version;
+            for (const stream of streams) stream.end();
         },
     };
 }

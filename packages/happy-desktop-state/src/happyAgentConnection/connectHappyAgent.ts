@@ -297,6 +297,46 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         options.onCompatibilityChange?.(next);
     };
 
+    // The daemon process the managed feed last named. It outlives any one
+    // `updates()` iterator, so a replacement that happened while the feed was
+    // being reopened is still recognized as one.
+    let daemonId: string | undefined;
+    // Invalidates an older health read when another replacement follows it.
+    let daemonHealthGeneration = 0;
+
+    /**
+     * Asks a daemon that replaced the one this connection verified what it is.
+     *
+     * Startup health is read once, but a restart behind the same endpoint swaps
+     * the process — and with it the version and the protocol — without this
+     * connection ever starting again. A failure is only diagnostic: the feed is
+     * already live, and the next replacement asks again.
+     */
+    const daemonHealthRefresh = async (): Promise<void> => {
+        const generation = ++daemonHealthGeneration;
+        try {
+            const health = await client.getHealth({
+                signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+            });
+            if (rootController.signal.aborted || generation !== daemonHealthGeneration) return;
+            reportDebug({
+                detail: debugDetail(health),
+                level: "info",
+                message: "Replacement Happy Agent health read",
+                source: "connection",
+            });
+            reportCompatibility(serverCompatibility(health.version));
+        } catch (error) {
+            if (rootController.signal.aborted || generation !== daemonHealthGeneration) return;
+            reportDebug({
+                detail: errorDetail(error),
+                level: "warning",
+                message: "Replacement Happy Agent health read failed",
+                source: "connection",
+            });
+        }
+    };
+
     const reportMutationFailure = (
         action: MutationAction,
         mutationId: string,
@@ -2024,27 +2064,38 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             source: "sse",
                         });
                         publishConnection("reconnecting");
+                        // A lost journal is also how a replacement that does
+                        // not name its process shows itself.
+                        background(daemonHealthRefresh());
                         await resync(true);
                         reopen = true;
                         break;
                     } else if (update.kind === "daemon_started") {
+                        // Each `updates()` iterator only compares against the
+                        // processes it saw itself; the connection remembers
+                        // across the reopen that follows a failed attempt.
+                        const replaced =
+                            update.replaced ||
+                            (daemonId !== undefined && daemonId !== update.daemonId);
+                        daemonId = update.daemonId;
                         reportDebug({
                             detail: debugDetail({
                                 cursor: update.cursor,
                                 daemonId: update.daemonId,
-                                replaced: update.replaced,
+                                replaced,
                             }),
-                            level: update.replaced ? "warning" : "info",
-                            message: update.replaced
+                            level: replaced ? "warning" : "info",
+                            message: replaced
                                 ? "A different Happy Agent process is answering; reconciling"
                                 : "Managed update feed named its Happy Agent process",
                             source: "sse",
                         });
                         // A replacement carries none of the previous process's
                         // journal, so everything applied so far is only as good
-                        // as a snapshot taken again.
-                        if (update.replaced) {
+                        // as a snapshot taken again — its version included.
+                        if (replaced) {
                             publishConnection("reconnecting");
+                            background(daemonHealthRefresh());
                             await resync(true);
                             reopen = true;
                             break;

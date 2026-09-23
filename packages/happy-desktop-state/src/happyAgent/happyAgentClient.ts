@@ -116,7 +116,7 @@ export interface HappyAgentWorkspaceClient {
      * read and write the one document the host persists.
      */
     readonly memory: HappyAgentWorkspaceMemoryStore;
-    /** Loads (once) and returns the model catalog; cached for the client's lifetime. */
+    /** Loads the model catalog once, then answers with the current one `models` follows. */
     catalogRead(): Promise<HappyAgentModelCatalog>;
     /** The single session-list store; materialized on first access. */
     sessionList(): HappyAgentSessionListStore;
@@ -417,6 +417,7 @@ export function happyAgentWorkspaceClientCreate(
     const models = happyAgentModelStoreCreate({
         catalogRead: async () =>
             happyAgentModelCatalogProject((await deps.client.getConfig()).config),
+        sync: deps.connection.sync,
         ...(deps.modelPreferencePersistence
             ? { preferencePersistence: deps.modelPreferencePersistence }
             : {}),
@@ -436,6 +437,16 @@ export function happyAgentWorkspaceClientCreate(
     const chats = new Map<HappyAgentSessionId, ChatBinding>();
     let disposed = false;
     let chatUseOrder = 0;
+
+    // Every materialized conversation derives its pickers from this
+    // connection's catalog, so a catalog the daemon changed reaches each one.
+    let chatCatalog: HappyAgentModelCatalog | undefined;
+    const modelsUnsubscribe = models.subscribe(() => {
+        const snapshot = models.get();
+        if (snapshot.type !== "ready" || snapshot.catalog === chatCatalog) return;
+        chatCatalog = snapshot.catalog;
+        for (const binding of chats.values()) binding.store?.catalogChanged(snapshot.catalog);
+    });
 
     /**
      * A released chat has no transcript listener, but its ChatStore used to
@@ -669,9 +680,11 @@ export function happyAgentWorkspaceClientCreate(
             let binding = chats.get(sessionId);
             admitChat(sessionId);
             if (!binding) {
-                const storePromise = models.load().then(({ catalog }) => {
+                const storePromise = models.load().then((loaded) => {
+                    // The catalog may have moved on since this load answered.
+                    const latest = models.get();
                     const chatDeps: HappyAgentChatDeps = {
-                        catalog,
+                        catalog: latest.type === "ready" ? latest.catalog : loaded.catalog,
                         transcriptConnect: deps.transcriptConnect,
                         connectActions: deps.connection,
                         connectMutationSubscribe: deps.connectMutationSubscribe,
@@ -758,6 +771,7 @@ export function happyAgentWorkspaceClientCreate(
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
+            modelsUnsubscribe();
             models[Symbol.dispose]();
             sessionListStore?.[Symbol.dispose]();
             sessionListStore = undefined;
