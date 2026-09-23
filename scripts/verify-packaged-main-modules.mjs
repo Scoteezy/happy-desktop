@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { sep } from "node:path";
 import { dirname, join, normalize } from "node:path/posix";
 
 const require = createRequire(
@@ -9,7 +10,9 @@ const { extractFile, listPackage } = electronBuilderRequire("@electron/asar");
 
 /** Verify every relative JavaScript import reachable from each packaged process entry. */
 export function packagedMainModulesVerify(archive, entries) {
-    const packaged = new Set(listPackage(archive).map((path) => path.replace(/^\//u, "")));
+    const packaged = new Set(
+        listPackage(archive).map((path) => path.replaceAll("\\", "/").replace(/^\//u, "")),
+    );
     const pending = [...entries];
     const visited = new Set();
     while (pending.length > 0) {
@@ -17,7 +20,7 @@ export function packagedMainModulesVerify(archive, entries) {
         if (visited.has(file)) continue;
         visited.add(file);
         if (!packaged.has(file)) throw new Error(`Packaged Electron module is missing: ${file}`);
-        const source = extractFile(archive, file).toString("utf8");
+        const source = extractFile(archive, file.replaceAll("/", sep)).toString("utf8");
         const imports = source.matchAll(/(?:from\s*|import\s*)\(?\s*["'](\.[^"']+)["']/gu);
         for (const match of imports) {
             const imported = normalize(join(dirname(file), match[1]));
