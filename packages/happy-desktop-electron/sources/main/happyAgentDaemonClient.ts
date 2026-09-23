@@ -87,6 +87,11 @@ export class HappyAgentDaemonClient {
         this.#client = options.connectionId ? client.connection(options.connectionId) : client;
     }
 
+    /** Main-only handoff to the isolated renderer transport; never sent to a page. */
+    rendererTransport(): HappyAgentDaemonClientOptions {
+        return { socketPath: this.socketPath, token: this.#token };
+    }
+
     connection(id: string): HappyAgentDaemonClient {
         let client = this.#connections.get(id);
         if (!client) {

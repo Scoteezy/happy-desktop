@@ -1,10 +1,13 @@
 import { createServer } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import type { happyAgentProtocol, HappyAgentDaemonHealth } from "happy-desktop-state";
 import type { HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
 import type { HappyAgentRendererProxy } from "./happyAgentRendererProxy";
+import type { HappyAgentRendererTarget } from "./happyAgentRendererProxy";
 import { happyAgentProxyHandle, type HappyAgentProxyClient } from "./happyAgentProxyHandle";
+import { happyAgentRequestTimingCreate } from "./happyAgentRequestTiming";
 import {
     happyAgentTerminalBridgeCreate,
     type HappyAgentTerminalClient,
@@ -18,7 +21,7 @@ export interface HappyAgentHttpProxyHandle {
      * bound proxy. Its URL, capability, server, terminal bridge, and preview
      * registration stay alive; subsequent work resolves through this backing.
      */
-    replace(backing: HappyAgentHttpProxyBacking): void;
+    replace(backing: HappyAgentHttpProxyBacking): Promise<void>;
     close(): void;
 }
 
@@ -49,6 +52,8 @@ export interface HappyAgentHttpProxyOptions extends HappyAgentHttpProxyBacking {
      * site; without one this proxy reports that it cannot render a document.
      */
     readonly htmlPreview?: HtmlPreviewProxyHandle;
+    /** Debug-only slow request timings, without URLs or credentials. */
+    readonly debug?: (message: string) => void;
 }
 
 /** Projects Happy Agent health into the minimal liveness shape the renderer loader consumes. */
@@ -97,19 +102,19 @@ export function happyAgentHttpProxyCreate(
     const capability = randomBytes(32).toString("base64url");
     const capabilityPrefix = `/${capability}`;
     let expectedHost: string | undefined;
-    const server = createServer((request, response) => {
-        const url = new URL(request.url ?? "/", "http://127.0.0.1");
-        // Exact-match only: an echoed arbitrary origin would hand the whole daemon
-        // surface to any page the user happens to have open.
+    const handleRequest = (
+        request: IncomingMessage,
+        response: ServerResponse,
+        url: URL,
+        requestPath: string,
+    ) => {
         const crossOrigin =
             options.allowedOrigin !== undefined && request.headers.origin === options.allowedOrigin;
         if (
-            request.headers.host !== expectedHost ||
-            (request.headers.origin !== undefined &&
-                request.headers.origin !== "null" &&
-                !request.headers.origin.startsWith("file:") &&
-                !crossOrigin) ||
-            (url.pathname !== capabilityPrefix && !url.pathname.startsWith(`${capabilityPrefix}/`))
+            request.headers.origin !== undefined &&
+            request.headers.origin !== "null" &&
+            !request.headers.origin.startsWith("file:") &&
+            !crossOrigin
         ) {
             response.writeHead(403);
             response.end();
@@ -145,7 +150,7 @@ export function happyAgentHttpProxyCreate(
             response.end();
             return;
         }
-        const requestPath = url.pathname.slice(capabilityPrefix.length) || "/";
+        const onTiming = happyAgentRequestTimingCreate(response, options.debug);
         const requestBacking = backing;
         const client = requestBacking.client;
         // The daemon bridge carries whatever body the daemon accepts, so the
@@ -171,6 +176,7 @@ export function happyAgentHttpProxyCreate(
             query: url.searchParams,
             request,
             response,
+            ...(onTiming ? { onTiming } : {}),
             onConnectionError: (error: unknown) => {
                 // An old in-flight request may finish failing after a
                 // replacement is already live. It cannot invalidate
@@ -196,6 +202,19 @@ export function happyAgentHttpProxyCreate(
                 }
             },
         );
+    };
+    const server = createServer((request, response) => {
+        const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        // Exact-match only: an echoed arbitrary origin would hand the whole daemon
+        // surface to any page the user happens to have open.
+        if (
+            request.headers.host !== expectedHost ||
+            (url.pathname !== capabilityPrefix && !url.pathname.startsWith(`${capabilityPrefix}/`))
+        ) {
+            response.writeHead(403).end();
+            return;
+        }
+        handleRequest(request, response, url, url.pathname.slice(capabilityPrefix.length) || "/");
     });
     const terminals = happyAgentTerminalBridgeCreate({
         client: () => Promise.resolve(backing.client),
@@ -220,24 +239,53 @@ export function happyAgentHttpProxyCreate(
             }
             expectedHost = `127.0.0.1:${address.port}`;
             const url = `http://${expectedHost}${capabilityPrefix}`;
-            const rendererDetach = options.rendererProxy?.targetSet({
+            const rendererTarget = (selected: CurrentBacking): HappyAgentRendererTarget => ({
                 url,
                 terminalCapability: capability,
+                ...(options.allowedOrigin ? { allowedOrigin: options.allowedOrigin } : {}),
+                requestHandle: (request, response, requestUrl) =>
+                    handleRequest(request, response, requestUrl, requestUrl.pathname),
+                ...(selected.client.rendererTransport
+                    ? { transport: selected.client.rendererTransport() }
+                    : {}),
+                onConnectionError: () => {
+                    if (backing === selected)
+                        options.onConnectionError?.(
+                            new Error("Happy Agent transport unavailable."),
+                        );
+                },
             });
+            let rendererDetach: (() => void) | undefined;
             let closed = false;
-            resolvePromise({
-                url,
-                replace: (next) => {
-                    if (closed) throw new Error("The Happy Agent HTTP proxy is closed.");
-                    backing = backingCreate(next);
-                },
-                close: () => {
-                    if (closed) return;
-                    closed = true;
-                    rendererDetach?.();
-                    terminals.close();
-                    server.close();
-                },
+            void (async () => {
+                rendererDetach = await options.rendererProxy?.targetSet(rendererTarget(backing));
+                resolvePromise({
+                    url,
+                    replace: async (next) => {
+                        if (closed) throw new Error("The Happy Agent HTTP proxy is closed.");
+                        const replacement = backingCreate(next);
+                        const detach = await options.rendererProxy?.targetSet(
+                            rendererTarget(replacement),
+                        );
+                        if (closed) {
+                            detach?.();
+                            throw new Error("The Happy Agent HTTP proxy is closed.");
+                        }
+                        backing = replacement;
+                        rendererDetach = detach;
+                    },
+                    close: () => {
+                        if (closed) return;
+                        closed = true;
+                        rendererDetach?.();
+                        terminals.close();
+                        server.close();
+                    },
+                });
+            })().catch((error: unknown) => {
+                server.close();
+                terminals.close();
+                reject(error);
             });
         });
     });

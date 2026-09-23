@@ -8,6 +8,7 @@ import {
     screen,
     session as electronSession,
     shell,
+    utilityProcess,
     webContents as electronWebContents,
     type BrowserWindowConstructorOptions,
     type MenuItemConstructorOptions,
@@ -1389,6 +1390,13 @@ void app
         else if (!app.isPackaged && applicationIconPath) app.dock?.setIcon(applicationIconPath);
         happyAgentRendererSession = await happyAgentRendererSessionCreate(
             electronSession.defaultSession,
+            () =>
+                utilityProcess.fork(
+                    join(import.meta.dirname, "happyAgentRendererUtility.js"),
+                    desktopDebugEnabled ? ["--happy-agent-transport-debug"] : [],
+                    { serviceName: "Happy Agent HTTP transport" },
+                ),
+            desktopDebugEnabled ? desktopDebugLog : undefined,
         );
         htmlPreviewProxy = await htmlPreviewProxyCreate();
         await htmlPreviewSessionConfigure();
@@ -1443,6 +1451,7 @@ void app
                 // build-owned origin receives CORS access.
                 ...(rendererOrigin ? { rendererOrigin } : {}),
                 ...(htmlPreviewProxy ? { htmlPreview: htmlPreviewProxy } : {}),
+                ...(desktopDebugEnabled ? { debug: desktopDebugLog } : {}),
             },
         );
         const debugController = new DesktopDebugController({

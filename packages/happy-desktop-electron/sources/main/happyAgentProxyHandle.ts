@@ -1,5 +1,6 @@
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { HappyAgentApiError } from "@slopus/happy-agent-client";
 import {
@@ -9,12 +10,17 @@ import {
 } from "./happyAgentDaemonClient";
 import { openInRun, openInTargetsRead } from "./openIn";
 import { happyAgentDaemonHealthProject } from "./happyAgentHttpProxy";
+import type { HappyAgentRequestMilestone } from "./happyAgentRequestTiming";
+import type { HappyAgentDaemonClientOptions } from "./happyAgentDaemonClient";
 
 /** The minimal Happy Agent surface used by the loopback bridge. */
 export type HappyAgentProxyClient = Pick<
     HappyAgentDaemonClient,
     "getWorkspace" | "health" | "rawRequest" | "readWorkspaceFile" | "writeWorkspaceFile"
-> & { readonly connection?: (id: string) => HappyAgentProxyClient };
+> & {
+    readonly connection?: (id: string) => HappyAgentProxyClient;
+    readonly rendererTransport?: () => HappyAgentDaemonClientOptions;
+};
 
 export interface HappyAgentProxyHandleOptions {
     readonly client: HappyAgentProxyClient;
@@ -23,6 +29,7 @@ export interface HappyAgentProxyHandleOptions {
     readonly query: URLSearchParams;
     readonly request: IncomingMessage;
     readonly response: ServerResponse;
+    readonly onTiming?: (milestone: HappyAgentRequestMilestone) => void;
     readonly onConnectionError?: (error: unknown) => void;
     /** Publishes one workspace file as an isolated local preview site. */
     readonly htmlPreviewUrl?: (
@@ -81,6 +88,7 @@ export async function happyAgentProxyHandle(
             method,
             daemonPath,
             path.startsWith("/v0/connections/") ? undefined : options.onConnectionError,
+            options.onTiming,
         );
         return true;
     }
@@ -333,6 +341,7 @@ async function happyAgentForward(
     method: string,
     path: string,
     onConnectionError?: (error: unknown) => void,
+    onTiming?: (milestone: HappyAgentRequestMilestone) => void,
 ): Promise<void> {
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -363,6 +372,7 @@ async function happyAgentForward(
             ...(Object.keys(forwardedHeaders).length === 0 ? {} : { headers: forwardedHeaders }),
             signal: controller.signal,
         });
+        onTiming?.("daemon-headers");
         const omittedResponseHeaders = omittedHeaderNames(upstream.headers.connection, [
             "access-control-allow-credentials",
             "access-control-allow-headers",
@@ -377,7 +387,20 @@ async function happyAgentForward(
             else response.setHeader(name, value);
         }
         response.writeHead(upstream.statusCode);
-        await pipeline(upstream.body, response);
+        if (onTiming) {
+            // A data listener on the source would switch it to flowing mode before
+            // pipeline is attached. This meter observes chunks only after the
+            // pipeline owns the stream, and preserves backpressure end to end.
+            const meter = new Transform({
+                transform(chunk: Buffer, _encoding, callback) {
+                    onTiming("daemon-first-byte");
+                    callback(null, chunk);
+                },
+            });
+            await pipeline(upstream.body, meter, response);
+        } else {
+            await pipeline(upstream.body, response);
+        }
     } catch (error) {
         if (controller.signal.aborted) return;
         if (happyAgentDaemonConnectionUnavailable(error)) onConnectionError?.(error);
