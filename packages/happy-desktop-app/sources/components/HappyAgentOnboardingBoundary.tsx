@@ -15,6 +15,7 @@ export function HappyAgentOnboardingBoundary(props: {
     readonly profile: HappyAgentProfileStore;
     readonly online: boolean;
     readonly onRetry: () => void;
+    readonly onExternalOpen?: (url: string) => void;
     readonly children: ReactNode;
 }) {
     const snapshot = useSyncExternalStore(props.store.subscribe, props.store.get, props.store.get);
@@ -97,6 +98,7 @@ export function HappyAgentOnboardingBoundary(props: {
         <LocalOnboardingScreen
             appearance={appearance.mode}
             view={view}
+            onExternalOpen={props.onExternalOpen}
             onAssistantsContinue={() => undefined}
             onConnectRetry={props.onRetry}
             onHappyMobileConnect={props.store.mobile.happyMobileConnect}

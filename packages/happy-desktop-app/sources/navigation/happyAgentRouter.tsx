@@ -167,6 +167,7 @@ function HappyAgentRootContent({ context }: { readonly context: HappyAgentRouter
             profile={setup.profile}
             online={entry?.status === "connected"}
             onRetry={setup.retry}
+            {...(context.externalLinkOpen ? { onExternalOpen: context.externalLinkOpen } : {})}
         >
             {content}
         </HappyAgentOnboardingBoundary>
