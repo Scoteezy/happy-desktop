@@ -675,20 +675,21 @@ export function happyAgentChatStoreCreate(
     let catalog = deps.catalog;
     /* Where a session whose model the connection stopped offering moves to. */
     let fallback: HappyAgentSelection | undefined;
-    /* The move off an unoffered model that is in flight: which model it left,
-       where it goes, and the mutations carrying it. The connection holds the
-       target as the session's intended mode from the moment it is asked, so
-       the next send carries it; a rejection clears it. */
-    let selectionMove:
-        | {
-              readonly from: string;
-              readonly to: HappyAgentSelection;
-              readonly mutationIds: ReadonlySet<string>;
-          }
-        | undefined;
+    /* The last move off an unoffered model this store asked for: the move, and
+       the mutations carrying it. The connection publishes the target as the
+       session's intended mode inside the switch call itself, and puts the old
+       mode back — again synchronously — before it reports a rejection. There
+       is no success callback, so an offered snapshot is never taken as
+       acknowledgement: the record stays, a rollback matching it is not asked
+       again in the background, and a rejection of any of its mutations marks
+       the move refused. */
+    let selectionMove: { readonly key: string; readonly mutationIds: Set<string> } | undefined;
     /* A move the daemon refused. It is not asked again in the background; the
        reader's next send asks once more, or says why it cannot. */
     let selectionMoveRefused: string | undefined;
+    /* True while a move's mutations are being issued, whose optimistic
+       snapshots arrive before their ids are known. */
+    let selectionMoveIssuing = false;
     let disposed = false;
     let active = false;
     let status: "loading" | "ready" | "error" = "loading";
@@ -986,49 +987,55 @@ export function happyAgentChatStoreCreate(
     const selectionReconcile = (explicit: boolean): void => {
         const connected = transcriptSession;
         if (
+            selectionMoveIssuing ||
             disposed ||
             !active ||
             status !== "ready" ||
             connected === undefined ||
+            // The connection's placeholder names no mode of its own yet.
+            connected.historyLoading === true ||
             connected.modelLocked ||
             runStatus !== "idle"
         )
             return;
         const current = transcriptSelectionOf(connected);
-        if (happyAgentSelectionOffered(catalog, current)) {
-            // Settled: the session reports an offered model.
-            selectionMove = undefined;
-            selectionMoveRefused = undefined;
-            return;
-        }
+        if (happyAgentSelectionOffered(catalog, current)) return;
         const next = happyAgentSelectionCatalogReconcile(catalog, current, fallback);
         if (next === current) return;
-        const from = `${current.providerId}\u0000${current.modelId}`;
-        const key = `${from}\u0000${next.providerId}\u0000${next.modelId}`;
-        if (
-            selectionMove !== undefined &&
-            selectionMove.from === from &&
-            happyAgentSelectionEqual(selectionMove.to, next)
-        )
-            return;
-        if (!explicit && selectionMoveRefused === key) return;
+        const key = [
+            current.providerId,
+            current.modelId,
+            next.providerId,
+            next.modelId,
+            next.effort ?? "",
+            next.serviceTier ?? "",
+        ].join("\u0000");
+        // In the background, a move already asked for — including the old mode
+        // a rollback republishes before its rejection is reported — or one the
+        // daemon refused is not asked again. The reader's send always asks.
+        if (!explicit && (selectionMove?.key === key || selectionMoveRefused === key)) return;
         selectionMoveRefused = undefined;
         const mutationIds = new Set<string>();
+        selectionMove = { key, mutationIds };
         const track = (mutationId: string): void => {
             mutationIds.add(mutationId);
             connectMutationTrack(mutationId);
         };
-        selectionMove = { from, to: next, mutationIds };
-        track(
-            deps.connectActions.switchModel(sessionId, {
-                providerId: next.providerId,
-                modelId: next.modelId,
-            }),
-        );
-        if (next.effort !== current.effort)
-            track(deps.connectActions.setEffort(sessionId, next.effort));
-        if (next.serviceTier !== current.serviceTier)
-            track(deps.connectActions.setServiceTier(sessionId, next.serviceTier));
+        selectionMoveIssuing = true;
+        try {
+            track(
+                deps.connectActions.switchModel(sessionId, {
+                    providerId: next.providerId,
+                    modelId: next.modelId,
+                }),
+            );
+            if (next.effort !== current.effort)
+                track(deps.connectActions.setEffort(sessionId, next.effort));
+            if (next.serviceTier !== current.serviceTier)
+                track(deps.connectActions.setServiceTier(sessionId, next.serviceTier));
+        } finally {
+            selectionMoveIssuing = false;
+        }
     };
 
     const unsubscribeCatalog = deps.catalogFollow?.((input) => {
@@ -1042,10 +1049,9 @@ export function happyAgentChatStoreCreate(
     const unsubscribeMutationRejections = deps.connectMutationSubscribe((rejection) => {
         if (!pendingMutationIds.delete(rejection.mutationId)) return;
         if (selectionMove?.mutationIds.has(rejection.mutationId) === true) {
-            // The connection has put the old mode back; the next send may not
-            // count on this move any longer.
-            const { from, to } = selectionMove;
-            selectionMoveRefused = `${from}\u0000${to.providerId}\u0000${to.modelId}`;
+            // The connection has already put the old mode back; the move is
+            // not asked again until the reader sends.
+            selectionMoveRefused = selectionMove.key;
             selectionMove = undefined;
         }
         const requestId = requestMutationIds.get(rejection.mutationId);
@@ -1183,19 +1189,21 @@ export function happyAgentChatStoreCreate(
                 const steered = runStatus === "running";
                 // A new turn runs on a model the connection offers, or not at
                 // all; steering joins a run that already has its model.
-                // What decides is the mode this send will carry: the session's
-                // own, or a move off it that was asked for and not refused. A
-                // fallback merely existing is not a mode anything will send.
-                if (!steered && transcriptSession !== undefined) {
+                // What decides is the mode this send will carry. The published
+                // session includes the connection's intended mode, which is
+                // exactly what `sendMessage` reads, and a move asked for here
+                // is published before this line — as a rejected one is rolled
+                // back. A fallback merely existing is not a mode anything sends.
+                // Before the first history snapshot the session has no mode
+                // yet, so there is nothing to judge.
+                if (
+                    !steered &&
+                    transcriptSession !== undefined &&
+                    transcriptSession.historyLoading !== true
+                ) {
                     selectionReconcile(true);
                     const current = transcriptSelectionOf(transcriptSession);
-                    if (
-                        !happyAgentSelectionOffered(catalog, current) &&
-                        !(
-                            selectionMove !== undefined &&
-                            happyAgentSelectionOffered(catalog, selectionMove.to)
-                        )
-                    )
+                    if (!happyAgentSelectionOffered(catalog, current))
                         throw new UserError(
                             catalog.providers.some(
                                 (provider) =>
