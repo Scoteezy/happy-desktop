@@ -1175,6 +1175,45 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     // bootstrap plus every materialized conversation snapshot.
     const refetchResource = (refetch: Promise<void>): void => background(refetch);
 
+    // A busy agent emits a steady stream of versioned updates, and every one of
+    // them misses while its repair read is outstanding. Keep one read per agent
+    // in flight and follow it with exactly one more when events arrived
+    // meanwhile, so a slow connection cannot pile up a request per event.
+    const agentRefetches = new Map<string, { again: boolean }>();
+    // Agents whose full read found nowhere to land: no loaded workspace,
+    // project, bot, or open session carries them. Reading them again on every
+    // update would never change that, so their updates are ignored until
+    // something that does carry them (a snapshot, a session, a parent's
+    // activity) makes them known again.
+    const untrackedAgents = new Set<string>();
+
+    const refetchAgent = (agentId: string): void => {
+        const running = agentRefetches.get(agentId);
+        if (running !== undefined) {
+            running.again = true;
+            return;
+        }
+        const refetch = { again: false };
+        agentRefetches.set(agentId, refetch);
+        const read = async (): Promise<void> => {
+            do {
+                refetch.again = false;
+                const { agent } = await client.getAgent(agentId, {
+                    signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+                });
+                const latest = agentOf(agent.id);
+                if (latest === undefined || latest.version.localeCompare(agent.version) <= 0) {
+                    replaceAgent(agent);
+                }
+                if (agentOf(agent.id) === undefined) {
+                    untrackedAgents.add(agent.id);
+                    return;
+                }
+            } while (refetch.again);
+        };
+        refetchResource(read().finally(() => agentRefetches.delete(agentId)));
+    };
+
     const reloadConfig = async (): Promise<void> => {
         const response = await client.getConfig({
             signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
@@ -1364,35 +1403,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             case "agent.updated": {
                 const current = agentOf(event.payload.agentId);
                 if (current === undefined) {
-                    refetchResource(
-                        client
-                            .getAgent(event.payload.agentId, { signal: rootController.signal })
-                            .then(({ agent }) => {
-                                const latest = agentOf(agent.id);
-                                if (
-                                    latest === undefined ||
-                                    latest.version.localeCompare(agent.version) <= 0
-                                ) {
-                                    replaceAgent(agent);
-                                }
-                            }),
-                    );
+                    if (!untrackedAgents.has(event.payload.agentId)) {
+                        refetchAgent(event.payload.agentId);
+                    }
                     return;
                 }
+                untrackedAgents.delete(event.payload.agentId);
                 if (current.version !== event.payload.previousVersion) {
-                    refetchResource(
-                        client
-                            .getAgent(event.payload.agentId, { signal: rootController.signal })
-                            .then(({ agent }) => {
-                                const latest = agentOf(agent.id);
-                                if (
-                                    latest === undefined ||
-                                    latest.version.localeCompare(agent.version) <= 0
-                                ) {
-                                    replaceAgent(agent);
-                                }
-                            }),
-                    );
+                    refetchAgent(event.payload.agentId);
                     return;
                 }
                 replaceAgent({
