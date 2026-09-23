@@ -122,10 +122,12 @@ export function desktopPreferencesCreate(
                           ...(snapshot.defaultEffort ? { effort: snapshot.defaultEffort } : {}),
                       }
                     : undefined;
+            const nextLinkOpen = snapshot.linkOpenPlacement;
             if (
                 defaultEqual(config.defaultModel, nextDefault) &&
                 config.defaultEffort === nextEffort &&
                 config.defaultPermissionMode === nextPermissionMode &&
+                (config.linkOpen ?? "panel") === nextLinkOpen &&
                 (config.previewUpdatesEnabled === true) === snapshot.previewUpdatesEnabled
             )
                 return;
@@ -158,6 +160,7 @@ export function desktopPreferencesCreate(
                 ...(nextDefault ? { defaultModel: nextDefault } : {}),
                 defaultPermissionMode: nextPermissionMode,
                 ...(config.keepAwake === undefined ? {} : { keepAwake: config.keepAwake }),
+                linkOpen: nextLinkOpen,
                 ...(nextDefault
                     ? {
                           lastPickedModel: {
@@ -194,6 +197,7 @@ function settingsInitial(config: DesktopConfig): HappyAgentSettingsInitial {
             : {}),
         defaultEffort: effort,
         defaultPermissionMode: permissionMode(config.defaultPermissionMode),
+        ...(config.linkOpen === undefined ? {} : { linkOpenPlacement: config.linkOpen }),
         previewUpdatesEnabled: config.previewUpdatesEnabled === true,
     };
 }
@@ -274,6 +278,7 @@ function configFromPreferenceDocument(
         ...(document.lastPickedModel ? { lastPickedModel: document.lastPickedModel } : {}),
         defaultPermissionMode: current.defaultPermissionMode,
         ...(current.keepAwake === undefined ? {} : { keepAwake: current.keepAwake }),
+        ...(current.linkOpen === undefined ? {} : { linkOpen: current.linkOpen }),
         ...(current.previewUpdatesEnabled === undefined
             ? {}
             : { previewUpdatesEnabled: current.previewUpdatesEnabled }),

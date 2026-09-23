@@ -7,6 +7,7 @@ import type {
     DesktopConfig,
     DesktopDefaultModel,
     DesktopKeepAwakeMode,
+    DesktopLinkOpenPlacement,
     DesktopModelIdentity,
     DesktopModelPreference,
     DesktopPermissionMode,
@@ -118,6 +119,7 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
         "defaultPermissionMode",
         "keepAwake",
         "lastPickedModel",
+        "linkOpen",
         "modelPreferences",
         "previewUpdatesEnabled",
         "scrollbarVisibility",
@@ -158,6 +160,8 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
         candidate.lastPickedModel === undefined
             ? undefined
             : modelIdentityOnlyParse(candidate.lastPickedModel);
+    const linkOpen =
+        candidate.linkOpen === undefined ? undefined : linkOpenPlacementParse(candidate.linkOpen);
     const titleShimmerEnabled =
         typeof candidate.titleShimmerEnabled === "boolean"
             ? candidate.titleShimmerEnabled
@@ -173,6 +177,7 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
         !defaultPermissionMode ||
         (candidate.keepAwake !== undefined && !keepAwake) ||
         (candidate.lastPickedModel !== undefined && !lastPickedModel) ||
+        (candidate.linkOpen !== undefined && !linkOpen) ||
         !scrollbarVisibility
     )
         throw invalidConfigError();
@@ -194,6 +199,7 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
         defaultPermissionMode,
         ...(keepAwake ? { keepAwake } : {}),
         ...(lastPickedModel ? { lastPickedModel } : {}),
+        ...(linkOpen ? { linkOpen } : {}),
         modelPreferences,
         ...(candidate.previewUpdatesEnabled === undefined
             ? {}
@@ -206,6 +212,10 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
 
 function appearanceModeParse(value: unknown): DesktopAppearanceMode | undefined {
     return value === "dark" || value === "light" || value === "system" ? value : undefined;
+}
+
+function linkOpenPlacementParse(value: unknown): DesktopLinkOpenPlacement | undefined {
+    return value === "panel" || value === "browser" ? value : undefined;
 }
 
 function keepAwakeModeParse(value: unknown): DesktopKeepAwakeMode | undefined {

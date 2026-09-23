@@ -429,6 +429,7 @@ export function MessagePage() {
                         }
                         generationStatus="complete"
                         initials="CX"
+                        onLinkOpen={() => {}}
                         time="10:58"
                         tone="mint"
                     />,
