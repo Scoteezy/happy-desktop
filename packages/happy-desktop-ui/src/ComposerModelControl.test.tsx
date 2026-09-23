@@ -108,7 +108,7 @@ it("composes the controlled model picker into the composer and navigates its men
     const menu = view.$(
         '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-menu"]',
     );
-    expect(menu.bounds().width).toBe(360);
+    expect(menu.bounds().width).toBe(240);
     expect(menu.bounds().x + menu.bounds().width).toBeCloseTo(
         control.bounds().x + control.bounds().width,
         1,
@@ -116,22 +116,29 @@ it("composes the controlled model picker into the composer and navigates its men
     expect(menu.computedStyle("box-shadow")).toBe("none");
     expect(trigger.bounds().y - (menu.bounds().y + menu.bounds().height)).toBeCloseTo(8, 1);
     expect(menu.element.textContent).toContain("5.6 Terra");
-    const header = view.$('[data-testid="control"] [data-service-header="codex"]');
-    await userEvent.hover(header.element);
-    for (const animation of header.element.getAnimations()) animation.finish();
-    expect(header.computedStyle("transform")).toBe("none");
-    await userEvent.click(header.element);
+    const account = view.$(
+        '[data-testid="control"] [data-service-header="codex"] [data-happy-desktop-ui="composer-model-control-account-label"]',
+    );
+    await userEvent.hover(account.element);
+    for (const animation of account.element.getAnimations()) animation.finish();
+    expect(account.computedStyle("transform")).toBe("none");
+    expect(account.computedStyle("cursor")).toBe("pointer");
+    await userEvent.click(account.element);
     const choices = view.$(
         '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-accounts"]',
     );
     expect(choices.element.textContent).toContain("work");
-    // The composer places this selector against its right edge. Its account
-    // submenu must therefore open left of the menu and remain in-view.
-    const submenuGap = menu.bounds().x - (choices.bounds().x + choices.bounds().width);
-    expect(submenuGap).toBeGreaterThanOrEqual(7);
-    expect(submenuGap).toBeLessThanOrEqual(8);
-    expect(choices.bounds().x).toBeGreaterThanOrEqual(20);
-    expect(choices.bounds().x + choices.bounds().width).toBeLessThanOrEqual(740);
+    // The account list hangs from the account name, inside the menu and in view.
+    expect(choices.bounds().y).toBeGreaterThan(account.bounds().y + account.bounds().height);
+    expect(choices.bounds().x).toBeGreaterThanOrEqual(menu.bounds().x);
+    expect(choices.bounds().x + choices.bounds().width).toBeLessThanOrEqual(
+        menu.bounds().x + menu.bounds().width,
+    );
+    // Its name toggles the list shut again.
+    await userEvent.click(account.element);
+    expect(
+        view.container.querySelector('[data-happy-desktop-ui="composer-model-control-accounts"]'),
+    ).toBeNull();
     const terra = Array.from(
         view.container.querySelectorAll<HTMLButtonElement>(
             '[data-testid="control"] .happy-composer-model-control__row-main',

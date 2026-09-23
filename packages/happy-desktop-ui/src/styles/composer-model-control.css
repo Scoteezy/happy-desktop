@@ -1,5 +1,5 @@
 /* C-145 ComposerModelControl — the composer's model pill and its one flat menu
- * of services, models, and per-model effort sliders. */
+ * of services and models, with small effort and account lists. */
 
 .happy-composer-model-control,
 .happy-composer-model-control * {
@@ -48,15 +48,8 @@
     background: var(--surface-ripple);
 }
 
-.happy-composer-model-control__trigger:focus-visible,
-.happy-composer-model-control__service-header:focus-visible,
-.happy-composer-model-control__account:focus-visible,
-.happy-composer-model-control__benchmarks:focus-visible {
-    outline: 2px solid var(--radio-active);
-    outline-offset: -2px;
-}
-
 .happy-composer-model-control__trigger:focus-visible {
+    outline: 2px solid var(--radio-active);
     outline-offset: 2px;
 }
 
@@ -86,7 +79,7 @@
 }
 
 .happy-composer-model-control__menu,
-.happy-composer-model-control__accounts {
+.happy-composer-model-control__popup {
     position: absolute;
     z-index: 30;
     display: flex;
@@ -99,14 +92,31 @@
 }
 
 /* The pill sits at the composer's trailing edge, so the menu grows leftwards
- * from it and the account submenu opens further left again. */
+ * from it, only as wide as its longest name beside the widest effort. */
 .happy-composer-model-control__menu {
     bottom: calc(100% + 8px);
     right: 0;
-    width: 360px;
+    width: max-content;
+    min-width: 240px;
+    max-width: 320px;
     /* The measured cap comes from the control itself; this is the fallback for a
      * menu rendered before it can be measured. */
     max-height: min(480px, calc(100vh - 16px));
+}
+
+/* Inner lists are placed against the name that opened them when they mount. */
+.happy-composer-model-control__popup {
+    z-index: 31;
+    width: max-content;
+    min-width: 160px;
+}
+
+/* The account list lies exactly over the menu's width, its border on the
+ * menu's, so account names and plans keep the menu's text column. */
+.happy-composer-model-control__accounts {
+    right: -1px;
+    left: -1px;
+    width: auto;
 }
 
 .happy-composer-model-control__list {
@@ -122,25 +132,30 @@
     overscroll-behavior: contain;
 }
 
-.happy-composer-model-control__service {
+.happy-composer-model-control__service,
+.happy-composer-model-control__account-list {
     display: flex;
     flex: 0 0 auto;
     flex-direction: column;
 }
 
+/* Every line shares one grid: a 16px check gutter, then the text, so headers,
+ * model names, and the benchmarks link all start on the same left edge. */
 .happy-composer-model-control__service-header,
 .happy-composer-model-control__row,
-.happy-composer-model-control__account,
+.happy-composer-model-control__option,
 .happy-composer-model-control__benchmarks {
+    position: relative;
+    isolation: isolate;
     display: flex;
     flex: 0 0 auto;
     align-items: center;
     gap: 8px;
     min-width: 0;
+    height: 32px;
     margin: 0;
     padding: 0 10px;
     border: 0;
-    border-radius: 8px;
     background: transparent;
     color: var(--text);
     font-family: inherit;
@@ -154,53 +169,53 @@
 
 .happy-composer-model-control__service-header {
     height: 28px;
-    gap: 4px;
     color: var(--text-secondary);
     font-size: 12px;
-    cursor: pointer;
 }
 
-.happy-composer-model-control__service-header:hover,
-.happy-composer-model-control__service-header[aria-expanded="true"],
-.happy-composer-model-control__account:hover,
-.happy-composer-model-control__account[data-shown],
-.happy-composer-model-control__benchmarks:hover,
-.happy-composer-model-control__row[data-active] {
+/* A line's highlight is painted 2px inside it, so two neighbouring highlights
+ * always keep 4px apart instead of touching. The line keeps its full hit box. */
+.happy-composer-model-control__row::before,
+.happy-composer-model-control__option::before,
+.happy-composer-model-control__benchmarks::before {
+    position: absolute;
+    inset: 2px 0;
+    z-index: -1;
+    border-radius: 8px;
+    content: "";
+    pointer-events: none;
+}
+
+.happy-composer-model-control__row[data-selected]::before,
+.happy-composer-model-control__row[data-active]::before,
+.happy-composer-model-control__option:hover::before,
+.happy-composer-model-control__option[data-shown]::before,
+.happy-composer-model-control__benchmarks:hover::before {
     background: var(--surface-pressed);
 }
 
-.happy-composer-model-control__service-name {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+/* Focus rings are drawn inside the highlight they belong to, never across a neighbour. */
+.happy-composer-model-control__row:has(
+    .happy-composer-model-control__row-main:focus-visible
+)::before,
+.happy-composer-model-control__row[data-focus-visible]::before,
+.happy-composer-model-control__option:focus-visible::before,
+.happy-composer-model-control__benchmarks:focus-visible::before {
+    box-shadow: inset 0 0 0 2px var(--radio-active);
 }
 
-.happy-composer-model-control__service-account {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.happy-composer-model-control__option:focus-visible,
+.happy-composer-model-control__benchmarks:focus-visible {
+    outline: none;
 }
 
 .happy-composer-model-control__row {
-    height: 32px;
-    gap: 12px;
+    cursor: pointer;
 }
 
 .happy-composer-model-control__row[data-disabled] {
+    cursor: default;
     opacity: 0.48;
-}
-
-/* The row button carries keyboard focus, but its ring outlines the whole row,
- * inset so the list's scrollport never clips it. */
-.happy-composer-model-control__row:has(.happy-composer-model-control__row-main:focus-visible),
-.happy-composer-model-control__row[data-focus-visible] {
-    outline: 2px solid var(--radio-active);
-    outline-offset: -2px;
 }
 
 .happy-composer-model-control__row-main {
@@ -217,17 +232,13 @@
     color: inherit;
     font: inherit;
     text-align: left;
-    cursor: pointer;
+    cursor: inherit;
     appearance: none;
     -webkit-appearance: none;
 }
 
 .happy-composer-model-control__row-main:focus-visible {
     outline: none;
-}
-
-.happy-composer-model-control__row-main:disabled {
-    cursor: default;
 }
 
 .happy-composer-model-control__check {
@@ -239,7 +250,8 @@
     height: 16px;
 }
 
-.happy-composer-model-control__name {
+.happy-composer-model-control__name,
+.happy-composer-model-control__service-name {
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
@@ -247,99 +259,132 @@
     white-space: nowrap;
 }
 
-.happy-composer-model-control__slider {
-    display: flex;
-    flex: 0 0 auto;
-    height: 20px;
-    cursor: pointer;
-    touch-action: none;
+.happy-composer-model-control__service-name {
+    font-weight: 600;
 }
 
-.happy-composer-model-control__slider:focus {
+/* Wide enough for the longest effort, so a changed effort never resizes the menu. */
+.happy-composer-model-control__effort-column {
+    display: flex;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    min-width: 72px;
+}
+
+/* The effort and the account name are text buttons coloured like the effort
+ * in the pill. Pointing at one highlights just that button, the way a
+ * project row's settings gear does in the sidebar: the same fill, radius,
+ * timing, and full-strength text. The fill is painted outside the text box, so
+ * the text and its right edge never move. */
+.happy-composer-model-control__text-button {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 18px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 120ms ease;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.happy-composer-model-control__text-button::before {
+    position: absolute;
+    inset: -3px -6px;
+    z-index: -1;
+    border-radius: 4px;
+    content: "";
+    pointer-events: none;
+    transition: background-color 120ms ease;
+}
+
+.happy-composer-model-control__text-button:hover:not(:disabled),
+.happy-composer-model-control__text-button:focus-visible,
+.happy-composer-model-control__text-button[data-hover],
+.happy-composer-model-control__text-button[data-focus-visible],
+.happy-composer-model-control__text-button[aria-expanded="true"] {
+    color: var(--text);
+}
+
+.happy-composer-model-control__text-button:hover:not(:disabled)::before,
+.happy-composer-model-control__text-button:focus-visible::before,
+.happy-composer-model-control__text-button[data-hover]::before,
+.happy-composer-model-control__text-button[data-focus-visible]::before,
+.happy-composer-model-control__text-button[aria-expanded="true"]::before {
+    background: var(--surface-selected);
+}
+
+/* Keyboard focus rings the fill from inside, so it never reaches a neighbour. */
+.happy-composer-model-control__text-button:focus-visible,
+.happy-composer-model-control__text-button[data-focus-visible] {
     outline: none;
 }
 
-.happy-composer-model-control__effort-label {
-    flex: 0 0 72px;
-    overflow: hidden;
-    color: var(--text-secondary);
-    font-size: 13px;
-    text-align: right;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.happy-composer-model-control__text-button:focus-visible::before,
+.happy-composer-model-control__text-button[data-focus-visible]::before {
+    box-shadow: inset 0 0 0 2px var(--radio-active);
+}
+
+.happy-composer-model-control__text-button:disabled {
+    cursor: default;
+}
+
+/* While the pointer is on a row's effort, only the effort is highlighted: the
+ * row gives up its own fill, which in the dark theme is the same colour. */
+.happy-composer-model-control__row:has(
+    .happy-composer-model-control__text-button:hover:not(:disabled),
+    .happy-composer-model-control__text-button[data-hover],
+    .happy-composer-model-control__text-button[aria-expanded="true"]
+)::before {
+    background: transparent;
+}
+
+.happy-composer-model-control__account-label {
+    font-size: 12px;
 }
 
 /* A model that is neither chosen nor under the pointer or focus is only its
- * name. The slider keeps its place, so revealing it never moves the row. */
-.happy-composer-model-control__row:not([data-selected], [data-active])
-    .happy-composer-model-control__slider,
+ * name. Its effort keeps its place, so revealing it never moves the row. */
 .happy-composer-model-control__row:not([data-selected], [data-active])
     .happy-composer-model-control__effort-label {
     visibility: hidden;
 }
 
-/* The tube and its holes fade as one layer, so the holes never darken where they cross the tube. */
-.happy-composer-model-control__track {
-    fill: var(--text-secondary);
-    opacity: 0.4;
-}
-
-.happy-composer-model-control__bubble {
-    fill: var(--text);
-}
-
-/* After a scroll snaps the bubble into its hole, it wobbles once as it settles. */
-.happy-composer-model-control__bubble[data-settle] {
-    animation: happy-composer-model-control-settle 180ms ease-out;
-}
-
-@keyframes happy-composer-model-control-settle {
-    0% {
-        transform: scale(1.18, 0.84);
-    }
-    55% {
-        transform: scale(0.94, 1.06);
-    }
-    100% {
-        transform: none;
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .happy-composer-model-control__bubble[data-settle] {
-        animation: none;
-    }
+.happy-composer-model-control__option {
+    cursor: pointer;
 }
 
 .happy-composer-model-control__benchmarks {
-    height: 32px;
-    justify-content: space-between;
     color: var(--text-secondary);
     font-size: 13px;
     text-decoration: none;
     cursor: pointer;
 }
 
+/* A hairline runs exactly across the text column: from the left edge shared by
+ * headers, names, and the benchmarks link to the right edge of efforts and
+ * account names, clear of the check gutter and the menu border. */
 .happy-composer-model-control__separator {
-    flex: 0 0 1px;
-    height: 1px;
-    margin: 0 10px;
-    background: var(--divider);
-}
-
-.happy-composer-model-control__accounts {
-    right: calc(100% + 8px);
-    width: 240px;
-}
-
-.happy-composer-model-control__account-list {
     display: flex;
-    flex-direction: column;
+    flex: 0 0 auto;
+    padding: 0 10px 0 34px;
 }
 
-.happy-composer-model-control__account {
-    height: 32px;
-    cursor: pointer;
+.happy-composer-model-control__separator::before {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--divider);
+    content: "";
 }
 
 /* An account that lacks the selected model stays listed, with its reason, but cannot be picked. */
@@ -362,7 +407,8 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 6px 10px;
+    /* On the text column, like every name above it. */
+    padding: 6px 10px 6px 34px;
 }
 
 .happy-composer-model-control__usage-window {
