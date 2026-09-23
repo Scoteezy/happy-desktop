@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { desktopFlavorRead } from "./desktopFlavors.mjs";
+import { packagedMainModulesVerify } from "./verify-packaged-main-modules.mjs";
 
 if (process.platform !== "win32") throw new Error("Windows releases require a Windows builder.");
 const flavorName = process.argv[2] ?? "standard";
@@ -74,7 +75,8 @@ await build({
         ...(flavorName === "local-web"
             ? {
                   files: [
-                      "dist/main.js",
+                      "dist/*.js",
+                      "dist/assets/**/*.js",
                       "dist/preload.cjs",
                       "assets/app-icon/generated/app-icon.png",
                       "package.json",
@@ -87,6 +89,10 @@ await build({
 const updater = parse(
     await readFile(join(output, "win-unpacked", "resources", "app-update.yml"), "utf8"),
 );
+packagedMainModulesVerify(join(output, "win-unpacked", "resources", "app.asar"), [
+    "dist/main.js",
+    "dist/happyAgentRendererUtility.js",
+]);
 if (
     updater.channel !== flavor.channel ||
     updater.updaterCacheDirName !== flavor.updaterCacheDirName

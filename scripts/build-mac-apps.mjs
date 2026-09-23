@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { desktopFlavorNames, desktopFlavorRead } from "./desktopFlavors.mjs";
+import { packagedMainModulesVerify } from "./verify-packaged-main-modules.mjs";
 
 const workspace = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const desktopDirectory = join(workspace, "packages", "happy-desktop-electron");
@@ -148,7 +149,8 @@ function builderConfiguration(base, output, app, flavorName, selectedFlavor) {
         ...(flavorName === "local-web"
             ? {
                   files: [
-                      "dist/main.js",
+                      "dist/*.js",
+                      "dist/assets/**/*.js",
                       "dist/preload.cjs",
                       "assets/app-icon/generated/app-icon.png",
                       "package.json",
@@ -204,6 +206,10 @@ async function releaseVerify(selectedFlavor, output) {
             throw new Error(
                 `${updaterConfigurationPath} uses updater cache ${String(updaterConfiguration.updaterCacheDirName)}, expected ${selectedFlavor.updaterCacheDirName}.`,
             );
+        packagedMainModulesVerify(join(application, "Contents", "Resources", "app.asar"), [
+            "dist/main.js",
+            "dist/happyAgentRendererUtility.js",
+        ]);
         await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", application]);
         await run("xcrun", ["stapler", "validate", application]);
         await run("spctl", ["--assess", "--type", "execute", "--verbose=4", application]);
