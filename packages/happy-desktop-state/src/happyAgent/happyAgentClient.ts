@@ -45,11 +45,7 @@ import type {
     HappyAgentSessionId,
 } from "./happyAgentTypes.js";
 import { happyAgentModelStoreCreate, type HappyAgentModelStore } from "./happyAgentModelStore.js";
-import type {
-    HappyAgentModelPreferencePersistence,
-    HappyAgentModelStoreReadySnapshot,
-} from "./happyAgentModelStore.js";
-import type { HappyAgentSelectionCatalogInput } from "./happyAgentSessionDraftStore.js";
+import type { HappyAgentModelPreferencePersistence } from "./happyAgentModelStore.js";
 import {
     happyAgentWorkspaceMemoryStoreCreate,
     type HappyAgentWorkspaceMemoryPersistence,
@@ -444,24 +440,16 @@ export function happyAgentWorkspaceClientCreate(
 
     /**
      * The owner-only catalog input every materialized conversation follows:
-     * this connection's catalog and configured default, as the model store
-     * holds them now and whenever either changes.
+     * this connection's catalog, as the model store holds it now and whenever
+     * it changes.
      */
-    const catalogFollow = (
-        listener: (input: HappyAgentSelectionCatalogInput) => void,
-    ): (() => void) => {
-        let last: HappyAgentModelStoreReadySnapshot | undefined;
+    const catalogFollow = (listener: (catalog: HappyAgentModelCatalog) => void): (() => void) => {
+        let last: HappyAgentModelCatalog | undefined;
         const deliver = (): void => {
             const snapshot = models.get();
-            if (snapshot.type !== "ready") return;
-            if (
-                last !== undefined &&
-                last.catalog === snapshot.catalog &&
-                last.defaultSelection === snapshot.defaultSelection
-            )
-                return;
-            last = snapshot;
-            listener({ catalog: snapshot.catalog, fallback: snapshot.defaultSelection });
+            if (snapshot.type !== "ready" || snapshot.catalog === last) return;
+            last = snapshot.catalog;
+            listener(snapshot.catalog);
         };
         const unsubscribe = models.subscribe(deliver);
         deliver();

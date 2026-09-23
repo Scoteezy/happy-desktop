@@ -46,24 +46,13 @@ export interface HappyAgentSessionDraftStore {
     serviceTierUpdate(serviceTier?: HappyAgentServiceTier): void;
 }
 
-/**
- * What the connection offers now: its catalog, and the selection a session
- * falls back to when its own model is no longer offered. `fallback` is absent
- * when the catalog offers no usable model at all.
- */
-export interface HappyAgentSelectionCatalogInput {
-    readonly catalog: HappyAgentModelCatalog;
-    readonly fallback?: HappyAgentSelection;
-}
-
 /** Owner-only authoritative input to a draft; never a reader's action. */
 export interface HappyAgentSessionDraftWriter {
     /**
      * The daemon changed what it offers. The pickers re-derive from the new
-     * catalog and the selection is brought back inside it: see
-     * `happyAgentSelectionCatalogReconcile`.
+     * catalog; the reader's selection is theirs and is left as it is.
      */
-    catalogChanged(input: HappyAgentSelectionCatalogInput): void;
+    catalogChanged(catalog: HappyAgentModelCatalog): void;
 }
 
 export interface HappyAgentSessionDraftOptions {
@@ -95,15 +84,13 @@ const DEFAULT_PERMISSION_MODE: HappyAgentPermissionMode = "auto";
  * catalog, but it is not worth refusing to start a session over — the daemon
  * still applies its own default. The first listed model of the first usable
  * provider stands in, so the pickers open on something real rather than on a
- * model id that does not exist. A declared default whose provider is switched
- * off is no more usable than a missing one, and is passed over the same way.
+ * model id that does not exist.
  */
 export function happyAgentSessionSelectionDefault(
     catalog: HappyAgentModelCatalog,
 ): HappyAgentSelection {
     const declared = catalog.providers.find(
-        (provider) =>
-            provider.id === catalog.defaultProviderId && provider.disabledReason === undefined,
+        (provider) => provider.id === catalog.defaultProviderId,
     );
     const declaredModel = declared?.models.find((model) => model.id === catalog.defaultModelId);
     const provider =
@@ -120,65 +107,6 @@ export function happyAgentSessionSelectionDefault(
         ...(model ? { effort: model.defaultThinkingLevel } : {}),
         permissionMode: DEFAULT_PERMISSION_MODE,
     };
-}
-
-/**
- * Whether the catalog offers this provider's model in its pickers right now.
- * A model is offered by one provider at a time: the same model id under a
- * provider that is switched off, or under another account, is not this one.
- */
-export function happyAgentSelectionOffered(
-    catalog: HappyAgentModelCatalog,
-    selection: Pick<HappyAgentSelection, "providerId" | "modelId">,
-): boolean {
-    return catalog.providers.some(
-        (provider) =>
-            provider.id === selection.providerId &&
-            provider.disabledReason === undefined &&
-            provider.models.some((model) => model.id === selection.modelId),
-    );
-}
-
-/**
- * Brings a selection back inside what the catalog offers.
- *
- * A model still offered keeps its choice, with an effort or service tier the
- * model no longer supports replaced by its own default. A model no longer
- * offered is replaced by `fallback` — the connection's configured default —
- * keeping the access mode, which is not the catalog's to take away. With no
- * usable fallback there is nothing honest to move to, so the selection is
- * returned as it is and `happyAgentSelectionOffered` keeps reporting it.
- * Returns `selection` itself when nothing changed.
- */
-export function happyAgentSelectionCatalogReconcile(
-    catalog: HappyAgentModelCatalog,
-    selection: HappyAgentSelection,
-    fallback: HappyAgentSelection | undefined,
-): HappyAgentSelection {
-    const source = happyAgentSelectionOffered(catalog, selection)
-        ? selection
-        : fallback !== undefined && happyAgentSelectionOffered(catalog, fallback)
-          ? { ...fallback, permissionMode: selection.permissionMode }
-          : undefined;
-    if (source === undefined) return selection;
-    const provider = catalog.providers.find((candidate) => candidate.id === source.providerId)!;
-    const model = provider.models.find((candidate) => candidate.id === source.modelId)!;
-    const effort =
-        source.effort !== undefined && model.thinkingLevels.includes(source.effort)
-            ? source.effort
-            : model.defaultThinkingLevel;
-    const serviceTier =
-        source.serviceTier !== undefined && provider.serviceTiers.includes(source.serviceTier)
-            ? source.serviceTier
-            : undefined;
-    const next: HappyAgentSelection = {
-        providerId: source.providerId,
-        modelId: source.modelId,
-        ...(effort !== undefined ? { effort } : {}),
-        permissionMode: source.permissionMode,
-        ...(serviceTier !== undefined ? { serviceTier } : {}),
-    };
-    return happyAgentSelectionEqual(selection, next) ? selection : next;
 }
 
 /**
@@ -337,20 +265,16 @@ export function happyAgentSessionDraftStoreOwnedCreate(options: HappyAgentSessio
                 ),
         },
         writer: {
-            catalogChanged(input) {
-                catalog = input.catalog;
+            catalogChanged(next) {
+                if (next === catalog) return;
+                catalog = next;
                 const previous = store.getState();
-                const selection = happyAgentSelectionCatalogReconcile(
-                    catalog,
-                    previous.selection,
-                    input.fallback,
-                );
                 const menus = happyAgentMenusReferencesPreserve(
                     previous.menus,
-                    happyAgentMenusDerive(catalog, selection),
+                    happyAgentMenusDerive(catalog, previous.selection),
                 );
-                if (selection === previous.selection && menus === previous.menus) return;
-                store.setState({ selection, menus }, true);
+                if (menus === previous.menus) return;
+                store.setState({ selection: previous.selection, menus }, true);
             },
         },
     };

@@ -46,7 +46,6 @@ import {
     type HappyAgentViewPlacement,
 } from "./happyAgentPanelStore.js";
 import {
-    happyAgentSelectionOffered,
     happyAgentSessionDraftStoreOwnedCreate,
     type HappyAgentSessionDraftSnapshot,
     type HappyAgentSessionDraftStore,
@@ -1386,13 +1385,6 @@ function selectionCreateFields(
         permissionMode: selection.permissionMode,
     };
 }
-
-/** Why no session can be started: the connection's catalog offers no model at all. */
-const NO_MODEL_REFUSAL =
-    "No model is available on this Happy Agent. Switch on a provider in Settings → Providers.";
-/** Why a session cannot be started on the model it names: the catalog stopped offering it. */
-const MODEL_UNOFFERED_REFUSAL =
-    "That model is no longer offered by this Happy Agent. Choose another model and try again.";
 
 /**
  * Owns the join between the conversation list and the open conversation for one
@@ -3650,42 +3642,13 @@ export function happyAgentWorkspaceStoreCreate(
      * submission pending for the whole of that wait, so a second Enter cannot
      * start a second session against the same new workspace.
      */
-    /**
-     * Refuses a session the connection's catalog cannot run: one naming a
-     * model it no longer offers, or any at all when it offers nothing. A
-     * create that names no model is the daemon's default to fill, and that is
-     * only honest while the catalog still offers something.
-     */
-    const createRefusalFind = (
-        create: Pick<HappyAgentSessionCreateInput, "providerId" | "modelId">,
-    ): string | undefined => {
-        const models = client.models.get();
-        if (models.type !== "ready") return undefined;
-        const offered = models.catalog.providers.filter(
-            (provider) => provider.disabledReason === undefined && provider.models.length > 0,
-        );
-        if (offered.length === 0) return NO_MODEL_REFUSAL;
-        if (create.modelId === undefined) return undefined;
-        return offered.some(
-            (provider) =>
-                (create.providerId === undefined || provider.id === create.providerId) &&
-                provider.models.some((model) => model.id === create.modelId),
-        )
-            ? undefined
-            : MODEL_UNOFFERED_REFUSAL;
-    };
-
-    /** `createRefusalFind` for a whole selection, as a draft or the last used one names it. */
-    const selectionRefusalFind = (selection: HappyAgentSelection | undefined): string | undefined =>
-        selection === undefined ? undefined : createRefusalFind(selectionCreateFields(selection));
-
     const groupSubmit = (
         groupId: HappyAgentGroupId,
         text: string,
         attachments: readonly ComposerAttachment[],
         selection: HappyAgentSelection | undefined,
     ): Promise<HappyAgentSessionLocation> => {
-        const refusal = groupConversationRefusalFind(groupId) ?? selectionRefusalFind(selection);
+        const refusal = groupConversationRefusalFind(groupId);
         if (refusal) return Promise.reject(new Error(refusal));
         try {
             happyAgentComposerAttachmentsValidate(attachments);
@@ -3859,8 +3822,6 @@ export function happyAgentWorkspaceStoreCreate(
         const name = pending.name.trim();
         const seed = pending.faces[pending.faceSlot];
         const selection = botCreateSessionDraft?.get().selection;
-        const selectionRefusal = selectionRefusalFind(selection);
-        if (selectionRefusal) throw new Error(selectionRefusal);
         botCreateDraft = { ...pending, submitting: true, error: undefined };
         recompute();
         // The face is painted before anything is asked of the host. It is a
@@ -4016,10 +3977,9 @@ export function happyAgentWorkspaceStoreCreate(
      * session's own composer from the first frame. Only the daemon's side of
      * the creation waits for the directory.
      */
-    const worktreeFirstConversationStart = (
-        worktreeId: HappyAgentWorktreeId,
-        selection: HappyAgentSelection | undefined,
-    ): void => {
+    const worktreeFirstConversationStart = (worktreeId: HappyAgentWorktreeId): void => {
+        const models = client.models.get();
+        const selection = models.type === "ready" ? models.lastUsedSelection : undefined;
         const create: HappyAgentSessionCreateInput = {
             cwd: "",
             worktreeId,
@@ -4338,18 +4298,15 @@ export function happyAgentWorkspaceStoreCreate(
     /**
      * Hands the connection's current catalog to the open drafts, so their
      * pickers list what the daemon offers now rather than what it offered when
-     * they were opened. A chosen model it no longer offers falls back to the
-     * connection's configured default; that is not the reader's choice, so it
-     * is not remembered as one.
+     * they were opened. The reader's selection stays as they left it.
      */
     const draftsCatalogApply = (): void => {
         const models = client.models.get();
         if (models.type !== "ready") return;
-        const input = { catalog: models.catalog, fallback: models.defaultSelection };
         draftsCatalogApplying = true;
         try {
-            groupDraftWriter?.catalogChanged(input);
-            botCreateSessionDraftWriter?.catalogChanged(input);
+            groupDraftWriter?.catalogChanged(models.catalog);
+            botCreateSessionDraftWriter?.catalogChanged(models.catalog);
         } finally {
             draftsCatalogApplying = false;
         }
@@ -4878,8 +4835,6 @@ export function happyAgentWorkspaceStoreCreate(
                 ...(input.model ? { modelId: input.model } : {}),
                 ...(input.effort ? { effort: input.effort } : {}),
             };
-            const modelRefusal = createRefusalFind(create);
-            if (modelRefusal) throw new Error(modelRefusal);
             const location = start.worktreeId
                 ? list.worktreeSessionStart(start.worktreeId, create)
                 : await list.sessionCreate(create);
@@ -4893,11 +4848,11 @@ export function happyAgentWorkspaceStoreCreate(
         },
         // Anything the caller names wins over the connection's last selection.
         conversationCreate: (groupId, input) => {
+            const refusal = groupConversationRefusalFind(groupId);
+            if (refusal) return Promise.reject(new Error(refusal));
             const models = client.models.get();
             const selection = models.type === "ready" ? models.lastUsedSelection : undefined;
             const create = selection ? { ...selectionCreateFields(selection), ...input } : input;
-            const refusal = groupConversationRefusalFind(groupId) ?? createRefusalFind(create);
-            if (refusal) return Promise.reject(new Error(refusal));
             // A worktree goes through the route that waits for the host to name
             // its directory, whatever the caller passed as `cwd`. The caller
             // reads that from the row it drew, and a workspace the host has not
@@ -5054,20 +5009,9 @@ export function happyAgentWorkspaceStoreCreate(
         botReorder: (botId, afterId) => list.botReorder(botId, afterId),
         projectArchive: (projectId) => list.projectArchive(projectId),
         async worktreeCreate(projectId) {
-            // A workspace arrives with its first conversation, and that
-            // conversation is configured from the catalog, so the catalog is
-            // waited for — joining a read already in flight — rather than
-            // leaving the model to an implicit daemon default. A failed read
-            // rejects with the model store's own error.
-            await client.models.load();
-            if (disposed) return;
-            const models = client.models.get();
-            const selection = models.type === "ready" ? models.lastUsedSelection : undefined;
             // The new checkout is forked from the project's own folder, so a
-            // project whose folder has gone cannot produce one. A selection the
-            // catalog cannot run refuses the workspace before it is made,
-            // rather than leaving one behind whose conversation cannot start.
-            const refusal = groupWorkRefusalFind(projectId) ?? selectionRefusalFind(selection);
+            // project whose folder has gone cannot produce one.
+            const refusal = groupWorkRefusalFind(projectId);
             if (refusal) throw new Error(refusal);
             // One synchronous act names the workspace, addresses it, and names
             // its first conversation, so the very first frame the reader sees
@@ -5079,7 +5023,7 @@ export function happyAgentWorkspaceStoreCreate(
             const worktreeId = list.worktreeCreate(projectId);
             if (worktreeId === undefined) return;
             output({ type: "groupOpenRequested", groupId: worktreeId });
-            worktreeFirstConversationStart(worktreeId, selection);
+            worktreeFirstConversationStart(worktreeId);
         },
         worktreeArchive: (projectId, worktreeId) => list.worktreeArchive(projectId, worktreeId),
         worktreeReorder: (projectId, worktreeId, afterId) =>

@@ -21,13 +21,9 @@ import {
 } from "./happyAgentConversationProject.js";
 import { happyAgentMenusDerive } from "./happyAgentMenusStore.js";
 import {
-    happyAgentSelectionCatalogReconcile,
     happyAgentSelectionEffortUpdate,
-    happyAgentSelectionEqual,
     happyAgentSelectionModelUpdate,
-    happyAgentSelectionOffered,
     happyAgentSelectionServiceTierUpdate,
-    type HappyAgentSelectionCatalogInput,
 } from "./happyAgentSessionDraftStore.js";
 import { deepEqual, happyAgentUserError } from "./happyAgentSupport.js";
 import type {
@@ -580,13 +576,13 @@ export interface HappyAgentChatStore {
 export interface HappyAgentChatDeps {
     readonly catalog: HappyAgentModelCatalog;
     /**
-     * Owner-only authoritative input: what the connection offers now. The
-     * listener is called with the current offer and again on every change;
-     * the returned function stops it, and the store calls it when disposed.
+     * Owner-only authoritative input: the connection's current model catalog.
+     * The listener is called with it now and again on every change; the
+     * returned function stops it, and the store calls it when disposed. The
+     * pickers and context gauge re-derive from it; the session's own selection
+     * is the daemon's and is left alone.
      */
-    readonly catalogFollow?: (
-        listener: (input: HappyAgentSelectionCatalogInput) => void,
-    ) => () => void;
+    readonly catalogFollow?: (listener: (catalog: HappyAgentModelCatalog) => void) => () => void;
     readonly transcriptConnect: HappyAgentChatTranscriptConnect;
     readonly connectActions: Pick<
         HappyAgentConnection,
@@ -673,23 +669,6 @@ export function happyAgentChatStoreCreate(
     /* The connection's current model catalog; the daemon can change what it
        offers while this conversation is open. */
     let catalog = deps.catalog;
-    /* Where a session whose model the connection stopped offering moves to. */
-    let fallback: HappyAgentSelection | undefined;
-    /* The last move off an unoffered model this store asked for: the move, and
-       the mutations carrying it. The connection publishes the target as the
-       session's intended mode inside the switch call itself, and puts the old
-       mode back — again synchronously — before it reports a rejection. There
-       is no success callback, so an offered snapshot is never taken as
-       acknowledgement: the record stays, a rollback matching it is not asked
-       again in the background, and a rejection of any of its mutations marks
-       the move refused. */
-    let selectionMove: { readonly key: string; readonly mutationIds: Set<string> } | undefined;
-    /* A move the daemon refused. It is not asked again in the background; the
-       reader's next send asks once more, or says why it cannot. */
-    let selectionMoveRefused: string | undefined;
-    /* True while a move's mutations are being issued, whose optimistic
-       snapshots arrive before their ids are known. */
-    let selectionMoveIssuing = false;
     let disposed = false;
     let active = false;
     let status: "loading" | "ready" | "error" = "loading";
@@ -925,7 +904,6 @@ export function happyAgentChatStoreCreate(
                 status = "ready";
                 error = undefined;
                 commit();
-                selectionReconcile(false);
             },
             onError: (caught) => {
                 if (!active || disposed) return;
@@ -972,88 +950,14 @@ export function happyAgentChatStoreCreate(
         return pendingMutationIds.size > 0;
     };
 
-    /**
-     * Moves the session off a model the connection no longer offers, onto the
-     * connection's configured default, before its next message. It asks the
-     * daemon through the same typed switch a reader's pick uses, but it is not
-     * the reader's pick, so nothing is remembered as last used. A run already
-     * underway is left to finish on what it started with; a session whose model
-     * is locked, or a connection with nothing to offer, is left as it is.
-     *
-     * One move is asked for at a time. A move the daemon refused is asked for
-     * again only when `explicit` — the reader sending — so a refusal never
-     * turns into a background retry loop.
-     */
-    const selectionReconcile = (explicit: boolean): void => {
-        const connected = transcriptSession;
-        if (
-            selectionMoveIssuing ||
-            disposed ||
-            !active ||
-            status !== "ready" ||
-            connected === undefined ||
-            // The connection's placeholder names no mode of its own yet.
-            connected.historyLoading === true ||
-            connected.modelLocked ||
-            runStatus !== "idle"
-        )
-            return;
-        const current = transcriptSelectionOf(connected);
-        if (happyAgentSelectionOffered(catalog, current)) return;
-        const next = happyAgentSelectionCatalogReconcile(catalog, current, fallback);
-        if (next === current) return;
-        const key = [
-            current.providerId,
-            current.modelId,
-            next.providerId,
-            next.modelId,
-            next.effort ?? "",
-            next.serviceTier ?? "",
-        ].join("\u0000");
-        // In the background, a move already asked for — including the old mode
-        // a rollback republishes before its rejection is reported — or one the
-        // daemon refused is not asked again. The reader's send always asks.
-        if (!explicit && (selectionMove?.key === key || selectionMoveRefused === key)) return;
-        selectionMoveRefused = undefined;
-        const mutationIds = new Set<string>();
-        selectionMove = { key, mutationIds };
-        const track = (mutationId: string): void => {
-            mutationIds.add(mutationId);
-            connectMutationTrack(mutationId);
-        };
-        selectionMoveIssuing = true;
-        try {
-            track(
-                deps.connectActions.switchModel(sessionId, {
-                    providerId: next.providerId,
-                    modelId: next.modelId,
-                }),
-            );
-            if (next.effort !== current.effort)
-                track(deps.connectActions.setEffort(sessionId, next.effort));
-            if (next.serviceTier !== current.serviceTier)
-                track(deps.connectActions.setServiceTier(sessionId, next.serviceTier));
-        } finally {
-            selectionMoveIssuing = false;
-        }
-    };
-
-    const unsubscribeCatalog = deps.catalogFollow?.((input) => {
-        if (disposed) return;
-        catalog = input.catalog;
-        fallback = input.fallback;
+    const unsubscribeCatalog = deps.catalogFollow?.((next) => {
+        if (disposed || next === catalog) return;
+        catalog = next;
         commit();
-        selectionReconcile(false);
     });
 
     const unsubscribeMutationRejections = deps.connectMutationSubscribe((rejection) => {
         if (!pendingMutationIds.delete(rejection.mutationId)) return;
-        if (selectionMove?.mutationIds.has(rejection.mutationId) === true) {
-            // The connection has already put the old mode back; the move is
-            // not asked again until the reader sends.
-            selectionMoveRefused = selectionMove.key;
-            selectionMove = undefined;
-        }
         const requestId = requestMutationIds.get(rejection.mutationId);
         if (requestId !== undefined) {
             requestMutationIds.delete(rejection.mutationId);
@@ -1187,33 +1091,6 @@ export function happyAgentChatStoreCreate(
             rejecting(async () => {
                 if ((await pendingQuestionAnswer(text)).textUsed) return;
                 const steered = runStatus === "running";
-                // A new turn runs on a model the connection offers, or not at
-                // all; steering joins a run that already has its model.
-                // What decides is the mode this send will carry. The published
-                // session includes the connection's intended mode, which is
-                // exactly what `sendMessage` reads, and a move asked for here
-                // is published before this line — as a rejected one is rolled
-                // back. A fallback merely existing is not a mode anything sends.
-                // Before the first history snapshot the session has no mode
-                // yet, so there is nothing to judge.
-                if (
-                    !steered &&
-                    transcriptSession !== undefined &&
-                    transcriptSession.historyLoading !== true
-                ) {
-                    selectionReconcile(true);
-                    const current = transcriptSelectionOf(transcriptSession);
-                    if (!happyAgentSelectionOffered(catalog, current))
-                        throw new UserError(
-                            catalog.providers.some(
-                                (provider) =>
-                                    provider.disabledReason === undefined &&
-                                    provider.models.length > 0,
-                            )
-                                ? "This conversation's model is no longer offered by this Happy Agent. Choose another model and send again."
-                                : "No model is available on this Happy Agent. Switch on a provider in Settings → Providers.",
-                        );
-                }
                 const mutationId = deps.connectActions.sendMessage(
                     sessionId,
                     images && images.length > 0
