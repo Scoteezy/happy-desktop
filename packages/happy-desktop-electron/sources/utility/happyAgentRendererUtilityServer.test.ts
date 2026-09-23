@@ -1,11 +1,17 @@
 import { createServer, request as httpRequest, type Server } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { performance } from "node:perf_hooks";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { happyAgentRendererUtilityServerCreate } from "./happyAgentRendererUtilityServer";
+
+function daemonSocketPath(directory: string): string {
+    return process.platform === "win32"
+        ? `\\\\.\\pipe\\${basename(directory)}-daemon`
+        : join(directory, "daemon.sock");
+}
 
 describe("isolated Happy Agent HTTP transport", () => {
     let isolated: Awaited<ReturnType<typeof happyAgentRendererUtilityServerCreate>> | undefined;
@@ -56,7 +62,7 @@ describe("isolated Happy Agent HTTP transport", () => {
 
     it("serves daemon bytes without the native bridge, keeps local routes scoped, and swaps clients", async () => {
         directory = await mkdtemp(join(tmpdir(), "happy-utility-"));
-        const socket = join(directory, "daemon.sock");
+        const socket = daemonSocketPath(directory);
         const forwarded = vi.fn();
         daemon = createServer((request, response) => {
             forwarded(request.url, request.headers.authorization);
@@ -107,7 +113,7 @@ describe("isolated Happy Agent HTTP transport", () => {
 
     it("preserves backpressure and aborts the daemon stream when the renderer disconnects", async () => {
         directory = await mkdtemp(join(tmpdir(), "happy-utility-stream-"));
-        const socket = join(directory, "daemon.sock");
+        const socket = daemonSocketPath(directory);
         const chunk = Buffer.alloc(64 * 1024, 0x61);
         let generated = 0;
         let cancelled = false;
@@ -175,7 +181,7 @@ describe("isolated Happy Agent HTTP transport", () => {
     if (process.env.HAPPY_TRANSPORT_BENCH === "1")
         it("measures 100 local 1 MiB responses (Node fixture, not Electron)", async () => {
             directory = await mkdtemp(join(tmpdir(), "happy-utility-bench-"));
-            const socket = join(directory, "daemon.sock");
+            const socket = daemonSocketPath(directory);
             const bytes = Buffer.alloc(1024 * 1024, 0x61);
             daemon = createServer((_request, response) =>
                 response.writeHead(200, { "content-length": bytes.byteLength }).end(bytes),
