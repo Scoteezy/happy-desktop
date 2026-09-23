@@ -1,5 +1,4 @@
 import { type ReactNode } from "react";
-import { Button } from "../../src/Button";
 import { FilePreview } from "../../src/FilePreview";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
@@ -74,11 +73,7 @@ export function FilePreviewPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                     {frame(
                         <FilePreview
-                            actions={
-                                <Button icon="copy" size="small" variant="ghost">
-                                    Download
-                                </Button>
-                            }
+                            onDownload={() => {}}
                             content={{ type: "url", url: sampleImage }}
                             dimensions="640 × 400"
                             onClose={() => {}}

@@ -184,6 +184,7 @@ import {
     type CommandPaletteTab,
 } from "./commandPaletteResults";
 import { openExternalLink } from "./externalLink";
+import { fileDownload } from "./fileDownload";
 import { reactFrameInputUpdate, reactFrameSubscribe } from "./reactFrameSubscribe";
 import { BlueprintView } from "./views/BlueprintView";
 import type {
@@ -4241,6 +4242,13 @@ function HappyAgentFileBody(props: {
                           ),
                       }
                     : {})}
+                // The file as saved, not an unsaved edit: downloading names a
+                // file, and the file is what is on disk.
+                onDownload={() =>
+                    void fileDownload(file.path, { type: "text", text: content }).catch(
+                        () => undefined,
+                    )
+                }
                 onRevert={() => workspace.fileDraftRevert(file.id)}
                 onSave={() => {
                     if (!saveDisabled && props.happyAgentOnline())
@@ -4392,6 +4400,10 @@ function HappyAgentChangedFilePreview(props: {
     // has no preview beats rendering its bytes as characters.
     const kind = filePreviewKind(file.path);
     const readable = kind === "markdown" || kind === "text";
+    const saved =
+        file.document.type === "ready" && "newContent" in file.document.value
+            ? file.document.value.newContent
+            : undefined;
     const cacheKey =
         file.draft === undefined &&
         file.document.type === "ready" &&
@@ -4403,6 +4415,14 @@ function HappyAgentChangedFilePreview(props: {
         <FilePreview
             content={readable ? { type: "text", text: props.text } : { type: "unavailable" }}
             {...(cacheKey === undefined ? {} : { cacheKey })}
+            {...(saved === undefined
+                ? {}
+                : {
+                      onDownload: () =>
+                          void fileDownload(file.path, { type: "text", text: saved }).catch(
+                              () => undefined,
+                          ),
+                  })}
             // A document followed out of the changed list lands beside it as the
             // file itself, the same way one followed out of a file tab does.
             onFileOpen={(href) => {
@@ -4457,6 +4477,13 @@ function HappyAgentFilePreview(props: {
                       onMediaWindowOpen: () => mediaWindow({ path: props.path, url: value.url }),
                   }
                 : {})}
+            // A file with no viewer is still a file, and saving it is often the
+            // only thing left to do with it.
+            onDownload={() =>
+                void fileDownload(props.path, { type: "url", url: value.url }).catch(
+                    () => undefined,
+                )
+            }
             path={props.path}
             size={fileSizeFormat(value.size)}
             updating={props.revalidating}

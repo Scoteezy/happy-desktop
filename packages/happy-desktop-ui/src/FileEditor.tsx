@@ -10,6 +10,7 @@ import { CodeEditor } from "./CodeEditor";
 import { FileTreeFamilyIcon, fileTreeFamily } from "./FileTree";
 import { FilePathLabel } from "./FilePathLabel";
 import { SegmentedControl } from "./SegmentedControl";
+import { Ionicon } from "./vectorIcons/VectorIcon";
 export type FileEditorProps = {
     className?: string;
     "data-testid"?: string;
@@ -24,6 +25,8 @@ export type FileEditorProps = {
     onSave?: () => void;
     onRevert?: () => void;
     onClose?: () => void;
+    /** Saves the file to the reader's machine. Absent hides the control. */
+    onDownload?: () => void;
     /** Unsaved local edits exist. Drives Command-S and Revert. */
     dirty?: boolean;
     /** A save is in flight. */
@@ -81,6 +84,7 @@ export function FileEditor(props: FileEditorProps) {
         "onSave",
         "onRevert",
         "onClose",
+        "onDownload",
         "dirty",
         "saving",
         "saveDisabled",
@@ -179,6 +183,19 @@ export function FileEditor(props: FileEditorProps) {
                             variant="ghost"
                         >
                             {local.revertLabel ?? "Revert"}
+                        </Button>
+                    ) : null}
+                    {local.onDownload ? (
+                        <Button
+                            aria-label="Download"
+                            data-testid="file-editor-download"
+                            iconOnly
+                            onClick={() => local.onDownload?.()}
+                            size="small"
+                            title="Download"
+                            variant="ghost"
+                        >
+                            <Ionicon name="download-outline" size={14} />
                         </Button>
                     ) : null}
                     {local.onClose ? (
