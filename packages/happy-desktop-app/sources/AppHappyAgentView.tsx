@@ -122,6 +122,7 @@ import {
     CodeEditor,
     ComposerFooterBar,
     ComposerModelControl,
+    type ComposerModelUsageWatch,
     ConversationView,
     DeferredPane,
     EmptyState,
@@ -174,6 +175,7 @@ import {
     type TabTransferTarget,
     WindowDragRegion,
     happyAgentComposerModelControlProps,
+    happyAgentComposerModelUsageWatch,
     sidebarReorderMove,
     type MenuItem,
     type FileTreeNode,
@@ -203,6 +205,7 @@ import {
     type CommandPaletteTab,
 } from "./commandPaletteResults";
 import { openExternalLink } from "./externalLink";
+import { fileDownload } from "./fileDownload";
 import { reactFrameInputUpdate, reactFrameSubscribe } from "./reactFrameSubscribe";
 import { BlueprintView } from "./views/BlueprintView";
 import type {
@@ -2198,6 +2201,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     {desktop ? <WindowDragRegion /> : null}
                     <HappyAgentCreateBotSurface
                         happyAgentOnline={activeHappyAgentOnline}
+                        providerUsage={active.session.providerUsage}
                         // The artist's page is on the web, and this window has
                         // no workspace behind it for an embedded tab to run in,
                         // so it goes to the machine's own browser where the
@@ -2267,6 +2271,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     platform={props.platform}
                     projects={active.projects}
                     happyAgentOnline={activeHappyAgentOnline}
+                    providerUsage={active.session.providerUsage}
                     titleShimmerEnabled={titleShimmerEnabled}
                     viewerId={viewerId}
                     workspace={active.session.workspace}
@@ -3017,6 +3022,8 @@ function inboxItemTime(value: number | undefined): string | undefined {
 }
 
 interface HappyAgentWorkspaceSurfaceProps {
+    /** Account usage for the model picker's account submenu; read only while that submenu is open. */
+    providerUsage?: HappyAgentProviderUsageStore;
     browserConnectionId: string | null;
     /** Unified outer route and daemon health for this already materialized Happy Agent. */
     availability: HappyAgentAvailabilitySnapshot;
@@ -3080,7 +3087,19 @@ interface HappyAgentWorkspaceSurfaceProps {
  * keystroke live in the workspace store outside React, so this component stays a
  * pure projection.
  */
+/**
+ * The model picker's account-usage feed for one session. The picker treats a
+ * new watch as a new lease on the daemon's usage reads, so it keeps one identity
+ * for as long as the store does.
+ */
+function useComposerModelUsageWatch(
+    store: HappyAgentProviderUsageStore | undefined,
+): ComposerModelUsageWatch | undefined {
+    return useMemo(() => (store ? happyAgentComposerModelUsageWatch(store) : undefined), [store]);
+}
+
 function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
+    const modelUsageWatch = useComposerModelUsageWatch(props.providerUsage);
     const workspaceFocusedPane = useRef<AppShellFocusedPane>("workspace");
     // AppShell's panel callback ref treats this callback's identity as the
     // panel lifetime, so ordinary store renders must keep it stable.
@@ -3686,6 +3705,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             // under the strip is the same composer that starts the first one.
             <HappyAgentGroupComposer
                 composer={workspace.groupComposer}
+                modelUsageWatch={modelUsageWatch}
                 {...(workspace.groupSessionDraft
                     ? { draftMenus: workspace.groupSessionDraft.menus }
                     : {})}
@@ -3698,6 +3718,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             />
         ) : (
             <HappyAgentConversationBody
+                modelUsageWatch={modelUsageWatch}
                 activitySelected={panel.open && panel.activeViewId === "activity"}
                 conversation={conversation}
                 emptyContent={
@@ -4576,6 +4597,13 @@ function HappyAgentFileBody(props: {
                           ),
                       }
                     : {})}
+                // The file as saved, not an unsaved edit: downloading names a
+                // file, and the file is what is on disk.
+                onDownload={() =>
+                    void fileDownload(file.path, { type: "text", text: content }).catch(
+                        () => undefined,
+                    )
+                }
                 onRevert={() => workspace.fileDraftRevert(file.id)}
                 onSave={() => {
                     if (!saveDisabled && props.happyAgentOnline())
@@ -4805,6 +4833,10 @@ function HappyAgentChangedFilePreview(props: {
     // has no preview beats rendering its bytes as characters.
     const kind = filePreviewKind(file.path);
     const readable = kind === "markdown" || kind === "text";
+    const saved =
+        file.document.type === "ready" && "newContent" in file.document.value
+            ? file.document.value.newContent
+            : undefined;
     const cacheKey =
         file.draft === undefined &&
         file.document.type === "ready" &&
@@ -4817,6 +4849,14 @@ function HappyAgentChangedFilePreview(props: {
             content={readable ? { type: "text", text: props.text } : { type: "unavailable" }}
             {...(cacheKey === undefined ? {} : { cacheKey })}
             {...(props.editor === undefined || !readable ? {} : { editor: props.editor })}
+            {...(saved === undefined
+                ? {}
+                : {
+                      onDownload: () =>
+                          void fileDownload(file.path, { type: "text", text: saved }).catch(
+                              () => undefined,
+                          ),
+                  })}
             // A document followed out of the changed list lands beside it as the
             // file itself, the same way one followed out of a file tab does.
             onFileOpen={(href, selection) => {
@@ -4871,6 +4911,13 @@ function HappyAgentFilePreview(props: {
                       onMediaWindowOpen: () => mediaWindow({ path: props.path, url: value.url }),
                   }
                 : {})}
+            // A file with no viewer is still a file, and saving it is often the
+            // only thing left to do with it.
+            onDownload={() =>
+                void fileDownload(props.path, { type: "url", url: value.url }).catch(
+                    () => undefined,
+                )
+            }
             path={props.path}
             size={fileSizeFormat(value.size)}
             updating={props.revalidating}
@@ -4895,6 +4942,7 @@ function fileSizeFormat(size: number): string {
  */
 function HappyAgentGroupComposer(props: {
     composer: ComposerSnapshot;
+    modelUsageWatch?: ComposerModelUsageWatch;
     /**
      * How that first conversation will be configured, and the options behind
      * those choices. Absent until the model catalog has been read, which is
@@ -4942,6 +4990,7 @@ function HappyAgentGroupComposer(props: {
                 draftMenus ? (
                     <ComposerModelControl
                         {...happyAgentComposerModelControlProps(draftMenus, {
+                            usageWatch: props.modelUsageWatch,
                             onEffortChange: (effort?: HappyAgentThinkingLevel) =>
                                 workspace.sessionEffortUpdate(effort),
                             onModelChange: (selection: HappyAgentModelSelection) =>
@@ -4996,6 +5045,7 @@ function HappyAgentGroupComposer(props: {
 /** The open conversation's materialization states, inside the directory's tabs. */
 function HappyAgentConversationBody(props: {
     activitySelected: boolean;
+    modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentWorkspaceSnapshot["conversation"];
     emptyContent?: ReactNode;
     focusOnType: boolean;
@@ -5043,6 +5093,7 @@ function HappyAgentConversationBody(props: {
         return (
             <HappyAgentConversationSurface
                 activitySelected={props.activitySelected}
+                modelUsageWatch={props.modelUsageWatch}
                 conversation={conversation.value}
                 emptyContent={props.emptyContent}
                 focusOnType={props.focusOnType}
@@ -5186,6 +5237,7 @@ function happyAgentDelegatedElapsedMs(
 
 function HappyAgentConversationSurface(props: {
     activitySelected: boolean;
+    modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentConversationSnapshot;
     emptyContent?: ReactNode;
     focusOnType: boolean;
@@ -5330,6 +5382,7 @@ function HappyAgentConversationSurface(props: {
                     {conversation.menus ? (
                         <ComposerModelControl
                             {...happyAgentComposerModelControlProps(conversation.menus, {
+                                usageWatch: props.modelUsageWatch,
                                 // The daemon refuses a model change while a run
                                 // is active or queued behind it, so the control
                                 // says so rather than accepting a choice the
@@ -5853,6 +5906,7 @@ function happyAgentNamingDialog(
 function HappyAgentCreateBotSurface(props: {
     happyAgentOnline: () => boolean;
     onExternalLinkOpen: (url: string) => void;
+    providerUsage?: HappyAgentProviderUsageStore;
     unavailable?: string;
     workspace: HappyAgentWorkspaceStore;
 }) {
@@ -5861,6 +5915,7 @@ function HappyAgentCreateBotSurface(props: {
         props.workspace.get,
         props.workspace.get,
     ).botCreate;
+    const modelUsageWatch = useComposerModelUsageWatch(props.providerUsage);
     if (!botCreate) return null;
     const store = props.workspace;
     const menus = botCreate.menus;
@@ -5881,6 +5936,7 @@ function HappyAgentCreateBotSurface(props: {
                 menus ? (
                     <ComposerModelControl
                         {...happyAgentComposerModelControlProps(menus, {
+                            usageWatch: modelUsageWatch,
                             onEffortChange: (effort?: HappyAgentThinkingLevel) =>
                                 store.botCreateEffortUpdate(effort),
                             onModelChange: (selection: HappyAgentModelSelection) =>

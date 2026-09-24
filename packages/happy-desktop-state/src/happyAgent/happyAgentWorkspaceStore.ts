@@ -48,9 +48,10 @@ import {
     type HappyAgentViewPlacement,
 } from "./happyAgentPanelStore.js";
 import {
-    happyAgentSessionDraftStoreCreate,
+    happyAgentSessionDraftStoreOwnedCreate,
     type HappyAgentSessionDraftSnapshot,
     type HappyAgentSessionDraftStore,
+    type HappyAgentSessionDraftWriter,
 } from "./happyAgentSessionDraftStore.js";
 import {
     happyAgentGroupAccessOf,
@@ -1896,6 +1897,9 @@ export function happyAgentWorkspaceStoreCreate(
     let disposed = false;
     let unsubscribeList: (() => void) | undefined;
     let unsubscribeWorkspaceFiles: (() => void) | undefined;
+    let unsubscribeModels: (() => void) | undefined;
+    /** True while the drafts re-derive from a catalog the daemon changed, which nobody chose. */
+    let draftsCatalogApplying = false;
     /** Ready bytes may have changed while this store had no live file-hint subscription. */
     let fileDocumentsReconcileOnStart = false;
     /**
@@ -2071,6 +2075,7 @@ export function happyAgentWorkspaceStoreCreate(
      * ones every composer has.
      */
     let botCreateSessionDraft: HappyAgentSessionDraftStore | undefined;
+    let botCreateSessionDraftWriter: HappyAgentSessionDraftWriter | undefined;
     let unsubscribeBotCreateSessionDraft: (() => void) | undefined;
     /** Invalidates a catalog read still in flight once the draft it was for is put down. */
     let botCreateSessionDraftGeneration = 0;
@@ -2108,6 +2113,7 @@ export function happyAgentWorkspaceStoreCreate(
     let unsubscribeGroupComposer: (() => void) | undefined;
     /** How the addressed group's first session will be configured. */
     let groupDraft: HappyAgentSessionDraftStore | undefined;
+    let groupDraftWriter: HappyAgentSessionDraftWriter | undefined;
     let unsubscribeGroupDraft: (() => void) | undefined;
     let groupDraftGeneration = 0;
     /**
@@ -4822,17 +4828,24 @@ export function happyAgentWorkspaceStoreCreate(
     const botCreateSessionDraftEnsure = (): void => {
         const current = ++botCreateSessionDraftGeneration;
         void client.models.load().then(
-            ({ catalog, lastUsedSelection }) => {
+            (loaded) => {
                 if (disposed || botCreateSessionDraftGeneration !== current || !botCreateDraft)
                     return;
-                botCreateSessionDraft = happyAgentSessionDraftStoreCreate({
-                    catalog,
-                    selection: lastUsedSelection,
+                // The catalog may have moved on since this load answered.
+                const latest = client.models.get();
+                const models = latest.type === "ready" ? latest : loaded;
+                const owned = happyAgentSessionDraftStoreOwnedCreate({
+                    catalog: models.catalog,
+                    selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
+                    effortRemembered: (providerId, modelId) =>
+                        client.models.effortRemembered(providerId, modelId),
                 });
+                botCreateSessionDraft = owned.store;
+                botCreateSessionDraftWriter = owned.writer;
                 unsubscribeBotCreateSessionDraft = botCreateSessionDraft.subscribe(() => {
                     const selection = botCreateSessionDraft?.get().selection;
-                    if (selection) client.models.selectionUsed(selection);
+                    if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
                     recompute();
                 });
                 recompute();
@@ -4857,6 +4870,7 @@ export function happyAgentWorkspaceStoreCreate(
         unsubscribeBotCreateSessionDraft?.();
         unsubscribeBotCreateSessionDraft = undefined;
         botCreateSessionDraft = undefined;
+        botCreateSessionDraftWriter = undefined;
         botCreateSessionDraftGeneration += 1;
         botCreateDraft = undefined;
     };
@@ -5014,6 +5028,7 @@ export function happyAgentWorkspaceStoreCreate(
         unsubscribeGroupDraft?.();
         unsubscribeGroupDraft = undefined;
         groupDraft = undefined;
+        groupDraftWriter = undefined;
         // Invalidates a catalog read still in flight, so its draft cannot attach
         // itself to a group that has since been left.
         groupDraftGeneration += 1;
@@ -5027,16 +5042,23 @@ export function happyAgentWorkspaceStoreCreate(
     const groupDraftEnsure = (groupId: HappyAgentGroupId): void => {
         const current = ++groupDraftGeneration;
         void client.models.load().then(
-            ({ catalog, lastUsedSelection }) => {
+            (loaded) => {
                 if (disposed || groupDraftGeneration !== current || openGroupId !== groupId) return;
-                groupDraft = happyAgentSessionDraftStoreCreate({
-                    catalog,
-                    selection: lastUsedSelection,
+                // The catalog may have moved on since this load answered.
+                const latest = client.models.get();
+                const models = latest.type === "ready" ? latest : loaded;
+                const owned = happyAgentSessionDraftStoreOwnedCreate({
+                    catalog: models.catalog,
+                    selection: models.lastUsedSelection,
                     modelSelect: (current, input) => client.models.modelSelect(current, input),
+                    effortRemembered: (providerId, modelId) =>
+                        client.models.effortRemembered(providerId, modelId),
                 });
+                groupDraft = owned.store;
+                groupDraftWriter = owned.writer;
                 unsubscribeGroupDraft = groupDraft.subscribe(() => {
                     const selection = groupDraft?.get().selection;
-                    if (selection) client.models.selectionUsed(selection);
+                    if (selection && !draftsCatalogApplying) client.models.selectionUsed(selection);
                     recompute();
                 });
                 recompute();
@@ -5382,6 +5404,23 @@ export function happyAgentWorkspaceStoreCreate(
         conversation = { type: "error", error: failure };
     };
 
+    /**
+     * Hands the connection's current catalog to the open drafts, so their
+     * pickers list what the daemon offers now rather than what it offered when
+     * they were opened. The reader's selection stays as they left it.
+     */
+    const draftsCatalogApply = (): void => {
+        const models = client.models.get();
+        if (models.type !== "ready") return;
+        draftsCatalogApplying = true;
+        try {
+            groupDraftWriter?.catalogChanged(models.catalog);
+            botCreateSessionDraftWriter?.catalogChanged(models.catalog);
+        } finally {
+            draftsCatalogApplying = false;
+        }
+    };
+
     const start = (): void => {
         active = true;
         const reconcileFileDocuments = fileDocumentsReconcileOnStart;
@@ -5425,6 +5464,15 @@ export function happyAgentWorkspaceStoreCreate(
         // seconds because that is how often the answer can change.
         openInTargetsRefresh();
         openInTargetsTimer ??= setInterval(openInTargetsRefresh, OPEN_IN_TARGETS_REFRESH_MS);
+        // The daemon can change what it offers at any time — a provider
+        // switched on, or a restart onto another configuration — and the open
+        // drafts and a conversation still showing the machine's defaults list
+        // exactly that. A catalog that moved while nobody watched lands now.
+        unsubscribeModels = client.models.subscribe(() => {
+            draftsCatalogApply();
+            recompute();
+        });
+        draftsCatalogApply();
         recompute();
     };
 
@@ -5437,6 +5485,8 @@ export function happyAgentWorkspaceStoreCreate(
         unsubscribeWorkspaceFiles?.();
         unsubscribeWorkspaceFiles = undefined;
         slicesFollow();
+        unsubscribeModels?.();
+        unsubscribeModels = undefined;
         fileDocumentsReconcileOnStart = true;
         // A workspace nobody is looking at does not go asking the host what is
         // installed; the next start reads it fresh anyway.

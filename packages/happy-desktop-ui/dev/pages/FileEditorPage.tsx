@@ -80,6 +80,7 @@ export function FileEditorPage() {
                     {frame(
                         <FileEditor
                             documentKey="src/components/Counter.tsx@7f3a"
+                            onDownload={() => {}}
                             onSave={() => {}}
                             path="src/components/Counter.tsx"
                             value={sample}

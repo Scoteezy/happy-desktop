@@ -1,8 +1,13 @@
 import { createStore } from "zustand/vanilla";
-import { happyAgentMenusDerive, happyAgentMenusSelectionProject } from "./happyAgentMenusStore.js";
+import {
+    happyAgentMenusDerive,
+    happyAgentMenusReferencesPreserve,
+    happyAgentMenusSelectionProject,
+} from "./happyAgentMenusStore.js";
 import type {
     HappyAgentMenusSnapshot,
     HappyAgentModelCatalog,
+    HappyAgentModelEffortRemembered,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
     HappyAgentSelection,
@@ -42,12 +47,22 @@ export interface HappyAgentSessionDraftStore {
     serviceTierUpdate(serviceTier?: HappyAgentServiceTier): void;
 }
 
+/** Owner-only authoritative input to a draft; never a reader's action. */
+export interface HappyAgentSessionDraftWriter {
+    /**
+     * The daemon changed what it offers. The pickers re-derive from the new
+     * catalog; the reader's selection is theirs and is left as it is.
+     */
+    catalogChanged(catalog: HappyAgentModelCatalog): void;
+}
+
 export interface HappyAgentSessionDraftOptions {
     readonly catalog: HappyAgentModelCatalog;
     readonly modelSelect?: (
         current: HappyAgentSelection,
         input: HappyAgentModelSelection,
     ) => HappyAgentSelection;
+    readonly effortRemembered?: HappyAgentModelEffortRemembered;
     /**
      * What to open the draft on — the workspace's most recent selection, so a
      * new session starts configured the way the last one was. Absent for the
@@ -196,11 +211,23 @@ export function happyAgentSelectionEqual(
 export function happyAgentSessionDraftStoreCreate(
     options: HappyAgentSessionDraftOptions,
 ): HappyAgentSessionDraftStore {
-    const catalog = options.catalog;
+    return happyAgentSessionDraftStoreOwnedCreate(options).store;
+}
+
+/**
+ * The draft together with its owner-only writer. Only the owner that follows
+ * the connection's model store may tell a draft that the daemon's catalog
+ * changed; the draft's public face stays the reader's actions alone.
+ */
+export function happyAgentSessionDraftStoreOwnedCreate(options: HappyAgentSessionDraftOptions): {
+    readonly store: HappyAgentSessionDraftStore;
+    readonly writer: HappyAgentSessionDraftWriter;
+} {
+    let catalog = options.catalog;
     const seed = options.selection ?? happyAgentSessionSelectionDefault(catalog);
     const snapshotOf = (selection: HappyAgentSelection): HappyAgentSessionDraftSnapshot => ({
         selection,
-        menus: happyAgentMenusDerive(catalog, selection),
+        menus: happyAgentMenusDerive(catalog, selection, options.effortRemembered),
     });
     const store = createStore<HappyAgentSessionDraftSnapshot>()(() => snapshotOf(seed));
     const selectionSet = (selection: HappyAgentSelection): void => {
@@ -209,30 +236,53 @@ export function happyAgentSessionDraftStoreCreate(
         store.setState(
             {
                 selection,
-                menus: happyAgentMenusSelectionProject(catalog, previous.menus, selection),
+                menus: happyAgentMenusSelectionProject(
+                    catalog,
+                    previous.menus,
+                    selection,
+                    options.effortRemembered,
+                ),
             },
             true,
         );
     };
 
     return {
-        get: () => store.getState(),
-        subscribe: (listener) => store.subscribe(listener),
+        store: {
+            get: () => store.getState(),
+            subscribe: (listener) => store.subscribe(listener),
 
-        modelUpdate: (input) =>
-            selectionSet(
-                options.modelSelect?.(store.getState().selection, input) ??
-                    happyAgentSelectionModelUpdate(catalog, store.getState().selection, input),
-            ),
-        effortUpdate: (effort) =>
-            selectionSet(happyAgentSelectionEffortUpdate(store.getState().selection, effort)),
-        permissionModeUpdate: (permissionMode) =>
-            selectionSet(
-                happyAgentSelectionPermissionModeUpdate(store.getState().selection, permissionMode),
-            ),
-        serviceTierUpdate: (serviceTier) =>
-            selectionSet(
-                happyAgentSelectionServiceTierUpdate(store.getState().selection, serviceTier),
-            ),
+            modelUpdate: (input) =>
+                selectionSet(
+                    options.modelSelect?.(store.getState().selection, input) ??
+                        happyAgentSelectionModelUpdate(catalog, store.getState().selection, input),
+                ),
+            effortUpdate: (effort) =>
+                selectionSet(happyAgentSelectionEffortUpdate(store.getState().selection, effort)),
+            permissionModeUpdate: (permissionMode) =>
+                selectionSet(
+                    happyAgentSelectionPermissionModeUpdate(
+                        store.getState().selection,
+                        permissionMode,
+                    ),
+                ),
+            serviceTierUpdate: (serviceTier) =>
+                selectionSet(
+                    happyAgentSelectionServiceTierUpdate(store.getState().selection, serviceTier),
+                ),
+        },
+        writer: {
+            catalogChanged(next) {
+                if (next === catalog) return;
+                catalog = next;
+                const previous = store.getState();
+                const menus = happyAgentMenusReferencesPreserve(
+                    previous.menus,
+                    happyAgentMenusDerive(catalog, previous.selection, options.effortRemembered),
+                );
+                if (menus === previous.menus) return;
+                store.setState({ selection: previous.selection, menus }, true);
+            },
+        },
     };
 }

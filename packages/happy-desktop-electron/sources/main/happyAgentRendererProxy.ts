@@ -8,13 +8,20 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 import { HAPPY_AGENT_TERMINAL_CAPABILITY_PROTOCOL_PREFIX } from "./happyAgentTerminalBridge";
+import type { HappyAgentDaemonClientOptions } from "./happyAgentDaemonClient";
 
 export const happyAgentRendererOrigin = "http://happy-agent";
 
 export interface HappyAgentRendererTarget {
     readonly url: string;
     readonly terminalCapability: string;
+    /** HTTP stays on this connection; only terminal upgrades use the loopback bridge. */
+    readonly requestHandle: (request: IncomingMessage, response: ServerResponse, url: URL) => void;
+    readonly transport?: HappyAgentDaemonClientOptions;
+    readonly onConnectionError?: () => void;
+    readonly allowedOrigin?: string;
 }
 
 export interface HappyAgentRendererProxy {
@@ -22,7 +29,7 @@ export interface HappyAgentRendererProxy {
     readonly username: string;
     readonly password: string;
     /** Installs a backing without changing the renderer's URL or cache keys. */
-    targetSet(target: HappyAgentRendererTarget): () => void;
+    targetSet(target: HappyAgentRendererTarget): Promise<() => void>;
     close(): void;
 }
 
@@ -35,7 +42,10 @@ export interface HappyAgentRendererProxy {
  * CONNECT is restricted to happy-agent:80. Chromium uses it for WebSockets; the
  * tunnel terminates at our own HTTP parser, never at an arbitrary network host.
  */
-export function happyAgentRendererProxyCreate(): Promise<HappyAgentRendererProxy> {
+export function happyAgentRendererProxyCreate(
+    debug?: (message: string) => void,
+    eventLoopName = "main",
+): Promise<HappyAgentRendererProxy> {
     const username = randomBytes(24).toString("base64url");
     const password = randomBytes(32).toString("base64url");
     const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
@@ -64,26 +74,20 @@ export function happyAgentRendererProxyCreate(): Promise<HappyAgentRendererProxy
             return undefined;
         }
     };
-    const headers = (
-        request: IncomingMessage,
-        backing: HappyAgentRendererTarget,
-        upgrade: boolean,
-    ) => {
+    const headers = (request: IncomingMessage, backing: HappyAgentRendererTarget) => {
         const forwarded: IncomingHttpHeaders = {
             ...request.headers,
             host: new URL(backing.url).host,
         };
         delete forwarded["proxy-authorization"];
         delete forwarded["proxy-connection"];
-        if (upgrade) {
-            const protocols = request.headers["sec-websocket-protocol"];
-            forwarded["sec-websocket-protocol"] = [
-                ...(typeof protocols === "string"
-                    ? protocols.split(",").map((value) => value.trim())
-                    : []),
-                `${HAPPY_AGENT_TERMINAL_CAPABILITY_PROTOCOL_PREFIX}${backing.terminalCapability}`,
-            ].join(", ");
-        }
+        const protocols = request.headers["sec-websocket-protocol"];
+        forwarded["sec-websocket-protocol"] = [
+            ...(typeof protocols === "string"
+                ? protocols.split(",").map((value) => value.trim())
+                : []),
+            `${HAPPY_AGENT_TERMINAL_CAPABILITY_PROTOCOL_PREFIX}${backing.terminalCapability}`,
+        ].join(", ");
         return forwarded;
     };
     const handle = (request: IncomingMessage, response: ServerResponse, authenticated: boolean) => {
@@ -106,52 +110,17 @@ export function happyAgentRendererProxyCreate(): Promise<HappyAgentRendererProxy
             response.writeHead(503, { "cache-control": "no-store" }).end();
             return;
         }
-        const upstream = httpRequest(
-            `${backing.url}${url.pathname}${url.search}`,
-            {
-                method: request.method,
-                headers: headers(request, backing, false),
-            },
-            (incoming) => {
-                response.writeHead(incoming.statusCode ?? 502, incoming.headers);
-                incoming.on("error", () => response.destroy());
-                incoming.pipe(response);
-            },
-        );
-        upstream.on("error", () => {
-            if (response.headersSent) response.destroy();
-            else response.writeHead(502, { "cache-control": "no-store" }).end();
-        });
-        request.once("aborted", () => upstream.destroy());
-        request.on("error", () => upstream.destroy());
-        response.once("close", () => upstream.destroy());
-        request.pipe(upstream);
+        backing.requestHandle(request, response, url);
     };
-    const upgrade = (
+    const forwardUpgrade = (
         request: IncomingMessage,
         socket: Duplex,
         head: Buffer,
-        authenticated: boolean,
+        backing: HappyAgentRendererTarget,
+        url: URL,
     ) => {
-        socketHold(socket);
-        const url = route(request);
-        if (!url) {
-            socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
-            return;
-        }
-        if (!authenticated && request.headers["proxy-authorization"] !== authorization) {
-            socket.end(
-                'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Happy Agent"\r\nConnection: close\r\n\r\n',
-            );
-            return;
-        }
-        const backing = target;
-        if (!backing) {
-            socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
-            return;
-        }
         const upstream = httpRequest(`${backing.url}${url.pathname}${url.search}`, {
-            headers: headers(request, backing, true),
+            headers: headers(request, backing),
         });
         upstream.once("upgrade", (incoming, remote, remoteHead) => {
             socketHold(remote);
@@ -184,6 +153,31 @@ export function happyAgentRendererProxyCreate(): Promise<HappyAgentRendererProxy
         socket.once("close", () => upstream.destroy());
         upstream.end();
     };
+    const upgrade = (
+        request: IncomingMessage,
+        socket: Duplex,
+        head: Buffer,
+        authenticated: boolean,
+    ) => {
+        socketHold(socket);
+        const url = route(request);
+        if (!url) {
+            socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+            return;
+        }
+        if (!authenticated && request.headers["proxy-authorization"] !== authorization) {
+            socket.end(
+                'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Happy Agent"\r\nConnection: close\r\n\r\n',
+            );
+            return;
+        }
+        const backing = target;
+        if (!backing) {
+            socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+            return;
+        }
+        forwardUpgrade(request, socket, head, backing, url);
+    };
     const server = createServer((request, response) => handle(request, response, false));
     // This parser has no listening port; only authenticated CONNECT sockets enter.
     const tunnels = createServer((request, response) => handle(request, response, true));
@@ -207,15 +201,35 @@ export function happyAgentRendererProxyCreate(): Promise<HappyAgentRendererProxy
         if (head.length) socket.unshift(head);
         tunnels.emit("connection", socket);
     });
+    // Only enable sampling in debug mode. The histogram reports the actual JS
+    // scheduling gap, independently of request/network timing.
+    const eventLoop = debug ? monitorEventLoopDelay({ resolution: 10 }) : undefined;
+    eventLoop?.enable();
+    const interval =
+        eventLoop &&
+        setInterval(() => {
+            const maximumMs = eventLoop.max / 1e6;
+            if (maximumMs >= 100)
+                debug?.(
+                    `Happy Agent ${eventLoopName} event-loop stall max=${maximumMs.toFixed(0)}ms`,
+                );
+            eventLoop.reset();
+        }, 10_000);
+    interval?.unref();
     return new Promise((resolve, reject) => {
-        server.once("error", reject);
+        const listenError = (error: Error) => {
+            if (interval) clearInterval(interval);
+            eventLoop?.disable();
+            reject(error);
+        };
+        server.once("error", listenError);
         server.listen(0, "127.0.0.1", () => {
-            server.removeListener("error", reject);
+            server.off("error", listenError);
             resolve({
                 port: (server.address() as AddressInfo).port,
                 username,
                 password,
-                targetSet(next) {
+                async targetSet(next) {
                     target = next;
                     return () => {
                         if (target === next) target = undefined;
@@ -223,6 +237,8 @@ export function happyAgentRendererProxyCreate(): Promise<HappyAgentRendererProxy
                 },
                 close() {
                     target = undefined;
+                    if (interval) clearInterval(interval);
+                    eventLoop?.disable();
                     for (const socket of sockets) socket.destroy();
                     sockets.clear();
                     server.close();

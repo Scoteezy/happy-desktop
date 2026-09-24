@@ -35,6 +35,7 @@ import type {
     HappyAgentContextGauge,
     HappyAgentModel,
     HappyAgentModelCatalog,
+    HappyAgentModelEffortRemembered,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
     HappyAgentQueuedMessage,
@@ -575,6 +576,14 @@ export interface HappyAgentChatStore {
 
 export interface HappyAgentChatDeps {
     readonly catalog: HappyAgentModelCatalog;
+    /**
+     * Owner-only authoritative input: the connection's current model catalog.
+     * The listener is called with it now and again on every change; the
+     * returned function stops it, and the store calls it when disposed. The
+     * pickers and context gauge re-derive from it; the session's own selection
+     * is the daemon's and is left alone.
+     */
+    readonly catalogFollow?: (listener: (catalog: HappyAgentModelCatalog) => void) => () => void;
     readonly transcriptConnect: HappyAgentChatTranscriptConnect;
     readonly connectActions: Pick<
         HappyAgentConnection,
@@ -599,6 +608,7 @@ export interface HappyAgentChatDeps {
         input: HappyAgentModelSelection,
     ) => HappyAgentSelection;
     readonly output?: (event: HappyAgentChatOutput) => void;
+    readonly effortRemembered?: HappyAgentModelEffortRemembered;
 }
 
 export interface HappyAgentChatTranscriptConnection {
@@ -658,6 +668,9 @@ export function happyAgentChatStoreCreate(
     }));
 
     const listeners = new Set<() => void>();
+    /* The connection's current model catalog; the daemon can change what it
+       offers while this conversation is open. */
+    let catalog = deps.catalog;
     let disposed = false;
     let active = false;
     let status: "loading" | "ready" | "error" = "loading";
@@ -825,7 +838,7 @@ export function happyAgentChatStoreCreate(
             ...(usage === undefined ? {} : { usage }),
             usageLoading: false,
             contextGauge: contextGaugeDerive(
-                deps.catalog,
+                catalog,
                 usage?.context,
                 connected === undefined
                     ? undefined
@@ -838,7 +851,13 @@ export function happyAgentChatStoreCreate(
             ...(openImage === undefined ? {} : { openImage }),
             ...(connected === undefined
                 ? {}
-                : { menus: happyAgentMenusDerive(deps.catalog, transcriptSelectionOf(connected)) }),
+                : {
+                      menus: happyAgentMenusDerive(
+                          catalog,
+                          transcriptSelectionOf(connected),
+                          deps.effortRemembered,
+                      ),
+                  }),
         };
         /* The transcript answers for itself: `entriesMerge` returns the very
            list it was given when nothing moved, so a new one is a change and
@@ -938,6 +957,12 @@ export function happyAgentChatStoreCreate(
         }
         return pendingMutationIds.size > 0;
     };
+
+    const unsubscribeCatalog = deps.catalogFollow?.((next) => {
+        if (disposed || next === catalog) return;
+        catalog = next;
+        commit();
+    });
 
     const unsubscribeMutationRejections = deps.connectMutationSubscribe((rejection) => {
         if (!pendingMutationIds.delete(rejection.mutationId)) return;
@@ -1153,7 +1178,7 @@ export function happyAgentChatStoreCreate(
             const current = transcriptSelectionOf(connected);
             const next =
                 deps.modelSelect?.(current, input) ??
-                happyAgentSelectionModelUpdate(deps.catalog, current, input);
+                happyAgentSelectionModelUpdate(catalog, current, input);
             deps.selectionUsed?.(next);
             connectMutationTrack(
                 deps.connectActions.switchModel(sessionId, {
@@ -1253,6 +1278,7 @@ export function happyAgentChatStoreCreate(
             disposed = true;
             stop();
             unsubscribeMutationRejections();
+            unsubscribeCatalog?.();
             storeUnsubscribe();
             listeners.clear();
             pendingMutationIds.clear();

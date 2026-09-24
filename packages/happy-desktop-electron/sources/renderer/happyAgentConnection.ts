@@ -167,30 +167,45 @@ function snapshotsEqual(
     return (
         left.connection === right.connection &&
         left.daemon === right.daemon &&
+        left.version === right.version &&
         left.message === right.message &&
         left.attempt === right.attempt
     );
+}
+
+/** The product version the daemon last reported in its own health. */
+function daemonVersionOf(connection: HappyAgentConnection): string | undefined {
+    const compatibility = connection.compatibility();
+    return compatibility.status === "checking" ? undefined : compatibility.serverVersion;
 }
 
 /**
  * Projects the connection's managed update-feed lifecycle into the host
  * availability store. It opens no transport of its own: `/health` remains the
  * one startup gate inside `connectHappyAgent`, and the shared client owns
- * reconnect state.
+ * reconnect state. The version is the one the connection last read from the
+ * daemon itself, which it reads again whenever a replacement starts answering.
  */
-function streamConnectionStoreCreate(connection: HappyAgentConnection): HappyAgentConnectionStore {
+function streamConnectionStoreCreate(connection: HappyAgentConnection): {
+    readonly store: HappyAgentConnectionStore;
+    /** The connection read the daemon's health again. */
+    readonly versionChanged: () => void;
+} {
     const listeners = new Set<() => void>();
-    let snapshot: HappyAgentConnectionSnapshot = {
-        attempt: 0,
-        connection: "connecting",
-        daemon: "unknown",
+    const versioned = (
+        next: Omit<HappyAgentConnectionSnapshot, "version">,
+    ): HappyAgentConnectionSnapshot => {
+        const version = daemonVersionOf(connection);
+        return version === undefined ? next : { ...next, version };
     };
+    let snapshot = versioned({ attempt: 0, connection: "connecting", daemon: "unknown" });
     let sourceState: ReturnType<
         ReturnType<HappyAgentConnection["connectGroups"]>["state"]
     >["connection"] = "connecting";
     let disposed = false;
 
-    const publish = (next: HappyAgentConnectionSnapshot): void => {
+    const publish = (state: Omit<HappyAgentConnectionSnapshot, "version">): void => {
+        const next = versioned(state);
         if (snapshotsEqual(snapshot, next)) return;
         snapshot = next;
         for (const listener of listeners) listener();
@@ -235,7 +250,7 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): HappyAge
         },
     });
 
-    return {
+    const store: HappyAgentConnectionStore = {
         get: () => snapshot,
         subscribe(listener) {
             if (disposed) return () => undefined;
@@ -248,6 +263,12 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): HappyAge
             disposed = true;
             source.close();
             listeners.clear();
+        },
+    };
+    return {
+        store,
+        versionChanged: () => {
+            if (!disposed) publish(snapshot);
         },
     };
 }
@@ -280,6 +301,7 @@ export function happyAgentConnectionOpen(input: {
 }): HappyAgentConnectionHandle {
     let disposed = false;
     let session: HappyAgentSession | undefined;
+    let sessionConnection: ReturnType<typeof streamConnectionStoreCreate> | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     let compatibilityFailure: string | undefined;
     let catalogFailure: string | undefined;
@@ -311,6 +333,9 @@ export function happyAgentConnectionOpen(input: {
             if (disposed) return;
             const mismatch = protocolMismatchOf(compatibility);
             compatibilityFailure = mismatch?.message;
+            // A replacement daemon reports its own version here, and Settings
+            // follows the daemon this window is connected to.
+            sessionConnection?.versionChanged();
             input.deps.compatibility?.(mismatch);
             input.deps.changed();
         },
@@ -428,12 +453,13 @@ export function happyAgentConnectionOpen(input: {
                     message: "Model catalog loaded",
                     source: "catalog",
                 });
+                sessionConnection = streamConnectionStoreCreate(agentConnection);
                 session = {
                     welcome,
                     onboarding,
                     cloud: () => cloudStore,
                     teams: () => client.teams(),
-                    connection: streamConnectionStoreCreate(agentConnection),
+                    connection: sessionConnection.store,
                     debugLog,
                     host: input.host,
                     happyIntegration: () => client.happyIntegration(),
@@ -518,6 +544,7 @@ export function happyAgentConnectionOpen(input: {
                 session.connection[Symbol.dispose]();
                 session.clock[Symbol.dispose]();
                 session = undefined;
+                sessionConnection = undefined;
             }
             for (const unsubscribe of accountKeepWarm) unsubscribe();
             onboarding[Symbol.dispose]();

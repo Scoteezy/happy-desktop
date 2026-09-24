@@ -319,6 +319,15 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         options.onCompatibilityChange?.(next);
     };
 
+    // The daemon process the managed feed last named. It outlives any one
+    // `updates()` iterator, so a replacement that happened while the feed was
+    // being reopened is still recognized as one.
+    let daemonId: string | undefined;
+    // Set when the process answering may no longer be the one whose health
+    // admitted this connection. Until its own health is read and found
+    // compatible and ready, nothing is taken from it: no bootstrap, no feed.
+    let daemonVerify = false;
+
     const reportMutationFailure = (
         action: MutationAction,
         mutationId: string,
@@ -1254,6 +1263,45 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     // bootstrap plus every materialized conversation snapshot.
     const refetchResource = (refetch: Promise<void>): void => background(refetch);
 
+    // A busy agent emits a steady stream of versioned updates, and every one of
+    // them misses while its repair read is outstanding. Keep one read per agent
+    // in flight and follow it with exactly one more when events arrived
+    // meanwhile, so a slow connection cannot pile up a request per event.
+    const agentRefetches = new Map<string, { again: boolean }>();
+    // Agents whose full read found nowhere to land: no loaded workspace,
+    // project, bot, or open session carries them. Reading them again on every
+    // update would never change that, so their updates are ignored until
+    // something that does carry them (a snapshot, a session, a parent's
+    // activity) makes them known again.
+    const untrackedAgents = new Set<string>();
+
+    const refetchAgent = (agentId: string): void => {
+        const running = agentRefetches.get(agentId);
+        if (running !== undefined) {
+            running.again = true;
+            return;
+        }
+        const refetch = { again: false };
+        agentRefetches.set(agentId, refetch);
+        const read = async (): Promise<void> => {
+            do {
+                refetch.again = false;
+                const { agent } = await client.getAgent(agentId, {
+                    signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+                });
+                const latest = agentOf(agent.id);
+                if (latest === undefined || latest.version.localeCompare(agent.version) <= 0) {
+                    replaceAgent(agent);
+                }
+                if (agentOf(agent.id) === undefined) {
+                    untrackedAgents.add(agent.id);
+                    return;
+                }
+            } while (refetch.again);
+        };
+        refetchResource(read().finally(() => agentRefetches.delete(agentId)));
+    };
+
     const reloadConfig = async (): Promise<void> => {
         const response = await client.getConfig({
             signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
@@ -1443,35 +1491,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             case "agent.updated": {
                 const current = agentOf(event.payload.agentId);
                 if (current === undefined) {
-                    refetchResource(
-                        client
-                            .getAgent(event.payload.agentId, { signal: rootController.signal })
-                            .then(({ agent }) => {
-                                const latest = agentOf(agent.id);
-                                if (
-                                    latest === undefined ||
-                                    latest.version.localeCompare(agent.version) <= 0
-                                ) {
-                                    replaceAgent(agent);
-                                }
-                            }),
-                    );
+                    if (!untrackedAgents.has(event.payload.agentId)) {
+                        refetchAgent(event.payload.agentId);
+                    }
                     return;
                 }
+                untrackedAgents.delete(event.payload.agentId);
                 if (current.version !== event.payload.previousVersion) {
-                    refetchResource(
-                        client
-                            .getAgent(event.payload.agentId, { signal: rootController.signal })
-                            .then(({ agent }) => {
-                                const latest = agentOf(agent.id);
-                                if (
-                                    latest === undefined ||
-                                    latest.version.localeCompare(agent.version) <= 0
-                                ) {
-                                    replaceAgent(agent);
-                                }
-                            }),
-                    );
+                    refetchAgent(event.payload.agentId);
                     return;
                 }
                 replaceAgent({
@@ -2033,8 +2060,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 // Health gates startup because it is the only route guaranteed
                 // while the daemon is booting. Once the first bootstrap lands,
                 // the client's managed update feed owns reachability and
-                // reconnection.
-                if (config === undefined) {
+                // reconnection — until a different process may be answering
+                // it, which passes the same gate before anything of its is used.
+                if (config === undefined || daemonVerify) {
                     reportDebug({
                         level: "info",
                         message: "Checking Happy Agent health before managed updates",
@@ -2057,8 +2085,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     const nextCompatibility = serverCompatibility(health.version);
                     reportCompatibility(nextCompatibility);
                     if (nextCompatibility.status !== "compatible" || !health.ready) {
-                        sync.writer.onboardingUnavailable();
-                        publishConnection("connecting");
+                        if (config === undefined) sync.writer.onboardingUnavailable();
+                        publishConnection(config === undefined ? "connecting" : "reconnecting");
                         reportDebug({
                             detail: debugDetail({ delayMs: reconnectMs }),
                             level: "warning",
@@ -2069,6 +2097,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         reconnectMs = Math.min(reconnectMs * 2, MAXIMUM_RECONNECT_MS);
                         continue;
                     }
+                }
+                if (config === undefined) {
                     // Team members without a profile can read these endpoints,
                     // but cannot read config/bootstrap or open the event stream.
                     // Keep that authorization boundary identical for every route.
@@ -2091,6 +2121,15 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     }
                 }
                 if (config === undefined) await resync(false);
+                else if (daemonVerify) {
+                    // A replacement carries none of the previous process's
+                    // journal, so everything applied so far is only as good as
+                    // a snapshot taken again. Cleared only once that snapshot
+                    // lands; a failure goes back through the gate on the
+                    // ordinary reconnect backoff.
+                    await resync(true);
+                    daemonVerify = false;
+                }
                 let reopen = false;
                 reportDebug({
                     detail: debugDetail({ after: cursor ?? null }),
@@ -2128,28 +2167,38 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             source: "sse",
                         });
                         publishConnection("reconnecting");
-                        await resync(true);
+                        // A lost journal is also how a replacement that does
+                        // not name its process shows itself, so the process is
+                        // verified before it is reconciled.
+                        daemonVerify = true;
                         reopen = true;
                         break;
                     } else if (update.kind === "daemon_started") {
+                        // Each `updates()` iterator only compares against the
+                        // processes it saw itself; the connection remembers
+                        // across the reopen that follows a failed attempt.
+                        const replaced =
+                            update.replaced ||
+                            (daemonId !== undefined && daemonId !== update.daemonId);
+                        daemonId = update.daemonId;
                         reportDebug({
                             detail: debugDetail({
                                 cursor: update.cursor,
                                 daemonId: update.daemonId,
-                                replaced: update.replaced,
+                                replaced,
                             }),
-                            level: update.replaced ? "warning" : "info",
-                            message: update.replaced
+                            level: replaced ? "warning" : "info",
+                            message: replaced
                                 ? "A different Happy Agent process is answering; reconciling"
                                 : "Managed update feed named its Happy Agent process",
                             source: "sse",
                         });
-                        // A replacement carries none of the previous process's
-                        // journal, so everything applied so far is only as good
-                        // as a snapshot taken again.
-                        if (update.replaced) {
+                        // Nothing from a replacement is used until its own
+                        // health admits it; the gate at the top of the loop
+                        // reads that and then reconciles.
+                        if (replaced) {
                             publishConnection("reconnecting");
-                            await resync(true);
+                            daemonVerify = true;
                             reopen = true;
                             break;
                         }

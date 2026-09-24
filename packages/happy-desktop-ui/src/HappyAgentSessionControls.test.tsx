@@ -13,17 +13,29 @@ const menus: HappyAgentMenusSnapshot = {
     modelOptions: [
         {
             providerId: "codex",
+            providerType: "codex",
             modelId: "gpt-5.6-sol",
             name: "GPT Sol",
             disabled: false,
             current: true,
+            efforts: [
+                { level: "medium", label: "Medium" },
+                { level: "high", label: "High" },
+            ],
+            defaultEffort: "medium",
         },
         {
             providerId: "claude",
+            providerType: "claude",
             modelId: "opus-4-8",
             name: "Opus",
             disabled: false,
             current: false,
+            efforts: [
+                { level: "medium", label: "Medium" },
+                { level: "high", label: "High" },
+            ],
+            defaultEffort: "medium",
         },
     ],
     effortOptions: [

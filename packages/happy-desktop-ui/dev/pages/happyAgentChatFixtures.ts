@@ -352,35 +352,53 @@ export const conversationEntries: readonly ConversationEntry[] = [
     message("a2", "agent", "The change is applied and tests pass.", "streaming"),
 ];
 
+const happyAgentModelEfforts = [
+    { level: "low", label: "Low" },
+    { level: "medium", label: "Medium" },
+    { level: "high", label: "High" },
+] as const;
+
 export const happyAgentMenus: HappyAgentMenusSnapshot = {
     modelOptions: [
         {
             providerId: "codex",
+            providerType: "codex",
             modelId: "gpt-5.6-sol",
             name: "GPT-5.6 Sol",
             disabled: false,
             current: true,
+            efforts: happyAgentModelEfforts,
+            defaultEffort: "medium",
         },
         {
             providerId: "codex",
+            providerType: "codex",
             modelId: "gpt-5.6-terra",
             name: "GPT-5.6 Terra",
             disabled: false,
             current: false,
+            efforts: happyAgentModelEfforts,
+            defaultEffort: "medium",
         },
         {
             providerId: "claude",
+            providerType: "claude",
             modelId: "opus-4-8",
             name: "Opus 4.8",
             disabled: false,
             current: false,
+            efforts: happyAgentModelEfforts,
+            defaultEffort: "medium",
         },
         {
             providerId: "grok",
+            providerType: "grok",
             modelId: "grok-4.5",
             name: "Grok 4.5",
             disabled: true,
             current: false,
+            efforts: happyAgentModelEfforts,
+            defaultEffort: "medium",
         },
     ],
     effortOptions: [

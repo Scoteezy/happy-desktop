@@ -119,7 +119,7 @@ export interface HappyAgentWorkspaceClient {
      * read and write the one document the host persists.
      */
     readonly memory: HappyAgentWorkspaceMemoryStore;
-    /** Loads (once) and returns the model catalog; cached for the client's lifetime. */
+    /** Loads the model catalog once, then answers with the current one `models` follows. */
     catalogRead(): Promise<HappyAgentModelCatalog>;
     /** The single session-list store; materialized on first access. */
     sessionList(): HappyAgentSessionListStore;
@@ -441,6 +441,7 @@ export function happyAgentWorkspaceClientCreate(
     const models = happyAgentModelStoreCreate({
         catalogRead: async () =>
             happyAgentModelCatalogProject((await deps.client.getConfig()).config),
+        sync: deps.connection.sync,
         ...(deps.modelPreferencePersistence
             ? { preferencePersistence: deps.modelPreferencePersistence }
             : {}),
@@ -460,6 +461,24 @@ export function happyAgentWorkspaceClientCreate(
     const chats = new Map<HappyAgentSessionId, ChatBinding>();
     let disposed = false;
     let chatUseOrder = 0;
+
+    /**
+     * The owner-only catalog input every materialized conversation follows:
+     * this connection's catalog, as the model store holds it now and whenever
+     * it changes.
+     */
+    const catalogFollow = (listener: (catalog: HappyAgentModelCatalog) => void): (() => void) => {
+        let last: HappyAgentModelCatalog | undefined;
+        const deliver = (): void => {
+            const snapshot = models.get();
+            if (snapshot.type !== "ready" || snapshot.catalog === last) return;
+            last = snapshot.catalog;
+            listener(snapshot.catalog);
+        };
+        const unsubscribe = models.subscribe(deliver);
+        deliver();
+        return unsubscribe;
+    };
 
     /**
      * A released chat has no transcript listener, but its ChatStore used to
@@ -706,14 +725,19 @@ export function happyAgentWorkspaceClientCreate(
             let binding = chats.get(sessionId);
             admitChat(sessionId);
             if (!binding) {
-                const storePromise = models.load().then(({ catalog }) => {
+                const storePromise = models.load().then((loaded) => {
+                    // The catalog may have moved on since this load answered.
+                    const latest = models.get();
                     const chatDeps: HappyAgentChatDeps = {
-                        catalog,
+                        catalog: latest.type === "ready" ? latest.catalog : loaded.catalog,
+                        catalogFollow,
                         transcriptConnect: deps.transcriptConnect,
                         connectActions: deps.connection,
                         connectMutationSubscribe: deps.connectMutationSubscribe,
                         selectionUsed: (selection) => models.selectionUsed(selection),
                         modelSelect: (current, input) => models.modelSelect(current, input),
+                        effortRemembered: (providerId, modelId) =>
+                            models.effortRemembered(providerId, modelId),
                         output: deps.chatOutput
                             ? (event) => deps.chatOutput?.(sessionId, event)
                             : undefined,

@@ -8,21 +8,40 @@ import "./styles/composer-model-control.css";
 import "./styles/icon.css";
 import "./styles/vector-icon.css";
 import { Composer } from "./Composer";
-import { ComposerModelControl, type ComposerModelChoice } from "./ComposerModelControl";
+import {
+    ComposerModelControl,
+    type ComposerModelSelection,
+    type ComposerModelService,
+} from "./ComposerModelControl";
 import { createRenderer } from "./testing";
 
-const MODELS: readonly ComposerModelChoice[] = [
-    { id: "sol", label: "5.6 Sol" },
-    { id: "terra", label: "5.6 Terra" },
-    { id: "luna", label: "5.6 Luna" },
-];
-const EFFORTS: readonly ComposerModelChoice[] = [
+const EFFORTS = [
     { id: "standard", label: "Standard" },
     { id: "extra-high", label: "Extra High" },
 ];
+const MODELS = [
+    { id: "sol", label: "5.6 Sol", efforts: EFFORTS },
+    { id: "terra", label: "5.6 Terra", efforts: EFFORTS },
+    { id: "luna", label: "5.6 Luna", efforts: EFFORTS },
+];
+const SERVICES: readonly ComposerModelService[] = [
+    {
+        id: "codex",
+        label: "Codex",
+        account: "personal",
+        accounts: [
+            { id: "personal", label: "personal", models: MODELS },
+            { id: "work", label: "work", models: MODELS },
+        ],
+    },
+];
 function Fixture() {
-    const [model, setModel] = useState("sol");
-    const [effort, setEffort] = useState("extra-high");
+    const [selection, setSelection] = useState<ComposerModelSelection>({
+        service: "codex",
+        account: "personal",
+        model: "sol",
+        effort: "extra-high",
+    });
     return (
         <div className="happy-theme-dark" style={{ marginTop: "280px" }}>
             <Composer
@@ -30,12 +49,9 @@ function Fixture() {
                 modelControl={
                     <ComposerModelControl
                         data-testid="control"
-                        effort={effort}
-                        efforts={EFFORTS}
-                        model={model}
-                        models={MODELS}
-                        onEffortChange={setEffort}
-                        onModelChange={setModel}
+                        onSelect={setSelection}
+                        selection={selection}
+                        services={SERVICES}
                     />
                 }
                 onSend={() => undefined}
@@ -49,7 +65,7 @@ function Fixture() {
     );
 }
 
-it("composes the controlled model picker into the composer and navigates its panels", async () => {
+it("composes the controlled model picker into the composer and navigates its menu", async () => {
     const view = createRenderer().render(() => <Fixture />, {
         width: 760,
         height: 500,
@@ -93,33 +109,39 @@ it("composes the controlled model picker into the composer and navigates its pan
         '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-menu"]',
     );
     expect(menu.bounds().width).toBe(240);
+    expect(menu.bounds().x + menu.bounds().width).toBeCloseTo(
+        control.bounds().x + control.bounds().width,
+        1,
+    );
     expect(menu.computedStyle("box-shadow")).toBe("none");
     expect(trigger.bounds().y - (menu.bounds().y + menu.bounds().height)).toBeCloseTo(8, 1);
-    const modelRow = view.$(
-        '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-row"]',
+    expect(menu.element.textContent).toContain("5.6 Terra");
+    const account = view.$(
+        '[data-testid="control"] [data-service-header="codex"] [data-happy-desktop-ui="composer-model-control-account-label"]',
     );
-    await userEvent.hover(modelRow.element);
-    for (const animation of modelRow.element.getAnimations()) animation.finish();
-    expect(modelRow.computedStyle("transform")).toBe("none");
-    await userEvent.click(modelRow.element);
+    await userEvent.hover(account.element);
+    for (const animation of account.element.getAnimations()) animation.finish();
+    expect(account.computedStyle("transform")).toBe("none");
+    expect(account.computedStyle("cursor")).toBe("pointer");
+    await userEvent.click(account.element);
     const choices = view.$(
-        '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-choices"]',
+        '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-accounts"]',
     );
-    expect(choices.element.textContent).toContain("5.6 Terra");
-    // The composer places this selector against its right edge. Its nested
-    // choices must therefore open left of the parent menu and remain in-view.
-    const submenuGap = menu.bounds().x - (choices.bounds().x + choices.bounds().width);
-    expect(submenuGap).toBeGreaterThanOrEqual(7);
-    expect(submenuGap).toBeLessThanOrEqual(8);
-    const submenuBottomInset =
-        menu.bounds().y + menu.bounds().height - (choices.bounds().y + choices.bounds().height);
-    expect(submenuBottomInset).toBeGreaterThanOrEqual(0);
-    expect(submenuBottomInset).toBeLessThanOrEqual(1);
-    expect(choices.bounds().x).toBeGreaterThanOrEqual(20);
-    expect(choices.bounds().x + choices.bounds().width).toBeLessThanOrEqual(740);
+    expect(choices.element.textContent).toContain("work");
+    // The account list hangs from the account name, inside the menu and in view.
+    expect(choices.bounds().y).toBeGreaterThan(account.bounds().y + account.bounds().height);
+    expect(choices.bounds().x).toBeGreaterThanOrEqual(menu.bounds().x);
+    expect(choices.bounds().x + choices.bounds().width).toBeLessThanOrEqual(
+        menu.bounds().x + menu.bounds().width,
+    );
+    // Its name toggles the list shut again.
+    await userEvent.click(account.element);
+    expect(
+        view.container.querySelector('[data-happy-desktop-ui="composer-model-control-accounts"]'),
+    ).toBeNull();
     const terra = Array.from(
         view.container.querySelectorAll<HTMLButtonElement>(
-            '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-choice"]',
+            '[data-testid="control"] .happy-composer-model-control__row-main',
         ),
     ).find((choice) => choice.textContent === "5.6 Terra");
     await userEvent.click(terra!);

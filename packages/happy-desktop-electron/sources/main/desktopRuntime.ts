@@ -71,6 +71,7 @@ export interface DesktopRuntimeOptions {
     readonly rendererOrigin?: string;
     /** The window's HTML preview proxy, so a Happy Agent's documents can be published. */
     readonly htmlPreview?: HtmlPreviewProxyHandle;
+    readonly debug?: (message: string) => void;
 }
 
 /** Owns the active local-Happy Agent topology and one immutable renderer snapshot. */
@@ -114,6 +115,7 @@ export class DesktopRuntime implements AsyncDisposable {
                     ...(options.rendererProxy ? { rendererProxy: options.rendererProxy } : {}),
                     ...(options.rendererOrigin ? { allowedOrigin: options.rendererOrigin } : {}),
                     ...(options.htmlPreview ? { htmlPreview: options.htmlPreview } : {}),
+                    ...(options.debug ? { debug: options.debug } : {}),
                 }));
         const configuredActive = settings?.topologies.find(
             ({ id }) => id === settings.activeTopologyId,
@@ -392,7 +394,7 @@ export class DesktopRuntime implements AsyncDisposable {
                 return;
             }
             try {
-                proxy.replace({
+                await proxy.replace({
                     client: replacement.client,
                 });
             } catch (replaceError) {

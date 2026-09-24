@@ -20,6 +20,10 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: resolve(import.meta.dirname, "sources/main/main.ts"),
+                happyAgentRendererUtility: resolve(
+                    import.meta.dirname,
+                    "sources/utility/utility.ts",
+                ),
             },
             external: [
                 "electron",

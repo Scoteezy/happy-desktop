@@ -62,6 +62,7 @@ const modelCatalog: HappyAgentModelCatalog = {
         {
             enabled: true,
             id: "happy",
+            type: "claude",
             models: [
                 {
                     id: "luna",

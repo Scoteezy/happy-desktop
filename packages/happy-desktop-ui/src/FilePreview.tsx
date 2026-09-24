@@ -72,6 +72,11 @@ export type FilePreviewProps = {
      */
     onMediaWindowOpen?: () => void;
     /**
+     * Saves this file to the reader's machine. Absent where there is nothing to
+     * save yet, so the control is missing rather than inert.
+     */
+    onDownload?: () => void;
+    /**
      * Opens a file a rendered Markdown document links to. Absent leaves those
      * links inert, which is the honest answer on a surface with no workspace
      * behind it.
@@ -231,6 +236,7 @@ export function FilePreview(props: FilePreviewProps) {
         "updating",
         "dimensions",
         "actions",
+        "onDownload",
         "onFileOpen",
         "onMediaWindowOpen",
         "rendered",
@@ -303,6 +309,19 @@ export function FilePreview(props: FilePreviewProps) {
                         />
                     ) : null}
                     {local.actions}
+                    {local.onDownload ? (
+                        <Button
+                            aria-label="Download"
+                            data-testid="file-preview-download"
+                            iconOnly
+                            onClick={() => local.onDownload?.()}
+                            size="small"
+                            title="Download"
+                            variant="ghost"
+                        >
+                            <Ionicon name="download-outline" size={14} />
+                        </Button>
+                    ) : null}
                     {local.onClose ? (
                         <Button
                             aria-label={local.closeLabel ?? "Close preview"}

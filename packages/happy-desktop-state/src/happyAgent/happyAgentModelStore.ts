@@ -1,5 +1,8 @@
+import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { UserError } from "../types.js";
 import { happyAgentMenusDerive } from "./happyAgentMenusStore.js";
+import { happyAgentModelCatalogProject } from "./happyAgentProject.js";
+import { deepEqual } from "./happyAgentSupport.js";
 import {
     happyAgentSelectionModelUpdate,
     happyAgentSessionSelectionDefault,
@@ -73,9 +76,11 @@ export type HappyAgentModelStoreReadySnapshot = Extract<
 >;
 
 /**
- * One daemon connection's model authority. It loads the immutable catalog once,
- * exposes model capabilities/defaults, and retains the complete selection most
- * recently chosen anywhere in that connection.
+ * One daemon connection's model authority. It loads the catalog, keeps it
+ * current with the daemon's configuration for the rest of the connection —
+ * across `config.updated` and a replacement daemon alike — exposes model
+ * capabilities/defaults, and retains the complete selection most recently
+ * chosen anywhere in that connection.
  */
 export interface HappyAgentModelStore {
     get(): HappyAgentModelStoreSnapshot;
@@ -95,13 +100,28 @@ export interface HappyAgentModelStore {
     selectionUsed(selection: HappyAgentSelection): void;
     /** Selects a model with that model's last locally remembered effort and speed. */
     modelSelect(current: HappyAgentSelection, input: HappyAgentModelSelection): HappyAgentSelection;
+    /** The effort last chosen for a model on a provider, when this machine remembers one. */
+    effortRemembered(providerId: string, modelId: string): HappyAgentThinkingLevel | undefined;
     [Symbol.dispose](): void;
 }
 
 export interface HappyAgentModelStoreOptions {
     readonly catalogRead: () => Promise<HappyAgentModelCatalog>;
+    /**
+     * The connection's authoritative input, followed from the first `load()`.
+     * A bootstrap — including the one taken after a replacement daemon starts
+     * answering — carries the configuration and replaces the catalog outright;
+     * `config.updated` carries none, so it reads the catalog again.
+     */
+    readonly sync?: HappyAgentSync;
     readonly preferencePersistence?: HappyAgentModelPreferencePersistence;
 }
+
+/**
+ * Waits before each re-read of a catalog whose last read failed. Bounded: past
+ * the last one, the next reconnect or configuration announcement asks again.
+ */
+const CATALOG_RETRY_MS: readonly number[] = [1_000, 2_000, 4_000, 8_000, 16_000];
 
 /**
  * The catalog read's failure as something a surface can show, without losing
@@ -132,6 +152,8 @@ export function happyAgentModelStoreCreate(
     let preferences = document.preferences;
     let preferenceUnsubscribe: (() => void) | undefined;
     let writingPreferences = false;
+    const effortRemembered = (providerId: string, modelId: string) =>
+        preferences[providerId]?.[modelId]?.effort ?? undefined;
 
     const publish = (next: HappyAgentModelStoreSnapshot): void => {
         snapshot = next;
@@ -147,8 +169,105 @@ export function happyAgentModelStoreCreate(
         publish({
             ...snapshot,
             ...selections,
-            menus: happyAgentMenusDerive(snapshot.catalog, selections.lastUsedSelection),
+            menus: happyAgentMenusDerive(
+                snapshot.catalog,
+                selections.lastUsedSelection,
+                effortRemembered,
+            ),
         });
+    };
+
+    /**
+     * Makes `catalog` the one this store answers with. An identical catalog is
+     * not a change: keeping the old reference is what lets every picker and
+     * chat that derived from it stand still.
+     */
+    const catalogAdopt = (catalog: HappyAgentModelCatalog): void => {
+        if (snapshot.type === "ready" && deepEqual(snapshot.catalog, catalog)) return;
+        const selections = selectionsFromDocument(
+            catalog,
+            document,
+            snapshot.type === "ready" ? snapshot : undefined,
+        );
+        publish({
+            type: "ready",
+            catalog,
+            ...selections,
+            menus: happyAgentMenusDerive(catalog, selections.lastUsedSelection, effortRemembered),
+        });
+    };
+
+    // Every source of a catalog takes the next number, and only the newest may
+    // land: a read that was already in flight when the daemon changed its
+    // configuration answers with what it was before.
+    let catalogGeneration = 0;
+    // A re-read failed. The last confirmed catalog stays on screen while the
+    // read is retried on a bounded backoff; past that, the next reconnect or
+    // configuration announcement asks again.
+    let catalogReadFailed = false;
+    let catalogRetry: ReturnType<typeof setTimeout> | undefined;
+    let follow: AbortController | undefined;
+    let disposed = false;
+
+    const catalogRetryCancel = (): void => {
+        if (catalogRetry !== undefined) clearTimeout(catalogRetry);
+        catalogRetry = undefined;
+    };
+
+    const catalogReload = (signal: AbortSignal, attempt = 0): void => {
+        catalogRetryCancel();
+        const generation = ++catalogGeneration;
+        void options.catalogRead().then(
+            (catalog) => {
+                if (signal.aborted || generation !== catalogGeneration) return;
+                catalogReadFailed = false;
+                catalogAdopt(catalog);
+            },
+            () => {
+                if (signal.aborted || generation !== catalogGeneration) return;
+                catalogReadFailed = true;
+                const delay = CATALOG_RETRY_MS[attempt];
+                if (delay === undefined) return;
+                catalogRetry = setTimeout(() => {
+                    catalogRetry = undefined;
+                    if (!signal.aborted) catalogReload(signal, attempt + 1);
+                }, delay);
+            },
+        );
+    };
+
+    /**
+     * Follows the daemon's configuration for the rest of this store's life.
+     * Installed before the first read is sent, so nothing the daemon announces
+     * after that read began can be missed.
+     */
+    const followStart = (): void => {
+        const sync = options.sync;
+        if (!sync || follow || disposed) return;
+        const active = new AbortController();
+        follow = active;
+        void (async () => {
+            for await (const input of sync.follow({
+                signal: active.signal,
+                events: ["config.updated"],
+            })) {
+                if (input.kind === "error") continue;
+                if (input.kind === "bootstrap") {
+                    catalogRetryCancel();
+                    ++catalogGeneration;
+                    catalogReadFailed = false;
+                    catalogAdopt(happyAgentModelCatalogProject(input.bootstrap.config));
+                } else if (input.kind === "reconcile") {
+                    // The first load was sent after this subscription was
+                    // installed, so it already answers for everything before.
+                    if (!loadPromise) catalogReload(active.signal);
+                } else if (
+                    (input.update.kind === "connected" && catalogReadFailed) ||
+                    (input.update.kind === "event" && input.update.event.type === "config.updated")
+                )
+                    catalogReload(active.signal);
+            }
+        })().catch(() => undefined);
     };
 
     return {
@@ -165,42 +284,37 @@ export function happyAgentModelStoreCreate(
             if (snapshot.type === "ready") return Promise.resolve(snapshot);
             if (loadPromise) return loadPromise;
             if (snapshot.type === "error") publish({ type: "loading" });
+            followStart();
+            const generation = ++catalogGeneration;
             loadPromise = options.catalogRead().then(
                 (catalog) => {
+                    loadPromise = undefined;
+                    // A disposed store publishes nothing; its connection is gone.
+                    if (disposed) throw new UserError("This Happy Agent connection is closed.");
+                    // A newer catalog already arrived while this read was out.
+                    if (generation !== catalogGeneration && snapshot.type === "ready")
+                        return snapshot;
                     document = options.preferencePersistence?.read() ?? document;
                     preferences = document.preferences;
-                    const selections = selectionsFromDocument(catalog, document);
-                    const ready: HappyAgentModelStoreReadySnapshot = {
-                        type: "ready",
-                        catalog,
-                        ...selections,
-                        menus: happyAgentMenusDerive(catalog, selections.lastUsedSelection),
-                    };
-                    publish(ready);
-                    loadPromise = undefined;
-                    return ready;
+                    catalogAdopt(catalog);
+                    return snapshot as HappyAgentModelStoreReadySnapshot;
                 },
                 (error: unknown) => {
+                    loadPromise = undefined;
+                    if (disposed) throw modelError(error);
+                    if (snapshot.type === "ready") return snapshot;
                     const failure = modelError(error);
                     publish({ type: "error", error: failure });
-                    loadPromise = undefined;
                     throw failure;
                 },
             );
             return loadPromise;
         },
         catalogChanged(catalog) {
-            const selections = selectionsFromDocument(
-                catalog,
-                document,
-                snapshot.type === "ready" ? snapshot : undefined,
-            );
-            publish({
-                type: "ready",
-                catalog,
-                ...selections,
-                menus: happyAgentMenusDerive(catalog, selections.lastUsedSelection),
-            });
+            if (disposed) return;
+            catalogRetryCancel();
+            ++catalogGeneration;
+            catalogAdopt(catalog);
         },
         selectionUsed(selection) {
             if (snapshot.type !== "ready") return;
@@ -232,7 +346,7 @@ export function happyAgentModelStoreCreate(
             publish({
                 ...snapshot,
                 lastUsedSelection: selection,
-                menus: happyAgentMenusDerive(snapshot.catalog, selection),
+                menus: happyAgentMenusDerive(snapshot.catalog, selection, effortRemembered),
             });
         },
         modelSelect(current, input) {
@@ -248,8 +362,11 @@ export function happyAgentModelStoreCreate(
                 (candidate) => candidate.id === selected.providerId,
             );
             const model = provider?.models.find((candidate) => candidate.id === selected.modelId);
+            // An effort named with the model is a choice, not a gap to fill from memory.
             const effort =
-                preference?.effort && model?.thinkingLevels.includes(preference.effort)
+                input.effort === undefined &&
+                preference?.effort &&
+                model?.thinkingLevels.includes(preference.effort)
                     ? preference.effort
                     : selected.effort;
             const serviceTier =
@@ -267,7 +384,12 @@ export function happyAgentModelStoreCreate(
                 ...(serviceTier !== undefined ? { serviceTier } : {}),
             };
         },
+        effortRemembered,
         [Symbol.dispose]() {
+            disposed = true;
+            catalogRetryCancel();
+            follow?.abort();
+            follow = undefined;
             preferenceUnsubscribe?.();
             listeners.clear();
         },
