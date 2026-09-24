@@ -62,5 +62,5 @@ export * from "./happyAgent/happyAgentWindowStore.js";
 export * from "./happyAgent/happyAgentWorkspaceMemory.js";
 export * from "./happyAgent/happyAgentWorkspaceStore.js";
 export * from "./happyAgent/happyAgentWorkspaceTriageStore.js";
-export * from "./happyAgent/happyAgentSidebarFilterStore.js";
+export * from "./happyAgent/happyAgentSidebarViewStore.js";
 export * from "./happyAgent/happyAgentViewPreferences.js";

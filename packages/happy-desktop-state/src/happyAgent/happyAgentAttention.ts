@@ -220,12 +220,13 @@ export interface HappyAgentRecentItem {
     readonly sessionId: HappyAgentSessionId;
     readonly groupId: HappyAgentGroupId;
     readonly title: string;
+    readonly createdAt: number;
     readonly updatedAt: number;
     readonly activity: ConversationSummary["activity"];
     readonly place: HappyAgentAttentionPlace;
 }
 
-/** One calendar day of the recents list, newest conversation first. */
+/** One calendar day of the recents list, the session begun latest first. */
 export interface HappyAgentRecentDay {
     /** Local midnight that starts the day, so the surface can name it. */
     readonly dayStart: number;
@@ -247,12 +248,18 @@ export interface HappyAgentRecentOptions {
 }
 
 /**
- * The recents list: every conversation across the given machines, newest
- * first, cut into local calendar days. It is the sidebar's answer to "what
- * was I doing" across projects rather than inside one, so a chat on another
- * machine or under a bot stands in the same column as one in the open
- * project. Like the attention queue it is a projection of state the window
- * already holds, derived at render time.
+ * The recents list: every conversation across the given machines, cut into
+ * local calendar days by when each was last touched. It is the sidebar's
+ * answer to "what was I doing" across projects rather than inside one, so a
+ * chat on another machine or under a bot stands in the same column as one in
+ * the open project. Like the attention queue it is a projection of state the
+ * window already holds, derived at render time.
+ *
+ * Which day a conversation files under follows its last activity, but its
+ * place inside the day follows when the session began. Activity moves every
+ * time an agent reports anything, and a column ordered by it would shuffle
+ * its rows under the reader's eye whenever several agents are working at
+ * once; the start of a session never moves.
  */
 export function happyAgentRecentProject(
     sources: readonly HappyAgentRecentSource[],
@@ -271,6 +278,7 @@ export function happyAgentRecentProject(
                 sessionId: conversation.id as HappyAgentSessionId,
                 groupId: groupId as HappyAgentGroupId,
                 title: conversation.title,
+                createdAt: conversation.createdAt,
                 updatedAt: conversation.updatedAt,
                 activity: conversation.activity,
                 place,
@@ -286,5 +294,9 @@ export function happyAgentRecentProject(
         if (last && last.dayStart === dayStart) last.items.push(item);
         else days.push({ dayStart, items: [item] });
     }
+    for (const day of days)
+        day.items.sort(
+            (left, right) => right.createdAt - left.createdAt || (left.key < right.key ? -1 : 1),
+        );
     return days;
 }

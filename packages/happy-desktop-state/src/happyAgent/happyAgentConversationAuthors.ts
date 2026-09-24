@@ -80,6 +80,7 @@ export function happyAgentConversationSummaryProject(
         title: summaryTitle(session),
         subtitle: session.displayCwd || session.cwd,
         activity,
+        createdAt: session.createdAt,
         updatedAt: session.lastMessageAt ?? session.updatedAt,
         ...(session.unreadReason === undefined
             ? {}

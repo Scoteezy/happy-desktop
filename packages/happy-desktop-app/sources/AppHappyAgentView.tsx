@@ -41,9 +41,8 @@ import type {
     HappyAgentRecentItem,
     HappyAgentInboxStore,
     HappyAgentSidebarCollapseSnapshot,
-    HappyAgentSidebarFilterSnapshot,
-    HappyAgentSidebarFilterStore,
     HappyAgentSidebarView,
+    HappyAgentSidebarViewStore,
     HappyAgentWorkspaceTriageChange,
     HappyAgentWorkspaceTriageSnapshot,
     HappyAgentWorkspaceTriageStore,
@@ -86,7 +85,7 @@ import {
     happyAgentRecentProject,
     happyAgentInboxStoreNoop,
     happyAgentNavigationOrderApply,
-    happyAgentSidebarFilterStoreNoop,
+    happyAgentSidebarViewStoreNoop,
     happyAgentSidebarRowCollapsed,
     happyAgentWorkspaceTriageKey,
     happyAgentWorkspaceTriageStateOf,
@@ -165,7 +164,7 @@ import {
     SidebarUpdateAction,
     Switch,
     ShortcutHelpSheet,
-    SidebarFilterBar,
+    SidebarViewTabs,
     UndoToast,
     TabbedPane,
     TextField,
@@ -542,10 +541,10 @@ export interface AppHappyAgentViewProps {
     /** Addresses that surface on one machine. Absent in a host with nowhere to put it. */
     onBotCreateOpen?(happyAgentId: string): void;
     /**
-     * Which rows this window leaves out of the sidebar. Absent in a host that
-     * keeps no such record, which shows every row.
+     * Which list this window shows in the sidebar. Absent in a host that
+     * keeps no such record, which shows the workspace list.
      */
-    sidebarFilter?: HappyAgentSidebarFilterStore;
+    sidebarView?: HappyAgentSidebarViewStore;
     /**
      * Where this window remembers which workspaces were pinned, snoozed, or
      * settled. Absent in a host that keeps no such record, which lists every
@@ -1559,7 +1558,8 @@ function conversationLive(conversation: ConversationSummary): boolean {
  */
 interface SidebarView {
     readonly collapse: HappyAgentSidebarCollapseSnapshot;
-    readonly filter: HappyAgentSidebarFilterSnapshot;
+    /** Which list the sidebar is showing. */
+    readonly mode: HappyAgentSidebarView;
     readonly address: { readonly happyAgentId: string; readonly groupId?: string };
     /** What the reader filed each workspace as, read against `now`. */
     readonly triage: HappyAgentWorkspaceTriageSnapshot;
@@ -1599,12 +1599,6 @@ function groupTriageState(
     );
 }
 
-/** The sections as built, and how many rows the filters left out of them. */
-interface SidebarBuild {
-    readonly sections: SidebarSection[];
-    readonly hidden: number;
-}
-
 function happyAgentSections(
     directory: AppHappyAgentDirectorySnapshot,
     titleShimmerEnabled: boolean,
@@ -1612,16 +1606,11 @@ function happyAgentSections(
         | { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string }
         | undefined,
     view: SidebarView,
-): SidebarBuild {
+): SidebarSection[] {
     // The attention list is the other thing this sidebar can be: the same
-    // column, showing only what is waiting, with the filters standing down.
-    if (view.filter.view === "attention")
-        return { sections: happyAgentAttentionSections(view), hidden: 0 };
-    let hidden = 0;
-    const count = (rows: number): void => {
-        hidden += rows;
-    };
-    const sections = directory.happyAgents.flatMap((happyAgent) => [
+    // column, showing what is waiting and then what is recent.
+    if (view.mode === "attention") return happyAgentAttentionSections(view);
+    return directory.happyAgents.flatMap((happyAgent) => [
         // Keep the heading even with no bots: its action is where the first
         // one is named, and a machine with none is exactly where that is wanted.
         {
@@ -1629,7 +1618,7 @@ function happyAgentSections(
             label: "Bots",
             items: [
                 ...happyAgent.bots.flatMap((bot) =>
-                    botSectionRows(bot, happyAgent, titleShimmerEnabled, view, count),
+                    botSectionRows(bot, happyAgent, titleShimmerEnabled, view),
                 ),
                 // The host lists a new bot last, so a bot still being made
                 // stands where it will arrive.
@@ -1652,15 +1641,8 @@ function happyAgentSections(
                   }
                 : {}),
         },
-        ...happyAgentProjectsSections(
-            happyAgent,
-            titleShimmerEnabled,
-            shortcutProject,
-            view,
-            count,
-        ),
+        ...happyAgentProjectsSections(happyAgent, titleShimmerEnabled, shortcutProject, view),
     ]);
-    return { sections, hidden };
 }
 
 const ATTENTION_SECTION_PRIORITY = "attention:priority";
@@ -1800,23 +1782,9 @@ function botSectionRows(
     happyAgent: AppHappyAgentEntry,
     titleShimmerEnabled: boolean,
     view: SidebarView,
-    count: (rows: number) => void,
 ): SidebarItem[] {
     const tasks = happyAgentBotSubtasks([bot]);
     const liveTasks = tasks.filter((task) => conversationLive(task.conversation));
-    const addressed =
-        view.address.happyAgentId === happyAgent.id &&
-        (view.address.groupId === bot.workspaceId ||
-            tasks.some((task) => task.workspaceId === view.address.groupId));
-    if (
-        view.filter.hideBots &&
-        !addressed &&
-        !conversationLive(bot.conversation) &&
-        liveTasks.length === 0
-    ) {
-        count(1 + tasks.length);
-        return [];
-    }
     const rowId = happyAgentItemId(happyAgent.id, bot.workspaceId);
     if (!happyAgentSidebarRowCollapsed(view.collapse, rowId, true))
         return [
@@ -1872,9 +1840,7 @@ function happyAgentProjectsSections(
         | { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string }
         | undefined,
     view: SidebarView,
-    count: (rows: number) => void,
 ): SidebarSection[] {
-    const addressedHere = view.address.happyAgentId === happyAgent.id;
     const pinnedRows: SidebarItem[] = [];
     const activeRows: SidebarItem[] = [];
     const shelfRows: SidebarItem[] = [];
@@ -1925,34 +1891,7 @@ function happyAgentProjectsSections(
                 shelfRows.push(filedAlone(row, state));
             else withProject.push(row);
         }
-        let block: SidebarItem[] = [projectRow, ...withProject];
-        if (view.filter.hideIdle && projectState === "active") {
-            // With the idle filter on, a workspace with nothing live in it
-            // is left out, and a project whose own sessions and remaining
-            // workspaces are all resting goes with them — unless the reader
-            // is standing in one of them.
-            const keptWorktrees = new Set(
-                project.worktrees
-                    .filter(
-                        (worktree) =>
-                            worktree.conversations.some(conversationLive) ||
-                            (addressedHere && view.address.groupId === worktree.id),
-                    )
-                    .map((worktree) => worktree.id),
-            );
-            const projectLive =
-                project.conversations.some(conversationLive) ||
-                (addressedHere && view.address.groupId === project.id);
-            if (!projectLive && keptWorktrees.size === 0) {
-                count(block.length);
-                continue;
-            }
-            const kept = block.filter(
-                (row, index) => index === 0 || keptWorktrees.has(row.id as HappyAgentWorktreeId),
-            );
-            count(block.length - kept.length);
-            block = kept;
-        }
+        const block: SidebarItem[] = [projectRow, ...withProject];
         if (projectState === "pinned") pinnedRows.push(...block);
         else if (projectState === "active") activeRows.push(...block);
         else
@@ -2234,11 +2173,11 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     const inbox = useSyncExternalStore(inboxStore.subscribe, inboxStore.get, inboxStore.get);
     const daemonStore = props.daemon ?? sidebarDaemonStoreNoop;
     const daemon = useSyncExternalStore(daemonStore.subscribe, daemonStore.get, daemonStore.get);
-    const sidebarFilterStore = props.sidebarFilter ?? happyAgentSidebarFilterStoreNoop;
-    const sidebarFilter = useSyncExternalStore(
-        sidebarFilterStore.subscribe,
-        sidebarFilterStore.get,
-        sidebarFilterStore.get,
+    const sidebarViewStore = props.sidebarView ?? happyAgentSidebarViewStoreNoop;
+    const sidebarList = useSyncExternalStore(
+        sidebarViewStore.subscribe,
+        sidebarViewStore.get,
+        sidebarViewStore.get,
     );
     const workspaceTriageStore = props.workspaceTriage ?? happyAgentWorkspaceTriageStoreNoop;
     const workspaceTriage = useSyncExternalStore(
@@ -2353,7 +2292,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // all judge a workspace's filing against the same instant.
     const sidebarView: SidebarView = {
         collapse: sidebarCollapse,
-        filter: sidebarFilter,
+        mode: sidebarList.view,
         triage: workspaceTriage,
         attention: attentionItems,
         recent: recentDays,
@@ -2363,7 +2302,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             ...(props.groupId === undefined ? {} : { groupId: props.groupId }),
         },
     };
-    const sidebarBuild = happyAgentSections(
+    const sidebarSections = happyAgentSections(
         directory,
         titleShimmerEnabled,
         workspaceCreateTarget,
@@ -2379,7 +2318,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 addressedProject?.id,
             )}
             activeItemId={
-                sidebarFilter.view === "attention"
+                sidebarList.view === "attention"
                     ? conversationActiveRowId(sidebarView, props.happyAgentId, props.chatId)
                     : props.groupId
                       ? happyAgentItemId(
@@ -2701,18 +2640,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       },
                   }
                 : {})}
-            {...(props.sidebarFilter
+            {...(props.sidebarView
                 ? {
                       bodyAccessory: (
-                          <SidebarFilterBar
+                          <SidebarViewTabs
                               attentionCount={attentionItems.length}
-                              hiddenCount={sidebarBuild.hidden}
-                              hideBots={sidebarFilter.hideBots}
-                              hideIdle={sidebarFilter.hideIdle}
-                              onHideBotsToggle={() => sidebarFilterStore.hideBotsToggle()}
-                              onHideIdleToggle={() => sidebarFilterStore.hideIdleToggle()}
-                              onViewSelect={(view) => sidebarFilterStore.viewSelect(view)}
-                              view={sidebarFilter.view}
+                              onViewSelect={(view) => sidebarViewStore.viewSelect(view)}
+                              view={sidebarList.view}
                           />
                       ),
                   }
@@ -2785,7 +2719,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       },
                   }
                 : {})}
-            sections={sectionsCollapsed(sidebarBuild.sections, sidebarCollapse.collapsed)}
+            sections={sectionsCollapsed(sidebarSections, sidebarCollapse.collapsed)}
         />
     );
 
@@ -2806,7 +2740,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         workspace: active?.session?.workspace,
         workspaceCreateProjectId: workspaceCreateTarget?.projectId,
         attentionCount: attentionItems.length,
-        sidebarView: sidebarFilter.view,
+        sidebarView: sidebarList.view,
     };
     // The same suggestions the empty palette offers, on the gesture the reader
     // already has for discovering chords. The shell mounts it only while
@@ -2829,7 +2763,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         onUpdateApply: props.onUpdateApply,
         store: commandPaletteStore,
         titleShimmer: titleShimmerStore,
-        onSidebarViewSelect: (view) => sidebarFilterStore.viewSelect(view),
+        onSidebarViewSelect: (view) => sidebarViewStore.viewSelect(view),
         onAttentionNext: attentionJump,
         onAttentionReadAll: attentionReadAll,
         ...(props.shortcutHelp ? { onShortcutHelpOpen: () => shortcutHelpStore.helpOpen() } : {}),

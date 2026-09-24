@@ -24,7 +24,7 @@ import {
     welcomeStoreCreate,
     happyAgentNavigationOrderStoreCreate,
     happyAgentSidebarCollapseStoreCreate,
-    happyAgentSidebarFilterStoreCreate,
+    happyAgentSidebarViewStoreCreate,
     happyAgentSidebarVisibilityStoreCreate,
     happyAgentSettingsStoreCreate,
     happyAgentWorkspaceTriageStoreCreate,
@@ -35,7 +35,7 @@ import {
     type WelcomeStore,
     type HappyAgentNavigationOrderStore,
     type HappyAgentSidebarCollapseStore,
-    type HappyAgentSidebarFilterStore,
+    type HappyAgentSidebarViewStore,
     type HappyAgentSidebarVisibilityStore,
     type HappyAgentSettingsStore,
     type HappyAgentWorkspaceTriageStore,
@@ -109,7 +109,7 @@ import { desktopExperimentsPersistence } from "./desktopExperiments";
 import { desktopWelcomePersistence } from "./desktopWelcome";
 import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
-import { desktopSidebarFilterPersistence } from "./desktopSidebarFilter";
+import { desktopSidebarViewPersistence } from "./desktopSidebarView";
 import { desktopWorkspaceTriagePersistence } from "./desktopWorkspaceTriage";
 import { DesktopBootGate } from "./DesktopBootGate";
 import { desktopRestartStoreCreate, type DesktopRestartStore } from "./desktopRestartStore";
@@ -291,7 +291,7 @@ function HappyAgentBoundary(props: {
     router: HappyAgentRouter;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
-    sidebarFilter: HappyAgentSidebarFilterStore;
+    sidebarView: HappyAgentSidebarViewStore;
     workspaceTriage: HappyAgentWorkspaceTriageStore;
     shortcutHelp: ShortcutHelpStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
@@ -336,7 +336,7 @@ function HappyAgentBoundary(props: {
                 experiments: props.experiments,
                 navigationOrder: props.navigationOrder,
                 sidebarCollapse: props.sidebarCollapse,
-                sidebarFilter: props.sidebarFilter,
+                sidebarView: props.sidebarView,
                 workspaceTriage: props.workspaceTriage,
                 shortcutHelp: props.shortcutHelp,
                 sidebarVisibility: props.sidebarVisibility,
@@ -483,7 +483,7 @@ interface DesktopRendererProps {
     experiments: ExperimentsStore;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
-    sidebarFilter: HappyAgentSidebarFilterStore;
+    sidebarView: HappyAgentSidebarViewStore;
     workspaceTriage: HappyAgentWorkspaceTriageStore;
     shortcutHelp: ShortcutHelpStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
@@ -645,7 +645,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 mediaWindow={props.mediaWindow}
                                 navigationOrder={ui.navigationOrder}
                                 sidebarCollapse={ui.sidebarCollapse}
-                                sidebarFilter={ui.sidebarFilter}
+                                sidebarView={ui.sidebarView}
                                 workspaceTriage={ui.workspaceTriage}
                                 shortcutHelp={ui.shortcutHelp}
                                 sidebarVisibility={ui.sidebarVisibility}
@@ -967,7 +967,7 @@ function DesktopRuntimeContent(
                     experiments={props.experiments}
                     navigationOrder={props.navigationOrder}
                     sidebarCollapse={props.sidebarCollapse}
-                    sidebarFilter={props.sidebarFilter}
+                    sidebarView={props.sidebarView}
                     workspaceTriage={props.workspaceTriage}
                     shortcutHelp={props.shortcutHelp}
                     sidebarVisibility={props.sidebarVisibility}
@@ -1155,7 +1155,7 @@ if (mediaPreviewBridge) {
         // Which rows the sidebar leaves out, and which workspaces are pinned,
         // snoozed, or settled: both the window's own, kept beside the folding
         // above and for the same reason.
-        const sidebarFilter = happyAgentSidebarFilterStoreCreate(desktopSidebarFilterPersistence());
+        const sidebarView = happyAgentSidebarViewStoreCreate(desktopSidebarViewPersistence());
         const workspaceTriage = happyAgentWorkspaceTriageStoreCreate({
             persistence: desktopWorkspaceTriagePersistence(),
         });
@@ -1303,7 +1303,7 @@ if (mediaPreviewBridge) {
                                       commandPalette,
                                       navigationOrder,
                                       sidebarCollapse,
-                                      sidebarFilter,
+                                      sidebarView,
                                       workspaceTriage,
                                       shortcutHelp,
                                   },
@@ -1370,7 +1370,7 @@ if (mediaPreviewBridge) {
                         experiments={experiments}
                         navigationOrder={navigationOrder}
                         sidebarCollapse={sidebarCollapse}
-                        sidebarFilter={sidebarFilter}
+                        sidebarView={sidebarView}
                         workspaceTriage={workspaceTriage}
                         shortcutHelp={shortcutHelp}
                         sidebarVisibility={sidebarVisibility}

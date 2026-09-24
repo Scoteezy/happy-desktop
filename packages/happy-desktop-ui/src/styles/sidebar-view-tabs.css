@@ -1,0 +1,76 @@
+/*
+ * The sidebar's view tabs: the two that choose which list is up. They sit
+ * between the pinned rows and the sections, on the same inset as the rows,
+ * so they read as the heading of the list they switch.
+ *
+ * Each tab is built on the sidebar row's grid — the row's own horizontal
+ * padding, a 20px slot with a 16px glyph centred in it, an 8px gap to the
+ * label — so its icon and label stand on the same vertical lines as the rows
+ * beneath it. The one that is up is told apart by weight alone: no fill, so a
+ * tab never reads as a pressed switch.
+ *
+ * Layout is flexbox; colors and type come from theme roles.
+ */
+
+.happy-sidebar-view-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 2px 0 4px;
+}
+
+.happy-sidebar-view-tabs__tab {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    margin: 0;
+    padding: 0 var(--happy-panel-row-padding, 10px);
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 16px;
+    font-synthesis: none;
+    text-align: left;
+    appearance: none;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease,
+        color 120ms ease;
+}
+
+.happy-sidebar-view-tabs__tab:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-sidebar-view-tabs__tab:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: -2px;
+}
+
+.happy-sidebar-view-tabs__tab[aria-selected="true"] {
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* The row's leading lane is a 20px slot with the glyph centred in it. */
+.happy-sidebar-view-tabs__slot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 16px;
+}
+
+.happy-sidebar-view-tabs__label {
+    white-space: nowrap;
+}

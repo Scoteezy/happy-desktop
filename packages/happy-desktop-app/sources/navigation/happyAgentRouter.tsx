@@ -21,7 +21,7 @@ import type {
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
-    HappyAgentSidebarFilterStore,
+    HappyAgentSidebarViewStore,
     HappyAgentSidebarVisibilityStore,
     HappyAgentSessionId,
     HappyAgentSessionLocation,
@@ -111,7 +111,7 @@ export interface HappyAgentRouterContext {
      * being worked on. Absent in a host that keeps no such record, which shows
      * every row.
      */
-    readonly sidebarFilter?: HappyAgentSidebarFilterStore;
+    readonly sidebarView?: HappyAgentSidebarViewStore;
     /**
      * Where this window remembers which workspaces were pinned, snoozed, or
      * settled. Absent in a host that keeps no such record, which lists every
@@ -460,7 +460,7 @@ function HappyAgentWorkspaceLayout(
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
             {...(context.sidebarCollapse ? { sidebarCollapse: context.sidebarCollapse } : {})}
             {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
-            {...(context.sidebarFilter ? { sidebarFilter: context.sidebarFilter } : {})}
+            {...(context.sidebarView ? { sidebarView: context.sidebarView } : {})}
             {...(context.workspaceTriage ? { workspaceTriage: context.workspaceTriage } : {})}
             {...(context.shortcutHelp ? { shortcutHelp: context.shortcutHelp } : {})}
             botCreateOpen={props.botCreate}

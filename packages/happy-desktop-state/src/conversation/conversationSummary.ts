@@ -15,6 +15,11 @@ export interface ConversationSummary {
     readonly activity: "running" | "awaitingInput" | "waiting" | "idle";
     /** Epoch milliseconds of the newest content, for relative timestamps. */
     readonly updatedAt: number;
+    /**
+     * When the session began. Unlike `updatedAt` it never moves, so a list
+     * that must hold still while agents work orders by it.
+     */
+    readonly createdAt: number;
     readonly unread?: boolean;
     /**
      * Why the row is unread, for a stack that tracks it: an agent needing an
