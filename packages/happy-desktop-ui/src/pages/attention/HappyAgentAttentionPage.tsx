@@ -8,16 +8,15 @@ import { Avatar } from "../../Avatar";
 import { AvatarBrutalist } from "../../AvatarBrutalist";
 import { Banner } from "../../Banner";
 import { Button } from "../../Button";
+import { ChannelHeader } from "../../ChannelHeader";
 import { Composer } from "../../Composer";
 import { EmptyState } from "../../EmptyState";
-import { SURFACE_HEADER_HEIGHT } from "../../InfoPanel";
 import {
     HappyAgentUserInputPrompt,
     type HappyAgentUserInputAnswerMap,
 } from "../../HappyAgentUserInputPrompt";
 import type { KeyboardShortcut } from "../../keyboardShortcut";
 import { ScrollArea } from "../../Scrollbar";
-import { Toolbar } from "../../Toolbar";
 
 export type HappyAgentAttentionAnswerMap = HappyAgentUserInputAnswerMap;
 
@@ -86,15 +85,18 @@ export function HappyAgentAttentionPage(props: HappyAgentAttentionPageProps) {
             data-testid={props["data-testid"]}
             style={props.style}
         >
+            {/* The same header every surface wears: the channel header at
+                full width, with the queue's state as its topic and the two
+                queue actions where a channel keeps its own. */}
             <div
                 className="happy-agent-attention__header"
                 data-happy-desktop-ui="happy-agent-attention-header"
             >
-                <Toolbar
-                    height={SURFACE_HEADER_HEIGHT}
-                    subtitle={attentionSubtitle(blocked.length, finished.length, props.loading)}
+                <ChannelHeader
+                    icon="inbox"
                     title="Attention"
-                    trailing={
+                    topic={attentionSubtitle(blocked.length, finished.length, props.loading)}
+                    actions={
                         total > 0 ? (
                             <div className="happy-agent-attention__header-actions">
                                 <Button
