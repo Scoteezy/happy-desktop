@@ -2,25 +2,90 @@
  * The sidebar's filter bar: two pressed-or-not switches and, when they are
  * hiding anything, a count. It sits between the pinned rows and the sections,
  * on the same inset as the rows, so it reads as part of the list it filters.
+ *
+ * Each switch is built on the sidebar row's grid — the row's own horizontal
+ * padding, a 16px glyph, an 8px gap to the label — so its icon and label
+ * stand on the same vertical lines as the rows above and below it. A button
+ * component brings its own padding, glyph size, and gap, and none of those
+ * are the row's, which is why the switches are not buttons.
+ *
  * Layout is flexbox; colors and type come from theme roles.
  */
 
 .happy-sidebar-filter-bar {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
     box-sizing: border-box;
     width: 100%;
-    /* The bar sits under rows whose 16px icon starts at the row padding. A
-       small button carries its own 10px padding and a 14px icon, so the bar
-       gives back all but 1px of the row padding: that puts the funnel's
-       centre on the same vertical line as the bell above it. */
-    padding: 4px calc(var(--happy-panel-row-padding, 10px) - 9px) 6px;
+    padding: 2px 0 4px;
+}
+
+.happy-sidebar-filter-bar__switch {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    margin: 0;
+    padding: 0 var(--happy-panel-row-padding, 10px);
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 16px;
+    font-synthesis: none;
+    text-align: left;
+    appearance: none;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease,
+        color 120ms ease;
+}
+
+.happy-sidebar-filter-bar__switch:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-sidebar-filter-bar__switch:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: -2px;
+}
+
+/* A switch in force is filled like a pressed control, and its label is the
+   full-strength text: the rule is on, and the bar says so at a glance. */
+.happy-sidebar-filter-bar__switch[aria-pressed="true"] {
+    background: var(--surface-high);
+    color: var(--text);
+}
+
+.happy-sidebar-filter-bar__switch[aria-pressed="true"]:hover {
+    background-image: linear-gradient(var(--surface-ripple), var(--surface-ripple));
+}
+
+/* The row's leading lane is a 20px slot with the glyph centred in it, so the
+   switch keeps the same slot: glyph and label then land exactly where a row's
+   do. */
+.happy-sidebar-filter-bar__switch-icon {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 16px;
+}
+
+.happy-sidebar-filter-bar__switch-label {
+    white-space: nowrap;
 }
 
 .happy-sidebar-filter-bar__count {
     margin-left: auto;
-    padding-right: 2px;
+    padding-right: var(--happy-panel-row-padding, 10px);
     font-size: 11px;
     line-height: 16px;
     color: var(--text-secondary);
