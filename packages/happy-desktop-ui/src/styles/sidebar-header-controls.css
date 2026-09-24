@@ -1,0 +1,85 @@
+/*
+ * The two controls at the trailing edge of the sidebar's heading: search and
+ * the attention bell. Square, quiet, and the same size as the row controls
+ * elsewhere in the column, so the heading reads as one lane. The bell that
+ * is on takes the accent; the count it wears sits over its corner.
+ *
+ * Layout is flexbox; colors and type come from theme roles.
+ */
+
+.happy-sidebar-header-controls {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+}
+
+.happy-sidebar-header-controls__control {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    appearance: none;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease,
+        color 120ms ease;
+}
+
+.happy-sidebar-header-controls__control:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-sidebar-header-controls__control:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: -2px;
+}
+
+.happy-sidebar-header-controls__control[aria-pressed="true"] {
+    background: var(--surface-high);
+    color: var(--text);
+}
+
+.happy-sidebar-header-controls__control[data-control="attention"][aria-pressed="true"] {
+    color: var(--accent);
+}
+
+.happy-sidebar-header-controls__count {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--accent);
+    color: var(--text-on-accent, #fff);
+    font-family: var(--happy-font-ui);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- The search row ---------------------------------------------------- */
+
+.happy-sidebar-search-field {
+    display: flex;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 2px var(--happy-panel-row-padding, 10px) 6px;
+}

@@ -164,7 +164,8 @@ import {
     SidebarUpdateAction,
     Switch,
     ShortcutHelpSheet,
-    SidebarViewTabs,
+    SidebarHeaderControls,
+    SidebarSearchField,
     UndoToast,
     TabbedPane,
     TextField,
@@ -1560,6 +1561,8 @@ interface SidebarView {
     readonly collapse: HappyAgentSidebarCollapseSnapshot;
     /** Which list the sidebar is showing. */
     readonly mode: HappyAgentSidebarView;
+    /** What the reader typed into the search, lower-cased and trimmed; empty when none. */
+    readonly search: string;
     readonly address: { readonly happyAgentId: string; readonly groupId?: string };
     /** What the reader filed each workspace as, read against `now`. */
     readonly triage: HappyAgentWorkspaceTriageSnapshot;
@@ -1608,8 +1611,27 @@ function happyAgentSections(
     view: SidebarView,
 ): SidebarSection[] {
     // The attention list is the other thing this sidebar can be: the same
-    // column, showing what is waiting and then what is recent.
-    if (view.mode === "attention") return happyAgentAttentionSections(view);
+    // column, showing what is waiting and then what is recent. Either list
+    // is then cut to what the search names.
+    const sections =
+        view.mode === "attention"
+            ? happyAgentAttentionSections(view)
+            : happyAgentWorkspaceSections(directory, titleShimmerEnabled, shortcutProject, view);
+    return view.search === ""
+        ? sections
+        : sectionsSearch(sections, view.search, (rowId) =>
+              rowSessionTitles(directory, view, rowId),
+          );
+}
+
+function happyAgentWorkspaceSections(
+    directory: AppHappyAgentDirectorySnapshot,
+    titleShimmerEnabled: boolean,
+    shortcutProject:
+        | { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string }
+        | undefined,
+    view: SidebarView,
+): SidebarSection[] {
     return directory.happyAgents.flatMap((happyAgent) => [
         // Keep the heading even with no bots: its action is where the first
         // one is named, and a machine with none is exactly where that is wanted.
@@ -1643,6 +1665,91 @@ function happyAgentSections(
         },
         ...happyAgentProjectsSections(happyAgent, titleShimmerEnabled, shortcutProject, view),
     ]);
+}
+
+const SEARCH_EMPTY_SECTION = "search:empty";
+
+/**
+ * The sessions a row stands for, by title: what the search reads. A
+ * conversation row is its own session; a bot is its conversation and every
+ * subtask under it; a project or workspace is every session inside it.
+ */
+function rowSessionTitles(
+    directory: AppHappyAgentDirectorySnapshot,
+    view: SidebarView,
+    rowId: string,
+): readonly string[] {
+    const conversation = conversationRowOf(view, rowId);
+    if (conversation) return [conversation.title];
+    const row = happyAgentItemParse(rowId);
+    const happyAgent = directory.happyAgents.find((entry) => entry.id === row.happyAgentId);
+    if (!happyAgent) return [];
+    const subtask = happyAgentBotSubtasks(happyAgent.bots).find(
+        (task) => task.conversation.id === row.id,
+    );
+    if (subtask) return [subtask.conversation.title];
+    const bot = happyAgent.bots.find((candidate) => candidate.workspaceId === row.id);
+    if (bot)
+        return [
+            bot.conversation.title,
+            ...happyAgentBotSubtasks([bot]).map((task) => task.conversation.title),
+        ];
+    const group = openGroupFind(happyAgent.projects, happyAgent.bots, row.id);
+    return group ? group.conversations.map((summary) => summary.title) : [];
+}
+
+/**
+ * The sections cut to what the search names. A row stays when one of its
+ * sessions, or its own name, contains the query; a row that stays keeps the
+ * rows above it in its tree, so a matching workspace is still read under its
+ * project. A row holding several matching sessions says how many, and a bot
+ * that was folded is unfolded, so what matched is never behind a fold. A
+ * section with nothing left is dropped, and a search that matched nothing
+ * anywhere says so in one section rather than leaving the column bare.
+ */
+function sectionsSearch(
+    sections: readonly SidebarSection[],
+    query: string,
+    titlesOf: (rowId: string) => readonly string[],
+): SidebarSection[] {
+    const matches = (text: string): boolean => text.toLowerCase().includes(query);
+    const kept = sections.flatMap((section): SidebarSection[] => {
+        const rows = section.items;
+        const keep = new Set<string>();
+        const counts = new Map<string, number>();
+        // The rows above each row in its tree, by depth: a kept row keeps them.
+        const ancestors: string[] = [];
+        for (const row of rows) {
+            const depth = row.depth ?? 0;
+            ancestors.length = depth;
+            const count = titlesOf(row.id).filter(matches).length;
+            counts.set(row.id, count);
+            if (count > 0 || matches(row.label)) {
+                keep.add(row.id);
+                for (const ancestor of ancestors) keep.add(ancestor);
+            }
+            ancestors[depth] = row.id;
+        }
+        const items = rows
+            .filter((row) => keep.has(row.id))
+            .map((row): SidebarItem => {
+                const { collapsed: _folded, ...rest } = row;
+                const count = counts.get(row.id) ?? 0;
+                return count > 1 ? { ...rest, meta: `${String(count)} sessions` } : rest;
+            });
+        if (items.length === 0) return [];
+        const { empty: _empty, collapsed: _collapsed, ...rest } = section;
+        return [{ ...rest, items }];
+    });
+    if (kept.length > 0) return kept;
+    return [
+        {
+            empty: { description: `No sessions match “${query}”` },
+            id: SEARCH_EMPTY_SECTION,
+            items: [],
+            label: "Search",
+        },
+    ];
 }
 
 const ATTENTION_SECTION_PRIORITY = "attention:priority";
@@ -2293,6 +2400,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     const sidebarView: SidebarView = {
         collapse: sidebarCollapse,
         mode: sidebarList.view,
+        search: sidebarList.searchQuery.trim().toLowerCase(),
         triage: workspaceTriage,
         attention: attentionItems,
         recent: recentDays,
@@ -2533,15 +2641,24 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 // A bot still being made has no conversation to go to yet. The
                 // window follows it on its own the moment the host answers.
                 if (happyAgent.botsCreating?.some((entry) => entry.workspaceId === row.id)) return;
+                const group = openGroupFind(happyAgent.projects, happyAgent.bots, row.id);
+                // While a search is up, the row was kept for a session it
+                // holds, so that session is where selecting it goes.
+                const searched =
+                    sidebarView.search === ""
+                        ? undefined
+                        : group?.conversations.find((summary) =>
+                              summary.title.toLowerCase().includes(sidebarView.search),
+                          )?.id;
                 props.onChatSelect(
                     happyAgent.id,
                     row.id,
                     // A workspace that has not recorded where this project was
                     // left falls back to its most recent conversation, which is
                     // also what a workspace without the memory at all does.
-                    happyAgent.session?.workspace.get().groupResume?.get(groupId) ??
-                        openGroupFind(happyAgent.projects, happyAgent.bots, row.id)
-                            ?.conversations[0]?.id,
+                    searched ??
+                        happyAgent.session?.workspace.get().groupResume?.get(groupId) ??
+                        group?.conversations[0]?.id,
                 );
             }}
             onItemAction={(id) => {
@@ -2642,13 +2759,32 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 : {})}
             {...(props.sidebarView
                 ? {
-                      bodyAccessory: (
-                          <SidebarViewTabs
+                      headerTrailing: (
+                          <SidebarHeaderControls
                               attentionCount={attentionItems.length}
-                              onViewSelect={(view) => sidebarViewStore.viewSelect(view)}
-                              view={sidebarList.view}
+                              attentionOn={sidebarList.view === "attention"}
+                              onAttentionToggle={() => sidebarViewStore.viewToggle()}
+                              onSearchToggle={() =>
+                                  sidebarList.searchOpen
+                                      ? sidebarViewStore.searchClose()
+                                      : sidebarViewStore.searchOpen()
+                              }
+                              searchOpen={sidebarList.searchOpen}
                           />
                       ),
+                      ...(sidebarList.searchOpen
+                          ? {
+                                bodyAccessory: (
+                                    <SidebarSearchField
+                                        onClose={() => sidebarViewStore.searchClose()}
+                                        onValueChange={(value) =>
+                                            sidebarViewStore.searchQueryUpdate(value)
+                                        }
+                                        value={sidebarList.searchQuery}
+                                    />
+                                ),
+                            }
+                          : {}),
                   }
                 : {})}
             {...(props.workspaceTriage
