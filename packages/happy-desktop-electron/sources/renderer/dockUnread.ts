@@ -1,3 +1,4 @@
+import { happyAgentBotSubtasks } from "happy-desktop-state";
 import type {
     HappyAgentDirectorySnapshot,
     HappyAgentDirectoryStore,
@@ -23,6 +24,8 @@ export function happyAgentDirectoryUnreadCount(snapshot: HappyAgentDirectorySnap
     let count = 0;
     for (const happyAgent of snapshot.happyAgents) {
         for (const bot of happyAgent.bots) if (bot.conversation.unread) count += 1;
+        for (const subtask of happyAgentBotSubtasks(happyAgent.bots))
+            if (subtask.conversation.unread) count += 1;
         for (const project of happyAgent.projects) {
             for (const conversation of project.conversations) if (conversation.unread) count += 1;
             for (const worktree of project.worktrees)

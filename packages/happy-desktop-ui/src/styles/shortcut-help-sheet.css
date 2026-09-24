@@ -1,0 +1,64 @@
+/*
+ * The shortcut sheet: groups of chords read down one column inside a modal.
+ * Each row is a name on the left and its cap on the right, so the eye can run
+ * down either column. Layout is flexbox; colors and type come from theme roles.
+ */
+
+.happy-shortcut-help__groups {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+}
+
+.happy-shortcut-help__group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+}
+
+.happy-shortcut-help__group-label {
+    margin: 0;
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+}
+
+.happy-shortcut-help__rows {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    width: 100%;
+}
+
+.happy-shortcut-help__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 28px;
+    padding: 0 4px;
+    border-radius: var(--happy-radius-sm);
+}
+
+.happy-shortcut-help__row-label {
+    margin: 0;
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 20px;
+    color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-shortcut-help__row-keys {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    margin: 0;
+}

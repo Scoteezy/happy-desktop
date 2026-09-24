@@ -193,11 +193,19 @@ export { FileEditor, type FileEditorProps } from "./FileEditor";
 export {
     commandShortcut,
     commandShortcutMatches,
+    controlShortcut,
+    keyShortcut,
     windowShortcutBlocked,
+    windowShortcutEditing,
     type CommandShortcut,
     type KeyboardShortcut,
 } from "./keyboardShortcut";
-export { WindowShortcuts, type WindowShortcutAction } from "./WindowShortcuts";
+export {
+    WindowKeyRelease,
+    WindowShortcuts,
+    type WindowKeyReleaseProps,
+    type WindowShortcutAction,
+} from "./WindowShortcuts";
 export type { HtmlPreviewFailure, HtmlPreviewProps, HtmlPreviewRenderer } from "./htmlPreview";
 export type { MediaWindowOpener, MediaWindowRequest } from "./mediaWindow";
 export { HtmlPreviewFrame, type HtmlPreviewFrameProps } from "./HtmlPreviewFrame";
@@ -589,6 +597,19 @@ export {
     type HappyAgentInboxAnswerMap,
     type HappyAgentInboxPageProps,
 } from "./pages/inbox/HappyAgentInboxPage";
+export {
+    HappyAgentAttentionPage,
+    happyAgentAttentionPlaceLabel,
+    type HappyAgentAttentionAnswerMap,
+    type HappyAgentAttentionPageProps,
+} from "./pages/attention/HappyAgentAttentionPage";
+export {
+    ShortcutHelpSheet,
+    type ShortcutHelpGroup,
+    type ShortcutHelpRow,
+    type ShortcutHelpSheetProps,
+} from "./ShortcutHelpSheet";
+export { UndoToast, type UndoToastProps } from "./UndoToast";
 export {
     HappyAgentSettingsSection,
     HappyAgentSettingsShell,

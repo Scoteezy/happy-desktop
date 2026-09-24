@@ -24,16 +24,22 @@ import {
     welcomeStoreCreate,
     happyAgentNavigationOrderStoreCreate,
     happyAgentSidebarCollapseStoreCreate,
+    happyAgentSidebarFilterStoreCreate,
     happyAgentSidebarVisibilityStoreCreate,
     happyAgentSettingsStoreCreate,
+    happyAgentWorkspaceTriageStoreCreate,
+    shortcutHelpStoreCreate,
     type AppearanceStore,
     type CommandPaletteStore,
     type ExperimentsStore,
     type WelcomeStore,
     type HappyAgentNavigationOrderStore,
     type HappyAgentSidebarCollapseStore,
+    type HappyAgentSidebarFilterStore,
     type HappyAgentSidebarVisibilityStore,
     type HappyAgentSettingsStore,
+    type HappyAgentWorkspaceTriageStore,
+    type ShortcutHelpStore,
     type TitleShimmerStore,
     type HappyAgentWindowStore,
     type HappyAgentModelPreferencePersistence,
@@ -103,6 +109,8 @@ import { desktopExperimentsPersistence } from "./desktopExperiments";
 import { desktopWelcomePersistence } from "./desktopWelcome";
 import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
+import { desktopSidebarFilterPersistence } from "./desktopSidebarFilter";
+import { desktopWorkspaceTriagePersistence } from "./desktopWorkspaceTriage";
 import { DesktopBootGate } from "./DesktopBootGate";
 import { desktopRestartStoreCreate, type DesktopRestartStore } from "./desktopRestartStore";
 import {
@@ -283,6 +291,9 @@ function HappyAgentBoundary(props: {
     router: HappyAgentRouter;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
+    sidebarFilter: HappyAgentSidebarFilterStore;
+    workspaceTriage: HappyAgentWorkspaceTriageStore;
+    shortcutHelp: ShortcutHelpStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
     happyAgents: HappyAgentDirectoryStore;
     settings: HappyAgentSettingsStore;
@@ -325,6 +336,9 @@ function HappyAgentBoundary(props: {
                 experiments: props.experiments,
                 navigationOrder: props.navigationOrder,
                 sidebarCollapse: props.sidebarCollapse,
+                sidebarFilter: props.sidebarFilter,
+                workspaceTriage: props.workspaceTriage,
+                shortcutHelp: props.shortcutHelp,
                 sidebarVisibility: props.sidebarVisibility,
                 platform: props.platform,
                 happyAgents: props.happyAgents,
@@ -469,6 +483,9 @@ interface DesktopRendererProps {
     experiments: ExperimentsStore;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
+    sidebarFilter: HappyAgentSidebarFilterStore;
+    workspaceTriage: HappyAgentWorkspaceTriageStore;
+    shortcutHelp: ShortcutHelpStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
     platform: "desktop" | "web";
     happyAgentRouter: HappyAgentRouter;
@@ -628,6 +645,9 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 mediaWindow={props.mediaWindow}
                                 navigationOrder={ui.navigationOrder}
                                 sidebarCollapse={ui.sidebarCollapse}
+                                sidebarFilter={ui.sidebarFilter}
+                                workspaceTriage={ui.workspaceTriage}
+                                shortcutHelp={ui.shortcutHelp}
                                 sidebarVisibility={ui.sidebarVisibility}
                                 platform={props.platform}
                                 router={ui.router}
@@ -947,6 +967,9 @@ function DesktopRuntimeContent(
                     experiments={props.experiments}
                     navigationOrder={props.navigationOrder}
                     sidebarCollapse={props.sidebarCollapse}
+                    sidebarFilter={props.sidebarFilter}
+                    workspaceTriage={props.workspaceTriage}
+                    shortcutHelp={props.shortcutHelp}
                     sidebarVisibility={props.sidebarVisibility}
                     platform={props.platform}
                     router={props.happyAgentRouter}
@@ -1129,6 +1152,15 @@ if (mediaPreviewBridge) {
         // window-lifetime stores and deliberately given nothing to persist: an
         // open palette is a question in progress, not a place to come back to.
         const commandPalette = commandPaletteStoreCreate();
+        // Which rows the sidebar leaves out, and which workspaces are pinned,
+        // snoozed, or settled: both the window's own, kept beside the folding
+        // above and for the same reason.
+        const sidebarFilter = happyAgentSidebarFilterStoreCreate(desktopSidebarFilterPersistence());
+        const workspaceTriage = happyAgentWorkspaceTriageStoreCreate({
+            persistence: desktopWorkspaceTriagePersistence(),
+        });
+        // Whether the shortcut sheet is up: transient, like the palette.
+        const shortcutHelp = shortcutHelpStoreCreate();
         const connectionUis = new Map<string, DesktopConnectionUi>();
         const auth = desktopCloudAuthRouterCreate(desktopBridge, (id) => {
             happyAgents.happyAgentActivate(id);
@@ -1271,6 +1303,9 @@ if (mediaPreviewBridge) {
                                       commandPalette,
                                       navigationOrder,
                                       sidebarCollapse,
+                                      sidebarFilter,
+                                      workspaceTriage,
+                                      shortcutHelp,
                                   },
                               }
                             : {}),
@@ -1335,6 +1370,9 @@ if (mediaPreviewBridge) {
                         experiments={experiments}
                         navigationOrder={navigationOrder}
                         sidebarCollapse={sidebarCollapse}
+                        sidebarFilter={sidebarFilter}
+                        workspaceTriage={workspaceTriage}
+                        shortcutHelp={shortcutHelp}
                         sidebarVisibility={sidebarVisibility}
                         // Only the Electron window hides its title bar; the browser
                         // development server renders the same tree with web chrome.

@@ -39,7 +39,7 @@ export type HappyAgentRoute =
       }
     | { readonly kind: "group"; readonly happyAgentId: string; readonly groupId: string }
     | { readonly kind: "home" }
-    | { readonly kind: "inbox"; readonly happyAgentId: string }
+    | { readonly kind: "attention"; readonly happyAgentId: string }
     | { readonly kind: "happyAgent"; readonly happyAgentId: string }
     | { readonly kind: "settings" }
     | { readonly kind: "settingsSection"; readonly section: string };
@@ -71,8 +71,8 @@ export function happyAgentRoutePath(route: HappyAgentRoute): string {
             return `/chats/${part(route.happyAgentId)}/${part(route.groupId)}`;
         case "home":
             return "/";
-        case "inbox":
-            return `/inbox/${part(route.happyAgentId)}`;
+        case "attention":
+            return `/attention/${part(route.happyAgentId)}`;
         case "happyAgent":
             return `/chats/${part(route.happyAgentId)}`;
         case "settings":
@@ -152,9 +152,9 @@ export function happyAgentRoutePathParse(pathname: string): HappyAgentRoute | un
                     : undefined;
             }
             return undefined;
-        case "inbox":
+        case "attention":
             return first !== undefined && segments.length === 2
-                ? { kind: "inbox", happyAgentId: first }
+                ? { kind: "attention", happyAgentId: first }
                 : undefined;
         case "settings":
             if (first === undefined) return { kind: "settings" };
@@ -219,9 +219,9 @@ export function happyAgentRouteParse(value: unknown): HappyAgentRoute | undefine
         }
         case "home":
             return HAPPY_AGENT_ROUTE_HOME;
-        case "inbox": {
+        case "attention": {
             const happyAgentId = fieldOf(record, "happyAgentId");
-            return happyAgentId ? { kind: "inbox", happyAgentId } : undefined;
+            return happyAgentId ? { kind: "attention", happyAgentId } : undefined;
         }
         case "happyAgent": {
             const happyAgentId = fieldOf(record, "happyAgentId");

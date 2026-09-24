@@ -272,7 +272,7 @@ describe("every place this window can address", () => {
         { kind: "happyAgent", happyAgentId: "r1" },
         { kind: "group", groupId: "g1", happyAgentId: "r1" },
         { chatId: "c1", groupId: "g1", kind: "chat", happyAgentId: "r1" },
-        { kind: "inbox", happyAgentId: "r1" },
+        { kind: "attention", happyAgentId: "r1" },
         { kind: "blueprint" },
         { kind: "settings" },
         { kind: "settingsSection", section: "appearance" },
@@ -289,7 +289,7 @@ describe("every place this window can address", () => {
     });
 
     it("refuses a path that names no place", () => {
-        for (const path of ["/nope", "/chats/a/b/c/d", "/inbox", "/blueprint/x", "relative"])
+        for (const path of ["/nope", "/chats/a/b/c/d", "/attention", "/blueprint/x", "relative"])
             expect(happyAgentRoutePathParse(path)).toBeUndefined();
     });
 });

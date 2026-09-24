@@ -35,9 +35,13 @@ import type {
     HappyAgentPanelTabSnapshot,
     HappyAgentPermissionMode,
     HappyAgentProfileStore,
-    HappyAgentInboxItem,
+    HappyAgentAttentionItem,
     HappyAgentInboxSnapshot,
     HappyAgentInboxStore,
+    HappyAgentSidebarFilterStore,
+    HappyAgentWorkspaceTriageChange,
+    HappyAgentWorkspaceTriageStore,
+    ShortcutHelpStore,
     HappyAgentInstructionsStore,
     HappyAgentSecurityPolicyStore,
     HappyAgentSecretsStore,
@@ -71,8 +75,13 @@ import {
     agentAuthor,
     commandPaletteStoreNoop,
     experimentsStoreNoop,
+    happyAgentAttentionNext,
+    happyAgentAttentionProject,
     happyAgentInboxStoreNoop,
     happyAgentNavigationOrderApply,
+    happyAgentSidebarFilterStoreNoop,
+    happyAgentWorkspaceTriageStoreNoop,
+    shortcutHelpStoreNoop,
     happyAgentAvailabilityProject,
     happyAgentNavigationOrderStoreNoop,
     happyAgentSidebarCollapseStoreNoop,
@@ -145,7 +154,9 @@ import {
     SidebarFooter,
     SidebarUpdateAction,
     Switch,
-    HappyAgentInboxPage,
+    HappyAgentAttentionPage,
+    ShortcutHelpSheet,
+    UndoToast,
     TabbedPane,
     TextField,
     TerminalPanel,
@@ -169,7 +180,7 @@ import {
     WorkspaceLifecycleNotice,
     type WorkspaceLifecyclePhase,
 } from "happy-desktop-ui";
-import { APP_SHORTCUTS } from "./appShortcuts";
+import { APP_SHORTCUT_GROUPS, APP_SHORTCUTS } from "./appShortcuts";
 import { HappyAgentVersionProvider } from "./HappyAgentVersionProvider";
 import {
     COMMAND_PALETTE_PREVIEW_LIMIT,
@@ -518,10 +529,23 @@ export interface AppHappyAgentViewProps {
     botCreateOpen?: boolean;
     /** Addresses that surface on one machine. Absent in a host with nowhere to put it. */
     onBotCreateOpen?(happyAgentId: string): void;
-    /** Whether the URL addresses the addressed Happy Agent's inbox of agent questions. */
-    inboxOpen?: boolean;
-    /** Addresses that inbox. */
-    onInboxOpen?(): void;
+    /** Whether the URL addresses the attention queue. */
+    attentionOpen?: boolean;
+    /** Addresses that queue. */
+    onAttentionOpen?(): void;
+    /**
+     * Which rows this window leaves out of the sidebar. Absent in a host that
+     * keeps no such record, which shows every row.
+     */
+    sidebarFilter?: HappyAgentSidebarFilterStore;
+    /**
+     * Where this window remembers which workspaces were pinned, snoozed, or
+     * settled. Absent in a host that keeps no such record, which lists every
+     * workspace as active and offers none of those acts.
+     */
+    workspaceTriage?: HappyAgentWorkspaceTriageStore;
+    /** Whether the shortcut sheet is open. Absent in a host without one. */
+    shortcutHelp?: ShortcutHelpStore;
     /** Whether the URL addresses the enrolled account's friends surface. */
     /** Addresses that friends surface. */
     /** Whether the URL addresses the component workbench, in a development build. */
@@ -1638,12 +1662,12 @@ function happyAgentStatusLabel(happyAgent: AppHappyAgentEntry): string {
 }
 
 /**
- * The pinned row that opens the addressed Happy Agent's inbox. It belongs with the
- * pinned rows rather than under a project because the questions it collects come
- * from every session on that machine at once, and the person answering them is
- * working through a queue rather than visiting a repository.
+ * The pinned row that opens the attention queue. It belongs with the pinned
+ * rows rather than under a project because the conversations it collects come
+ * from every machine at once, and the person working through them is working
+ * through a queue rather than visiting a repository.
  */
-const INBOX_ITEM = "inbox";
+const ATTENTION_ITEM = "attention";
 
 /**
  * The workspace window. It owns no product state: it subscribes to the directory
@@ -1672,15 +1696,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // The order the reader arranged the pinned rows in belongs to the window
     // rather than to any one Happy Agent, so a machine going away rearranges nothing.
     const experimentsStore = props.experiments ?? experimentsStoreNoop;
-    // The inbox and folders are still being built, so they are offered only to
-    // a reader who has asked for unfinished work in settings. The switch is
-    // read here so their routes, sidebar rows, and dialogs cannot disagree
-    // about whether the surfaces exist.
-    const experimental = useSyncExternalStore(
-        experimentsStore.subscribe,
-        experimentsStore.get,
-        experimentsStore.get,
-    ).experimentalFeaturesEnabled;
     const navigationOrderStore = props.navigationOrder ?? happyAgentNavigationOrderStoreNoop;
     const navigationOrder = useSyncExternalStore(
         navigationOrderStore.subscribe,
@@ -1748,7 +1763,49 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     const inbox = useSyncExternalStore(inboxStore.subscribe, inboxStore.get, inboxStore.get);
     const daemonStore = props.daemon ?? sidebarDaemonStoreNoop;
     const daemon = useSyncExternalStore(daemonStore.subscribe, daemonStore.get, daemonStore.get);
-    const inboxPending = inbox.pending.length;
+    const sidebarFilterStore = props.sidebarFilter ?? happyAgentSidebarFilterStoreNoop;
+    const sidebarFilter = useSyncExternalStore(
+        sidebarFilterStore.subscribe,
+        sidebarFilterStore.get,
+        sidebarFilterStore.get,
+    );
+    const workspaceTriageStore = props.workspaceTriage ?? happyAgentWorkspaceTriageStoreNoop;
+    const workspaceTriage = useSyncExternalStore(
+        workspaceTriageStore.subscribe,
+        workspaceTriageStore.get,
+        workspaceTriageStore.get,
+    );
+    const shortcutHelpStore = props.shortcutHelp ?? shortcutHelpStoreNoop;
+    const shortcutHelpOpen = useSyncExternalStore(
+        shortcutHelpStore.subscribe,
+        () => shortcutHelpStore.get().open,
+        () => shortcutHelpStore.get().open,
+    );
+    // The queue of everything waiting on the person, across every machine. It
+    // is derived here, beside the directory subscription it reads, so the
+    // pinned row's count, the queue itself, and the jump chord all read one
+    // list. Questions come from the addressed machine's inbox only — that is
+    // the one the window subscribes to — and every other machine contributes
+    // its unread conversations without words for them.
+    const attentionItems = happyAgentAttentionProject(
+        directory.happyAgents.map((happyAgent) => ({
+            happyAgentId: happyAgent.id,
+            projects: happyAgent.projects,
+            bots: happyAgent.bots,
+            questions: happyAgent.id === active?.id ? inbox.pending : [],
+        })),
+    );
+    const attentionJump = () => {
+        const next = happyAgentAttentionNext(attentionItems, {
+            happyAgentId: props.happyAgentId,
+            ...(props.chatId === undefined ? {} : { sessionId: props.chatId }),
+        });
+        if (next) props.onChatSelect(next.happyAgentId, next.groupId, next.sessionId);
+    };
+    const attentionReadAll = () => {
+        for (const happyAgent of props.happyAgents.get().happyAgents)
+            happyAgent.session?.workspace.conversationsAllRead();
+    };
     const desktop = props.platform === "desktop";
     // Happy's own update wins the row. Restarting the app is the larger event of
     // the two, and it carries the agent with it, so the agent states its case
@@ -1776,18 +1833,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // The pinned rows as the window offers them. What the reader has made of
     // that order is applied below, so this list only ever states which rows this
     // window has and what each one is.
-    // The inbox belongs to the addressed machine, so it appears only while that
-    // machine is reachable: a queue of questions is meaningless from a Happy Agent that
-    // cannot say what it is waiting on.
+    // The attention row is offered whenever any machine could have something
+    // waiting; its count is the queue's length, so the row and the queue can
+    // never disagree about how much is waiting.
     const pinnedOffered: SidebarItem[] =
-        experimental && active?.session?.inbox
+        active !== undefined
             ? [
                   {
-                      badge: inboxPending,
+                      badge: attentionItems.length,
                       icon: "bell",
-                      id: INBOX_ITEM,
+                      id: ATTENTION_ITEM,
                       kind: "action",
-                      label: "Inbox",
+                      label: "Attention",
                   },
               ]
             : [];
@@ -1802,8 +1859,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 addressedProject?.id,
             )}
             activeItemId={
-                experimental && props.inboxOpen
-                    ? INBOX_ITEM
+                props.attentionOpen
+                    ? ATTENTION_ITEM
                     : props.groupId
                       ? happyAgentItemId(
                             props.happyAgentId,
@@ -1931,8 +1988,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             // Once every remembered tab is gone, its first session is what the
             // group still has to show.
             onItemSelect={(id) => {
-                if (id === INBOX_ITEM) {
-                    props.onInboxOpen?.();
+                if (id === ATTENTION_ITEM) {
+                    props.onAttentionOpen?.();
                     return;
                 }
                 const row = happyAgentItemParse(id);
@@ -2075,6 +2132,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 : undefined,
         workspace: active?.session?.workspace,
         workspaceCreateProjectId: workspaceCreateTarget?.projectId,
+        attentionCount: attentionItems.length,
     };
     // The same suggestions the empty palette offers, on the gesture the reader
     // already has for discovering chords. The shell mounts it only while
@@ -2097,6 +2155,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         onUpdateApply: props.onUpdateApply,
         store: commandPaletteStore,
         titleShimmer: titleShimmerStore,
+        onAttentionOpen: props.onAttentionOpen,
+        onAttentionNext: attentionJump,
+        onAttentionReadAll: attentionReadAll,
+        ...(props.shortcutHelp ? { onShortcutHelpOpen: () => shortcutHelpStore.helpOpen() } : {}),
     };
 
     // Which screen the window is showing. It is a value rather than a set of
@@ -2138,21 +2200,25 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 </>
             );
 
-        // The inbox belongs to the addressed machine, so it is shown only while that
-        // machine has stores to answer through.
-        if (experimental && props.inboxOpen && active?.session?.inbox)
+        // The attention queue spans every machine, so it is shown whenever the
+        // window has any; answering in place goes through the addressed
+        // machine's inbox, which is the only one the window subscribes to.
+        if (props.attentionOpen && active !== undefined)
             return (
                 <>
                     {desktop ? <WindowDragRegion /> : null}
-                    <HappyAgentInboxSurface
-                        onOpenSession={(happyAgentId, groupId, chatId) =>
-                            props.onChatSelect(happyAgentId, groupId, chatId)
-                        }
-                        projects={active.projects}
+                    <HappyAgentAttentionSurface
                         happyAgentId={active.id}
                         happyAgentOnline={activeHappyAgentOnline}
-                        snapshot={inbox}
-                        store={active.session.inbox}
+                        happyAgents={props.happyAgents}
+                        inbox={inbox}
+                        inboxStore={inboxStore}
+                        items={attentionItems}
+                        loading={active.status === "connecting"}
+                        onOpen={(item) =>
+                            props.onChatSelect(item.happyAgentId, item.groupId, item.sessionId)
+                        }
+                        onReadAll={attentionReadAll}
                         {...(activeAvailability?.refusal === undefined
                             ? {}
                             : { unavailable: activeAvailability.refusal })}
@@ -2262,14 +2328,55 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 A host that keeps no palette binds nothing: swallowing the chord
                 to do nothing with it is worse than leaving it to whatever else
                 the reader has bound Command-K to. */}
-            {props.commandPalette ? (
-                <WindowShortcuts
-                    actions={[
-                        {
-                            run: () => commandPaletteStore.paletteOpen(),
-                            shortcut: APP_SHORTCUTS.paletteOpen,
-                        },
-                    ]}
+            <WindowShortcuts
+                actions={[
+                    ...(props.commandPalette
+                        ? [
+                              {
+                                  run: () => commandPaletteStore.paletteOpen(),
+                                  shortcut: APP_SHORTCUTS.paletteOpen,
+                              },
+                          ]
+                        : []),
+                    // The queue's chords are the window's, like the palette's:
+                    // the next waiting conversation may be on any machine and
+                    // in any workspace, so the jump is offered from every route.
+                    { run: attentionJump, shortcut: APP_SHORTCUTS.attentionNext },
+                    {
+                        run: attentionReadAll,
+                        shortcut: APP_SHORTCUTS.attentionReadAll,
+                        whenEditing: false,
+                    },
+                    ...(props.shortcutHelp
+                        ? [
+                              {
+                                  run: () => shortcutHelpStore.helpToggle(),
+                                  shortcut: APP_SHORTCUTS.shortcutHelp,
+                              },
+                          ]
+                        : []),
+                ]}
+            />
+            {shortcutHelpOpen ? (
+                <ModalOverlay onDismiss={() => shortcutHelpStore.helpClose()}>
+                    <ShortcutHelpSheet
+                        groups={APP_SHORTCUT_GROUPS.map((group) => ({
+                            label: group.label,
+                            rows: group.rows.map((row) => ({
+                                label: row.label,
+                                shortcut: APP_SHORTCUTS[row.keys],
+                            })),
+                        }))}
+                        onClose={() => shortcutHelpStore.helpClose()}
+                    />
+                </ModalOverlay>
+            ) : null}
+            {workspaceTriage.undo ? (
+                <UndoToast
+                    label={triageUndoLabel(workspaceTriage.undo.change, active)}
+                    onDismiss={() => workspaceTriageStore.undoDismiss()}
+                    onUndo={() => workspaceTriageStore.undo()}
+                    shortcut={APP_SHORTCUTS.triageUndo}
                 />
             ) : null}
             {/* The window's own dialogs, mounted once beside whatever screen is
@@ -2329,6 +2436,8 @@ interface HappyAgentPaletteSubject {
     workspaceCreateProjectId?: HappyAgentProjectId;
     updateReady?: { readonly action: "refresh" | "restart"; readonly version?: string };
     workspace?: HappyAgentWorkspaceStore;
+    /** How many conversations are waiting on the person, across every machine. */
+    attentionCount: number;
 }
 
 /** The window acts the palette can commit to. */
@@ -2349,6 +2458,10 @@ interface HappyAgentPaletteActions {
     onSettingsOpen(): void;
     onSettingsSectionOpen?(section: string): void;
     onUpdateApply?(): void;
+    onAttentionOpen?(): void;
+    onAttentionNext(): void;
+    onAttentionReadAll(): void;
+    onShortcutHelpOpen?(): void;
 }
 
 /**
@@ -2487,6 +2600,7 @@ function paletteContext(
         sessionCreateAvailable: facts.sessionCreateAvailable,
         tabs: facts.tabs,
         updateReady: subject.updateReady,
+        attentionCount: subject.attentionCount,
         workspaceCreateAvailable:
             subject.online &&
             subject.workspace !== undefined &&
@@ -2837,79 +2951,119 @@ function paletteCommandRun(
         case "updateApply":
             props.onUpdateApply?.();
             return;
+        case "attentionOpen":
+            props.onAttentionOpen?.();
+            return;
+        case "attentionNext":
+            props.onAttentionNext();
+            return;
+        case "attentionReadAll":
+            props.onAttentionReadAll();
+            return;
+        case "shortcutHelpOpen":
+            props.onShortcutHelpOpen?.();
+            return;
     }
 }
 
 /**
- * One Happy Agent's inbox inside the window's shell. It subscribes to nothing: the
- * window already reads this store for the sidebar count, so the queue and the
- * badge are one subscription and can never disagree about how many questions
- * are waiting.
+ * The attention queue inside the window's shell. It subscribes to nothing: the
+ * window already derives the queue for the pinned row's count, so the queue and
+ * the badge are one reading and can never disagree about how much is waiting.
  *
- * Naming an item's location and opening the session that asked are addressing
- * acts, which is why they live here rather than in the page: the page renders
- * questions, the window decides where they came from and where they lead.
+ * Answering a row in place goes through the addressed machine's inbox, whose
+ * drafts and submissions are keyed by the question rather than the row; the
+ * accessors below make that translation once. Marking a row seen and opening
+ * it are addressing acts, which is why they live here rather than in the page.
  */
-function HappyAgentInboxSurface(props: {
-    onOpenSession(happyAgentId: string, groupId: string, chatId: string): void;
-    projects: readonly HappyAgentProjectGroup[];
+function HappyAgentAttentionSurface(props: {
     happyAgentId: string;
     happyAgentOnline: () => boolean;
-    snapshot: HappyAgentInboxSnapshot;
-    store: HappyAgentInboxStore;
+    happyAgents: AppHappyAgentDirectoryStore;
+    inbox: HappyAgentInboxSnapshot;
+    inboxStore: HappyAgentInboxStore;
+    items: readonly HappyAgentAttentionItem[];
+    loading: boolean;
+    onOpen(item: HappyAgentAttentionItem): void;
+    onReadAll(): void;
     unavailable?: string;
 }) {
-    const locate = (item: HappyAgentInboxItem) => {
-        const scope = item.scope;
-        if (!scope) return undefined;
-        const project = props.projects.find((candidate) => candidate.id === scope.projectId);
-        if (!project) return undefined;
-        if (scope.kind === "project") return project.name;
-        const worktree = project.worktrees.find((candidate) => candidate.id === scope.worktreeId);
-        return worktree ? `${project.name} · ${worktree.name}` : project.name;
-    };
+    const workspaceOf = (happyAgentId: string) =>
+        props.happyAgents.get().happyAgents.find((entry) => entry.id === happyAgentId)?.session
+            ?.workspace;
     return (
-        <HappyAgentInboxPage
-            answered={props.snapshot.answered}
-            {...(props.snapshot.error ? { error: props.snapshot.error } : {})}
-            itemLocation={locate}
-            itemTime={(item) =>
-                inboxItemTime(item.status === "answered" ? item.resolvedAt : item.createdAt)
+        <HappyAgentAttentionPage
+            itemTime={(item) => attentionItemTime(item.since)}
+            items={props.items}
+            loading={props.loading}
+            nextShortcut={APP_SHORTCUTS.attentionNext}
+            onAnswer={(item, answers) => {
+                if (item.question && props.happyAgentOnline())
+                    props.inboxStore.itemAnswer(item.question.id, answers);
+            }}
+            onMessageChange={(item, text) => {
+                if (item.question) props.inboxStore.itemMessageUpdate(item.question.id, text);
+            }}
+            onMessageSubmit={(item) => {
+                if (item.question && props.happyAgentOnline())
+                    props.inboxStore.itemMessageSubmit(item.question.id);
+            }}
+            onOpen={props.onOpen}
+            onRead={(item) => workspaceOf(item.happyAgentId)?.conversationRead(item.sessionId)}
+            onReadAll={props.onReadAll}
+            onSelectionChange={(item, answers) => {
+                if (item.question) props.inboxStore.itemSelectionUpdate(item.question.id, answers);
+            }}
+            questionMessage={(item) =>
+                item.question ? props.inbox.messages.get(item.question.id) : undefined
             }
-            loading={props.snapshot.loading}
-            messages={props.snapshot.messages}
-            onAnswer={(itemId, answers) => {
-                if (props.happyAgentOnline()) props.store.itemAnswer(itemId, answers);
-            }}
-            onMessageChange={(itemId, text) => props.store.itemMessageUpdate(itemId, text)}
-            onMessageSubmit={(itemId) => {
-                if (props.happyAgentOnline()) props.store.itemMessageSubmit(itemId);
-            }}
-            onSelectionChange={(itemId, answers) =>
-                props.store.itemSelectionUpdate(itemId, answers)
+            questionSelection={(item) =>
+                item.question ? props.inbox.selections.get(item.question.id) : undefined
             }
-            selections={props.snapshot.selections}
-            onOpenSession={(item) => {
-                if (!item.scope) return;
-                props.onOpenSession(
-                    props.happyAgentId,
-                    happyAgentSessionGroupIdOf(item.scope),
-                    item.sessionId,
-                );
-            }}
-            pending={props.snapshot.pending}
-            submissions={props.snapshot.submissions}
+            questionSubmission={(item) =>
+                item.question ? props.inbox.submissions.get(item.question.id) : undefined
+            }
+            readAllShortcut={APP_SHORTCUTS.attentionReadAll}
             {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
         />
     );
 }
 
-/** When a question was asked or settled, as an absolute local time. */
-function inboxItemTime(value: number | undefined): string | undefined {
-    if (value === undefined) return undefined;
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-        new Date(value),
-    );
+/** How long a row has been waiting, said relative to now. */
+function attentionItemTime(since: number | undefined): string | undefined {
+    if (since === undefined) return undefined;
+    const elapsed = Math.max(0, Date.now() - since);
+    const minutes = Math.round(elapsed / 60_000);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+}
+
+/** What the undo toast says was done, naming the workspace it was done to. */
+function triageUndoLabel(
+    change: HappyAgentWorkspaceTriageChange,
+    happyAgent: AppHappyAgentEntry | undefined,
+): string {
+    const groupId = change.key.slice(change.key.indexOf("/") + 1);
+    const name = happyAgent
+        ? (openGroupFind(happyAgent.projects, happyAgent.bots, groupId)?.name ?? "Workspace")
+        : "Workspace";
+    switch (change.kind) {
+        case "pinned":
+            return `Pinned ${name}`;
+        case "unpinned":
+            return `Unpinned ${name}`;
+        case "snoozed":
+            return `Snoozed ${name}`;
+        case "woken":
+            return `Woke ${name}`;
+        case "settled":
+            return `Settled ${name}`;
+        case "reopened":
+            return `Reopened ${name}`;
+    }
 }
 
 interface HappyAgentWorkspaceSurfaceProps {

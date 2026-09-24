@@ -64,7 +64,15 @@ export type CommandPaletteCommand =
     | { readonly kind: "workspaceCreate" }
     | { readonly kind: "settingsOpen" }
     | { readonly kind: "settingsSectionOpen"; readonly section: string }
-    | { readonly kind: "updateApply" };
+    | { readonly kind: "updateApply" }
+    /** Opens the queue of conversations waiting on the person. */
+    | { readonly kind: "attentionOpen" }
+    /** Jumps to the next conversation in that queue. */
+    | { readonly kind: "attentionNext" }
+    /** Marks every waiting conversation read. */
+    | { readonly kind: "attentionReadAll" }
+    /** Opens the sheet that lists the window's chords. */
+    | { readonly kind: "shortcutHelpOpen" };
 
 /** A row that goes somewhere or does something, and then closes the palette. */
 export interface CommandPaletteCommandRow {
@@ -201,6 +209,8 @@ export interface CommandPaletteContext {
     readonly sessionCreateAvailable: boolean;
     /** Whether a new workspace can be made in the addressed project. */
     readonly workspaceCreateAvailable: boolean;
+    /** How many conversations are waiting on the person, across every machine. */
+    readonly attentionCount: number;
 }
 
 export interface CommandPaletteInput extends CommandPaletteContext {
@@ -785,6 +795,44 @@ function actionRows(
                   },
               ]
             : []),
+        {
+            kind: "command" as const,
+            id: "action:attention-open",
+            title: "Open attention queue",
+            ...(context.attentionCount > 0
+                ? { meta: `${context.attentionCount} waiting` }
+                : { meta: "Nothing waiting" }),
+            glyph: { kind: "icon" as const, name: "bell" as const },
+            command: { kind: "attentionOpen" as const },
+        },
+        ...(context.attentionCount > 0
+            ? [
+                  {
+                      kind: "command" as const,
+                      id: "action:attention-next",
+                      title: "Next conversation needing you",
+                      glyph: { kind: "icon" as const, name: "arrow-right" as const },
+                      shortcut: APP_SHORTCUTS.attentionNext,
+                      command: { kind: "attentionNext" as const },
+                  },
+                  {
+                      kind: "command" as const,
+                      id: "action:attention-read-all",
+                      title: "Mark everything read",
+                      glyph: { kind: "icon" as const, name: "check" as const },
+                      shortcut: APP_SHORTCUTS.attentionReadAll,
+                      command: { kind: "attentionReadAll" as const },
+                  },
+              ]
+            : []),
+        {
+            kind: "command" as const,
+            id: "action:shortcuts",
+            title: "Keyboard shortcuts",
+            glyph: { kind: "icon" as const, name: "tasks" as const },
+            shortcut: APP_SHORTCUTS.shortcutHelp,
+            command: { kind: "shortcutHelpOpen" as const },
+        },
         {
             kind: "command" as const,
             id: "action:settings",

@@ -665,6 +665,12 @@ export interface HappyAgentSessionSummary {
     readonly wait?: HappyAgentSessionWait;
     /** Why this chat is waiting for the person, as durably tracked by Happy Agent. */
     readonly unreadReason?: "attention_needed" | "turn_finished";
+    /**
+     * When the chat started waiting, epoch milliseconds, present exactly when
+     * `unreadReason` is. It is what orders the attention queue oldest-first:
+     * the chat that has waited longest is the one holding an agent up.
+     */
+    readonly unreadSince?: number;
     readonly title?: string;
     readonly recap?: string;
     /** Chronological sort key: when the session was first created. */

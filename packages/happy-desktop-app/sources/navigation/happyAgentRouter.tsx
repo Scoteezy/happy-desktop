@@ -21,10 +21,13 @@ import type {
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
+    HappyAgentSidebarFilterStore,
     HappyAgentSidebarVisibilityStore,
     HappyAgentSessionId,
     HappyAgentSessionLocation,
     HappyAgentSettingsStore,
+    HappyAgentWorkspaceTriageStore,
+    ShortcutHelpStore,
     TitleShimmerStore,
     HappyAgentWindowStore,
     HappyAgentWorkspaceStore,
@@ -103,6 +106,20 @@ export interface HappyAgentRouterContext {
     readonly sidebarCollapse?: HappyAgentSidebarCollapseStore;
     /** Whether this window's left side is folded away; shared by every connection. */
     readonly sidebarVisibility?: HappyAgentSidebarVisibilityStore;
+    /**
+     * Which rows this window leaves out of the sidebar to keep it to what is
+     * being worked on. Absent in a host that keeps no such record, which shows
+     * every row.
+     */
+    readonly sidebarFilter?: HappyAgentSidebarFilterStore;
+    /**
+     * Where this window remembers which workspaces were pinned, snoozed, or
+     * settled. Absent in a host that keeps no such record, which lists every
+     * workspace as active.
+     */
+    readonly workspaceTriage?: HappyAgentWorkspaceTriageStore;
+    /** Whether the shortcut sheet is open. Absent in a host without one. */
+    readonly shortcutHelp?: ShortcutHelpStore;
     /**
      * Whether this window offers the features that are not finished yet. Absent
      * in a host that remembers no such choice, which withholds them.
@@ -332,15 +349,15 @@ const botCreateRoute = createRoute({
 });
 
 /**
- * One machine's inbox of agent questions. The Happy Agent is in the address because the
- * queue is that machine's — its agents are the ones waiting — so the window's
- * back and forward move between machines' inboxes rather than between two views
- * of one ambiguous list.
+ * The attention queue: every conversation waiting on the person. The Happy
+ * Agent is in the address because answering in place goes through that
+ * machine's inbox, so the window's back and forward move between machines'
+ * queues rather than between two views of one ambiguous list.
  */
-const inboxRoute = createRoute({
-    component: HappyAgentInboxRoute,
+const attentionRoute = createRoute({
+    component: HappyAgentAttentionRoute,
     getParentRoute: () => rootRoute,
-    path: "/inbox/$happyAgentId",
+    path: "/attention/$happyAgentId",
 });
 
 /**
@@ -395,7 +412,7 @@ const routeTree = rootRoute.addChildren([
         groupFileRoute,
         chatFileRoute,
     ]),
-    inboxRoute,
+    attentionRoute,
     botCreateRoute,
     ...(import.meta.env.DEV ? [blueprintRoute] : []),
     settingsIndexRoute,
@@ -403,12 +420,12 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 /**
- * The inbox address renders the same window a conversation does: the shell and
- * its sidebar stay, and only the content area changes, so working through
- * questions is not leaving the workspace.
+ * The attention address renders the same window a conversation does: the shell
+ * and its sidebar stay, and only the content area changes, so working through
+ * the queue is not leaving the workspace.
  */
-function HappyAgentInboxRoute() {
-    return <HappyAgentWorkspaceLayout inbox />;
+function HappyAgentAttentionRoute() {
+    return <HappyAgentWorkspaceLayout attention />;
 }
 
 /**
@@ -432,7 +449,7 @@ function HappyAgentWorkspaceLayout(
     props: {
         blueprint?: boolean;
         botCreate?: boolean;
-        inbox?: boolean;
+        attention?: boolean;
     } = {},
 ) {
     // Read loosely because this component renders under several routes, which
@@ -466,8 +483,11 @@ function HappyAgentWorkspaceLayout(
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
             {...(context.sidebarCollapse ? { sidebarCollapse: context.sidebarCollapse } : {})}
             {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
+            {...(context.sidebarFilter ? { sidebarFilter: context.sidebarFilter } : {})}
+            {...(context.workspaceTriage ? { workspaceTriage: context.workspaceTriage } : {})}
+            {...(context.shortcutHelp ? { shortcutHelp: context.shortcutHelp } : {})}
             botCreateOpen={props.botCreate}
-            inboxOpen={props.inbox}
+            attentionOpen={props.attention}
             blueprintOpen={props.blueprint}
             // Offered only where the route exists, which is what puts the
             // workbench row in a development sidebar and nowhere else.
@@ -477,10 +497,10 @@ function HappyAgentWorkspaceLayout(
             onBotCreateOpen={(happyAgentId) =>
                 void navigate({ params: { happyAgentId }, to: "/bots/new/$happyAgentId" })
             }
-            onInboxOpen={() =>
+            onAttentionOpen={() =>
                 void navigate({
                     params: { happyAgentId: params.happyAgentId ?? happyAgentDefaultId(context) },
-                    to: "/inbox/$happyAgentId",
+                    to: "/attention/$happyAgentId",
                 })
             }
             onUpdateApply={context.onUpdateApply}

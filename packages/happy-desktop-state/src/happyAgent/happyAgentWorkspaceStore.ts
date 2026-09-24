@@ -999,6 +999,28 @@ export interface HappyAgentWorkspaceStore {
     /** Returns an archived conversation to its workspace strip. Navigation remains the caller's. */
     conversationRestore(conversationId: HappyAgentSessionId): Promise<void>;
     /**
+     * Marks one conversation read without opening it — the attention queue's
+     * "seen" for a turn that finished and needs no answer. The row's dot, the
+     * queue's entry and the Dock count all clear together because they all read
+     * the same durable fact.
+     */
+    conversationRead(conversationId: HappyAgentSessionId): void;
+    /** Marks every unread conversation on this machine read, bots included. */
+    conversationsAllRead(): void;
+    /**
+     * Declares that the next `conversationOpen` is one step of a walk through
+     * the recently used conversations rather than a destination the reader
+     * chose. A walked-to conversation is not moved to the front of the recents
+     * until the walk ends, so each further step continues down the same list
+     * instead of bouncing between the two newest entries.
+     */
+    recentWalkBegin(): void;
+    /**
+     * Ends the walk: the conversation now on screen becomes the most recent,
+     * exactly as if it had been chosen outright. Idempotent.
+     */
+    recentWalkEnd(): void;
+    /**
      * Moves one tab of the addressed group directly after `afterId`, or to the
      * front of the strip when null. The order is this client's own and takes
      * effect at once: nothing is asked of the daemon, which orders sessions but
@@ -1814,6 +1836,12 @@ export function happyAgentWorkspaceStoreCreate(
     };
     /** The group the URL currently names, so tab memory knows what it describes. */
     let addressedGroupId: HappyAgentGroupId | undefined;
+    /** Whether the next `conversationOpen` is a step of a recents walk. */
+    let recentWalk = false;
+    /** The conversation the walk is standing on, remembered only when it ends. */
+    let recentWalkOpen:
+        | { readonly groupId: HappyAgentGroupId; readonly sessionId: HappyAgentSessionId }
+        | undefined;
     /**
      * The published address. It is kept beside `addressedGroupId` rather than
      * derived from it because the two answer different questions: that one is
@@ -4655,11 +4683,18 @@ export function happyAgentWorkspaceStoreCreate(
             if (groupId !== undefined && fileScopeOf(groupId) === "all")
                 workspaceFilesEnsure(groupId);
             if (groupId !== undefined) {
-                client.memory.recentTabRemember({
-                    type: "session",
-                    groupId,
-                    sessionId: conversationId,
-                });
+                // A step of a recents walk is not a choice of destination: the
+                // list it is walking must hold still under it.
+                if (recentWalk) recentWalkOpen = { groupId, sessionId: conversationId };
+                else {
+                    recentWalkOpen = undefined;
+                    client.memory.recentTabRemember({
+                        type: "session",
+                        groupId,
+                        sessionId: conversationId,
+                    });
+                }
+                recentWalk = false;
                 addressedGroupId = groupId;
                 addressedGroupSeenUpdate();
                 groupRestore(groupId);
@@ -4876,6 +4911,50 @@ export function happyAgentWorkspaceStoreCreate(
             const result = await list.sessionRestore(conversationId);
             if (result.type === "failed") throw result.error;
             client.chatRestore(conversationId);
+        },
+        conversationRead(conversationId) {
+            if (disposed) return;
+            list.sessionRead(conversationId, true);
+        },
+        conversationsAllRead() {
+            if (disposed) return;
+            const listSnapshot = list.get();
+            const unread: HappyAgentSessionId[] = [];
+            if (listSnapshot.projects.type === "ready") {
+                for (const project of listSnapshot.projects.value) {
+                    for (const conversation of project.conversations)
+                        if (conversation.unread)
+                            unread.push(conversation.id as HappyAgentSessionId);
+                    for (const worktree of project.worktrees)
+                        for (const conversation of worktree.conversations)
+                            if (conversation.unread)
+                                unread.push(conversation.id as HappyAgentSessionId);
+                }
+            }
+            for (const bot of listSnapshot.bots)
+                if (bot.conversation.unread)
+                    unread.push(bot.conversation.id as HappyAgentSessionId);
+            for (const subtask of happyAgentBotSubtasks(listSnapshot.bots))
+                if (subtask.conversation.unread)
+                    unread.push(subtask.conversation.id as HappyAgentSessionId);
+            for (const id of unread) list.sessionRead(id, true);
+        },
+        recentWalkBegin() {
+            if (disposed) return;
+            recentWalk = true;
+        },
+        recentWalkEnd() {
+            if (disposed) return;
+            recentWalk = false;
+            const landed = recentWalkOpen;
+            recentWalkOpen = undefined;
+            if (landed === undefined) return;
+            client.memory.recentTabRemember({
+                type: "session",
+                groupId: landed.groupId,
+                sessionId: landed.sessionId,
+            });
+            recompute();
         },
         tabReorder(tabId, afterId) {
             if (disposed || addressedGroupId === undefined) return;

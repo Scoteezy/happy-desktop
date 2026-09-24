@@ -7,13 +7,19 @@ import {
     commandPaletteStoreCreate,
     happyAgentNavigationOrderStoreCreate,
     happyAgentSidebarCollapseStoreCreate,
+    happyAgentSidebarFilterStoreCreate,
     happyAgentSettingsStoreCreate,
+    happyAgentWorkspaceTriageStoreCreate,
+    shortcutHelpStoreCreate,
     type CommandPaletteStore,
     type HappyAgentNavigationOrderStore,
     type HappyAgentSidebarCollapseStore,
+    type HappyAgentSidebarFilterStore,
     type HappyAgentSidebarVisibilityStore,
     type HappyAgentSettingsStore,
     type HappyAgentModelPreferencePersistence,
+    type HappyAgentWorkspaceTriageStore,
+    type ShortcutHelpStore,
 } from "happy-desktop-state";
 import type {
     HappyAgentDirectoryStore,
@@ -25,6 +31,9 @@ export interface DesktopConnectionUi {
     readonly commandPalette: CommandPaletteStore;
     readonly navigationOrder: HappyAgentNavigationOrderStore;
     readonly sidebarCollapse: HappyAgentSidebarCollapseStore;
+    readonly sidebarFilter: HappyAgentSidebarFilterStore;
+    readonly workspaceTriage: HappyAgentWorkspaceTriageStore;
+    readonly shortcutHelp: ShortcutHelpStore;
     readonly sidebarVisibility: HappyAgentSidebarVisibilityStore;
     readonly settings: HappyAgentSettingsStore;
     readonly directory: HappyAgentDirectoryStore;
@@ -121,6 +130,9 @@ export function desktopConnectionUiCreate(input: {
         commandPalette: input.main?.commandPalette ?? commandPaletteStoreCreate(),
         navigationOrder: input.main?.navigationOrder ?? happyAgentNavigationOrderStoreCreate(),
         sidebarCollapse: input.main?.sidebarCollapse ?? happyAgentSidebarCollapseStoreCreate(),
+        sidebarFilter: input.main?.sidebarFilter ?? happyAgentSidebarFilterStoreCreate(),
+        workspaceTriage: input.main?.workspaceTriage ?? happyAgentWorkspaceTriageStoreCreate(),
+        shortcutHelp: input.main?.shortcutHelp ?? shortcutHelpStoreCreate(),
         sidebarVisibility: input.sidebarVisibility,
         directory: {
             get: () => snapshot,
