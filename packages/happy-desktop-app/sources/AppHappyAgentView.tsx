@@ -184,6 +184,7 @@ import {
     type SidebarSection,
     type SidebarSectionDrop,
     type TabItem,
+    WindowKeyRelease,
     WindowShortcuts,
     WorkspaceLifecycleLane,
     WorkspaceLifecycleNotice,
@@ -3980,6 +3981,53 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             }),
         );
     };
+    // Selecting a tab is one routine whether the strip or a shortcut asks: a
+    // file tab is a file address, a tool tab is a main-view choice, and every
+    // other tab is a session of the open group.
+    const tabSelect = (tabId: string) => {
+        if (!openGroup) return;
+        const file = groupFileTabs.find((tab) => tab.id === tabId);
+        if (file) {
+            props.onFileSelect(file.groupId, props.chatId, file.path, file.kind);
+            return;
+        }
+        if (mainTools.some((tab) => tab.id === tabId)) {
+            props.workspace.mainViewSelect(tabId);
+            return;
+        }
+        props.onChatSelect(openGroup.id, tabId);
+    };
+    // ⌘⇧] and ⌘⇧[ step through the strip in its visible order, wrapping at
+    // either end, from whichever tab the address currently names.
+    const tabStep = (direction: 1 | -1) => {
+        if (groupTabs.length < 2) return;
+        const activeTabId = workspace.activeMainViewId ?? props.chatId;
+        const index = groupTabs.findIndex((tab) => tab.id === activeTabId);
+        const next = groupTabs[(index + direction + groupTabs.length) % groupTabs.length];
+        if (next && next.id !== activeTabId) tabSelect(next.id);
+    };
+    // Ctrl-Tab walks the reader's most-recently-visited sessions across every
+    // workspace, the way an editor walks its recent files: each step moves the
+    // address one place along the list while the list itself holds still, and
+    // releasing Control is what commits the landing as the newest visit. Only
+    // sessions that still exist are stops; a closed one is skipped over.
+    const recentStep = (direction: 1 | -1) => {
+        const stops = workspace.recentTabs.flatMap((entry) => {
+            if (entry.type !== "session") return [];
+            const group = openGroupFind(rows, workspace.list.bots, entry.groupId, entry.sessionId);
+            return group?.conversations.some((summary) => summary.id === entry.sessionId)
+                ? [entry]
+                : [];
+        });
+        if (stops.length < 2) return;
+        const index = stops.findIndex(
+            (entry) => entry.groupId === props.groupId && entry.sessionId === props.chatId,
+        );
+        const next = stops[index === -1 ? 0 : (index + direction + stops.length) % stops.length];
+        if (!next || (next.groupId === props.groupId && next.sessionId === props.chatId)) return;
+        props.workspace.recentWalkBegin();
+        props.onChatSelect(next.groupId, next.sessionId);
+    };
     // Closing a tab archives the session behind it, while a file tab simply
     // closes. The close control and every context-menu sweep funnel through
     // this one routine, so a sweep behaves exactly like closing each tab by
@@ -4470,6 +4518,10 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                             // do when Files or an offline session is the only
                             // current target.
                             { run: activeTabClose, shortcut: APP_SHORTCUTS.tabClose },
+                            { run: () => tabStep(1), shortcut: APP_SHORTCUTS.tabNext },
+                            { run: () => tabStep(-1), shortcut: APP_SHORTCUTS.tabPrevious },
+                            { run: () => recentStep(1), shortcut: APP_SHORTCUTS.recentNext },
+                            { run: () => recentStep(-1), shortcut: APP_SHORTCUTS.recentPrevious },
                             ...(openGroupPreparing
                                 ? []
                                 : [
@@ -4504,6 +4556,13 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                   ]
                                 : []),
                         ]}
+                    />
+                    {/* Letting go of Control ends a recents walk wherever it
+                        landed; a window that loses focus mid-walk ends it the
+                        same way, so no walk is left half-taken. */}
+                    <WindowKeyRelease
+                        keyName="Control"
+                        onRelease={() => props.workspace.recentWalkEnd()}
                     />
                     {/* A worktree with work already in it keeps its tab strip and
                         its transcripts, so its phase is stated in the lane above
@@ -4652,23 +4711,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 if (!move) return;
                                 props.workspace.tabReorder(move.id, move.afterId);
                             }}
-                            onSelect={(tabId) => {
-                                const file = groupFileTabs.find((tab) => tab.id === tabId);
-                                if (file) {
-                                    props.onFileSelect(
-                                        file.groupId,
-                                        props.chatId,
-                                        file.path,
-                                        file.kind,
-                                    );
-                                    return;
-                                }
-                                if (mainTools.some((tab) => tab.id === tabId)) {
-                                    props.workspace.mainViewSelect(tabId);
-                                    return;
-                                }
-                                props.onChatSelect(openGroup.id, tabId);
-                            }}
+                            onSelect={tabSelect}
                             onTransfer={(tabId) => {
                                 const file = groupFileTabs.find((tab) => tab.id === tabId);
                                 const selected = workspace.activeMainViewId === tabId;
