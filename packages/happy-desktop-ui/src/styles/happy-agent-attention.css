@@ -24,6 +24,7 @@
     box-sizing: border-box;
     width: 100%;
     max-width: 720px;
+    margin: 0 auto;
     padding: 0 8px;
 }
 
@@ -53,6 +54,15 @@
     box-sizing: border-box;
     width: 100%;
     max-width: 720px;
+    margin: 0 auto;
+}
+
+/* With nothing queued, the column has one thing to say and says it in the
+   middle of the surface rather than tucked under the header: an empty queue
+   is the good outcome, not a list that failed to load. */
+.happy-agent-attention__content[data-empty="true"] {
+    flex: 1 1 auto;
+    justify-content: center;
 }
 
 /* ---- Section label ---------------------------------------------------- */

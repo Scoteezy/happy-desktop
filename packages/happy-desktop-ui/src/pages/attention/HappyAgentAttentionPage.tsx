@@ -136,7 +136,7 @@ export function HappyAgentAttentionPage(props: HappyAgentAttentionPageProps) {
                 data-happy-desktop-ui="happy-agent-attention-scroll"
                 viewportClassName="happy-agent-attention__scroll-viewport"
             >
-                <div className="happy-agent-attention__content">
+                <div className="happy-agent-attention__content" data-empty={total === 0}>
                     {props.unavailable ? (
                         <Banner tone="neutral" title="Happy Agent reconnecting">
                             {props.unavailable}

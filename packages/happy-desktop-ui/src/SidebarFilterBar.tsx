@@ -34,25 +34,38 @@ export function SidebarFilterBar(props: SidebarFilterBarProps) {
             aria-label="Sidebar filters"
             style={props.style}
         >
+            {/* Each switch is named for what pressing it does, and a pressed
+                one swaps its icon for a check, so "Hide idle" with a check
+                reads as a rule in force rather than a category to pick. */}
             <Button
                 aria-pressed={props.hideIdle}
                 data-filter="idle"
-                icon="filter"
+                icon={props.hideIdle ? "check" : "filter"}
                 onClick={props.onHideIdleToggle}
                 size="small"
+                title={
+                    props.hideIdle
+                        ? "Idle workspaces are hidden. Click to show them."
+                        : "Hide workspaces with nothing running, waiting, or unread"
+                }
                 variant={props.hideIdle ? "secondary" : "ghost"}
             >
-                Idle
+                Hide idle
             </Button>
             <Button
                 aria-pressed={props.hideBots}
                 data-filter="bots"
-                icon="agents"
+                icon={props.hideBots ? "check" : "agents"}
                 onClick={props.onHideBotsToggle}
                 size="small"
+                title={
+                    props.hideBots
+                        ? "Resting bots are hidden. Click to show them."
+                        : "Hide bots that are neither working nor waiting on you"
+                }
                 variant={props.hideBots ? "secondary" : "ghost"}
             >
-                Bots
+                Hide bots
             </Button>
             {hidden > 0 ? (
                 <span
