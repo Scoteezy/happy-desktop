@@ -105,6 +105,13 @@
     font-variant-numeric: tabular-nums;
 }
 
+/* The controls' bubbles wait longer than a bubble in open space: the pointer
+   crosses this bar on its way to the rows, and a bubble that answered every
+   crossing would be noise. */
+.happy-sidebar-list-bar__controls .happy-tooltip__bubble {
+    --happy-tooltip-delay: 500ms;
+}
+
 /* ---- Search takes the row ---------------------------------------------- */
 
 /* The name and controls stay in the flow so the row keeps its height and

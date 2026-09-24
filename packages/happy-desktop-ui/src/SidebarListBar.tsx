@@ -77,8 +77,15 @@ export function SidebarListBar(props: SidebarListBarProps) {
                 {/* Each control explains itself on hover with its words and its
                     chord, the way the palette does, so the chord is learned
                     where the control is rather than from a sheet. */}
+                {/* The bar stands at the top of the scrollport, and a bubble
+                    rising above it would be cut off by that edge; both bubbles
+                    open downward over the list instead, after a longer dwell
+                    than a control in open space needs, because the pointer
+                    crosses these two on its way to the rows. */}
                 <Tooltip
                     label="Search sessions"
+                    align="end"
+                    placement="bottom"
                     {...(props.searchShortcut ? { shortcut: props.searchShortcut } : {})}
                 >
                     <button
@@ -96,6 +103,8 @@ export function SidebarListBar(props: SidebarListBarProps) {
                     label={
                         props.view === "attention" ? "Show every workspace" : "Show what needs you"
                     }
+                    align="end"
+                    placement="bottom"
                     {...(props.attentionShortcut ? { shortcut: props.attentionShortcut } : {})}
                 >
                     <button
