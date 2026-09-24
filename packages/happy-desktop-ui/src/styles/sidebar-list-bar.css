@@ -1,0 +1,209 @@
+/*
+ * The row that heads the sidebar's list: the two list names on the left, the
+ * bell and search on the right, all on the rows' inset. When search is open
+ * the row is the field: it unfolds across the bar from the controls' corner
+ * and the names and controls fade under it.
+ *
+ * Layout is flexbox; colors and type come from theme roles.
+ */
+
+.happy-sidebar-list-bar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    width: 100%;
+    height: 32px;
+    padding: 0 4px 0 var(--happy-panel-row-padding, 10px);
+}
+
+/* ---- The names ------------------------------------------------------- */
+
+.happy-sidebar-list-bar__modes {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    transition: opacity 160ms ease;
+}
+
+.happy-sidebar-list-bar__mode {
+    display: flex;
+    flex: none;
+    align-items: center;
+    height: 24px;
+    margin: 0;
+    padding: 0 4px;
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 16px;
+    font-synthesis: none;
+    white-space: nowrap;
+    appearance: none;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease,
+        color 120ms ease;
+}
+
+/* The first name starts on the rows' text line: its own 4px of padding is
+   taken back so the letters, not the button, sit on the inset. */
+.happy-sidebar-list-bar__mode:first-child {
+    margin-left: -4px;
+}
+
+.happy-sidebar-list-bar__mode:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-sidebar-list-bar__mode:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: -2px;
+}
+
+.happy-sidebar-list-bar__mode[aria-selected="true"] {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.happy-sidebar-list-bar__divider {
+    flex: none;
+    width: 1px;
+    height: 12px;
+    background: var(--divider);
+}
+
+/* ---- The controls ------------------------------------------------------ */
+
+.happy-sidebar-list-bar__controls {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    transition: opacity 160ms ease;
+}
+
+.happy-sidebar-list-bar__control {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    appearance: none;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease,
+        color 120ms ease;
+}
+
+.happy-sidebar-list-bar__control:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-sidebar-list-bar__control:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: -2px;
+}
+
+/* The bell that is on takes the accent: it is the one state that changes
+   what the whole column below it means. */
+.happy-sidebar-list-bar__control[data-control="attention"][aria-pressed="true"] {
+    background: var(--surface-high);
+    color: var(--accent);
+}
+
+.happy-sidebar-list-bar__count {
+    position: absolute;
+    top: 1px;
+    right: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: var(--accent);
+    color: var(--text-on-accent, #fff);
+    font-family: var(--happy-font-ui);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Search takes the row ---------------------------------------------- */
+
+/* The names and controls stay in the flow so the row keeps its height and
+   the field lands over exactly the same box; they only fade and stop taking
+   the pointer. */
+.happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__modes,
+.happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__controls {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.happy-sidebar-list-bar__search {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    box-sizing: border-box;
+    padding: 0 4px 0 calc(var(--happy-panel-row-padding, 10px) - 4px);
+    animation: happy-sidebar-list-bar-search-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.happy-sidebar-list-bar__search > .happy-text-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.happy-sidebar-list-bar__search-close {
+    width: 24px;
+    height: 24px;
+}
+
+/* The field unfolds from the search control's corner: what was a 28px square
+   at the trailing edge becomes the whole row, so the control reads as having
+   opened rather than a new row having arrived. */
+@keyframes happy-sidebar-list-bar-search-in {
+    from {
+        clip-path: inset(2px 32px 2px calc(100% - 64px) round var(--happy-radius-sm));
+        opacity: 0.6;
+    }
+
+    to {
+        clip-path: inset(0 0 0 0 round var(--happy-radius-sm));
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-sidebar-list-bar__search {
+        animation: none;
+    }
+
+    .happy-sidebar-list-bar__modes,
+    .happy-sidebar-list-bar__controls {
+        transition: none;
+    }
+}

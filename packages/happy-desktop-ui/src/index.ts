@@ -605,8 +605,7 @@ export {
     type ShortcutHelpSheetProps,
 } from "./ShortcutHelpSheet";
 export { UndoToast, type UndoToastProps } from "./UndoToast";
-export { SidebarHeaderControls, type SidebarHeaderControlsProps } from "./SidebarHeaderControls";
-export { SidebarSearchField, type SidebarSearchFieldProps } from "./SidebarSearchField";
+export { SidebarListBar, type SidebarListBarProps, type SidebarListView } from "./SidebarListBar";
 export {
     HappyAgentSettingsSection,
     HappyAgentSettingsShell,

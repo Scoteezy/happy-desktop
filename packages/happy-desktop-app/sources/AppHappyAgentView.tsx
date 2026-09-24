@@ -164,8 +164,7 @@ import {
     SidebarUpdateAction,
     Switch,
     ShortcutHelpSheet,
-    SidebarHeaderControls,
-    SidebarSearchField,
+    SidebarListBar,
     UndoToast,
     TabbedPane,
     TextField,
@@ -2759,32 +2758,20 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 : {})}
             {...(props.sidebarView
                 ? {
-                      headerTrailing: (
-                          <SidebarHeaderControls
+                      bodyAccessory: (
+                          <SidebarListBar
                               attentionCount={attentionItems.length}
-                              attentionOn={sidebarList.view === "attention"}
-                              onAttentionToggle={() => sidebarViewStore.viewToggle()}
-                              onSearchToggle={() =>
-                                  sidebarList.searchOpen
-                                      ? sidebarViewStore.searchClose()
-                                      : sidebarViewStore.searchOpen()
+                              onSearchClose={() => sidebarViewStore.searchClose()}
+                              onSearchOpen={() => sidebarViewStore.searchOpen()}
+                              onSearchQueryUpdate={(value) =>
+                                  sidebarViewStore.searchQueryUpdate(value)
                               }
+                              onViewSelect={(view) => sidebarViewStore.viewSelect(view)}
                               searchOpen={sidebarList.searchOpen}
+                              searchQuery={sidebarList.searchQuery}
+                              view={sidebarList.view}
                           />
                       ),
-                      ...(sidebarList.searchOpen
-                          ? {
-                                bodyAccessory: (
-                                    <SidebarSearchField
-                                        onClose={() => sidebarViewStore.searchClose()}
-                                        onValueChange={(value) =>
-                                            sidebarViewStore.searchQueryUpdate(value)
-                                        }
-                                        value={sidebarList.searchQuery}
-                                    />
-                                ),
-                            }
-                          : {}),
                   }
                 : {})}
             {...(props.workspaceTriage
