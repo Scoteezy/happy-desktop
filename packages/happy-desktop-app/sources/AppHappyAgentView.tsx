@@ -4,6 +4,7 @@ import type {
     AppearanceStore,
     CommandPaletteStore,
     ConversationEntry,
+    ConversationSummary,
     ComposerSnapshot,
     ExperimentsStore,
     ConversationToolCall,
@@ -38,6 +39,8 @@ import type {
     HappyAgentAttentionItem,
     HappyAgentInboxSnapshot,
     HappyAgentInboxStore,
+    HappyAgentSidebarCollapseSnapshot,
+    HappyAgentSidebarFilterSnapshot,
     HappyAgentSidebarFilterStore,
     HappyAgentWorkspaceTriageChange,
     HappyAgentWorkspaceTriageStore,
@@ -80,6 +83,7 @@ import {
     happyAgentInboxStoreNoop,
     happyAgentNavigationOrderApply,
     happyAgentSidebarFilterStoreNoop,
+    happyAgentSidebarRowCollapsed,
     happyAgentWorkspaceTriageStoreNoop,
     shortcutHelpStoreNoop,
     happyAgentAvailabilityProject,
@@ -156,6 +160,7 @@ import {
     Switch,
     HappyAgentAttentionPage,
     ShortcutHelpSheet,
+    SidebarFilterBar,
     UndoToast,
     TabbedPane,
     TextField,
@@ -1468,26 +1473,51 @@ function sectionsCollapsed(
     }));
 }
 
+/** Whether a conversation is doing something, or waiting on the reader. */
+function conversationLive(conversation: ConversationSummary): boolean {
+    return conversation.activity !== "idle" || conversation.unread === true;
+}
+
+/**
+ * How this window wants the list shown: what is folded, what is filtered
+ * out, and where the reader is standing — which is never hidden, whatever
+ * the filters say, because a list that hid the thing on screen would be a
+ * list the reader could not find themselves in.
+ */
+interface SidebarView {
+    readonly collapse: HappyAgentSidebarCollapseSnapshot;
+    readonly filter: HappyAgentSidebarFilterSnapshot;
+    readonly address: { readonly happyAgentId: string; readonly groupId?: string };
+}
+
+/** The sections as built, and how many rows the filters left out of them. */
+interface SidebarBuild {
+    readonly sections: SidebarSection[];
+    readonly hidden: number;
+}
+
 function happyAgentSections(
     directory: AppHappyAgentDirectorySnapshot,
     titleShimmerEnabled: boolean,
-    shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
-): SidebarSection[] {
-    return directory.happyAgents.flatMap((happyAgent) => [
+    shortcutProject:
+        | { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string }
+        | undefined,
+    view: SidebarView,
+): SidebarBuild {
+    let hidden = 0;
+    const count = (rows: number): void => {
+        hidden += rows;
+    };
+    const sections = directory.happyAgents.flatMap((happyAgent) => [
         // Keep the heading even with no bots: its action is where the first
         // one is named, and a machine with none is exactly where that is wanted.
         {
             id: happyAgentBotsSectionId(happyAgent.id),
             label: "Bots",
             items: [
-                ...happyAgent.bots.flatMap((bot) => [
-                    botSidebarItem(bot, titleShimmerEnabled),
-                    ...botSubtaskSidebarItems(
-                        bot.subtasks,
-                        happyAgent.projects,
-                        titleShimmerEnabled,
-                    ),
-                ]),
+                ...happyAgent.bots.flatMap((bot) =>
+                    botSectionRows(bot, happyAgent, titleShimmerEnabled, view, count),
+                ),
                 // The host lists a new bot last, so a bot still being made
                 // stands where it will arrive.
                 ...(happyAgent.botsCreating ?? []).map((bot) =>
@@ -1509,15 +1539,94 @@ function happyAgentSections(
                   }
                 : {}),
         },
-        happyAgentProjectsSection(happyAgent, titleShimmerEnabled, shortcutProject),
+        happyAgentProjectsSection(happyAgent, titleShimmerEnabled, shortcutProject, view, count),
     ]);
+    return { sections, hidden };
+}
+
+/**
+ * One bot's rows. A bot folds by default: its subtasks are the agent's own
+ * bookkeeping, and a column of them under every bot is what made the list
+ * unreadable. What is folded away is only what is resting — a subtask that
+ * is working, or waiting on the reader, stands at the top level beside its
+ * bot wearing the bot's face, so nothing that needs the reader is ever
+ * behind a fold. Unfolded, the bot shows its whole tree as before.
+ *
+ * With the bots filter on, a bot with nothing live in it is left out
+ * entirely, unless it is where the reader is standing.
+ */
+function botSectionRows(
+    bot: HappyAgentBot,
+    happyAgent: AppHappyAgentEntry,
+    titleShimmerEnabled: boolean,
+    view: SidebarView,
+    count: (rows: number) => void,
+): SidebarItem[] {
+    const tasks = happyAgentBotSubtasks([bot]);
+    const liveTasks = tasks.filter((task) => conversationLive(task.conversation));
+    const addressed =
+        view.address.happyAgentId === happyAgent.id &&
+        (view.address.groupId === bot.workspaceId ||
+            tasks.some((task) => task.workspaceId === view.address.groupId));
+    if (
+        view.filter.hideBots &&
+        !addressed &&
+        !conversationLive(bot.conversation) &&
+        liveTasks.length === 0
+    ) {
+        count(1 + tasks.length);
+        return [];
+    }
+    const rowId = happyAgentItemId(happyAgent.id, bot.workspaceId);
+    if (!happyAgentSidebarRowCollapsed(view.collapse, rowId, true))
+        return [
+            botSidebarItem(bot, titleShimmerEnabled),
+            ...botSubtaskSidebarItems(bot.subtasks, happyAgent.projects, titleShimmerEnabled),
+        ];
+    const restingTasks = tasks.filter((task) => !conversationLive(task.conversation));
+    const botFace = {
+        id: bot.id,
+        label: `Bot: ${bot.name}`,
+        avatarId: bot.id,
+        ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
+    };
+    return [
+        {
+            ...botSidebarItem(bot, titleShimmerEnabled),
+            ...(restingTasks.length > 0 ? { collapsed: true } : {}),
+        },
+        // The resting subtasks, nested and therefore folded away. Flattened
+        // to one depth: they are not shown while folded, and unfolding the
+        // bot draws the whole tree through the branch above.
+        ...restingTasks.flatMap((task) =>
+            botSubtaskSidebarItems(
+                [{ ...task, subtasks: [] }],
+                happyAgent.projects,
+                titleShimmerEnabled,
+            ),
+        ),
+        ...liveTasks.map((task) => ({
+            ...botSubtaskSidebarItems(
+                [{ ...task, subtasks: [] }],
+                happyAgent.projects,
+                titleShimmerEnabled,
+                0,
+            )[0]!,
+            contextAvatars: [botFace],
+        })),
+    ];
 }
 
 function happyAgentProjectsSection(
     happyAgent: AppHappyAgentEntry,
     titleShimmerEnabled: boolean,
-    shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
+    shortcutProject:
+        | { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string }
+        | undefined,
+    view: SidebarView,
+    count: (rows: number) => void,
 ): SidebarSection {
+    const addressedHere = view.address.happyAgentId === happyAgent.id;
     return {
         id: happyAgentSectionId(happyAgent.id),
         // Which machine this is belongs to the connection rail and the window,
@@ -1525,15 +1634,42 @@ function happyAgentProjectsSection(
         // beneath it, the way "Bots" does above.
         label: "Projects",
         items: happyAgent.projects
-            .flatMap((project) =>
-                sidebarItems(
+            .flatMap((project) => {
+                const rows = sidebarItems(
                     project,
                     happyAgent.bots,
                     titleShimmerEnabled,
                     shortcutProject?.happyAgentId === happyAgent.id &&
                         shortcutProject.projectId === project.id,
-                ),
-            )
+                );
+                if (!view.filter.hideIdle) return rows;
+                // With the idle filter on, a workspace with nothing live in it
+                // is left out, and a project whose own sessions and remaining
+                // workspaces are all resting goes with them — unless the
+                // reader is standing in one of them.
+                const keptWorktrees = new Set(
+                    project.worktrees
+                        .filter(
+                            (worktree) =>
+                                worktree.conversations.some(conversationLive) ||
+                                (addressedHere && view.address.groupId === worktree.id),
+                        )
+                        .map((worktree) => worktree.id),
+                );
+                const projectLive =
+                    project.conversations.some(conversationLive) ||
+                    (addressedHere && view.address.groupId === project.id);
+                if (!projectLive && keptWorktrees.size === 0) {
+                    count(rows.length);
+                    return [];
+                }
+                const kept = rows.filter(
+                    (row, index) =>
+                        index === 0 || keptWorktrees.has(row.id as HappyAgentWorktreeId),
+                );
+                count(rows.length - kept.length);
+                return kept;
+            })
             .map((item) => ({
                 ...item,
                 id: happyAgentItemId(happyAgent.id, item.id),
@@ -1849,6 +1985,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
               ]
             : [];
     const pinned = pinnedArrange(pinnedOffered, navigationOrder.order);
+    const sidebarBuild = happyAgentSections(directory, titleShimmerEnabled, workspaceCreateTarget, {
+        collapse: sidebarCollapse,
+        filter: sidebarFilter,
+        address: {
+            happyAgentId: props.happyAgentId,
+            ...(props.groupId === undefined ? {} : { groupId: props.groupId }),
+        },
+    });
     const sidebar = (
         <Sidebar
             actions={pinned}
@@ -2105,14 +2249,30 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             {...(props.sidebarCollapse
                 ? {
                       onItemCollapseToggle: (id: string) => {
-                          sidebarCollapseStore.rowCollapseToggle(id);
+                          // A bot folds by default, so its toggle is recorded
+                          // as a departure from that rather than from open.
+                          const row = happyAgentItemParse(id);
+                          const bot = happyAgentOf(row.happyAgentId)?.bots.some(
+                              (candidate) => candidate.workspaceId === row.id,
+                          );
+                          sidebarCollapseStore.rowCollapseToggle(id, bot === true);
                       },
                   }
                 : {})}
-            sections={sectionsCollapsed(
-                happyAgentSections(directory, titleShimmerEnabled, workspaceCreateTarget),
-                sidebarCollapse.collapsed,
-            )}
+            {...(props.sidebarFilter
+                ? {
+                      bodyAccessory: (
+                          <SidebarFilterBar
+                              hiddenCount={sidebarBuild.hidden}
+                              hideBots={sidebarFilter.hideBots}
+                              hideIdle={sidebarFilter.hideIdle}
+                              onHideBotsToggle={() => sidebarFilterStore.hideBotsToggle()}
+                              onHideIdleToggle={() => sidebarFilterStore.hideIdleToggle()}
+                          />
+                      ),
+                  }
+                : {})}
+            sections={sectionsCollapsed(sidebarBuild.sections, sidebarCollapse.collapsed)}
         />
     );
 

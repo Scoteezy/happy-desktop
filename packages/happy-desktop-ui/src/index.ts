@@ -610,6 +610,7 @@ export {
     type ShortcutHelpSheetProps,
 } from "./ShortcutHelpSheet";
 export { UndoToast, type UndoToastProps } from "./UndoToast";
+export { SidebarFilterBar, type SidebarFilterBarProps } from "./SidebarFilterBar";
 export {
     HappyAgentSettingsSection,
     HappyAgentSettingsShell,

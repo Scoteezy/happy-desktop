@@ -1,0 +1,25 @@
+/*
+ * The sidebar's filter bar: two pressed-or-not switches and, when they are
+ * hiding anything, a count. It sits between the pinned rows and the sections,
+ * on the same inset as the rows, so it reads as part of the list it filters.
+ * Layout is flexbox; colors and type come from theme roles.
+ */
+
+.happy-sidebar-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 4px var(--happy-panel-row-padding, 10px) 6px;
+}
+
+.happy-sidebar-filter-bar__count {
+    margin-left: auto;
+    padding-right: 2px;
+    font-size: 11px;
+    line-height: 16px;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
