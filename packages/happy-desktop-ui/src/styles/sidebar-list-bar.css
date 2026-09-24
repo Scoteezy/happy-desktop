@@ -109,7 +109,18 @@
 
 /* The name and controls stay in the flow so the row keeps its height and
    the field lands over exactly the same box; they only fade and stop taking
-   the pointer. */
+   the pointer. Coming back, they wait for the field to fold most of the way
+   before they show through it. */
+.happy-sidebar-list-bar__title,
+.happy-sidebar-list-bar__controls {
+    transition-delay: 120ms;
+}
+
+.happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__title,
+.happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__controls {
+    transition-delay: 0ms;
+}
+
 .happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__title,
 .happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__controls {
     opacity: 0;
@@ -125,6 +136,14 @@
     box-sizing: border-box;
     padding: 0 4px 0 calc(var(--happy-panel-row-padding, 10px) - 4px);
     animation: happy-sidebar-list-bar-search-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Closing runs the same unfold backwards: the field folds back into the
+   control's corner and, once it has, is taken down. It stops taking the
+   pointer at once, so a click during the fold lands on what is underneath. */
+.happy-sidebar-list-bar__search[data-closing] {
+    pointer-events: none;
+    animation: happy-sidebar-list-bar-search-out 200ms cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .happy-sidebar-list-bar__search > .happy-text-field {
@@ -152,9 +171,26 @@
     }
 }
 
+@keyframes happy-sidebar-list-bar-search-out {
+    from {
+        clip-path: inset(0 0 0 0 round var(--happy-radius-sm));
+        opacity: 1;
+    }
+
+    to {
+        clip-path: inset(2px 32px 2px calc(100% - 64px) round var(--happy-radius-sm));
+        opacity: 0;
+    }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .happy-sidebar-list-bar__search {
         animation: none;
+    }
+
+    /* With no fold to wait for, the field is gone as soon as the search is. */
+    .happy-sidebar-list-bar__search[data-closing] {
+        display: none;
     }
 
     .happy-sidebar-list-bar__title,

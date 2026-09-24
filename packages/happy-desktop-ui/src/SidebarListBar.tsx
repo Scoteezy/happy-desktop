@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { Icon } from "./Icon";
 import { TextField } from "./TextField";
 
@@ -41,6 +41,17 @@ export interface SidebarListBarProps {
  */
 export function SidebarListBar(props: SidebarListBarProps) {
     const waiting = props.attentionCount ?? 0;
+    // The field folds away rather than vanishing, so it outlives the search
+    // by one animation. Which way the search last went is tracked during
+    // render — the documented way to react to a prop changing without an
+    // effect — and the fold-out ending is what finally takes the field down.
+    const [wasOpen, setWasOpen] = useState(props.searchOpen);
+    const [closing, setClosing] = useState(false);
+    if (wasOpen !== props.searchOpen) {
+        setWasOpen(props.searchOpen);
+        setClosing(!props.searchOpen);
+    }
+    const fieldShown = props.searchOpen || closing;
     return (
         <div
             className={["happy-sidebar-list-bar", props.className].filter(Boolean).join(" ")}
@@ -97,10 +108,15 @@ export function SidebarListBar(props: SidebarListBarProps) {
                     ) : null}
                 </button>
             </div>
-            {props.searchOpen ? (
+            {fieldShown ? (
                 <div
                     className="happy-sidebar-list-bar__search"
+                    data-closing={props.searchOpen ? undefined : ""}
                     data-happy-desktop-ui="sidebar-list-bar-search"
+                    onAnimationEnd={(event) => {
+                        if (event.animationName === "happy-sidebar-list-bar-search-out")
+                            setClosing(false);
+                    }}
                     onKeyDown={(event) => {
                         if (event.key !== "Escape") return;
                         event.preventDefault();
@@ -109,7 +125,8 @@ export function SidebarListBar(props: SidebarListBarProps) {
                     }}
                 >
                     <TextField
-                        autoFocus
+                        autoFocus={props.searchOpen}
+                        disabled={!props.searchOpen}
                         fullWidth
                         leadingIcon="search"
                         onBlur={() => {
