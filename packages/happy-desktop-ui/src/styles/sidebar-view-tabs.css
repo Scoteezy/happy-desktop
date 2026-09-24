@@ -21,10 +21,15 @@
     padding: 2px 0 4px;
 }
 
+/* The two tabs share the width between them, so the pair spans the column
+   like the rows do; each still ranges its glyph and name from its own leading
+   edge, so the first tab's icon stays on the rows' line. */
 .happy-sidebar-view-tabs__tab {
     display: flex;
-    flex: none;
+    flex: 1 1 0;
     align-items: center;
+    justify-content: flex-start;
+    min-width: 0;
     gap: 8px;
     height: 28px;
     margin: 0;
@@ -72,5 +77,8 @@
 }
 
 .happy-sidebar-view-tabs__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
