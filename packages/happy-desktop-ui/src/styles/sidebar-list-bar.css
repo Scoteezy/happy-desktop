@@ -1,8 +1,8 @@
 /*
- * The row that heads the sidebar's list: the two list names on the left, the
+ * The row that heads the sidebar's list: the name of the list on the left, the
  * bell and search on the right, all on the rows' inset. When search is open
  * the row is the field: it unfolds across the bar from the controls' corner
- * and the names and controls fade under it.
+ * and the name and controls fade under it.
  *
  * Layout is flexbox; colors and type come from theme roles.
  */
@@ -18,67 +18,22 @@
     padding: 0 4px 0 var(--happy-panel-row-padding, 10px);
 }
 
-/* ---- The names ------------------------------------------------------- */
+/* ---- The name ---------------------------------------------------------- */
 
-.happy-sidebar-list-bar__modes {
-    display: flex;
+/* The list that is up, named in the rows' own type and on their text line. */
+.happy-sidebar-list-bar__title {
     flex: 1;
-    align-items: center;
-    gap: 6px;
     min-width: 0;
-    transition: opacity 160ms ease;
-}
-
-.happy-sidebar-list-bar__mode {
-    display: flex;
-    flex: none;
-    align-items: center;
-    height: 24px;
-    margin: 0;
-    padding: 0 4px;
-    border: none;
-    border-radius: var(--happy-radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
+    overflow: hidden;
+    color: var(--text);
     font-family: var(--happy-font-ui);
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     line-height: 16px;
     font-synthesis: none;
+    text-overflow: ellipsis;
     white-space: nowrap;
-    appearance: none;
-    cursor: pointer;
-    transition:
-        background-color 120ms ease,
-        color 120ms ease;
-}
-
-/* The first name starts on the rows' text line: its own 4px of padding is
-   taken back so the letters, not the button, sit on the inset. */
-.happy-sidebar-list-bar__mode:first-child {
-    margin-left: -4px;
-}
-
-.happy-sidebar-list-bar__mode:hover {
-    background: var(--surface-ripple);
-    color: var(--text);
-}
-
-.happy-sidebar-list-bar__mode:focus-visible {
-    outline: 2px solid var(--surface-selected);
-    outline-offset: -2px;
-}
-
-.happy-sidebar-list-bar__mode[aria-selected="true"] {
-    color: var(--text);
-    font-weight: 600;
-}
-
-.happy-sidebar-list-bar__divider {
-    flex: none;
-    width: 1px;
-    height: 12px;
-    background: var(--divider);
+    transition: opacity 160ms ease;
 }
 
 /* ---- The controls ------------------------------------------------------ */
@@ -152,10 +107,10 @@
 
 /* ---- Search takes the row ---------------------------------------------- */
 
-/* The names and controls stay in the flow so the row keeps its height and
+/* The name and controls stay in the flow so the row keeps its height and
    the field lands over exactly the same box; they only fade and stop taking
    the pointer. */
-.happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__modes,
+.happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__title,
 .happy-sidebar-list-bar[data-search] .happy-sidebar-list-bar__controls {
     opacity: 0;
     pointer-events: none;
@@ -202,7 +157,7 @@
         animation: none;
     }
 
-    .happy-sidebar-list-bar__modes,
+    .happy-sidebar-list-bar__title,
     .happy-sidebar-list-bar__controls {
         transition: none;
     }

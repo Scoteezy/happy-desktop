@@ -25,10 +25,9 @@ export interface SidebarListBarProps {
 
 /**
  * SidebarListBar — the row that heads the sidebar's list, above its first
- * section. It names the two lists the column can be, "Workspaces" and
- * "Attention", with the one that is up in full strength and either one a
- * tap away; and it holds the two controls that act on the list: the bell,
- * which is the same switch with the waiting count on it, and search.
+ * section. It names the list the column is showing, "Workspaces" or
+ * "Attention", and holds the two controls that act on it: the bell, which
+ * switches between the two and wears the waiting count, and search.
  *
  * Search takes the whole row. Pressing it swaps the names and controls for
  * one field across the bar's width, unfolding from the control's corner so
@@ -51,21 +50,12 @@ export function SidebarListBar(props: SidebarListBarProps) {
             data-view={props.view}
             style={props.style}
         >
-            <div aria-label="Sidebar list" className="happy-sidebar-list-bar__modes" role="tablist">
-                <ModeTab
-                    label="Workspaces"
-                    onSelect={() => props.onViewSelect("workspaces")}
-                    selected={props.view === "workspaces"}
-                    view="workspaces"
-                />
-                <span aria-hidden="true" className="happy-sidebar-list-bar__divider" />
-                <ModeTab
-                    label="Attention"
-                    onSelect={() => props.onViewSelect("attention")}
-                    selected={props.view === "attention"}
-                    view="attention"
-                />
-            </div>
+            <span
+                className="happy-sidebar-list-bar__title"
+                data-happy-desktop-ui="sidebar-list-bar-title"
+            >
+                {props.view === "attention" ? "Attention" : "Workspaces"}
+            </span>
             <div className="happy-sidebar-list-bar__controls">
                 <button
                     aria-label="Search sessions"
@@ -143,28 +133,5 @@ export function SidebarListBar(props: SidebarListBarProps) {
                 </div>
             ) : null}
         </div>
-    );
-}
-
-interface ModeTabProps {
-    readonly label: string;
-    readonly onSelect: () => void;
-    readonly selected: boolean;
-    readonly view: SidebarListView;
-}
-
-/** One of the two list names; the one that is up is the heavier. */
-function ModeTab(props: ModeTabProps) {
-    return (
-        <button
-            aria-selected={props.selected}
-            className="happy-sidebar-list-bar__mode"
-            data-view={props.view}
-            onClick={props.onSelect}
-            role="tab"
-            type="button"
-        >
-            {props.label}
-        </button>
     );
 }
