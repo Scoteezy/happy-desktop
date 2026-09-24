@@ -11,7 +11,11 @@
     gap: 4px;
     box-sizing: border-box;
     width: 100%;
-    padding: 4px var(--happy-panel-row-padding, 10px) 6px;
+    /* The bar sits under rows whose 16px icon starts at the row padding. A
+       small button carries its own 10px padding and a 14px icon, so the bar
+       gives back all but 1px of the row padding: that puts the funnel's
+       centre on the same vertical line as the bell above it. */
+    padding: 4px calc(var(--happy-panel-row-padding, 10px) - 9px) 6px;
 }
 
 .happy-sidebar-filter-bar__count {
