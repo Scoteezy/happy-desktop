@@ -14,11 +14,27 @@
 
 .happy-sidebar-filter-bar {
     display: flex;
-    align-items: center;
-    gap: 2px;
+    flex-direction: column;
+    gap: 6px;
     box-sizing: border-box;
     width: 100%;
     padding: 2px 0 4px;
+}
+
+/* The view switch sits on the row inset, the full width of the list it
+   switches, so its two segments read as the two lists' headings. */
+.happy-sidebar-filter-bar__view {
+    display: flex;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0 var(--happy-panel-row-padding, 10px);
+}
+
+.happy-sidebar-filter-bar__filters {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    width: 100%;
 }
 
 .happy-sidebar-filter-bar__switch {

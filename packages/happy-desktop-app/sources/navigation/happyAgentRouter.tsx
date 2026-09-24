@@ -349,18 +349,6 @@ const botCreateRoute = createRoute({
 });
 
 /**
- * The attention queue: every conversation waiting on the person. The Happy
- * Agent is in the address because answering in place goes through that
- * machine's inbox, so the window's back and forward move between machines'
- * queues rather than between two views of one ambiguous list.
- */
-const attentionRoute = createRoute({
-    component: HappyAgentAttentionRoute,
-    getParentRoute: () => rootRoute,
-    path: "/attention/$happyAgentId",
-});
-
-/**
  * The component workbench, addressed without a Happy Agent because it renders component
  * pages rather than anything a machine holds. The route is registered only in a
  * development build, which is also the only build whose sidebar offers it.
@@ -412,21 +400,11 @@ const routeTree = rootRoute.addChildren([
         groupFileRoute,
         chatFileRoute,
     ]),
-    attentionRoute,
     botCreateRoute,
     ...(import.meta.env.DEV ? [blueprintRoute] : []),
     settingsIndexRoute,
     settingsSectionRoute,
 ]);
-
-/**
- * The attention address renders the same window a conversation does: the shell
- * and its sidebar stay, and only the content area changes, so working through
- * the queue is not leaving the workspace.
- */
-function HappyAgentAttentionRoute() {
-    return <HappyAgentWorkspaceLayout attention />;
-}
 
 /**
  * The naming address renders the same window a conversation does: the shell and
@@ -449,7 +427,6 @@ function HappyAgentWorkspaceLayout(
     props: {
         blueprint?: boolean;
         botCreate?: boolean;
-        attention?: boolean;
     } = {},
 ) {
     // Read loosely because this component renders under several routes, which
@@ -487,7 +464,6 @@ function HappyAgentWorkspaceLayout(
             {...(context.workspaceTriage ? { workspaceTriage: context.workspaceTriage } : {})}
             {...(context.shortcutHelp ? { shortcutHelp: context.shortcutHelp } : {})}
             botCreateOpen={props.botCreate}
-            attentionOpen={props.attention}
             blueprintOpen={props.blueprint}
             // Offered only where the route exists, which is what puts the
             // workbench row in a development sidebar and nowhere else.
@@ -496,12 +472,6 @@ function HappyAgentWorkspaceLayout(
                 : {})}
             onBotCreateOpen={(happyAgentId) =>
                 void navigate({ params: { happyAgentId }, to: "/bots/new/$happyAgentId" })
-            }
-            onAttentionOpen={() =>
-                void navigate({
-                    params: { happyAgentId: params.happyAgentId ?? happyAgentDefaultId(context) },
-                    to: "/attention/$happyAgentId",
-                })
             }
             onUpdateApply={context.onUpdateApply}
             platform={context.platform}

@@ -599,12 +599,6 @@ export {
     type HappyAgentInboxPageProps,
 } from "./pages/inbox/HappyAgentInboxPage";
 export {
-    HappyAgentAttentionPage,
-    happyAgentAttentionPlaceLabel,
-    type HappyAgentAttentionAnswerMap,
-    type HappyAgentAttentionPageProps,
-} from "./pages/attention/HappyAgentAttentionPage";
-export {
     ShortcutHelpSheet,
     type ShortcutHelpGroup,
     type ShortcutHelpRow,

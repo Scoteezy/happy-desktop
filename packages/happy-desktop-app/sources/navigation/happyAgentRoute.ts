@@ -39,7 +39,6 @@ export type HappyAgentRoute =
       }
     | { readonly kind: "group"; readonly happyAgentId: string; readonly groupId: string }
     | { readonly kind: "home" }
-    | { readonly kind: "attention"; readonly happyAgentId: string }
     | { readonly kind: "happyAgent"; readonly happyAgentId: string }
     | { readonly kind: "settings" }
     | { readonly kind: "settingsSection"; readonly section: string };
@@ -71,8 +70,6 @@ export function happyAgentRoutePath(route: HappyAgentRoute): string {
             return `/chats/${part(route.happyAgentId)}/${part(route.groupId)}`;
         case "home":
             return "/";
-        case "attention":
-            return `/attention/${part(route.happyAgentId)}`;
         case "happyAgent":
             return `/chats/${part(route.happyAgentId)}`;
         case "settings":
@@ -152,10 +149,6 @@ export function happyAgentRoutePathParse(pathname: string): HappyAgentRoute | un
                     : undefined;
             }
             return undefined;
-        case "attention":
-            return first !== undefined && segments.length === 2
-                ? { kind: "attention", happyAgentId: first }
-                : undefined;
         case "settings":
             if (first === undefined) return { kind: "settings" };
             return segments.length === 2 ? { kind: "settingsSection", section: first } : undefined;
@@ -219,10 +212,6 @@ export function happyAgentRouteParse(value: unknown): HappyAgentRoute | undefine
         }
         case "home":
             return HAPPY_AGENT_ROUTE_HOME;
-        case "attention": {
-            const happyAgentId = fieldOf(record, "happyAgentId");
-            return happyAgentId ? { kind: "attention", happyAgentId } : undefined;
-        }
         case "happyAgent": {
             const happyAgentId = fieldOf(record, "happyAgentId");
             return happyAgentId ? { kind: "happyAgent", happyAgentId } : undefined;

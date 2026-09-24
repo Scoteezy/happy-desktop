@@ -37,11 +37,11 @@ import type {
     HappyAgentPermissionMode,
     HappyAgentProfileStore,
     HappyAgentAttentionItem,
-    HappyAgentInboxSnapshot,
     HappyAgentInboxStore,
     HappyAgentSidebarCollapseSnapshot,
     HappyAgentSidebarFilterSnapshot,
     HappyAgentSidebarFilterStore,
+    HappyAgentSidebarView,
     HappyAgentWorkspaceTriageChange,
     HappyAgentWorkspaceTriageSnapshot,
     HappyAgentWorkspaceTriageStore,
@@ -161,7 +161,6 @@ import {
     SidebarFooter,
     SidebarUpdateAction,
     Switch,
-    HappyAgentAttentionPage,
     ShortcutHelpSheet,
     SidebarFilterBar,
     UndoToast,
@@ -539,10 +538,6 @@ export interface AppHappyAgentViewProps {
     botCreateOpen?: boolean;
     /** Addresses that surface on one machine. Absent in a host with nowhere to put it. */
     onBotCreateOpen?(happyAgentId: string): void;
-    /** Whether the URL addresses the attention queue. */
-    attentionOpen?: boolean;
-    /** Addresses that queue. */
-    onAttentionOpen?(): void;
     /**
      * Which rows this window leaves out of the sidebar. Absent in a host that
      * keeps no such record, which shows every row.
@@ -869,6 +864,7 @@ const ROW_MENU_ARCHIVE = "archive";
  */
 const ROW_MENU_RENAME = "rename";
 /** The filing acts a project or workspace row offers, when the window keeps a record of them. */
+const ROW_MENU_READ = "read";
 const ROW_MENU_PIN = "triage:pin";
 const ROW_MENU_UNPIN = "triage:unpin";
 const ROW_MENU_SNOOZE_HOUR = "triage:snooze:hour";
@@ -1564,6 +1560,8 @@ interface SidebarView {
     readonly address: { readonly happyAgentId: string; readonly groupId?: string };
     /** What the reader filed each workspace as, read against `now`. */
     readonly triage: HappyAgentWorkspaceTriageSnapshot;
+    /** Every conversation waiting on the person, in the order to work through them. */
+    readonly attention: readonly HappyAgentAttentionItem[];
     readonly now: number;
 }
 
@@ -1610,6 +1608,10 @@ function happyAgentSections(
         | undefined,
     view: SidebarView,
 ): SidebarBuild {
+    // The attention list is the other thing this sidebar can be: the same
+    // column, showing only what is waiting, with the filters standing down.
+    if (view.filter.view === "attention")
+        return { sections: happyAgentAttentionSections(view.attention), hidden: 0 };
     let hidden = 0;
     const count = (rows: number): void => {
         hidden += rows;
@@ -1654,6 +1656,108 @@ function happyAgentSections(
         ),
     ]);
     return { sections, hidden };
+}
+
+const ATTENTION_SECTION_BLOCKED = "attention:blocked";
+const ATTENTION_SECTION_FINISHED = "attention:finished";
+const ATTENTION_SECTION_EMPTY = "attention:empty";
+
+/**
+ * The attention list as sidebar sections: what an agent is blocked on first,
+ * then what has finished and not been read, each row wearing the face of the
+ * place it happened in.
+ */
+function happyAgentAttentionSections(items: readonly HappyAgentAttentionItem[]): SidebarSection[] {
+    if (items.length === 0)
+        return [
+            {
+                empty: {
+                    description: "When an agent stops for you, or finishes a turn, it waits here.",
+                    icon: "check-circle",
+                    title: "Nothing needs you",
+                },
+                id: ATTENTION_SECTION_EMPTY,
+                items: [],
+                label: "Attention",
+            },
+        ];
+    const blocked = items.filter((item) => item.reason === "attention_needed");
+    const finished = items.filter((item) => item.reason === "turn_finished");
+    return [
+        ...(blocked.length > 0
+            ? [
+                  {
+                      id: ATTENTION_SECTION_BLOCKED,
+                      items: blocked.map(attentionSidebarItem),
+                      label: `Needs an answer · ${blocked.length}`,
+                  },
+              ]
+            : []),
+        ...(finished.length > 0
+            ? [
+                  {
+                      id: ATTENTION_SECTION_FINISHED,
+                      items: finished.map(attentionSidebarItem),
+                      label: `Finished · ${finished.length}`,
+                  },
+              ]
+            : []),
+    ];
+}
+
+function attentionSidebarItem(item: HappyAgentAttentionItem): SidebarItem {
+    const time = attentionItemTime(item.since);
+    return {
+        contextAvatars: [attentionPlaceFace(item.place)],
+        icon: "chat",
+        id: `${ATTENTION_ROW_PREFIX}${item.key}`,
+        kind: "channel",
+        label: item.title,
+        ...(time === undefined ? {} : { meta: time }),
+        ...(item.reason === "attention_needed" ? { status: "waiting" as const } : { unread: true }),
+    };
+}
+
+/** The small face of the place a waiting conversation lives in. */
+function attentionPlaceFace(
+    place: HappyAgentAttentionItem["place"],
+): NonNullable<SidebarItem["contextAvatars"]>[number] {
+    if (place.kind === "bot" || place.kind === "subtask")
+        return {
+            id: place.botId,
+            label: `Bot: ${place.botName}`,
+            avatarId: place.botId,
+            ...(place.botAvatarUrl ? { imageUrl: place.botAvatarUrl } : {}),
+        };
+    return {
+        id: place.projectId,
+        label: `Project: ${place.projectName}`,
+        initials: place.projectName.slice(0, 1).toUpperCase(),
+        ...(place.home ? { icon: "home" as const } : {}),
+        ...(place.projectAvatarUrl ? { imageUrl: place.projectAvatarUrl } : {}),
+    };
+}
+
+/** The queue item an attention row stands for, or nothing for any other row. */
+function attentionItemOf(
+    items: readonly HappyAgentAttentionItem[],
+    rowId: string,
+): HappyAgentAttentionItem | undefined {
+    if (!rowId.startsWith(ATTENTION_ROW_PREFIX)) return undefined;
+    const key = rowId.slice(ATTENTION_ROW_PREFIX.length);
+    return items.find((item) => item.key === key);
+}
+
+/** The attention row for the addressed conversation, or none when it is not waiting. */
+function attentionActiveRowId(
+    items: readonly HappyAgentAttentionItem[],
+    happyAgentId: string,
+    sessionId: string | undefined,
+): string {
+    const item = items.find(
+        (entry) => entry.happyAgentId === happyAgentId && entry.sessionId === sessionId,
+    );
+    return item ? `${ATTENTION_ROW_PREFIX}${item.key}` : "";
 }
 
 /**
@@ -2006,12 +2110,11 @@ function happyAgentStatusLabel(happyAgent: AppHappyAgentEntry): string {
 }
 
 /**
- * The pinned row that opens the attention queue. It belongs with the pinned
- * rows rather than under a project because the conversations it collects come
- * from every machine at once, and the person working through them is working
- * through a queue rather than visiting a repository.
+ * The id prefix of a row in the sidebar's attention list. The rest of the id
+ * is the queue item's own key, so a row and the chord that walks the same
+ * queue name one conversation the same way.
  */
-const ATTENTION_ITEM = "attention";
+const ATTENTION_ROW_PREFIX = "attention:";
 
 /**
  * The workspace window. It owns no product state: it subscribes to the directory
@@ -2208,21 +2311,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // The pinned rows as the window offers them. What the reader has made of
     // that order is applied below, so this list only ever states which rows this
     // window has and what each one is.
-    // The attention row is offered whenever any machine could have something
-    // waiting; its count is the queue's length, so the row and the queue can
-    // never disagree about how much is waiting.
-    const pinnedOffered: SidebarItem[] =
-        active !== undefined
-            ? [
-                  {
-                      badge: attentionItems.length,
-                      icon: "bell",
-                      id: ATTENTION_ITEM,
-                      kind: "action",
-                      label: "Attention",
-                  },
-              ]
-            : [];
+    const pinnedOffered: SidebarItem[] = [];
     const pinned = pinnedArrange(pinnedOffered, navigationOrder.order);
     // How this window wants the list shown, read once per render so the
     // sections, a row's menu, and the chords acting on the addressed group
@@ -2231,6 +2320,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         collapse: sidebarCollapse,
         filter: sidebarFilter,
         triage: workspaceTriage,
+        attention: attentionItems,
         now: Date.now(),
         address: {
             happyAgentId: props.happyAgentId,
@@ -2253,8 +2343,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 addressedProject?.id,
             )}
             activeItemId={
-                props.attentionOpen
-                    ? ATTENTION_ITEM
+                sidebarFilter.view === "attention"
+                    ? attentionActiveRowId(attentionItems, props.happyAgentId, props.chatId)
                     : props.groupId
                       ? happyAgentItemId(
                             props.happyAgentId,
@@ -2320,6 +2410,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 ) : undefined
             }
             itemMenuItems={(item) => {
+                if (item.id.startsWith(ATTENTION_ROW_PREFIX))
+                    return [
+                        { icon: "check", id: ROW_MENU_READ, kind: "item", label: "Mark as read" },
+                    ];
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (happyAgent?.status !== "connected") return [];
@@ -2364,6 +2458,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 else if (section.kind === "projects") workspace.projectAdd();
             }}
             onItemMenuSelect={(item, actionId) => {
+                if (item.id.startsWith(ATTENTION_ROW_PREFIX)) {
+                    const entry = attentionItemOf(attentionItems, item.id);
+                    if (entry && actionId === ROW_MENU_READ)
+                        happyAgentOf(entry.happyAgentId)?.session?.workspace.conversationRead(
+                            entry.sessionId,
+                        );
+                    return;
+                }
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (!happyAgent) return;
@@ -2429,8 +2531,11 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             // Once every remembered tab is gone, its first session is what the
             // group still has to show.
             onItemSelect={(id) => {
-                if (id === ATTENTION_ITEM) {
-                    props.onAttentionOpen?.();
+                // An attention row is a conversation on whichever machine
+                // holds it; selecting it is the same act as the jump chord.
+                if (id.startsWith(ATTENTION_ROW_PREFIX)) {
+                    const item = attentionItemOf(attentionItems, id);
+                    if (item) props.onChatSelect(item.happyAgentId, item.groupId, item.sessionId);
                     return;
                 }
                 const row = happyAgentItemParse(id);
@@ -2563,11 +2668,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 ? {
                       bodyAccessory: (
                           <SidebarFilterBar
+                              attentionCount={attentionItems.length}
                               hiddenCount={sidebarBuild.hidden}
                               hideBots={sidebarFilter.hideBots}
                               hideIdle={sidebarFilter.hideIdle}
                               onHideBotsToggle={() => sidebarFilterStore.hideBotsToggle()}
                               onHideIdleToggle={() => sidebarFilterStore.hideIdleToggle()}
+                              onViewSelect={(view) => sidebarFilterStore.viewSelect(view)}
+                              view={sidebarFilter.view}
                           />
                       ),
                   }
@@ -2661,6 +2769,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         workspace: active?.session?.workspace,
         workspaceCreateProjectId: workspaceCreateTarget?.projectId,
         attentionCount: attentionItems.length,
+        sidebarView: sidebarFilter.view,
     };
     // The same suggestions the empty palette offers, on the gesture the reader
     // already has for discovering chords. The shell mounts it only while
@@ -2683,7 +2792,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         onUpdateApply: props.onUpdateApply,
         store: commandPaletteStore,
         titleShimmer: titleShimmerStore,
-        onAttentionOpen: props.onAttentionOpen,
+        onSidebarViewSelect: (view) => sidebarFilterStore.viewSelect(view),
         onAttentionNext: attentionJump,
         onAttentionReadAll: attentionReadAll,
         ...(props.shortcutHelp ? { onShortcutHelpOpen: () => shortcutHelpStore.helpOpen() } : {}),
@@ -2721,32 +2830,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         // host can send it there.
                         onExternalLinkOpen={props.onExternalLinkOpen ?? openExternalLink}
                         workspace={active.session.workspace}
-                        {...(activeAvailability?.refusal === undefined
-                            ? {}
-                            : { unavailable: activeAvailability.refusal })}
-                    />
-                </>
-            );
-
-        // The attention queue spans every machine, so it is shown whenever the
-        // window has any; answering in place goes through the addressed
-        // machine's inbox, which is the only one the window subscribes to.
-        if (props.attentionOpen && active !== undefined)
-            return (
-                <>
-                    {desktop ? <WindowDragRegion /> : null}
-                    <HappyAgentAttentionSurface
-                        happyAgentId={active.id}
-                        happyAgentOnline={activeHappyAgentOnline}
-                        happyAgents={props.happyAgents}
-                        inbox={inbox}
-                        inboxStore={inboxStore}
-                        items={attentionItems}
-                        loading={active.status === "connecting"}
-                        onOpen={(item) =>
-                            props.onChatSelect(item.happyAgentId, item.groupId, item.sessionId)
-                        }
-                        onReadAll={attentionReadAll}
                         {...(activeAvailability?.refusal === undefined
                             ? {}
                             : { unavailable: activeAvailability.refusal })}
@@ -3019,6 +3102,8 @@ interface HappyAgentPaletteSubject {
     workspace?: HappyAgentWorkspaceStore;
     /** How many conversations are waiting on the person, across every machine. */
     attentionCount: number;
+    /** Which list the sidebar is showing. */
+    sidebarView: HappyAgentSidebarView;
 }
 
 /** The window acts the palette can commit to. */
@@ -3039,7 +3124,7 @@ interface HappyAgentPaletteActions {
     onSettingsOpen(): void;
     onSettingsSectionOpen?(section: string): void;
     onUpdateApply?(): void;
-    onAttentionOpen?(): void;
+    onSidebarViewSelect(view: HappyAgentSidebarView): void;
     onAttentionNext(): void;
     onAttentionReadAll(): void;
     onShortcutHelpOpen?(): void;
@@ -3182,6 +3267,7 @@ function paletteContext(
         tabs: facts.tabs,
         updateReady: subject.updateReady,
         attentionCount: subject.attentionCount,
+        sidebarView: subject.sidebarView,
         workspaceCreateAvailable:
             subject.online &&
             subject.workspace !== undefined &&
@@ -3532,8 +3618,8 @@ function paletteCommandRun(
         case "updateApply":
             props.onUpdateApply?.();
             return;
-        case "attentionOpen":
-            props.onAttentionOpen?.();
+        case "sidebarViewSelect":
+            props.onSidebarViewSelect(command.view);
             return;
         case "attentionNext":
             props.onAttentionNext();
@@ -3545,69 +3631,6 @@ function paletteCommandRun(
             props.onShortcutHelpOpen?.();
             return;
     }
-}
-
-/**
- * The attention queue inside the window's shell. It subscribes to nothing: the
- * window already derives the queue for the pinned row's count, so the queue and
- * the badge are one reading and can never disagree about how much is waiting.
- *
- * Answering a row in place goes through the addressed machine's inbox, whose
- * drafts and submissions are keyed by the question rather than the row; the
- * accessors below make that translation once. Marking a row seen and opening
- * it are addressing acts, which is why they live here rather than in the page.
- */
-function HappyAgentAttentionSurface(props: {
-    happyAgentId: string;
-    happyAgentOnline: () => boolean;
-    happyAgents: AppHappyAgentDirectoryStore;
-    inbox: HappyAgentInboxSnapshot;
-    inboxStore: HappyAgentInboxStore;
-    items: readonly HappyAgentAttentionItem[];
-    loading: boolean;
-    onOpen(item: HappyAgentAttentionItem): void;
-    onReadAll(): void;
-    unavailable?: string;
-}) {
-    const workspaceOf = (happyAgentId: string) =>
-        props.happyAgents.get().happyAgents.find((entry) => entry.id === happyAgentId)?.session
-            ?.workspace;
-    return (
-        <HappyAgentAttentionPage
-            itemTime={(item) => attentionItemTime(item.since)}
-            items={props.items}
-            loading={props.loading}
-            nextShortcut={APP_SHORTCUTS.attentionNext}
-            onAnswer={(item, answers) => {
-                if (item.question && props.happyAgentOnline())
-                    props.inboxStore.itemAnswer(item.question.id, answers);
-            }}
-            onMessageChange={(item, text) => {
-                if (item.question) props.inboxStore.itemMessageUpdate(item.question.id, text);
-            }}
-            onMessageSubmit={(item) => {
-                if (item.question && props.happyAgentOnline())
-                    props.inboxStore.itemMessageSubmit(item.question.id);
-            }}
-            onOpen={props.onOpen}
-            onRead={(item) => workspaceOf(item.happyAgentId)?.conversationRead(item.sessionId)}
-            onReadAll={props.onReadAll}
-            onSelectionChange={(item, answers) => {
-                if (item.question) props.inboxStore.itemSelectionUpdate(item.question.id, answers);
-            }}
-            questionMessage={(item) =>
-                item.question ? props.inbox.messages.get(item.question.id) : undefined
-            }
-            questionSelection={(item) =>
-                item.question ? props.inbox.selections.get(item.question.id) : undefined
-            }
-            questionSubmission={(item) =>
-                item.question ? props.inbox.submissions.get(item.question.id) : undefined
-            }
-            readAllShortcut={APP_SHORTCUTS.attentionReadAll}
-            {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
-        />
-    );
 }
 
 /** How long a row has been waiting, said relative to now. */

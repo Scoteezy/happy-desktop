@@ -65,8 +65,8 @@ export type CommandPaletteCommand =
     | { readonly kind: "settingsOpen" }
     | { readonly kind: "settingsSectionOpen"; readonly section: string }
     | { readonly kind: "updateApply" }
-    /** Opens the queue of conversations waiting on the person. */
-    | { readonly kind: "attentionOpen" }
+    /** Switches the sidebar between its workspace list and its attention list. */
+    | { readonly kind: "sidebarViewSelect"; readonly view: "workspaces" | "attention" }
     /** Jumps to the next conversation in that queue. */
     | { readonly kind: "attentionNext" }
     /** Marks every waiting conversation read. */
@@ -211,6 +211,8 @@ export interface CommandPaletteContext {
     readonly workspaceCreateAvailable: boolean;
     /** How many conversations are waiting on the person, across every machine. */
     readonly attentionCount: number;
+    /** Which list the sidebar is showing. */
+    readonly sidebarView: "workspaces" | "attention";
 }
 
 export interface CommandPaletteInput extends CommandPaletteContext {
@@ -795,16 +797,24 @@ function actionRows(
                   },
               ]
             : []),
-        {
-            kind: "command" as const,
-            id: "action:attention-open",
-            title: "Open attention queue",
-            ...(context.attentionCount > 0
-                ? { meta: `${context.attentionCount} waiting` }
-                : { meta: "Nothing waiting" }),
-            glyph: { kind: "icon" as const, name: "bell" as const },
-            command: { kind: "attentionOpen" as const },
-        },
+        context.sidebarView === "attention"
+            ? {
+                  kind: "command" as const,
+                  id: "action:sidebar-workspaces",
+                  title: "Show workspaces in sidebar",
+                  glyph: { kind: "icon" as const, name: "branch" as const },
+                  command: { kind: "sidebarViewSelect" as const, view: "workspaces" as const },
+              }
+            : {
+                  kind: "command" as const,
+                  id: "action:sidebar-attention",
+                  title: "Show attention in sidebar",
+                  ...(context.attentionCount > 0
+                      ? { meta: `${context.attentionCount} waiting` }
+                      : { meta: "Nothing waiting" }),
+                  glyph: { kind: "icon" as const, name: "bell" as const },
+                  command: { kind: "sidebarViewSelect" as const, view: "attention" as const },
+              },
         ...(context.attentionCount > 0
             ? [
                   {
