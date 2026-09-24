@@ -43,6 +43,7 @@ import type {
     HappyAgentSidebarFilterSnapshot,
     HappyAgentSidebarFilterStore,
     HappyAgentWorkspaceTriageChange,
+    HappyAgentWorkspaceTriageSnapshot,
     HappyAgentWorkspaceTriageStore,
     ShortcutHelpStore,
     HappyAgentInstructionsStore,
@@ -84,6 +85,8 @@ import {
     happyAgentNavigationOrderApply,
     happyAgentSidebarFilterStoreNoop,
     happyAgentSidebarRowCollapsed,
+    happyAgentWorkspaceTriageKey,
+    happyAgentWorkspaceTriageStateOf,
     happyAgentWorkspaceTriageStoreNoop,
     shortcutHelpStoreNoop,
     happyAgentAvailabilityProject,
@@ -179,6 +182,7 @@ import {
     type SidebarNumberShortcutTarget,
     type SidebarReorder,
     type SidebarSection,
+    type SidebarSectionDrop,
     type TabItem,
     WindowShortcuts,
     WorkspaceLifecycleLane,
@@ -863,6 +867,52 @@ const ROW_MENU_ARCHIVE = "archive";
  * only thing there is to say about it.
  */
 const ROW_MENU_RENAME = "rename";
+/** The filing acts a project or workspace row offers, when the window keeps a record of them. */
+const ROW_MENU_PIN = "triage:pin";
+const ROW_MENU_UNPIN = "triage:unpin";
+const ROW_MENU_SNOOZE_HOUR = "triage:snooze:hour";
+const ROW_MENU_SNOOZE_TOMORROW = "triage:snooze:tomorrow";
+const ROW_MENU_WAKE = "triage:wake";
+const ROW_MENU_SETTLE = "triage:settle";
+const ROW_MENU_REOPEN = "triage:reopen";
+
+/** How long "an hour" and "tomorrow" are, for a snooze. */
+const SNOOZE_HOUR_MS = 60 * 60 * 1000;
+function snoozeUntilTomorrow(now: number): number {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    return tomorrow.getTime();
+}
+
+/** The filing rows a project or workspace offers, given how it is filed now. */
+function triageMenuItems(state: "pinned" | "active" | "snoozed" | "settled"): MenuItem[] {
+    return [
+        state === "pinned"
+            ? { kind: "item", id: ROW_MENU_UNPIN, label: "Unpin", icon: "star" }
+            : { kind: "item", id: ROW_MENU_PIN, label: "Pin", icon: "star" },
+        ...(state === "snoozed"
+            ? [{ kind: "item" as const, id: ROW_MENU_WAKE, label: "Wake", icon: "sun" as const }]
+            : [
+                  {
+                      kind: "item" as const,
+                      id: ROW_MENU_SNOOZE_HOUR,
+                      label: "Snooze for an hour",
+                      icon: "moon" as const,
+                  },
+                  {
+                      kind: "item" as const,
+                      id: ROW_MENU_SNOOZE_TOMORROW,
+                      label: "Snooze until tomorrow",
+                      icon: "moon" as const,
+                  },
+              ]),
+        state === "settled"
+            ? { kind: "item", id: ROW_MENU_REOPEN, label: "Reopen", icon: "history" }
+            : { kind: "item", id: ROW_MENU_SETTLE, label: "Settle", icon: "check-circle" },
+        { kind: "separator" },
+    ];
+}
 
 /**
  * The context menu one sidebar row offers. Archiving is a menu action rather
@@ -877,6 +927,7 @@ function rowMenuItems(
     projects: readonly HappyAgentProjectGroup[],
     bots: readonly HappyAgentBot[],
     item: SidebarItem,
+    triage?: { readonly state: "pinned" | "active" | "snoozed" | "settled" },
 ): MenuItem[] {
     if (bots.some((bot) => bot.workspaceId === item.id))
         return [
@@ -892,8 +943,12 @@ function rowMenuItems(
         ];
     const owner = rowOwnerFind(projects, item.id);
     if (!owner) return [];
+    // Filing comes first: it is what the reader reaches for several times a
+    // day, and it is offered only where the window keeps a record of it.
+    const filing = triage ? triageMenuItems(triage.state) : [];
     if (owner.worktreeId)
         return [
+            ...filing,
             { kind: "item", id: ROW_MENU_RENAME, label: "Rename workspace", icon: "edit" },
             { kind: "separator" },
             {
@@ -905,9 +960,10 @@ function rowMenuItems(
             },
         ];
     // The home project's name is the machine's, not the reader's to set, so it
-    // offers neither renaming nor archiving.
+    // offers neither renaming nor archiving, and it is never filed away.
     if (owner.project.kind === "home") return [];
     return [
+        ...filing,
         { kind: "item", id: ROW_MENU_RENAME, label: "Project settings…", icon: "settings" },
         { kind: "separator" },
         {
@@ -1365,6 +1421,16 @@ function happyAgentItemId(happyAgentId: string, id: string): string {
  */
 const HAPPY_AGENT_SECTION_PREFIX = "happy-agent:";
 const HAPPY_AGENT_BOTS_SECTION_PREFIX = "happy-agent-bots:";
+/**
+ * The two shelves a machine's projects can be filed on, above and below the
+ * active list. A row dragged past the top of the active list is pinned; one
+ * dragged past its bottom is settled; and the way back is the same drag in
+ * reverse, so the sections are the states and the drag is the verb.
+ */
+const HAPPY_AGENT_PINNED_SECTION_PREFIX = "happy-agent-pinned:";
+const HAPPY_AGENT_SETTLED_SECTION_PREFIX = "happy-agent-settled:";
+
+type HappyAgentSectionKind = "bots" | "projects" | "pinned" | "settled";
 
 function happyAgentSectionId(happyAgentId: string): string {
     return `${HAPPY_AGENT_SECTION_PREFIX}${happyAgentId}`;
@@ -1374,20 +1440,27 @@ function happyAgentBotsSectionId(happyAgentId: string): string {
     return `${HAPPY_AGENT_BOTS_SECTION_PREFIX}${happyAgentId}`;
 }
 
-/** Which of a Happy Agent's two lists a section id names, and whose it is. */
+function happyAgentPinnedSectionId(happyAgentId: string): string {
+    return `${HAPPY_AGENT_PINNED_SECTION_PREFIX}${happyAgentId}`;
+}
+
+function happyAgentSettledSectionId(happyAgentId: string): string {
+    return `${HAPPY_AGENT_SETTLED_SECTION_PREFIX}${happyAgentId}`;
+}
+
+/** Which of a Happy Agent's lists a section id names, and whose it is. */
 function happyAgentSectionParse(
     sectionId: string,
-): { readonly happyAgentId: string; readonly kind: "bots" | "projects" } | undefined {
-    if (sectionId.startsWith(HAPPY_AGENT_BOTS_SECTION_PREFIX))
-        return {
-            happyAgentId: sectionId.slice(HAPPY_AGENT_BOTS_SECTION_PREFIX.length),
-            kind: "bots",
-        };
-    if (sectionId.startsWith(HAPPY_AGENT_SECTION_PREFIX))
-        return {
-            happyAgentId: sectionId.slice(HAPPY_AGENT_SECTION_PREFIX.length),
-            kind: "projects",
-        };
+): { readonly happyAgentId: string; readonly kind: HappyAgentSectionKind } | undefined {
+    const prefixes: readonly { readonly prefix: string; readonly kind: HappyAgentSectionKind }[] = [
+        { prefix: HAPPY_AGENT_BOTS_SECTION_PREFIX, kind: "bots" },
+        { prefix: HAPPY_AGENT_PINNED_SECTION_PREFIX, kind: "pinned" },
+        { prefix: HAPPY_AGENT_SETTLED_SECTION_PREFIX, kind: "settled" },
+        { prefix: HAPPY_AGENT_SECTION_PREFIX, kind: "projects" },
+    ];
+    for (const { prefix, kind } of prefixes)
+        if (sectionId.startsWith(prefix))
+            return { happyAgentId: sectionId.slice(prefix.length), kind };
     return undefined;
 }
 
@@ -1488,6 +1561,38 @@ interface SidebarView {
     readonly collapse: HappyAgentSidebarCollapseSnapshot;
     readonly filter: HappyAgentSidebarFilterSnapshot;
     readonly address: { readonly happyAgentId: string; readonly groupId?: string };
+    /** What the reader filed each workspace as, read against `now`. */
+    readonly triage: HappyAgentWorkspaceTriageSnapshot;
+    readonly now: number;
+}
+
+/**
+ * What the sidebar does with one workspace right now: where the reader filed
+ * it, read against what is happening inside it. A workspace with nothing in
+ * it yet counts as touched now rather than never, so an empty new project is
+ * not settled the moment it is made.
+ */
+function groupTriageState(
+    view: SidebarView,
+    happyAgentId: string,
+    groupId: string,
+    conversations: readonly ConversationSummary[],
+): "pinned" | "active" | "snoozed" | "settled" {
+    return happyAgentWorkspaceTriageStateOf(
+        view.triage,
+        happyAgentWorkspaceTriageKey(happyAgentId, groupId),
+        {
+            now: view.now,
+            updatedAt:
+                conversations.length === 0
+                    ? view.now
+                    : conversations.reduce(
+                          (latest, conversation) => Math.max(latest, conversation.updatedAt),
+                          0,
+                      ),
+            live: conversations.some(conversationLive),
+        },
+    );
 }
 
 /** The sections as built, and how many rows the filters left out of them. */
@@ -1539,7 +1644,13 @@ function happyAgentSections(
                   }
                 : {}),
         },
-        happyAgentProjectsSection(happyAgent, titleShimmerEnabled, shortcutProject, view, count),
+        ...happyAgentProjectsSections(
+            happyAgent,
+            titleShimmerEnabled,
+            shortcutProject,
+            view,
+            count,
+        ),
     ]);
     return { sections, hidden };
 }
@@ -1617,7 +1728,15 @@ function botSectionRows(
     ];
 }
 
-function happyAgentProjectsSection(
+/**
+ * One machine's projects as up to three sections: what the reader pinned,
+ * what is active, and what is settled or snoozed. A project is filed with the
+ * worktrees that follow it; a worktree filed on its own stands flat on its
+ * shelf wearing its project's picture, so the shelf still says where it is
+ * from. The active list is the only one the idle filter thins, because the
+ * shelves are already the reader's own statement about what is not current.
+ */
+function happyAgentProjectsSections(
     happyAgent: AppHappyAgentEntry,
     titleShimmerEnabled: boolean,
     shortcutProject:
@@ -1625,56 +1744,144 @@ function happyAgentProjectsSection(
         | undefined,
     view: SidebarView,
     count: (rows: number) => void,
-): SidebarSection {
+): SidebarSection[] {
     const addressedHere = view.address.happyAgentId === happyAgent.id;
+    const pinnedRows: SidebarItem[] = [];
+    const activeRows: SidebarItem[] = [];
+    const shelfRows: SidebarItem[] = [];
+    for (const project of happyAgent.projects) {
+        const rows = sidebarItems(
+            project,
+            happyAgent.bots,
+            titleShimmerEnabled,
+            shortcutProject?.happyAgentId === happyAgent.id &&
+                shortcutProject.projectId === project.id,
+        );
+        const projectRow = rows[0]!;
+        const worktreeRows = rows.slice(1);
+        // The home project is the machine's own place rather than a piece of
+        // work, so it is never filed anywhere but the active list.
+        const projectState =
+            project.kind === "home"
+                ? "active"
+                : groupTriageState(view, happyAgent.id, project.id, project.conversations);
+        const projectFace = {
+            id: project.id,
+            label: `Project: ${project.name}`,
+            initials: project.name.slice(0, 1).toUpperCase(),
+            ...(project.kind === "home" ? { icon: "home" as const } : {}),
+            ...(project.avatar ? { imageUrl: project.avatar.url } : {}),
+        };
+        const filedAlone = (row: SidebarItem, state: "snoozed" | "settled" | "pinned") => ({
+            ...row,
+            depth: 0,
+            contextAvatars: [projectFace],
+            ...(state === "snoozed" ? { meta: "snoozed" } : {}),
+        });
+        // A worktree filed differently from its project leaves the project's
+        // block for its own shelf; the rest travel with the project.
+        const withProject: SidebarItem[] = [];
+        for (const row of worktreeRows) {
+            const worktree = project.worktrees.find((candidate) => candidate.id === row.id);
+            const state = worktree
+                ? groupTriageState(view, happyAgent.id, worktree.id, worktree.conversations)
+                : "active";
+            if (state === "pinned" && projectState !== "pinned")
+                pinnedRows.push(filedAlone(row, "pinned"));
+            else if (
+                (state === "snoozed" || state === "settled") &&
+                projectState !== "snoozed" &&
+                projectState !== "settled"
+            )
+                shelfRows.push(filedAlone(row, state));
+            else withProject.push(row);
+        }
+        let block: SidebarItem[] = [projectRow, ...withProject];
+        if (view.filter.hideIdle && projectState === "active") {
+            // With the idle filter on, a workspace with nothing live in it
+            // is left out, and a project whose own sessions and remaining
+            // workspaces are all resting goes with them — unless the reader
+            // is standing in one of them.
+            const keptWorktrees = new Set(
+                project.worktrees
+                    .filter(
+                        (worktree) =>
+                            worktree.conversations.some(conversationLive) ||
+                            (addressedHere && view.address.groupId === worktree.id),
+                    )
+                    .map((worktree) => worktree.id),
+            );
+            const projectLive =
+                project.conversations.some(conversationLive) ||
+                (addressedHere && view.address.groupId === project.id);
+            if (!projectLive && keptWorktrees.size === 0) {
+                count(block.length);
+                continue;
+            }
+            const kept = block.filter(
+                (row, index) => index === 0 || keptWorktrees.has(row.id as HappyAgentWorktreeId),
+            );
+            count(block.length - kept.length);
+            block = kept;
+        }
+        if (projectState === "pinned") pinnedRows.push(...block);
+        else if (projectState === "active") activeRows.push(...block);
+        else
+            shelfRows.push(
+                ...block.map((row, index) =>
+                    index === 0 && projectState === "snoozed" ? { ...row, meta: "snoozed" } : row,
+                ),
+            );
+    }
+    const addressed = (items: SidebarItem[]): SidebarItem[] =>
+        items.map((item) => ({
+            ...item,
+            id: happyAgentItemId(happyAgent.id, item.id),
+            ...happyAgentSidebarItemAvailability(item, happyAgent),
+        }));
+    const settledSectionId = happyAgentSettledSectionId(happyAgent.id);
+    return [
+        ...(pinnedRows.length > 0
+            ? [
+                  {
+                      id: happyAgentPinnedSectionId(happyAgent.id),
+                      label: "Pinned",
+                      items: addressed(pinnedRows),
+                  },
+              ]
+            : []),
+        happyAgentActiveSection(happyAgent, addressed(activeRows)),
+        // The shelf folds by default: what is on it is by definition not what
+        // the reader is doing today, and it stands at the bottom so the active
+        // list above keeps its place.
+        ...(shelfRows.length > 0
+            ? [
+                  {
+                      id: settledSectionId,
+                      label: "Settled",
+                      collapsed: happyAgentSidebarRowCollapsed(
+                          view.collapse,
+                          settledSectionId,
+                          true,
+                      ),
+                      items: addressed(shelfRows),
+                  },
+              ]
+            : []),
+    ];
+}
+
+function happyAgentActiveSection(
+    happyAgent: AppHappyAgentEntry,
+    items: SidebarItem[],
+): SidebarSection {
     return {
         id: happyAgentSectionId(happyAgent.id),
         // Which machine this is belongs to the connection rail and the window,
         // not to a heading over the list: the heading names the kind of thing
         // beneath it, the way "Bots" does above.
         label: "Projects",
-        items: happyAgent.projects
-            .flatMap((project) => {
-                const rows = sidebarItems(
-                    project,
-                    happyAgent.bots,
-                    titleShimmerEnabled,
-                    shortcutProject?.happyAgentId === happyAgent.id &&
-                        shortcutProject.projectId === project.id,
-                );
-                if (!view.filter.hideIdle) return rows;
-                // With the idle filter on, a workspace with nothing live in it
-                // is left out, and a project whose own sessions and remaining
-                // workspaces are all resting goes with them — unless the
-                // reader is standing in one of them.
-                const keptWorktrees = new Set(
-                    project.worktrees
-                        .filter(
-                            (worktree) =>
-                                worktree.conversations.some(conversationLive) ||
-                                (addressedHere && view.address.groupId === worktree.id),
-                        )
-                        .map((worktree) => worktree.id),
-                );
-                const projectLive =
-                    project.conversations.some(conversationLive) ||
-                    (addressedHere && view.address.groupId === project.id);
-                if (!projectLive && keptWorktrees.size === 0) {
-                    count(rows.length);
-                    return [];
-                }
-                const kept = rows.filter(
-                    (row, index) =>
-                        index === 0 || keptWorktrees.has(row.id as HappyAgentWorktreeId),
-                );
-                count(rows.length - kept.length);
-                return kept;
-            })
-            .map((item) => ({
-                ...item,
-                id: happyAgentItemId(happyAgent.id, item.id),
-                ...happyAgentSidebarItemAvailability(item, happyAgent),
-            })),
+        items,
         // Project creation belongs to the Happy Agent named by this section.
         ...(happyAgent.status === "connected" && happyAgent.session
             ? {
@@ -1942,6 +2149,37 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         for (const happyAgent of props.happyAgents.get().happyAgents)
             happyAgent.session?.workspace.conversationsAllRead();
     };
+    // The addressed workspace as something the chords can file: its owner,
+    // its key in the window's record, and how it is filed now. A bot's
+    // workspace and the home project are never filed, so they answer nothing.
+    const addressedTriage = (() => {
+        if (!active || props.groupId === undefined) return undefined;
+        if (active.bots.some((bot) => bot.workspaceId === props.groupId)) return undefined;
+        const owner = rowOwnerFind(active.projects, props.groupId);
+        if (!owner || (owner.worktreeId === undefined && owner.project.kind === "home"))
+            return undefined;
+        const conversations = owner.worktreeId
+            ? (owner.project.worktrees.find((candidate) => candidate.id === owner.worktreeId)
+                  ?.conversations ?? [])
+            : owner.project.conversations;
+        const key = happyAgentWorkspaceTriageKey(active.id, props.groupId);
+        const now = Date.now();
+        return {
+            key,
+            owner,
+            state: happyAgentWorkspaceTriageStateOf(workspaceTriage, key, {
+                now,
+                updatedAt:
+                    conversations.length === 0
+                        ? now
+                        : conversations.reduce(
+                              (latest, conversation) => Math.max(latest, conversation.updatedAt),
+                              0,
+                          ),
+                live: conversations.some(conversationLive),
+            }),
+        };
+    })();
     const desktop = props.platform === "desktop";
     // Happy's own update wins the row. Restarting the app is the larger event of
     // the two, and it carries the agent with it, so the agent states its case
@@ -1985,14 +2223,25 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
               ]
             : [];
     const pinned = pinnedArrange(pinnedOffered, navigationOrder.order);
-    const sidebarBuild = happyAgentSections(directory, titleShimmerEnabled, workspaceCreateTarget, {
+    // How this window wants the list shown, read once per render so the
+    // sections, a row's menu, and the chords acting on the addressed group
+    // all judge a workspace's filing against the same instant.
+    const sidebarView: SidebarView = {
         collapse: sidebarCollapse,
         filter: sidebarFilter,
+        triage: workspaceTriage,
+        now: Date.now(),
         address: {
             happyAgentId: props.happyAgentId,
             ...(props.groupId === undefined ? {} : { groupId: props.groupId }),
         },
-    });
+    };
+    const sidebarBuild = happyAgentSections(
+        directory,
+        titleShimmerEnabled,
+        workspaceCreateTarget,
+        sidebarView,
+    );
     const sidebar = (
         <Sidebar
             actions={pinned}
@@ -2073,10 +2322,29 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (happyAgent?.status !== "connected") return [];
-                return rowMenuItems(happyAgent.projects, happyAgent.bots, {
-                    ...item,
-                    id: row.id,
-                });
+                const owner = rowOwnerFind(happyAgent.projects, row.id);
+                const conversations = owner
+                    ? owner.worktreeId
+                        ? (owner.project.worktrees.find(
+                              (candidate) => candidate.id === owner.worktreeId,
+                          )?.conversations ?? [])
+                        : owner.project.conversations
+                    : [];
+                return rowMenuItems(
+                    happyAgent.projects,
+                    happyAgent.bots,
+                    { ...item, id: row.id },
+                    props.workspaceTriage && owner
+                        ? {
+                              state: groupTriageState(
+                                  sidebarView,
+                                  happyAgent.id,
+                                  row.id,
+                                  conversations,
+                              ),
+                          }
+                        : undefined,
+                );
             }}
             // Each heading makes its own kind of thing on the Happy Agent it
             // names: a bot is named on a surface of its own, a project is chosen
@@ -2092,7 +2360,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 const workspace = happyAgent.session?.workspace;
                 if (!workspace) return;
                 if (section.kind === "bots") props.onBotCreateOpen?.(happyAgent.id);
-                else workspace.projectAdd();
+                else if (section.kind === "projects") workspace.projectAdd();
             }}
             onItemMenuSelect={(item, actionId) => {
                 const row = happyAgentItemParse(item.id);
@@ -2113,6 +2381,34 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 if (actionId === ROW_MENU_RENAME) {
                     workspace.renameOpen(owner.project.id, owner.worktreeId);
                     return;
+                }
+                // Filing is the window's own record, so it needs no host and
+                // answers whether or not the machine is reachable.
+                const key = happyAgentWorkspaceTriageKey(happyAgent.id, row.id);
+                switch (actionId) {
+                    case ROW_MENU_PIN:
+                        workspaceTriageStore.workspacePin(key);
+                        return;
+                    case ROW_MENU_UNPIN:
+                        workspaceTriageStore.workspaceUnpin(key);
+                        return;
+                    case ROW_MENU_SNOOZE_HOUR:
+                        workspaceTriageStore.workspaceSnooze(key, Date.now() + SNOOZE_HOUR_MS);
+                        return;
+                    case ROW_MENU_SNOOZE_TOMORROW:
+                        workspaceTriageStore.workspaceSnooze(key, snoozeUntilTomorrow(Date.now()));
+                        return;
+                    case ROW_MENU_WAKE:
+                        workspaceTriageStore.workspaceWake(key);
+                        return;
+                    case ROW_MENU_SETTLE:
+                        workspaceTriageStore.workspaceSettle(key);
+                        return;
+                    case ROW_MENU_REOPEN:
+                        workspaceTriageStore.workspaceReopen(key);
+                        return;
+                    default:
+                        break;
                 }
                 if (actionId !== ROW_MENU_ARCHIVE) return;
                 // Deliberately no navigation here. An archive that the host
@@ -2212,6 +2508,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 if (happyAgent?.status !== "connected") return;
                 const workspace = happyAgent.session?.workspace;
                 if (!workspace) return;
+                // The shelves keep the projects' own order; a drag inside one
+                // is not an arrangement anybody keeps.
+                if (section.kind !== "bots" && section.kind !== "projects") return;
                 const moved = happyAgentItemParse(move.id).id;
                 const after = move.afterId === null ? null : happyAgentItemParse(move.afterId).id;
                 // A bot's row is addressed by its workspace, so the move the
@@ -2270,6 +2569,74 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               onHideIdleToggle={() => sidebarFilterStore.hideIdleToggle()}
                           />
                       ),
+                  }
+                : {})}
+            {...(props.workspaceTriage
+                ? {
+                      // The shelves are states and the drag is the verb: past
+                      // the top of the active list pins, past its bottom
+                      // settles, and the way back is the same drag reversed.
+                      sectionDropTargets: (sectionId: string) => {
+                          const section = happyAgentSectionParse(sectionId);
+                          if (!section) return {};
+                          const id = section.happyAgentId;
+                          if (section.kind === "projects")
+                              return {
+                                  above: {
+                                      sectionId: happyAgentPinnedSectionId(id),
+                                      verb: "Pin",
+                                      icon: "star" as const,
+                                  },
+                                  below: {
+                                      sectionId: happyAgentSettledSectionId(id),
+                                      verb: "Settle",
+                                      icon: "check-circle" as const,
+                                  },
+                              };
+                          if (section.kind === "pinned")
+                              return {
+                                  below: {
+                                      sectionId: happyAgentSectionId(id),
+                                      verb: "Unpin",
+                                      icon: "star" as const,
+                                  },
+                              };
+                          if (section.kind === "settled")
+                              return {
+                                  above: {
+                                      sectionId: happyAgentSectionId(id),
+                                      verb: "Reopen",
+                                      icon: "history" as const,
+                                  },
+                              };
+                          return {};
+                      },
+                      onItemSectionDrop: (
+                          sectionId: string,
+                          itemId: string,
+                          target: SidebarSectionDrop,
+                      ) => {
+                          const from = happyAgentSectionParse(sectionId);
+                          const to = happyAgentSectionParse(target.sectionId);
+                          const row = happyAgentItemParse(itemId);
+                          if (!from || !to) return;
+                          const key = happyAgentWorkspaceTriageKey(row.happyAgentId, row.id);
+                          if (to.kind === "pinned") workspaceTriageStore.workspacePin(key);
+                          else if (to.kind === "settled") workspaceTriageStore.workspaceSettle(key);
+                          else if (from.kind === "pinned") workspaceTriageStore.workspaceUnpin(key);
+                          else if (from.kind === "settled")
+                              workspaceTriageStore.workspaceReopen(key);
+                      },
+                  }
+                : {})}
+            {...(props.sidebarCollapse
+                ? {
+                      onSectionCollapseToggle: (sectionId: string) => {
+                          // The shelf folds by default, so its toggle is a
+                          // departure from shut, recorded under the section's
+                          // own id beside the rows'.
+                          sidebarCollapseStore.rowCollapseToggle(sectionId, true);
+                      },
                   }
                 : {})}
             sections={sectionsCollapsed(sidebarBuild.sections, sidebarCollapse.collapsed)}
@@ -2507,6 +2874,59 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         shortcut: APP_SHORTCUTS.attentionReadAll,
                         whenEditing: false,
                     },
+                    // The last filing can be taken back while its toast is up.
+                    // Command-Z is left to a text field that has focus, whose
+                    // own undo it is.
+                    ...(workspaceTriage.undo
+                        ? [
+                              {
+                                  run: () => workspaceTriageStore.undo(),
+                                  shortcut: APP_SHORTCUTS.triageUndo,
+                                  whenEditing: false,
+                              },
+                          ]
+                        : []),
+                    ...(addressedTriage && props.workspaceTriage
+                        ? [
+                              {
+                                  run: () => {
+                                      if (addressedTriage.state === "pinned")
+                                          workspaceTriageStore.workspaceUnpin(addressedTriage.key);
+                                      else workspaceTriageStore.workspacePin(addressedTriage.key);
+                                  },
+                                  shortcut: APP_SHORTCUTS.workspacePin,
+                              },
+                              {
+                                  run: () => {
+                                      if (addressedTriage.state === "settled")
+                                          workspaceTriageStore.workspaceReopen(addressedTriage.key);
+                                      else
+                                          workspaceTriageStore.workspaceSettle(addressedTriage.key);
+                                  },
+                                  shortcut: APP_SHORTCUTS.workspaceSettle,
+                              },
+                          ]
+                        : []),
+                    ...(addressedTriage
+                        ? [
+                              {
+                                  run: () => {
+                                      const workspace = active?.session?.workspace;
+                                      if (!workspace || !activeHappyAgentOnline()) return;
+                                      const owner = addressedTriage.owner;
+                                      void (
+                                          owner.worktreeId
+                                              ? workspace.worktreeArchive(
+                                                    owner.project.id,
+                                                    owner.worktreeId,
+                                                )
+                                              : workspace.projectArchive(owner.project.id)
+                                      ).catch(() => undefined);
+                                  },
+                                  shortcut: APP_SHORTCUTS.workspaceArchive,
+                              },
+                          ]
+                        : []),
                     ...(props.shortcutHelp
                         ? [
                               {

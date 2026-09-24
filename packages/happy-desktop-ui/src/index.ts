@@ -261,6 +261,7 @@ export {
     type SidebarProps,
     type SidebarReorder,
     type SidebarSection,
+    type SidebarSectionDrop,
 } from "./Sidebar";
 export { SidebarFooter, type SidebarFooterProps } from "./SidebarFooter";
 export {

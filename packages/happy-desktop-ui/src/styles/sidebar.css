@@ -445,6 +445,63 @@
     opacity: 1;
 }
 
+/* Held past the section's edge: the surface takes the accent so the row reads
+   as leaving, and the verb for where it is going sits at its trailing end. */
+.happy-sidebar__tree-drag-surface[data-crossing] {
+    background: var(--accent-soft, var(--surface-ripple));
+    box-shadow: 0 0 0 1px var(--accent) inset;
+}
+
+.happy-sidebar__tree-drag-badge {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 6px;
+    border-radius: var(--happy-radius-sm);
+    background: var(--accent);
+    color: var(--on-accent, var(--surface));
+    font-family: var(--happy-font-ui);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 14px;
+    white-space: nowrap;
+    transform: translateY(-50%);
+}
+
+/* A section that folds names itself on a control: the label is the disclosure,
+   restyled from the button it has to be back into the label it looks like. */
+.happy-sidebar__section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+}
+
+.happy-sidebar__section-toggle-chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    color: var(--text-secondary);
+}
+
+.happy-sidebar__section-toggle-count {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
 .happy-sidebar__tree-connectors {
     position: absolute;
     /* Tree ink stays above row fills, including selection and the held row. */
