@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import { Icon, type IconName } from "./Icon";
-import { SegmentedControl } from "./SegmentedControl";
 
 /** Which of the sidebar's two lists is up. */
 export type SidebarFilterView = "workspaces" | "attention";
@@ -9,7 +8,7 @@ export interface SidebarFilterBarProps {
     /** Which list the sidebar is showing. */
     readonly view: SidebarFilterView;
     readonly onViewSelect: (view: SidebarFilterView) => void;
-    /** How many conversations are waiting on the reader, worn by the attention segment. */
+    /** How many conversations are waiting on the reader, worn by the attention tab. */
     readonly attentionCount?: number;
     /** Rows with nothing running, waiting, or unread are left out. */
     readonly hideIdle: boolean;
@@ -29,18 +28,20 @@ export interface SidebarFilterBarProps {
  * the workspace list, the two switches that keep it to what is being worked
  * on: leave out idle rows, leave out resting bots.
  *
- * The view switch is a segmented control because the two lists are
- * alternatives of one place, not pages: the attention list is the same
- * sidebar showing only what is waiting, and the screen beside it does not
- * change. The attention segment wears the queue's count, so the reader can
- * see something is waiting without switching to look.
+ * Every control here is laid out on the sidebar row's own grid — the row's
+ * inset, a 16px glyph in the row's 20px slot, the row's 8px gap — so its icon
+ * and label stand on the same vertical lines as the rows above and below it.
+ * A component with its own padding and glyph size cannot be made to do that,
+ * which is why the bar draws its controls itself.
  *
- * The filter switches are pressed-or-not controls rather than a menu, because
- * the reader flips them several times a day and a menu is a trip for
- * something that should be a glance. They apply to the workspace list only,
- * so the attention list does not show them. The bar says how many rows the
- * filters are hiding, so an empty-looking list is never mistaken for an
- * empty list.
+ * The two lists are tabs: alternatives of one place, told apart by weight,
+ * because the attention list is the same sidebar showing only what is waiting
+ * and the screen beside it does not change. The attention tab wears the
+ * queue's count, so the reader sees something is waiting without switching
+ * to look. The filters are pressed-or-not switches, told apart by fill and a
+ * check, and they apply to the workspace list only, so the attention list
+ * does not show them. The bar says how many rows the filters are hiding, so
+ * an empty-looking list is never mistaken for an empty list.
  */
 export function SidebarFilterBar(props: SidebarFilterBarProps) {
     const hidden = props.hiddenCount ?? 0;
@@ -55,23 +56,24 @@ export function SidebarFilterBar(props: SidebarFilterBarProps) {
             aria-label="Sidebar filters"
             style={props.style}
         >
-            <div className="happy-sidebar-filter-bar__view">
-                <SegmentedControl
-                    aria-label="Sidebar list"
-                    fullWidth
-                    onChange={(value) =>
-                        props.onViewSelect(value === "attention" ? "attention" : "workspaces")
-                    }
-                    segments={[
-                        { icon: "branch", label: "Workspaces", value: "workspaces" },
-                        {
-                            icon: "bell",
-                            label: waiting > 0 ? `Attention · ${waiting}` : "Attention",
-                            value: "attention",
-                        },
-                    ]}
-                    size="small"
-                    value={props.view}
+            <div
+                className="happy-sidebar-filter-bar__view"
+                role="tablist"
+                aria-label="Sidebar list"
+            >
+                <ViewTab
+                    icon="branch"
+                    label="Workspaces"
+                    onSelect={() => props.onViewSelect("workspaces")}
+                    selected={props.view === "workspaces"}
+                    view="workspaces"
+                />
+                <ViewTab
+                    icon="bell"
+                    label={waiting > 0 ? `Attention · ${waiting}` : "Attention"}
+                    onSelect={() => props.onViewSelect("attention")}
+                    selected={props.view === "attention"}
+                    view="attention"
                 />
             </div>
             {props.view === "workspaces" ? (
@@ -114,6 +116,33 @@ export function SidebarFilterBar(props: SidebarFilterBarProps) {
     );
 }
 
+interface ViewTabProps {
+    readonly icon: IconName;
+    readonly label: string;
+    readonly onSelect: () => void;
+    readonly selected: boolean;
+    readonly view: SidebarFilterView;
+}
+
+/** One of the two lists, named on the row grid; the one that is up is the heavier. */
+function ViewTab(props: ViewTabProps) {
+    return (
+        <button
+            aria-selected={props.selected}
+            className="happy-sidebar-filter-bar__tab"
+            data-view={props.view}
+            onClick={props.onSelect}
+            role="tab"
+            type="button"
+        >
+            <span className="happy-sidebar-filter-bar__slot">
+                <Icon name={props.icon} size={16} />
+            </span>
+            <span className="happy-sidebar-filter-bar__label">{props.label}</span>
+        </button>
+    );
+}
+
 interface FilterSwitchProps {
     readonly filter: "idle" | "bots";
     readonly icon: IconName;
@@ -126,10 +155,7 @@ interface FilterSwitchProps {
 /**
  * One switch, named for what pressing it does. A pressed switch swaps its
  * glyph for a check, so "Hide idle" with a check reads as a rule in force
- * rather than a category on offer. It is laid out on the sidebar row's own
- * grid — the row's inset, a 16px glyph in the row's 20px slot, the row's 8px
- * gap — so its icon and label fall on the same vertical lines as the rows
- * above and below it.
+ * rather than a category on offer.
  */
 function FilterSwitch(props: FilterSwitchProps) {
     return (
@@ -141,10 +167,10 @@ function FilterSwitch(props: FilterSwitchProps) {
             title={props.title}
             type="button"
         >
-            <span className="happy-sidebar-filter-bar__switch-icon">
+            <span className="happy-sidebar-filter-bar__slot">
                 <Icon name={props.pressed ? "check" : props.icon} size={16} />
             </span>
-            <span className="happy-sidebar-filter-bar__switch-label">{props.label}</span>
+            <span className="happy-sidebar-filter-bar__label">{props.label}</span>
         </button>
     );
 }

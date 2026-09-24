@@ -1,13 +1,15 @@
 /*
- * The sidebar's filter bar: two pressed-or-not switches and, when they are
+ * The sidebar's filter bar: the two tabs that choose which list is up, and
+ * under the workspace list, two pressed-or-not switches and, when they are
  * hiding anything, a count. It sits between the pinned rows and the sections,
  * on the same inset as the rows, so it reads as part of the list it filters.
  *
- * Each switch is built on the sidebar row's grid — the row's own horizontal
- * padding, a 16px glyph, an 8px gap to the label — so its icon and label
- * stand on the same vertical lines as the rows above and below it. A button
- * component brings its own padding, glyph size, and gap, and none of those
- * are the row's, which is why the switches are not buttons.
+ * Every control is built on the sidebar row's grid — the row's own horizontal
+ * padding, a 20px slot with a 16px glyph centred in it, an 8px gap to the
+ * label — so its icon and label stand on the same vertical lines as the rows
+ * above and below it, and as each other. A button or segmented control brings
+ * its own padding, glyph size, and gap, and none of those are the row's,
+ * which is why the bar's controls are drawn here.
  *
  * Layout is flexbox; colors and type come from theme roles.
  */
@@ -15,21 +17,13 @@
 .happy-sidebar-filter-bar {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 2px;
     box-sizing: border-box;
     width: 100%;
     padding: 2px 0 4px;
 }
 
-/* The view switch sits on the row inset, the full width of the list it
-   switches, so its two segments read as the two lists' headings. */
-.happy-sidebar-filter-bar__view {
-    display: flex;
-    box-sizing: border-box;
-    width: 100%;
-    padding: 0 var(--happy-panel-row-padding, 10px);
-}
-
+.happy-sidebar-filter-bar__view,
 .happy-sidebar-filter-bar__filters {
     display: flex;
     align-items: center;
@@ -37,6 +31,9 @@
     width: 100%;
 }
 
+/* ---- The shared row grid ---------------------------------------------- */
+
+.happy-sidebar-filter-bar__tab,
 .happy-sidebar-filter-bar__switch {
     display: flex;
     flex: none;
@@ -62,15 +59,42 @@
         color 120ms ease;
 }
 
+.happy-sidebar-filter-bar__tab:hover,
 .happy-sidebar-filter-bar__switch:hover {
     background: var(--surface-ripple);
     color: var(--text);
 }
 
+.happy-sidebar-filter-bar__tab:focus-visible,
 .happy-sidebar-filter-bar__switch:focus-visible {
     outline: 2px solid var(--surface-selected);
     outline-offset: -2px;
 }
+
+/* The row's leading lane is a 20px slot with the glyph centred in it. */
+.happy-sidebar-filter-bar__slot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 16px;
+}
+
+.happy-sidebar-filter-bar__label {
+    white-space: nowrap;
+}
+
+/* ---- Tabs: told apart by weight --------------------------------------- */
+
+/* The list that is up is the full-strength, heavier name; the other is the
+   quieter one. No fill, so a tab never looks like a pressed switch. */
+.happy-sidebar-filter-bar__tab[aria-selected="true"] {
+    color: var(--text);
+    font-weight: 600;
+}
+
+/* ---- Switches: told apart by fill ------------------------------------- */
 
 /* A switch in force is filled like a pressed control, and its label is the
    full-strength text: the rule is on, and the bar says so at a glance. */
@@ -81,22 +105,6 @@
 
 .happy-sidebar-filter-bar__switch[aria-pressed="true"]:hover {
     background-image: linear-gradient(var(--surface-ripple), var(--surface-ripple));
-}
-
-/* The row's leading lane is a 20px slot with the glyph centred in it, so the
-   switch keeps the same slot: glyph and label then land exactly where a row's
-   do. */
-.happy-sidebar-filter-bar__switch-icon {
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 16px;
-}
-
-.happy-sidebar-filter-bar__switch-label {
-    white-space: nowrap;
 }
 
 .happy-sidebar-filter-bar__count {
