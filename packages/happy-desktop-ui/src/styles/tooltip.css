@@ -47,6 +47,15 @@
     --happy-tooltip-rise: 3px;
 }
 
+/* The chord, when the bubble names one, stands after the words with a
+   breath between; the cap is the same cap the palette and buttons wear. */
+.happy-tooltip__shortcut {
+    display: flex;
+    flex: none;
+    align-items: center;
+    margin-left: 8px;
+}
+
 /* The bubble is an overlay that intentionally leaves the flow: the trigger's
    row must measure exactly as it does with no tooltip at all. It is also
    centered on the trigger rather than on any sibling, which is a translation by

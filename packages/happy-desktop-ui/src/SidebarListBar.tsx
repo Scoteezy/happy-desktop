@@ -1,6 +1,8 @@
 import { useState, type CSSProperties } from "react";
 import { Icon } from "./Icon";
+import type { KeyboardShortcut } from "./keyboardShortcut";
 import { TextField } from "./TextField";
+import { Tooltip } from "./Tooltip";
 
 /** Which of the sidebar's two lists is up. */
 export type SidebarListView = "workspaces" | "attention";
@@ -11,6 +13,10 @@ export interface SidebarListBarProps {
     readonly onViewSelect: (view: SidebarListView) => void;
     /** How many conversations are waiting on the reader, worn by the bell. */
     readonly attentionCount?: number;
+    /** The chord that does what the bell does, shown on its tooltip. */
+    readonly attentionShortcut?: KeyboardShortcut;
+    /** The chord that opens the search, shown on its tooltip. */
+    readonly searchShortcut?: KeyboardShortcut;
     /** Whether the bar has become the search field. */
     readonly searchOpen: boolean;
     readonly searchQuery: string;
@@ -68,45 +74,60 @@ export function SidebarListBar(props: SidebarListBarProps) {
                 {props.view === "attention" ? "Attention" : "Workspaces"}
             </span>
             <div className="happy-sidebar-list-bar__controls">
-                <button
-                    aria-label="Search sessions"
-                    className="happy-sidebar-list-bar__control"
-                    data-control="search"
-                    onClick={props.onSearchOpen}
-                    title="Search sessions"
-                    type="button"
+                {/* Each control explains itself on hover with its words and its
+                    chord, the way the palette does, so the chord is learned
+                    where the control is rather than from a sheet. */}
+                <Tooltip
+                    label="Search sessions"
+                    {...(props.searchShortcut ? { shortcut: props.searchShortcut } : {})}
                 >
-                    <Icon name="search" size={16} />
-                </button>
-                <button
-                    aria-label={
-                        props.view === "attention"
-                            ? "Show every workspace"
-                            : waiting > 0
-                              ? `Show what needs you (${String(waiting)})`
-                              : "Show what needs you"
-                    }
-                    aria-pressed={props.view === "attention"}
-                    className="happy-sidebar-list-bar__control"
-                    data-control="attention"
-                    onClick={() =>
-                        props.onViewSelect(props.view === "attention" ? "workspaces" : "attention")
-                    }
-                    title={
+                    <button
+                        aria-keyshortcuts={props.searchShortcut?.aria}
+                        aria-label="Search sessions"
+                        className="happy-sidebar-list-bar__control"
+                        data-control="search"
+                        onClick={props.onSearchOpen}
+                        type="button"
+                    >
+                        <Icon name="search" size={16} />
+                    </button>
+                </Tooltip>
+                <Tooltip
+                    label={
                         props.view === "attention" ? "Show every workspace" : "Show what needs you"
                     }
-                    type="button"
+                    {...(props.attentionShortcut ? { shortcut: props.attentionShortcut } : {})}
                 >
-                    <Icon name="bell" size={16} />
-                    {waiting > 0 ? (
-                        <span
-                            className="happy-sidebar-list-bar__count"
-                            data-happy-desktop-ui="sidebar-list-bar-count"
-                        >
-                            {waiting > 99 ? "99+" : String(waiting)}
-                        </span>
-                    ) : null}
-                </button>
+                    <button
+                        aria-keyshortcuts={props.attentionShortcut?.aria}
+                        aria-label={
+                            props.view === "attention"
+                                ? "Show every workspace"
+                                : waiting > 0
+                                  ? `Show what needs you (${String(waiting)})`
+                                  : "Show what needs you"
+                        }
+                        aria-pressed={props.view === "attention"}
+                        className="happy-sidebar-list-bar__control"
+                        data-control="attention"
+                        onClick={() =>
+                            props.onViewSelect(
+                                props.view === "attention" ? "workspaces" : "attention",
+                            )
+                        }
+                        type="button"
+                    >
+                        <Icon name="bell" size={16} />
+                        {waiting > 0 ? (
+                            <span
+                                className="happy-sidebar-list-bar__count"
+                                data-happy-desktop-ui="sidebar-list-bar-count"
+                            >
+                                {waiting > 99 ? "99+" : String(waiting)}
+                            </span>
+                        ) : null}
+                    </button>
+                </Tooltip>
             </div>
             {fieldShown ? (
                 <div

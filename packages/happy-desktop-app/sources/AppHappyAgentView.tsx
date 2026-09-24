@@ -2770,6 +2770,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       bodyAccessory: (
                           <SidebarListBar
                               attentionCount={attentionItems.length}
+                              attentionShortcut={APP_SHORTCUTS.attentionToggle}
+                              searchShortcut={APP_SHORTCUTS.sidebarSearch}
                               onSearchClose={() => sidebarViewStore.searchClose()}
                               onSearchOpen={() => sidebarViewStore.searchOpen()}
                               onSearchQueryUpdate={(value) =>
@@ -3056,6 +3058,20 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     // the next waiting conversation may be on any machine and
                     // in any workspace, so the jump is offered from every route.
                     { run: attentionJump, shortcut: APP_SHORTCUTS.attentionNext },
+                    // The bell and the search are the sidebar bar's two
+                    // controls, and their chords reach them from any route.
+                    ...(props.sidebarView
+                        ? [
+                              {
+                                  run: () => sidebarViewStore.viewToggle(),
+                                  shortcut: APP_SHORTCUTS.attentionToggle,
+                              },
+                              {
+                                  run: () => sidebarViewStore.searchOpen(),
+                                  shortcut: APP_SHORTCUTS.sidebarSearch,
+                              },
+                          ]
+                        : []),
                     {
                         run: attentionReadAll,
                         shortcut: APP_SHORTCUTS.attentionReadAll,

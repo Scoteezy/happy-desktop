@@ -34,6 +34,10 @@ export const APP_SHORTCUTS = {
     triageUndo: commandShortcut("z"),
     /** Opens the sheet that lists every chord here. */
     shortcutHelp: commandShortcut("/"),
+    /** The sidebar's bell: the attention list on, or back to every workspace. */
+    attentionToggle: commandShortcut("u", { alt: true }),
+    /** The sidebar's search, taking its bar. */
+    sidebarSearch: commandShortcut("f", { shift: true }),
 } as const;
 
 /** What each chord does, for the sheet that lists them. */
@@ -45,6 +49,8 @@ export const APP_SHORTCUT_GROUPS: readonly {
         label: "Navigate",
         rows: [
             { label: "Command palette", keys: "paletteOpen" },
+            { label: "Show what needs you, or every workspace", keys: "attentionToggle" },
+            { label: "Search sessions", keys: "sidebarSearch" },
             { label: "Next conversation needing you", keys: "attentionNext" },
             { label: "Mark everything read", keys: "attentionReadAll" },
             { label: "Walk recent conversations", keys: "recentNext" },
