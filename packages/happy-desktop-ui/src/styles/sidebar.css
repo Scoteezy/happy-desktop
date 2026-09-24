@@ -940,6 +940,52 @@
     vertical-align: top;
 }
 
+/*
+ * A row with a second line: the name, and under it where the conversation
+ * lives. It stands taller than a one-line row, and its two lines are stacked
+ * in one column that takes the label's place in the row, so the trailing lane
+ * still ranges against the same edge. The place line is smaller and quieter,
+ * with a glyph the size of its own text, so it reads as a caption to the name.
+ */
+.happy-sidebar__item[data-sublabel] {
+    height: 46px;
+}
+
+.happy-sidebar__item-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.happy-sidebar__item-text .happy-sidebar__item-label {
+    flex: none;
+}
+
+.happy-sidebar__item-sublabel {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 14px;
+}
+
+.happy-sidebar__item-sublabel-icon {
+    display: flex;
+    flex: none;
+    align-items: center;
+}
+
+.happy-sidebar__item-sublabel-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .happy-sidebar__item[data-active] .happy-sidebar__item-label {
     font-weight: 600;
 }

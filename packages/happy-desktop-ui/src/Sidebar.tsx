@@ -101,6 +101,13 @@ export type SidebarItem = {
     label: string;
     /** Whether a busy or creating row shimmers its label. Defaults to true. */
     labelShimmer?: boolean;
+    /**
+     * A second line under the name saying where the row's conversation lives,
+     * with a glyph for the kind of place. A row with one stands taller and,
+     * unless it also names an icon or context avatars, carries no leading mark:
+     * the place line is what identifies it.
+     */
+    sublabel?: { icon?: IconName; text: string };
     meta?: string;
     /**
      * A control at the trailing edge of the row, reported through
@@ -428,6 +435,7 @@ function leadingIcon(item: SidebarItem): IconName {
  */
 function showsLeadingSlot(item: SidebarItem): boolean {
     if (item.contextAvatars?.length) return true;
+    if (item.sublabel !== undefined) return item.icon !== undefined || item.emoji !== undefined;
     if ((item.depth ?? 0) === 0) return true;
     if (item.kind === "person" || item.kind === "agent" || item.kind === "project") return true;
     return item.icon !== undefined || item.emoji !== undefined;
@@ -1217,6 +1225,7 @@ function SidebarRow({
             className={["happy-sidebar__item", props.className].filter(Boolean).join(" ")}
             data-active={props.active ? "" : undefined}
             data-archived={item().archived ? "" : undefined}
+            data-sublabel={item().sublabel !== undefined ? "" : undefined}
             /* Both are needed and neither implies the other: a row that folds is
                styled as one whether it is open or shut, and a row still says it
                is shut while the pointer is elsewhere. */
@@ -1353,21 +1362,55 @@ function SidebarRow({
                     {foldControl()}
                 </span>
             ) : null}
-            <span className="happy-sidebar__item-label" data-happy-desktop-ui="sidebar-item-label">
-                {/* The row's own colour, with a near-white band wiping through
+            {((label) =>
+                item().sublabel === undefined ? (
+                    label
+                ) : (
+                    /* The name and, under it, the place: one column standing
+                       where the label alone would, so the trailing lane keeps
+                       its edge. */
+                    <span
+                        className="happy-sidebar__item-text"
+                        data-happy-desktop-ui="sidebar-item-text"
+                    >
+                        {label}
+                        <span
+                            className="happy-sidebar__item-sublabel"
+                            data-happy-desktop-ui="sidebar-item-sublabel"
+                        >
+                            {item().sublabel?.icon !== undefined ? (
+                                <span
+                                    aria-hidden="true"
+                                    className="happy-sidebar__item-sublabel-icon"
+                                >
+                                    <Icon name={item().sublabel!.icon!} size={12} />
+                                </span>
+                            ) : null}
+                            <span className="happy-sidebar__item-sublabel-text">
+                                {item().sublabel?.text}
+                            </span>
+                        </span>
+                    </span>
+                ))(
+                <span
+                    className="happy-sidebar__item-label"
+                    data-happy-desktop-ui="sidebar-item-label"
+                >
+                    {/* The row's own colour, with a near-white band wiping through
                         it. Busy is a passing state, so it may not restyle the name:
                         an unread row is already heavier and darker than its
                         neighbours, and painting the name again here would stack a
                         second emphasis on top of one the row had already earned.
                         Only the travelling band is new. */}
-                {shimmerLabel() ? (
-                    <ShimmerText sweep="sheen" tone="inherit">
-                        {item().label}
-                    </ShimmerText>
-                ) : (
-                    item().label
-                )}
-            </span>
+                    {shimmerLabel() ? (
+                        <ShimmerText sweep="sheen" tone="inherit">
+                            {item().label}
+                        </ShimmerText>
+                    ) : (
+                        item().label
+                    )}
+                </span>,
+            )}
             {props.shortcut ? (
                 <KeyCap
                     className="happy-sidebar__item-shortcut"

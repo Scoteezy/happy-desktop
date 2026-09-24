@@ -37,6 +37,8 @@ import type {
     HappyAgentPermissionMode,
     HappyAgentProfileStore,
     HappyAgentAttentionItem,
+    HappyAgentRecentDay,
+    HappyAgentRecentItem,
     HappyAgentInboxStore,
     HappyAgentSidebarCollapseSnapshot,
     HappyAgentSidebarFilterSnapshot,
@@ -81,6 +83,7 @@ import {
     experimentsStoreNoop,
     happyAgentAttentionNext,
     happyAgentAttentionProject,
+    happyAgentRecentProject,
     happyAgentInboxStoreNoop,
     happyAgentNavigationOrderApply,
     happyAgentSidebarFilterStoreNoop,
@@ -1562,6 +1565,8 @@ interface SidebarView {
     readonly triage: HappyAgentWorkspaceTriageSnapshot;
     /** Every conversation waiting on the person, in the order to work through them. */
     readonly attention: readonly HappyAgentAttentionItem[];
+    /** Every other conversation, newest first, cut into days. */
+    readonly recent: readonly HappyAgentRecentDay[];
     readonly now: number;
 }
 
@@ -1611,7 +1616,7 @@ function happyAgentSections(
     // The attention list is the other thing this sidebar can be: the same
     // column, showing only what is waiting, with the filters standing down.
     if (view.filter.view === "attention")
-        return { sections: happyAgentAttentionSections(view.attention), hidden: 0 };
+        return { sections: happyAgentAttentionSections(view), hidden: 0 };
     let hidden = 0;
     const count = (rows: number): void => {
         hidden += rows;
@@ -1658,106 +1663,125 @@ function happyAgentSections(
     return { sections, hidden };
 }
 
-const ATTENTION_SECTION_BLOCKED = "attention:blocked";
-const ATTENTION_SECTION_FINISHED = "attention:finished";
-const ATTENTION_SECTION_EMPTY = "attention:empty";
+const ATTENTION_SECTION_PRIORITY = "attention:priority";
+const RECENT_SECTION_PREFIX = "recent:";
+/** The id prefix of a row in the recents part of the attention list. */
+const RECENT_ROW_PREFIX = "recent:";
 
 /**
- * The attention list as sidebar sections: what an agent is blocked on first,
- * then what has finished and not been read, each row wearing the face of the
- * place it happened in.
+ * The attention list as sidebar sections: what is waiting on the person
+ * first, under "Priority", and then everything else newest first, cut into
+ * days — what the reader was doing across every project and machine. Rows
+ * are the same shape in both parts: the conversation's name over the place
+ * it lives in. Priority rows are keyed by the queue item's own key, so a row
+ * and the chord that walks the same queue name one conversation the same way.
  */
-function happyAgentAttentionSections(items: readonly HappyAgentAttentionItem[]): SidebarSection[] {
-    if (items.length === 0)
-        return [
-            {
-                empty: {
-                    description: "When an agent stops for you, or finishes a turn, it waits here.",
-                    icon: "check-circle",
-                    title: "Nothing needs you",
-                },
-                id: ATTENTION_SECTION_EMPTY,
-                items: [],
-                label: "Attention",
-            },
-        ];
-    const blocked = items.filter((item) => item.reason === "attention_needed");
-    const finished = items.filter((item) => item.reason === "turn_finished");
+function happyAgentAttentionSections(view: SidebarView): SidebarSection[] {
     return [
-        ...(blocked.length > 0
-            ? [
-                  {
-                      id: ATTENTION_SECTION_BLOCKED,
-                      items: blocked.map(attentionSidebarItem),
-                      label: `Needs an answer · ${blocked.length}`,
-                  },
-              ]
-            : []),
-        ...(finished.length > 0
-            ? [
-                  {
-                      id: ATTENTION_SECTION_FINISHED,
-                      items: finished.map(attentionSidebarItem),
-                      label: `Finished · ${finished.length}`,
-                  },
-              ]
-            : []),
+        {
+            id: ATTENTION_SECTION_PRIORITY,
+            label: "Priority",
+            items: view.attention.map(attentionSidebarItem),
+            ...(view.attention.length === 0
+                ? { empty: { description: "Nothing needs attention" } }
+                : {}),
+        },
+        ...view.recent.map((day) => ({
+            id: `${RECENT_SECTION_PREFIX}${String(day.dayStart)}`,
+            label: recentDayLabel(day.dayStart, view.now),
+            items: day.items.map(recentSidebarItem),
+        })),
     ];
+}
+
+/** "Today", "Yesterday", a weekday within the week, and a date beyond it. */
+function recentDayLabel(dayStart: number, now: number): string {
+    const today = new Date(now).setHours(0, 0, 0, 0);
+    const daysAgo = Math.round((today - dayStart) / 86_400_000);
+    if (daysAgo <= 0) return "Today";
+    if (daysAgo === 1) return "Yesterday";
+    const date = new Date(dayStart);
+    if (daysAgo < 7) return date.toLocaleDateString(undefined, { weekday: "long" });
+    return date.toLocaleDateString(undefined, {
+        day: "numeric",
+        month: "short",
+        ...(date.getFullYear() === new Date(now).getFullYear() ? {} : { year: "numeric" }),
+    });
 }
 
 function attentionSidebarItem(item: HappyAgentAttentionItem): SidebarItem {
     const time = attentionItemTime(item.since);
     return {
-        contextAvatars: [attentionPlaceFace(item.place)],
-        icon: "chat",
         id: `${ATTENTION_ROW_PREFIX}${item.key}`,
         kind: "channel",
         label: item.title,
+        reorderable: false,
+        sublabel: attentionPlaceSublabel(item.place),
         ...(time === undefined ? {} : { meta: time }),
         ...(item.reason === "attention_needed" ? { status: "waiting" as const } : { unread: true }),
     };
 }
 
-/** The small face of the place a waiting conversation lives in. */
-function attentionPlaceFace(
-    place: HappyAgentAttentionItem["place"],
-): NonNullable<SidebarItem["contextAvatars"]>[number] {
-    if (place.kind === "bot" || place.kind === "subtask")
-        return {
-            id: place.botId,
-            label: `Bot: ${place.botName}`,
-            avatarId: place.botId,
-            ...(place.botAvatarUrl ? { imageUrl: place.botAvatarUrl } : {}),
-        };
+function recentSidebarItem(item: HappyAgentRecentItem): SidebarItem {
     return {
-        id: place.projectId,
-        label: `Project: ${place.projectName}`,
-        initials: place.projectName.slice(0, 1).toUpperCase(),
-        ...(place.home ? { icon: "home" as const } : {}),
-        ...(place.projectAvatarUrl ? { imageUrl: place.projectAvatarUrl } : {}),
+        id: `${RECENT_ROW_PREFIX}${item.key}`,
+        kind: "channel",
+        label: item.title,
+        reorderable: false,
+        sublabel: attentionPlaceSublabel(item.place),
+        ...(item.activity === "running"
+            ? { status: "working" as const }
+            : item.activity === "awaitingInput"
+              ? { status: "waiting" as const }
+              : {}),
     };
 }
 
-/** The queue item an attention row stands for, or nothing for any other row. */
-function attentionItemOf(
-    items: readonly HappyAgentAttentionItem[],
-    rowId: string,
-): HappyAgentAttentionItem | undefined {
-    if (!rowId.startsWith(ATTENTION_ROW_PREFIX)) return undefined;
-    const key = rowId.slice(ATTENTION_ROW_PREFIX.length);
-    return items.find((item) => item.key === key);
+/** The place a conversation lives in, as the caption under its name. */
+function attentionPlaceSublabel(
+    place: HappyAgentAttentionItem["place"],
+): NonNullable<SidebarItem["sublabel"]> {
+    switch (place.kind) {
+        case "bot":
+        case "subtask":
+            return { icon: "agents", text: place.botName };
+        case "project":
+            return { icon: place.home ? "home" : "files", text: place.projectName };
+        case "workspace":
+            return { icon: "branch", text: `${place.projectName} / ${place.worktreeName}` };
+    }
 }
 
-/** The attention row for the addressed conversation, or none when it is not waiting. */
-function attentionActiveRowId(
-    items: readonly HappyAgentAttentionItem[],
+/** The conversation a priority or recents row stands for, or nothing for any other row. */
+function conversationRowOf(
+    view: SidebarView,
+    rowId: string,
+): HappyAgentAttentionItem | HappyAgentRecentItem | undefined {
+    if (rowId.startsWith(ATTENTION_ROW_PREFIX)) {
+        const key = rowId.slice(ATTENTION_ROW_PREFIX.length);
+        return view.attention.find((item) => item.key === key);
+    }
+    if (rowId.startsWith(RECENT_ROW_PREFIX)) {
+        const key = rowId.slice(RECENT_ROW_PREFIX.length);
+        for (const day of view.recent) {
+            const item = day.items.find((entry) => entry.key === key);
+            if (item) return item;
+        }
+    }
+    return undefined;
+}
+
+/** The row for the addressed conversation in the attention list, or none. */
+function conversationActiveRowId(
+    view: SidebarView,
     happyAgentId: string,
     sessionId: string | undefined,
 ): string {
-    const item = items.find(
-        (entry) => entry.happyAgentId === happyAgentId && entry.sessionId === sessionId,
-    );
-    return item ? `${ATTENTION_ROW_PREFIX}${item.key}` : "";
+    const key = `${happyAgentId}/${sessionId ?? ""}`;
+    if (view.attention.some((item) => item.key === key)) return `${ATTENTION_ROW_PREFIX}${key}`;
+    for (const day of view.recent)
+        if (day.items.some((item) => item.key === key)) return `${RECENT_ROW_PREFIX}${key}`;
+    return "";
 }
 
 /**
@@ -2242,6 +2266,17 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             questions: happyAgent.id === active?.id ? inbox.pending : [],
         })),
     );
+    // Everything else, newest first, for the same list: what the reader was
+    // doing across every project and machine. What the queue already lists is
+    // left out, so a conversation stands in one place at a time.
+    const recentDays = happyAgentRecentProject(
+        directory.happyAgents.map((happyAgent) => ({
+            happyAgentId: happyAgent.id,
+            projects: happyAgent.projects,
+            bots: happyAgent.bots,
+        })),
+        { exclude: new Set(attentionItems.map((item) => item.key)) },
+    );
     const attentionJump = () => {
         const next = happyAgentAttentionNext(attentionItems, {
             happyAgentId: props.happyAgentId,
@@ -2321,6 +2356,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         filter: sidebarFilter,
         triage: workspaceTriage,
         attention: attentionItems,
+        recent: recentDays,
         now: Date.now(),
         address: {
             happyAgentId: props.happyAgentId,
@@ -2344,7 +2380,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             )}
             activeItemId={
                 sidebarFilter.view === "attention"
-                    ? attentionActiveRowId(attentionItems, props.happyAgentId, props.chatId)
+                    ? conversationActiveRowId(sidebarView, props.happyAgentId, props.chatId)
                     : props.groupId
                       ? happyAgentItemId(
                             props.happyAgentId,
@@ -2414,6 +2450,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     return [
                         { icon: "check", id: ROW_MENU_READ, kind: "item", label: "Mark as read" },
                     ];
+                if (item.id.startsWith(RECENT_ROW_PREFIX)) return [];
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (happyAgent?.status !== "connected") return [];
@@ -2459,7 +2496,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             }}
             onItemMenuSelect={(item, actionId) => {
                 if (item.id.startsWith(ATTENTION_ROW_PREFIX)) {
-                    const entry = attentionItemOf(attentionItems, item.id);
+                    const entry = conversationRowOf(sidebarView, item.id);
                     if (entry && actionId === ROW_MENU_READ)
                         happyAgentOf(entry.happyAgentId)?.session?.workspace.conversationRead(
                             entry.sessionId,
@@ -2533,8 +2570,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             onItemSelect={(id) => {
                 // An attention row is a conversation on whichever machine
                 // holds it; selecting it is the same act as the jump chord.
-                if (id.startsWith(ATTENTION_ROW_PREFIX)) {
-                    const item = attentionItemOf(attentionItems, id);
+                if (id.startsWith(ATTENTION_ROW_PREFIX) || id.startsWith(RECENT_ROW_PREFIX)) {
+                    const item = conversationRowOf(sidebarView, id);
                     if (item) props.onChatSelect(item.happyAgentId, item.groupId, item.sessionId);
                     return;
                 }

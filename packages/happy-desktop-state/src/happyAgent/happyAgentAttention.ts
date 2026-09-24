@@ -131,38 +131,7 @@ export function happyAgentAttentionProject(
                 ...(question === undefined ? {} : { question }),
             });
         };
-        for (const project of source.projects) {
-            const projectPlace = {
-                projectId: project.id,
-                projectName: project.name,
-                ...(project.avatar ? { projectAvatarUrl: project.avatar.url } : {}),
-                home: project.kind === "home",
-            };
-            for (const conversation of project.conversations)
-                push(conversation, project.id, { kind: "project", ...projectPlace });
-            for (const worktree of project.worktrees)
-                for (const conversation of worktree.conversations)
-                    push(conversation, worktree.id, {
-                        kind: "workspace",
-                        ...projectPlace,
-                        worktreeName: worktree.name,
-                    });
-        }
-        for (const bot of source.bots) {
-            const botPlace = {
-                botId: bot.id,
-                botName: bot.name,
-                ...(bot.avatar ? { botAvatarUrl: bot.avatar.url } : {}),
-            };
-            push(bot.conversation, bot.workspaceId, { kind: "bot", ...botPlace });
-            const visit = (tasks: readonly HappyAgentBotSubtask[]): void => {
-                for (const task of tasks) {
-                    push(task.conversation, task.workspaceId, { kind: "subtask", ...botPlace });
-                    visit(task.subtasks);
-                }
-            };
-            visit(bot.subtasks);
-        }
+        sourceConversationsVisit(source, push);
     }
     return items.sort(attentionCompare);
 }
@@ -195,4 +164,127 @@ export function happyAgentAttentionNext(
     );
     if (index === -1) return items[0];
     return items[(index + 1) % items.length];
+}
+
+/** Every conversation one machine holds, with the group and place each lives in. */
+function sourceConversationsVisit(
+    source: {
+        readonly projects: readonly HappyAgentProjectGroup[];
+        readonly bots: readonly HappyAgentBot[];
+    },
+    visit: (
+        conversation: ConversationSummary,
+        groupId: string,
+        place: HappyAgentAttentionPlace,
+    ) => void,
+): void {
+    for (const project of source.projects) {
+        const projectPlace = {
+            projectId: project.id,
+            projectName: project.name,
+            ...(project.avatar ? { projectAvatarUrl: project.avatar.url } : {}),
+            home: project.kind === "home",
+        };
+        for (const conversation of project.conversations)
+            visit(conversation, project.id, { kind: "project", ...projectPlace });
+        for (const worktree of project.worktrees)
+            for (const conversation of worktree.conversations)
+                visit(conversation, worktree.id, {
+                    kind: "workspace",
+                    ...projectPlace,
+                    worktreeName: worktree.name,
+                });
+    }
+    for (const bot of source.bots) {
+        const botPlace = {
+            botId: bot.id,
+            botName: bot.name,
+            ...(bot.avatar ? { botAvatarUrl: bot.avatar.url } : {}),
+        };
+        visit(bot.conversation, bot.workspaceId, { kind: "bot", ...botPlace });
+        const tasks = (list: readonly HappyAgentBotSubtask[]): void => {
+            for (const task of list) {
+                visit(task.conversation, task.workspaceId, { kind: "subtask", ...botPlace });
+                tasks(task.subtasks);
+            }
+        };
+        tasks(bot.subtasks);
+    }
+}
+
+/** One conversation in the recents list, by when it was last touched. */
+export interface HappyAgentRecentItem {
+    /** `${happyAgentId}/${sessionId}`: the same key the attention queue uses for the row. */
+    readonly key: string;
+    readonly happyAgentId: string;
+    readonly sessionId: HappyAgentSessionId;
+    readonly groupId: HappyAgentGroupId;
+    readonly title: string;
+    readonly updatedAt: number;
+    readonly activity: ConversationSummary["activity"];
+    readonly place: HappyAgentAttentionPlace;
+}
+
+/** One calendar day of the recents list, newest conversation first. */
+export interface HappyAgentRecentDay {
+    /** Local midnight that starts the day, so the surface can name it. */
+    readonly dayStart: number;
+    readonly items: readonly HappyAgentRecentItem[];
+}
+
+/** Everything one machine contributes to the recents list. */
+export interface HappyAgentRecentSource {
+    readonly happyAgentId: string;
+    readonly projects: readonly HappyAgentProjectGroup[];
+    readonly bots: readonly HappyAgentBot[];
+}
+
+export interface HappyAgentRecentOptions {
+    /** Conversations whose key is here are left out: what the attention queue already lists. */
+    readonly exclude?: ReadonlySet<string>;
+    /** How many conversations to keep, newest first. Sixty is a sidebar's worth. */
+    readonly limit?: number;
+}
+
+/**
+ * The recents list: every conversation across the given machines, newest
+ * first, cut into local calendar days. It is the sidebar's answer to "what
+ * was I doing" across projects rather than inside one, so a chat on another
+ * machine or under a bot stands in the same column as one in the open
+ * project. Like the attention queue it is a projection of state the window
+ * already holds, derived at render time.
+ */
+export function happyAgentRecentProject(
+    sources: readonly HappyAgentRecentSource[],
+    options: HappyAgentRecentOptions = {},
+): readonly HappyAgentRecentDay[] {
+    const exclude = options.exclude;
+    const limit = options.limit ?? 60;
+    const items: HappyAgentRecentItem[] = [];
+    for (const source of sources)
+        sourceConversationsVisit(source, (conversation, groupId, place) => {
+            const key = `${source.happyAgentId}/${conversation.id}`;
+            if (exclude?.has(key)) return;
+            items.push({
+                key,
+                happyAgentId: source.happyAgentId,
+                sessionId: conversation.id as HappyAgentSessionId,
+                groupId: groupId as HappyAgentGroupId,
+                title: conversation.title,
+                updatedAt: conversation.updatedAt,
+                activity: conversation.activity,
+                place,
+            });
+        });
+    items.sort(
+        (left, right) => right.updatedAt - left.updatedAt || (left.key < right.key ? -1 : 1),
+    );
+    const days: { dayStart: number; items: HappyAgentRecentItem[] }[] = [];
+    for (const item of items.slice(0, limit)) {
+        const dayStart = new Date(item.updatedAt).setHours(0, 0, 0, 0);
+        const last = days[days.length - 1];
+        if (last && last.dayStart === dayStart) last.items.push(item);
+        else days.push({ dayStart, items: [item] });
+    }
+    return days;
 }
