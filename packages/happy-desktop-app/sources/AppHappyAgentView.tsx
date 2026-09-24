@@ -2641,14 +2641,23 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 // window follows it on its own the moment the host answers.
                 if (happyAgent.botsCreating?.some((entry) => entry.workspaceId === row.id)) return;
                 const group = openGroupFind(happyAgent.projects, happyAgent.bots, row.id);
-                // While a search is up, the row was kept for a session it
-                // holds, so that session is where selecting it goes.
-                const searched =
-                    sidebarView.search === ""
-                        ? undefined
-                        : group?.conversations.find((summary) =>
-                              summary.title.toLowerCase().includes(sidebarView.search),
-                          )?.id;
+                // While a search is up, the row was kept for the sessions it
+                // holds that match, so one of those is where selecting it
+                // goes: the first, or, when the reader is already standing in
+                // one of them, the next one round — so a row that says
+                // "3 sessions" walks its three on three clicks.
+                const searched = (() => {
+                    if (sidebarView.search === "" || !group) return undefined;
+                    const matched = group.conversations.filter((summary) =>
+                        summary.title.toLowerCase().includes(sidebarView.search),
+                    );
+                    if (matched.length === 0) return undefined;
+                    const here =
+                        props.happyAgentId === happyAgent.id && props.groupId === row.id
+                            ? matched.findIndex((summary) => summary.id === props.chatId)
+                            : -1;
+                    return matched[(here + 1) % matched.length]?.id;
+                })();
                 props.onChatSelect(
                     happyAgent.id,
                     row.id,
