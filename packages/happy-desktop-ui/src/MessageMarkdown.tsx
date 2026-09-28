@@ -16,6 +16,7 @@ import { markdownFence, markdownFenceIsMermaid } from "./markdownFence";
 import { type FileOpenHandler } from "./fileReference";
 import { markdownDocumentLinkTarget, markdownFileUrlTransform } from "./MarkdownDocument";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { FILE_REFERENCE_LINK_ATTRIBUTE } from "./messageFileReferences";
 import { MESSAGE_MARKDOWN_REMARK_PLUGINS } from "./messageMarkdownAst";
 import { ScrollArea } from "./Scrollbar";
 
@@ -181,11 +182,13 @@ const MarkdownLink = ({
                 <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>
             </a>
         );
-    // A file reference this surface cannot open is the words it was written as.
-    // The transcript makes links out of written references itself, so an inert
-    // anchor here would underline a path in every message read somewhere with
-    // no workspace behind it and promise a click that is not coming.
-    if (target !== undefined)
+    // A written reference this surface cannot open is the words it was written
+    // as. The transcript made that link itself, so an inert anchor here would
+    // underline a path in every message read somewhere with no workspace behind
+    // it and promise a click that is not coming. A link the author wrote to a
+    // file is different: it was a link on the page and stays one, inert, the
+    // way every other target this surface will not navigate to does.
+    if (target !== undefined && FILE_REFERENCE_LINK_ATTRIBUTE in props)
         return <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>;
     // Only a web page has two places to open; a mail address has one, and it
     // is not a place this product draws.

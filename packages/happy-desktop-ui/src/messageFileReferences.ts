@@ -13,6 +13,8 @@ interface MarkdownNode {
     value?: string;
     url?: string;
     children?: MarkdownNode[];
+    /** What the node hands the element rendered from it, attribute by attribute. */
+    data?: { hProperties: Record<string, string> };
 }
 
 /**
@@ -21,6 +23,16 @@ interface MarkdownNode {
  * somewhere — putting a second link inside it would nest two anchors.
  */
 const OPAQUE = new Set(["code", "link", "linkReference", "definition", "html", "yaml"]);
+
+/**
+ * The attribute a link made here carries, telling it apart from one the author
+ * wrote. A written reference that nothing can open goes back to being words;
+ * an author's link to a file was a link on the page and stays one, inert. The
+ * element's attributes are the one thing a remark node hands the component
+ * that renders it, so the distinction travels there.
+ */
+export const FILE_REFERENCE_LINK_ATTRIBUTE = "data-file-reference";
+const REFERENCE_LINK_DATA = { hProperties: { dataFileReference: "" } };
 
 /**
  * Turns written file references into links.
@@ -84,7 +96,12 @@ function inlineCodeLink(node: MarkdownNode): MarkdownNode | undefined {
     if (node.type !== "inlineCode" || node.value === undefined) return undefined;
     const value = node.value.trim();
     if (!fileReferenceIsWhole(value)) return undefined;
-    return { type: "link", url: value, children: [{ type: "inlineCode", value }] };
+    return {
+        type: "link",
+        url: value,
+        children: [{ type: "inlineCode", value }],
+        data: REFERENCE_LINK_DATA,
+    };
 }
 
 /**
@@ -105,6 +122,7 @@ function textPieces(value: string): MarkdownNode[] | undefined {
             type: "link",
             url: reference,
             children: [{ type: "text", value: reference }],
+            data: REFERENCE_LINK_DATA,
         });
         consumed = match.index + reference.length;
     }
