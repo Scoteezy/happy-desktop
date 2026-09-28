@@ -124,12 +124,22 @@ export interface HappyAgentProviderUsageStoreDeps {
     readonly source: HappyAgentProviderUsageSource;
 }
 
+/** A reading younger than this is shown as it is; a new subscriber does not re-read it. */
+const USAGE_FRESH_MS = 60_000;
+
 /**
  * How much of each provider account's plan this Happy Agent has spent, as one surface.
  *
  * The store owns no schedule of its own: the source repeats the daemon read
- * while anything is subscribed, and every reading it reports replaces the list
- * wholesale. There is nothing to act on here — usage is read, never changed — so
+ * while anything is subscribed, and every successful reading it reports
+ * replaces the list wholesale.
+ *
+ * The last successful reading outlives its subscribers for the life of the
+ * store, so a surface that reopens shows it at once instead of waiting for the
+ * daemon. A new source cycle does not blank it: its opening "loading" report
+ * says nothing about the accounts, so only a successful reading replaces them.
+ * While the held reading is under a minute old the cycle is not started at
+ * all; it starts the moment the reading turns stale. There is nothing to act on here — usage is read, never changed — so
  * the store has no actions and emits no output, and the first subscriber
  * starting the cycle is what keeps a closed screen from polling a machine.
  */
@@ -143,14 +153,34 @@ export function happyAgentProviderUsageStoreCreate(
 
     const listeners = new Set<() => void>();
     let unsubscribeSource: (() => void) | undefined;
+    let staleTimer: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
 
     const start = (): void => {
-        if (disposed || unsubscribeSource) return;
+        if (disposed || unsubscribeSource || staleTimer !== undefined) return;
+        const loadedAt = store.getState().loadedAt;
+        const age = loadedAt === undefined ? Infinity : Date.now() - loadedAt;
+        if (age < USAGE_FRESH_MS) {
+            staleTimer = setTimeout(() => {
+                staleTimer = undefined;
+                if (listeners.size > 0) start();
+            }, USAGE_FRESH_MS - age);
+            return;
+        }
         unsubscribeSource = deps.source.subscribe(
-            (reading) => {
+            (incoming) => {
                 if (disposed) return;
                 const current = store.getState();
+                // Until the cycle succeeds, the accounts already held are still the latest known.
+                const reading =
+                    incoming.loadedAt === undefined && current.loadedAt !== undefined
+                        ? {
+                              ...incoming,
+                              providers: current.providers,
+                              loading: false,
+                              loadedAt: current.loadedAt,
+                          }
+                        : incoming;
                 const error =
                     reading.error === undefined
                         ? undefined
@@ -185,6 +215,8 @@ export function happyAgentProviderUsageStoreCreate(
     };
 
     const stop = (): void => {
+        clearTimeout(staleTimer);
+        staleTimer = undefined;
         unsubscribeSource?.();
         unsubscribeSource = undefined;
     };

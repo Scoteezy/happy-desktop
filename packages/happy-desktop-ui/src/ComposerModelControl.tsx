@@ -38,10 +38,14 @@ export type ComposerModelAccountUsage = {
     /** The plan the service reports for the account, such as "Max". */
     plan?: string;
     windows: readonly ComposerModelUsageWindow[];
+    /** Already-formatted age of a reading old enough to mention, such as "updated 12m ago". */
+    updated?: string;
 };
 export type ComposerModelAccount = {
     id: string;
     label: string;
+    /** The service's own account, named "Default account" rather than by its id. */
+    default?: boolean;
     /** The models this account offers, in catalog order. */
     models: readonly ComposerModelChoice[];
 };
@@ -117,6 +121,8 @@ const MENU_MAX_HEIGHT = 480;
 const POPUP_GAP = 4;
 /** A row's side padding: text ends this far inside its highlight. */
 const ROW_INSET = 10;
+/** Space between the menu and the account panel beside it, and that panel and the window edge. */
+const SIDE_GAP = 8;
 /** Horizontal scroll that steps an effort or account once. */
 const STEP_SCROLL = 48;
 /** After a step, momentum still arriving from the same flick is ignored this long. */
@@ -150,31 +156,59 @@ function fitToViewport(node: HTMLDivElement | null) {
     node.style.maxHeight = `${Math.max(96, Math.min(MENU_MAX_HEIGHT, room))}px`;
 }
 
+/** A list opened from the keyboard takes focus on its current choice. */
+function popupFocus(node: HTMLElement, anchor: HTMLElement) {
+    if (document.activeElement !== anchor) return;
+    (
+        node.querySelector<HTMLElement>('[aria-checked="true"]') ??
+        node.querySelector<HTMLElement>('[data-menu-item="popup"]')
+    )?.focus();
+}
+
 /**
- * Hangs an inner list from the name that opened it, its right edge on the edge
- * of that row's highlight: below the name when it fits inside the menu,
- * otherwise above it, where it grows upwards. A keyboard-opened list takes focus on its current choice.
+ * Hangs the effort list from the effort that opened it, its right edge on the
+ * edge of that row's highlight: below the effort when it fits inside the menu,
+ * otherwise above it, where it grows upwards.
  */
-function placePopup(node: HTMLDivElement | null) {
+function placeEfforts(node: HTMLDivElement | null) {
     const menu = node?.parentElement;
     const anchor = menu?.querySelector<HTMLElement>("[data-popup-anchor]");
     if (!node || !menu || !anchor) return;
     const box = menu.getBoundingClientRect();
     const at = anchor.getBoundingClientRect();
-    // A list that spans the rows (the accounts, with their usage) is placed by its stylesheet.
-    if (node.dataset.popupSpan === undefined)
-        node.style.right = `${box.right - menu.clientLeft - at.right - ROW_INSET}px`;
+    node.style.right = `${box.right - menu.clientLeft - at.right - ROW_INSET}px`;
     const below = at.bottom + POPUP_GAP;
     if (below + node.offsetHeight <= box.bottom) {
         node.style.top = `${below - box.top - menu.clientTop}px`;
     } else {
         node.style.bottom = `${box.bottom - menu.clientTop - (at.top - POPUP_GAP)}px`;
     }
-    if (document.activeElement === anchor)
-        (
-            node.querySelector<HTMLElement>('[aria-checked="true"]') ??
-            node.querySelector<HTMLElement>('[data-menu-item="popup"]')
-        )?.focus();
+    popupFocus(node, anchor);
+}
+
+/**
+ * Opens the account panel beside the menu as a column of its own, its first
+ * account level with the header that opened it: to the right when the window
+ * has room for it there, otherwise to the left. It never reaches below the
+ * menu, which is itself kept inside the window.
+ */
+function placeAccounts(node: HTMLDivElement | null) {
+    const menu = node?.parentElement;
+    const anchor = menu?.querySelector<HTMLElement>("[data-popup-anchor]");
+    const header = anchor?.closest("[data-service-header]");
+    if (!node || !menu || !anchor || !header) return;
+    const box = menu.getBoundingClientRect();
+    const row = header.getBoundingClientRect();
+    const side =
+        box.right + SIDE_GAP + node.offsetWidth <= window.innerWidth - SIDE_GAP ? "right" : "left";
+    node.dataset.side = side;
+    // Offsets are from the menu's padding box, which starts inside its border.
+    node.style[side === "right" ? "left" : "right"] = `${box.width - menu.clientLeft + SIDE_GAP}px`;
+    const first = node.querySelector<HTMLElement>('[data-menu-item="popup"]');
+    const firstMiddle = first ? node.clientTop + first.offsetTop + first.offsetHeight / 2 : 0;
+    const top = Math.min(row.top + row.height / 2 - firstMiddle, box.bottom - node.offsetHeight);
+    node.style.top = `${top - box.top - menu.clientTop}px`;
+    popupFocus(node, anchor);
 }
 
 /** Horizontal scroll, or a vertical wheel with Shift, in pixels; 0 for plain vertical scroll. */
@@ -182,6 +216,15 @@ function horizontalDelta(event: ReactWheelEvent) {
     const scale = event.deltaMode === 1 ? WHEEL_LINE_HEIGHT : 1;
     if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return event.deltaX * scale;
     return event.shiftKey ? event.deltaY * scale : 0;
+}
+
+/** The mark on the current choice, set right after its name. */
+function Check() {
+    return (
+        <span className="happy-composer-model-control__check">
+            <Icon name="check" size={14} />
+        </span>
+    );
 }
 
 function UsageWindow(props: { window: ComposerModelUsageWindow }) {
@@ -261,8 +304,8 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         service.accounts.some((account) => account.models.length > 0),
     );
     const usageWatch = props.usageWatch;
-    // Identity contract: the watch runs exactly as long as the account list is
-    // mounted, so this callback may only change when the watch itself does —
+    // Identity contract: the watch runs exactly as long as the menu is open, so
+    // plans and usage are on hand before the account panel opens. This callback may only change when the watch itself does —
     // an ordinary re-render must not restart the owner's usage reads.
     const usageLease = useCallback(
         (node: HTMLDivElement | null) => {
@@ -508,10 +551,8 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                     disabled={row.model.disabled}
                     type="button"
                 >
-                    <span className="happy-composer-model-control__check">
-                        {row.selected ? <Icon name="check" size={16} /> : null}
-                    </span>
                     <span className="happy-composer-model-control__name">{row.model.label}</span>
+                    {row.selected ? <Check /> : null}
                 </button>
                 {effort ? (
                     <span className="happy-composer-model-control__effort-column">
@@ -548,7 +589,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                 data-happy-desktop-ui="composer-model-control-efforts"
                 data-popup=""
                 key={row.key}
-                ref={placePopup}
+                ref={placeEfforts}
                 role="menu"
             >
                 {row.model.efforts.map((effort, index) => (
@@ -564,10 +605,12 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                         role="menuitemradio"
                         type="button"
                     >
-                        <span className="happy-composer-model-control__check">
-                            {index === current ? <Icon name="check" size={16} /> : null}
+                        <span className="happy-composer-model-control__option-main">
+                            <span className="happy-composer-model-control__name">
+                                {effort.label}
+                            </span>
+                            {index === current ? <Check /> : null}
                         </span>
-                        <span className="happy-composer-model-control__name">{effort.label}</span>
                     </button>
                 ))}
             </div>
@@ -575,6 +618,16 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     };
 
     const usageOf = (account: ComposerModelAccount) => liveUsage?.get(account.id);
+    /** An account says that it is one: the service's own is its default, any other is its id. */
+    const accountName = (account: ComposerModelAccount) =>
+        account.default ? "Default account" : account.label;
+    /** The header names the account with its plan, when the service has reported one. */
+    const accountSummary = (service: ComposerModelService) => {
+        const account = service.accounts.find((candidate) => candidate.id === accountOf(service));
+        if (account === undefined) return accountOf(service);
+        const plan = account.default ? undefined : usageOf(account)?.plan;
+        return plan ? `${accountName(account)} · ${plan}` : accountName(account);
+    };
     const renderAccounts = (service: ComposerModelService) => {
         const shown =
             service.accounts.find((account) => account.id === accountHover) ??
@@ -586,12 +639,11 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                 className="happy-composer-model-control__popup happy-composer-model-control__accounts"
                 data-happy-desktop-ui="composer-model-control-accounts"
                 data-popup=""
-                data-popup-span=""
                 key={service.id}
-                ref={placePopup}
+                ref={placeAccounts}
                 role="menu"
             >
-                <div className="happy-composer-model-control__account-list" ref={usageLease}>
+                <div className="happy-composer-model-control__account-list">
                     {service.accounts.map((account) => {
                         const missing = accountMissing(service, account);
                         const plan = usageOf(account)?.plan;
@@ -619,11 +671,11 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                 role="menuitemradio"
                                 type="button"
                             >
-                                <span className="happy-composer-model-control__check">
-                                    {current ? <Icon name="check" size={16} /> : null}
-                                </span>
-                                <span className="happy-composer-model-control__name">
-                                    {account.label}
+                                <span className="happy-composer-model-control__option-main">
+                                    <span className="happy-composer-model-control__name">
+                                        {accountName(account)}
+                                    </span>
+                                    {current ? <Check /> : null}
                                 </span>
                                 {missing || plan ? (
                                     <span className="happy-composer-model-control__account-note">
@@ -648,6 +700,11 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                 <UsageWindow key={window.id} window={window} />
                             ))
                         )}
+                        {shownUsage?.updated ? (
+                            <span className="happy-composer-model-control__usage-age">
+                                {shownUsage.updated}
+                            </span>
+                        ) : null}
                     </div>
                 ) : null}
             </div>
@@ -727,106 +784,106 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                     <ScrollArea
                         className="happy-composer-model-control__list"
                         data-happy-desktop-ui="composer-model-control-list"
-                        // The scrollbar floats over the rows, so a long list keeps the same text
-                        // column as the footer below it.
-                        placement="overlay"
                         viewportClassName="happy-composer-model-control__list-viewport"
                         viewportProps={{ onScroll: () => setPopup(null) }}
                     >
-                        {sections.map(({ service, rows }, index) => {
-                            const account = accountOf(service);
-                            const accountsOpen =
-                                popup?.kind === "accounts" && popup.service === service.id;
-                            return (
-                                <Fragment key={service.id}>
-                                    {index > 0 ? (
+                        <div
+                            className="happy-composer-model-control__list-content"
+                            ref={usageLease}
+                        >
+                            {sections.map(({ service, rows }, index) => {
+                                const accountsOpen =
+                                    popup?.kind === "accounts" && popup.service === service.id;
+                                return (
+                                    <Fragment key={service.id}>
+                                        {index > 0 ? (
+                                            <div
+                                                className="happy-composer-model-control__separator"
+                                                role="separator"
+                                            />
+                                        ) : null}
                                         <div
-                                            className="happy-composer-model-control__separator"
-                                            role="separator"
-                                        />
-                                    ) : null}
-                                    <div
-                                        aria-label={service.label}
-                                        className="happy-composer-model-control__service"
-                                        data-happy-desktop-ui="composer-model-control-service"
-                                        role="group"
-                                    >
-                                        <div
-                                            className="happy-composer-model-control__service-header"
-                                            data-service-header={service.id}
-                                            onWheel={(event) => {
-                                                const direction = scrollStep(event, service.id);
-                                                if (direction !== 0)
-                                                    accountStep(service, direction);
-                                            }}
+                                            aria-label={service.label}
+                                            className="happy-composer-model-control__service"
+                                            data-happy-desktop-ui="composer-model-control-service"
+                                            role="group"
                                         >
-                                            <span className="happy-composer-model-control__check" />
-                                            <span className="happy-composer-model-control__service-name">
-                                                {service.label}
-                                            </span>
-                                            <button
-                                                aria-expanded={accountsOpen}
-                                                aria-haspopup="menu"
-                                                aria-label={`${service.label} account: ${
-                                                    service.accounts.find(
-                                                        (candidate) => candidate.id === account,
-                                                    )?.label ?? account
-                                                }`}
-                                                className="happy-composer-model-control__text-button happy-composer-model-control__account-label"
-                                                data-focus-visible={
-                                                    preview?.accountFocus === service.id
-                                                        ? ""
-                                                        : undefined
-                                                }
-                                                data-happy-desktop-ui="composer-model-control-account-label"
-                                                data-hover={
-                                                    preview?.accountButtonHover === service.id
-                                                        ? ""
-                                                        : undefined
-                                                }
-                                                data-menu-item="main"
-                                                data-popup-anchor={accountsOpen ? "" : undefined}
-                                                onClick={() => {
-                                                    setAccountHover(null);
-                                                    popupToggle({
-                                                        kind: "accounts",
-                                                        service: service.id,
-                                                    });
-                                                }}
-                                                onKeyDown={(event) => {
-                                                    const direction = arrowStep(event);
+                                            <div
+                                                className="happy-composer-model-control__service-header"
+                                                data-service-header={service.id}
+                                                onWheel={(event) => {
+                                                    const direction = scrollStep(event, service.id);
                                                     if (direction !== 0)
                                                         accountStep(service, direction);
                                                 }}
-                                                type="button"
                                             >
-                                                {service.accounts.find(
-                                                    (candidate) => candidate.id === account,
-                                                )?.label ?? account}
-                                            </button>
+                                                <span className="happy-composer-model-control__service-name">
+                                                    {service.label}
+                                                </span>
+                                                <button
+                                                    aria-expanded={accountsOpen}
+                                                    aria-haspopup="menu"
+                                                    aria-label={`${service.label} account: ${accountSummary(service)}`}
+                                                    className="happy-composer-model-control__text-button happy-composer-model-control__account-label"
+                                                    data-focus-visible={
+                                                        preview?.accountFocus === service.id
+                                                            ? ""
+                                                            : undefined
+                                                    }
+                                                    data-happy-desktop-ui="composer-model-control-account-label"
+                                                    data-hover={
+                                                        preview?.accountButtonHover === service.id
+                                                            ? ""
+                                                            : undefined
+                                                    }
+                                                    data-menu-item="main"
+                                                    data-popup-anchor={
+                                                        accountsOpen ? "" : undefined
+                                                    }
+                                                    onClick={() => {
+                                                        setAccountHover(null);
+                                                        popupToggle({
+                                                            kind: "accounts",
+                                                            service: service.id,
+                                                        });
+                                                    }}
+                                                    onKeyDown={(event) => {
+                                                        const direction = arrowStep(event);
+                                                        if (direction !== 0)
+                                                            accountStep(service, direction);
+                                                    }}
+                                                    type="button"
+                                                >
+                                                    <span className="happy-composer-model-control__account-text">
+                                                        {accountSummary(service)}
+                                                    </span>
+                                                    <Icon name="chevron-right" size={12} />
+                                                </button>
+                                            </div>
+                                            {rows.map(renderRow)}
                                         </div>
-                                        {rows.map(renderRow)}
-                                    </div>
-                                </Fragment>
-                            );
-                        })}
+                                    </Fragment>
+                                );
+                            })}
+                        </div>
                     </ScrollArea>
-                    <div className="happy-composer-model-control__separator" role="separator" />
-                    <a
-                        className="happy-composer-model-control__benchmarks"
-                        data-happy-desktop-ui="composer-model-control-benchmarks"
-                        data-menu-item="main"
-                        href={COMPOSER_MODEL_BENCHMARKS_URL}
-                        onClick={close}
-                        rel="noreferrer"
-                        target="_blank"
-                    >
-                        <span className="happy-composer-model-control__check" />
-                        <span className="happy-composer-model-control__name">
-                            Latest benchmarks
-                        </span>
-                        <Octicon name="link-external" size={12} />
-                    </a>
+                    <div className="happy-composer-model-control__footer">
+                        <div className="happy-composer-model-control__separator" role="separator" />
+                        <a
+                            className="happy-composer-model-control__benchmarks"
+                            data-happy-desktop-ui="composer-model-control-benchmarks"
+                            data-menu-item="main"
+                            href={COMPOSER_MODEL_BENCHMARKS_URL}
+                            onClick={close}
+                            rel="noreferrer"
+                            target="_blank"
+                        >
+                            <span className="happy-composer-model-control__name">
+                                Latest benchmarks
+                            </span>
+                            <Octicon name="link-external" size={12} />
+                        </a>
+                    </div>
                     {popupRow ? renderEfforts(popupRow) : null}
                     {popupService ? renderAccounts(popupService) : null}
                 </div>

@@ -65,7 +65,13 @@ export function happyAgentComposerModelControlProps(
         }
         let account = service.accounts.find((candidate) => candidate.id === option.providerId);
         if (account === undefined) {
-            account = { id: option.providerId, label: option.providerId, models: [] };
+            account = {
+                id: option.providerId,
+                label: option.providerId,
+                // The provider configured under its type's own id is that service's default account.
+                ...(option.providerId === option.providerType ? { default: true } : {}),
+                models: [],
+            };
             service.accounts.push(account);
         }
         if (option.providerId === menus.currentProviderId) service.account = option.providerId;
@@ -139,9 +145,19 @@ function clockTime(at: Date): string {
     return at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+/** A held reading older than this says how old it is. */
+const USAGE_AGE_SHOWN_MS = 5 * 60_000;
+
+function readingAge(capturedAt: number, now: number): string | undefined {
+    if (now - capturedAt <= USAGE_AGE_SHOWN_MS) return undefined;
+    const minutes = Math.floor((now - capturedAt) / 60_000);
+    return minutes < 60 ? `updated ${minutes}m ago` : `updated ${Math.floor(minutes / 60)}h ago`;
+}
+
 /** Plan windows per provider account; an account with no plan reading is left unknown. */
 function usageProject(
     snapshot: HappyAgentProviderUsageSnapshot,
+    now: number,
 ): ReadonlyMap<string, ComposerModelAccountUsage> {
     const usage = new Map<string, ComposerModelAccountUsage>();
     for (const entry of snapshot.providers) {
@@ -153,8 +169,10 @@ function usageProject(
                 reading.planName === undefined)
         )
             continue;
+        const updated = readingAge(reading.capturedAt, now);
         usage.set(entry.providerId, {
             ...(reading.planName === undefined ? {} : { plan: reading.planName }),
+            ...(updated === undefined ? {} : { updated }),
             windows: [
                 usageWindow("fiveHour", "5h", reading.fiveHour, (at) => `resets ${clockTime(at)}`),
                 usageWindow(
@@ -171,9 +189,9 @@ function usageProject(
 }
 
 /**
- * Feeds the picker's account submenu from the provider-usage store. Subscribing
- * is what starts the daemon reads, and the picker holds the subscription only
- * while its account submenu is open.
+ * Feeds the picker's accounts from the provider-usage store. The picker holds
+ * the subscription while its menu is open: the store answers at once with the
+ * reading it already holds and re-reads the daemon only once that is stale.
  */
 export function happyAgentComposerModelUsageWatch(
     store: HappyAgentProviderUsageStore,
@@ -184,7 +202,7 @@ export function happyAgentComposerModelUsageWatch(
             const snapshot = store.get();
             if (snapshot === last) return;
             last = snapshot;
-            listener(usageProject(snapshot));
+            listener(usageProject(snapshot, Date.now()));
         };
         const unsubscribe = store.subscribe(emit);
         emit();

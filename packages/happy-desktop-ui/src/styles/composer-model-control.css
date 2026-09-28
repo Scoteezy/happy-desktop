@@ -92,8 +92,11 @@
 }
 
 /* The pill sits at the composer's trailing edge, so the menu grows leftwards
- * from it, only as wide as its longest name beside the widest effort. */
+ * from it, only as wide as its longest name beside the widest effort. Its
+ * inset lives on the list content and the footer instead of the menu, so an
+ * overflowing list sets its scrollbar beside the rows, that inset away. */
 .happy-composer-model-control__menu {
+    padding: 6px 0;
     bottom: calc(100% + 8px);
     right: 0;
     width: max-content;
@@ -111,12 +114,9 @@
     min-width: 160px;
 }
 
-/* The account list lies exactly over the menu's width, its border on the
- * menu's, so account names and plans keep the menu's text column. */
+/* The account panel is a column beside the menu, placed when it mounts. */
 .happy-composer-model-control__accounts {
-    right: -1px;
-    left: -1px;
-    width: auto;
+    width: 248px;
 }
 
 .happy-composer-model-control__list {
@@ -127,9 +127,26 @@
 .happy-composer-model-control__list-viewport {
     display: flex;
     flex-direction: column;
-    gap: 4px;
     overflow-y: auto;
     overscroll-behavior: contain;
+}
+
+.happy-composer-model-control__list-content,
+.happy-composer-model-control__footer {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0 var(--happy-panel-inset);
+}
+
+/* While the list overflows, the footer keeps clear of the scrollbar lane too,
+ * so the benchmarks link stays on the rows' text column. */
+.happy-composer-model-control__menu:has(
+        > .happy-composer-model-control__list[data-scrollbar-overflow-y]
+    )
+    > .happy-composer-model-control__footer {
+    padding-right: calc(var(--happy-panel-inset) + var(--happy-scrollbar-track));
 }
 
 .happy-composer-model-control__service,
@@ -139,8 +156,8 @@
     flex-direction: column;
 }
 
-/* Every line shares one grid: a 16px check gutter, then the text, so headers,
- * model names, and the benchmarks link all start on the same left edge. */
+/* Every line has the same side padding, so headers, model names, and the
+ * benchmarks link all start on one left edge; a check follows its label. */
 .happy-composer-model-control__service-header,
 .happy-composer-model-control__row,
 .happy-composer-model-control__option,
@@ -222,7 +239,7 @@
     display: flex;
     flex: 1 1 auto;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     align-self: stretch;
     min-width: 0;
     margin: 0;
@@ -241,22 +258,34 @@
     outline: none;
 }
 
+/* A label and the check that follows it travel together; the check never shrinks. */
+.happy-composer-model-control__option-main {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
 .happy-composer-model-control__check {
     display: flex;
-    flex: 0 0 16px;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
 }
 
 .happy-composer-model-control__name,
-.happy-composer-model-control__service-name {
-    flex: 1 1 auto;
+.happy-composer-model-control__service-name,
+.happy-composer-model-control__account-text {
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.happy-composer-model-control__service-name {
+    flex-grow: 1;
 }
 
 .happy-composer-model-control__service-name {
@@ -349,7 +378,10 @@
     background: transparent;
 }
 
+/* The account name ends in a chevron: it opens a panel of its own. */
 .happy-composer-model-control__account-label {
+    align-items: center;
+    gap: 2px;
     font-size: 12px;
 }
 
@@ -365,6 +397,10 @@
 }
 
 .happy-composer-model-control__benchmarks {
+    justify-content: space-between;
+}
+
+.happy-composer-model-control__benchmarks {
     color: var(--text-secondary);
     font-size: 13px;
     text-decoration: none;
@@ -373,11 +409,11 @@
 
 /* A hairline runs exactly across the text column: from the left edge shared by
  * headers, names, and the benchmarks link to the right edge of efforts and
- * account names, clear of the check gutter and the menu border. */
+ * account names, clear of the menu border. */
 .happy-composer-model-control__separator {
     display: flex;
     flex: 0 0 auto;
-    padding: 0 10px 0 34px;
+    padding: 0 10px;
 }
 
 .happy-composer-model-control__separator::before {
@@ -407,8 +443,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    /* On the text column, like every name above it. */
-    padding: 6px 10px 6px 34px;
+    padding: 6px 10px;
 }
 
 .happy-composer-model-control__usage-window {
@@ -430,6 +465,13 @@
     min-width: 0;
     color: var(--text);
     font-weight: 600;
+}
+
+/* How old a held reading is, said only once it is old enough to matter. */
+.happy-composer-model-control__usage-age {
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 14px;
 }
 
 .happy-composer-model-control__usage-resets {

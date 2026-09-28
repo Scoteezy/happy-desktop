@@ -128,12 +128,16 @@ it("composes the controlled model picker into the composer and navigates its men
         '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-accounts"]',
     );
     expect(choices.element.textContent).toContain("work");
-    // The account list hangs from the account name, inside the menu and in view.
-    expect(choices.bounds().y).toBeGreaterThan(account.bounds().y + account.bounds().height);
-    expect(choices.bounds().x).toBeGreaterThanOrEqual(menu.bounds().x);
-    expect(choices.bounds().x + choices.bounds().width).toBeLessThanOrEqual(
-        menu.bounds().x + menu.bounds().width,
-    );
+    // The account panel opens as a column beside the menu, 8px away: to the
+    // right when the window has room there, otherwise to the left.
+    const menuRight = menu.element.getBoundingClientRect().right;
+    const side = menuRight + 8 + choices.bounds().width <= window.innerWidth - 8 ? "right" : "left";
+    expect(choices.element.getAttribute("data-side")).toBe(side);
+    expect(
+        side === "right"
+            ? choices.bounds().x - (menu.bounds().x + menu.bounds().width)
+            : menu.bounds().x - (choices.bounds().x + choices.bounds().width),
+    ).toBeCloseTo(8, 0);
     // Its name toggles the list shut again.
     await userEvent.click(account.element);
     expect(
