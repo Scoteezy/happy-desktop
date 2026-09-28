@@ -156,56 +156,102 @@ type ReviewStreamItem = {
     readonly fileDiff: ReturnType<typeof parseDiffFromFile>;
 };
 
+/**
+ * Diffs already parsed, by what was parsed.
+ *
+ * Parsing a diff is work proportional to the file, and a review arrives one
+ * file at a time: without this, the twenty-seventh file landing re-parses the
+ * twenty-six already on screen, as does every unrelated notification while the
+ * review is open. A file whose bytes have not moved keeps the diff already
+ * parsed for it, which also keeps the renderer's own item identity — it
+ * redraws what changed and leaves the rest alone.
+ *
+ * A memo keyed on the inputs rather than a ref of the last render: the answer
+ * for a file depends on nothing but the file, so it is the same whichever
+ * render, or whichever stream, asks. Bounded, and the least recently asked for
+ * is what goes, so a long session reviewing many changes does not keep every
+ * diff it ever drew.
+ */
+const PARSED_MAX = 512;
+const parsedDiffs = new Map<string, ReviewStreamItem>();
+
+/**
+ * What decides the parse: the paths and the bytes on each side. A side whose
+ * identity is known is named by it, which is short; one whose identity is not
+ * — the empty side of an added or deleted file — is named by its bytes.
+ */
+function parsedDiffKey(file: ReviewStreamFile): string {
+    return [
+        file.path,
+        file.oldPath ?? "",
+        file.oldCacheKey ?? `c:${file.oldContent}`,
+        file.newCacheKey ?? `c:${file.newContent}`,
+    ].join("\0");
+}
+
+function reviewStreamItem(file: ReviewStreamFile): ReviewStreamItem {
+    const key = parsedDiffKey(file);
+    const known = parsedDiffs.get(key);
+    if (known !== undefined) {
+        // Re-inserted so insertion order is recency, and the oldest entry is
+        // the one nobody has asked for in the longest.
+        parsedDiffs.delete(key);
+        parsedDiffs.set(key, known);
+        return known;
+    }
+    const item: ReviewStreamItem = {
+        id: file.path,
+        type: "diff",
+        fileDiff: parseDiffFromFile(
+            {
+                name: file.oldPath ?? file.path,
+                contents: file.oldContent,
+                ...(file.oldCacheKey === undefined ? {} : { cacheKey: file.oldCacheKey }),
+            },
+            {
+                name: file.path,
+                contents: file.newContent,
+                ...(file.newCacheKey === undefined ? {} : { cacheKey: file.newCacheKey }),
+            },
+        ),
+    };
+    parsedDiffs.set(key, item);
+    if (parsedDiffs.size > PARSED_MAX) {
+        const oldest = parsedDiffs.keys().next().value;
+        if (oldest !== undefined) parsedDiffs.delete(oldest);
+    }
+    return item;
+}
+
+/**
+ * A number for each distinct way a file has been annotated, so the renderer can
+ * be told "this item changed" without being told how.
+ *
+ * The renderer is controlled: it keeps what it last drew for an item unless the
+ * item's version differs from the last one drawn. What matters is only that two
+ * states of the same file get different numbers and one state always gets the
+ * same, which is what interning the state's description gives — with no memory
+ * of which render drew what. Cleared when it grows large; a state met again
+ * after that gets a fresh number, which costs one redraw and nothing else.
+ */
+const VERSIONS_MAX = 4096;
+const versions = new Map<string, number>();
+let versionNext = 1;
+
+function versionOf(signature: string): number {
+    const known = versions.get(signature);
+    if (known !== undefined) return known;
+    if (versions.size >= VERSIONS_MAX) versions.clear();
+    const version = versionNext++;
+    versions.set(signature, version);
+    return version;
+}
+
 export function ReviewStream(props: ReviewStreamProps) {
     const view = useRef<CodeViewHandle<ReviewStreamAnnotation>>(null);
     const commenting = props.onCommentDraftOpen !== undefined;
 
-    // Parsing a diff is work proportional to the file, and a review arrives one
-    // file at a time: without this, the twenty-seventh file landing re-parses
-    // the twenty-six already on screen, as does every unrelated notification
-    // while the review is open. A file whose bytes have not moved keeps the
-    // diff already parsed for it, which also keeps the renderer's own item
-    // identity — it redraws what changed and leaves the rest alone.
-    const parsed = useRef(new Map<string, { file: ReviewStreamFile; item: ReviewStreamItem }>());
-    const items = useMemo(() => {
-        const kept = new Map<string, { file: ReviewStreamFile; item: ReviewStreamItem }>();
-        const built = props.files.map((file) => {
-            const previous = parsed.current.get(file.path);
-            const unchanged =
-                previous !== undefined &&
-                previous.file.oldContent === file.oldContent &&
-                previous.file.newContent === file.newContent &&
-                previous.file.oldPath === file.oldPath;
-            const item = unchanged
-                ? previous.item
-                : {
-                      id: file.path,
-                      type: "diff" as const,
-                      fileDiff: parseDiffFromFile(
-                          {
-                              name: file.oldPath ?? file.path,
-                              contents: file.oldContent,
-                              ...(file.oldCacheKey === undefined
-                                  ? {}
-                                  : { cacheKey: file.oldCacheKey }),
-                          },
-                          {
-                              name: file.path,
-                              contents: file.newContent,
-                              ...(file.newCacheKey === undefined
-                                  ? {}
-                                  : { cacheKey: file.newCacheKey }),
-                          },
-                      ),
-                  };
-            kept.set(file.path, { file, item });
-            return item;
-        });
-        // Files no longer in the review are dropped with it, so the map holds
-        // exactly what is on screen.
-        parsed.current = kept;
-        return built;
-    }, [props.files]);
+    const items = useMemo(() => props.files.map(reviewStreamItem), [props.files]);
 
     // Where the notes go, per file. Only positions live here, never the text
     // being typed: the renderer re-places annotations whenever this changes, so
@@ -214,14 +260,7 @@ export function ReviewStream(props: ReviewStreamProps) {
     const draftLine = props.commentDraft?.lineNumber;
     const draftSide = props.commentDraft?.side;
     const collapsedFiles = props.collapsed;
-    // What was last handed to the renderer for each file, and under which
-    // version. A version means nothing on its own — it only has to differ from
-    // the one before it whenever the file's notes do.
-    const signatures = useRef(new Map<string, { signature: string; version: number }>());
     const annotated = useMemo(() => {
-        // A file the review no longer has takes its history with it.
-        for (const id of signatures.current.keys())
-            if (!items.some((item) => item.id === id)) signatures.current.delete(id);
         return items.map((item) => {
             const collapsed = collapsedFiles?.has(item.id) === true;
             const held = !commenting
@@ -247,12 +286,10 @@ export function ReviewStream(props: ReviewStreamProps) {
                           },
                       ]
                     : held;
-            // The renderer is controlled: it keeps what it last drew for an item
-            // unless the item says it changed. What can change here is which
-            // notes are on the file and where — a note's characters are read
-            // where it is drawn — and whether the file is closed. So the file
-            // says exactly that, and a version is counted off each time the
-            // answer differs from the last one drawn.
+            // What can change about a drawn file is which notes are on it and
+            // where — a note's characters are read where it is drawn — and
+            // whether the file is closed. So the file says exactly that, and its
+            // version is the number for that description.
             //
             // Written out rather than folded into a number: a note submitted on
             // the line its draft was on turns one annotation into another at the
@@ -260,6 +297,7 @@ export function ReviewStream(props: ReviewStreamProps) {
             // two states the same version — which leaves the composer on screen
             // over a note that has already been kept.
             const signature = [
+                item.id,
                 collapsed ? "closed" : "open",
                 ...annotations.map((annotation) =>
                     annotation.metadata.type === "draft"
@@ -267,14 +305,7 @@ export function ReviewStream(props: ReviewStreamProps) {
                         : `note:${annotation.metadata.comment.id}:${annotation.side}:${String(annotation.lineNumber)}:${annotation.metadata.comment.stale === true ? "stale" : "fresh"}`,
                 ),
             ].join("|");
-            const drawn = signatures.current.get(item.id);
-            const version =
-                drawn === undefined
-                    ? 0
-                    : drawn.signature === signature
-                      ? drawn.version
-                      : drawn.version + 1;
-            signatures.current.set(item.id, { signature, version });
+            const version = versionOf(signature);
             return {
                 ...item,
                 ...(annotations.length === 0 ? {} : { annotations }),
@@ -784,7 +815,10 @@ export function ReviewStream(props: ReviewStreamProps) {
             <div className="happy-review-stream__body" ref={readingWatch}>
                 {picked === undefined ? null : (
                     <div
-                        aria-hidden={pinned ? undefined : "true"}
+                        // A copy for the eye of a header that stays in the
+                        // stream and keeps its own controls: the copy is never
+                        // what assistive technology or the keyboard reaches.
+                        aria-hidden="true"
                         className="happy-review-stream__reading"
                         data-clickable={props.onFileCollapsedToggle === undefined ? undefined : ""}
                         data-happy-desktop-ui="review-stream-reading"
