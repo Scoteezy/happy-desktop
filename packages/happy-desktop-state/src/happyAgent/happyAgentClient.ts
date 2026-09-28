@@ -32,6 +32,8 @@ import {
 } from "./happyAgentProject.js";
 import type {
     HappyAgentChangedFileDocument,
+    HappyAgentFileMatchRequest,
+    HappyAgentFileMatchResult,
     HappyAgentFileSearchResult,
     HappyAgentGitChangedFile,
     HappyAgentGroupId,
@@ -177,6 +179,15 @@ export interface HappyAgentWorkspaceClient {
         query: string,
         limit?: number,
     ): Promise<readonly HappyAgentFileSearchResult[]>;
+    /**
+     * Asks one checkout what a gitignore-style mask holds right now. A pure
+     * query, like the search: nothing is stored on either side, and the answer
+     * is only as current as the working tree at the moment it was asked.
+     */
+    filesMatch(
+        groupId: HappyAgentGroupId,
+        request: HappyAgentFileMatchRequest,
+    ): Promise<HappyAgentFileMatchResult>;
     /**
      * Reads one existing text file from a project/worktree checkout. A file
      * belongs to the checkout rather than to any conversation open over it, so
@@ -547,6 +558,24 @@ export function happyAgentWorkspaceClientCreate(
                     ...(limit === undefined ? {} : { limit }),
                 })
             ).files.map((file) => ({ fileName: file.fileName, path: file.path })),
+        filesMatch: async (groupId, request) => {
+            const matched = await deps.client.matchFiles(groupId, {
+                source: request.source,
+                include: [...request.include],
+                exclude: [...request.exclude],
+                paths: request.paths.map((path) => ({
+                    path: path.path,
+                    ...(path.reason === undefined ? {} : { reason: path.reason }),
+                    lines: path.lines.map((range) => ({ start: range.start, end: range.end })),
+                })),
+            });
+            return {
+                files: matched.files,
+                total: matched.total,
+                truncated: matched.truncated,
+                unmatchedRules: matched.unmatchedRules,
+            };
+        },
         workspaceFileRead: async (groupId, path, signal) => {
             const file = await deps.client.readFile(groupId, path, { signal });
             return { path, content: happyAgentTextDecodeBase64(file.content), hash: file.hash };

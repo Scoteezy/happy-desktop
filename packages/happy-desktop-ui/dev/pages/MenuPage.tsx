@@ -47,6 +47,34 @@ const states: MenuItem[] = [
     { kind: "item", id: "remove", label: "Remove", icon: "close", danger: true },
 ];
 
+const HOUR = 60 * 60 * 1000;
+const clock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const withActs: MenuItem[] = [
+    { kind: "label", label: "Slices" },
+    {
+        kind: "item",
+        id: "one",
+        label: "File browser only",
+        icon: "check",
+        detail: clock.format(Date.now() - HOUR),
+        action: { icon: "close", label: "Hide slice" },
+    },
+    {
+        kind: "item",
+        id: "two",
+        label: "Daemon connection layer",
+        detail: clock.format(Date.now() - 2 * HOUR),
+        action: { icon: "close", label: "Hide slice" },
+    },
+    {
+        kind: "item",
+        id: "three",
+        label: "A long title that must give way to the time and the cross",
+        detail: "Sep 12",
+        action: { icon: "close", label: "Hide slice" },
+    },
+];
+
 const linkPlaces: MenuItem[] = [
     { kind: "item", id: "browser", label: "Open in browser", icon: "open-external" },
     { kind: "item", id: "panel", label: "Open in side panel", icon: "panel-expand" },
@@ -156,9 +184,20 @@ export function MenuPage() {
                 </Specimen>
 
                 <Specimen
+                    detail="trailing detail · a cross on hover or focus takes the act · from the keyboard: Right or Tab steps onto the act, Left or Shift-Tab back, Up and Down move by row · long label yields"
+                    label="Rows with a trailing act"
+                    number="M-05"
+                    stage="app"
+                >
+                    <div style={{ padding: "28px" }}>
+                        <Menu items={withActs} width={260} />
+                    </div>
+                </Specimen>
+
+                <Specimen
                     detail="opened at the pointer · fixed to the window · clamps to the viewport edge · Escape or a click elsewhere closes"
                     label="Context menu at the pointer"
-                    number="M-05"
+                    number="M-06"
                     stage="app"
                 >
                     <div style={{ padding: "28px" }}>

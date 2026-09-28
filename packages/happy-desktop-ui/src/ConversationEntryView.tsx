@@ -61,6 +61,8 @@ export type ConversationEntryViewProps = {
     onAttachmentOpen?: (attachment: ConversationLinkedAttachment) => void;
     /** Opens this entry's tool call in an owner-provided preview surface. */
     onToolSelect?: (entryId: string, tool: ConversationToolCall) => void;
+    /** Shows a slice an agent built, in the workspace's file listing. */
+    onSliceOpen?: (sliceId: string) => void;
     /** Opens one child session represented by a delegated-agent entry. */
     onDelegationSelect?: (sessionId: string) => void;
     /** Reference epoch millis used by live delegated-agent timers. */
@@ -220,6 +222,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                         : undefined
                 }
                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+                {...(props.onSliceOpen ? { onSliceOpen: props.onSliceOpen } : {})}
                 singleLine={entry.activity.kind === "tool"}
                 time={
                     (entry.activity.kind === "tool" || entry.activity.kind === "agentMessage") &&

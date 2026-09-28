@@ -198,6 +198,7 @@ export {
     type FileBrowserLayout,
     type FileBrowserProps,
     type FileBrowserScope,
+    type FileBrowserSlice,
 } from "./FileBrowser";
 export { FilePathLabel, type FilePathLabelProps } from "./FilePathLabel";
 export {

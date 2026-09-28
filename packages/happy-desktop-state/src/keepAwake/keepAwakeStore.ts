@@ -90,7 +90,8 @@ export function keepAwakeStoreCreate(options: KeepAwakeStoreOptions = {}): KeepA
     // shows whether an agent is working beside the selection either way.
     const sourceWatchSync = (): void => {
         const wanted = listeners.size > 0 && !disposed;
-        if (wanted && sourceUnsubscribe === undefined) sourceUnsubscribe = source.subscribe(publish);
+        if (wanted && sourceUnsubscribe === undefined)
+            sourceUnsubscribe = source.subscribe(publish);
         else if (!wanted && sourceUnsubscribe !== undefined) {
             sourceUnsubscribe();
             sourceUnsubscribe = undefined;

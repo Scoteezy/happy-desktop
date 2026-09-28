@@ -60,6 +60,10 @@ import type {
     HappyAgentSessionCreateInput,
     HappyAgentSessionId,
     HappyAgentSessionSummary,
+    HappyAgentSlice,
+    HappyAgentSliceFile,
+    HappyAgentSliceId,
+    HappyAgentSliceMatch,
     ScrollbarVisibility,
     ThemeMode,
     SubagentSummary,
@@ -3888,14 +3892,28 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         onPanelFileClose={() => props.workspace.filePanelClose()}
                         onViewClose={panelViewClose}
                         onScopeChange={(scope) => {
+                            // Changes and a slice are already in hand; only All
+                            // Files has to be read from the checkout.
                             if (
                                 openGroup &&
-                                (scope === "changed" ||
+                                (scope !== "all" ||
                                     workspace.workspaceFiles !== undefined ||
                                     happyAgentOnline())
                             )
                                 props.workspace.fileScopeUpdate(openGroup.id, scope);
                         }}
+                        onSliceSelect={(sliceId) => {
+                            if (openGroup) props.workspace.sliceSelect(openGroup.id, sliceId);
+                        }}
+                        onSliceHide={(sliceId) => {
+                            if (openGroup) props.workspace.sliceHide(openGroup.id, sliceId);
+                        }}
+                        onSlicePinToggle={(sliceId) => {
+                            if (openGroup) props.workspace.slicePinToggle(openGroup.id, sliceId);
+                        }}
+                        slices={workspace.slices}
+                        {...(workspace.slice ? { slice: workspace.slice } : {})}
+                        {...(workspace.sliceMatch ? { sliceMatch: workspace.sliceMatch } : {})}
                         onToggle={(path, expanded) =>
                             props.workspace.fileTreeExpandedUpdate(path, expanded)
                         }
@@ -5507,6 +5525,12 @@ function HappyAgentConversationSurface(props: {
                 if (attachment.openUrl) openExternalLink(attachment.openUrl);
             }}
             onToolSelect={(entryId) => workspace.panel.previewOpen(entryId)}
+            onSliceOpen={(sliceId) =>
+                workspace.sliceOpen(
+                    props.groupId as HappyAgentGroupId,
+                    sliceId as HappyAgentSliceId,
+                )
+            }
             onDelegationSelect={(sessionId) =>
                 props.onChatSelect(props.groupId, sessionId as HappyAgentSessionId)
             }
@@ -6081,6 +6105,48 @@ function workspaceFileTreeNodes(
     });
 }
 
+/**
+ * What a sliced row says after its name: the lines the agent meant, and why
+ * it named the file. Nothing for a file the rules matched rather than named —
+ * the rule is the reason, and the listing's own note says which rules.
+ */
+function sliceFileDetail(file: HappyAgentSliceFile): string | undefined {
+    const lines = file.lines
+        .map((range) =>
+            range.start === range.end
+                ? `L${String(range.start)}`
+                : `L${String(range.start)}–${String(range.end)}`,
+        )
+        .join(", ");
+    const parts = [lines, file.reason ?? ""].filter((part) => part.length > 0);
+    return parts.length === 0 ? undefined : parts.join(" · ");
+}
+
+/**
+ * What the listing says under a slice besides its rows: the changes it leaves
+ * out, so a slice never reads as a clean checkout; the files past the
+ * daemon's limit; the rules that matched nothing; and why an ask failed.
+ */
+function sliceNote(
+    match: HappyAgentSliceMatch | undefined,
+    changesOutside: number,
+): string | undefined {
+    const parts: string[] = [];
+    if (match?.status === "error")
+        parts.push(match.error ?? "The checkout could not evaluate this slice.");
+    if (changesOutside > 0)
+        parts.push(
+            `${String(changesOutside)} changed ${changesOutside === 1 ? "file" : "files"} outside this slice`,
+        );
+    if (match?.truncated === true)
+        parts.push(
+            `Showing the first ${String(match.files.length)} of ${String(match.total)} files`,
+        );
+    if (match !== undefined && match.unmatchedRules.length > 0)
+        parts.push(`Matches nothing: ${match.unmatchedRules.join(", ")}`);
+    return parts.length === 0 ? undefined : parts.join(" · ");
+}
+
 function HappyAgentPanelBody(props: {
     activity?: HappyAgentConversationSnapshot;
     browserContent?: BrowserContentRenderer;
@@ -6105,7 +6171,7 @@ function HappyAgentPanelBody(props: {
     onActivityProcessStop?: (processId: number) => void;
     /** Opens one delegated child session from the Activity tab. */
     onSubagentSelect?: (sessionId: string) => void;
-    onFileOpen: (path: string) => void;
+    onFileOpen: FileOpenHandler;
     onFilePreprocess: (path: string) => void;
     onFileSelect: (path: string) => void;
     onLayoutChange: (layout: HappyAgentFileLayout) => void;
@@ -6123,6 +6189,18 @@ function HappyAgentPanelBody(props: {
     fileBody: (file: HappyAgentFileTabSnapshot) => ReactNode;
     onPanelFileClose: () => void;
     onScopeChange: (scope: HappyAgentFileScope) => void;
+    /** Lists the panel by another of the checkout's slices. */
+    onSliceSelect: (sliceId: HappyAgentSliceId) => void;
+    /** Puts one slice away; its card still opens it. */
+    onSliceHide: (sliceId: HappyAgentSliceId) => void;
+    /** Keeps one slice with the checkout, or lets it go. */
+    onSlicePinToggle: (sliceId: HappyAgentSliceId) => void;
+    /** The checkout's slices, newest first; empty offers no slice scope. */
+    slices: readonly HappyAgentSlice[];
+    /** The slice listed under the slice scope. */
+    slice?: HappyAgentSlice;
+    /** What the checkout holds under that slice right now, once asked. */
+    sliceMatch?: HappyAgentSliceMatch;
     onToggle: (path: string, expanded: boolean) => void;
     onDirectoryPrefetch: (path: string) => void;
     onLoadMore: (path: string) => void;
@@ -6145,16 +6223,61 @@ function HappyAgentPanelBody(props: {
     workspaceFilesLoading: boolean;
 }) {
     const all = props.scope === "all";
+    const sliced = props.scope === "slice" ? props.slice : undefined;
+    const sliceMatch = sliced === undefined ? undefined : props.sliceMatch;
     const query = props.search.query;
-    // Changes is whole in memory, so its query is answered right here by
-    // dropping the rows that do not match. All Files cannot be: the tree holds
-    // only the directories somebody opened, so filtering it would quietly
-    // present a fraction of the checkout as the whole answer — the daemon ranks
-    // that one and its results arrive through the snapshot.
-    const entries: FileTreeBuildEntry[] = useMemo(() => {
-        const built = props.changes.map(changeEntry);
-        return query === "" ? built : built.filter((entry) => filePathMatches(entry.path, query));
-    }, [props.changes, query]);
+    const changesByPath = useMemo(
+        () => new Map(props.changes.map((change) => [change.path, change])),
+        [props.changes],
+    );
+    // What the listing holds before the query narrows it. A slice lists what
+    // the checkout answered for its mask, against the live change list: a
+    // file that changed keeps its status and stat and opens as a diff, one
+    // that did not is the plain file. A file the agent named outright says
+    // why, and which lines, after its name. The slice never carries content,
+    // so what shows through it is the working tree as it stands now.
+    const listed: FileTreeBuildEntry[] = useMemo(
+        () =>
+            sliced
+                ? (sliceMatch?.files ?? []).map((file) => {
+                      const change = changesByPath.get(file.path);
+                      const detail = sliceFileDetail(file);
+                      return {
+                          ...(change ? changeEntry(change) : { path: file.path }),
+                          ...(detail === undefined ? {} : { detail }),
+                      };
+                  })
+                : props.changes.map(changeEntry),
+        [changesByPath, props.changes, sliceMatch, sliced],
+    );
+    // Changes and a slice are whole in memory, so their query is answered
+    // right here by dropping the rows that do not match. All Files cannot be:
+    // the tree holds only the directories somebody opened, so filtering it
+    // would quietly present a fraction of the checkout as the whole answer —
+    // the daemon ranks that one and its results arrive through the snapshot.
+    const entries: FileTreeBuildEntry[] = useMemo(
+        () =>
+            query === "" ? listed : listed.filter((entry) => filePathMatches(entry.path, query)),
+        [listed, query],
+    );
+    // The changes a slice leaves out, so the listing says what it is not
+    // showing rather than reading as a clean checkout.
+    const changesOutsideSlice = useMemo(() => {
+        if (!sliced || sliceMatch === undefined) return 0;
+        const named = new Set(sliceMatch.files.map((file) => file.path));
+        return props.changes.filter((change) => !named.has(change.path)).length;
+    }, [props.changes, sliceMatch, sliced]);
+    // The listing needs only what names a slice; the rules stay here.
+    const sliceChoices = useMemo(
+        () =>
+            props.slices.map((slice) => ({
+                id: slice.id,
+                title: slice.title,
+                createdAt: slice.createdAt,
+                pinned: slice.pinned,
+            })),
+        [props.slices],
+    );
     const expansion: FileTreeExpansion = useMemo(
         () => ({
             opened: props.expanded,
@@ -6167,10 +6290,6 @@ function HappyAgentPanelBody(props: {
             defaultDepth: all ? 0 : Number.POSITIVE_INFINITY,
         }),
         [all, props.expanded, props.collapsed],
-    );
-    const changesByPath = useMemo(
-        () => new Map(props.changes.map((change) => [change.path, change])),
-        [props.changes],
     );
     const searchResults = props.search.results;
     const nodes: FileTreeNode[] = useMemo(
@@ -6206,12 +6325,26 @@ function HappyAgentPanelBody(props: {
             searchResults,
         ],
     );
-    const loading = all ? props.workspaceFilesLoading : props.changesStatus === "loading";
+    // A slice waits on the checkout's first answer for it; after that the last
+    // answer stays on screen while a fresh one is asked for.
+    const loading = all
+        ? props.workspaceFilesLoading
+        : sliced
+          ? sliceMatch === undefined ||
+            (sliceMatch.status === "loading" && sliceMatch.files.length === 0)
+          : props.changesStatus === "loading";
     const changesUnavailable = props.changesStatus === "unavailable";
     const changesStale = !all && props.changesStatus === "stale";
-    const addedLines = props.changes.reduce((sum, change) => sum + (change.addedLines ?? 0), 0);
-    const deletedLines = props.changes.reduce((sum, change) => sum + (change.deletedLines ?? 0), 0);
-    const count = !all && (changesUnavailable || loading) ? undefined : entries.length;
+    // Totals over what is listed, so a slice states the diff of its own files
+    // rather than of the whole change it was cut from.
+    const addedLines = listed.reduce((sum, entry) => sum + (entry.addedLines ?? 0), 0);
+    const deletedLines = listed.reduce((sum, entry) => sum + (entry.deletedLines ?? 0), 0);
+    const count = !all && !sliced && (changesUnavailable || loading) ? undefined : entries.length;
+    const note = sliced
+        ? sliceNote(sliceMatch, changesOutsideSlice)
+        : changesStale
+          ? "Showing the last successful Git scan. Retrying automatically…"
+          : undefined;
     // Only the tabs this side is holding: one the reader moved into the main
     // content is drawn there, and the panel neither lists it nor renders it.
     const panelTools = toolTabsPlaced(props.panel, "panel");
@@ -6385,9 +6518,11 @@ function HappyAgentPanelBody(props: {
                                     ? `Nothing matches “${query}”.`
                                     : all
                                       ? "No files."
-                                      : changesUnavailable
-                                        ? "Git changes are temporarily unavailable."
-                                        : "No changed files."
+                                      : sliced
+                                        ? "This slice names no files."
+                                        : changesUnavailable
+                                          ? "Git changes are temporarily unavailable."
+                                          : "No changed files."
                             }
                             onSearchQueryChange={props.onSearchQueryChange}
                             searchQuery={query}
@@ -6395,11 +6530,18 @@ function HappyAgentPanelBody(props: {
                             layout={props.layout}
                             loading={loading}
                             nodes={nodes}
-                            {...(changesStale
-                                ? {
-                                      note: "Showing the last successful Git scan. Retrying automatically…",
-                                  }
-                                : {})}
+                            {...(note === undefined ? {} : { note })}
+                            onSliceSelect={(sliceId: string) =>
+                                props.onSliceSelect(sliceId as HappyAgentSliceId)
+                            }
+                            onSliceHide={(sliceId: string) =>
+                                props.onSliceHide(sliceId as HappyAgentSliceId)
+                            }
+                            onSlicePinToggle={(sliceId: string) =>
+                                props.onSlicePinToggle(sliceId as HappyAgentSliceId)
+                            }
+                            {...(props.slice === undefined ? {} : { sliceId: props.slice.id })}
+                            slices={sliceChoices}
                             {...(props.happyAgentAvailability !== undefined && all
                                 ? {
                                       fileActionsUnavailable:

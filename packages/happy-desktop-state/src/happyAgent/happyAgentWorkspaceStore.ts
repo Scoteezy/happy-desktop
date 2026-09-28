@@ -99,6 +99,10 @@ import type {
     HappyAgentSessionCreateInput,
     HappyAgentSessionId,
     HappyAgentSessionUsage,
+    HappyAgentSlice,
+    HappyAgentSliceFile,
+    HappyAgentSliceId,
+    HappyAgentSliceMatch,
     SubagentSummary,
     HappyAgentTask,
     HappyAgentThinkingLevel,
@@ -689,6 +693,26 @@ export interface HappyAgentWorkspaceSnapshot {
     /** The last reference that named a file the checkout does not have, until put away. */
     readonly fileOpenFailure?: HappyAgentFileOpenFailure;
     /**
+     * The slices agents have built over the addressed checkout, newest first:
+     * every `create_slice` card in a conversation loaded while this window has
+     * been open, plus the ones the reader pinned, minus the ones they hid.
+     * Empty when there are none: the panel offers the slice scope only while
+     * this holds something.
+     */
+    readonly slices: readonly HappyAgentSlice[];
+    /**
+     * The slice the panel lists under the slice scope: the one the reader last
+     * chose in this checkout, or the newest when they never chose or their
+     * choice is hidden. Absent exactly when `slices` is empty.
+     */
+    readonly slice?: HappyAgentSlice;
+    /**
+     * What the checkout holds under `slice` right now, once it has been asked.
+     * Absent until the first ask for that slice; afterwards the last answer,
+     * marked loading while a fresh one is on its way.
+     */
+    readonly sliceMatch?: HappyAgentSliceMatch;
+    /**
      * The open review streams, by the group whose changes each is. One per
      * checkout, because a review is about a working tree rather than about a
      * session, and it stays open across the sessions read beside it.
@@ -823,7 +847,7 @@ export interface HappyAgentBotCreateSnapshot {
 export type HappyAgentBotFacePaint = (seed: string) => Promise<HappyAgentAvatarImage>;
 
 /** Which files the panel lists. */
-export type HappyAgentFileScope = "changed" | "all";
+export type HappyAgentFileScope = "changed" | "all" | "slice";
 
 /**
  * How the panel arranges them. Flat suits a handful of changed files, where a
@@ -926,6 +950,34 @@ export interface HappyAgentFileComments {
 }
 
 const FILE_COMMENTS_IDLE: HappyAgentFileComments = { comments: [] };
+
+/** No slices known, or none left: one shared value so the snapshot keeps its identity. */
+const SLICES_NONE: readonly HappyAgentSlice[] = [];
+
+/** A slice the checkout has not yet answered for. */
+const SLICE_MATCH_PENDING: HappyAgentSliceMatch = {
+    status: "loading",
+    files: [],
+    total: 0,
+    truncated: false,
+    unmatchedRules: [],
+};
+
+/**
+ * The slice the panel lists by: the remembered one while it is still offered,
+ * and otherwise the newest. A remembered choice can name a slice the reader
+ * has since put away; the newest is what they would have reached for anyway.
+ */
+function sliceResolve(
+    slices: readonly HappyAgentSlice[],
+    sliceId: string | undefined,
+): HappyAgentSlice | undefined {
+    if (sliceId !== undefined) {
+        const chosen = slices.find((slice) => slice.id === sliceId);
+        if (chosen !== undefined) return chosen;
+    }
+    return slices[0];
+}
 
 /**
  * Why a file a reference named could not be opened: the path as it was
@@ -1549,6 +1601,31 @@ export interface HappyAgentWorkspaceStore {
      * a reader who only ever looks at their own changes.
      */
     fileScopeUpdate(groupId: HappyAgentGroupId, scope: HappyAgentFileScope): void;
+    /**
+     * Looks through one slice of a checkout: makes it the slice the panel
+     * lists by and puts the panel's listing under the slice scope. The choice
+     * is remembered per checkout, like the scope itself.
+     */
+    sliceSelect(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
+    /**
+     * Opens one slice from where it was named — the card in a transcript —
+     * bringing the panel to its file listing under that slice. A card always
+     * opens what it names: a slice the reader had put away comes back.
+     */
+    sliceOpen(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
+    /**
+     * Puts one slice away. It leaves the picker and nothing else happens to
+     * it — the card in the transcript still opens it. If it was the slice
+     * being listed by, the panel moves to the newest remaining one, or back to
+     * the changed files when none remain.
+     */
+    sliceHide(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
+    /**
+     * Keeps one slice with the checkout's view preferences, whole, so it is
+     * offered even when no loaded conversation holds its card — or lets a kept
+     * one go.
+     */
+    slicePinToggle(groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void;
     /** Chooses whether the panel nests paths into folders, for this checkout. */
     fileLayoutUpdate(groupId: HappyAgentGroupId, layout: HappyAgentFileLayout): void;
     /**
@@ -1977,6 +2054,39 @@ export function happyAgentWorkspaceStoreCreate(
     /** Which reference is still being followed; a later one retires an earlier. */
     let fileReferenceGeneration = 0;
     /**
+     * Every slice card seen in a conversation loaded while this window has been
+     * open, by the checkout it was evaluated against and then by card. A card
+     * is a tool call, so its id is the slice's; nothing is stored anywhere
+     * else. Filed under the checkout the card names rather than the one the
+     * conversation is read beside: a bot holds several checkouts, and a
+     * subtask has one of its own.
+     */
+    const slicesSeen = new Map<HappyAgentGroupId, Map<HappyAgentSliceId, HappyAgentSlice>>();
+    /** Counted up whenever a card is first seen, so the offered list is rebuilt only then. */
+    let slicesSeenVersion = 0;
+    /** The offered list as last built, and what it was built from. */
+    let slicesMemo:
+        | {
+              readonly groupId: HappyAgentGroupId;
+              readonly version: number;
+              readonly preferences: HappyAgentViewPreferencesDocument;
+              readonly slices: readonly HappyAgentSlice[];
+          }
+        | undefined;
+    /** What the checkout last answered for each slice asked about. */
+    let sliceMatches: ReadonlyMap<HappyAgentSliceId, HappyAgentSliceMatch> = new Map();
+    /** Which ask for each slice is still wanted; a later ask retires an earlier one. */
+    const sliceMatchGenerations = new Map<HappyAgentSliceId, number>();
+    /** The change list each answer was evaluated against, so a moved working tree asks again. */
+    const sliceMatchChanges = new Map<
+        HappyAgentSliceId,
+        readonly HappyAgentGitChangedFile[] | undefined
+    >();
+    /** The checkout each asked-about slice belongs to, so a file hint can find them. */
+    const sliceMatchGroups = new Map<HappyAgentSliceId, HappyAgentGroupId>();
+    /** Slices whose checkout moved since they were last asked about. */
+    const sliceMatchStale = new Set<HappyAgentSliceId>();
+    /**
      * The notes of every checkout the reader has stepped away from with notes
      * still unsent, by checkout. A checkout's notes leave this the moment it is
      * addressed again, and it holds nothing for a checkout left with none.
@@ -2321,6 +2431,7 @@ export function happyAgentWorkspaceStoreCreate(
         fileViewMode,
         fileViewWrap,
         fileScope: "changed",
+        slices: SLICES_NONE,
         fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
         fileSearch: FILE_SEARCH_IDLE,
         fileComments: FILE_COMMENTS_IDLE,
@@ -2565,6 +2676,7 @@ export function happyAgentWorkspaceStoreCreate(
                   );
             if (conversation.type !== "ready" || !conversationEqual(conversation.value, next)) {
                 conversation = { type: "ready", value: next };
+                slicesCollect(next.entries, next.conversationId);
             }
         }
         const groupComposerDraft = groupComposer?.getState();
@@ -2576,7 +2688,17 @@ export function happyAgentWorkspaceStoreCreate(
         // another project shows that project the way it was left, rather than
         // carrying the last one's panel width and listing across to it.
         const nextView = groupView(nextAddress.groupId);
-        const nextFileScope = nextView.fileScope ?? "changed";
+        const nextSlices = slicesOf(nextAddress.groupId);
+        const nextSlice = sliceResolve(nextSlices, nextView.sliceId);
+        // A remembered slice scope over a checkout with nothing to slice by
+        // shows the changes: an empty listing would say the checkout is clean.
+        const preferredScope = nextView.fileScope ?? "changed";
+        const nextFileScope =
+            preferredScope === "slice" && nextSlice === undefined ? "changed" : preferredScope;
+        // The checkout is asked what the listed slice holds whenever the
+        // listing is drawn and the last answer no longer stands.
+        if (nextFileScope === "slice" && nextSlice !== undefined) sliceMatchEnsure(nextSlice);
+        const nextSliceMatch = nextSlice === undefined ? undefined : sliceMatches.get(nextSlice.id);
         // The daemon's all-files contract is a lazy directory tree. Flattening
         // it would require recursively opening every directory before the first
         // row could be truthful, which turns one panel open into a request storm.
@@ -2627,6 +2749,9 @@ export function happyAgentWorkspaceStoreCreate(
                 snapshot.fileViewMode === fileViewMode &&
                 snapshot.fileViewWrap === fileViewWrap &&
                 snapshot.fileScope === nextFileScope &&
+                snapshot.slices === nextSlices &&
+                snapshot.slice === nextSlice &&
+                snapshot.sliceMatch === nextSliceMatch &&
                 snapshot.fileLayout === nextFileLayout &&
                 snapshot.fileSearch === fileSearch &&
                 snapshot.fileComments === fileComments &&
@@ -2655,6 +2780,9 @@ export function happyAgentWorkspaceStoreCreate(
                           fileViewMode,
                           fileViewWrap,
                           fileScope: nextFileScope,
+                          slices: nextSlices,
+                          ...(nextSlice === undefined ? {} : { slice: nextSlice }),
+                          ...(nextSliceMatch === undefined ? {} : { sliceMatch: nextSliceMatch }),
                           fileLayout: nextFileLayout,
                           fileSearch,
                           fileComments,
@@ -2761,6 +2889,182 @@ export function happyAgentWorkspaceStoreCreate(
         const view = groupView(groupId);
         fileTreeExpanded = new Set(view.fileTreeOpened ?? []);
         fileTreeCollapsed = new Set(view.fileTreeClosed ?? []);
+    };
+
+    /**
+     * Notes every slice card a conversation holds. A card carries the whole
+     * slice — the mask and the paths named outright — and says which checkout
+     * it was evaluated against, so each is filed under that checkout whatever
+     * conversation showed it. A card already noted is left as it was: a slice
+     * is written once, by the call that made it.
+     */
+    const slicesCollect = (
+        entries: readonly ConversationEntry[],
+        agentId: HappyAgentSessionId,
+    ): void => {
+        let noted = false;
+        for (const entry of entries) {
+            if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") continue;
+            const tool = entry.activity.tool;
+            const presentation = tool.presentation;
+            if (presentation?.type !== "slice") continue;
+            const groupId = presentation.workspaceId as HappyAgentGroupId;
+            const id = tool.toolCallId as HappyAgentSliceId;
+            let seen = slicesSeen.get(groupId);
+            if (seen === undefined) {
+                seen = new Map();
+                slicesSeen.set(groupId, seen);
+            }
+            if (seen.has(id)) continue;
+            seen.set(id, {
+                id,
+                groupId,
+                root: presentation.root,
+                agentId,
+                title: presentation.title,
+                ...(presentation.note === undefined ? {} : { note: presentation.note }),
+                source: presentation.source,
+                include: presentation.include,
+                exclude: presentation.exclude,
+                paths: presentation.paths,
+                fileCount: presentation.fileCount,
+                createdAt: entry.occurredAt ?? Date.now(),
+                pinned: false,
+            });
+            noted = true;
+        }
+        if (noted) slicesSeenVersion += 1;
+    };
+
+    /**
+     * The slices of one checkout as the picker offers them: the cards seen and
+     * the slices pinned, together, the hidden ones left out, newest first. A
+     * pinned slice stands for its card when both are known, so pinning shows
+     * on the row. Rebuilt only when a card is first seen or the checkout's
+     * preferences change, so the snapshot keeps one list across ordinary
+     * notifications.
+     */
+    const slicesOf = (groupId: HappyAgentGroupId | undefined): readonly HappyAgentSlice[] => {
+        if (groupId === undefined) return SLICES_NONE;
+        if (
+            slicesMemo !== undefined &&
+            slicesMemo.groupId === groupId &&
+            slicesMemo.version === slicesSeenVersion &&
+            slicesMemo.preferences === viewPreferences
+        )
+            return slicesMemo.slices;
+        const view = groupView(groupId);
+        const hidden = new Set(view.slicesHidden ?? []);
+        const merged = new Map<HappyAgentSliceId, HappyAgentSlice>();
+        for (const pin of view.slicesPinned ?? [])
+            merged.set(pin.id as HappyAgentSliceId, {
+                ...pin,
+                id: pin.id as HappyAgentSliceId,
+                groupId,
+                agentId: pin.agentId as HappyAgentSessionId,
+                pinned: true,
+            });
+        for (const slice of slicesSeen.get(groupId)?.values() ?? [])
+            if (!merged.has(slice.id)) merged.set(slice.id, slice);
+        const slices = [...merged.values()]
+            .filter((slice) => !hidden.has(slice.id))
+            .sort((left, right) => right.createdAt - left.createdAt);
+        const offered = slices.length === 0 ? SLICES_NONE : slices;
+        slicesMemo = {
+            groupId,
+            version: slicesSeenVersion,
+            preferences: viewPreferences,
+            slices: offered,
+        };
+        return offered;
+    };
+
+    /**
+     * Asks the checkout what a slice holds right now, unless the last answer
+     * still stands. A mask is evaluated against the working tree as it is, so
+     * it is asked again whenever the tree moves: the daemon reports a
+     * different change list, or a file hint names the checkout. The last
+     * answer stays on screen, marked loading, until the next one lands.
+     */
+    const sliceMatchEnsure = (slice: HappyAgentSlice): void => {
+        const changes = groupChangesRead(slice.groupId);
+        const current = sliceMatches.get(slice.id);
+        if (
+            current !== undefined &&
+            !sliceMatchStale.has(slice.id) &&
+            sliceMatchChanges.get(slice.id) === changes
+        )
+            return;
+        sliceMatchStale.delete(slice.id);
+        sliceMatchChanges.set(slice.id, changes);
+        sliceMatchGroups.set(slice.id, slice.groupId);
+        const generation = (sliceMatchGenerations.get(slice.id) ?? 0) + 1;
+        sliceMatchGenerations.set(slice.id, generation);
+        const asking = new Map(sliceMatches);
+        asking.set(
+            slice.id,
+            current === undefined ? SLICE_MATCH_PENDING : { ...current, status: "loading" },
+        );
+        sliceMatches = asking;
+        void client
+            .filesMatch(slice.groupId, {
+                source: slice.source,
+                include: slice.include,
+                exclude: slice.exclude,
+                paths: slice.paths,
+            })
+            .then(
+                (result) => {
+                    if (disposed || sliceMatchGenerations.get(slice.id) !== generation) return;
+                    // A file the agent named outright keeps what it said about
+                    // it; one the rules matched has the rule for a reason.
+                    const named = new Map(slice.paths.map((path) => [path.path, path]));
+                    const files = result.files.map<HappyAgentSliceFile>((path) => {
+                        const pin = named.get(path);
+                        return {
+                            path,
+                            ...(pin?.reason === undefined ? {} : { reason: pin.reason }),
+                            lines: pin?.lines ?? [],
+                        };
+                    });
+                    const answered = new Map(sliceMatches);
+                    answered.set(slice.id, {
+                        status: "ready",
+                        files,
+                        total: result.total,
+                        truncated: result.truncated,
+                        unmatchedRules: result.unmatchedRules,
+                    });
+                    sliceMatches = answered;
+                    recompute();
+                },
+                (error: unknown) => {
+                    if (disposed || sliceMatchGenerations.get(slice.id) !== generation) return;
+                    const refused = new Map(sliceMatches);
+                    refused.set(slice.id, {
+                        ...(current ?? SLICE_MATCH_PENDING),
+                        status: "error",
+                        error: happyAgentUserError(error).message,
+                    });
+                    sliceMatches = refused;
+                    recompute();
+                },
+            );
+    };
+
+    /** Marks every answered slice of one checkout as needing another look; the next listing asks. */
+    const sliceMatchesInvalidate = (groupId: HappyAgentGroupId): void => {
+        for (const [id, owner] of sliceMatchGroups) if (owner === groupId) sliceMatchStale.add(id);
+    };
+
+    /** Lists the panel by one slice; shared by the picker and the transcript card. */
+    const sliceSelect = (groupId: HappyAgentGroupId, sliceId: HappyAgentSliceId): void => {
+        const view = groupView(groupId);
+        if (view.fileScope === "slice" && view.sliceId === sliceId) return;
+        viewPreferencesWrite(groupId, { fileScope: "slice", sliceId });
+        // The query survives the switch, asked again against the slice.
+        if (fileSearch.query !== "") fileSearchApply(fileSearch.query);
+        recompute();
     };
 
     /**
@@ -3719,6 +4023,11 @@ export function happyAgentWorkspaceStoreCreate(
             change.paths === null || change.paths.includes(path);
         fileAddressesInvalidate(change.groupId, change.paths);
         fileCommentsStale(change.groupId, change.paths);
+        // A slice is evaluated against the working tree, so a tree that moved
+        // is asked about again — now, if it is on screen.
+        sliceMatchesInvalidate(change.groupId);
+        if (change.groupId === addressedGroupId && fileScopeOf(change.groupId) === "slice")
+            recompute();
         reviewReconcile(change.groupId, change.paths);
         for (const tab of fileTabs) {
             if (tab.groupId !== change.groupId || !affected(tab.path)) continue;
@@ -5496,6 +5805,7 @@ export function happyAgentWorkspaceStoreCreate(
                     // Nothing is addressed here, so there is no checkout whose
                     // arrangement this could be: the defaults stand in.
                     fileScope: "changed",
+                    slices: SLICES_NONE,
                     fileLayout: HAPPY_AGENT_FILE_LAYOUT_DEFAULT,
                     fileSearch,
                     fileComments,
@@ -6341,6 +6651,59 @@ export function happyAgentWorkspaceStoreCreate(
             // the same thing — but the two scopes answer it from different
             // places, so it is asked again against the one now showing.
             if (fileSearch.query !== "") fileSearchApply(fileSearch.query);
+            recompute();
+        },
+        sliceSelect,
+        sliceOpen(groupId, sliceId) {
+            const view = groupView(groupId);
+            // A card always opens what it names, so a slice that was put away
+            // is offered again before it is listed by.
+            if (view.slicesHidden?.includes(sliceId) === true)
+                viewPreferencesWrite(groupId, {
+                    slicesHidden: view.slicesHidden.filter((id) => id !== sliceId),
+                });
+            panel.filesSelect();
+            sliceSelect(groupId, sliceId);
+            recompute();
+        },
+        sliceHide(groupId, sliceId) {
+            const view = groupView(groupId);
+            if (view.slicesHidden?.includes(sliceId) === true) return;
+            viewPreferencesWrite(groupId, {
+                slicesHidden: [...(view.slicesHidden ?? []), sliceId],
+            });
+            recompute();
+        },
+        slicePinToggle(groupId, sliceId) {
+            const view = groupView(groupId);
+            const pinned = view.slicesPinned ?? [];
+            if (pinned.some((pin) => pin.id === sliceId)) {
+                viewPreferencesWrite(groupId, {
+                    slicesPinned: pinned.filter((pin) => pin.id !== sliceId),
+                });
+                recompute();
+                return;
+            }
+            const slice = slicesOf(groupId).find((candidate) => candidate.id === sliceId);
+            if (slice === undefined) return;
+            viewPreferencesWrite(groupId, {
+                slicesPinned: [
+                    ...pinned,
+                    {
+                        id: slice.id,
+                        agentId: slice.agentId,
+                        root: slice.root,
+                        title: slice.title,
+                        ...(slice.note === undefined ? {} : { note: slice.note }),
+                        source: slice.source,
+                        include: slice.include,
+                        exclude: slice.exclude,
+                        paths: slice.paths,
+                        fileCount: slice.fileCount,
+                        createdAt: slice.createdAt,
+                    },
+                ],
+            });
             recompute();
         },
         fileLayoutUpdate(groupId, layout) {

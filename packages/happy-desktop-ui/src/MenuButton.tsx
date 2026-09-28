@@ -20,6 +20,8 @@ export interface MenuButtonProps {
     /** Static rows, or a catalog materialized only when the menu opens. */
     readonly items: readonly MenuItem[] | (() => readonly MenuItem[]);
     readonly onSelect: (id: string) => void;
+    /** A row's trailing act was taken; the menu closes as it does for a choice. */
+    readonly onAction?: (id: string) => void;
     readonly align?: "start" | "end";
     /** Which edge of the trigger the popover opens from. */
     readonly placement?: "above" | "below";
@@ -186,6 +188,14 @@ export function MenuButton(props: MenuButtonProps) {
                     id={menuId}
                     items={[...visibleItems]}
                     label={props.menuLabel}
+                    {...(props.onAction
+                        ? {
+                              onAction: (id: string) => {
+                                  close(true);
+                                  props.onAction?.(id);
+                              },
+                          }
+                        : {})}
                     onSelect={(id) => {
                         if (id === previousPageId) {
                             setMenuPage((page) => Math.max(0, page - 1));
@@ -226,8 +236,40 @@ export function MenuButton(props: MenuButtonProps) {
                     close(true);
                     return;
                 }
+                const active =
+                    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                // A row with a trailing act is two controls side by side: the
+                // row itself and the act. Right and Left step between them,
+                // and Tab does the same before it would leave the menu, so the
+                // act is reachable without a pointer.
+                const row = active?.closest<HTMLElement>(".happy-menu__row") ?? null;
+                const rowItem = row?.querySelector<HTMLElement>('[role="menuitem"]') ?? null;
+                const rowAction =
+                    row?.querySelector<HTMLElement>(".happy-menu__item-action:not(:disabled)") ??
+                    null;
+                const onAction = active !== null && active === rowAction;
                 if (event.key === "Tab") {
+                    const sideways = event.shiftKey
+                        ? onAction
+                            ? rowItem
+                            : null
+                        : onAction
+                          ? null
+                          : rowAction;
+                    if (sideways !== null) {
+                        event.preventDefault();
+                        sideways.focus();
+                        return;
+                    }
                     close(false);
+                    return;
+                }
+                if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+                    const sideways =
+                        event.key === "ArrowRight" ? rowAction : onAction ? rowItem : null;
+                    if (sideways === null) return;
+                    event.preventDefault();
+                    sideways.focus();
                     return;
                 }
                 const items = menuItems();
@@ -239,8 +281,13 @@ export function MenuButton(props: MenuButtonProps) {
                 }
                 if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
                 event.preventDefault();
-                const active = document.activeElement as HTMLElement | null;
-                const at = active ? items.indexOf(active) : -1;
+                // Up and Down from an act move by row, the same as from the row.
+                const at =
+                    onAction && rowItem
+                        ? items.indexOf(rowItem)
+                        : active
+                          ? items.indexOf(active)
+                          : -1;
                 const step = event.key === "ArrowDown" ? 1 : -1;
                 const next = at < 0 ? (step > 0 ? 0 : items.length - 1) : at + step;
                 items[(next + items.length) % items.length]?.focus();

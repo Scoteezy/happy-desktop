@@ -6,6 +6,8 @@ export interface FileTreeBuildEntry {
     readonly gitStatus?: FileTreeGitStatus;
     readonly addedLines?: number;
     readonly deletedLines?: number;
+    /** Why this row is listed, shown dimmed after its name: a slice's reason, the lines it named. */
+    readonly detail?: string;
 }
 
 /**
@@ -51,6 +53,7 @@ function entryFacts(entry: FileTreeBuildEntry) {
         ...(entry.gitStatus ? { gitStatus: entry.gitStatus } : {}),
         ...(entry.addedLines === undefined ? {} : { addedLines: entry.addedLines }),
         ...(entry.deletedLines === undefined ? {} : { deletedLines: entry.deletedLines }),
+        ...(entry.detail === undefined ? {} : { detail: entry.detail }),
     };
 }
 
