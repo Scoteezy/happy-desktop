@@ -386,7 +386,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="08"
                 label="Default account and a named one"
-                detail="Codex runs on its own full login, which reads Default account with its plan. Claude runs on claude_extra, a setup token that reports no plan, so it reads by its id alone."
+                detail="Codex runs on its own account, which reads Default account. Claude runs on claude_extra, which reads by its id. Headers never show a plan; plans live in the account panel."
                 stage="surface"
             >
                 <Open selection={OPUS_EXTRA} />
@@ -394,7 +394,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09"
                 label="Cached usage shown instantly"
-                detail="The panel shows the reading held from earlier in the session at once and refreshes it in the background once it is a minute old. The full claude login reports its plan, Max."
+                detail="The panel shows the reading held from earlier in the session at once and refreshes it in the background once it is a minute old. Every account has a plan cell: the full claude login reports Max."
                 stage="surface"
             >
                 <Open preview={{ accounts: "claude", accountHover: "claude" }} />
@@ -402,7 +402,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="10"
                 label="Usage without a plan"
-                detail="claude_extra runs on a setup token: its 5h and weekly usage are real, read from rate-limit headers, but it cannot see its plan, so none is shown, in the header or the list."
+                detail="claude_extra runs on a setup token: its 5h and weekly usage are real, read from rate-limit headers, but it cannot see its plan, so its plan cell reads a muted dash."
                 stage="surface"
             >
                 <Open
@@ -413,7 +413,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="11"
                 label="API-key account without usage"
-                detail="grok_api is an API key, and the Grok API has no usage endpoint: no plan, and its usage reads unknown, never 0%."
+                detail="grok_api is an API key, and the Grok API has no usage endpoint: its plan cell reads a dash and its usage reads unknown, never 0%. The grok CLI account reports no plan either."
                 stage="surface"
             >
                 <Open preview={{ accounts: "grok", accountHover: "grok_api" }} />

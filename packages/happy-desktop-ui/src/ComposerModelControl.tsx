@@ -619,16 +619,10 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     /** An account says that it is one: the service's own is its default, any other is its id. */
     const accountName = (account: ComposerModelAccount) =>
         account.default ? "Default account" : account.label;
-    /**
-     * The header names the account with its plan only when the service reported
-     * one: an account whose usage comes from a token without plan access, or
-     * that has no usage at all, shows no plan rather than a guessed one.
-     */
+    /** The header only names the account; its plan belongs to the account panel. */
     const accountSummary = (service: ComposerModelService) => {
         const account = service.accounts.find((candidate) => candidate.id === accountOf(service));
-        if (account === undefined) return accountOf(service);
-        const plan = usageOf(account)?.plan;
-        return plan ? `${accountName(account)} · ${plan}` : accountName(account);
+        return account === undefined ? accountOf(service) : accountName(account);
     };
     const renderAccounts = (service: ComposerModelService) => {
         const shown =
@@ -679,13 +673,20 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                     </span>
                                     {current ? <Check /> : null}
                                 </span>
-                                {missing || plan ? (
+                                {missing ? (
                                     <span className="happy-composer-model-control__account-note">
-                                        {missing
-                                            ? `no ${selectedModel?.label ?? selection?.model}`
-                                            : plan}
+                                        {`no ${selectedModel?.label ?? selection?.model}`}
                                     </span>
                                 ) : null}
+                                {/* Every account has a plan cell. One the daemon could not read (a
+                                    setup token, an API key) says so with a dash, never a guess. */}
+                                <span
+                                    className="happy-composer-model-control__account-plan"
+                                    data-happy-desktop-ui="composer-model-control-account-plan"
+                                    data-unknown={plan ? undefined : ""}
+                                >
+                                    {plan ?? "—"}
+                                </span>
                             </button>
                         );
                     })}

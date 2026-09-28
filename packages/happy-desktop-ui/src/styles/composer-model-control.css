@@ -439,6 +439,23 @@
     white-space: nowrap;
 }
 
+/* One right-aligned plan column down the account panel, wide enough for any
+ * reported plan, so every row ends on the same edge. */
+.happy-composer-model-control__account-plan {
+    display: flex;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    min-width: 32px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+/* A plan the daemon could not read: a muted dash, not a plan. */
+.happy-composer-model-control__account-plan[data-unknown] {
+    opacity: 0.56;
+}
+
 .happy-composer-model-control__usage {
     display: flex;
     flex-direction: column;
