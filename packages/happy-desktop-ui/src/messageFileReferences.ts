@@ -1,4 +1,4 @@
-import { fileReferenceIsWhole, fileReferencePattern } from "./fileReference";
+import { fileReferenceIsWhole, fileReferenceMatches } from "./fileReference";
 
 /**
  * The parts of a Markdown tree this walk touches, named structurally.
@@ -93,13 +93,12 @@ function inlineCodeLink(node: MarkdownNode): MarkdownNode | undefined {
  * exactly as it was.
  */
 function textPieces(value: string): MarkdownNode[] | undefined {
-    const pattern = fileReferencePattern();
-    let pieces: MarkdownNode[] | undefined;
+    const matches = fileReferenceMatches(value);
+    if (matches.length === 0) return undefined;
+    const pieces: MarkdownNode[] = [];
     let consumed = 0;
-    let match = pattern.exec(value);
-    while (match !== null) {
-        const reference = match[0];
-        pieces ??= [];
+    for (const match of matches) {
+        const reference = match.text;
         if (match.index > consumed)
             pieces.push({ type: "text", value: value.slice(consumed, match.index) });
         pieces.push({
@@ -108,9 +107,7 @@ function textPieces(value: string): MarkdownNode[] | undefined {
             children: [{ type: "text", value: reference }],
         });
         consumed = match.index + reference.length;
-        match = pattern.exec(value);
     }
-    if (pieces === undefined) return undefined;
     if (consumed < value.length) pieces.push({ type: "text", value: value.slice(consumed) });
     return pieces;
 }

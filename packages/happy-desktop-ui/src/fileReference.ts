@@ -48,10 +48,148 @@ export function fileReferencePattern(): RegExp {
     return new RegExp(REFERENCE_PATTERN, "gu");
 }
 
+/**
+ * Extensions a file someone would point into is known to end in. Source, the
+ * files beside source, and the documents written about it.
+ *
+ * The shape alone is not enough: `api.example.com:443`, `db.internal:5432`,
+ * and `redis.io:6379` are each a dotted name and a number, and a top-level
+ * domain is indistinguishable from an extension by looks. A name with a
+ * directory in it is a path whatever it ends in; a bare name has to end in
+ * something files end in.
+ */
+const SOURCE_EXTENSIONS = new Set([
+    "astro",
+    "bash",
+    "bat",
+    "c",
+    "cc",
+    "cfg",
+    "cjs",
+    "clj",
+    "cljs",
+    "cmd",
+    "conf",
+    "cpp",
+    "cs",
+    "css",
+    "csv",
+    "cts",
+    "cxx",
+    "dart",
+    "el",
+    "env",
+    "erl",
+    "ex",
+    "exs",
+    "fish",
+    "fs",
+    "go",
+    "gql",
+    "gradle",
+    "graphql",
+    "groovy",
+    "h",
+    "hcl",
+    "hh",
+    "hpp",
+    "hs",
+    "htm",
+    "html",
+    "hxx",
+    "ini",
+    "java",
+    "jl",
+    "js",
+    "json",
+    "json5",
+    "jsonc",
+    "jsx",
+    "kt",
+    "kts",
+    "less",
+    "lisp",
+    "lock",
+    "lua",
+    "m",
+    "md",
+    "mdx",
+    "mjs",
+    "ml",
+    "mli",
+    "mm",
+    "mts",
+    "nim",
+    "php",
+    "pl",
+    "pm",
+    "proto",
+    "ps1",
+    "py",
+    "r",
+    "rb",
+    "rkt",
+    "rs",
+    "sass",
+    "scala",
+    "scm",
+    "scss",
+    "sh",
+    "sol",
+    "sql",
+    "svelte",
+    "svg",
+    "swift",
+    "tex",
+    "tf",
+    "toml",
+    "ts",
+    "tsv",
+    "tsx",
+    "txt",
+    "v",
+    "vim",
+    "vue",
+    "xml",
+    "yaml",
+    "yml",
+    "zig",
+    "zsh",
+]);
+
+/**
+ * Whether a name the pattern accepted is one a file would actually have: a
+ * path with a directory in it, or a bare name ending in a source extension.
+ */
+export function fileReferencePathPlausible(path: string): boolean {
+    if (path.includes("/")) return true;
+    const dot = path.lastIndexOf(".");
+    return dot !== -1 && SOURCE_EXTENSIONS.has(path.slice(dot + 1).toLowerCase());
+}
+
+/**
+ * Every written file reference in a run of prose, in order, as the text that
+ * was matched and where it starts.
+ */
+export function fileReferenceMatches(
+    value: string,
+): readonly { readonly index: number; readonly text: string }[] {
+    const pattern = fileReferencePattern();
+    const matches: { index: number; text: string }[] = [];
+    let match = pattern.exec(value);
+    while (match !== null) {
+        const path = match[1];
+        if (path !== undefined && fileReferencePathPlausible(path))
+            matches.push({ index: match.index, text: match[0] });
+        match = pattern.exec(value);
+    }
+    return matches;
+}
+
 /** Whether this whole string is one written file reference and nothing else. */
 export function fileReferenceIsWhole(value: string): boolean {
     const match = new RegExp(`^${REFERENCE_PATTERN.source}$`, "u").exec(value);
-    return match !== null;
+    return match !== null && match[1] !== undefined && fileReferencePathPlausible(match[1]);
 }
 
 /**

@@ -3687,6 +3687,20 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 modelUsageWatch={modelUsageWatch}
                 activitySelected={panel.open && panel.activeViewId === "activity"}
                 conversation={conversation}
+                {...(workspace.fileOpenFailure === undefined
+                    ? {}
+                    : {
+                          notice: (
+                              <Banner
+                                  data-testid="file-reference-failure"
+                                  onDismiss={() => props.workspace.fileOpenFailureDismiss()}
+                                  title={`Could not open ${workspace.fileOpenFailure.path}`}
+                                  tone="warning"
+                              >
+                                  {workspace.fileOpenFailure.message}
+                              </Banner>
+                          ),
+                      })}
                 emptyContent={
                     openBot?.systemKey === "chief_of_staff" &&
                     conversation.type === "ready" &&
@@ -3714,7 +3728,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 onFileOpen={(path, selection) => {
                     if (!happyAgentOnline() || !openGroup.create) return;
                     const target = workspacePathRelative(path, openGroup.create.cwd);
-                    props.workspace.filePanelOpen(
+                    // A reference is a claim about the checkout, and the
+                    // checkout is asked before a tab is opened on the claim.
+                    props.workspace.fileReferenceOpen(
                         openGroup.id,
                         target,
                         fileTabKind(target),
@@ -4469,7 +4485,7 @@ function HappyAgentFileBody(props: {
         if (!props.happyAgentOnline()) return;
         const kind = fileTabKind(target);
         if (file.placement === "panel")
-            workspace.filePanelOpen(file.groupId, target, kind, selection);
+            workspace.fileReferenceOpen(file.groupId, target, kind, selection);
         else props.onMainFileOpen(target, kind, selection);
     };
     // Typing into a document that could never be written back is worse than not
