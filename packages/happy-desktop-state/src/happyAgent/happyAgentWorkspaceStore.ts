@@ -883,6 +883,9 @@ export interface HappyAgentCommentDraft {
  * Memory-only and deliberately so: a note here exists to become a request to
  * the agent, and it is spent when it does. Nothing about it is worth surviving
  * a restart, and persisting it would make an unsent remark look like a record.
+ * It does survive the reader stepping into another checkout and back: the
+ * notes are kept with the checkout they are about for as long as this window
+ * is open, so a glance at another project does not silently throw them away.
  */
 export interface HappyAgentFileComments {
     readonly comments: readonly HappyAgentFileComment[];
@@ -1886,11 +1889,19 @@ export function happyAgentWorkspaceStoreCreate(
     /** Which search request is still wanted; a later query retires an earlier one. */
     let fileSearchGeneration = 0;
     /**
-     * Review notes on this checkout. Like the search, this is what the reader is
-     * doing rather than how they like things, so it is neither persisted nor
-     * carried to another checkout.
+     * Review notes on the addressed checkout. Like the search, this is what the
+     * reader is doing rather than how they like things, so it is not persisted.
+     * Unlike the search it is not dropped at the checkout boundary either: a
+     * note is work, and work is not thrown away because the reader looked at
+     * another project for a minute.
      */
     let fileComments: HappyAgentFileComments = FILE_COMMENTS_IDLE;
+    /**
+     * The notes of every checkout the reader has stepped away from with notes
+     * still unsent, by checkout. A checkout's notes leave this the moment it is
+     * addressed again, and it holds nothing for a checkout left with none.
+     */
+    const fileCommentsHeld = new Map<HappyAgentGroupId, HappyAgentFileComments>();
     let reviews: ReadonlyMap<HappyAgentGroupId, HappyAgentReview> = new Map();
     /** Retires reads belonging to a review that has since been rebuilt or closed. */
     const reviewGenerations = new Map<string, number>();
@@ -2679,10 +2690,31 @@ export function happyAgentWorkspaceStoreCreate(
         fileSearch = FILE_SEARCH_IDLE;
     };
 
-    /** Review notes belong to the checkout they were written about. */
-    const fileCommentsReset = (): void => {
+    /**
+     * Moves the notes from the checkout being left to the one being entered.
+     *
+     * Review notes belong to the checkout they were written about, so the ones
+     * left unsent are put aside under it rather than dropped, and whatever was
+     * put aside for the next checkout comes back as its notes. The draft's chip
+     * follows: projecting takes the leaving checkout's chip out of its draft,
+     * and the entering checkout's draft is built with its own notes in it.
+     */
+    const fileCommentsSwitch = (
+        from: HappyAgentGroupId | undefined,
+        to: HappyAgentGroupId | undefined,
+    ): void => {
+        if (from !== undefined) {
+            if (fileComments.comments.length === 0 && fileComments.draft === undefined)
+                fileCommentsHeld.delete(from);
+            else fileCommentsHeld.set(from, fileComments);
+        }
         fileComments = FILE_COMMENTS_IDLE;
         fileCommentsProject();
+        if (to === undefined) return;
+        const held = fileCommentsHeld.get(to);
+        if (held === undefined) return;
+        fileCommentsHeld.delete(to);
+        fileComments = held;
     };
 
     /** Whether two projections of the notes say the same thing in the same order. */
@@ -2803,18 +2835,32 @@ export function happyAgentWorkspaceStoreCreate(
      * attached to code nobody meant. A note that knows it is stale can still be
      * sent — it carries the caveat with it.
      */
-    const fileCommentsStale = (paths: readonly string[] | null): void => {
-        if (fileComments.comments.length === 0) return;
+    const fileCommentsStale = (
+        groupId: HappyAgentGroupId,
+        paths: readonly string[] | null,
+    ): void => {
         const changed = paths === null ? undefined : new Set(paths);
         const affected = (path: string): boolean => changed === undefined || changed.has(path);
-        let touched = false;
-        const comments = fileComments.comments.map((comment) => {
-            if (comment.stale || !affected(comment.anchor.path)) return comment;
-            touched = true;
-            return { ...comment, stale: true };
-        });
-        if (!touched) return;
-        fileComments = { ...fileComments, comments };
+        const staled = (notes: HappyAgentFileComments): HappyAgentFileComments | undefined => {
+            let touched = false;
+            const comments = notes.comments.map((comment) => {
+                if (comment.stale || !affected(comment.anchor.path)) return comment;
+                touched = true;
+                return { ...comment, stale: true };
+            });
+            return touched ? { ...notes, comments } : undefined;
+        };
+        // A checkout the reader has stepped away from can still be written to,
+        // by an agent or by anything else, and its notes go stale just the same.
+        if (groupId !== addressedGroupId) {
+            const held = fileCommentsHeld.get(groupId);
+            const next = held === undefined ? undefined : staled(held);
+            if (next !== undefined) fileCommentsHeld.set(groupId, next);
+            return;
+        }
+        const next = staled(fileComments);
+        if (next === undefined) return;
+        fileComments = next;
         // The caveat travels with the note, so the chip is rewritten for it.
         fileCommentsProject();
     };
@@ -3579,7 +3625,7 @@ export function happyAgentWorkspaceStoreCreate(
         const affected = (path: string): boolean =>
             change.paths === null || change.paths.includes(path);
         fileAddressesInvalidate(change.groupId, change.paths);
-        fileCommentsStale(change.paths);
+        fileCommentsStale(change.groupId, change.paths);
         reviewReconcile(change.groupId, change.paths);
         for (const tab of fileTabs) {
             if (tab.groupId !== change.groupId || !affected(tab.path)) continue;
@@ -5568,7 +5614,7 @@ export function happyAgentWorkspaceStoreCreate(
             if (groupId !== addressedGroupId) {
                 fileTreeExpansionLoad(groupId);
                 fileSearchReset();
-                fileCommentsReset();
+                fileCommentsSwitch(addressedGroupId, groupId);
             }
             releaseGroup();
             if (groupId !== undefined && fileScopeOf(groupId) === "all")
@@ -5601,7 +5647,7 @@ export function happyAgentWorkspaceStoreCreate(
                 displayedMainViewId = undefined;
                 fileTreeExpansionLoad(groupId);
                 fileSearchReset();
-                fileCommentsReset();
+                fileCommentsSwitch(addressedGroupId, groupId);
             }
             // The panel belongs to this group, so it learns the address before
             // the conversation is released rather than after.
@@ -5680,12 +5726,12 @@ export function happyAgentWorkspaceStoreCreate(
             // itself. Without this, a project archived long after the reader
             // left it — or archived, restored, and archived again — would still
             // ask the owner to navigate away from a list it is already on.
+            fileCommentsSwitch(addressedGroupId, undefined);
             addressedGroupId = undefined;
             addressedGroupSeen = undefined;
             displayedMainViewId = undefined;
             fileTreeExpansionLoad(undefined);
             fileSearchReset();
-            fileCommentsReset();
             openConversation(undefined);
         },
         conversationListRetry: () => {
@@ -6268,7 +6314,7 @@ export function happyAgentWorkspaceStoreCreate(
             // rewriting it does, so notes left on it stop describing where they
             // were left. That the reader did it themselves changes nothing about
             // whether the recorded line numbers still hold.
-            fileCommentsStale([tab.path]);
+            fileCommentsStale(tab.groupId, [tab.path]);
             recompute();
         },
         fileDraftRevert(tabId) {
