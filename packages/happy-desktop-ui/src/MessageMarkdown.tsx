@@ -10,7 +10,8 @@ import {
 import Markdown, { type Components, type ExtraProps } from "react-markdown";
 import { filePreviewKind } from "./FilePreview";
 import { markdownFence, markdownFenceIsMermaid } from "./markdownFence";
-import { markdownDocumentLinkPath, markdownFileUrlTransform } from "./MarkdownDocument";
+import { type FileOpenHandler } from "./fileReference";
+import { markdownDocumentLinkTarget, markdownFileUrlTransform } from "./MarkdownDocument";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { MESSAGE_MARKDOWN_REMARK_PLUGINS } from "./messageMarkdownAst";
 import { ScrollArea } from "./Scrollbar";
@@ -53,7 +54,7 @@ const MarkdownLinkContext = createContext(false);
  * Happy can show; without this it stays inert rather than becoming a navigation
  * the app cannot honour.
  */
-const MarkdownFileOpenContext = createContext<((path: string) => void) | undefined>(undefined);
+const MarkdownFileOpenContext = createContext<FileOpenHandler | undefined>(undefined);
 const MarkdownTrailingContext = createContext<{
     endOffset: number;
     node: ReactNode;
@@ -109,25 +110,35 @@ const MarkdownLink = ({
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) => {
     const safe = safeHref(href);
     const onFileOpen = useContext(MarkdownFileOpenContext);
-    const path = safe === undefined ? markdownDocumentLinkPath(href) : undefined;
+    const target = safe === undefined ? markdownDocumentLinkTarget(href) : undefined;
     // Only a file this product can actually show is offered as a click. An
     // archive or an executable stays plain text rather than promising a preview
     // that would open on "no preview".
-    if (path !== undefined && onFileOpen !== undefined && filePreviewKind(path) !== "binary")
+    if (
+        target !== undefined &&
+        onFileOpen !== undefined &&
+        filePreviewKind(target.path) !== "binary"
+    )
         return (
             <a
                 className="happy-message__md-link happy-message__md-file"
                 data-happy-desktop-ui="message-md-file"
-                data-path={path}
-                href={path}
+                data-path={target.path}
+                href={target.path}
                 onClick={(event) => {
                     event.preventDefault();
-                    onFileOpen(path);
+                    onFileOpen(target.path, target.selection);
                 }}
             >
                 <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>
             </a>
         );
+    // A file reference this surface cannot open is the words it was written as.
+    // The transcript makes links out of written references itself, so an inert
+    // anchor here would underline a path in every message read somewhere with
+    // no workspace behind it and promise a click that is not coming.
+    if (target !== undefined)
+        return <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>;
     return (
         <a
             {...props}
@@ -280,7 +291,7 @@ const markdownComponents: Components = {
 export function renderMessageMarkdown(
     text: string,
     trailing?: ReactNode,
-    onFileOpen?: (path: string) => void,
+    onFileOpen?: FileOpenHandler,
     generationStatus?: MessageGenerationStatus,
 ): ReactNode {
     return (

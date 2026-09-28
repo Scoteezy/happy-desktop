@@ -1,4 +1,5 @@
 import { partitionComponentProps } from "./componentProps";
+import type { FileOpenHandler } from "./fileReference";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
 import { CodeBlock } from "./CodeBlock";
@@ -80,7 +81,7 @@ export type FilePreviewProps = {
      * links inert, which is the honest answer on a surface with no workspace
      * behind it.
      */
-    onFileOpen?: (path: string) => void;
+    onFileOpen?: FileOpenHandler;
     /**
      * The file as a page rather than as characters, supplied by the host: an
      * HTML document has a rendered face this surface cannot draw itself, since
@@ -366,7 +367,7 @@ function FilePreviewBody(props: {
     face: MarkdownFace;
     kind: FilePreviewKind;
     name: string;
-    onFileOpen?: (path: string) => void;
+    onFileOpen?: FileOpenHandler;
     onMediaMeasure: (size: { readonly width: number; readonly height: number }) => void;
     onMediaWindowOpen?: () => void;
     rendered?: ReactNode;

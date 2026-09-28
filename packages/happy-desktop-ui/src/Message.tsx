@@ -1,4 +1,5 @@
 import { partitionComponentProps } from "./componentProps";
+import type { FileOpenHandler } from "./fileReference";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import {
     Children,
@@ -194,7 +195,7 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      * viewer. Absent leaves such links inert, which is what a surface with no
      * workspace behind it can honestly offer.
      */
-    onFileOpen?: (path: string) => void;
+    onFileOpen?: FileOpenHandler;
     /** Makes the avatar and author name clickable to open the author's profile.
      *  Only the leading message of a group renders an avatar/name, so grouped
      *  follow-ups intentionally carry no profile affordance. */

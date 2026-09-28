@@ -252,6 +252,31 @@ export interface HappyAgentConversationSnapshot {
  */
 export type HappyAgentFileTabKind = "file" | "diff" | "media" | "document";
 
+/**
+ * A run of lines in one file, counted from 1 and including both ends — the way
+ * every editor, every review, and every agent writing `Store.ts:120-148` counts
+ * them. A single line is a range whose ends are equal, so nothing downstream
+ * has to tell one line apart from several.
+ */
+export interface HappyAgentFileLineRange {
+    readonly startLine: number;
+    readonly endLine: number;
+}
+
+/**
+ * A region of an open file that something asked to be shown, and which asking
+ * it was.
+ *
+ * The region alone cannot say "show me this again": clicking the same reference
+ * twice, or following it back after scrolling away, hands the viewer the lines
+ * it is already holding and nothing happens. `requestId` is what makes each ask
+ * a distinct event, so the viewer scrolls every time it is asked to and never
+ * between times.
+ */
+export interface HappyAgentFileReveal extends HappyAgentFileLineRange {
+    readonly requestId: number;
+}
+
 /** One workspace text file opened as a main-content document tab. */
 export interface HappyAgentFileTabSnapshot {
     readonly id: string;
@@ -277,6 +302,12 @@ export interface HappyAgentFileTabSnapshot {
      * group. Opening it permanently or editing it clears this flag.
      */
     readonly preview: boolean;
+    /**
+     * The region this tab was last asked to show, for a file reached through a
+     * reference that named one. Absent for a file opened whole, which is every
+     * file opened from the listing.
+     */
+    readonly reveal?: HappyAgentFileReveal;
     readonly revision: string;
     readonly document: Loadable<
         | HappyAgentWorkspaceFileDocument
@@ -1378,8 +1409,19 @@ export interface HappyAgentWorkspaceStore {
      * replaces this group's previous preview without disturbing permanent tabs.
      */
     filePreview(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
-    /** Opens one workspace file permanently, promoting its preview when present. */
-    fileOpen(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
+    /**
+     * Opens one workspace file permanently, promoting its preview when present.
+     *
+     * `selection` is the region a reference named — the lines behind a
+     * `Store.ts:120-148` in a message. The tab scrolls to them and marks them;
+     * opening the same file with no region named puts the mark away.
+     */
+    fileOpen(
+        groupId: HappyAgentGroupId,
+        path: string,
+        kind: HappyAgentFileTabKind,
+        selection?: HappyAgentFileLineRange,
+    ): void;
     /** Warms one file after pointer or keyboard intent without opening a tab. */
     filePreprocess(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
     /**
@@ -1405,7 +1447,12 @@ export interface HappyAgentWorkspaceStore {
      * the same way, into the same editor. The panel holds one file at a time,
      * so this replaces whichever file was in it.
      */
-    filePanelOpen(groupId: HappyAgentGroupId, path: string, kind: HappyAgentFileTabKind): void;
+    filePanelOpen(
+        groupId: HappyAgentGroupId,
+        path: string,
+        kind: HappyAgentFileTabKind,
+        selection?: HappyAgentFileLineRange,
+    ): void;
     /** Closes the panel's file viewer and stops its pending read. */
     filePanelClose(): void;
     /**
@@ -1953,6 +2000,8 @@ export function happyAgentWorkspaceStoreCreate(
     };
     let fileTreeExpanded: ReadonlySet<string> = new Set();
     let fileTreeCollapsed: ReadonlySet<string> = new Set();
+    /** Counts the asks to show a region, so each one is its own event. */
+    let fileRevealRequests = 0;
     /** The parts of a new bot the store holds itself; the composer is a store of its own. */
     interface BotCreateDraft {
         readonly name: string;
@@ -3644,8 +3693,27 @@ export function happyAgentWorkspaceStoreCreate(
         requestedKind: HappyAgentFileTabKind,
         preview: boolean,
         placement: HappyAgentViewPlacement = "main",
+        selection?: HappyAgentFileLineRange,
     ): void => {
         const kind = fileKindResolve(groupId, path, requestedKind);
+        // A fresh ask every time, so following the same reference twice scrolls
+        // back to it twice. Opening the file with no region named clears the
+        // last one rather than leaving a band marking lines nobody asked about.
+        const reveal =
+            selection === undefined
+                ? undefined
+                : { ...selection, requestId: (fileRevealRequests += 1) };
+        const revealApply = (tab: HappyAgentFileTabSnapshot): HappyAgentFileTabSnapshot => {
+            if (reveal !== undefined) return { ...tab, reveal };
+            // A preview is not a second decision about the file: it is what a
+            // click in the listing and the file's own address both resolve to,
+            // and the address is re-applied moments after a reference opens the
+            // file. Clearing here would take the region away from the reader
+            // who just asked for it. Opening the file outright does clear it.
+            if (tab.reveal === undefined || preview) return tab;
+            const { reveal: _cleared, ...rest } = tab;
+            return rest;
+        };
         if (!restoring)
             client.memory.recentTabRemember({ type: "file", groupId, path, fileKind: kind });
         const id = fileTabIdOf(groupId, path);
@@ -3665,6 +3733,7 @@ export function happyAgentWorkspaceStoreCreate(
         // Whatever the panel was holding steps aside: the viewer is one slot.
         if (placement === "panel") panelFileTabClose(id);
         if (existing) {
+            fileTabs = fileTabs.map((tab) => (tab.id === id ? revealApply(tab) : tab));
             if (existing.placement !== placement)
                 fileTabs = fileTabs.map((tab) => (tab.id === id ? { ...tab, placement } : tab));
             const change = fileChangeFind(groupId, path);
@@ -3708,6 +3777,7 @@ export function happyAgentWorkspaceStoreCreate(
             kind,
             placement,
             preview,
+            ...(reveal === undefined ? {} : { reveal }),
             revision,
             presentationId,
             saving: false,
@@ -6010,9 +6080,9 @@ export function happyAgentWorkspaceStoreCreate(
         worktreeReorder: (projectId, worktreeId, afterId) =>
             list.worktreeReorder(projectId, worktreeId, afterId),
 
-        filePanelOpen(groupId, path, kind) {
+        filePanelOpen(groupId, path, kind, selection) {
             if (disposed) return;
-            fileTabOpen(groupId, path, kind, false, "panel");
+            fileTabOpen(groupId, path, kind, false, "panel", selection);
             panel.fileViewOpen();
         },
         filePanelClose() {
@@ -6022,7 +6092,8 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
         },
         filePreview: (groupId, path, kind) => fileTabOpen(groupId, path, kind, true),
-        fileOpen: (groupId, path, kind) => fileTabOpen(groupId, path, kind, false),
+        fileOpen: (groupId, path, kind, selection) =>
+            fileTabOpen(groupId, path, kind, false, "main", selection),
         filePreprocess: (groupId, path, kind) => filePreprocessEnqueue(groupId, path, kind),
         attachmentFileOpen: (source, kind) => {
             const resolved = groupPathResolve(source);

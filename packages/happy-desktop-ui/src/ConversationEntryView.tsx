@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode } from "react";
+import type { FileOpenHandler } from "./fileReference";
 import { thumbhashDataUrl } from "./thumbhashDataUrl";
 import type {
     AgentTurnTraceSummary,
@@ -64,7 +65,7 @@ export type ConversationEntryViewProps = {
     /** Reference epoch millis used by live delegated-agent timers. */
     now?: number;
     /** Opens a workspace file named by a tool call or linked from a message. */
-    onFileOpen?: (path: string) => void;
+    onFileOpen?: FileOpenHandler;
     /** Disables request controls while a prior submission is in flight. */
     requestPending?: boolean;
     /** Last failed submission for this request. */

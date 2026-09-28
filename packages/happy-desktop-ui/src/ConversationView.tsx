@@ -1,4 +1,5 @@
 import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
+import type { FileOpenHandler } from "./fileReference";
 import {
     entryKey,
     type ComposerSnapshot,
@@ -195,7 +196,7 @@ export type ConversationViewProps = {
      * leaves those affordances out entirely, because a transcript with no
      * workspace behind it has nothing to open.
      */
-    onFileOpen?: (path: string) => void;
+    onFileOpen?: FileOpenHandler;
     /** Runs a command chosen from the `/` palette. */
     onCommandInvoke?: (commandId: string) => void;
     /** Stops the current run; the composer's send control becomes this while running. */

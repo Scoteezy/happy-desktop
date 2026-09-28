@@ -10,6 +10,7 @@ import type {
     HappyAgentClockStore,
     HappyAgentCloudStore,
     HappyAgentTeamsStore,
+    HappyAgentFileLineRange,
     HappyAgentFileTabKind,
     HappyAgentFileTabSnapshot,
     HappyAgentConnectionStore,
@@ -138,6 +139,7 @@ import {
     fileTreeRanked,
     filePathMatches,
     fileNameCompare,
+    type FileOpenHandler,
     type FileTreeExpansion,
     type FileTreeBuildEntry,
     HappyAgentCreateBotPage,
@@ -3438,9 +3440,14 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 ? { commentDraft: workspace.fileComments.draft }
                 : {})}
             happyAgentOnline={happyAgentOnline}
-            onMainFileOpen={(path, kind) =>
-                props.onFileSelect(file.groupId, props.chatId, path, kind)
-            }
+            onMainFileOpen={(path, kind, selection) => {
+                // The address names the file; the region is the ask that came
+                // with it, and the tab keeps it because a file's own address is
+                // re-applied as a preview and leaves a region alone.
+                if (selection !== undefined)
+                    props.workspace.fileOpen(file.groupId, path, kind, selection);
+                props.onFileSelect(file.groupId, props.chatId, path, kind);
+            }}
             wrap={workspace.fileViewWrap}
             {...(access.writeRefusal === undefined ? {} : { writeRefusal: access.writeRefusal })}
             {...(connectionRefusal === undefined ? {} : { saveRefusal: connectionRefusal })}
@@ -3645,10 +3652,15 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     ? { onCreate: () => groupConversationCreate(openGroup) }
                     : {})}
                 onChatSelect={props.onChatSelect}
-                onFileOpen={(path) => {
+                onFileOpen={(path, selection) => {
                     if (!happyAgentOnline() || !openGroup.create) return;
                     const target = workspacePathRelative(path, openGroup.create.cwd);
-                    props.workspace.filePanelOpen(openGroup.id, target, fileTabKind(target));
+                    props.workspace.filePanelOpen(
+                        openGroup.id,
+                        target,
+                        fileTabKind(target),
+                        selection,
+                    );
                 }}
                 canAbort={conversationCanAbort}
                 readOnly={conversationReadOnly}
@@ -4365,7 +4377,11 @@ function HappyAgentFileBody(props: {
     /** Re-reads Happy Agent availability when a retained file handler fires. */
     happyAgentOnline: () => boolean;
     /** Addresses a linked file opened from a main-content file tab. */
-    onMainFileOpen(path: string, kind: HappyAgentFileTabKind): void;
+    onMainFileOpen(
+        path: string,
+        kind: HappyAgentFileTabKind,
+        selection?: HappyAgentFileLineRange,
+    ): void;
     /** Why this file cannot be edited or saved, or absent when it can. */
     writeRefusal?: string;
     /** Why the current local draft cannot be persisted to the Happy Agent. */
@@ -4382,11 +4398,12 @@ function HappyAgentFileBody(props: {
      * one followed in the panel stays in the panel, because the reader is
      * reading the conversation and the panel is where they are reading.
      */
-    const linkedFileOpen = (target: string): void => {
+    const linkedFileOpen: FileOpenHandler = (target, selection): void => {
         if (!props.happyAgentOnline()) return;
         const kind = fileTabKind(target);
-        if (file.placement === "panel") workspace.filePanelOpen(file.groupId, target, kind);
-        else props.onMainFileOpen(target, kind);
+        if (file.placement === "panel")
+            workspace.filePanelOpen(file.groupId, target, kind, selection);
+        else props.onMainFileOpen(target, kind, selection);
     };
     // Typing into a document that could never be written back is worse than not
     // offering the editor at all: the reader loses what they typed and learns
@@ -4455,8 +4472,11 @@ function HappyAgentFileBody(props: {
                                   /* Whatever the link names — another document,
                                      a picture — follows the same file-open path
                                      as the sidebar. */
-                                  onFileOpen={(href) =>
-                                      linkedFileOpen(documentLinkResolve(file.path, href))
+                                  onFileOpen={(href, selection) =>
+                                      linkedFileOpen(
+                                          documentLinkResolve(file.path, href),
+                                          selection,
+                                      )
                                   }
                                   {...(markdownCacheKey === undefined
                                       ? {}
@@ -4482,6 +4502,7 @@ function HappyAgentFileBody(props: {
                 onWrapChange={(wrap) => workspace.fileViewWrapUpdate(wrap)}
                 path={file.path}
                 readOnly={file.saving || !writable}
+                {...(file.reveal === undefined ? {} : { reveal: file.reveal })}
                 saveDisabled={saveDisabled}
                 saving={file.saving}
                 {...(status === undefined ? {} : { status })}
@@ -4689,7 +4710,7 @@ function HappyAgentChangedFilePreview(props: {
     file: HappyAgentFileTabSnapshot;
     openDisabled: boolean;
     /** Opens a linked file on the side this one is being read on. */
-    onFileOpen: (path: string) => void;
+    onFileOpen: FileOpenHandler;
     text: string;
     /** The file's characters, editable, where this checkout can be written. */
     editor?: ReactNode;
@@ -4727,9 +4748,9 @@ function HappyAgentChangedFilePreview(props: {
                   })}
             // A document followed out of the changed list lands beside it as the
             // file itself, the same way one followed out of a file tab does.
-            onFileOpen={(href) => {
+            onFileOpen={(href, selection) => {
                 if (props.openDisabled) return;
-                props.onFileOpen(documentLinkResolve(file.path, href));
+                props.onFileOpen(documentLinkResolve(file.path, href), selection);
             }}
             path={file.path}
         />
@@ -4931,7 +4952,7 @@ function HappyAgentConversationBody(props: {
     /** Starts a session here, when this workspace can host one. */
     onCreate?: () => void;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
-    onFileOpen: (path: string) => void;
+    onFileOpen: FileOpenHandler;
     readOnly: boolean;
     /** Reads current transport health when a Happy Agent-backed action is invoked. */
     happyAgentOnline: () => boolean;
@@ -5109,8 +5130,8 @@ function HappyAgentConversationSurface(props: {
     notice?: ReactNode;
     now: number;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
-    /** Opens a file the transcript names, in the panel beside it. */
-    onFileOpen: (path: string) => void;
+    /** Opens a file the transcript names, in the panel beside it, at the lines it named. */
+    onFileOpen: FileOpenHandler;
     readOnly: boolean;
     /** Reads current transport health when a Happy Agent-backed action is invoked. */
     happyAgentOnline: () => boolean;
@@ -5334,8 +5355,8 @@ function HappyAgentConversationSurface(props: {
             onComposerValueChange={(value) =>
                 reactFrameInputUpdate(workspace, () => workspace.composerTextUpdate(value))
             }
-            onFileOpen={(path) => {
-                if (props.happyAgentOnline()) props.onFileOpen(path);
+            onFileOpen={(path, selection) => {
+                if (props.happyAgentOnline()) props.onFileOpen(path, selection);
             }}
             onImageOpen={(messageId, attachmentId) => {
                 if (props.happyAgentOnline()) workspace.imageOpen(messageId, attachmentId);
