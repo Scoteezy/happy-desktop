@@ -145,19 +145,9 @@ function clockTime(at: Date): string {
     return at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-/** A held reading older than this says how old it is. */
-const USAGE_AGE_SHOWN_MS = 5 * 60_000;
-
-function readingAge(capturedAt: number, now: number): string | undefined {
-    if (now - capturedAt <= USAGE_AGE_SHOWN_MS) return undefined;
-    const minutes = Math.floor((now - capturedAt) / 60_000);
-    return minutes < 60 ? `updated ${minutes}m ago` : `updated ${Math.floor(minutes / 60)}h ago`;
-}
-
 /** Plan windows per provider account; an account with no plan reading is left unknown. */
 function usageProject(
     snapshot: HappyAgentProviderUsageSnapshot,
-    now: number,
 ): ReadonlyMap<string, ComposerModelAccountUsage> {
     const usage = new Map<string, ComposerModelAccountUsage>();
     for (const entry of snapshot.providers) {
@@ -169,10 +159,8 @@ function usageProject(
                 reading.planName === undefined)
         )
             continue;
-        const updated = readingAge(reading.capturedAt, now);
         usage.set(entry.providerId, {
             ...(reading.planName === undefined ? {} : { plan: reading.planName }),
-            ...(updated === undefined ? {} : { updated }),
             windows: [
                 usageWindow("fiveHour", "5h", reading.fiveHour, (at) => `resets ${clockTime(at)}`),
                 usageWindow(
@@ -202,7 +190,7 @@ export function happyAgentComposerModelUsageWatch(
             const snapshot = store.get();
             if (snapshot === last) return;
             last = snapshot;
-            listener(usageProject(snapshot, Date.now()));
+            listener(usageProject(snapshot));
         };
         const unsubscribe = store.subscribe(emit);
         emit();

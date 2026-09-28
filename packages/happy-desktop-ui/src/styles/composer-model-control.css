@@ -467,13 +467,6 @@
     font-weight: 600;
 }
 
-/* How old a held reading is, said only once it is old enough to matter. */
-.happy-composer-model-control__usage-age {
-    color: var(--text-secondary);
-    font-size: 11px;
-    line-height: 14px;
-}
-
 .happy-composer-model-control__usage-resets {
     flex: 0 1 auto;
     min-width: 0;

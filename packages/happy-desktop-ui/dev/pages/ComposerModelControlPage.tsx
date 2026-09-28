@@ -106,7 +106,10 @@ const SERVICES: readonly ComposerModelService[] = [
         id: "grok",
         label: "Grok",
         account: "grok",
-        accounts: [{ id: "grok", label: "grok", default: true, models: GROK_MODELS }],
+        accounts: [
+            { id: "grok", label: "grok", default: true, models: GROK_MODELS },
+            { id: "grok_api", label: "grok_api", models: GROK_MODELS },
+        ],
     },
 ];
 
@@ -117,7 +120,13 @@ const ASTRA: ComposerModelSelection = {
     effort: "xhigh",
 };
 
-/* Usage as the provider-usage feed reports it; grok has no reading, so it reads unknown. */
+/*
+ * Usage as the provider-usage feed reports it. A full login (codex, claude)
+ * reports its plan; claude_extra runs on a `claude setup-token` token, which
+ * cannot read the plan, so its 5h and weekly windows come from rate-limit
+ * headers and it has no plan. grok has no reading and grok_api, an API key,
+ * has no usage API at all, so both read unknown.
+ */
 const USAGE: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
     [
         "codex",
@@ -142,10 +151,9 @@ const USAGE: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
     [
         "claude_extra",
         {
-            plan: "Max",
             windows: [
                 { id: "fiveHour", label: "5h", usedPercent: 91, resets: "resets 2:35 PM" },
-                { id: "weekly", label: "Weekly" },
+                { id: "weekly", label: "Weekly", usedPercent: 37, resets: "resets Fri 6:00 AM" },
             ],
         },
     ],
@@ -164,13 +172,6 @@ function heldUsage(usage: ReadonlyMap<string, ComposerModelAccountUsage>): Compo
 }
 
 const usageWatch = heldUsage(USAGE);
-
-/** The same reading, held long enough that it says how old it is. */
-const staleUsageWatch = heldUsage(
-    new Map(
-        [...USAGE].map(([account, usage]) => [account, { ...usage, updated: "updated 12m ago" }]),
-    ),
-);
 
 const LONG_SERVICES: readonly ComposerModelService[] = [
     ...SERVICES,
@@ -385,7 +386,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="08"
                 label="Default account and a named one"
-                detail="Codex and Grok run on their own accounts, which read Default account. Claude runs on claude_extra, which reads by its id and plan."
+                detail="Codex runs on its own full login, which reads Default account with its plan. Claude runs on claude_extra, a setup token that reports no plan, so it reads by its id alone."
                 stage="surface"
             >
                 <Open selection={OPUS_EXTRA} />
@@ -393,7 +394,15 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09"
                 label="Cached usage shown instantly"
-                detail="The panel shows the reading held from earlier in the session at once; a stale one is refreshed in the background."
+                detail="The panel shows the reading held from earlier in the session at once and refreshes it in the background once it is a minute old. The full claude login reports its plan, Max."
+                stage="surface"
+            >
+                <Open preview={{ accounts: "claude", accountHover: "claude" }} />
+            </Specimen>
+            <Specimen
+                number="10"
+                label="Usage without a plan"
+                detail="claude_extra runs on a setup token: its 5h and weekly usage are real, read from rate-limit headers, but it cannot see its plan, so none is shown, in the header or the list."
                 stage="surface"
             >
                 <Open
@@ -402,23 +411,12 @@ export function ComposerModelControlPage() {
                 />
             </Specimen>
             <Specimen
-                number="10"
-                label="Stale cached usage"
-                detail="A held reading older than five minutes says how old it is while the new one is on its way."
-                stage="surface"
-            >
-                <Open
-                    preview={{ accounts: "claude", accountHover: "claude" }}
-                    usageWatch={staleUsageWatch}
-                />
-            </Specimen>
-            <Specimen
                 number="11"
-                label="Unknown usage"
-                detail="An account with no usage reading at all reads unknown, never 0%."
+                label="API-key account without usage"
+                detail="grok_api is an API key, and the Grok API has no usage endpoint: no plan, and its usage reads unknown, never 0%."
                 stage="surface"
             >
-                <Open preview={{ accounts: "grok", accountHover: "grok" }} />
+                <Open preview={{ accounts: "grok", accountHover: "grok_api" }} />
             </Specimen>
             <Specimen
                 number="12"

@@ -38,8 +38,6 @@ export type ComposerModelAccountUsage = {
     /** The plan the service reports for the account, such as "Max". */
     plan?: string;
     windows: readonly ComposerModelUsageWindow[];
-    /** Already-formatted age of a reading old enough to mention, such as "updated 12m ago". */
-    updated?: string;
 };
 export type ComposerModelAccount = {
     id: string;
@@ -621,11 +619,15 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     /** An account says that it is one: the service's own is its default, any other is its id. */
     const accountName = (account: ComposerModelAccount) =>
         account.default ? "Default account" : account.label;
-    /** The header names the account with its plan, when the service has reported one. */
+    /**
+     * The header names the account with its plan only when the service reported
+     * one: an account whose usage comes from a token without plan access, or
+     * that has no usage at all, shows no plan rather than a guessed one.
+     */
     const accountSummary = (service: ComposerModelService) => {
         const account = service.accounts.find((candidate) => candidate.id === accountOf(service));
         if (account === undefined) return accountOf(service);
-        const plan = account.default ? undefined : usageOf(account)?.plan;
+        const plan = usageOf(account)?.plan;
         return plan ? `${accountName(account)} · ${plan}` : accountName(account);
     };
     const renderAccounts = (service: ComposerModelService) => {
@@ -700,11 +702,6 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                 <UsageWindow key={window.id} window={window} />
                             ))
                         )}
-                        {shownUsage?.updated ? (
-                            <span className="happy-composer-model-control__usage-age">
-                                {shownUsage.updated}
-                            </span>
-                        ) : null}
                     </div>
                 ) : null}
             </div>
