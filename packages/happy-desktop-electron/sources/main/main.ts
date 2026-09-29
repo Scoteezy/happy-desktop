@@ -259,9 +259,12 @@ function windowAppearanceApply(): void {
 }
 
 nativeTheme.themeSource = "system";
-// Independent Happy Agent realtime streams share the loopback HTTP proxy.
+// Independent Happy Agent realtime streams share the happy-agent virtual origin.
 // Keep them from exhausting Chromium's per-host sockets and starving API requests.
-app.commandLine.appendSwitch("ignore-connections-limit", "127.0.0.1,happy-agent");
+// Only that origin: lifting the limit for 127.0.0.1 also unthrottles the Vite
+// development server, whose cold module graph then overflows the loopback
+// listen backlog and resets connections, leaving the window blank.
+app.commandLine.appendSwitch("ignore-connections-limit", "happy-agent");
 // The exact virtual origin is local to Electron's authenticated proxy. Unlike
 // localhost, this requested hostname is not inherently trustworthy to Chromium;
 // mark only this origin local so the hosted HTTPS renderer can also consume it.
