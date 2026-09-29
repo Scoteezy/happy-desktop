@@ -1846,8 +1846,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 />
             }
             headerAccessory={
-                // Reachability is the window's line, not the sidebar's — see the
-                // band at the top. What stays here is what only this list can
+                // Reachability is the footer's line, not this heading's. What
+                // stays here is what only this list can
                 // say: that the Happy Agent is up and still did not hand over its
                 // sessions.
                 active?.status === "connected" && active.projectsStatus === "error" ? (
@@ -1863,7 +1863,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     </Banner>
                 ) : active?.status === "connected" && active.projectsStatus === "loading" ? (
                     // Also only while the Happy Agent is up. Losing it resets the list to
-                    // loading, and "Loading sessions…" under a band saying the
+                    // loading, and "Loading sessions…" under a footer saying the
                     // machine is unreachable is a promise nothing is keeping.
                     <Banner tone="neutral">Loading sessions…</Banner>
                 ) : undefined
@@ -3721,8 +3721,8 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         icon={openGroup.home ? "home" : "inbox"}
                         title={openGroup.name}
                     />
-                    {/* No banner for an unreachable Happy Agent. The window says that
-                        once, in the band across its top, and repeating it here
+                    {/* No banner for an unreachable Happy Agent. The sidebar footer says
+                        that once, and repeating it here
                         pushed the transcript down for something the reader was
                         already told — in the one surface where the shift is
                         most expensive. What this conversation still owes is the
@@ -4080,8 +4080,8 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     {/* With no project open there is no tab strip, so this side of
                         the window would have no lane to drag it by. */}
                     {desktop ? <WindowDragRegion /> : null}
-                    {/* No banner for an unreachable Happy Agent here either. The band
-                        across the top of the window is the window's one account
+                    {/* No banner for an unreachable Happy Agent here either. The sidebar
+                        footer is the window's one account
                         of the machine being out of touch, and this screen has
                         nothing to add to it: what it offers already goes quiet
                         on `availability`, below. */}
@@ -4861,7 +4861,7 @@ function HappyAgentConversationSurface(props: {
     // composer locks instead of collecting a message with nowhere to go.
     //
     // The Happy Agent being unreachable is deliberately not this: that is a wait, the
-    // draft survives it, and the window-level band names it. Only an unusable
+    // draft survives it, and the sidebar footer names it. Only an unusable
     // destination locks the box.
     const sendRefusal = props.unavailable;
     /*

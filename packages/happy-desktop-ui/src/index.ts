@@ -254,7 +254,11 @@ export {
     type SidebarReorder,
     type SidebarSection,
 } from "./Sidebar";
-export { SidebarFooter, type SidebarFooterProps } from "./SidebarFooter";
+export {
+    SidebarFooter,
+    type SidebarFooterConnection,
+    type SidebarFooterProps,
+} from "./SidebarFooter";
 export {
     SIDEBAR_SPACES_BAR_HEIGHT,
     SIDEBAR_SPACES_DOT_SIZE,
@@ -504,7 +508,6 @@ export {
     type AgentInstallScreenProps,
     type AgentInstallView,
 } from "./AgentInstallScreen";
-export { ConnectionHeader, type ConnectionHeaderProps } from "./ConnectionHeader";
 export {
     WelcomeScreen,
     type WelcomeScreenBackdrop,

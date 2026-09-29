@@ -46,7 +46,6 @@ import {
     SetupPage,
     ThemeScope,
     AgentInstallScreen,
-    ConnectionHeader,
     WelcomeScreen,
     ZoomIndicator,
     ConnectionShell,
@@ -612,11 +611,6 @@ function DesktopScreens(props: DesktopRendererProps) {
                             key={entry.id}
                             active={directory.activeHappyAgentId === entry.id}
                         >
-                            <DesktopConnectionHeader
-                                platform="web"
-                                happyAgents={ui.directory}
-                                windowState={surfaceWindowState}
-                            />
                             <HappyAgentBoundary
                                 appearance={props.appearance}
                                 bridge={props.bridge}
@@ -693,63 +687,6 @@ function DesktopLocalScreens(props: DesktopRendererProps) {
     // A restart is not gated here: it takes the whole window, rail included,
     // so its screen lives in DesktopScreens above every connection surface.
     return gated;
-}
-
-/**
- * The workspace's own line about being out of touch with the machine.
- *
- * It reads the Happy Agent directory rather than any one surface, because losing the
- * machine is not a fact about a surface: every project, session, and terminal in
- * the workspace is equally out of reach, and saying so once at the top beats
- * saying it on each of them.
- *
- * It belongs to the workspace and settings alone. Every screen before them —
- * the welcome, first-run setup, choosing where Happy runs, starting, failing to
- * start, a protocol gap — is already the window's whole account of a machine
- * that is not connected, and a band repeating it above them would be a second
- * voice talking over the one the reader is meant to act on.
- *
- * Only a Happy Agent that has actually dropped gets a line. `connecting` is deliberately
- * silent — that is startup, and the boot cover is already speaking for it; a
- * band that appeared during every launch would mean nothing by the time it
- * mattered.
- */
-function DesktopConnectionHeader(props: {
-    platform: "desktop" | "web";
-    happyAgents: HappyAgentDirectoryStore;
-    windowState: HappyAgentWindowStore;
-}) {
-    const directory = useSyncExternalStore(
-        props.happyAgents.subscribe,
-        props.happyAgents.get,
-        props.happyAgents.get,
-    );
-    const windowState = useSyncExternalStore(
-        props.windowState.subscribe,
-        props.windowState.get,
-        props.windowState.get,
-    );
-    const lost = directory.happyAgents.find(
-        (happyAgent) => happyAgent.status === "disconnected" || happyAgent.status === "error",
-    );
-    if (!lost) return null;
-    return (
-        <ConnectionHeader
-            message={lost.message ?? `${lost.label} is unreachable.`}
-            // An error has settled; a disconnect is still being retried by the
-            // connection's own backoff, and the spinner is the difference.
-            retrying={lost.status === "disconnected"}
-            // Only the Electron window hides its title bar and so hands this
-            // band the traffic lights; the browser development server draws web
-            // chrome above it and needs neither the inset nor the drag lane.
-            windowControls={props.platform === "desktop"}
-            // Full screen takes the lights away, and a connection rail beside
-            // this band holds their lane instead; either way the band shaped
-            // around them has to hear it, and no store the band could read
-            // reports it, and no CSS query asks it.
-            windowFullScreen={windowState.fullScreen || windowState.connectionRail}
-        />
-    );
 }
 
 /**
@@ -922,42 +859,30 @@ function DesktopRuntimeContent(
             />
         );
 
-    // The workspace is mounted, so this is the first screen a dropped machine
-    // can be reported against: the band is its outermost row and moves every
-    // surface in it down rather than covering any of them.
     return (
-        <div className="happy-connection-frame">
-            <DesktopConnectionHeader
-                platform={props.platform}
-                happyAgents={props.happyAgents}
-                windowState={props.windowState}
-            />
-            <div className="happy-connection-frame__body">
-                <HappyAgentBoundary
-                    appearance={props.appearance}
-                    bridge={props.bridge}
-                    commandPalette={props.commandPalette}
-                    {...(props.daemon ? { daemon: props.daemon } : {})}
-                    debug={props.debug}
-                    {...(props.performance ? { performance: props.performance } : {})}
-                    profiler={props.profiler}
-                    browserContent={props.browserContent}
-                    htmlPreview={props.htmlPreview}
-                    mediaWindow={props.mediaWindow}
-                    experiments={props.experiments}
-                    navigationOrder={props.navigationOrder}
-                    sidebarCollapse={props.sidebarCollapse}
-                    sidebarVisibility={props.sidebarVisibility}
-                    platform={props.platform}
-                    router={props.happyAgentRouter}
-                    happyAgents={props.happyAgents}
-                    settings={props.settings}
-                    titleShimmer={props.titleShimmer}
-                    update={snapshot ? workspaceUpdate(snapshot.update, hostedUpdate) : undefined}
-                    windowState={props.windowState}
-                />
-            </div>
-        </div>
+        <HappyAgentBoundary
+            appearance={props.appearance}
+            bridge={props.bridge}
+            commandPalette={props.commandPalette}
+            {...(props.daemon ? { daemon: props.daemon } : {})}
+            debug={props.debug}
+            {...(props.performance ? { performance: props.performance } : {})}
+            profiler={props.profiler}
+            browserContent={props.browserContent}
+            htmlPreview={props.htmlPreview}
+            mediaWindow={props.mediaWindow}
+            experiments={props.experiments}
+            navigationOrder={props.navigationOrder}
+            sidebarCollapse={props.sidebarCollapse}
+            sidebarVisibility={props.sidebarVisibility}
+            platform={props.platform}
+            router={props.happyAgentRouter}
+            happyAgents={props.happyAgents}
+            settings={props.settings}
+            titleShimmer={props.titleShimmer}
+            update={snapshot ? workspaceUpdate(snapshot.update, hostedUpdate) : undefined}
+            windowState={props.windowState}
+        />
     );
 }
 
