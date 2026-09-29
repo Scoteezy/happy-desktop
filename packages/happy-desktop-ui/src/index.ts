@@ -335,6 +335,7 @@ export {
     type HappyAgentProjectComputeMode,
     type HappyAgentProjectComputeSection,
     type HappyAgentProjectSettingsDialogProps,
+    type HappyAgentProjectSetupSection,
 } from "./HappyAgentProjectSettingsDialog";
 export {
     HappyAgentCreateBotPage,
