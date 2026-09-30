@@ -37,9 +37,11 @@ import { deepEqual } from "../happyAgent/happyAgentSupport.js";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
 import {
     applyChanges,
+    archivedAgentsMerge,
     defaultMode,
     elementsReuse,
     modeOf,
+    ownerResourceReplace,
     projectElements,
     projectBots,
     projectGroups,
@@ -70,6 +72,16 @@ const DEFAULT_HISTORY_LIMIT = 100;
 const GIT_WATCH_RENEW_MS = 2 * 60 * 1000;
 const RECENT_EVENT_RETENTION_MS = 60_000;
 const SNAPSHOT_RESPONSE_TIMEOUT_MS = 60_000;
+
+/**
+ * The desktop bootstrap as a current daemon serves it: beside the owners and their active
+ * agents, the most recently archived agents of those owners, newest first, as full agent
+ * objects. The published client this package pins does not describe that additive field yet;
+ * this widening goes away with the client release that does.
+ */
+type DesktopBootstrapWithArchivedAgents = Awaited<
+    ReturnType<HappyAgentClient["getDesktopBootstrap"]>
+> & { readonly archivedAgents?: readonly Agent[] };
 /*
  * Deadline for mutations the daemon answers without doing model work. A
  * create, send, or abort whose response never arrives would otherwise pend
@@ -666,7 +678,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             .getState()
             .projects.find((candidate) => candidate.id === project.id);
         if (!shouldAdoptVersion(current, project)) return false;
-        groupsStore.setState((state) => ({ projects: replaceResource(state.projects, project) }));
+        groupsStore.setState((state) => ({
+            projects: ownerResourceReplace(state.projects, project),
+        }));
         publishGroups(deltas);
         return true;
     };
@@ -674,7 +688,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const adoptWorkspace = (workspace: Workspace, deltas: readonly GroupDelta[] = []): boolean => {
         if (!shouldAdoptVersion(workspaceOf(workspace.id), workspace)) return false;
         groupsStore.setState((state) => ({
-            workspaces: replaceResource(state.workspaces, workspace),
+            workspaces: ownerResourceReplace(state.workspaces, workspace),
         }));
         publishGroups(deltas);
         return true;
@@ -973,7 +987,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             source: "sync",
         });
         const running = (async (): Promise<void> => {
-            const bootstrap = await client.getDesktopBootstrap({
+            const bootstrap: DesktopBootstrapWithArchivedAgents = await client.getDesktopBootstrap({
                 signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
             });
             if (rootController.signal.aborted) return;
@@ -992,12 +1006,20 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 ),
             );
             config = bootstrap.config;
+            // The daemon lists a project's or workspace's active agents on the owner and its
+            // most recently archived ones apart, in `archivedAgents`; a daemon too old to carry
+            // that field remembers no archived agent for this connection at all.
+            const owners = archivedAgentsMerge(
+                bootstrap.projects,
+                bootstrap.workspaces,
+                bootstrap.archivedAgents ?? [],
+            );
             groupsStore.setState({
                 // A daemon too old to know about bots omits the field entirely,
                 // which is an empty catalog rather than an unknown one.
                 bots: bootstrap.bots ?? [],
-                projects: bootstrap.projects,
-                workspaces: bootstrap.workspaces,
+                projects: owners.projects,
+                workspaces: owners.workspaces,
             });
             const gitWorkspaceIds = new Set(
                 activeGitWorkspaceIds(bootstrap.projects, bootstrap.workspaces),
@@ -1024,8 +1046,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 }
             }
             const projectedProjects = projectGroups(
-                bootstrap.projects,
-                bootstrap.workspaces,
+                owners.projects,
+                owners.workspaces,
                 endpoint,
                 config,
                 gitStates,
@@ -1250,7 +1272,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             })
                             .then(({ project }) => {
                                 groupsStore.setState((state) => ({
-                                    projects: replaceResource(state.projects, project),
+                                    projects: ownerResourceReplace(state.projects, project),
                                 }));
                                 publishGroups();
                             }),
@@ -1272,7 +1294,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                                     latest.version.localeCompare(project.version) <= 0
                                 ) {
                                     groupsStore.setState((state) => ({
-                                        projects: replaceResource(state.projects, project),
+                                        projects: ownerResourceReplace(state.projects, project),
                                     }));
                                     publishGroups();
                                 }
@@ -1281,7 +1303,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     return;
                 }
                 groupsStore.setState((state) => ({
-                    projects: replaceResource(state.projects, {
+                    projects: ownerResourceReplace(state.projects, {
                         ...applyChanges(current, event.payload.changes),
                         version: event.payload.version,
                     }),
@@ -1359,7 +1381,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             })
                             .then(({ workspace }) => {
                                 groupsStore.setState((state) => ({
-                                    workspaces: replaceResource(state.workspaces, workspace),
+                                    workspaces: ownerResourceReplace(state.workspaces, workspace),
                                 }));
                                 publishGroups();
                             }),
@@ -1379,7 +1401,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                                     latest.version.localeCompare(workspace.version) <= 0
                                 ) {
                                     groupsStore.setState((state) => ({
-                                        workspaces: replaceResource(state.workspaces, workspace),
+                                        workspaces: ownerResourceReplace(
+                                            state.workspaces,
+                                            workspace,
+                                        ),
                                     }));
                                     publishGroups();
                                 }
@@ -1388,7 +1413,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     return;
                 }
                 groupsStore.setState((state) => ({
-                    workspaces: replaceResource(state.workspaces, {
+                    workspaces: ownerResourceReplace(state.workspaces, {
                         ...applyChanges(current, event.payload.changes),
                         version: event.payload.version,
                     }),
