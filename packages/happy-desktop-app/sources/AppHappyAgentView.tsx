@@ -65,7 +65,7 @@ import type {
     HappyAgentWorkspaceStore,
     HappyAgentWorkingWait,
     HappyAgentWorktreeId,
-    HappyAgentRecentTabMemory,
+    HappyAgentClosedTab,
 } from "happy-desktop-state";
 import {
     HAPPY_AGENT_PANEL_FILE_VIEW_ID,
@@ -977,16 +977,25 @@ function tabIdStep(
  * forgets it by hand, and a restore that fails leaves it to be tried again.
  */
 function closedTabReopen(
-    closed: HappyAgentRecentTabMemory,
+    closed: HappyAgentClosedTab,
     workspace: HappyAgentWorkspaceStore,
     online: () => boolean,
     route: {
-        readonly chatSelect: (groupId: string, chatId: string) => void;
+        readonly chatSelect: (groupId: string, chatId?: string) => void;
         readonly fileSelect: (groupId: string, path: string, kind: HappyAgentFileTabKind) => void;
     },
 ): void {
     if (closed.type === "file") {
         route.fileSelect(closed.groupId, closed.path, closed.fileKind);
+        return;
+    }
+    if (closed.type === "browser") {
+        // The page comes back in its group's panel. A page from another group
+        // is put there and that group is addressed, so the reader arrives on it.
+        workspace.browserReopen(closed);
+        const current = workspace.get();
+        if (current.address.groupId !== closed.groupId)
+            route.chatSelect(closed.groupId, current.groupResume.get(closed.groupId));
         return;
     }
     if (!online()) return;
@@ -2453,7 +2462,7 @@ interface HappyAgentPaletteFacts {
     readonly activeMainTabId?: string;
     /** The tab closed most recently, named for the row that offers it back. */
     readonly closedTab?: {
-        readonly tab: HappyAgentRecentTabMemory;
+        readonly tab: HappyAgentClosedTab;
         readonly label: string;
         readonly icon: IconName;
     };
@@ -2533,14 +2542,16 @@ function paletteFacts(
                     label: closed.path.split("/").at(-1) ?? closed.path,
                     icon: fileTabIcon(closed.path, closed.fileKind),
                 }
-              : {
-                    tab: closed,
-                    label:
-                        workspace.list.archivedSessions.find(
-                            (session) => session.id === closed.sessionId,
-                        )?.title ?? `Session ${closed.sessionId.slice(0, 8)}`,
-                    icon: "chat" as const,
-                };
+              : closed.type === "browser"
+                ? { tab: closed, label: closed.label, icon: "globe" as const }
+                : {
+                      tab: closed,
+                      label:
+                          workspace.list.archivedSessions.find(
+                              (session) => session.id === closed.sessionId,
+                          )?.title ?? `Session ${closed.sessionId.slice(0, 8)}`,
+                      icon: "chat" as const,
+                  };
     return {
         archivedSessions: workspace.list.archivedSessions,
         groupResume: workspace.groupResume,

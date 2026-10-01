@@ -534,7 +534,7 @@ export interface HappyAgentWorkspaceSnapshot {
      * reopening never offers a tab that is already there. Memory-only: it is a
      * list of regrets, not of history, and the window's history keeps that.
      */
-    readonly closedTabs: readonly HappyAgentRecentTabMemory[];
+    readonly closedTabs: readonly HappyAgentClosedTab[];
     /**
      * The addressed group's tab strip, by tab id, in the order it is shown. It
      * covers everything the strip holds — sessions and files alike — because the
@@ -699,6 +699,20 @@ export interface HappyAgentProjectCloneSnapshot {
  * file was last pointed at.
  */
 export const HAPPY_AGENT_PANEL_FILE_VIEW_ID = "file";
+
+/**
+ * One tab the reader closed and may want back: a session or a file, in the
+ * same shape the recents remember them, or a browser page by its address.
+ */
+export type HappyAgentClosedTab =
+    | HappyAgentRecentTabMemory
+    | {
+          readonly type: "browser";
+          readonly groupId: HappyAgentGroupId;
+          readonly url: string;
+          /** The page's title as the tab last showed it, for the row that offers it back. */
+          readonly label: string;
+      };
 
 /** One of the four faces offered for a new bot, by position. */
 export type HappyAgentBotFaceSlot = 0 | 1 | 2 | 3;
@@ -1007,6 +1021,12 @@ export interface HappyAgentWorkspaceStore {
     conversationArchive(conversationId: HappyAgentSessionId): Promise<void>;
     /** Returns an archived conversation to its workspace strip. Navigation remains the caller's. */
     conversationRestore(conversationId: HappyAgentSessionId): Promise<void>;
+    /**
+     * Opens a closed browser page again, in the side panel of the group it was
+     * closed in, and drops it from `closedTabs`. Addressing that group, when it
+     * is not the open one, remains the caller's.
+     */
+    browserReopen(tab: HappyAgentClosedTab & { readonly type: "browser" }): void;
     /**
      * Moves one tab of the addressed group directly after `afterId`, or to the
      * front of the strip when null. The order is this client's own and takes
@@ -1441,6 +1461,12 @@ export function happyAgentWorkspaceStoreCreate(
         terminalOpen: (sessionId) => client.terminalOpen(sessionId),
         memoryRead: (groupId) => client.memory.groupRead(groupId)?.panel,
         memoryWrite: (groupId, memory) => client.memory.groupPanelWrite(groupId, memory),
+        // A closed page joins the closed sessions and files, so one chord and
+        // one palette row bring back whichever was closed last.
+        browserClosed: (tab) => {
+            closedTabRemember({ type: "browser", ...tab });
+            recompute();
+        },
     });
 
     const listeners = new Set<() => void>();
@@ -1659,14 +1685,16 @@ export function happyAgentWorkspaceStoreCreate(
     /** The addressed group's tab strip, in the order the reader arranged it. */
     let tabOrder: readonly string[] = [];
     /** What the reader has closed and may want back, most recent first. */
-    let closedTabs: readonly HappyAgentRecentTabMemory[] = [];
+    let closedTabs: readonly HappyAgentClosedTab[] = [];
     /** Enough to undo a sweep of "close others"; nobody reopens the fortieth. */
     const CLOSED_TAB_LIMIT = 32;
-    const closedTabKey = (tab: HappyAgentRecentTabMemory): string =>
+    const closedTabKey = (tab: HappyAgentClosedTab): string =>
         tab.type === "session"
             ? `session\u0000${tab.groupId}\u0000${tab.sessionId}`
-            : `file\u0000${tab.groupId}\u0000${tab.path}`;
-    const closedTabRemember = (tab: HappyAgentRecentTabMemory): void => {
+            : tab.type === "file"
+              ? `file\u0000${tab.groupId}\u0000${tab.path}`
+              : `browser\u0000${tab.groupId}\u0000${tab.url}`;
+    const closedTabRemember = (tab: HappyAgentClosedTab): void => {
         const key = closedTabKey(tab);
         closedTabs = [tab, ...closedTabs.filter((entry) => closedTabKey(entry) !== key)].slice(
             0,
@@ -1674,7 +1702,7 @@ export function happyAgentWorkspaceStoreCreate(
         );
     };
     /** Drops the entry for a tab that is open again, however it was reopened. */
-    const closedTabForget = (tab: HappyAgentRecentTabMemory): void => {
+    const closedTabForget = (tab: HappyAgentClosedTab): void => {
         const key = closedTabKey(tab);
         if (!closedTabs.some((entry) => closedTabKey(entry) === key)) return;
         closedTabs = closedTabs.filter((entry) => closedTabKey(entry) !== key);
@@ -4932,6 +4960,12 @@ export function happyAgentWorkspaceStoreCreate(
                 closedTabForget(restored);
                 recompute();
             }
+        },
+        browserReopen(tab) {
+            if (disposed) return;
+            panel.browserRestore({ groupId: tab.groupId, url: tab.url, label: tab.label });
+            closedTabForget(tab);
+            recompute();
         },
         tabReorder(tabId, afterId) {
             if (disposed || addressedGroupId === undefined) return;
