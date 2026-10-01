@@ -62,6 +62,8 @@ export type CommandPaletteCommand =
       }
     | { readonly kind: "sessionCreate" }
     | { readonly kind: "workspaceCreate" }
+    /** The neighbouring tab of the main strip, wrapping at the ends. */
+    | { readonly kind: "tabStep"; readonly direction: 1 | -1 }
     | { readonly kind: "settingsOpen" }
     | { readonly kind: "settingsSectionOpen"; readonly section: string }
     | { readonly kind: "updateApply" };
@@ -201,6 +203,8 @@ export interface CommandPaletteContext {
     readonly sessionCreateAvailable: boolean;
     /** Whether a new workspace can be made in the addressed project. */
     readonly workspaceCreateAvailable: boolean;
+    /** Whether the main strip has a neighbouring tab to step to. */
+    readonly tabStepAvailable: boolean;
 }
 
 export interface CommandPaletteInput extends CommandPaletteContext {
@@ -782,6 +786,28 @@ function actionRows(
                       glyph: { kind: "icon" as const, name: "branch" as const },
                       shortcut: APP_SHORTCUTS.workspaceCreate,
                       command: { kind: "workspaceCreate" as const },
+                  },
+              ]
+            : []),
+        // The strip's own chords, here so the caps have somewhere to be seen:
+        // a chord nothing in the window ever shows is one nobody learns.
+        ...(context.tabStepAvailable
+            ? [
+                  {
+                      kind: "command" as const,
+                      id: "action:tab-next",
+                      title: "Next tab",
+                      glyph: { kind: "icon" as const, name: "chevron-right" as const },
+                      shortcut: APP_SHORTCUTS.tabNext,
+                      command: { kind: "tabStep" as const, direction: 1 as const },
+                  },
+                  {
+                      kind: "command" as const,
+                      id: "action:tab-previous",
+                      title: "Previous tab",
+                      glyph: { kind: "icon" as const, name: "chevron-left" as const },
+                      shortcut: APP_SHORTCUTS.tabPrevious,
+                      command: { kind: "tabStep" as const, direction: -1 as const },
                   },
               ]
             : []),

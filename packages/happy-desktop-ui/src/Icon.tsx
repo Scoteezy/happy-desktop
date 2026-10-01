@@ -20,6 +20,7 @@ export type IconName =
     | "check-circle"
     | "copy"
     | "chevron-down"
+    | "chevron-left"
     | "chevron-right"
     | "close"
     | "branch"
@@ -130,6 +131,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     "check-circle": { set: "ionicons", name: "checkmark-circle-outline" },
     copy: { set: "ionicons", name: "copy-outline" },
     "chevron-down": { set: "ionicons", name: "chevron-down-outline" },
+    "chevron-left": { set: "ionicons", name: "chevron-back-outline" },
     "chevron-right": { set: "ionicons", name: "chevron-forward-outline" },
     // A bare cross: dismissing a thing where it is an affordance, and what went
     // wrong where it is not. In a danger or warning tone beside a failure it is

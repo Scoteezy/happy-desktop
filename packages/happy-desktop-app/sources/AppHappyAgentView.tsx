@@ -1034,22 +1034,40 @@ function sessionTabs(
 }
 
 /**
- * Keeps a bot's one conversation first in the strip and refuses to close it.
+ * The main strip's tab ids in the order it is drawn: the group's sessions, its
+ * open files, and the tools moved into the main content, in the order the
+ * workspace records, with a pinned session held first.
  *
- * A bot *is* that conversation: it was created with the bot, it is the only one
- * there will ever be, and there is no control anywhere that could bring it back.
- * So it does not take its chances in the reader's tab order the way an ordinary
- * session does — it holds the leading position whatever else is opened beside
- * it, and the files and tools a reader opens from it arrange themselves after.
+ * A bot *is* its one conversation: it was created with the bot, it is the only
+ * one there will ever be, and there is no control anywhere that could bring it
+ * back. So it does not take its chances in the reader's tab order the way an
+ * ordinary session does — it holds the leading position whatever else is
+ * opened beside it, and the files and tools a reader opens from it arrange
+ * themselves after. A detached subagent's chat is pinned the same way: it is
+ * the one session this strip shows.
  *
- * Every other group passes through untouched: `sessionId` is absent unless the
- * open group is a bot's.
+ * The strip, the keyboard, and the palette all read this one order, so "the
+ * next tab" is the tab drawn next wherever it is asked for.
  */
-function botTabPin(items: readonly TabItem[], sessionId: string | undefined): TabItem[] {
-    if (sessionId === undefined) return items as TabItem[];
-    const pinned = items.find((item) => item.id === sessionId);
-    if (pinned === undefined) return items as TabItem[];
-    return [{ ...pinned, closable: false }, ...items.filter((item) => item.id !== sessionId)];
+function groupTabIds(
+    openGroup: OpenGroup | undefined,
+    detachedConversationId: string | undefined,
+    fileTabIds: readonly string[],
+    toolTabIds: readonly string[],
+    tabOrder: readonly string[],
+): readonly string[] {
+    if (!openGroup) return [];
+    const sessionIds =
+        detachedConversationId !== undefined
+            ? [detachedConversationId]
+            : openGroup.conversations.map((summary) => summary.id);
+    const ordered = tabsOrdered(
+        [...sessionIds, ...fileTabIds, ...toolTabIds].map((id) => ({ id })),
+        tabOrder,
+    ).map((entry) => entry.id);
+    const pinnedId = detachedConversationId ?? openGroup.singleConversationId;
+    if (pinnedId === undefined || !ordered.includes(pinnedId)) return ordered;
+    return [pinnedId, ...ordered.filter((id) => id !== pinnedId)];
 }
 
 /**
@@ -2398,6 +2416,12 @@ interface HappyAgentPaletteActions {
 interface HappyAgentPaletteFacts {
     readonly archivedSessions: readonly HappyAgentSessionSummary[];
     readonly tabs: readonly CommandPaletteTab[];
+    /**
+     * The main strip in the order it is drawn, and the tab it is on, so the
+     * palette's "next tab" lands where the strip's own chord would.
+     */
+    readonly mainTabIds: readonly string[];
+    readonly activeMainTabId?: string;
     readonly sessionCreateAvailable: boolean;
     readonly groupResume?: ReadonlyMap<HappyAgentGroupId, HappyAgentSessionId>;
 }
@@ -2409,6 +2433,7 @@ interface HappyAgentPaletteFacts {
  */
 const PALETTE_WORKSPACE_ABSENT: HappyAgentPaletteFacts = {
     archivedSessions: [],
+    mainTabIds: [],
     sessionCreateAvailable: false,
     tabs: [],
 };
@@ -2449,6 +2474,7 @@ function paletteTabs(
  */
 function paletteFacts(
     workspace: HappyAgentWorkspaceSnapshot,
+    panel: HappyAgentPanelSnapshot,
     groupId: string | undefined,
     online: boolean,
 ): HappyAgentPaletteFacts {
@@ -2459,9 +2485,22 @@ function paletteFacts(
         groupId,
         workspace.address.conversationId,
     );
+    const activeMainTabId = workspace.activeMainViewId ?? workspace.address.conversationId;
     return {
         archivedSessions: workspace.list.archivedSessions,
         groupResume: workspace.groupResume,
+        mainTabIds: groupTabIds(
+            openGroup,
+            workspace.conversationDelegated ? workspace.address.conversationId : undefined,
+            openGroup
+                ? workspace.fileTabs
+                      .filter((tab) => tab.groupId === openGroup.id && tab.placement === "main")
+                      .map((tab) => tab.id)
+                : [],
+            openGroup ? toolTabsPlaced(panel, "main").map((tab) => tab.id) : [],
+            workspace.tabOrder,
+        ),
+        ...(activeMainTabId === undefined ? {} : { activeMainTabId }),
         sessionCreateAvailable:
             online &&
             !workspace.conversationDelegated &&
@@ -2488,10 +2527,17 @@ function HappyAgentCommandPaletteSurface(
         props.workspace.get,
         props.workspace.get,
     );
+    // The tools moved into the main strip are the panel's to list, so the
+    // strip's order is read from both stores.
+    const panel = useSyncExternalStore(
+        props.workspace.panel.subscribe,
+        props.workspace.panel.get,
+        props.workspace.panel.get,
+    );
     return (
         <HappyAgentCommandPalette
             {...props}
-            facts={paletteFacts(workspace, props.groupId, props.online)}
+            facts={paletteFacts(workspace, panel, props.groupId, props.online)}
         />
     );
 }
@@ -2505,10 +2551,15 @@ function HappyAgentQuickActionsSurface(
         props.workspace.get,
         props.workspace.get,
     );
+    const panel = useSyncExternalStore(
+        props.workspace.panel.subscribe,
+        props.workspace.panel.get,
+        props.workspace.panel.get,
+    );
     return (
         <HappyAgentQuickActions
             {...props}
-            facts={paletteFacts(workspace, props.groupId, props.online)}
+            facts={paletteFacts(workspace, panel, props.groupId, props.online)}
         />
     );
 }
@@ -2525,6 +2576,8 @@ function paletteContext(
         projects: subject.projects,
         sessionCreateAvailable: facts.sessionCreateAvailable,
         tabs: facts.tabs,
+        // Two tabs is the least that gives "next" somewhere to go.
+        tabStepAvailable: facts.mainTabIds.length > 1,
         updateReady: subject.updateReady,
         workspaceCreateAvailable:
             subject.online &&
@@ -2864,6 +2917,38 @@ function paletteCommandRun(
             const projectId = props.workspaceCreateProjectId;
             if (!workspace || projectId === undefined || !props.happyAgentOnline()) return;
             void workspace.worktreeCreate(projectId).catch(() => undefined);
+            return;
+        }
+        case "tabStep": {
+            // The main strip, through the same routes its own strip uses: a
+            // file is addressed beside the session, a tool moved here is shown,
+            // and anything else is a session of this group. The panel is not
+            // stepped from here — the palette has taken the keyboard, so there
+            // is no focused pane for it to answer for.
+            const workspace = props.workspace;
+            if (!workspace || props.groupId === undefined) return;
+            const next = tabIdStep(
+                props.facts.mainTabIds,
+                props.facts.activeMainTabId,
+                command.direction,
+            );
+            if (next === undefined) return;
+            const file = workspace.get().fileTabs.find((tab) => tab.id === next);
+            if (file) {
+                props.onFileSelect(
+                    props.happyAgentId,
+                    file.groupId,
+                    props.chatId,
+                    file.path,
+                    file.kind,
+                );
+                return;
+            }
+            if (workspace.panel.get().tabs.some((tab) => tab.id === next)) {
+                workspace.mainViewSelect(next);
+                return;
+            }
+            props.onChatSelect(props.happyAgentId, props.groupId, next);
             return;
         }
         case "settingsOpen":
@@ -3209,30 +3294,37 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
     const singleChat =
         openGroup?.singleConversationId !== undefined || detachedConversationId !== undefined;
     // Child agents expose one chat, even when they share a checkout. Files and
-    // tools can still sit beside that pinned conversation.
-    const groupTabs: TabItem[] = [
-        ...botTabPin(
-            tabsOrdered(
-                openGroup
-                    ? [
-                          ...(detachedConversationTab
-                              ? [detachedConversationTab]
-                              : sessionTabs(
-                                    openGroup,
-                                    props.titleShimmerEnabled,
-                                    openGroup.singleConversationId !== undefined &&
-                                        openBot === undefined,
-                                )
-                          ).map((tab) => (availability.online ? tab : { ...tab, closable: false })),
-                          ...groupFileTabs.map(fileTabItem),
-                          ...toolTabItems(mainTools),
-                      ]
-                    : [],
-                workspace.tabOrder,
-            ),
-            detachedConversationId ?? openGroup?.singleConversationId,
-        ),
-    ];
+    // tools can still sit beside that pinned conversation, which is the one tab
+    // that refuses to close.
+    const groupTabItems = new Map<string, TabItem>(
+        (openGroup
+            ? [
+                  ...(detachedConversationTab
+                      ? [detachedConversationTab]
+                      : sessionTabs(
+                            openGroup,
+                            props.titleShimmerEnabled,
+                            openGroup.singleConversationId !== undefined && openBot === undefined,
+                        )
+                  ).map((tab) => (availability.online ? tab : { ...tab, closable: false })),
+                  ...groupFileTabs.map(fileTabItem),
+                  ...toolTabItems(mainTools),
+              ]
+            : []
+        ).map((tab) => [tab.id, tab]),
+    );
+    const pinnedTabId = detachedConversationId ?? openGroup?.singleConversationId;
+    const groupTabs: TabItem[] = groupTabIds(
+        openGroup,
+        detachedConversationId,
+        groupFileTabs.map((tab) => tab.id),
+        mainTools.map((tab) => tab.id),
+        workspace.tabOrder,
+    ).flatMap((id) => {
+        const item = groupTabItems.get(id);
+        if (!item) return [];
+        return [id === pinnedTabId ? { ...item, closable: false } : item];
+    });
     const historyMenuItems = (): readonly MenuItem[] => {
         if (!openGroup) return [];
         // One list in one order: every session this workspace has, open or
