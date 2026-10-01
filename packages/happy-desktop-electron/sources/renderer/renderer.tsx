@@ -20,6 +20,7 @@ import {
     appearanceStoreCreate,
     commandPaletteStoreCreate,
     experimentsStoreCreate,
+    gptLiveStoreCreate,
     titleShimmerStoreCreate,
     welcomeStoreCreate,
     happyAgentNavigationOrderStoreCreate,
@@ -29,6 +30,7 @@ import {
     type AppearanceStore,
     type CommandPaletteStore,
     type ExperimentsStore,
+    type GptLiveStore,
     type WelcomeStore,
     type HappyAgentNavigationOrderStore,
     type HappyAgentSidebarCollapseStore,
@@ -99,6 +101,7 @@ import { desktopProfilerStoreCreate } from "./desktopProfilerStore";
 import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
 import { desktopDaemonStoreCreate } from "./desktopDaemonStore";
 import { desktopExperimentsPersistence } from "./desktopExperiments";
+import { desktopGptLivePersistence } from "./desktopGptLive";
 import { desktopWelcomePersistence } from "./desktopWelcome";
 import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
@@ -279,6 +282,7 @@ function HappyAgentBoundary(props: {
     mediaWindow?: MediaWindowOpener;
     experiments: ExperimentsStore;
     platform: "desktop" | "web";
+    gptLive: GptLiveStore;
     router: HappyAgentRouter;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
@@ -322,6 +326,7 @@ function HappyAgentBoundary(props: {
                       }
                     : {}),
                 experiments: props.experiments,
+                gptLive: props.gptLive,
                 navigationOrder: props.navigationOrder,
                 sidebarCollapse: props.sidebarCollapse,
                 sidebarVisibility: props.sidebarVisibility,
@@ -466,6 +471,7 @@ interface DesktopRendererProps {
     mediaWindow?: MediaWindowOpener;
     bridge: HappyDesktopBridge;
     experiments: ExperimentsStore;
+    gptLive: GptLiveStore;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
@@ -618,6 +624,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 commandPalette={ui.commandPalette}
                                 connectionOnboarding
                                 experiments={props.experiments}
+                                gptLive={props.gptLive}
                                 htmlPreview={props.htmlPreview}
                                 mediaWindow={props.mediaWindow}
                                 navigationOrder={ui.navigationOrder}
@@ -872,6 +879,7 @@ function DesktopRuntimeContent(
             htmlPreview={props.htmlPreview}
             mediaWindow={props.mediaWindow}
             experiments={props.experiments}
+            gptLive={props.gptLive}
             navigationOrder={props.navigationOrder}
             sidebarCollapse={props.sidebarCollapse}
             sidebarVisibility={props.sidebarVisibility}
@@ -1045,6 +1053,7 @@ if (mediaPreviewBridge) {
         // is kept beside the arrangement above and for the same reason: it says
         // what this installation shows, so no machine has a say in it.
         const experiments = experimentsStoreCreate(desktopExperimentsPersistence());
+        const gptLive = gptLiveStoreCreate(desktopGptLivePersistence());
         // Active-title motion is also this window's own choice. The store keeps
         // the product default in memory and writes only after the reader changes
         // the switch, so untouched installations follow future defaults.
@@ -1258,6 +1267,7 @@ if (mediaPreviewBridge) {
                             browserLocal ? undefined : desktopMediaWindowOpen(desktopBridge)
                         }
                         experiments={experiments}
+                        gptLive={gptLive}
                         navigationOrder={navigationOrder}
                         sidebarCollapse={sidebarCollapse}
                         sidebarVisibility={sidebarVisibility}

@@ -470,6 +470,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         effort="medium"
                         effortOptions={effortOptions}
                         experimentalFeaturesEnabled
+                        gptLiveEnabled={false}
+                        onGptLiveEnabledChange={noop}
                         modelOptions={modelOptions}
                         onAppearanceChange={noop}
                         onAgentCheck={noop}

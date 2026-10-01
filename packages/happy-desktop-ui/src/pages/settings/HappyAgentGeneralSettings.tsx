@@ -2,6 +2,7 @@ import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
 import { FormRow } from "../../FormRow";
+import { GptLiveSettings } from "../../GptLiveSettings";
 import { SegmentedControl } from "../../SegmentedControl";
 import { Select, type SelectOption } from "../../Select";
 import { Spinner } from "../../Spinner";
@@ -30,6 +31,9 @@ export type HappyAgentGeneralSettingsProps = {
     unavailable?: string;
     /** Whether this window offers the features that are not finished yet. */
     experimentalFeaturesEnabled: boolean;
+    /** Separate, default-off GPT-Live voice preference; enabling never starts a call. */
+    gptLiveEnabled?: boolean;
+    onGptLiveEnabledChange?: (enabled: boolean) => void;
     /** Whether active session, project, and workspace titles shimmer. */
     titleShimmerEnabled: boolean;
     /** Absent where the host does not manage updates. */
@@ -395,6 +399,12 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     label="Enable experimental features"
                 />
             </HappyAgentSettingsSection>
+            {props.onGptLiveEnabledChange ? (
+                <GptLiveSettings
+                    enabled={props.gptLiveEnabled === true}
+                    onEnabledChange={props.onGptLiveEnabledChange}
+                />
+            ) : null}
         </>
     );
 }

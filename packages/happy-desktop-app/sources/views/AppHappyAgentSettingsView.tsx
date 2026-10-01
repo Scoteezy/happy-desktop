@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import type {
     AppearanceStore,
     ExperimentsStore,
+    GptLiveStore,
     HappyAgentInstructionsSnapshot,
     HappyAgentDebugLogSnapshot,
     HappyAgentSecurityPolicySnapshot,
@@ -23,6 +24,7 @@ import {
     happyAgentPermissionLabel,
     happyAgentThinkingLabel,
     experimentsStoreNoop,
+    gptLiveStoreNoop,
     happyAgentCloudStoreNoop,
     happyAgentAvailabilityProject,
     happyAgentIntegrationStoreNoop,
@@ -277,6 +279,7 @@ export interface AppHappyAgentSettingsViewProps {
      * in a host that remembers no such choice, which withholds them.
      */
     experiments?: ExperimentsStore;
+    gptLive?: GptLiveStore;
     /** Every Happy Agent in this window, including the one whose catalog is read. */
     debug?: AppHappyAgentDebugStore;
     profiler?: AppHappyAgentProfilerStore;
@@ -308,6 +311,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         props.appearance.get,
     );
     const experimentsStore = props.experiments ?? experimentsStoreNoop;
+    const gptLiveStore = props.gptLive ?? gptLiveStoreNoop;
+    const gptLive = useSyncExternalStore(
+        gptLiveStore.subscribe,
+        gptLiveStore.get,
+        gptLiveStore.get,
+    );
     const experiments = useSyncExternalStore(
         experimentsStore.subscribe,
         experimentsStore.get,
@@ -754,6 +763,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     }))}
                     error={models.type === "error" ? models.error.message : undefined}
                     experimentalFeaturesEnabled={experiments.experimentalFeaturesEnabled}
+                    {...(props.gptLive
+                        ? {
+                              gptLiveEnabled: gptLive.gptLiveEnabled,
+                              onGptLiveEnabledChange: gptLiveStore.gptLiveEnabledUpdate,
+                          }
+                        : {})}
                     loading={models.type !== "ready" && models.type !== "error"}
                     modelOptions={modelOptions(catalog, settings)}
                     onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}

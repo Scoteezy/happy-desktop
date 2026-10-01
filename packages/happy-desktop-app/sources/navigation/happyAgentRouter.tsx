@@ -17,6 +17,7 @@ import type {
     AppearanceStore,
     CommandPaletteStore,
     ExperimentsStore,
+    GptLiveStore,
     HappyAgentGroupId,
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
@@ -108,6 +109,8 @@ export interface HappyAgentRouterContext {
      * in a host that remembers no such choice, which withholds them.
      */
     readonly experiments?: ExperimentsStore;
+    /** Window-owned GPT-Live opt-in; unrelated to coding-provider settings. */
+    readonly gptLive?: GptLiveStore;
     /** Window-local preference for animated activity titles. */
     readonly titleShimmer?: TitleShimmerStore;
     /**
@@ -576,6 +579,7 @@ function HappyAgentSettingsRoute() {
             {...(context.debug ? { debug: context.debug } : {})}
             {...(context.profiler ? { profiler: context.profiler } : {})}
             {...(context.experiments ? { experiments: context.experiments } : {})}
+            {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             onCategorySelect={(section) =>
                 void navigate({ params: { section }, to: "/settings/$section" })
             }
