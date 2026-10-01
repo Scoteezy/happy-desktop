@@ -4082,7 +4082,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 },
                                 shortcut: APP_SHORTCUTS.tabReopen,
                             },
-                            // Cmd-Shift-W sweeps the main strip the way the
+                            // Option-Cmd-W sweeps the main strip the way the
                             // tab menu's "Close all" does: each tab closed as
                             // if by hand, the detached subagent left alone.
                             {

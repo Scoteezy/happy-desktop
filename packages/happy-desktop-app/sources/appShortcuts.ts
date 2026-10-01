@@ -22,8 +22,12 @@ export const APP_SHORTCUTS = {
     tabPrevious: commandShortcut("[", { shift: true }),
     /** Brings back the tab closed most recently, the way a browser's does. */
     tabReopen: commandShortcut("t", { shift: true }),
-    /** Every tab of the open workspace's strip, the way its context menu offers. */
-    tabsCloseAll: commandShortcut("w", { shift: true }),
+    /**
+     * Every tab of the open workspace's strip, the way its context menu offers.
+     * Option-Command-W is what macOS itself means by "Close All"; Shift-W was
+     * found bound elsewhere on a reader's machine before the window saw it.
+     */
+    tabsCloseAll: commandShortcut("w", { alt: true }),
     /**
      * The active tab to the other side of the window, from anywhere. The arrow
      * points at the destination, as it does on a focused tab with Option alone;
