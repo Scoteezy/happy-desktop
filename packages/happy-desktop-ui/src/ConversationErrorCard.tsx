@@ -1,4 +1,6 @@
 import { type CSSProperties } from "react";
+import type { ConversationErrorAssistance } from "happy-desktop-state";
+import { conversationErrorAssistanceText } from "./conversationErrorAssistanceText";
 import { partitionComponentProps } from "./componentProps";
 import { CopyButton } from "./CopyButton";
 import { Octicon } from "./vectorIcons/VectorIcon";
@@ -10,6 +12,8 @@ export interface ConversationErrorCardProps {
     readonly style?: CSSProperties;
     readonly title: string;
     readonly tone?: "error" | "warning";
+    readonly assistance?: ConversationErrorAssistance;
+    readonly onAssistanceRequest?: () => void;
 }
 
 /**
@@ -25,8 +29,13 @@ export function ConversationErrorCard(props: ConversationErrorCardProps) {
         "style",
         "title",
         "tone",
+        "assistance",
+        "onAssistanceRequest",
     ]);
     const tone = local.tone ?? "error";
+    const assistance = local.assistance
+        ? conversationErrorAssistanceText(local.assistance)
+        : undefined;
     return (
         <div
             className={["happy-conversation-error-card", local.className].filter(Boolean).join(" ")}
@@ -63,6 +72,23 @@ export function ConversationErrorCard(props: ConversationErrorCardProps) {
                     >
                         {local.reason}
                     </span>
+                    {assistance ? (
+                        <span className="happy-conversation-error-card__assistance">
+                            <button
+                                className="happy-conversation-error-card__assistance-action"
+                                disabled={assistance.disabled || !local.onAssistanceRequest}
+                                onClick={local.onAssistanceRequest}
+                                type="button"
+                            >
+                                {assistance.label}
+                            </button>
+                            {assistance.detail ? (
+                                <span className="happy-conversation-error-card__assistance-detail">
+                                    {assistance.detail}
+                                </span>
+                            ) : null}
+                        </span>
+                    ) : null}
                 </span>
                 {/* A failure is the line a reader most often needs verbatim —
                     in a bug report, a search, or a reply — so the whole reason

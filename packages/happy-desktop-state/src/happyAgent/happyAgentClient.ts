@@ -2,7 +2,14 @@ import type {
     TerminalColorScheme,
     TerminalDriverCreate,
 } from "../modules/terminal/terminalState.js";
-import type { HappyAgentClient } from "@slopus/happy-agent-client";
+import type { HappyAgentClient, SendMessageRequest } from "@slopus/happy-agent-client";
+import { modeOf } from "../happyAgentConnection/projection.js";
+import { happyAgentUserError } from "./happyAgentSupport.js";
+import {
+    happyAgentErrorAssistanceText,
+    type HappyAgentErrorAssistanceRequest,
+    type HappyAgentErrorDiagnostic,
+} from "./happyAgentErrorAssistance.js";
 import { happyAgentProjectAddError } from "./happyAgentProjectRegistration.js";
 import type { MutationRejectedDelta } from "../happyAgentConnection/index.js";
 import type { HappyAgentConnection } from "../happyAgentConnection/index.js";
@@ -108,6 +115,11 @@ export interface HappyAgentWorkspaceFilesChanged {
 }
 
 export interface HappyAgentWorkspaceClient {
+    /** Prepares one ordinary, acknowledged send to this daemon's Chief of Staff. */
+    errorAssistancePrepare(
+        targetSessionId: HappyAgentSessionId,
+        source: HappyAgentErrorDiagnostic,
+    ): HappyAgentErrorAssistanceRequest;
     /** One model/capability/default/last-used authority for this daemon connection. */
     readonly models: HappyAgentModelStore;
     /**
@@ -602,6 +614,36 @@ export function happyAgentWorkspaceClientCreate(
                 });
             }
             return sessionListStore;
+        },
+        errorAssistancePrepare(targetSessionId, source) {
+            const id = `c${crypto.randomUUID().replaceAll("-", "").slice(0, 23)}`;
+            let request: SendMessageRequest | undefined;
+            return {
+                async send() {
+                    try {
+                        if (disposed) throw new Error("This Happy Agent connection is closed.");
+                        const signal = AbortSignal.timeout(60_000);
+                        if (!request) {
+                            const [target, config] = await Promise.all([
+                                deps.client.getAgentBootstrap(targetSessionId, { signal }),
+                                deps.client.getConfig({ signal }),
+                            ]);
+                            // Capture the destination's own selection once. Even an ambiguous
+                            // reply must retry the same message, content, and mode.
+                            request = {
+                                id,
+                                text: happyAgentErrorAssistanceText(source),
+                                delivery: "queue",
+                                mode: modeOf(config.config, target.draft, target.mode),
+                            };
+                        }
+                        if (disposed) throw new Error("This Happy Agent connection is closed.");
+                        await deps.client.sendMessage(targetSessionId, request, { signal });
+                    } catch (error) {
+                        throw happyAgentUserError(error);
+                    }
+                },
+            };
         },
         inbox() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");

@@ -4915,6 +4915,11 @@ function HappyAgentConversationSurface(props: {
             }
             conversationId={conversation.conversationId}
             entries={conversation.entries}
+            errorAssistance={conversation.errorAssistance}
+            errorAssistanceUnavailable={props.unavailable}
+            onErrorAssistanceRequest={(entryId) => {
+                if (props.happyAgentOnline()) workspace.errorAssistanceRequest(entryId);
+            }}
             loading={!conversation.ready}
             {...(props.notice === undefined ? {} : { notice: props.notice })}
             scrollPosition={conversation.scrollPosition}

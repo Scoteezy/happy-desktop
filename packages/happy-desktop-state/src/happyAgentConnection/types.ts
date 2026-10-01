@@ -282,6 +282,8 @@ export interface CompactionElement extends BaseChatElement {
 
 export interface FailureElement extends BaseChatElement {
     kind: "failure";
+    /** Durable service message identity; absent on a local-only failure. */
+    messageId?: string;
     outcome: "retried" | "continued" | "failed";
     attempt?: number;
     reason: string;

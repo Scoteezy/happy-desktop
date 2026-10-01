@@ -87,3 +87,48 @@
 .happy-conversation-error-card:focus-within .happy-copy-button {
     opacity: 1;
 }
+
+.happy-conversation-error-card__assistance {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.happy-conversation-error-card__assistance-action,
+.happy-conversation-error-card__assistance-detail {
+    min-width: 0;
+    min-height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font-family: var(--happy-font-ui);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+    text-align: left;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.happy-conversation-error-card__assistance-action {
+    color: var(--text);
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.happy-conversation-error-card__assistance-action:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+}
+
+.happy-conversation-error-card__assistance-action:disabled,
+.happy-conversation-error-card__assistance-detail {
+    color: var(--text-secondary);
+}
+
+.happy-conversation-error-card__assistance-action:disabled {
+    cursor: default;
+    text-decoration: none;
+}

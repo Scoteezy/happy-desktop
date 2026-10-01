@@ -911,6 +911,7 @@ function messageElementsProject(
                     ...base,
                     id,
                     kind: "failure",
+                    messageId: message.id,
                     outcome: "failed",
                     reason: block.text,
                 });

@@ -5,6 +5,7 @@ import type {
     ConversationAttachment,
     ConversationAuthor,
     ConversationEntry,
+    ConversationErrorAssistance,
     ConversationToolCall,
     UserError,
 } from "happy-desktop-state";
@@ -28,6 +29,8 @@ type ConversationLinkedAttachment = Extract<ConversationAttachment, { kind: "lin
 
 export type ConversationEntryViewProps = {
     entry: ConversationEntry;
+    errorAssistance?: ConversationErrorAssistance;
+    onErrorAssistanceRequest?: (entryId: string) => void;
     /** Identity heading for the first activity in an agent turn. */
     activityAuthor?: ConversationAuthor;
     /** Identity id of the reader, so their own messages take the own treatment. */
@@ -317,6 +320,12 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
         const notice =
             entry.level === "error" || entry.retry !== undefined ? (
                 <ConversationErrorCard
+                    assistance={props.errorAssistance}
+                    onAssistanceRequest={
+                        props.onErrorAssistanceRequest
+                            ? () => props.onErrorAssistanceRequest!(entry.id)
+                            : undefined
+                    }
                     className={props.activityAuthor ? undefined : props.className}
                     data-testid={props["data-testid"]}
                     reason={entry.text}

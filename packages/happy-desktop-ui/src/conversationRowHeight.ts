@@ -2,6 +2,7 @@ import {
     entryKey,
     type AgentTurnTraceSummary,
     type ConversationEntry,
+    type ConversationErrorAssistance,
     type ConversationRequest,
 } from "happy-desktop-state";
 import {
@@ -29,6 +30,7 @@ import {
 import { SYSTEM_NOTIFICATION_HEIGHT } from "./systemNotification";
 import { agentTraceMetaStats, agentTraceMetaTitle } from "./agentTraceMeta";
 import { conversationErrorTitle } from "./conversationErrorTitle";
+import { conversationErrorAssistanceText } from "./conversationErrorAssistanceText";
 
 /**
  * Height of one conversation row, computed from the entry and the list's measure
@@ -64,6 +66,7 @@ export type ConversationRowContext = {
     readonly expanded?: boolean;
     /** A live status footer follows the final agent message. */
     readonly liveStatus?: boolean;
+    readonly errorAssistance?: ConversationErrorAssistance;
 };
 type CachedRowHeight = { readonly value: number | undefined };
 type Dictionary<T> = Record<string, T | undefined>;
@@ -608,15 +611,25 @@ export function conversationRowHeight(
                 : 0;
         if (entry.level === "error" || entry.retry !== undefined) {
             const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
+            const assistance = context.errorAssistance
+                ? conversationErrorAssistanceText(context.errorAssistance)
+                : undefined;
             return rowHeightCached(
                 cache,
                 entry,
-                `error:${String(width)}:${String(lead)}`,
+                `error:${String(width)}:${String(lead)}:${assistance?.label ?? ""}:${assistance?.detail ?? ""}`,
                 () =>
                     lead +
                     ERROR_TEXT_CHROME +
                     errorTextHeight(conversationErrorTitle(entry), measure, cache?.text, true) +
-                    errorTextHeight(entry.text, measure, cache?.text),
+                    errorTextHeight(entry.text, measure, cache?.text) +
+                    (assistance
+                        ? 4 +
+                          errorTextHeight(assistance.label, measure, cache?.text) +
+                          (assistance.detail
+                              ? 4 + errorTextHeight(assistance.detail, measure, cache?.text)
+                              : 0)
+                        : 0),
             );
         }
         return rowHeightCached(

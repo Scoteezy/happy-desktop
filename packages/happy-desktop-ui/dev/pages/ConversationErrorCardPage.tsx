@@ -25,6 +25,56 @@ export function ConversationErrorCardPage() {
                 </div>
             </Specimen>
             <Specimen
+                detail="An explicit click sends the quoted diagnostic. Pending, unavailable, and failed handoffs remain honest about delivery."
+                label="Chief of Staff handoff"
+                number="04"
+                stage="surface"
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "24px",
+                        width: "760px",
+                    }}
+                >
+                    <ConversationErrorCard
+                        assistance={{ status: "ready" }}
+                        onAssistanceRequest={() => {}}
+                        reason="The selected provider account needs attention. You can also sign in manually and retry."
+                        title="Failure"
+                    />
+                    <ConversationErrorCard
+                        assistance={{ status: "pending" }}
+                        reason="The provider connection closed."
+                        title="Failure"
+                    />
+                    <ConversationErrorCard
+                        assistance={{
+                            status: "unavailable",
+                            reason: "Chief of Staff is not available on this Happy Agent.",
+                        }}
+                        reason="The provider connection closed."
+                        title="Failure"
+                    />
+                    <ConversationErrorCard
+                        assistance={{
+                            status: "failed",
+                            reason: "Could not reach this Happy Agent. Your error and manual recovery options are unchanged.",
+                        }}
+                        onAssistanceRequest={() => {}}
+                        reason="The provider connection closed."
+                        title="Failure"
+                    />
+                    <ConversationErrorCard
+                        assistance={{ status: "sent" }}
+                        onAssistanceRequest={() => {}}
+                        reason="The provider connection closed."
+                        title="Failure"
+                    />
+                </div>
+            </Specimen>
+            <Specimen
                 detail="Hard breaks, blank paragraphs, and indentation remain visible."
                 label="Full multiline diagnostic"
                 number="02"

@@ -1,6 +1,11 @@
 import { createStore } from "zustand/vanilla";
 import { happyAgentBotSubtasks } from "./happyAgentBotSubtasks.js";
-import type { ConversationEntry } from "../conversation/conversationEntry.js";
+import type {
+    ConversationEntry,
+    ConversationErrorAssistance,
+    ConversationErrorAssistanceEntry,
+} from "../conversation/conversationEntry.js";
+import type { HappyAgentErrorAssistanceRequest } from "./happyAgentErrorAssistance.js";
 import type { ConversationSummary } from "../conversation/conversationSummary.js";
 import type { Loadable } from "../conversation/loadable.js";
 import type { UserError } from "../types.js";
@@ -192,6 +197,7 @@ export interface HappyAgentConversationSnapshot {
     readonly title?: string;
     readonly subtitle?: string;
     readonly entries: readonly ConversationEntry[];
+    readonly errorAssistance: readonly ConversationErrorAssistanceEntry[];
     readonly composer: ComposerSnapshot;
     readonly running: boolean;
     readonly workingPhase: HappyAgentWorkingPhase;
@@ -975,6 +981,8 @@ export interface HappyAgentWorkspaceStore {
     messageSendCurrent(message: string): Promise<void>;
     /** Sends agent-authored slot text to one explicitly addressed conversation. */
     messageSend(sessionId: HappyAgentSessionId, message: string): Promise<void>;
+    /** Sends one quoted error to this daemon's Chief of Staff, then requests navigation. */
+    errorAssistanceRequest(entryId: string): void;
     /** Replaces one explicitly addressed conversation's composer draft. */
     draftUpdate(sessionId: HappyAgentSessionId, message: string): Promise<void>;
     /** Adds an unsent suggestion without replacing an existing draft or duplicating an unchanged retry. */
@@ -1465,6 +1473,16 @@ export function happyAgentWorkspaceStoreCreate(
     let attachmentSequence = 0;
 
     let conversation: Loadable<HappyAgentConversationSnapshot> = { type: "unloaded" };
+    type ErrorAssistanceAttempt = {
+        readonly location: HappyAgentSessionLocation;
+        readonly request: HappyAgentErrorAssistanceRequest;
+        status: ConversationErrorAssistance;
+    };
+    // Retain the prepared message identity across manual retries and navigation.
+    const errorAssistanceAttempts = new Map<
+        HappyAgentSessionId,
+        Map<string, ErrorAssistanceAttempt>
+    >();
     // An addressed group with nothing in it yet: its composer is live, and the
     // first thing sent into it is what creates the conversation.
     let openGroupId: HappyAgentGroupId | undefined;
@@ -1896,6 +1914,54 @@ export function happyAgentWorkspaceStoreCreate(
         recompute();
     };
 
+    const errorAssistanceProject = (
+        chat: HappyAgentChatSnapshot,
+    ): readonly ConversationErrorAssistanceEntry[] => {
+        const chief = list.get().bots.find((bot) => bot.systemKey === "chief_of_staff");
+        const attempts = errorAssistanceAttempts.get(chat.sessionId);
+        const projected: ConversationErrorAssistanceEntry[] = [];
+        for (const entry of chat.entries) {
+            if (entry.kind !== "notice" || entry.variant !== "notice" || entry.level !== "error")
+                continue;
+            const attempt = attempts?.get(entry.id);
+            const refusal = !entry.source
+                ? "This error has no saved message to reference. Copy the error for manual help."
+                : !chief
+                  ? "Chief of Staff is not available on this Happy Agent."
+                  : chief.conversation.id === chat.sessionId
+                    ? "This is already the Chief of Staff conversation. Use the composer for follow-up."
+                    : attempt && attempt.location.sessionId !== chief.conversation.id
+                      ? "The Chief of Staff for this handoff is no longer available."
+                      : list.groupConversationRefusal(chief.workspaceId);
+            projected.push({
+                entryId: entry.id,
+                assistance:
+                    attempt?.status.status === "pending"
+                        ? attempt.status
+                        : refusal
+                          ? { status: "unavailable", reason: refusal }
+                          : (attempt?.status ?? { status: "ready" }),
+            });
+        }
+        const previous =
+            conversation.type === "ready"
+                ? conversation.value.errorAssistance
+                : NO_ERROR_ASSISTANCE;
+        return projected.length === previous.length &&
+            projected.every((entry, index) => {
+                const old = previous[index]!;
+                return (
+                    entry.entryId === old.entryId &&
+                    entry.assistance.status === old.assistance.status &&
+                    (!("reason" in entry.assistance) ||
+                        ("reason" in old.assistance &&
+                            entry.assistance.reason === old.assistance.reason))
+                );
+            })
+            ? previous
+            : projected;
+    };
+
     const conversationProject = (
         chat: HappyAgentChatSnapshot,
         draft: ComposerSnapshot,
@@ -1914,6 +1980,7 @@ export function happyAgentWorkspaceStoreCreate(
             ...(chat.title ? { title: chat.title } : {}),
             ...(chat.cwd ? { subtitle: chat.cwd } : {}),
             entries: chat.entries,
+            errorAssistance: errorAssistanceProject(chat),
             composer: draft,
             running: chat.runStatus === "running",
             workingPhase: chat.workingPhase,
@@ -4777,6 +4844,80 @@ export function happyAgentWorkspaceStoreCreate(
             writeGuard(sessionConversationRefusal(sessionId), () =>
                 withAddressedChat(sessionId, (store) => store.messageSend(message, [])),
             ),
+        errorAssistanceRequest(entryId) {
+            if (disposed || !openId || conversation.type !== "ready") return;
+            const sourceSessionId = openId;
+            const entry = conversation.value.entries.find(
+                (candidate) => candidate.kind === "notice" && candidate.id === entryId,
+            );
+            const availability = conversation.value.errorAssistance.find(
+                (candidate) => candidate.entryId === entryId,
+            )?.assistance;
+            if (
+                !availability ||
+                availability.status === "unavailable" ||
+                availability.status === "pending" ||
+                entry?.kind !== "notice" ||
+                entry.variant !== "notice" ||
+                !entry.source
+            )
+                return;
+            const chief = list.get().bots.find((bot) => bot.systemKey === "chief_of_staff");
+            if (
+                !chief ||
+                chief.conversation.id === sourceSessionId ||
+                list.groupConversationRefusal(chief.workspaceId)
+            )
+                return;
+            let attempts = errorAssistanceAttempts.get(sourceSessionId);
+            if (!attempts) {
+                attempts = new Map();
+                errorAssistanceAttempts.set(sourceSessionId, attempts);
+            }
+            let attempt = attempts.get(entryId);
+            if (!attempt) {
+                const targetSessionId = chief.conversation.id as HappyAgentSessionId;
+                attempt = {
+                    location: { sessionId: targetSessionId, groupId: chief.workspaceId },
+                    request: client.errorAssistancePrepare(targetSessionId, {
+                        sessionId: sourceSessionId,
+                        messageId: entry.source.messageId,
+                        runId: entry.source.runId,
+                        text: entry.text,
+                    }),
+                    status: { status: "ready" },
+                };
+                attempts.set(entryId, attempt);
+            }
+            if (attempt.location.sessionId !== chief.conversation.id) return;
+            if (attempt.status.status === "sent") {
+                output({ type: "conversationOpenRequested", location: attempt.location });
+                return;
+            }
+            const pending = attempt;
+            const generation = acquisitionGeneration;
+            pending.status = { status: "pending" };
+            recompute();
+            void pending.request.send().then(
+                () => {
+                    if (disposed) return;
+                    pending.status = { status: "sent" };
+                    recompute();
+                    // A late acknowledgement must not take the reader away from a
+                    // conversation they deliberately opened during this request.
+                    if (openId === sourceSessionId && acquisitionGeneration === generation)
+                        output({ type: "conversationOpenRequested", location: pending.location });
+                },
+                (error: unknown) => {
+                    if (disposed) return;
+                    pending.status = {
+                        status: "failed",
+                        reason: happyAgentUserError(error).message,
+                    };
+                    recompute();
+                },
+            );
+        },
         draftUpdate: (sessionId, message) =>
             writeGuard(sessionConversationRefusal(sessionId), () =>
                 withAddressedChat(sessionId, (store) =>
@@ -5840,6 +5981,7 @@ export function happyAgentWorkspaceStoreCreate(
 /* Stable empties, so an acquiring snapshot recomputed twice stays equal to
    itself and the surface is not notified for nothing. */
 const NO_ENTRIES: readonly ConversationEntry[] = [];
+const NO_ERROR_ASSISTANCE: readonly ConversationErrorAssistanceEntry[] = [];
 const NO_QUEUED: readonly HappyAgentQueuedMessage[] = [];
 const NO_SUBMISSIONS: HappyAgentChatSnapshot["requestSubmissions"] = [];
 const NO_SELECTIONS: HappyAgentChatSnapshot["requestSelections"] = new Map();
@@ -5869,6 +6011,7 @@ function conversationAcquiring(
         ...(summary?.title ? { title: summary.title } : {}),
         ...(summary?.subtitle ? { subtitle: summary.subtitle } : {}),
         entries: NO_ENTRIES,
+        errorAssistance: NO_ERROR_ASSISTANCE,
         composer,
         running: false,
         workingPhase: "working",

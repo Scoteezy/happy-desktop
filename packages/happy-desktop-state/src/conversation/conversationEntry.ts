@@ -374,6 +374,20 @@ export interface ConversationServiceNoticeEntry extends ConversationNoticeEntryB
         readonly maxAttempts?: number;
     };
     readonly title?: string;
+    /** Explicit durable provenance for a user-requested diagnostic handoff. */
+    readonly source?: { readonly messageId: string; readonly runId: string };
+}
+
+export type ConversationErrorAssistance =
+    | { readonly status: "ready" }
+    | { readonly status: "pending" }
+    | { readonly status: "sent" }
+    | { readonly status: "failed"; readonly reason: string }
+    | { readonly status: "unavailable"; readonly reason: string };
+
+export interface ConversationErrorAssistanceEntry {
+    readonly entryId: string;
+    readonly assistance: ConversationErrorAssistance;
 }
 
 /**

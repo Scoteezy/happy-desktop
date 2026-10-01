@@ -834,6 +834,9 @@ function happyAgentConnectGroupProject(
                         ? { retry: { attempt: element.attempt } }
                         : {}),
                     title: element.outcome === "retried" ? "Retrying" : "Failure",
+                    ...(element.messageId === undefined
+                        ? {}
+                        : { source: { messageId: element.messageId, runId: element.runId } }),
                     text: happyAgentConversationFailureText(element.reason),
                     sequence,
                 });
