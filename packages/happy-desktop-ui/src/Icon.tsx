@@ -52,6 +52,7 @@ export type IconName =
     | "reply"
     | "zap"
     | "terminal"
+    | "keyboard"
     | "globe"
     | "filter"
     | "edit"
@@ -176,6 +177,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     reply: { set: "ionicons", name: "arrow-undo-outline" },
     zap: { set: "ionicons", name: "flash-outline" },
     terminal: { set: "ionicons", name: "terminal-outline" },
+    keyboard: { set: "ionicons", name: "keypad-outline" },
     globe: { set: "ionicons", name: "globe-outline" },
     filter: { set: "ionicons", name: "funnel-outline" },
     edit: { set: "ionicons", name: "create-outline" },

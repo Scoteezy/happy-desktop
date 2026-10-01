@@ -66,6 +66,8 @@ export type CommandPaletteCommand =
     | { readonly kind: "tabStep"; readonly direction: 1 | -1 }
     /** The tab closed most recently, back where it was. */
     | { readonly kind: "tabReopen" }
+    /** The sheet listing every chord. */
+    | { readonly kind: "shortcutSheetOpen" }
     | { readonly kind: "settingsOpen" }
     | { readonly kind: "settingsSectionOpen"; readonly section: string }
     | { readonly kind: "updateApply" };
@@ -830,6 +832,14 @@ function actionRows(
                   },
               ]
             : []),
+        {
+            kind: "command" as const,
+            id: "action:shortcuts",
+            title: "Keyboard shortcuts",
+            glyph: { kind: "icon" as const, name: "keyboard" as const },
+            shortcut: APP_SHORTCUTS.shortcutsShow,
+            command: { kind: "shortcutSheetOpen" as const },
+        },
         {
             kind: "command" as const,
             id: "action:settings",

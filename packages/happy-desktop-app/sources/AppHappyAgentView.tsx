@@ -147,6 +147,7 @@ import {
     SidebarUpdateAction,
     Switch,
     HappyAgentInboxPage,
+    ShortcutSheet,
     TabbedPane,
     TextField,
     TerminalPanel,
@@ -171,7 +172,7 @@ import {
     WorkspaceLifecycleNotice,
     type WorkspaceLifecyclePhase,
 } from "happy-desktop-ui";
-import { APP_SHORTCUTS } from "./appShortcuts";
+import { APP_SHORTCUT_SECTIONS, APP_SHORTCUTS } from "./appShortcuts";
 import { HappyAgentVersionProvider } from "./HappyAgentVersionProvider";
 import {
     COMMAND_PALETTE_PREVIEW_LIMIT,
@@ -916,6 +917,17 @@ function toolTabsPlaced(
     placement: "panel" | "main",
 ): readonly HappyAgentPanelTabSnapshot[] {
     return panel.tabs.filter((tab) => tab.placement === placement);
+}
+
+/**
+ * Whether a panel view has a form in the main strip. The listing opens content
+ * rather than being content, and a tool-call preview is bound to an entry of
+ * the conversation the main content is showing; neither has a form over there.
+ */
+function panelViewTransferable(viewId: string): boolean {
+    return (
+        viewId !== "files" && viewId !== "activity" && viewId !== "usage" && viewId !== "preview"
+    );
 }
 
 function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefined {
@@ -1807,6 +1819,11 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         () => commandPaletteStore.get().open,
         () => commandPaletteStore.get().open,
     );
+    const shortcutSheetOpen = useSyncExternalStore(
+        commandPaletteStore.subscribe,
+        () => commandPaletteStore.get().shortcutSheet,
+        () => commandPaletteStore.get().shortcutSheet,
+    );
     const windowStateStore = props.windowState ?? happyAgentWindowStoreNoop;
     const windowState = useSyncExternalStore(
         windowStateStore.subscribe,
@@ -2364,6 +2381,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             run: () => commandPaletteStore.paletteOpen(),
                             shortcut: APP_SHORTCUTS.paletteOpen,
                         },
+                        // The sheet listing every chord opens from the same
+                        // place; while it shows, the dispatcher stands down
+                        // and the sheet hears its own chord to close.
+                        {
+                            run: () => commandPaletteStore.shortcutSheetOpen(),
+                            shortcut: APP_SHORTCUTS.shortcutsShow,
+                        },
                     ]}
                 />
             ) : null}
@@ -2401,6 +2425,17 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         facts={PALETTE_WORKSPACE_ABSENT}
                     />
                 )
+            ) : null}
+            {/* The chord sheet is a window dialog like the palette: read from
+                any route, mounted only while it shows. */}
+            {shortcutSheetOpen ? (
+                <ModalOverlay onDismiss={() => commandPaletteStore.shortcutSheetClose()}>
+                    <ShortcutSheet
+                        onClose={() => commandPaletteStore.shortcutSheetClose()}
+                        sections={APP_SHORTCUT_SECTIONS}
+                        toggleShortcut={APP_SHORTCUTS.shortcutsShow}
+                    />
+                </ModalOverlay>
             ) : null}
         </HappyAgentVersionProvider>
     );
@@ -3033,6 +3068,10 @@ function paletteCommandRun(
             props.onChatSelect(props.happyAgentId, props.groupId, next);
             return;
         }
+        case "shortcutSheetOpen":
+            // The palette has already closed itself; the sheet takes its place.
+            props.store.shortcutSheetOpen();
+            return;
         case "settingsOpen":
             props.onSettingsOpen();
             return;
@@ -3588,6 +3627,40 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         else if (viewId === HAPPY_AGENT_PANEL_FILE_VIEW_ID) props.workspace.panel.fileViewOpen();
         else props.workspace.panel.tabSelect(viewId as HappyAgentPanelTabId);
     };
+    // Crossing the split, whether a tab is dragged over or sent by the
+    // Option-Command arrows. A session is what the address names, so it stays
+    // where the address points; a diff is two revisions read together and the
+    // panel's viewer reads one file, so it has nowhere over there to land; and
+    // a file with text that has not been written back keeps its edit rather
+    // than its place.
+    const mainTabTransferable = (tabId: string) =>
+        mainTools.some((entry) => entry.id === tabId) ||
+        groupFileTabs.some(
+            (entry) =>
+                entry.id === tabId &&
+                entry.kind !== "diff" &&
+                entry.draft === undefined &&
+                !entry.saving,
+        );
+    const mainTabTransfer = (tabId: string) => {
+        if (!openGroup) return;
+        const file = groupFileTabs.find((tab) => tab.id === tabId);
+        const selected = workspace.activeMainViewId === tabId;
+        props.workspace.viewPlacementUpdate(tabId, "panel");
+        // The selected file leaving the strip hands the address back to the
+        // session, so the main content never shows an empty place.
+        if (file && selected) props.onChatSelect(openGroup.id, props.chatId, true);
+    };
+    // The panel's counterpart: a file lands in the main strip addressed beside
+    // the session, a tool simply moves.
+    const panelViewTransfer = (viewId: string) => {
+        const file =
+            viewId === HAPPY_AGENT_PANEL_FILE_VIEW_ID
+                ? workspace.panelFile
+                : workspace.fileTabs.find((tab) => tab.id === viewId);
+        props.workspace.viewPlacementUpdate(viewId, "main");
+        if (file) props.onFileSelect(file.groupId, props.chatId, file.path, file.kind);
+    };
     /**
      * Command-Shift-bracket: the neighbouring tab of whichever strip the
      * keyboard is in, wrapping at the ends. The panel answers while it is the
@@ -3856,20 +3929,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                             props.workspace.fileTreeDirectoryPrefetch(path)
                         }
                         onLoadMore={(path) => props.workspace.fileTreeLoadMore(path)}
-                        onViewTransfer={(viewId) => {
-                            const file =
-                                viewId === HAPPY_AGENT_PANEL_FILE_VIEW_ID
-                                    ? workspace.panelFile
-                                    : workspace.fileTabs.find((tab) => tab.id === viewId);
-                            props.workspace.viewPlacementUpdate(viewId, "main");
-                            if (file)
-                                props.onFileSelect(
-                                    file.groupId,
-                                    props.chatId,
-                                    file.path,
-                                    file.kind,
-                                );
-                        }}
+                        onViewTransfer={panelViewTransfer}
                         panel={panel}
                         previewTool={previewTool}
                         {...(terminalHappyAgentAvailability === undefined
@@ -4021,6 +4081,41 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                     });
                                 },
                                 shortcut: APP_SHORTCUTS.tabReopen,
+                            },
+                            // Cmd-Shift-W sweeps the main strip the way the
+                            // tab menu's "Close all" does: each tab closed as
+                            // if by hand, the detached subagent left alone.
+                            {
+                                run: () => groupTabsClose(sweepableTabs.map((tab) => tab.id)),
+                                shortcut: APP_SHORTCUTS.tabsCloseAll,
+                            },
+                            // Option-Command arrows send the selected tab
+                            // across the split in the direction pressed: right
+                            // into the panel, left back into the main strip.
+                            // A tab that cannot cross — a session, a diff, an
+                            // unsaved file, the panel's fixed views — stays.
+                            {
+                                run: () => {
+                                    const tabId = props.workspace.get().activeMainViewId;
+                                    if (tabId === undefined || !mainTabTransferable(tabId)) return;
+                                    mainTabTransfer(tabId);
+                                },
+                                shortcut: APP_SHORTCUTS.tabMoveToPanel,
+                            },
+                            {
+                                run: () => {
+                                    const panelNow = props.workspace.panel.get();
+                                    if (!panelNow.open) return;
+                                    const viewId = panelNow.activeViewId;
+                                    if (!panelViewTransferable(viewId)) return;
+                                    if (
+                                        viewId === HAPPY_AGENT_PANEL_FILE_VIEW_ID &&
+                                        !panelNow.fileViewOpen
+                                    )
+                                        return;
+                                    panelViewTransfer(viewId);
+                                },
+                                shortcut: APP_SHORTCUTS.tabMoveToMain,
                             },
                             ...(openGroupPreparing
                                 ? []
@@ -4205,33 +4300,14 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 props.workspace.tabReorder(move.id, move.afterId);
                             }}
                             onSelect={groupTabSelect}
-                            onTransfer={(tabId) => {
-                                const file = groupFileTabs.find((tab) => tab.id === tabId);
-                                const selected = workspace.activeMainViewId === tabId;
-                                props.workspace.viewPlacementUpdate(tabId, "panel");
-                                // Moving the addressed file beside the session
-                                // uncovers that session in the main region, so
-                                // its address must stop claiming the file is
-                                // still selected there.
-                                if (file && selected)
-                                    props.onChatSelect(openGroup.id, props.chatId, true);
-                            }}
+                            onTransfer={mainTabTransfer}
                             // A session is what the address names, so it stays
                             // where the address points; a diff is two revisions
                             // read together and the panel's viewer reads one
                             // file, so it has nowhere over there to land; and a
                             // file with text that has not been written back
                             // keeps its edit rather than its place.
-                            transferable={(tab) =>
-                                mainTools.some((entry) => entry.id === tab.id) ||
-                                groupFileTabs.some(
-                                    (entry) =>
-                                        entry.id === tab.id &&
-                                        entry.kind !== "diff" &&
-                                        entry.draft === undefined &&
-                                        !entry.saving,
-                                )
-                            }
+                            transferable={(tab) => mainTabTransferable(tab.id)}
                             transferTargets={MAIN_TRANSFER_TARGETS}
                             tabMenuItems={(tab) => {
                                 const index = sweepableTabs.findIndex(
@@ -6121,15 +6197,7 @@ function HappyAgentPanelBody(props: {
                     }}
                     onTransfer={(tabId) => props.onViewTransfer(tabId)}
                     tabs={tabs}
-                    // The listing opens content rather than being content, and a
-                    // tool-call preview is bound to an entry of the conversation
-                    // the main content is showing; neither has a form over there.
-                    transferable={(tab) =>
-                        tab.id !== "files" &&
-                        tab.id !== "activity" &&
-                        tab.id !== "usage" &&
-                        tab.id !== "preview"
-                    }
+                    transferable={(tab) => panelViewTransferable(tab.id)}
                     transferTargets={PANEL_TRANSFER_TARGETS}
                 >
                     <HappyAgentToolBodies
