@@ -65,6 +65,7 @@ import type {
     HappyAgentWorkspaceStore,
     HappyAgentWorkingWait,
     HappyAgentWorktreeId,
+    HappyAgentRecentTabMemory,
 } from "happy-desktop-state";
 import {
     HAPPY_AGENT_PANEL_FILE_VIEW_ID,
@@ -158,6 +159,7 @@ import {
     sidebarReorderMove,
     type MenuItem,
     type FileTreeNode,
+    type IconName,
     type KeyboardShortcut,
     type SidebarItem,
     type SidebarNumberShortcutTarget,
@@ -965,6 +967,33 @@ function tabIdStep(
     const index = ids.indexOf(activeId);
     if (index < 0) return undefined;
     return ids[(index + direction + ids.length) % ids.length];
+}
+
+/**
+ * Brings one closed tab back. A file is addressed where it was, which reopens
+ * it; a session is restored from the archive first, since the host stopped
+ * listing it, and then addressed — the same order the recents menu uses.
+ * Either route is what drops the entry from the closed list, so nothing here
+ * forgets it by hand, and a restore that fails leaves it to be tried again.
+ */
+function closedTabReopen(
+    closed: HappyAgentRecentTabMemory,
+    workspace: HappyAgentWorkspaceStore,
+    online: () => boolean,
+    route: {
+        readonly chatSelect: (groupId: string, chatId: string) => void;
+        readonly fileSelect: (groupId: string, path: string, kind: HappyAgentFileTabKind) => void;
+    },
+): void {
+    if (closed.type === "file") {
+        route.fileSelect(closed.groupId, closed.path, closed.fileKind);
+        return;
+    }
+    if (!online()) return;
+    void workspace
+        .conversationRestore(closed.sessionId)
+        .then(() => route.chatSelect(closed.groupId, closed.sessionId))
+        .catch(() => undefined);
 }
 
 /** One tab per tool, iconed by what it holds. */
@@ -2422,6 +2451,12 @@ interface HappyAgentPaletteFacts {
      */
     readonly mainTabIds: readonly string[];
     readonly activeMainTabId?: string;
+    /** The tab closed most recently, named for the row that offers it back. */
+    readonly closedTab?: {
+        readonly tab: HappyAgentRecentTabMemory;
+        readonly label: string;
+        readonly icon: IconName;
+    };
     readonly sessionCreateAvailable: boolean;
     readonly groupResume?: ReadonlyMap<HappyAgentGroupId, HappyAgentSessionId>;
 }
@@ -2486,6 +2521,26 @@ function paletteFacts(
         workspace.address.conversationId,
     );
     const activeMainTabId = workspace.activeMainViewId ?? workspace.address.conversationId;
+    // The most recently closed tab, named the way its tab was: a file by its
+    // name, a session by its title as the archive still holds it.
+    const closed = workspace.closedTabs[0];
+    const closedTab =
+        closed === undefined
+            ? undefined
+            : closed.type === "file"
+              ? {
+                    tab: closed,
+                    label: closed.path.split("/").at(-1) ?? closed.path,
+                    icon: fileTabIcon(closed.path, closed.fileKind),
+                }
+              : {
+                    tab: closed,
+                    label:
+                        workspace.list.archivedSessions.find(
+                            (session) => session.id === closed.sessionId,
+                        )?.title ?? `Session ${closed.sessionId.slice(0, 8)}`,
+                    icon: "chat" as const,
+                };
     return {
         archivedSessions: workspace.list.archivedSessions,
         groupResume: workspace.groupResume,
@@ -2501,6 +2556,7 @@ function paletteFacts(
             workspace.tabOrder,
         ),
         ...(activeMainTabId === undefined ? {} : { activeMainTabId }),
+        ...(closedTab === undefined ? {} : { closedTab }),
         sessionCreateAvailable:
             online &&
             !workspace.conversationDelegated &&
@@ -2578,6 +2634,9 @@ function paletteContext(
         tabs: facts.tabs,
         // Two tabs is the least that gives "next" somewhere to go.
         tabStepAvailable: facts.mainTabIds.length > 1,
+        ...(facts.closedTab
+            ? { tabReopen: { icon: facts.closedTab.icon, label: facts.closedTab.label } }
+            : {}),
         updateReady: subject.updateReady,
         workspaceCreateAvailable:
             subject.online &&
@@ -2917,6 +2976,18 @@ function paletteCommandRun(
             const projectId = props.workspaceCreateProjectId;
             if (!workspace || projectId === undefined || !props.happyAgentOnline()) return;
             void workspace.worktreeCreate(projectId).catch(() => undefined);
+            return;
+        }
+        case "tabReopen": {
+            const workspace = props.workspace;
+            const closed = props.facts.closedTab?.tab;
+            if (!workspace || !closed) return;
+            closedTabReopen(closed, workspace, props.happyAgentOnline, {
+                chatSelect: (groupId, chatId) =>
+                    props.onChatSelect(props.happyAgentId, groupId, chatId),
+                fileSelect: (groupId, path, kind) =>
+                    props.onFileSelect(props.happyAgentId, groupId, props.chatId, path, kind),
+            });
             return;
         }
         case "tabStep": {
@@ -3927,6 +3998,19 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                             // already has its first session and may have files.
                             { run: () => activeTabStep(1), shortcut: APP_SHORTCUTS.tabNext },
                             { run: () => activeTabStep(-1), shortcut: APP_SHORTCUTS.tabPrevious },
+                            {
+                                run: () => {
+                                    const closed = props.workspace.get().closedTabs[0];
+                                    if (!closed) return;
+                                    closedTabReopen(closed, props.workspace, happyAgentOnline, {
+                                        chatSelect: (groupId, chatId) =>
+                                            props.onChatSelect(groupId, chatId),
+                                        fileSelect: (groupId, path, kind) =>
+                                            props.onFileSelect(groupId, props.chatId, path, kind),
+                                    });
+                                },
+                                shortcut: APP_SHORTCUTS.tabReopen,
+                            },
                             ...(openGroupPreparing
                                 ? []
                                 : [

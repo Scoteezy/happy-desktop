@@ -20,5 +20,7 @@ export const APP_SHORTCUTS = {
      */
     tabNext: commandShortcut("]", { shift: true }),
     tabPrevious: commandShortcut("[", { shift: true }),
+    /** Brings back the tab closed most recently, the way a browser's does. */
+    tabReopen: commandShortcut("t", { shift: true }),
     workspaceCreate: commandShortcut("n"),
 } as const;

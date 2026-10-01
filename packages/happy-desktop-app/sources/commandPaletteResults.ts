@@ -64,6 +64,8 @@ export type CommandPaletteCommand =
     | { readonly kind: "workspaceCreate" }
     /** The neighbouring tab of the main strip, wrapping at the ends. */
     | { readonly kind: "tabStep"; readonly direction: 1 | -1 }
+    /** The tab closed most recently, back where it was. */
+    | { readonly kind: "tabReopen" }
     | { readonly kind: "settingsOpen" }
     | { readonly kind: "settingsSectionOpen"; readonly section: string }
     | { readonly kind: "updateApply" };
@@ -205,6 +207,8 @@ export interface CommandPaletteContext {
     readonly workspaceCreateAvailable: boolean;
     /** Whether the main strip has a neighbouring tab to step to. */
     readonly tabStepAvailable: boolean;
+    /** What reopening would bring back, named, when something has been closed. */
+    readonly tabReopen?: { readonly label: string; readonly icon: IconName };
 }
 
 export interface CommandPaletteInput extends CommandPaletteContext {
@@ -808,6 +812,21 @@ function actionRows(
                       glyph: { kind: "icon" as const, name: "chevron-left" as const },
                       shortcut: APP_SHORTCUTS.tabPrevious,
                       command: { kind: "tabStep" as const, direction: -1 as const },
+                  },
+              ]
+            : []),
+        ...(context.tabReopen
+            ? [
+                  {
+                      kind: "command" as const,
+                      id: "action:tab-reopen",
+                      title: "Reopen closed tab",
+                      // Named, so the row says what it would bring back
+                      // before it is chosen.
+                      meta: context.tabReopen.label,
+                      glyph: { kind: "icon" as const, name: context.tabReopen.icon },
+                      shortcut: APP_SHORTCUTS.tabReopen,
+                      command: { kind: "tabReopen" as const },
                   },
               ]
             : []),
