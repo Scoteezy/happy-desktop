@@ -13,5 +13,12 @@ export const APP_SHORTCUTS = {
     panelToggleAlternate: commandShortcut("b", { alt: true }),
     sessionCreate: commandShortcut("t"),
     tabClose: commandShortcut("w"),
+    /**
+     * The neighbouring tab in whichever strip the keyboard is in, the way a
+     * browser steps through its tabs. Command-number is already the sidebar's,
+     * jumping between projects, so the strip takes the bracket chords instead.
+     */
+    tabNext: commandShortcut("]", { shift: true }),
+    tabPrevious: commandShortcut("[", { shift: true }),
     workspaceCreate: commandShortcut("n"),
 } as const;

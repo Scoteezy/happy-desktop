@@ -928,6 +928,45 @@ function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefine
     return tab?.id;
 }
 
+/**
+ * The panel's strip in the order it is drawn: the permanent Files view, then
+ * the transient views that are showing, then the live tool tabs the panel
+ * holds. Both the strip and the keyboard read this one order, so stepping to
+ * "the next tab" lands on the tab that is drawn next.
+ */
+function panelViewIds(
+    panel: HappyAgentPanelSnapshot,
+    activityAvailable: boolean,
+    panelFilePresent: boolean,
+): readonly string[] {
+    const activityTabShown =
+        panel.activityViewOpen || (activityAvailable && !panel.activityViewDismissed);
+    return [
+        "files",
+        ...(activityTabShown ? ["activity"] : []),
+        ...(panel.usageViewOpen ? ["usage"] : []),
+        ...(panel.fileViewOpen && panelFilePresent ? [HAPPY_AGENT_PANEL_FILE_VIEW_ID] : []),
+        ...(panel.previewEntryId ? ["preview"] : []),
+        ...toolTabsPlaced(panel, "panel").map((tab) => tab.id),
+    ];
+}
+
+/**
+ * The tab one step along from the active one, wrapping at either end the way
+ * a browser's strip does. A strip with nothing selected, or with one tab, has
+ * nowhere to step.
+ */
+function tabIdStep(
+    ids: readonly string[],
+    activeId: string | undefined,
+    direction: 1 | -1,
+): string | undefined {
+    if (ids.length < 2 || activeId === undefined) return undefined;
+    const index = ids.indexOf(activeId);
+    if (index < 0) return undefined;
+    return ids[(index + direction + ids.length) % ids.length];
+}
+
 /** One tab per tool, iconed by what it holds. */
 function toolTabItems(tabs: readonly HappyAgentPanelTabSnapshot[]): TabItem[] {
     return tabs.map((tab) => ({
@@ -3348,6 +3387,61 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         else if (viewId === "file") props.workspace.filePanelClose();
         else props.workspace.panel.tabClose(viewId as HappyAgentPanelTabId);
     };
+    // Selecting a tab in the main strip, whether by a click on it or by the
+    // keyboard stepping onto it: a file is addressed beside the session, a tool
+    // moved here is shown, and anything else is a session of this group.
+    const groupTabSelect = (tabId: string) => {
+        if (!openGroup) return;
+        const file = groupFileTabs.find((tab) => tab.id === tabId);
+        if (file) {
+            props.onFileSelect(file.groupId, props.chatId, file.path, file.kind);
+            return;
+        }
+        if (mainTools.some((tab) => tab.id === tabId)) {
+            props.workspace.mainViewSelect(tabId);
+            return;
+        }
+        props.onChatSelect(openGroup.id, tabId);
+    };
+    // The panel's counterpart, through the same routes its own strip uses.
+    const panelViewSelect = (viewId: string) => {
+        const panelNow = props.workspace.panel.get();
+        if (viewId === "files") props.workspace.panel.filesSelect();
+        else if (viewId === "activity") props.workspace.activityPanelOpen();
+        else if (viewId === "usage") props.workspace.usagePanelOpen();
+        else if (viewId === "preview" && panelNow.previewEntryId)
+            props.workspace.panel.previewOpen(panelNow.previewEntryId);
+        else if (viewId === HAPPY_AGENT_PANEL_FILE_VIEW_ID) props.workspace.panel.fileViewOpen();
+        else props.workspace.panel.tabSelect(viewId as HappyAgentPanelTabId);
+    };
+    /**
+     * Command-Shift-bracket: the neighbouring tab of whichever strip the
+     * keyboard is in, wrapping at the ends. The panel answers while it is the
+     * focused pane and showing, the way Cmd-W closes there; otherwise the main
+     * strip steps. A step that lands nowhere — one tab, nothing selected —
+     * leaves everything as it is.
+     */
+    const activeTabStep = (direction: 1 | -1) => {
+        const panelNow = props.workspace.panel.get();
+        if (workspaceFocusedPane.current === "panel" && panelNow.open) {
+            const current = props.workspace.get();
+            const ids = panelViewIds(
+                panelNow,
+                current.conversation.type === "ready" &&
+                    current.conversation.value.activityAvailable,
+                current.panelFile !== undefined,
+            );
+            const next = tabIdStep(ids, panelNow.activeViewId, direction);
+            if (next !== undefined) panelViewSelect(next);
+            return;
+        }
+        const next = tabIdStep(
+            groupTabs.map((tab) => tab.id),
+            workspace.activeMainViewId ?? props.chatId,
+            direction,
+        );
+        if (next !== undefined) groupTabSelect(next);
+    };
     const activeTabClose = () => {
         const panelNow = props.workspace.panel.get();
         const panelTarget = openGroupPreparing ? undefined : panelCloseTargetFind(panelNow);
@@ -3736,6 +3830,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                             // do when Files or an offline session is the only
                             // current target.
                             { run: activeTabClose, shortcut: APP_SHORTCUTS.tabClose },
+                            // The strip is drawn in every phase, so stepping
+                            // along it is too: a workspace still being prepared
+                            // already has its first session and may have files.
+                            { run: () => activeTabStep(1), shortcut: APP_SHORTCUTS.tabNext },
+                            { run: () => activeTabStep(-1), shortcut: APP_SHORTCUTS.tabPrevious },
                             ...(openGroupPreparing
                                 ? []
                                 : [
@@ -3918,23 +4017,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 if (!move) return;
                                 props.workspace.tabReorder(move.id, move.afterId);
                             }}
-                            onSelect={(tabId) => {
-                                const file = groupFileTabs.find((tab) => tab.id === tabId);
-                                if (file) {
-                                    props.onFileSelect(
-                                        file.groupId,
-                                        props.chatId,
-                                        file.path,
-                                        file.kind,
-                                    );
-                                    return;
-                                }
-                                if (mainTools.some((tab) => tab.id === tabId)) {
-                                    props.workspace.mainViewSelect(tabId);
-                                    return;
-                                }
-                                props.onChatSelect(openGroup.id, tabId);
-                            }}
+                            onSelect={groupTabSelect}
                             onTransfer={(tabId) => {
                                 const file = groupFileTabs.find((tab) => tab.id === tabId);
                                 const selected = workspace.activeMainViewId === tabId;
@@ -5727,9 +5810,6 @@ function HappyAgentPanelBody(props: {
     const panelTools = toolTabsPlaced(props.panel, "panel");
     const activeToolTab = panelTools.find((tab) => tab.id === props.panel.activeViewId);
     const panelFile = props.panelFile;
-    const activityTabShown =
-        props.panel.activityViewOpen ||
-        (props.activity?.activityAvailable === true && !props.panel.activityViewDismissed);
     const activityBackgroundProcesses = props.activity
         ? props.activity.backgroundProcesses.filter((process) =>
               props.activity?.detachedBackgroundProcessIds.has(process.id),
@@ -5740,47 +5820,48 @@ function HappyAgentPanelBody(props: {
             ? (props.happyAgentAvailabilityReason ??
               "Happy Agent must reconnect before loading all files.")
             : undefined;
-    const baseTabs: TabItem[] = [
-        { closable: false, icon: "files", id: "files", label: "Files" },
-        ...(activityTabShown
-            ? [{ closable: true, icon: "agents" as const, id: "activity", label: "Activity" }]
-            : []),
-        ...(props.panel.usageViewOpen
-            ? [{ closable: true, icon: "clock" as const, id: "usage", label: "Usage" }]
-            : []),
-        ...(props.panel.fileViewOpen && panelFile
-            ? [
-                  {
-                      ...fileTabItem(panelFile),
-                      closable: true,
-                      id: HAPPY_AGENT_PANEL_FILE_VIEW_ID,
-                      // The viewer holds whatever the transcript last pointed
-                      // at, so it is marked as the replaceable tab it is.
-                      preview: true,
-                  } satisfies TabItem,
-              ]
-            : []),
-        ...(props.panel.previewEntryId
-            ? [
-                  {
-                      closable: true,
-                      icon:
-                          props.previewTool?.presentation?.type === "fileDiff"
-                              ? ("doc" as const)
-                              : props.previewTool?.presentation?.type === "execCommand" ||
-                                  props.previewTool?.presentation?.type ===
-                                      "backgroundTerminalInteraction"
-                                ? ("terminal" as const)
-                                : ("zap" as const),
-                      id: "preview",
-                      label: "Preview",
-                      preview: true,
-                  },
-              ]
-            : []),
-        ...toolTabItems(panelTools),
-    ];
-    const tabs = baseTabs;
+    // One tab per view id, in the one order the keyboard steps through too.
+    const tabs: TabItem[] = panelViewIds(
+        props.panel,
+        props.activity?.activityAvailable === true,
+        panelFile !== undefined,
+    ).flatMap((id): TabItem[] => {
+        if (id === "files") return [{ closable: false, icon: "files", id, label: "Files" }];
+        if (id === "activity") return [{ closable: true, icon: "agents", id, label: "Activity" }];
+        if (id === "usage") return [{ closable: true, icon: "clock", id, label: "Usage" }];
+        if (id === HAPPY_AGENT_PANEL_FILE_VIEW_ID)
+            return panelFile
+                ? [
+                      {
+                          ...fileTabItem(panelFile),
+                          closable: true,
+                          id,
+                          // The viewer holds whatever the transcript last
+                          // pointed at, so it is marked as the replaceable tab
+                          // it is.
+                          preview: true,
+                      },
+                  ]
+                : [];
+        if (id === "preview")
+            return [
+                {
+                    closable: true,
+                    icon:
+                        props.previewTool?.presentation?.type === "fileDiff"
+                            ? "doc"
+                            : props.previewTool?.presentation?.type === "execCommand" ||
+                                props.previewTool?.presentation?.type ===
+                                    "backgroundTerminalInteraction"
+                              ? "terminal"
+                              : "zap",
+                    id,
+                    label: "Preview",
+                    preview: true,
+                },
+            ];
+        return toolTabItems(panelTools.filter((tab) => tab.id === id));
+    });
     return (
         <>
             {/* The panel's own chrome control, at its leading edge. */}
