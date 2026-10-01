@@ -1,7 +1,6 @@
 import { type CSSProperties } from "react";
 import { partitionComponentProps } from "./componentProps";
 import { CopyButton } from "./CopyButton";
-import { ScrollingText } from "./ScrollingText";
 import { Octicon } from "./vectorIcons/VectorIcon";
 
 export interface ConversationErrorCardProps {
@@ -14,9 +13,9 @@ export interface ConversationErrorCardProps {
 }
 
 /**
- * A failed turn's compact explanation, aligned to the assistant activity rail.
- * It uses the same one-line rhythm as a tool call so failures remain visible
- * without interrupting the transcript with a full alert panel.
+ * A failed turn's complete explanation, aligned to the assistant activity rail.
+ * The reason retains its paragraphs and wraps in place, with the original text
+ * available to copy without having to select a long diagnostic by hand.
  */
 export function ConversationErrorCard(props: ConversationErrorCardProps) {
     const [local] = partitionComponentProps(props, [
@@ -58,12 +57,12 @@ export function ConversationErrorCard(props: ConversationErrorCardProps) {
                     >
                         {local.title}
                     </strong>
-                    <ScrollingText
+                    <span
                         className="happy-conversation-error-card__reason"
                         data-happy-desktop-ui="conversation-error-reason"
                     >
                         {local.reason}
-                    </ScrollingText>
+                    </span>
                 </span>
                 {/* A failure is the line a reader most often needs verbatim —
                     in a bug report, a search, or a reply — so the whole reason

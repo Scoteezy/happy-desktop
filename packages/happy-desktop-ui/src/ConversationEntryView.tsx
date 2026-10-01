@@ -11,6 +11,7 @@ import type {
 import { AgentActivityRow, type ActivityMotion, type ActivityTreatment } from "./AgentActivityRow";
 import { ConversationComputeEvent } from "./ConversationComputeEvent";
 import { ConversationErrorCard } from "./ConversationErrorCard";
+import { conversationErrorTitle } from "./conversationErrorTitle";
 import { DelegatedAgentActivity } from "./DelegatedAgentActivity";
 import { TurnSummary } from "./TurnSummary";
 import { AgentTraceRow } from "./AgentTraceRow";
@@ -320,13 +321,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                     data-testid={props["data-testid"]}
                     reason={entry.text}
                     style={props.activityAuthor ? undefined : props.style}
-                    title={
-                        entry.retry === undefined
-                            ? (entry.title ?? "Error")
-                            : entry.retry.attempt === undefined || entry.retry.attempt === 1
-                              ? "Connection Error"
-                              : `Connection Error (Attempt ${String(entry.retry.attempt)})`
-                    }
+                    title={conversationErrorTitle(entry)}
                     tone={entry.retry ? "warning" : "error"}
                 />
             ) : (
