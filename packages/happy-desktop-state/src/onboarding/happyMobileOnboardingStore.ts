@@ -10,7 +10,12 @@ export type HappyMobileLinkPhase =
     | { readonly kind: "failed"; readonly message: string };
 
 export type HappyDesktopMobileStep =
-    | { readonly kind: "intro"; readonly alreadyLinked?: boolean }
+    /** Platform pick and store code; confirming it is the consent that starts setup. */
+    | {
+          readonly kind: "intro";
+          readonly platform: "ios" | "android";
+          readonly alreadyLinked?: boolean;
+      }
     | {
           readonly kind: "get-app";
           readonly platform: "ios" | "android";

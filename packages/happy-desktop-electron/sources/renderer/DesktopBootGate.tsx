@@ -33,6 +33,18 @@ export function desktopBootForget(): void {
     booted = false;
 }
 
+/**
+ * Marks this window as started without the cover ever having been shown.
+ *
+ * The single caller is the first-launch welcome, which opens the window on a
+ * whole screen of its own before anything has booted. Setup follows it, and
+ * setup answers for itself screen by screen, so the mark must not come back
+ * in front of it.
+ */
+export function desktopBootSkip(): void {
+    booted = true;
+}
+
 /** A Happy Agent that has said something conclusive about what it holds. */
 function happyAgentSettled(happyAgent: HappyAgentDirectoryEntry): boolean {
     // Only a Happy Agent that is up owes an answer about its projects. One that is

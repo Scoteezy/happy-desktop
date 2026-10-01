@@ -105,7 +105,7 @@ import { desktopGptLivePersistence } from "./desktopGptLive";
 import { desktopWelcomePersistence } from "./desktopWelcome";
 import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
-import { DesktopBootGate } from "./DesktopBootGate";
+import { DesktopBootGate, desktopBootSkip } from "./DesktopBootGate";
 import { desktopRestartStoreCreate, type DesktopRestartStore } from "./desktopRestartStore";
 import {
     DesktopMediaPreviewWindow,
@@ -357,42 +357,19 @@ function DesktopOnboardingGate(props: {
     children: ReactNode;
     platform: "desktop" | "web";
     store: LocalOnboardingStore;
-    welcome: WelcomeStore;
 }) {
     const snapshot = useSyncExternalStore(props.store.subscribe, props.store.get, props.store.get);
-    const welcome = useSyncExternalStore(
-        props.welcome.subscribe,
-        props.welcome.get,
-        props.welcome.get,
-    );
     const appearance = useSyncExternalStore(
         props.appearance.subscribe,
         props.appearance.get,
         props.appearance.get,
     );
-    // Nothing has answered yet, so nothing is known to be owed. Deciding here
-    // would put the welcome — a full-colour mark and a slogan — in front of a
-    // machine that turns out to need no setup at all, for exactly as long as the
-    // main process takes to say so. The boot cover holds the window meanwhile.
+    // Nothing has answered yet, so nothing is known to be owed. On an ordinary
+    // launch the boot cover holds the window meanwhile; a first launch spends
+    // that time on the welcome.
     if (!snapshot.onboarding) return null;
     const view = localOnboardingView(snapshot);
     const reached = localOnboardingReachedStage(snapshot);
-    // The welcome is only the deck. Entering setup acknowledges it and enables
-    // the renderer-owned automatic download and launch; every machine operation
-    // appears on the one setup surface that follows.
-    if (view && !welcome.welcomeAcknowledged)
-        return (
-            <WelcomeScreen
-                appearance={appearance.mode}
-                backdrop={{ kind: "sky" }}
-                onAction={() => {
-                    props.store.agentSetupBegin();
-                    props.welcome.welcomeAcknowledge();
-                }}
-                onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}
-                slides={happyAgentWelcomeSlides}
-            />
-        );
     // The interface is the final onboarding step. Keep the sidebar (+) usable
     // while Chief of Staff's unsent draft is being prepared in the background.
     if (!view || view.kind === "finishing")
@@ -501,6 +478,34 @@ interface DesktopRendererProps {
  * itself is always reachable.
  */
 function DesktopRenderer(props: DesktopRendererProps) {
+    const welcome = useSyncExternalStore(
+        props.welcome.subscribe,
+        props.welcome.get,
+        props.welcome.get,
+    );
+    const appearance = useSyncExternalStore(
+        props.appearance.subscribe,
+        props.appearance.get,
+        props.appearance.get,
+    );
+    // A first launch opens on the welcome itself. It needs nothing from the
+    // machine, so it is not held behind the boot cover while the main process
+    // works out what this machine still owes. Entering setup acknowledges it and
+    // enables the renderer-owned automatic download and launch.
+    if (!welcome.welcomeAcknowledged)
+        return (
+            <WelcomeScreen
+                appearance={appearance.mode}
+                backdrop={{ kind: "sky" }}
+                onAction={() => {
+                    desktopBootSkip();
+                    props.onboarding.agentSetupBegin();
+                    props.welcome.welcomeAcknowledge();
+                }}
+                onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}
+                slides={happyAgentWelcomeSlides}
+            />
+        );
     return (
         // Outside every screen below, so one mark spans the whole run-up to a
         // workspace instead of being unmounted and remounted as the window moves
@@ -686,7 +691,6 @@ function DesktopLocalScreens(props: DesktopRendererProps) {
                 bridge={props.bridge}
                 platform={props.platform}
                 store={props.onboarding}
-                welcome={props.welcome}
             >
                 {content}
             </DesktopOnboardingGate>

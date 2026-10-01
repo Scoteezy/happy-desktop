@@ -53,8 +53,11 @@ const firstProjectSteps: readonly { label: string; view: LocalOnboardingView }[]
 ];
 
 const mobileSteps: readonly { label: string; step: DesktopMobileSetupStep }[] = [
-    { label: "Mobile · opt-in", step: { kind: "intro" } },
-    { label: "Mobile · existing connection", step: { kind: "intro", alreadyLinked: true } },
+    { label: "Mobile · get the app", step: { kind: "intro", platform: "ios" } },
+    {
+        label: "Mobile · existing connection",
+        step: { alreadyLinked: true, kind: "intro", platform: "ios" },
+    },
     {
         label: "Mobile · get app and install CLI",
         step: { kind: "get-app", platform: "ios", preparation: "preparing" },

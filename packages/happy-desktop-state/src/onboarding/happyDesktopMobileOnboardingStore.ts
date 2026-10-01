@@ -8,14 +8,14 @@ import type {
     HappyMobileOnboardingStoreOptions,
 } from "./happyMobileOnboardingStore.js";
 
-/** Desktop-only consent, app-install gate, and handoff; no legacy work on subscription. */
+/** Desktop-only consent and app-install screen, then handoff; no legacy work on subscription. */
 export function happyDesktopMobileOnboardingStoreCreate(
     options: HappyMobileOnboardingStoreOptions,
 ): HappyMobileOnboardingStore {
     const listeners = new Set<() => void>();
     let snapshot: HappyMobileOnboardingSnapshot = options.initialSkipped
         ? { status: "skipped" }
-        : { status: "desktop", step: { kind: "intro" } };
+        : { status: "desktop", step: { kind: "intro", platform: "ios" } };
     let consented = false;
     let skipped = options.initialSkipped === true;
     let continued = false;
@@ -44,6 +44,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
         if (!consented)
             return {
                 kind: "intro",
+                platform,
                 ...(integration?.configured ? { alreadyLinked: true } : {}),
             };
         if (linked && integration?.configured) {
@@ -89,6 +90,16 @@ export function happyDesktopMobileOnboardingStoreCreate(
                 ...(preparationError || networkError
                     ? { message: preparationError ?? networkError }
                     : {}),
+            };
+        // The app is on the phone but the CLI is still being prepared: pairing
+        // starts by itself as soon as preparation finishes.
+        if (!prepared)
+            return {
+                kind: "link",
+                appReady: true,
+                phase: preparationError
+                    ? { kind: "failed", message: preparationError }
+                    : { kind: "preparing" },
             };
         const message = pairingError ?? networkError;
         if (message) return { kind: "link", appReady: true, phase: { kind: "failed", message } };
@@ -188,6 +199,8 @@ export function happyDesktopMobileOnboardingStoreCreate(
             prepared = true;
             publish();
             advance();
+            // Confirmed from the first screen, before the CLI was ready.
+            if (appReady && integration && !integration.configured) pair();
         })().catch((error: unknown) => {
             if (!current()) return;
             preparing = false;
@@ -374,7 +387,10 @@ export function happyDesktopMobileOnboardingStoreCreate(
         happyMobileConnect() {
             if (!active() || snapshot.status !== "desktop") return;
             if (!consented) {
+                // The first screen shows the store code, so confirming it is
+                // both the consent and the person saying the app is installed.
                 consented = true;
+                if (!integration?.configured) appReady = true;
                 prepare();
                 return;
             }
@@ -403,7 +419,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
             else retryRead();
         },
         happyMobilePlatformSelect(value) {
-            if (!active() || !consented || appReady) return;
+            if (!active() || appReady) return;
             platform = value;
             publish();
         },

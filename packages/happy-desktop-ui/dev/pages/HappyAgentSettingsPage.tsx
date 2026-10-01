@@ -573,7 +573,7 @@ export function HappyAgentSettingsBlueprintPage() {
             >
                 <DesktopMobileSetup
                     appearance="light"
-                    step={{ kind: "intro", alreadyLinked: true }}
+                    step={{ alreadyLinked: true, kind: "intro", platform: "ios" }}
                     onContinue={noop}
                     onSkip={noop}
                     onPlatformSelect={noop}
