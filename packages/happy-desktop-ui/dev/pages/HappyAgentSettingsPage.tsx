@@ -12,6 +12,7 @@ import {
     HappyAgentProfileSettings,
     HappyAgentSecretSettings,
     HappyAgentSettingsShell,
+    GptLiveSettings,
     HappyAgentUsageSettings,
     type HappyAgentProviderRow,
     type HappyAgentSecretRow,
@@ -470,8 +471,6 @@ export function HappyAgentSettingsBlueprintPage() {
                         effort="medium"
                         effortOptions={effortOptions}
                         experimentalFeaturesEnabled
-                        gptLiveEnabled={false}
-                        onGptLiveEnabledChange={noop}
                         modelOptions={modelOptions}
                         onAppearanceChange={noop}
                         onAgentCheck={noop}
@@ -491,6 +490,25 @@ export function HappyAgentSettingsBlueprintPage() {
                         scrollbarVisibility="automatic"
                         titleShimmerEnabled={false}
                     />
+                </HappyAgentSettingsShell>
+            </FullScreenSpecimen>
+            <FullScreenSpecimen
+                label="Happy Agent settings — Experimental"
+                detail="Revealed only after enabling experimental features in General"
+                number="01x"
+            >
+                <HappyAgentSettingsShell
+                    activeCategoryId="experimental"
+                    categories={[
+                        ...categories,
+                        { id: "experimental", label: "Experimental", icon: "zap" },
+                    ]}
+                    title="Experimental"
+                    description="Features that are still being built"
+                    onCategorySelect={noop}
+                    onClose={noop}
+                >
+                    <GptLiveSettings enabled={false} onEnabledChange={noop} />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
             <FullScreenSpecimen

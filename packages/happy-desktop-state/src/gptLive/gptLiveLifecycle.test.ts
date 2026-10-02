@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { gptLiveStoreCreate } from "./gptLiveStore";
+import { gptLiveStoreCreate, gptLiveExperimentsConnect } from "./gptLiveStore";
+import { experimentsStoreCreate } from "../experiments/experimentsStore";
+import { gptLiveRuntimeFixtureCreate } from "./testing/gptLiveRuntimeFixture";
 import type {
     GptLiveAvailability,
     GptLiveCall,
@@ -62,6 +64,48 @@ function fixture() {
 }
 
 describe("GPT-Live call lifetime", () => {
+    it("blocks saved voice while experiments are off and withdraws an active call through its normal close path", async () => {
+        const experiments = experimentsStoreCreate();
+        const live = gptLiveRuntimeFixtureCreate();
+        const store = gptLiveStoreCreate(
+            { read: () => ({ gptLiveEnabled: true }), write: () => {} },
+            live.runtime,
+            experiments,
+        );
+        const stop = gptLiveExperimentsConnect(store, experiments);
+        try {
+            expect(store.get().gptLiveEnabled).toBe(false);
+            store.gptLiveEnabledUpdate(true);
+            store.panelOpen();
+            store.callStart();
+            expect(live.daemon.calls).toHaveLength(0);
+            expect(live.stats.permissionStarts).toBe(0);
+            experiments.experimentalFeaturesUpdate(true);
+            store.gptLiveEnabledUpdate(true);
+            store.panelOpen();
+            await vi.waitFor(() => expect(store.get().availability?.supported).toBe(true));
+            store.accountSelect("codex");
+            store.callStart();
+            await vi.waitFor(() => expect(live.stats.socketOpens).toBe(1));
+            live.hello();
+            live.mediaReady();
+            live.active();
+            await vi.waitFor(() => expect(store.get().status).toBe("active"));
+            experiments.experimentalFeaturesUpdate(false);
+            expect(store.get().gptLiveEnabled).toBe(false);
+            expect(store.get().panelVisible).toBe(false);
+            expect(live.stats.mediaSilences).toBe(1);
+            expect(live.stats.subscriptions).toBe(0);
+            await vi.waitFor(() => expect(live.closeRequests()).toHaveLength(1));
+            live.status("closed");
+            expect(live.stats.mediaCloses).toBe(1);
+            expect(live.stats.socketCloses).toBe(1);
+            expect(live.daemon.callCount("abortAgent")).toBe(0);
+        } finally {
+            stop();
+            store[Symbol.dispose]();
+        }
+    });
     it("starts graceful local close before cancelling the opening signal", async () => {
         const f = fixture();
         await f.start();

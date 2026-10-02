@@ -7,6 +7,7 @@ import type {
     GptLiveRuntimeEvent,
     GptLiveTranscriptFragment,
 } from "./gptLiveRuntime.js";
+import type { ExperimentsStore } from "../experiments/experimentsStore.js";
 
 /** A desktop preference, independent of any coding session or provider default. */
 export interface GptLiveDocument {
@@ -76,7 +77,9 @@ const DISABLED: GptLiveSnapshot = {
 export function gptLiveStoreCreate(
     persistence?: GptLivePersistence,
     runtime?: GptLiveRuntime,
+    experiments?: Pick<ExperimentsStore, "get">,
 ): GptLiveStore {
+    const allowed = () => experiments?.get().experimentalFeaturesEnabled ?? true;
     let snapshot = DISABLED;
     try {
         // Local storage is an external, editable boundary. Only literal true
@@ -85,7 +88,8 @@ export function gptLiveStoreCreate(
         if (
             typeof document === "object" &&
             document !== null &&
-            (document as { gptLiveEnabled?: unknown }).gptLiveEnabled === true
+            (document as { gptLiveEnabled?: unknown }).gptLiveEnabled === true &&
+            allowed()
         ) {
             snapshot = { ...DISABLED, gptLiveEnabled: true, status: "idle" };
         }
@@ -180,7 +184,7 @@ export function gptLiveStoreCreate(
             };
         },
         gptLiveEnabledUpdate(enabled) {
-            if (disposed || snapshot.gptLiveEnabled === enabled) return;
+            if (disposed || snapshot.gptLiveEnabled === enabled || (enabled && !allowed())) return;
             stop();
             const next: GptLiveSnapshot = {
                 ...DISABLED,
@@ -195,7 +199,13 @@ export function gptLiveStoreCreate(
             publish(next);
         },
         availabilityRead() {
-            if (disposed || !snapshot.gptLiveEnabled || availabilityController || callController)
+            if (
+                disposed ||
+                !allowed() ||
+                !snapshot.gptLiveEnabled ||
+                availabilityController ||
+                callController
+            )
                 return;
             if (!runtime) {
                 publish({
@@ -249,6 +259,7 @@ export function gptLiveStoreCreate(
         callStart() {
             if (
                 disposed ||
+                !allowed() ||
                 !snapshot.gptLiveEnabled ||
                 !runtime ||
                 callController ||
@@ -299,7 +310,7 @@ export function gptLiveStoreCreate(
             idle();
         },
         panelOpen() {
-            if (disposed || !snapshot.gptLiveEnabled) return;
+            if (disposed || !allowed() || !snapshot.gptLiveEnabled) return;
             publish({ ...snapshot, panelVisible: true });
             if (!snapshot.availability) store.availabilityRead();
         },
@@ -356,6 +367,18 @@ export function gptLiveStoreCreate(
         },
     };
     return store;
+}
+
+/** Explicit window lifetime: withdrawing experiments ends voice through its normal close path. */
+export function gptLiveExperimentsConnect(
+    store: GptLiveStore,
+    experiments: ExperimentsStore,
+): () => void {
+    const reconcile = () => {
+        if (!experiments.get().experimentalFeaturesEnabled) store.gptLiveEnabledUpdate(false);
+    };
+    reconcile();
+    return experiments.subscribe(reconcile);
 }
 
 export const gptLiveStoreNoop: GptLiveStore = {

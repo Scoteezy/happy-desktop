@@ -22,6 +22,7 @@ import {
     commandPaletteStoreCreate,
     experimentsStoreCreate,
     gptLiveStoreCreate,
+    gptLiveExperimentsConnect,
     titleShimmerStoreCreate,
     welcomeStoreCreate,
     happyAgentNavigationOrderStoreCreate,
@@ -512,7 +513,7 @@ function DesktopRenderer(props: DesktopRendererProps) {
         // Outside every screen below, so one mark spans the whole run-up to a
         // workspace instead of being unmounted and remounted as the window moves
         // between the screens that boot crosses.
-        <AppGptLiveSurface store={props.gptLive}>
+        <AppGptLiveSurface store={props.gptLive} experiments={props.experiments}>
             <DesktopBootGate
                 onboarding={props.onboarding}
                 happyAgents={props.happyAgents}
@@ -1132,7 +1133,9 @@ if (mediaPreviewBridge) {
                 directory: happyAgents,
                 connectionUis,
             }),
+            experiments,
         );
+        appDisposers.push(gptLiveExperimentsConnect(gptLive, experiments));
         appDisposers.push(() => gptLive[Symbol.dispose]());
         // What the surfaces lay out against: the window itself, or the
         // closed-inset arrangement while the rail owns the window's left edge.
