@@ -83,7 +83,7 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                 </Banner>
             ) : null}
             {props.disconnectError ? (
-                <Banner tone="danger" title="Still connected">
+                <Banner tone="danger" title="Pairing could not be removed">
                     {props.disconnectError}
                 </Banner>
             ) : null}
@@ -108,7 +108,7 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                     />
                 }
                 description="Whether this Happy Agent has a saved Happy Mobile pairing."
-                label="Configuration"
+                label="Phone pairing"
             />
             <FormRow
                 control={
@@ -118,7 +118,7 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                     />
                 }
                 description={statusDescription(props.status)}
-                label="Connection"
+                label="Mobile connection"
             />
             {!props.onSetup && props.status === "pairing" && props.pairingData ? (
                 <Box className="happy-agent-mobile-settings__pairing">
@@ -166,20 +166,26 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
             {props.onSetup ? (
                 <FormRow
                     align="start"
-                    label="Set up mobile access"
+                    label={props.configured ? "Terminal access" : "Connect Happy Mobile"}
                     description={
                         props.configured
-                            ? "Use your saved pairing to finish mobile access for Happy Desktop and terminal Claude Code and Codex sessions."
+                            ? "Use your saved phone pairing to set up the Happy CLI for terminal Claude Code and Codex sessions. This checks the CLI account, server, and connection."
                             : "Get Happy Coder, prepare the Happy CLI, and link this computer with one device-pairing code."
                     }
                     control={
                         <Button
-                            disabled={props.unavailable !== undefined || props.disconnecting}
+                            disabled={
+                                props.unavailable !== undefined ||
+                                props.disconnecting ||
+                                props.configured === undefined ||
+                                props.status === "disabled" ||
+                                props.status === "unavailable"
+                            }
                             onClick={props.onSetup}
                             size="small"
                             variant="primary"
                         >
-                            {props.configured ? "Finish mobile setup" : "Set up mobile access"}
+                            {props.configured ? "Set up terminal access" : "Connect Happy Mobile"}
                         </Button>
                     }
                 />
@@ -196,11 +202,11 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                             size="small"
                             variant="danger"
                         >
-                            Disconnect
+                            Unpair
                         </Button>
                     }
-                    description="Remove this pairing from Happy Agent. Happy Mobile will no longer be able to follow its work."
-                    label="Disconnect Happy Mobile"
+                    description="Remove this Happy Agent's saved phone pairing. The Happy CLI keeps its existing sign-in and terminal sessions."
+                    label="Unpair Happy Mobile"
                 />
             ) : null}
         </HappyAgentSettingsSection>
@@ -218,7 +224,7 @@ function pairingWaitingLabel(expiresAt: number | undefined): string {
 
 function configurationLabel(configured: boolean | undefined): string {
     if (configured === undefined) return "Unknown";
-    return configured ? "Configured" : "Not configured";
+    return configured ? "Paired" : "Not paired";
 }
 
 function statusDescription(status: HappyAgentMobileStatus): string {

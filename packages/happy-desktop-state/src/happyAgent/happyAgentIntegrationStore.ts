@@ -143,6 +143,9 @@ export function happyAgentIntegrationStoreCreate(
             return;
         }
         version = integration.version;
+        // Unlink is also a setup lifetime boundary. An older CLI handoff must
+        // not finish a flow for the pairing the server has just removed.
+        if (store.getState().configured === true && !integration.configured) setupClose();
         const current = store.getState();
         store.setState(
             {
