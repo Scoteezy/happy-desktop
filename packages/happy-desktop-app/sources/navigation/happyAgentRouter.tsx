@@ -632,6 +632,11 @@ export function happyAgentRouterConversationOpen(
     });
 }
 
+/** Uses the router's explicit route identity, never a pathname convention. */
+export function happyAgentRouterWorkspaceVisible(router: HappyAgentRouter): boolean {
+    return router.state.matches.some((match) => match.routeId === workspaceRoute.id);
+}
+
 /**
  * Addresses a group that holds no conversation yet, such as a worktree the
  * reader has just added. The conversation started in it re-addresses the same

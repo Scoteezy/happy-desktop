@@ -935,6 +935,20 @@ export interface HappyAgentWorkspaceNewChatInput {
     readonly prompt?: string;
 }
 
+/** A retained existing conversation projection; voice does not create a second sync system. */
+export interface HappyAgentVoiceSession {
+    get(): HappyAgentChatSnapshot;
+    draftRead(): ComposerSnapshot | undefined;
+    subscribe(listener: () => void): () => void;
+    draftAppend(text: string, expectedDraft: string): Promise<void>;
+    messageSendConfirmed(
+        text: string,
+        expectedDraft: string,
+        permissionMode: HappyAgentPermissionMode,
+    ): Promise<void>;
+    [Symbol.dispose](): void;
+}
+
 export interface HappyAgentWorkspaceStore {
     get(): HappyAgentWorkspaceSnapshot;
     subscribe(listener: () => void): () => void;
@@ -987,6 +1001,15 @@ export interface HappyAgentWorkspaceStore {
     draftUpdate(sessionId: HappyAgentSessionId, message: string): Promise<void>;
     /** Adds an unsent suggestion without replacing an existing draft or duplicating an unchanged retry. */
     draftAppend(sessionId: HappyAgentSessionId, message: string): Promise<void>;
+    /** Retains a concrete target for public-text reads, watches and guarded voice drafts. */
+    voiceSessionAcquire(sessionId: HappyAgentSessionId): Promise<HappyAgentVoiceSession>;
+    /** Creates in the named group without sending a prompt; the controller then navigates explicitly. */
+    voiceConversationCreate(groupId: HappyAgentGroupId): Promise<HappyAgentSessionLocation>;
+    voiceWorkspaceCreate(projectId: HappyAgentProjectId): Promise<{
+        readonly worktreeId: HappyAgentWorktreeId;
+        readonly location: HappyAgentSessionLocation;
+    }>;
+    voiceBotCreate(name?: string): Promise<HappyAgentBotCreation>;
     /** Starts the new conversation described by a slot action and optionally submits its prompt. */
     chatStart(input: HappyAgentWorkspaceNewChatInput): Promise<void>;
     /**
@@ -3040,6 +3063,8 @@ export function happyAgentWorkspaceStoreCreate(
 
     const releaseConversation = (): void => {
         mentionGeneration += 1;
+        if (composer?.getState().voiceDraft)
+            voiceComposers.set(composer.getState().scopeId as HappyAgentSessionId, composer);
         unsubscribeComposer?.();
         unsubscribeComposer = undefined;
         composer = undefined;
@@ -3201,6 +3226,8 @@ export function happyAgentWorkspaceStoreCreate(
      * them rather than empty until the host's copy arrives.
      */
     const conversationDraftTexts = new Map<HappyAgentSessionId, string>();
+    // Retain the owning composer, not a mirrored draft. Never persisted or shared with another window.
+    const voiceComposers = new Map<HappyAgentSessionId, ComposerStore>();
 
     const attachmentsRemember = <Key>(
         held: Map<Key, readonly ComposerAttachment[]>,
@@ -3317,6 +3344,11 @@ export function happyAgentWorkspaceStoreCreate(
     };
 
     const composerCreate = (conversationId: HappyAgentSessionId): ComposerStore => {
+        const retainedVoice = voiceComposers.get(conversationId);
+        if (retainedVoice) {
+            voiceComposers.delete(conversationId);
+            return retainedVoice;
+        }
         const carriedText = conversationDraftTexts.get(conversationId);
         conversationDraftTexts.delete(conversationId);
         const created: ComposerStore = composerStoreCreate(conversationId, {
@@ -3334,11 +3366,35 @@ export function happyAgentWorkspaceStoreCreate(
                         attachmentsRemember(conversationAttachments, conversationId, created);
                         return;
                     case "textUpdated":
+                        if (created.getState().voiceDraft) return;
                         void withChatStore((store) =>
                             store.draftSet(event.text, nextDraftUpdatedAt(), draftOrigin),
                         ).catch(() => undefined);
                         return;
                     case "textSubmitted":
+                        if (created.getState().voiceDraft) {
+                            submitting(created, event.revision, async () => {
+                                if (openId !== conversationId || composer !== created)
+                                    throw new Error(
+                                        "Return to this conversation to send the voice draft.",
+                                    );
+                                const refusal = sessionConversationRefusal(conversationId);
+                                if (refusal) throw new Error(refusal);
+                                if (event.attachments.length > 0)
+                                    throw new Error(
+                                        "Remove attachments before sending a voice draft.",
+                                    );
+                                const target = chatStore;
+                                const state = target?.get();
+                                if (!target || state?.session.type !== "ready")
+                                    throw new Error("The conversation is not ready.");
+                                await target.voiceMessageSendConfirmed(
+                                    event.text,
+                                    state.session.value.permissionMode,
+                                );
+                            });
+                            return;
+                        }
                         void withChatStore((store) =>
                             store.draftSet("", nextDraftUpdatedAt(), draftOrigin),
                         ).catch(() => undefined);
@@ -4918,6 +4974,116 @@ export function happyAgentWorkspaceStoreCreate(
                 },
             );
         },
+        async voiceSessionAcquire(sessionId) {
+            const acquired = await client.chat(sessionId);
+            let released = false;
+            const guarded = () => {
+                if (released || disposed) throw new Error("This conversation is no longer open.");
+                const refusal = sessionConversationRefusal(sessionId);
+                if (refusal) throw new Error(refusal);
+                const snapshot = acquired.store.get();
+                if (snapshot.session.type !== "ready")
+                    throw new Error("The conversation is not ready.");
+                if (
+                    snapshot.pendingUserInputs.length ||
+                    snapshot.session.value.pendingUserInputs.length
+                )
+                    throw new Error(
+                        "Answer the pending question yourself before adding voice text.",
+                    );
+                return snapshot;
+            };
+            return {
+                get: acquired.store.get,
+                draftRead: () =>
+                    openId === sessionId
+                        ? composer?.getState()
+                        : voiceComposers.get(sessionId)?.getState(),
+                subscribe: acquired.store.subscribe,
+                async draftAppend(text, expectedDraft) {
+                    guarded();
+                    if (openId !== sessionId || !composer)
+                        throw new Error("Open this conversation before adding voice text.");
+                    const current = composer.getState();
+                    if (current.text !== expectedDraft || current.submission.status === "pending")
+                        throw new Error("The draft changed. Try again after reviewing it.");
+                    if (current.text.length > 0 && !current.voiceDraft)
+                        throw new Error(
+                            "The composer contains a human draft. Voice left it unchanged.",
+                        );
+                    current.composerInput({ type: "voiceTextAppended", text });
+                },
+                async messageSendConfirmed(text, expectedDraft, permissionMode) {
+                    guarded();
+                    if (openId !== sessionId || !composer)
+                        throw new Error("Return to this conversation to send the voice draft.");
+                    const target = composer;
+                    const current = target.getState();
+                    if (
+                        !current.voiceDraft ||
+                        current.text !== expectedDraft ||
+                        text !== expectedDraft ||
+                        current.attachments.length > 0 ||
+                        current.submission.status === "pending"
+                    )
+                        throw new Error("The draft changed. Review it in the conversation.");
+                    current.composerInput({
+                        type: "voiceMessageSending",
+                        revision: current.revision,
+                    });
+                    try {
+                        await acquired.store.voiceMessageSendConfirmed(text, permissionMode);
+                        target.getState().composerInput({
+                            type: "voiceMessageSent",
+                            revision: current.revision,
+                        });
+                    } catch (error) {
+                        target.getState().composerInput({
+                            type: "submissionFailed",
+                            revision: current.revision,
+                            error: happyAgentUserError(error),
+                        });
+                        throw error;
+                    }
+                },
+                [Symbol.dispose]() {
+                    if (released) return;
+                    released = true;
+                    acquired[Symbol.dispose]();
+                },
+            };
+        },
+        async voiceConversationCreate(groupId) {
+            const refusal = groupConversationRefusalFind(groupId);
+            if (refusal) throw new Error(refusal);
+            const start = groupStartFind(groupId);
+            if (!start) throw new Error("That project or workspace is not ready.");
+            const location = start.worktreeId
+                ? list.worktreeSessionStart(start.worktreeId, start.create)
+                : await list.sessionCreate(start.create);
+            if (!location) throw new Error("The conversation could not be started.");
+            await list.sessionCreationWait(location.sessionId);
+            await list.sessionsRefresh();
+            return location;
+        },
+        async voiceWorkspaceCreate(projectId) {
+            const refusal = groupWorkRefusalFind(projectId);
+            if (refusal) throw new Error(refusal);
+            const worktreeId = list.worktreeCreate(projectId);
+            if (!worktreeId) throw new Error("The workspace could not be requested.");
+            const location = list.worktreeSessionStart(worktreeId, {});
+            if (!location)
+                throw new Error(
+                    "The workspace was requested, but its conversation could not be requested.",
+                );
+            await Promise.all([
+                list.workspaceCreationWait(worktreeId),
+                list.sessionCreationWait(location.sessionId),
+            ]);
+            await list.sessionsRefresh();
+            return { worktreeId, location };
+        },
+        voiceBotCreate: (name) => list.botCreate(name ? { name } : {}),
         draftUpdate: (sessionId, message) =>
             writeGuard(sessionConversationRefusal(sessionId), () =>
                 withAddressedChat(sessionId, (store) =>
@@ -5964,6 +6130,7 @@ export function happyAgentWorkspaceStoreCreate(
             groupAttachments.clear();
             conversationAttachments.clear();
             conversationDraftTexts.clear();
+            voiceComposers.clear();
             // Disposing the panel stops every terminal it opened: this connection is
             // going away, and a shell nobody can reach again is an orphan.
             unsubscribePanel();

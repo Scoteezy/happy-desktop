@@ -319,6 +319,8 @@ export interface ConversationMessageEntry {
     readonly kind: "message";
     readonly message: ConversationMessageProjection;
     readonly source: "server" | "local";
+    /** Explicit send acceptance for daemon-projected user rows; voice never shares optimistic text. */
+    readonly pendingSend?: boolean;
     readonly delivery: "sending" | "pending_steering" | "sent" | "failed";
     readonly clientMutationId?: string;
     readonly error?: UserError;

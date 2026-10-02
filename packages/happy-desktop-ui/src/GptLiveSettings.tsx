@@ -9,7 +9,7 @@ export interface GptLiveSettingsProps {
     onEnabledChange(enabled: boolean): void;
 }
 
-/** The honest opt-in surface until an authenticated GPT-Live bridge is available. */
+/** Default-off window-level voice opt-in; setup and explicit Start live in the persistent voice surface. */
 export function GptLiveSettings(props: GptLiveSettingsProps) {
     const switchId = useId();
     return (
@@ -32,9 +32,9 @@ export function GptLiveSettings(props: GptLiveSettingsProps) {
                 htmlFor={switchId}
                 label="Enable GPT-Live voice"
             />
-            <Banner tone="neutral" title="GPT-Live calling is not available yet">
-                This build does not have a GPT-Live connection. No microphone is opened and no
-                desktop context is sent. Running tasks are unaffected.
+            <Banner tone="neutral" title="Choose an account, then explicitly start a call">
+                Enabling shows the window's voice controls. No microphone is opened and no desktop
+                context is sent until you start a call. Running tasks are unaffected.
             </Banner>
         </HappyAgentSettingsSection>
     );

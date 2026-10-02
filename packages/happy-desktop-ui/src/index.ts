@@ -2,6 +2,7 @@ import "./styles.css";
 
 export { happyLogoBlackUrl, happyLogoWhiteUrl } from "./assets";
 export { GptLiveSettings, type GptLiveSettingsProps } from "./GptLiveSettings";
+export { GptLiveSurface, type GptLiveSurfaceProps } from "./GptLiveSurface";
 export { ChangedFileDiff, type ChangedFileDiffProps } from "./ChangedFileDiff";
 export { CompactActivityRow, type CompactActivityRowProps } from "./CompactActivityRow";
 export { compactCount } from "./countText";

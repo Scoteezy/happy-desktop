@@ -555,6 +555,7 @@ function happyAgentConnectGroupProject(
                 entries.push({
                     kind: "message",
                     source: "server",
+                    pendingSend: element.authority === "local",
                     delivery: element.delivery,
                     message: messageProject({
                         id: element.messageId,

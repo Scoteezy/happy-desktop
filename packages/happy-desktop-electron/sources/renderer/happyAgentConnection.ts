@@ -5,6 +5,9 @@ import {
     HappyAgentClient,
     happyAgentWorkspaceClientCreate,
     happyAgentClockStoreCreate,
+    gptLiveRuntimeCreate,
+    type GptLiveRuntime,
+    type GptLiveRuntimeCreateOptions,
     happyAgentDebugLogStoreCreate,
     happyAgentWorkspaceStoreCreate,
     happyAgentOnboardingStoreCreate,
@@ -92,6 +95,8 @@ function workspaceMemoryPersistence(happyAgentId: string): HappyAgentWorkspaceMe
 }
 
 export interface HappyAgentSession {
+    /** Supplies the existing authenticated connection only to the opt-in voice integration. */
+    gptLiveRuntimeCreate(options: Omit<GptLiveRuntimeCreateOptions, "client">): GptLiveRuntime;
     readonly welcome: WelcomeStore;
     readonly onboarding: HappyAgentOnboardingStore;
     readonly connection: HappyAgentConnectionStore;
@@ -455,6 +460,11 @@ export function happyAgentConnectionOpen(input: {
                 });
                 sessionConnection = streamConnectionStoreCreate(agentConnection);
                 session = {
+                    gptLiveRuntimeCreate: (options) =>
+                        gptLiveRuntimeCreate({
+                            ...options,
+                            client: () => (disposed ? undefined : directClient),
+                        }),
                     welcome,
                     onboarding,
                     cloud: () => cloudStore,

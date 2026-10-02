@@ -16,6 +16,7 @@ import {
     type WebContents,
 } from "electron";
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DesktopRuntime } from "./desktopRuntime";
@@ -40,6 +41,7 @@ import {
     desktopIpc,
     happyHtmlPreviewPartition,
     mediaPreviewArgument,
+    liveWindowArgument,
     mediaPreviewView,
     type DesktopBrowserProxyTarget,
     type DesktopBrowserStatus,
@@ -926,21 +928,19 @@ function localWindowCreate(bounds?: DesktopWindowBounds) {
     const rendererPath = join(dirname, "renderer", "index.html");
     const hostedUrl = hostedOrigin ? `${hostedOrigin}/?desktop=1&mode=local` : undefined;
     const rendererUrl = hostedUrl ?? developmentUrl ?? pathToFileURL(rendererPath).toString();
+    const liveWindowId = randomUUID();
     const window = new BrowserWindow({
         ...windowOptions(bounds, {
             // The build a window runs is fixed for its whole life, so the preload
             // is handed it as a launch argument rather than made to ask for it:
             // the shell can then render its identity in the first frame.
-            ...(buildIdentity
-                ? {
-                      additionalArguments: [
-                          `${buildIdentityArgument}${JSON.stringify(buildIdentity)}`,
-                          ...(desktopDebugEnabled ? [debugMetricsArgument] : []),
-                      ],
-                  }
-                : desktopDebugEnabled
-                  ? { additionalArguments: [debugMetricsArgument] }
-                  : {}),
+            additionalArguments: [
+                `${liveWindowArgument}${liveWindowId}`,
+                ...(buildIdentity
+                    ? [`${buildIdentityArgument}${JSON.stringify(buildIdentity)}`]
+                    : []),
+                ...(desktopDebugEnabled ? [debugMetricsArgument] : []),
+            ],
             contextIsolation: true,
             nodeIntegration: false,
             preload: join(dirname, "preload.cjs"),
@@ -952,6 +952,8 @@ function localWindowCreate(bounds?: DesktopWindowBounds) {
         window.webContents,
         rendererUrl,
         developmentUrl !== undefined || hostedOrigin !== undefined,
+        false,
+        liveWindowId,
     );
     if (desktopDebugEnabled) {
         desktopDebugLog(`renderer window created; loading ${rendererUrl}`);
@@ -1550,6 +1552,14 @@ void app
         });
         daemonController.runtimeSet(runtime.get());
         ipcMain.handle(desktopIpc.runtimeGet, () => runtime.get());
+        ipcMain.handle(desktopIpc.liveMicrophoneStart, (event, input: unknown) => {
+            if (!happyAgentRendererSession)
+                throw new Error("Native GPT-Live audio is unavailable.");
+            happyAgentRendererSession.liveMicrophoneStart(event.sender, event.senderFrame, input);
+        });
+        ipcMain.handle(desktopIpc.liveMicrophoneRevoke, (event) => {
+            happyAgentRendererSession?.liveMicrophoneRevoke(event.sender, event.senderFrame);
+        });
         ipcMain.handle(desktopIpc.desktopConfigGet, () => desktopConfigStore.get());
         ipcMain.handle(desktopIpc.desktopConfigWrite, async (_event, config: unknown) => {
             await desktopConfigStore.write(config);

@@ -36,7 +36,9 @@ it("renders the default-off opt-in and preserves switch identity and focus when 
     expect(control.getAttribute("aria-checked")).toBe("false");
     expect(control.getAttribute("aria-label")).toBe("Enable GPT-Live voice");
     const section = view.$('[data-happy-desktop-ui="happy-agent-settings-section"]');
-    expect(section.element.textContent).toContain("GPT-Live calling is not available yet");
+    expect(section.element.textContent).toContain(
+        "Choose an account, then explicitly start a call",
+    );
     expect(section.element.textContent).toContain("Running tasks are unaffected");
     expect(section.computedStyle("display")).toBe("flex");
     expect(section.computedStyle("gap")).toBe("12px");

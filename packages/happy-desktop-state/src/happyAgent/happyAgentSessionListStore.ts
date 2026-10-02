@@ -196,6 +196,8 @@ export type HappyAgentSessionListOutput = {
 };
 
 export interface HappyAgentSessionListStore {
+    sessionCreationWait(sessionId: HappyAgentSessionId): Promise<void>;
+    workspaceCreationWait(workspaceId: HappyAgentWorktreeId): Promise<void>;
     get(): HappyAgentSessionListSnapshot;
     subscribe(listener: () => void): () => void;
     /**
@@ -429,6 +431,8 @@ export interface HappyAgentSessionListDeps {
         | "createBot"
         | "createSession"
         | "createWorkspace"
+        | "sessionCreationWait"
+        | "workspaceCreationWait"
         | "markSessionRead"
         | "renameGroup"
         | "reorderBot"
@@ -1671,6 +1675,9 @@ export function happyAgentSessionListStoreCreate(
             }
             deps.connectActions.markSessionRead(sessionId);
         },
+        sessionCreationWait: (sessionId) => deps.connectActions.sessionCreationWait(sessionId),
+        workspaceCreationWait: (workspaceId) =>
+            deps.connectActions.workspaceCreationWait(workspaceId),
         sessionCreate: (input) => mutate(async () => sessionCreateRun(input)),
         projectCloneGithub(repository, name) {
             return connectMutationTrack(

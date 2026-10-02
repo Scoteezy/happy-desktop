@@ -245,6 +245,33 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
      */
     const unannouncedAgents = new Set<string>();
     const sendConfirmations = new Map<string, () => void>();
+    const sessionCreationOutcomes = new Map<string, Promise<void>>();
+    const workspaceCreationOutcomes = new Map<string, Promise<void>>();
+    const sendAcceptance = new Map<string, Promise<void>>();
+    const sendAcceptanceCreate = (id: string) => {
+        let resolve!: () => void;
+        let reject!: (error: Error) => void;
+        const promise = new Promise<void>((accepted, refused) => {
+            resolve = accepted;
+            reject = refused;
+        });
+        // The ordinary optimistic send has no promise consumer.
+        void promise.catch(() => undefined);
+        sendAcceptance.set(id, promise);
+        let settled = false;
+        const finish = (error?: Error) => {
+            if (settled) return;
+            settled = true;
+            rootController.signal.removeEventListener("abort", aborted);
+            if (error) reject(error);
+            else resolve();
+            queueMicrotask(() => sendAcceptance.delete(id));
+        };
+        const aborted = () =>
+            finish(new Error("The connection ended before message acceptance was confirmed."));
+        rootController.signal.addEventListener("abort", aborted, { once: true });
+        return { accept: () => finish(), reject: (error: Error) => finish(error) };
+    };
     const mutationQueues = new Map<string, Promise<void>>();
     const sessionCreations = new Map<string, Promise<void>>();
     const sessionMutationCounts = new Map<string, number>();
@@ -2237,6 +2264,21 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         const completed = queued.then((value) => {
             if (!closed) applied?.(value);
         });
+        const creationOutcomes =
+            action === "create_session"
+                ? sessionCreationOutcomes
+                : action === "create_workspace"
+                  ? workspaceCreationOutcomes
+                  : undefined;
+        if (creationOutcomes) {
+            creationOutcomes.set(
+                mutationId,
+                completed.then(() => undefined),
+            );
+            void creationOutcomes.get(mutationId)!.catch(() => undefined);
+            while (creationOutcomes.size > 256)
+                creationOutcomes.delete(creationOutcomes.keys().next().value!);
+        }
         // An optimistic conversation can accept input before its backend resource
         // exists. Sends wait for this dependency only, not the agent's work queue.
         if (action === "create_session" && sessionId !== undefined) {
@@ -2813,9 +2855,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         },
         sendMessage(sessionId, message) {
             const mutationId = nextId();
+            const acceptance = sendAcceptanceCreate(mutationId);
             const created = sessionCreations.get(sessionId);
             const agent = sessions.get(sessionId)?.agent ?? agentOf(sessionId);
             if (agent === undefined || config === undefined) {
+                acceptance.reject(new Error("The agent is not loaded."));
                 reportMutationFailure(
                     "send_message",
                     mutationId,
@@ -2907,6 +2951,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     if (response !== undefined) {
                         updateMessage(sessionId, response.message, response.message.runId);
                     }
+                    acceptance.accept();
                 },
                 () => {
                     sendConfirmations.delete(mutationId);
@@ -2915,16 +2960,47 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     if (current !== undefined && message?.pendingSend) {
                         current.messages.delete(mutationId);
                         publishSession(current);
+                        acceptance.reject(
+                            new Error(
+                                "The message was not accepted. Your local draft is retained.",
+                            ),
+                        );
                         return true;
                     }
                     // The event stream or bootstrap already confirmed this ID;
                     // a lost HTTP response must not turn a delivered message
                     // into a visible failure.
+                    if (message === undefined)
+                        acceptance.reject(
+                            new Error(
+                                "Message acceptance could not be confirmed. Check the conversation before retrying.",
+                            ),
+                        );
+                    else acceptance.accept();
                     return message === undefined;
                 },
                 sessionId,
                 // Each send starts independently, including while another send
                 // retries. Its mode is captured above and retries reuse its ID.
+            );
+        },
+        sendMessageConfirmed(sessionId, message) {
+            const id = this.sendMessage(sessionId, message);
+            return (
+                sendAcceptance.get(id) ??
+                Promise.reject(new Error("Message acceptance is unavailable."))
+            );
+        },
+        sessionCreationWait(sessionId) {
+            return (
+                sessionCreationOutcomes.get(sessionId) ??
+                Promise.reject(new Error("This session creation is no longer tracked."))
+            );
+        },
+        workspaceCreationWait(workspaceId) {
+            return (
+                workspaceCreationOutcomes.get(workspaceId) ??
+                Promise.reject(new Error("This workspace creation is no longer tracked."))
             );
         },
         invokeSlashCommand(sessionId, name, argumentsValue) {

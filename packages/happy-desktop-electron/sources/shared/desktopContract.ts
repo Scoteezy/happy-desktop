@@ -364,6 +364,9 @@ export interface DesktopBuildIdentity {
 /** Launch argument prefix carrying `DesktopBuildIdentity` JSON into the preload. */
 export const buildIdentityArgument = "--happy-build-identity=";
 
+/** Main chooses this identity before the application document exists. */
+export const liveWindowArgument = "--happy-live-window=";
+
 /** Launch argument enabling renderer-local diagnostics in an explicit debug window. */
 export const debugMetricsArgument = "--happy-debug-metrics";
 
@@ -627,6 +630,12 @@ export type DesktopPreviewNavigation = DesktopPreviewNavigationStep & {
 };
 
 export interface HappyDesktopBridge {
+    /** Native window identity; absent from the browser development bridge. */
+    readonly liveWindowId?: string;
+    /** An enabled feature and an explicit Start are required before audio capture. */
+    liveMicrophoneStart?(input: { readonly enabled: true }): Promise<void>;
+    /** Ends permission to capture audio; graceful call settlement remains with the renderer. */
+    liveMicrophoneRevoke?(): Promise<void>;
     /**
      * This window's development identity, absent in a packaged build. It is a
      * plain value rather than a call because the window is one build for its
@@ -814,6 +823,8 @@ export interface HappyMediaPreviewBridge {
 }
 
 export const desktopIpc = {
+    liveMicrophoneStart: "happy:live:microphone-start",
+    liveMicrophoneRevoke: "happy:live:microphone-revoke",
     /** Renderer → main only: the appearance source inherited by local web contents. */
     appearanceSet: "happy:appearance:set",
     browserProxyApply: "happy:browser:proxy-apply",

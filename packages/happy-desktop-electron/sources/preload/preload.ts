@@ -4,6 +4,7 @@ import {
     debugMetricsArgument,
     desktopIpc,
     mediaPreviewArgument,
+    liveWindowArgument,
     type DesktopBrowserStatus,
     type DesktopNavigationStep,
     type DesktopPreviewNavigation,
@@ -45,6 +46,11 @@ const identity = buildIdentityRead();
 const debugMetricsEnabled = process.argv.includes(debugMetricsArgument);
 
 const bridge: HappyDesktopBridge = {
+    liveWindowId: process.argv
+        .find((value) => value.startsWith(liveWindowArgument))
+        ?.slice(liveWindowArgument.length),
+    liveMicrophoneStart: (input) => ipcRenderer.invoke(desktopIpc.liveMicrophoneStart, input),
+    liveMicrophoneRevoke: () => ipcRenderer.invoke(desktopIpc.liveMicrophoneRevoke),
     ...(identity ? { buildIdentity: identity } : {}),
     debugMetricsEnabled,
     appearanceSet: (mode) => ipcRenderer.send(desktopIpc.appearanceSet, mode),

@@ -843,6 +843,7 @@ function messageElementsProject(
                 id: `message:${elementId}`,
                 kind: "user_message",
                 messageId: message.id,
+                authority: entry.pendingSend ? "local" : "server",
                 identity: null,
                 ...(message.metadata.userId === undefined
                     ? {}

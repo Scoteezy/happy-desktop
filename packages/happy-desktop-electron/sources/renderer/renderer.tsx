@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import {
     DesktopStartupScreen,
+    AppGptLiveSurface,
     happyAgentHistoryCreate,
     happyAgentWelcomeSlides,
     happyAgentRouterConversationOpen,
@@ -102,6 +103,7 @@ import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
 import { desktopDaemonStoreCreate } from "./desktopDaemonStore";
 import { desktopExperimentsPersistence } from "./desktopExperiments";
 import { desktopGptLivePersistence } from "./desktopGptLive";
+import { desktopGptLiveRuntimeCreate } from "./desktopGptLiveRuntime";
 import { desktopWelcomePersistence } from "./desktopWelcome";
 import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
@@ -510,13 +512,15 @@ function DesktopRenderer(props: DesktopRendererProps) {
         // Outside every screen below, so one mark spans the whole run-up to a
         // workspace instead of being unmounted and remounted as the window moves
         // between the screens that boot crosses.
-        <DesktopBootGate
-            onboarding={props.onboarding}
-            happyAgents={props.happyAgents}
-            runtime={props.store}
-        >
-            <DesktopScreens {...props} />
-        </DesktopBootGate>
+        <AppGptLiveSurface store={props.gptLive}>
+            <DesktopBootGate
+                onboarding={props.onboarding}
+                happyAgents={props.happyAgents}
+                runtime={props.store}
+            >
+                <DesktopScreens {...props} />
+            </DesktopBootGate>
+        </AppGptLiveSurface>
     );
 }
 
@@ -1057,7 +1061,6 @@ if (mediaPreviewBridge) {
         // is kept beside the arrangement above and for the same reason: it says
         // what this installation shows, so no machine has a say in it.
         const experiments = experimentsStoreCreate(desktopExperimentsPersistence());
-        const gptLive = gptLiveStoreCreate(desktopGptLivePersistence());
         // Active-title motion is also this window's own choice. The store keeps
         // the product default in memory and writes only after the reader changes
         // the switch, so untouched installations follow future defaults.
@@ -1124,6 +1127,15 @@ if (mediaPreviewBridge) {
             terminalColorScheme: () => appearance.get().appearance,
         });
         const windowState = windowStateStoreCreate(desktopBridge);
+        const gptLive = gptLiveStoreCreate(
+            desktopGptLivePersistence(),
+            desktopGptLiveRuntimeCreate({
+                bridge: desktopBridge,
+                directory: happyAgents,
+                connectionUis,
+            }),
+        );
+        appDisposers.push(() => gptLive[Symbol.dispose]());
         // What the surfaces lay out against: the window itself, or the
         // closed-inset arrangement while the rail owns the window's left edge.
         const surfaceWindowState = surfaceWindowStateStoreCreate({
