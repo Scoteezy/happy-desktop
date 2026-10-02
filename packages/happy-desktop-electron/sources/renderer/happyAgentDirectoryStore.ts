@@ -67,6 +67,12 @@ export interface HappyAgentDirectoryStore {
 }
 
 export interface HappyAgentDirectoryDeps {
+    readonly readLegacyCli?: () => Promise<
+        import("happy-desktop-state").HappyTerminalCliInspection
+    >;
+    readonly resetLegacyCli?: (
+        request: import("happy-desktop-state").HappyTerminalCliResetRequest,
+    ) => Promise<import("happy-desktop-state").HappyTerminalCliResetOutcome>;
     readonly cloudHostFor: (id: string) => HappyAgentCloudHost;
     readonly conversationOpen: (happyAgentId: string, location: HappyAgentSessionLocation) => void;
     readonly groupOpen: (happyAgentId: string, groupId: string) => void;
@@ -278,6 +284,10 @@ export function happyAgentDirectoryStoreCreate(
         happyAgent.connection = happyAgentConnectionOpen({
             cloudHost: deps.cloudHostFor(happyAgent.entry.id),
             guidedMobileSetup: happyAgent.entry.id === LOCAL_HAPPY_AGENT_ID,
+            readLegacyCli:
+                happyAgent.entry.id === LOCAL_HAPPY_AGENT_ID ? deps.readLegacyCli : undefined,
+            resetLegacyCli:
+                happyAgent.entry.id === LOCAL_HAPPY_AGENT_ID ? deps.resetLegacyCli : undefined,
             host: happyAgent.entry.remoteId
                 ? {
                       projectSource: "repository",

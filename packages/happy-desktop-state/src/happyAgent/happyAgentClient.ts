@@ -290,6 +290,12 @@ export interface HappyAgentWorkspaceClient {
 export interface HappyAgentWorkspaceClientDeps {
     /** The local desktop pairs Happy Mobile through the guided setup. */
     readonly guidedMobileSetup?: boolean;
+    readonly readLegacyCli?: () => Promise<
+        import("./happyTerminalCli.js").HappyTerminalCliInspection
+    >;
+    readonly resetLegacyCli?: (
+        request: import("./happyTerminalCli.js").HappyTerminalCliResetRequest,
+    ) => Promise<import("./happyTerminalCli.js").HappyTerminalCliResetOutcome>;
     readonly client: HappyAgentClient;
     readonly cloudHost: HappyAgentCloudHost;
     readonly connection: HappyAgentConnection;
@@ -675,6 +681,8 @@ export function happyAgentWorkspaceClientCreate(
                 client: deps.client,
                 sync: deps.connection.sync,
                 guidedMobileSetup: deps.guidedMobileSetup,
+                readLegacyCli: deps.readLegacyCli,
+                resetLegacyCli: deps.resetLegacyCli,
             });
             return happyIntegrationStore;
         },

@@ -541,10 +541,22 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             ) : section === "mobile-access" ? (
                 <HappyAgentMobileSettings
                     configured={happyIntegration.configured}
+                    updatedAt={happyIntegration.updatedAt}
+                    terminal={happyIntegration.terminalCli}
+                    terminalSetupSupport={happyIntegration.terminalSetupSupport}
+                    terminalReadError={happyIntegration.terminalCliReadError}
+                    management={happyIntegration.management}
+                    onTerminalReset={happyIntegrationStore.terminalCliResetRequest}
+                    onManagementCancel={happyIntegrationStore.mobileManagementCancel}
+                    onManagementConfirm={happyIntegrationStore.mobileManagementConfirm}
+                    onTerminalRegistrationRemovalChange={
+                        happyIntegrationStore.terminalCliRegistrationRemovalUpdate
+                    }
                     onSetup={happyIntegrationStore.mobileSetup?.start}
                     disconnecting={happyIntegration.disconnecting}
                     onDisconnect={() => {
-                        if (happyAgentOnline()) happyIntegrationStore.happyIntegrationDisconnect();
+                        if (happyAgentOnline())
+                            happyIntegrationStore.happyIntegrationDisconnectRequest();
                     }}
                     onPair={() => {
                         if (happyAgentOnline()) happyIntegrationStore.happyIntegrationPair();

@@ -615,7 +615,15 @@ export {
     HappyAgentMobileSettings,
     type HappyAgentMobileSettingsProps,
     type HappyAgentMobileStatus,
+    type HappyAgentMobileTerminal,
 } from "./pages/settings/HappyAgentMobileSettings";
+export {
+    MobileAccessConfirmation,
+    MobileAccessDetail,
+    type MobileAccessConfirmationProps,
+    type MobileAccessConfirmationState,
+    type MobileAccessTerminalResetPreview,
+} from "./MobileAccessConfirmation";
 export {
     HappyAgentDebugSettings,
     type HappyAgentDebugSettingsProps,

@@ -285,6 +285,12 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
 export function happyAgentConnectionOpen(input: {
     /** The local desktop pairs Happy Mobile through the guided setup. */
     readonly guidedMobileSetup?: boolean;
+    readonly readLegacyCli?: () => Promise<
+        import("happy-desktop-state").HappyTerminalCliInspection
+    >;
+    readonly resetLegacyCli?: (
+        request: import("happy-desktop-state").HappyTerminalCliResetRequest,
+    ) => Promise<import("happy-desktop-state").HappyTerminalCliResetOutcome>;
     readonly cloudHost: HappyAgentCloudHost;
     readonly host: HappyAgentHost;
     readonly deps: HappyAgentSessionDeps;
@@ -365,6 +371,8 @@ export function happyAgentConnectionOpen(input: {
         client: directClient,
         guidedMobileSetup: input.guidedMobileSetup,
         cloudHost: input.cloudHost,
+        readLegacyCli: input.readLegacyCli,
+        resetLegacyCli: input.resetLegacyCli,
         connection: agentConnection,
         hostServices,
         modelPreferencePersistence: input.modelPreferencePersistence,

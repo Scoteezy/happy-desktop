@@ -1096,6 +1096,8 @@ if (mediaPreviewBridge) {
         // the addressed conversation without the reader navigating twice.
         const happyAgents = happyAgentDirectoryStoreCreate(desktopBridge, runtimeStore, {
             cloudHostFor: auth.hostFor,
+            readLegacyCli: window.happyDesktop?.legacyCliStatus,
+            resetLegacyCli: window.happyDesktop?.legacyCliReset,
             conversationOpen: (happyAgentId, location) =>
                 happyAgentRouterConversationOpen(
                     connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,

@@ -64,3 +64,13 @@ export * from "./happyAgent/happyAgentWindowStore.js";
 export * from "./happyAgent/happyAgentWorkspaceMemory.js";
 export * from "./happyAgent/happyAgentWorkspaceStore.js";
 export * from "./happyAgent/happyAgentViewPreferences.js";
+export type {
+    HappyTerminalCliSnapshot,
+    HappyTerminalCliResetPreview,
+    HappyTerminalCliInspection,
+    HappyTerminalCliResetRequest,
+    HappyTerminalCliResetOutcome,
+    HappyTerminalCliResetErrorCode,
+    HappyTerminalCliResetEffects,
+    HappyMobileManagementConfirmation,
+} from "./happyAgent/happyTerminalCli.js";

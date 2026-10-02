@@ -69,6 +69,7 @@ import {
 import { localHappyAgentConnectorCreate, localRuntimeProbe } from "./localHappyAgent";
 import { LocalOnboarding } from "./localOnboarding";
 import { legacyCliConnectorCreate } from "./legacyCliConnect";
+import { legacyCliManagementCreate } from "./legacyCliManagement";
 import {
     desktopBrowserCommandValidate,
     desktopBrowserProxyTargetValidate,
@@ -514,6 +515,7 @@ function onboardingSenderRequire(sender: Electron.WebContents): void {
 }
 
 const legacyCli = legacyCliConnectorCreate(() => daemonController.launchEnvironment());
+const legacyCliManagement = legacyCliManagementCreate(() => daemonController.launchEnvironment());
 
 function legacyCliSenderCurrent(event: Electron.IpcMainInvokeEvent): () => boolean {
     onboardingSenderRequire(event.sender);
@@ -1792,6 +1794,12 @@ void app
         );
         ipcMain.handle(desktopIpc.legacyCliConnect, (event) =>
             legacyCli.connect(legacyCliSenderCurrent(event)),
+        );
+        ipcMain.handle(desktopIpc.legacyCliStatus, (event) =>
+            legacyCliManagement.read(legacyCliSenderCurrent(event)),
+        );
+        ipcMain.handle(desktopIpc.legacyCliReset, (event, request) =>
+            legacyCliManagement.reset(request, legacyCliSenderCurrent(event)),
         );
         ipcMain.handle(desktopIpc.onboardingProjectChoose, (event) => {
             onboardingSenderRequire(event.sender);
