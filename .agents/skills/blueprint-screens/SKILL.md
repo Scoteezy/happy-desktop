@@ -40,8 +40,9 @@ contracts in `DESIGN.md`, and it is not a reason to write tests.
 
     Options: `--only 1100x760` (substring filter on screen names), `--scale 1`
     (default 2× retina), `--settle 1500` (ms to let scenes and fades land).
-    Output: one PNG per screen plus an `index.html` contact sheet. A full run
-    takes about 20 seconds.
+    Output: one folder per window size (`1100x760/`, `720x640/`), each holding
+    that size's screens in flow order, plus an `index.html` contact sheet. A
+    full run takes about 20 seconds.
 
 3. Look at the PNGs yourself before showing them; fix anything obviously broken.
 4. Show the person: `open <out>/index.html` (full access), and list what changed.

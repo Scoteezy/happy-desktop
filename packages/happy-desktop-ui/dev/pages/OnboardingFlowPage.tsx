@@ -4,6 +4,7 @@ import type { OnboardingStage } from "../../src/OnboardingSteps";
 import { ThemeScope } from "../../src/ThemeScope";
 import type { WelcomeSlide } from "../../src/WelcomeDeck";
 import { WelcomeScreen } from "../../src/WelcomeScreen";
+import { SplashCover } from "../../src/SplashCover";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
 
 /** The page plan this page documents. The selector and the page header read the same value. */
@@ -48,7 +49,7 @@ function onboarding(view: LocalOnboardingView, reachedStage?: OnboardingStage) {
     );
 }
 
-/** First run in the order a new person meets it, one happy path. */
+/** First run in the order a new person meets it, one happy path, then a restart. */
 const screens: readonly { id: string; label: string; render: () => ReactNode }[] = [
     {
         id: "welcome",
@@ -74,6 +75,11 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
                     kind: "downloading",
                 },
             }),
+    },
+    {
+        id: "setup-starting",
+        label: "Setup · starting Happy Agent",
+        render: () => onboarding({ kind: "agent-setup", phase: { kind: "starting" } }),
     },
     {
         id: "subscriptions-checking",
@@ -132,13 +138,13 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
             ),
     },
     {
-        id: "connect-preparing",
-        label: "Connect phone · preparing",
+        id: "connect-code-loading",
+        label: "Connect phone · code on its way (shown at least 1s)",
         render: () =>
             onboarding(
                 {
                     kind: "happy-mobile-desktop",
-                    step: { appReady: true, kind: "link", phase: { kind: "preparing" } },
+                    step: { kind: "link", phase: { kind: "checking" } },
                 },
                 "connect-phone",
             ),
@@ -151,7 +157,6 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
                 {
                     kind: "happy-mobile-desktop",
                     step: {
-                        appReady: true,
                         kind: "link",
                         phase: {
                             data: "happy://terminal?AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -171,6 +176,15 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
                 { kind: "happy-mobile-desktop", step: { kind: "connected", online: true } },
                 "connect-phone",
             ),
+    },
+    {
+        id: "restart",
+        label: "Any later launch · until the workspace is ready",
+        render: () => (
+            <SplashCover quiet ready={false}>
+                {null}
+            </SplashCover>
+        ),
     },
 ];
 

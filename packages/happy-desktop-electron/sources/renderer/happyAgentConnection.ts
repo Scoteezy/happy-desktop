@@ -283,8 +283,8 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
  * state with the small set of services that remain owned by the desktop host.
  */
 export function happyAgentConnectionOpen(input: {
-    readonly prepareLegacyCli?: () => Promise<void>;
-    readonly connectLegacyCli?: () => Promise<void>;
+    /** The local desktop pairs Happy Mobile through the guided setup. */
+    readonly guidedMobileSetup?: boolean;
     readonly cloudHost: HappyAgentCloudHost;
     readonly host: HappyAgentHost;
     readonly deps: HappyAgentSessionDeps;
@@ -359,13 +359,11 @@ export function happyAgentConnectionOpen(input: {
         setupActive: input.happyAgentId !== "local" && welcome.get().welcomeAcknowledged,
         mobileSkipped: desktopHappyMobileOnboardingSkipped(input.happyAgentId),
         onMobileSkip: () => desktopHappyMobileOnboardingSkip(input.happyAgentId),
-        connectLegacyCli: input.connectLegacyCli,
-        prepareLegacyCli: input.prepareLegacyCli,
+        guidedMobileSetup: input.guidedMobileSetup,
     });
     const client: HappyAgentWorkspaceClient = happyAgentWorkspaceClientCreate({
         client: directClient,
-        connectLegacyCli: input.connectLegacyCli,
-        prepareLegacyCli: input.prepareLegacyCli,
+        guidedMobileSetup: input.guidedMobileSetup,
         cloudHost: input.cloudHost,
         connection: agentConnection,
         hostServices,

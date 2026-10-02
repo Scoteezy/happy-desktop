@@ -701,11 +701,7 @@ function onboardingStage(view: LocalOnboardingView): OnboardingStage {
         case "profile-required":
             return "profile";
         case "happy-mobile-desktop":
-            return view.step.kind === "link" && view.step.appReady
-                ? "connect-phone"
-                : view.step.kind === "connected"
-                  ? "connect-phone"
-                  : "get-app";
+            return view.step.kind === "intro" ? "get-app" : "connect-phone";
         case "happy-mobile-checking":
         case "happy-mobile-offer":
             return "get-app";

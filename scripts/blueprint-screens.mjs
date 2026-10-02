@@ -7,7 +7,8 @@
  * A screen is any element carrying `data-screen="<name>"`; `FullScreenSpecimen`
  * sets it from its `screen` prop. One Chromium, no assertions: this is for
  * looking at the UI quickly, not for proving it. Output goes to
- * `.context/screens/<page>/<timestamp>/` with an `index.html` contact sheet.
+ * `.context/screens/<page>/<timestamp>/`, one folder per window size, with an
+ * `index.html` contact sheet.
  */
 import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -93,19 +94,42 @@ try {
     );
     const selected = names.filter((name) => !values.only || name.includes(values.only));
     if (selected.length === 0) throw new Error(`No [data-screen] on #${page} matches.`);
-    for (const name of selected) {
-        const file = join(out, `${name}.png`);
-        await tab.locator(`[data-screen="${name}"]`).screenshot({ path: file });
+    // A name ending in a window size (`09-scan-1100x760`) goes in that size's
+    // folder as `09-scan.png`, so one size reads top to bottom as one flow.
+    const captures = selected.map((name) => {
+        const sized = /^(.*)-(\d+x\d+)$/u.exec(name);
+        return sized
+            ? { file: `${sized[2]}/${sized[1]}.png`, group: sized[2], name }
+            : { file: `${name}.png`, group: "", name };
+    });
+    for (const capture of captures) {
+        const file = join(out, capture.file);
+        await mkdir(join(file, ".."), { recursive: true });
+        await tab.locator(`[data-screen="${capture.name}"]`).screenshot({ path: file });
         console.log(relative(workspace, file));
     }
+    const groups = [...new Set(captures.map((capture) => capture.group))];
     await writeFile(
         join(out, "index.html"),
         `<!doctype html><meta charset="utf-8"><title>${page}</title>
 <style>body{margin:24px;background:#111;color:#ddd;font:13px system-ui}
+h2{font-size:15px;margin:8px 0 16px}
 figure{display:inline-block;margin:0 24px 32px 0;vertical-align:top}
 img{display:block;height:380px;border:1px solid #333}
 figcaption{margin-top:6px}</style>
-${selected.map((name) => `<figure><a href="${name}.png"><img src="${name}.png"></a><figcaption>${name}</figcaption></figure>`).join("\n")}`,
+${groups
+    .map(
+        (group) =>
+            (group ? `<h2>${group}</h2>\n` : "") +
+            captures
+                .filter((capture) => capture.group === group)
+                .map(
+                    (capture) =>
+                        `<figure><a href="${capture.file}"><img src="${capture.file}"></a><figcaption>${capture.file}</figcaption></figure>`,
+                )
+                .join("\n"),
+    )
+    .join("\n")}`,
     );
     console.log(relative(workspace, join(out, "index.html")));
 } finally {

@@ -69,8 +69,8 @@ export interface HappyAgentIntegrationStore {
 }
 
 export interface HappyAgentIntegrationStoreDeps {
-    readonly connectLegacyCli?: () => Promise<void>;
-    readonly prepareLegacyCli?: () => Promise<void>;
+    /** The local desktop pairs through the guided setup; remote Agents pair in place. */
+    readonly guidedMobileSetup?: boolean;
     readonly sync: HappyAgentSync;
     readonly client: Pick<
         HappyAgentClient,
@@ -117,12 +117,11 @@ export function happyAgentIntegrationStoreCreate(
         store.setState(current, true);
     };
     const setupStart = (): void => {
-        if (disposed || listeners.size === 0 || setup || !deps.connectLegacyCli) return;
+        if (disposed || listeners.size === 0 || setup || !deps.guidedMobileSetup) return;
         const session = happyDesktopMobileOnboardingStoreCreate({
             client: deps.client,
             sync: deps.sync,
-            connectLegacyCli: deps.connectLegacyCli,
-            prepareLegacyCli: deps.prepareLegacyCli,
+            guided: true,
         });
         setup = session;
         const project = () => {
@@ -224,7 +223,7 @@ export function happyAgentIntegrationStoreCreate(
 
     return {
         get: () => store.getState(),
-        ...(deps.connectLegacyCli
+        ...(deps.guidedMobileSetup
             ? {
                   mobileSetup: {
                       start: setupStart,
@@ -273,7 +272,7 @@ export function happyAgentIntegrationStoreCreate(
             );
         },
         happyIntegrationPair() {
-            if (deps.connectLegacyCli) {
+            if (deps.guidedMobileSetup) {
                 setupStart();
                 return;
             }
