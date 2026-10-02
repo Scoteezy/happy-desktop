@@ -47,7 +47,7 @@ it("offers and remembers the independent default-off voice switch even with no d
     );
     const control = view.getByRole("switch", { name: "Enable GPT-Live voice" });
     expect(control.getAttribute("aria-checked")).toBe("false");
-    expect(view.getByText("GPT-Live calling is not available yet")).toBeTruthy();
+    expect(view.getByText("Choose an account, then explicitly start a call")).toBeTruthy();
     fireEvent.click(control);
     expect(gptLive.get().gptLiveEnabled).toBe(true);
     expect(gptLiveStoreCreate(persistence).get().gptLiveEnabled).toBe(true);
