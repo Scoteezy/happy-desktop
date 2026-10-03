@@ -512,7 +512,7 @@ export function HappyAgentSettingsBlueprintPage() {
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
             <FullScreenSpecimen
-                detail="Mobile Access category: configured and connected, with the installation-wide unlink action"
+                detail="Mobile Access category: configured and connected, with the selected owner's disconnect action"
                 label="Happy Agent settings — Mobile Access"
                 number="01e"
             >
