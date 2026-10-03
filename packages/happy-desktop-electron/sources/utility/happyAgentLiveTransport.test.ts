@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CreateLiveSessionRequest, LiveSession } from "@slopus/happy-agent-client";
 import { happyAgentRendererUtilityServerCreate } from "./happyAgentRendererUtilityServer";
 import { HAPPY_AGENT_LIVE_WINDOW_HEADER, happyAgentLiveRoute } from "../main/happyAgentLiveRoute";
+import { localAgentSocketPath } from "../main/localAgentSocketPath";
 
 function createBody(id = "liveone", windowId = "window-a"): CreateLiveSessionRequest {
     return {
@@ -69,7 +70,7 @@ describe("native GPT-Live transport over the authenticated utility and daemon so
 
     async function fixture(creationWait?: Promise<void>) {
         directory = await mkdtemp(join(tmpdir(), "happy-native-live-"));
-        const socketPath = join(directory, "daemon.sock");
+        const socketPath = localAgentSocketPath(directory);
         const resources = new Map<string, LiveSession>();
         const requests = vi.fn();
         daemon = createServer(async (request, response) => {
