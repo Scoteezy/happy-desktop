@@ -1,9 +1,29 @@
 import "./styles.css";
 
 export { happyLogoBlackUrl, happyLogoWhiteUrl } from "./assets";
+export {
+    ChangedFileDiff,
+    type ChangedFileDiffComment,
+    type ChangedFileDiffCommentDraft,
+    type ChangedFileDiffCommentSide,
+    type ChangedFileDiffProps,
+} from "./ChangedFileDiff";
+export {
+    ReviewComment,
+    reviewCommentPlace,
+    type ReviewCommentProps,
+    type ReviewCommentSide,
+} from "./ReviewComment";
+export {
+    ReviewStream,
+    type ReviewStreamComment,
+    type ReviewStreamCommentDraft,
+    type ReviewStreamFile,
+    type ReviewStreamProps,
+    type ReviewStreamSingleFile,
+} from "./ReviewStream";
 export { GptLiveSettings, type GptLiveSettingsProps } from "./GptLiveSettings";
 export { GptLiveSurface, type GptLiveSurfaceProps } from "./GptLiveSurface";
-export { ChangedFileDiff, type ChangedFileDiffProps } from "./ChangedFileDiff";
 export { CompactActivityRow, type CompactActivityRowProps } from "./CompactActivityRow";
 export { compactCount } from "./countText";
 export { CodeBlock, codeBlockLanguage, type CodeBlockProps } from "./CodeBlock";

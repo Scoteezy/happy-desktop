@@ -112,6 +112,8 @@ function workspace(): HappyAgentWorkspaceStore {
         fileTreeCollapsed: new Set<string>(),
         fileSearch: { query: "", searching: false },
         workspaceFilesLoading: false,
+        fileComments: { comments: [] },
+        reviews: new Map(),
     };
     return {
         get: () => snapshot,
