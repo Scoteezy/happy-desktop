@@ -484,6 +484,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         onEffortChange={noop}
                         onPermissionModeChange={noop}
                         onScrollbarVisibilityChange={noop}
+                        onLinkOpenPlacementChange={noop}
+                        linkOpenPlacement="panel"
                         onTitleShimmerChange={noop}
                         permissionMode="auto"
                         permissionModeOptions={permissionModeOptions}
@@ -938,6 +940,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         onExperimentalFeaturesChange={noop}
                         onPermissionModeChange={noop}
                         onScrollbarVisibilityChange={noop}
+                        onLinkOpenPlacementChange={noop}
+                        linkOpenPlacement="panel"
                         onTitleShimmerChange={noop}
                         permissionMode="auto"
                         permissionModeOptions={permissionModeOptions}

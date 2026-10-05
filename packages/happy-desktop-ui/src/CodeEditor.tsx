@@ -16,10 +16,14 @@ import {
     Annotation,
     Compartment,
     EditorState,
+    RangeSet,
+    StateEffect,
+    StateField,
     Transaction,
     type Extension,
 } from "@codemirror/state";
 import {
+    Decoration,
     drawSelection,
     EditorView,
     highlightActiveLine,
@@ -28,6 +32,7 @@ import {
     keymap,
     lineNumbers,
     placeholder as placeholderExtension,
+    type DecorationSet,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { useCallback, useLayoutEffect, useRef, type CSSProperties } from "react";
@@ -97,6 +102,54 @@ const happyHighlightStyle = HighlightStyle.define([
     { tag: [tags.invalid], color: "var(--text-destructive)" },
 ]);
 
+/**
+ * The lines a reference named, marked in the text.
+ *
+ * Scrolling alone puts the region on screen and then leaves the reader to find
+ * it: a file opened at line 700 looks exactly like a file opened anywhere else.
+ * The band says which lines were being talked about, and it stays until the
+ * text changes or the reader puts the caret somewhere — at which point they
+ * have found what they came for and the mark is in the way.
+ */
+const revealSet = StateEffect.define<{ from: number; to: number }>();
+const revealLine = Decoration.line({ class: "happy-code-editor__reveal" });
+const revealField = StateField.define<DecorationSet>({
+    create: () => RangeSet.empty,
+    update(marks, transaction) {
+        for (const effect of transaction.effects) {
+            if (!effect.is(revealSet)) continue;
+            const lines = [];
+            for (let at = effect.value.from; at <= effect.value.to; ) {
+                const line = transaction.state.doc.lineAt(at);
+                lines.push(revealLine.range(line.from));
+                if (line.to >= transaction.state.doc.length) break;
+                at = line.to + 1;
+            }
+            return RangeSet.of(lines);
+        }
+        if (marks.size === 0) return marks;
+        // A band marks lines of the text it was put on: once that text is
+        // edited or replaced it is marking whatever moved under it. And once
+        // the reader has put the caret somewhere they have found what they came
+        // for, so the mark stops being an answer and starts being clutter.
+        return transaction.docChanged || transaction.selection !== undefined
+            ? RangeSet.empty
+            : marks;
+    },
+    provide: (field) => EditorView.decorations.from(field),
+});
+
+/** One region of an open file to show, and which request asked for it. */
+export type CodeEditorReveal = {
+    readonly startLine: number;
+    readonly endLine: number;
+    /**
+     * Changes on every ask. The region alone cannot say "show me this again",
+     * and following the same reference twice has to scroll back to it twice.
+     */
+    readonly requestId: number;
+};
+
 export type CodeEditorProps = {
     className?: string;
     "data-testid"?: string;
@@ -120,6 +173,11 @@ export type CodeEditorProps = {
     placeholder?: string;
     /** Soft-wraps long lines at the view edge instead of scrolling them. */
     wrap?: boolean;
+    /**
+     * A region to scroll to and mark. Applied whenever its `requestId` changes,
+     * and never in between, so an unrelated render cannot drag the view back.
+     */
+    reveal?: CodeEditorReveal;
 };
 
 type EditorBridge = {
@@ -163,7 +221,31 @@ interface EditorDocument {
 interface EditorHandle {
     document: EditorDocument;
     mounted: boolean;
+    /** The last ask this view has already scrolled to. */
+    revealRequestId?: number;
     view: EditorView;
+}
+
+/**
+ * Scrolls one region into view and bands it, if the text that is loaded
+ * actually reaches it.
+ *
+ * A tab can be asked for a region while its bytes are still being read, and
+ * marking line 700 of an empty document would spend the ask on nothing and
+ * leave the reader at the top of the file once it arrived. Not consuming it is
+ * what makes the reference work on a cold open as well as a warm one.
+ */
+function revealApply(view: EditorView, reveal: CodeEditorReveal): boolean {
+    const doc = view.state.doc;
+    if (reveal.startLine > doc.lines) return false;
+    const start = Math.max(reveal.startLine, 1);
+    const end = Math.min(Math.max(reveal.endLine, start), doc.lines);
+    const from = doc.line(start).from;
+    const to = doc.line(end).to;
+    view.dispatch({
+        effects: [revealSet.of({ from, to }), EditorView.scrollIntoView(from, { y: "center" })],
+    });
+    return true;
 }
 
 /** Controlled document replacements are not typing and must not enter undo. */
@@ -221,6 +303,7 @@ function editorDocumentCreate(props: CodeEditorProps, cacheable = true): EditorD
             bracketMatching(),
             indentUnit.of("    "),
             syntaxHighlighting(happyHighlightStyle),
+            revealField,
             language.of([]),
             editable.of(editorEditableExtensions(props)),
             keymap.of([
@@ -540,6 +623,10 @@ export function CodeEditor(props: CodeEditorProps) {
             incoming.owner = editor;
             editorBridgeUpdate(incoming.bridge, props);
             editor.view.setState(incoming.state);
+            // Another document is another text, and the band belonged to the
+            // one that left. Whatever region this file is still being asked for
+            // is asked for again below.
+            editor.revealRequestId = undefined;
         }
         editorBridgeUpdate(editor.document.bridge, props);
         // Typing already produced this text, and replacing a document the
@@ -578,6 +665,10 @@ export function CodeEditor(props: CodeEditorProps) {
             editor.view.dispatch({
                 effects: editor.document.editable.reconfigure(editorEditableExtensions(props)),
             });
+        }
+        const reveal = props.reveal;
+        if (reveal !== undefined && editor.revealRequestId !== reveal.requestId) {
+            if (revealApply(editor.view, reveal)) editor.revealRequestId = reveal.requestId;
         }
         editor.document.state = editor.view.state;
     });

@@ -10,6 +10,7 @@ import type {
     HappyAgentClockStore,
     HappyAgentCloudStore,
     HappyAgentTeamsStore,
+    HappyAgentFileLineRange,
     HappyAgentFileTabKind,
     HappyAgentFileTabSnapshot,
     HappyAgentConnectionStore,
@@ -70,6 +71,8 @@ import type {
     HappyAgentWorkspaceStore,
     HappyAgentWorkingWait,
     HappyAgentWorktreeId,
+    HappyAgentLinkOpenPlacement,
+    HappyAgentSettingsStore,
 } from "happy-desktop-state";
 import {
     HAPPY_AGENT_PANEL_FILE_VIEW_ID,
@@ -86,6 +89,7 @@ import {
     happyAgentSessionGroupIdOf,
     happyAgentOwnerAuthor,
     happyAgentWindowStoreNoop,
+    happyAgentSettingsStoreCreate,
     titleShimmerStoreNoop,
 } from "happy-desktop-state";
 import {
@@ -138,6 +142,9 @@ import {
     fileTreeRanked,
     filePathMatches,
     fileNameCompare,
+    type FileOpenHandler,
+    type LinkOpenHandler,
+    type LinkOpenPlacement,
     type FileTreeExpansion,
     type FileTreeBuildEntry,
     HappyAgentCreateBotPage,
@@ -399,6 +406,12 @@ export interface AppHappyAgentViewProps {
     /** Theme selection behind the sidebar footer's appearance toggle. */
     appearance: AppearanceStore;
     /**
+     * The window's own preferences, read here for where a clicked link goes
+     * and for the palette's settings rows. A host that keeps none supplies
+     * none, and the product defaults stand.
+     */
+    settings?: HappyAgentSettingsStore;
+    /**
      * Where this surface is running. In the Electron shell the window has no
      * native title bar, so the shell owns the traffic-light inset and the drag
      * lanes and the sidebar heading gives its space up to them; the browser
@@ -568,6 +581,9 @@ interface OpenGroup {
     /** The checkout's path, so a notice about it can name the directory. */
     readonly path: string;
 }
+
+/** What the window reads when the host supplies no settings store: the product defaults, unchanging. */
+const settingsStoreNone = happyAgentSettingsStoreCreate();
 
 const PANEL_TOGGLE_HINT = {
     aria: `${APP_SHORTCUTS.panelToggle.aria} ${APP_SHORTCUTS.panelToggleAlternate.aria}`,
@@ -1681,6 +1697,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         props.appearance.get,
         props.appearance.get,
     );
+    // Read through a store that never changes when the host supplies none, so
+    // the hook order does not depend on whether one was supplied.
+    const settingsStore = props.settings ?? settingsStoreNone;
+    const settings = useSyncExternalStore(
+        settingsStore.subscribe,
+        settingsStore.get,
+        settingsStore.get,
+    );
     const titleShimmerStore = props.titleShimmer ?? titleShimmerStoreNoop;
     const titleShimmerEnabled = useSyncExternalStore(
         titleShimmerStore.subscribe,
@@ -2114,6 +2138,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         onSettingsSectionOpen: props.onSettingsSectionOpen,
         onUpdateApply: props.onUpdateApply,
         store: commandPaletteStore,
+        settings: settingsStore,
         titleShimmer: titleShimmerStore,
     };
 
@@ -2207,6 +2232,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     onFileSelect={(groupId, chatId, path, kind, replace) =>
                         props.onFileSelect(active.id, groupId, chatId, path, kind, replace)
                     }
+                    onExternalLinkOpen={props.onExternalLinkOpen ?? openExternalLink}
+                    linkOpenDefault={settings.linkOpenPlacement}
                     platform={props.platform}
                     projects={active.projects}
                     happyAgentOnline={activeHappyAgentOnline}
@@ -2353,6 +2380,7 @@ interface HappyAgentPaletteSubject {
 interface HappyAgentPaletteActions {
     appearance: AppearanceStore;
     experiments: ExperimentsStore;
+    settings: HappyAgentSettingsStore;
     titleShimmer: TitleShimmerStore;
     store: CommandPaletteStore;
     happyAgentOnline: () => boolean;
@@ -2573,12 +2601,18 @@ function HappyAgentCommandPalette(
         props.titleShimmer.get,
         props.titleShimmer.get,
     );
+    const settings = useSyncExternalStore(
+        props.settings.subscribe,
+        props.settings.get,
+        props.settings.get,
+    );
     const results = commandPaletteResults({
         ...paletteContext(props, props.facts),
         experimentalFeaturesEnabled: experiments.experimentalFeaturesEnabled,
         query: palette.query,
         scrollbarVisibility: appearance.scrollbarVisibility,
         themeMode: appearance.mode,
+        linkOpenPlacement: settings.linkOpenPlacement,
         titleShimmerEnabled: titleShimmer.titleShimmerEnabled,
     });
     const sections = results.sections.map(
@@ -2738,6 +2772,26 @@ function paletteSettingControl(
                     label={row.label}
                 />
             );
+        case "linkOpenPlacement":
+            return (
+                <FormRow
+                    control={
+                        <SegmentedControl
+                            aria-label={row.label}
+                            onChange={(value) =>
+                                actions.settings.linkOpenPlacementUpdate(
+                                    value as HappyAgentLinkOpenPlacement,
+                                )
+                            }
+                            segments={[...row.control.segments]}
+                            size="small"
+                            value={row.control.value}
+                        />
+                    }
+                    description={row.description}
+                    label={row.label}
+                />
+            );
         case "experimentalFeatures":
             return (
                 <FormRow
@@ -2776,6 +2830,9 @@ function paletteSettingCommit(row: CommandPaletteSettingRow, actions: HappyAgent
             return;
         case "titleShimmer":
             actions.titleShimmer.titleShimmerUpdate(row.control.next);
+            return;
+        case "linkOpenPlacement":
+            actions.settings.linkOpenPlacementUpdate(row.control.next);
             return;
         case "experimentalFeatures":
             actions.experiments.experimentalFeaturesUpdate(row.control.next);
@@ -2970,6 +3027,10 @@ interface HappyAgentWorkspaceSurfaceProps {
         kind: HappyAgentFileTabKind,
         replace?: boolean,
     ): void;
+    /** Opens one web address in the machine's own browser rather than in an embedded tab. */
+    onExternalLinkOpen(url: string): void;
+    /** Which of the two places a plain click on a link goes, marked in its menu. */
+    linkOpenDefault: LinkOpenPlacement;
 }
 
 /**
@@ -3438,9 +3499,14 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 ? { commentDraft: workspace.fileComments.draft }
                 : {})}
             happyAgentOnline={happyAgentOnline}
-            onMainFileOpen={(path, kind) =>
-                props.onFileSelect(file.groupId, props.chatId, path, kind)
-            }
+            onMainFileOpen={(path, kind, selection) => {
+                // The address names the file; the region is the ask that came
+                // with it, and the tab keeps it because a file's own address is
+                // re-applied as a preview and leaves a region alone.
+                if (selection !== undefined)
+                    props.workspace.fileOpen(file.groupId, path, kind, selection);
+                props.onFileSelect(file.groupId, props.chatId, path, kind);
+            }}
             wrap={workspace.fileViewWrap}
             {...(access.writeRefusal === undefined ? {} : { writeRefusal: access.writeRefusal })}
             {...(connectionRefusal === undefined ? {} : { saveRefusal: connectionRefusal })}
@@ -3621,6 +3687,20 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 modelUsageWatch={modelUsageWatch}
                 activitySelected={panel.open && panel.activeViewId === "activity"}
                 conversation={conversation}
+                {...(workspace.fileOpenFailure === undefined
+                    ? {}
+                    : {
+                          notice: (
+                              <Banner
+                                  data-testid="file-reference-failure"
+                                  onDismiss={() => props.workspace.fileOpenFailureDismiss()}
+                                  title={`Could not open ${workspace.fileOpenFailure.path}`}
+                                  tone="warning"
+                              >
+                                  {workspace.fileOpenFailure.message}
+                              </Banner>
+                          ),
+                      })}
                 emptyContent={
                     openBot?.systemKey === "chief_of_staff" &&
                     conversation.type === "ready" &&
@@ -3645,11 +3725,26 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     ? { onCreate: () => groupConversationCreate(openGroup) }
                     : {})}
                 onChatSelect={props.onChatSelect}
-                onFileOpen={(path) => {
+                onFileOpen={(path, selection) => {
                     if (!happyAgentOnline() || !openGroup.create) return;
                     const target = workspacePathRelative(path, openGroup.create.cwd);
-                    props.workspace.filePanelOpen(openGroup.id, target, fileTabKind(target));
+                    // A reference is a claim about the checkout, and the
+                    // checkout is asked before a tab is opened on the claim.
+                    props.workspace.fileReferenceOpen(
+                        openGroup.id,
+                        target,
+                        fileTabKind(target),
+                        selection,
+                    );
                 }}
+                onLinkOpen={(url, placement) => {
+                    // The side panel's browser tab is this workspace's own; the
+                    // machine's browser is the host's door, and only the host
+                    // knows whether it has one.
+                    if (placement === "browser") props.onExternalLinkOpen(url);
+                    else props.workspace.panel.browserAdd(url);
+                }}
+                linkOpenDefault={props.linkOpenDefault}
                 canAbort={conversationCanAbort}
                 readOnly={conversationReadOnly}
                 happyAgentOnline={happyAgentOnline}
@@ -4365,7 +4460,11 @@ function HappyAgentFileBody(props: {
     /** Re-reads Happy Agent availability when a retained file handler fires. */
     happyAgentOnline: () => boolean;
     /** Addresses a linked file opened from a main-content file tab. */
-    onMainFileOpen(path: string, kind: HappyAgentFileTabKind): void;
+    onMainFileOpen(
+        path: string,
+        kind: HappyAgentFileTabKind,
+        selection?: HappyAgentFileLineRange,
+    ): void;
     /** Why this file cannot be edited or saved, or absent when it can. */
     writeRefusal?: string;
     /** Why the current local draft cannot be persisted to the Happy Agent. */
@@ -4382,11 +4481,12 @@ function HappyAgentFileBody(props: {
      * one followed in the panel stays in the panel, because the reader is
      * reading the conversation and the panel is where they are reading.
      */
-    const linkedFileOpen = (target: string): void => {
+    const linkedFileOpen: FileOpenHandler = (target, selection): void => {
         if (!props.happyAgentOnline()) return;
         const kind = fileTabKind(target);
-        if (file.placement === "panel") workspace.filePanelOpen(file.groupId, target, kind);
-        else props.onMainFileOpen(target, kind);
+        if (file.placement === "panel")
+            workspace.fileReferenceOpen(file.groupId, target, kind, selection);
+        else props.onMainFileOpen(target, kind, selection);
     };
     // Typing into a document that could never be written back is worse than not
     // offering the editor at all: the reader loses what they typed and learns
@@ -4455,8 +4555,11 @@ function HappyAgentFileBody(props: {
                                   /* Whatever the link names — another document,
                                      a picture — follows the same file-open path
                                      as the sidebar. */
-                                  onFileOpen={(href) =>
-                                      linkedFileOpen(documentLinkResolve(file.path, href))
+                                  onFileOpen={(href, selection) =>
+                                      linkedFileOpen(
+                                          documentLinkResolve(file.path, href),
+                                          selection,
+                                      )
                                   }
                                   {...(markdownCacheKey === undefined
                                       ? {}
@@ -4482,6 +4585,7 @@ function HappyAgentFileBody(props: {
                 onWrapChange={(wrap) => workspace.fileViewWrapUpdate(wrap)}
                 path={file.path}
                 readOnly={file.saving || !writable}
+                {...(file.reveal === undefined ? {} : { reveal: file.reveal })}
                 saveDisabled={saveDisabled}
                 saving={file.saving}
                 {...(status === undefined ? {} : { status })}
@@ -4689,7 +4793,7 @@ function HappyAgentChangedFilePreview(props: {
     file: HappyAgentFileTabSnapshot;
     openDisabled: boolean;
     /** Opens a linked file on the side this one is being read on. */
-    onFileOpen: (path: string) => void;
+    onFileOpen: FileOpenHandler;
     text: string;
     /** The file's characters, editable, where this checkout can be written. */
     editor?: ReactNode;
@@ -4727,9 +4831,9 @@ function HappyAgentChangedFilePreview(props: {
                   })}
             // A document followed out of the changed list lands beside it as the
             // file itself, the same way one followed out of a file tab does.
-            onFileOpen={(href) => {
+            onFileOpen={(href, selection) => {
                 if (props.openDisabled) return;
-                props.onFileOpen(documentLinkResolve(file.path, href));
+                props.onFileOpen(documentLinkResolve(file.path, href), selection);
             }}
             path={file.path}
         />
@@ -4931,7 +5035,11 @@ function HappyAgentConversationBody(props: {
     /** Starts a session here, when this workspace can host one. */
     onCreate?: () => void;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
-    onFileOpen: (path: string) => void;
+    onFileOpen: FileOpenHandler;
+    /** Opens a web link a message carries where its context menu asked for it. */
+    onLinkOpen: LinkOpenHandler;
+    /** Which of the two places a plain click on a link goes, marked in its menu. */
+    linkOpenDefault: LinkOpenPlacement;
     readOnly: boolean;
     /** Reads current transport health when a Happy Agent-backed action is invoked. */
     happyAgentOnline: () => boolean;
@@ -4967,6 +5075,8 @@ function HappyAgentConversationBody(props: {
                 now={props.now}
                 onChatSelect={props.onChatSelect}
                 onFileOpen={props.onFileOpen}
+                onLinkOpen={props.onLinkOpen}
+                linkOpenDefault={props.linkOpenDefault}
                 canAbort={props.canAbort}
                 readOnly={props.readOnly}
                 happyAgentOnline={props.happyAgentOnline}
@@ -5109,8 +5219,12 @@ function HappyAgentConversationSurface(props: {
     notice?: ReactNode;
     now: number;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
-    /** Opens a file the transcript names, in the panel beside it. */
-    onFileOpen: (path: string) => void;
+    /** Opens a file the transcript names, in the panel beside it, at the lines it named. */
+    onFileOpen: FileOpenHandler;
+    /** Opens a web link a message carries where its context menu asked for it. */
+    onLinkOpen: LinkOpenHandler;
+    /** Which of the two places a plain click on a link goes, marked in its menu. */
+    linkOpenDefault: LinkOpenPlacement;
     readOnly: boolean;
     /** Reads current transport health when a Happy Agent-backed action is invoked. */
     happyAgentOnline: () => boolean;
@@ -5339,9 +5453,11 @@ function HappyAgentConversationSurface(props: {
             onComposerValueChange={(value) =>
                 reactFrameInputUpdate(workspace, () => workspace.composerTextUpdate(value))
             }
-            onFileOpen={(path) => {
-                if (props.happyAgentOnline()) props.onFileOpen(path);
+            onFileOpen={(path, selection) => {
+                if (props.happyAgentOnline()) props.onFileOpen(path, selection);
             }}
+            onLinkOpen={props.onLinkOpen}
+            linkOpenDefault={props.linkOpenDefault}
             onImageOpen={(messageId, attachmentId) => {
                 if (props.happyAgentOnline()) workspace.imageOpen(messageId, attachmentId);
             }}
