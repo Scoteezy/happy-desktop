@@ -25,7 +25,7 @@ export function ConversationErrorCardPage() {
                 </div>
             </Specimen>
             <Specimen
-                detail="An explicit click sends the quoted diagnostic. Pending, unavailable, and failed handoffs remain honest about delivery."
+                detail="An explicit click adds the quoted diagnostic to the Chief of Staff's draft and opens that conversation; nothing is sent. Pending, unavailable, and failed handoffs say so."
                 label="Chief of Staff handoff"
                 number="04"
                 stage="surface"
@@ -62,12 +62,6 @@ export function ConversationErrorCardPage() {
                             status: "failed",
                             reason: "Could not reach this Happy Agent. Your error and manual recovery options are unchanged.",
                         }}
-                        onAssistanceRequest={() => {}}
-                        reason="The provider connection closed."
-                        title="Failure"
-                    />
-                    <ConversationErrorCard
-                        assistance={{ status: "sent" }}
                         onAssistanceRequest={() => {}}
                         reason="The provider connection closed."
                         title="Failure"

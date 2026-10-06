@@ -380,10 +380,13 @@ export interface ConversationServiceNoticeEntry extends ConversationNoticeEntryB
     readonly source?: { readonly messageId: string; readonly runId: string };
 }
 
+/**
+ * Whether an error can be handed to the Chief of Staff. A handoff writes that
+ * conversation's draft and opens it, so once written it is ready again.
+ */
 export type ConversationErrorAssistance =
     | { readonly status: "ready" }
     | { readonly status: "pending" }
-    | { readonly status: "sent" }
     | { readonly status: "failed"; readonly reason: string }
     | { readonly status: "unavailable"; readonly reason: string };
 

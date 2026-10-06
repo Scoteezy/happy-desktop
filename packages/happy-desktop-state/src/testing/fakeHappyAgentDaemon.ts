@@ -56,6 +56,10 @@ export interface FakeHappyAgentDaemon {
     /** Seed one agent inside a workspace (or a project's root workspace). */
     agentSeed(workspaceId: string, overrides?: Partial<Agent>): Agent;
     agentGet(agentId: string): Agent;
+    /** Replace one agent's saved composer draft, served by its bootstrap. */
+    draftSeed(agentId: string, draft: AgentDraftSnapshot): void;
+    /** Replace one agent's stored message mode, served by its bootstrap. */
+    modeSeed(agentId: string, mode: MessageMode | null): void;
     /** Replace an agent snapshot wholesale; the next read serves this object. */
     agentReplace(agent: Agent): void;
     /** Replace one agent's durable history served by `getMessages`. */
@@ -844,6 +848,12 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         workspaceSeed: seedWorkspace,
         agentSeed: seedAgent,
         agentGet: agentRequired,
+        draftSeed(agentId, draft) {
+            drafts.set(agentId, draft);
+        },
+        modeSeed(agentId, mode) {
+            modes.set(agentId, mode);
+        },
         agentReplace(agent) {
             agents.set(agent.id, agent);
         },

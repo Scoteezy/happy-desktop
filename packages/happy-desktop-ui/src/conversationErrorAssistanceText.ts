@@ -8,20 +8,18 @@ export function conversationErrorAssistanceText(assistance: ConversationErrorAss
 } {
     switch (assistance.status) {
         case "ready":
-            return { label: "Have Chief of Staff take care of it", disabled: false };
+            return { label: "Ask Chief of Staff", disabled: false };
         case "pending":
-            return { label: "Sending to Chief of Staff…", disabled: true };
-        case "sent":
-            return { label: "Open Chief of Staff conversation", disabled: false };
+            return { label: "Opening Chief of Staff…", disabled: true };
         case "failed":
             return {
-                label: "Retry Chief of Staff handoff",
-                detail: `Handoff failed: ${assistance.reason}`,
+                label: "Ask Chief of Staff",
+                detail: `Could not prepare the draft: ${assistance.reason}`,
                 disabled: false,
             };
         case "unavailable":
             return {
-                label: "Have Chief of Staff take care of it",
+                label: "Ask Chief of Staff",
                 detail: assistance.reason,
                 disabled: true,
             };
