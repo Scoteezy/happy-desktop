@@ -59,6 +59,7 @@ export function happyAgentModelCatalogProject(config: DaemonConfig): HappyAgentM
             );
             return {
                 enabled: provider.enabled,
+                hidden: provider.hidden ?? false,
                 id: providerId,
                 type: provider.type,
                 models,

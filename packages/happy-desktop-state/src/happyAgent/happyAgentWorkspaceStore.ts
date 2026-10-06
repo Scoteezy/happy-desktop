@@ -6,10 +6,14 @@ import type {
     ConversationErrorAssistanceEntry,
 } from "../conversation/conversationEntry.js";
 import { happyAgentChatDraftAppend } from "./happyAgentChatDraftAppend.js";
+import {
+    happyAgentChiefOfStaffRequestText,
+    type HappyAgentChiefOfStaffRequest,
+} from "./happyAgentChiefOfStaffRequest.js";
 import { happyAgentErrorAssistanceText } from "./happyAgentErrorAssistance.js";
 import type { ConversationSummary } from "../conversation/conversationSummary.js";
 import type { Loadable } from "../conversation/loadable.js";
-import type { UserError } from "../types.js";
+import { UserError } from "../types.js";
 import {
     composerStoreCreate,
     type ComposerAttachment,
@@ -1368,6 +1372,12 @@ export interface HappyAgentWorkspaceStore {
      * already typed there, then requests navigation. Nothing is sent.
      */
     errorAssistanceRequest(entryId: string): void;
+    /**
+     * Adds one labelled request to this daemon's Chief of Staff draft, below
+     * anything already typed there, then requests navigation. Nothing is sent,
+     * and the draft keeps the Chief of Staff's own model and access mode.
+     */
+    chiefOfStaffDraftAppend(request: HappyAgentChiefOfStaffRequest): Promise<void>;
     /** Replaces one explicitly addressed conversation's composer draft. */
     draftUpdate(sessionId: HappyAgentSessionId, message: string): Promise<void>;
     /** Adds an unsent suggestion without replacing an existing draft or duplicating an unchanged retry. */
@@ -6120,6 +6130,23 @@ export function happyAgentWorkspaceStoreCreate(
                     recompute();
                 },
             );
+        },
+        async chiefOfStaffDraftAppend(request) {
+            const chief = list.get().bots.find((bot) => bot.systemKey === "chief_of_staff");
+            if (!chief) throw new UserError("Chief of Staff is not available on this Happy Agent.");
+            const location = {
+                sessionId: chief.conversation.id as HappyAgentSessionId,
+                groupId: chief.workspaceId,
+            };
+            try {
+                await draftAppendRun(
+                    location.sessionId,
+                    happyAgentChiefOfStaffRequestText(request),
+                );
+            } catch (error) {
+                throw happyAgentUserError(error);
+            }
+            if (!disposed) output({ type: "conversationOpenRequested", location });
         },
         async voiceSessionAcquire(sessionId) {
             const acquired = await client.chat(sessionId);

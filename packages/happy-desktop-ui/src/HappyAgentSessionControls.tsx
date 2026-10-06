@@ -247,8 +247,7 @@ const PERMISSION_LABELS: Record<HappyAgentPermissionMode, string> = {
 };
 
 function currentModelName(menus: HappyAgentMenusSnapshot): string {
-    const current = menus.modelOptions.find((option) => option.current);
-    return current?.name ?? menus.currentModelId;
+    return menus.currentOption?.name ?? menus.currentModelId;
 }
 
 function currentEffortLabel(menus: HappyAgentMenusSnapshot): string {

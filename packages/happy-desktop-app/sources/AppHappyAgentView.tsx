@@ -4933,7 +4933,8 @@ function HappyAgentGroupComposer(props: {
 }) {
     const workspace = props.workspace;
     const draftMenus = props.draftMenus;
-    const modelsNotConfigured = draftMenus?.modelOptions.length === 0;
+    const modelsNotConfigured =
+        draftMenus?.modelOptions.length === 0 && draftMenus.currentAccount !== "hidden";
     return (
         <ConversationView
             agentAuthor={agentAuthor}
@@ -4963,6 +4964,8 @@ function HappyAgentGroupComposer(props: {
                     <ComposerModelControl
                         {...happyAgentComposerModelControlProps(draftMenus, {
                             usageWatch: props.modelUsageWatch,
+                            onChiefOfStaffAsk: (request) =>
+                                workspace.chiefOfStaffDraftAppend(request),
                             onEffortChange: (effort?: HappyAgentThinkingLevel) =>
                                 workspace.sessionEffortUpdate(effort),
                             onModelChange: (selection: HappyAgentModelSelection) =>
@@ -5289,7 +5292,9 @@ function HappyAgentConversationSurface(props: {
      * visible and keep showing what the session actually runs, which is what a
      * reader looking at someone else's chat came to find out.
      */
-    const modelsNotConfigured = conversation.menus?.modelOptions.length === 0;
+    const modelsNotConfigured =
+        conversation.menus?.modelOptions.length === 0 &&
+        conversation.menus.currentAccount !== "hidden";
     const composerDisabled = props.readOnly || modelsNotConfigured;
     const configurable = !composerDisabled && sendRefusal === undefined;
     const activeActivity = happyAgentActiveActivityCounts(conversation);
@@ -5360,6 +5365,9 @@ function HappyAgentConversationSurface(props: {
                         <ComposerModelControl
                             {...happyAgentComposerModelControlProps(conversation.menus, {
                                 usageWatch: props.modelUsageWatch,
+                                sessionId: conversation.conversationId as HappyAgentSessionId,
+                                onChiefOfStaffAsk: (request) =>
+                                    workspace.chiefOfStaffDraftAppend(request),
                                 // The daemon refuses a model change while a run
                                 // is active or queued behind it, so the control
                                 // says so rather than accepting a choice the
@@ -5931,6 +5939,7 @@ function HappyAgentCreateBotSurface(props: {
                     <ComposerModelControl
                         {...happyAgentComposerModelControlProps(menus, {
                             usageWatch: modelUsageWatch,
+                            onChiefOfStaffAsk: (request) => store.chiefOfStaffDraftAppend(request),
                             onEffortChange: (effort?: HappyAgentThinkingLevel) =>
                                 store.botCreateEffortUpdate(effort),
                             onModelChange: (selection: HappyAgentModelSelection) =>

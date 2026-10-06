@@ -100,7 +100,9 @@ export function happyAgentSessionSelectionDefault(
             ? declared
             : catalog.providers.find(
                   (candidate) =>
-                      candidate.disabledReason === undefined && candidate.models.length > 0,
+                      candidate.disabledReason === undefined &&
+                      !candidate.hidden &&
+                      candidate.models.length > 0,
               );
     const model = declaredModel ?? provider?.models[0];
     return {

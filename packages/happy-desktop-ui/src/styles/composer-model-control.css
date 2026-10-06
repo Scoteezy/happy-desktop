@@ -423,6 +423,128 @@
     cursor: pointer;
 }
 
+/* "Manage accounts" is a footer line like the benchmarks link, as a button. */
+.happy-composer-model-control__benchmarks:disabled {
+    cursor: default;
+    opacity: 0.48;
+}
+
+.happy-composer-model-control__footer-error {
+    padding: 0 10px 4px;
+    color: var(--text-destructive);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/* The mark beside the pill for a selected account that is not an ordinary
+ * choice: a quiet grey triangle for a hidden one, red for one that is gone. */
+.happy-composer-model-control__notice-anchor {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+}
+
+.happy-composer-model-control__notice {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.happy-composer-model-control__notice[data-kind="unavailable"] {
+    color: var(--warning-critical);
+    cursor: pointer;
+}
+
+.happy-composer-model-control__notice[data-kind="unavailable"]:hover,
+.happy-composer-model-control__notice-anchor[data-open]
+    .happy-composer-model-control__notice[data-kind="unavailable"] {
+    background: var(--surface-ripple);
+}
+
+.happy-composer-model-control__notice:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+/* While its popover is open, the trigger's tooltip would only repeat the
+ * popover's own label over it. */
+.happy-composer-model-control__notice-anchor[data-open] .happy-tooltip__bubble {
+    display: none;
+}
+
+/* Full-window transparent dismissal layer beneath the popover; leaves flow. */
+.happy-composer-model-control__notice-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 29;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: default;
+}
+
+/* Opens above the pill at the composer's trailing edge, like the menu, and
+ * leaves the flow. */
+.happy-composer-model-control__notice-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 320px;
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--modal-border);
+    border-radius: 14px;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.happy-composer-model-control__notice-explanation {
+    margin: 0;
+}
+
+.happy-composer-model-control__notice-request {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface-pressed);
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.happy-composer-model-control__notice-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.happy-composer-model-control__notice-error {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--text-destructive);
+    font-size: 12px;
+    line-height: 16px;
+}
+
 /* A hairline runs exactly across the text column: from the left edge shared by
  * headers, names, and the benchmarks link to the matching right inset, clear
  * of the panel border. */

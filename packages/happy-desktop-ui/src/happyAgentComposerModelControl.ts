@@ -1,14 +1,20 @@
-import type {
-    HappyAgentMenusSnapshot,
-    HappyAgentModelSelection,
-    HappyAgentProviderUsageSnapshot,
-    HappyAgentProviderUsageStore,
-    HappyAgentProviderUsageWindow,
-    HappyAgentThinkingLevel,
+import {
+    happyAgentChiefOfStaffRequestText,
+    type HappyAgentChiefOfStaffRequest,
+    type HappyAgentMenusSnapshot,
+    type HappyAgentModelOption,
+    type HappyAgentModelSelection,
+    type HappyAgentProviderUsageSnapshot,
+    type HappyAgentProviderUsageStore,
+    type HappyAgentProviderUsageWindow,
+    type HappyAgentSessionId,
+    type HappyAgentThinkingLevel,
 } from "happy-desktop-state";
 import type {
     ComposerModelAccount,
+    ComposerModelAccountNotice,
     ComposerModelAccountUsage,
+    ComposerModelChoice,
     ComposerModelControlProps,
     ComposerModelService,
     ComposerModelUsageWatch,
@@ -35,12 +41,55 @@ function serviceName(type: string): string {
     );
 }
 
+function choiceOf(option: HappyAgentModelOption): ComposerModelChoice {
+    return {
+        id: option.modelId,
+        label: option.name,
+        efforts: option.efforts.map((effort) => ({ id: effort.level, label: effort.label })),
+        effort: option.rememberedEffort ?? option.defaultEffort,
+        disabled: option.disabled,
+    };
+}
+
+/**
+ * The notice beside the pill for a selection whose account is not an ordinary
+ * choice. An unavailable one carries the exact request it would hand the
+ * Chief of Staff, so the reader sees it before asking.
+ */
+function accountNoticeOf(
+    menus: HappyAgentMenusSnapshot,
+    sessionId: HappyAgentSessionId | undefined,
+    ask: ((request: HappyAgentChiefOfStaffRequest) => Promise<void>) | undefined,
+): ComposerModelAccountNotice | undefined {
+    if (menus.currentAccount === "hidden") return { kind: "hidden" };
+    if (menus.currentAccount === "available" || ask === undefined) return undefined;
+    const request: HappyAgentChiefOfStaffRequest = {
+        kind: "accountUnavailable",
+        providerId: menus.currentProviderId,
+        modelId: menus.currentModelId,
+        reason: menus.currentAccount,
+        ...(sessionId === undefined ? {} : { sessionId }),
+    };
+    return {
+        kind: "unavailable",
+        explanation:
+            menus.currentAccount === "disabled"
+                ? `The ${menus.currentProviderId} account is switched off, so nothing is sent to it.`
+                : `The ${menus.currentProviderId} account is no longer configured on this Happy Agent.`,
+        request: happyAgentChiefOfStaffRequestText(request),
+        onAsk: () => ask(request),
+    };
+}
+
 /**
  * Maps a session menu snapshot into props for the shared composer model pill.
  *
  * Providers sharing a configured type are accounts of one service, listed in
  * catalog order. The service holding the current model opens on that model's
- * provider; any other service opens on its first account.
+ * provider; any other service opens on its first account. A hidden account is
+ * not listed, but a selection on it stays, named beside a grey notice; one
+ * that is switched off or gone gets a red notice that can ask the Chief of
+ * Staff for help.
  */
 export function happyAgentComposerModelControlProps(
     menus: HappyAgentMenusSnapshot,
@@ -49,6 +98,10 @@ export function happyAgentComposerModelControlProps(
         readonly onEffortChange: (effort?: HappyAgentThinkingLevel) => void;
         readonly disabled?: boolean;
         readonly usageWatch?: ComposerModelUsageWatch;
+        /** The conversation the pill belongs to; absent before it is started. */
+        readonly sessionId?: HappyAgentSessionId;
+        /** Adds a request to the Chief of Staff's draft and opens it. Nothing is sent. */
+        readonly onChiefOfStaffAsk?: (request: HappyAgentChiefOfStaffRequest) => Promise<void>;
     },
 ): ComposerModelControlProps {
     const services: (ComposerModelService & { accounts: ComposerModelAccount[] })[] = [];
@@ -75,28 +128,22 @@ export function happyAgentComposerModelControlProps(
             service.accounts.push(account);
         }
         if (option.providerId === menus.currentProviderId) service.account = option.providerId;
-        account.models = [
-            ...account.models,
-            {
-                id: option.modelId,
-                label: option.name,
-                efforts: option.efforts.map((effort) => ({
-                    id: effort.level,
-                    label: effort.label,
-                })),
-                effort: option.rememberedEffort ?? option.defaultEffort,
-                disabled: option.disabled,
-            },
-        ];
+        account.models = [...account.models, choiceOf(option)];
     }
-    const current = menus.modelOptions.find(
+    const listed = menus.modelOptions.some(
         (option) =>
             option.providerId === menus.currentProviderId &&
             option.modelId === menus.currentModelId,
     );
+    const current = menus.currentOption;
+    const accountNotice = accountNoticeOf(menus, handlers.sessionId, handlers.onChiefOfStaffAsk);
+    const ask = handlers.onChiefOfStaffAsk;
     return {
         disabled: handlers.disabled,
         services,
+        ...(current === undefined || listed ? {} : { selectionModel: choiceOf(current) }),
+        ...(accountNotice === undefined ? {} : { accountNotice }),
+        ...(ask === undefined ? {} : { onAccountsManage: () => ask({ kind: "accountsManage" }) }),
         selection: {
             service: current?.providerType ?? menus.currentProviderId,
             account: menus.currentProviderId,
@@ -105,7 +152,7 @@ export function happyAgentComposerModelControlProps(
         },
         usageWatch: handlers.usageWatch,
         onSelect: (selection) => {
-            const effort = menus.modelOptions
+            const effort = [...menus.modelOptions, ...(current === undefined ? [] : [current])]
                 .find(
                     (option) =>
                         option.providerId === selection.account &&

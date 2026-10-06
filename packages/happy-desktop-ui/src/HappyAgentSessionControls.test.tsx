@@ -9,7 +9,7 @@ import "./styles/happy-agent-chat.css";
 import { HappyAgentSessionControls } from "./HappyAgentSessionControls";
 import { createRenderer } from "./testing";
 
-const menus: HappyAgentMenusSnapshot = {
+const menusListed: Omit<HappyAgentMenusSnapshot, "currentOption"> = {
     modelOptions: [
         {
             providerId: "codex",
@@ -52,9 +52,15 @@ const menus: HappyAgentMenusSnapshot = {
     ],
     currentProviderId: "codex",
     currentModelId: "gpt-5.6-sol",
+    currentAccount: "available",
     currentEffort: "medium",
     currentPermissionMode: "auto",
     currentServiceTier: undefined,
+};
+
+const menus: HappyAgentMenusSnapshot = {
+    ...menusListed,
+    currentOption: menusListed.modelOptions[0],
 };
 
 it("opens a control menu, selects an option, and closes on outside pointer-down", async () => {

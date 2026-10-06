@@ -343,7 +343,7 @@ const happyAgentModelEfforts = [
     { level: "high", label: "High" },
 ] as const;
 
-export const happyAgentMenus: HappyAgentMenusSnapshot = {
+const happyAgentMenusListed: Omit<HappyAgentMenusSnapshot, "currentOption"> = {
     modelOptions: [
         {
             providerId: "codex",
@@ -403,9 +403,15 @@ export const happyAgentMenus: HappyAgentMenusSnapshot = {
     ],
     currentProviderId: "codex",
     currentModelId: "gpt-5.6-sol",
+    currentAccount: "available",
     currentEffort: "medium",
     currentPermissionMode: "auto",
     currentServiceTier: undefined,
+};
+
+export const happyAgentMenus: HappyAgentMenusSnapshot = {
+    ...happyAgentMenusListed,
+    currentOption: happyAgentMenusListed.modelOptions[0],
 };
 
 export const happyAgentUserInput: Extract<ConversationRequest, { kind: "userInput" }> = {

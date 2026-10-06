@@ -8,8 +8,10 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
     type WheelEvent as ReactWheelEvent,
 } from "react";
+import { Button } from "./Button";
 import { Icon } from "./Icon";
 import { ScrollArea } from "./Scrollbar";
+import { Tooltip } from "./Tooltip";
 import { Octicon } from "./vectorIcons/VectorIcon";
 
 export type ComposerModelEffort = {
@@ -61,6 +63,23 @@ export type ComposerModelSelection = {
     effort?: string;
 };
 /**
+ * Why the selected account is shown beside the pill although it is not one of
+ * the choices. A `hidden` account still works and stays selected; it is only
+ * kept out of the lists. An `unavailable` one no longer serves the
+ * conversation, and comes with a prepared request for help.
+ */
+export type ComposerModelAccountNotice =
+    | { kind: "hidden" }
+    | {
+          kind: "unavailable";
+          /** One line saying what happened to the account. */
+          explanation: string;
+          /** The exact text `onAsk` hands over, shown before it is asked. */
+          request: string;
+          /** Asks for help. A rejection's message is shown beside the button. */
+          onAsk(): Promise<void>;
+      };
+/**
  * Streams live account usage, keyed by account id, for as long as the menu is
  * open. The control calls it when the menu appears and calls the returned
  * release when it goes, so nothing is read while nobody looks. An account
@@ -88,6 +107,8 @@ export type ComposerModelControlPreview = {
     accountHover?: string;
     /** Service whose header carries the keyboard focus ring. */
     accountFocus?: string;
+    /** The account notice's tooltip or popover, shown open. */
+    accountNoticeOpen?: boolean;
 };
 export type ComposerModelControlProps = {
     className?: string;
@@ -95,6 +116,19 @@ export type ComposerModelControlProps = {
     disabled?: boolean;
     services: readonly ComposerModelService[];
     selection?: ComposerModelSelection;
+    /**
+     * The selected model when its account is not among `services`' choices —
+     * hidden, switched off, or gone — so the pill can still name it and offer
+     * its efforts.
+     */
+    selectionModel?: ComposerModelChoice;
+    /** Shown beside the pill when the selected account is not an ordinary choice. */
+    accountNotice?: ComposerModelAccountNotice;
+    /**
+     * Adds "Manage accounts" to the model list, above the benchmarks link. The
+     * menu closes once it settles; a rejection's message is shown under it.
+     */
+    onAccountsManage?(): Promise<void>;
     /**
      * A model, its account, its effort, or several changed. Picking from a list
      * closes the menu; stepping with horizontal scroll or arrow keys keeps it open.
@@ -317,6 +351,125 @@ function UsageWindow(props: { window: ComposerModelUsageWindow }) {
     );
 }
 
+function failureMessage(error: unknown, fallback: string) {
+    return error instanceof Error && error.message ? error.message : fallback;
+}
+
+/**
+ * The mark beside the pill for a selected account that is not an ordinary
+ * choice. A hidden one is a quiet grey triangle that explains itself on hover.
+ * An unavailable one is red and opens a small popover above it, holding the
+ * request for help and the one button that asks for it.
+ */
+function AccountNotice(props: { notice: ComposerModelAccountNotice; open?: boolean }) {
+    const notice = props.notice;
+    const [open, setOpen] = useState(props.open ?? false);
+    const [ask, setAsk] = useState<{ pending: boolean; error?: string }>({ pending: false });
+    if (notice.kind === "hidden")
+        return (
+            <Tooltip label="Hidden account" open={props.open}>
+                <span
+                    aria-label="Hidden account"
+                    className="happy-composer-model-control__notice"
+                    data-happy-desktop-ui="composer-model-control-notice"
+                    data-kind="hidden"
+                    role="img"
+                >
+                    <Octicon name="alert" size={14} />
+                </span>
+            </Tooltip>
+        );
+    return (
+        <div
+            className="happy-composer-model-control__notice-anchor"
+            data-open={open ? "" : undefined}
+            onKeyDown={(event) => {
+                if (event.key !== "Escape" || !open) return;
+                event.stopPropagation();
+                setOpen(false);
+            }}
+        >
+            <Tooltip label="Account unavailable">
+                <button
+                    aria-expanded={open}
+                    aria-haspopup="dialog"
+                    aria-label="Account unavailable"
+                    className="happy-composer-model-control__notice"
+                    data-happy-desktop-ui="composer-model-control-notice"
+                    data-kind="unavailable"
+                    onClick={() => setOpen((value) => !value)}
+                    type="button"
+                >
+                    <Octicon name="alert" size={14} />
+                </button>
+            </Tooltip>
+            {open ? (
+                <>
+                    {/* Transparent full-window backdrop closes the popover on an
+                        outside pointer-down without a document listener. */}
+                    <button
+                        aria-hidden="true"
+                        className="happy-composer-model-control__notice-backdrop"
+                        onClick={() => setOpen(false)}
+                        tabIndex={-1}
+                        type="button"
+                    />
+                    <div
+                        aria-label="Account unavailable"
+                        className="happy-composer-model-control__notice-popover"
+                        data-happy-desktop-ui="composer-model-control-notice-popover"
+                        role="dialog"
+                    >
+                        <p className="happy-composer-model-control__notice-explanation">
+                            {notice.explanation}
+                        </p>
+                        <div
+                            className="happy-composer-model-control__notice-request"
+                            data-happy-desktop-ui="composer-model-control-notice-request"
+                        >
+                            {notice.request}
+                        </div>
+                        <div className="happy-composer-model-control__notice-actions">
+                            <Button
+                                loading={ask.pending}
+                                onClick={() => {
+                                    setAsk({ pending: true });
+                                    notice.onAsk().then(
+                                        () => {
+                                            setAsk({ pending: false });
+                                            setOpen(false);
+                                        },
+                                        (error: unknown) =>
+                                            setAsk({
+                                                pending: false,
+                                                error: failureMessage(
+                                                    error,
+                                                    "Could not ask Chief of Staff.",
+                                                ),
+                                            }),
+                                    );
+                                }}
+                                size="small"
+                                variant="primary"
+                            >
+                                Ask Chief of Staff
+                            </Button>
+                            {ask.error ? (
+                                <span
+                                    className="happy-composer-model-control__notice-error"
+                                    role="alert"
+                                >
+                                    {ask.error}
+                                </span>
+                            ) : null}
+                        </div>
+                    </div>
+                </>
+            ) : null}
+        </div>
+    );
+}
+
 /**
  * C-145 ComposerModelControl — the composer's model pill. It opens a small
  * menu of two rows, Model and Effort, each naming its current choice. Model
@@ -334,7 +487,8 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     /** Accounts picked for services that do not hold the selection; they only change the list. */
     const [accountShown, setAccountShown] = useState<ReadonlyMap<string, string>>(() => new Map());
     const accountOf = (service: ComposerModelService) =>
-        service.id === selection?.service
+        service.id === selection?.service &&
+        service.accounts.some((account) => account.id === selection.account)
             ? selection.account
             : (accountShown.get(service.id) ?? service.account);
     const [activeRow] = useState<string | null>(() => {
@@ -351,9 +505,11 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     > | null>(null);
     const [remembered, setRemembered] = useState<ReadonlyMap<string, string>>(() => new Map());
     const gesture = useRef({ target: "", scrolled: 0, last: 0, cooldownUntil: 0 });
-    const hasModels = props.services.some((service) =>
-        service.accounts.some((account) => account.models.length > 0),
-    );
+    const hasModels =
+        props.selectionModel !== undefined ||
+        props.services.some((service) =>
+            service.accounts.some((account) => account.models.length > 0),
+        );
     const usageWatch = props.usageWatch;
     // Identity contract: the watch runs exactly as long as the menu is open, so
     // plans and usage are on hand before the account panel opens. This callback
@@ -392,7 +548,9 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     const selectedAccount = selectedService?.accounts.find(
         (account) => account.id === selection?.account,
     );
-    const selectedModel = selectedAccount?.models.find((model) => model.id === selection?.model);
+    const selectedModel =
+        selectedAccount?.models.find((model) => model.id === selection?.model) ??
+        props.selectionModel;
     const effortIndex = (row: Row) => {
         const ids = row.model.efforts.map((effort) => effort.id);
         const candidates = row.selected
@@ -419,7 +577,22 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         }));
         return { service, rows };
     });
-    const selectedRow = sections.flatMap((section) => section.rows).find((row) => row.selected);
+    // A selection on an account the lists do not offer has no row of its own;
+    // it still names its model and steps its effort from the menu.
+    const selectedRow =
+        sections.flatMap((section) => section.rows).find((row) => row.selected) ??
+        (selection && props.selectionModel
+            ? {
+                  key: rowKey(selection.service, selection.account, props.selectionModel.id),
+                  service: selection.service,
+                  account: selection.account,
+                  model: props.selectionModel,
+                  selected: true,
+              }
+            : undefined);
+    const [manage, setManage] = useState<{ pending: boolean; error?: string }>({
+        pending: false,
+    });
     const modelLabel = !hasModels
         ? "Models not configured"
         : (selectedModel?.label ?? selection?.model ?? "");
@@ -698,6 +871,9 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
             ref={root}
             style={props.style}
         >
+            {props.accountNotice ? (
+                <AccountNotice notice={props.accountNotice} open={preview?.accountNoticeOpen} />
+            ) : null}
             <button
                 aria-expanded={hasModels ? open : undefined}
                 aria-haspopup={hasModels ? "dialog" : undefined}
@@ -868,6 +1044,46 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                     className="happy-composer-model-control__separator"
                                     role="separator"
                                 />
+                                {props.onAccountsManage ? (
+                                    <button
+                                        className="happy-composer-model-control__benchmarks"
+                                        data-happy-desktop-ui="composer-model-control-accounts-manage"
+                                        data-menu-item="model"
+                                        disabled={manage.pending}
+                                        onClick={() => {
+                                            const accountsManage = props.onAccountsManage;
+                                            if (!accountsManage) return;
+                                            setManage({ pending: true });
+                                            accountsManage().then(
+                                                () => {
+                                                    setManage({ pending: false });
+                                                    close();
+                                                },
+                                                (error: unknown) =>
+                                                    setManage({
+                                                        pending: false,
+                                                        error: failureMessage(
+                                                            error,
+                                                            "Could not open Chief of Staff.",
+                                                        ),
+                                                    }),
+                                            );
+                                        }}
+                                        type="button"
+                                    >
+                                        <span className="happy-composer-model-control__name">
+                                            Manage accounts
+                                        </span>
+                                    </button>
+                                ) : null}
+                                {manage.error ? (
+                                    <span
+                                        className="happy-composer-model-control__footer-error"
+                                        role="alert"
+                                    >
+                                        {manage.error}
+                                    </span>
+                                ) : null}
                                 <a
                                     className="happy-composer-model-control__benchmarks"
                                     data-happy-desktop-ui="composer-model-control-benchmarks"

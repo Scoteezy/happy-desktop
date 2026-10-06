@@ -221,6 +221,12 @@ export interface HappyAgentModelProvider {
      * simply offers nothing.
      */
     readonly enabled: boolean;
+    /**
+     * Kept out of the pickers. A hidden account still works — it serves pools,
+     * and a conversation already on it keeps running there — it is just not
+     * offered as a choice. An older daemon does not report it: false.
+     */
+    readonly hidden: boolean;
     readonly disabledReason?: "not_authenticated" | "not_enabled" | "no_models";
 }
 
@@ -797,10 +803,28 @@ export interface HappyAgentMenusSnapshot {
     readonly serviceTierOptions: readonly HappyAgentServiceTierOption[];
     readonly currentProviderId: string;
     readonly currentModelId: string;
+    /** Whether the selection's account is one the pickers offer, and if not, why. */
+    readonly currentAccount: HappyAgentCurrentAccount;
+    /**
+     * The selected model, described as a picker row would describe it. Present
+     * whenever the catalog still names the model, including on a hidden or
+     * switched-off account, whose rows `modelOptions` does not list.
+     */
+    readonly currentOption?: HappyAgentModelOption;
     readonly currentEffort?: HappyAgentThinkingLevel;
     readonly currentPermissionMode: HappyAgentPermissionMode;
     readonly currentServiceTier?: HappyAgentServiceTier;
 }
+
+/**
+ * How the account a selection names stands in the catalog.
+ *
+ * - `available`: offered in the pickers.
+ * - `hidden`: still works and stays selected, but is not offered.
+ * - `disabled`: configured but switched off; nothing is routed to it.
+ * - `missing`: no longer configured on this machine at all.
+ */
+export type HappyAgentCurrentAccount = "available" | "hidden" | "disabled" | "missing";
 
 /**
  * Where a conversation is being read. `following` distinguishes a reader parked

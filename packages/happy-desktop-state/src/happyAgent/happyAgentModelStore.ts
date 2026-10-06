@@ -449,7 +449,8 @@ function preferenceSelection(
     if (!identity) return undefined;
     const provider = catalog.providers.find((candidate) => candidate.id === identity.providerId);
     const model = provider?.models.find((candidate) => candidate.id === identity.modelId);
-    if (!provider || provider.disabledReason !== undefined || !model) return undefined;
+    if (!provider || provider.disabledReason !== undefined || provider.hidden || !model)
+        return undefined;
     const candidateEffort =
         "effort" in identity ? (identity as HappyAgentModelPreferenceDefault).effort : undefined;
     const explicitEffort =

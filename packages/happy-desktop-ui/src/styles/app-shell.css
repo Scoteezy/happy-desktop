@@ -114,6 +114,7 @@
 .happy-desktop-app-shell[data-window-controls]
     button:not(
         .happy-agent-control__backdrop,
+        .happy-composer-model-control__notice-backdrop,
         .happy-menu-button__backdrop,
         .happy-context-menu__backdrop,
         .happy-slot-backdrop

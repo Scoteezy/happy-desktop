@@ -3,6 +3,7 @@ import { Button } from "../../src/Button";
 import { Composer } from "../../src/Composer";
 import {
     ComposerModelControl,
+    type ComposerModelAccountNotice,
     type ComposerModelAccountUsage,
     type ComposerModelChoice,
     type ComposerModelControlPreview,
@@ -238,19 +239,63 @@ const PARTIAL_SERVICES: readonly ComposerModelService[] = SERVICES.map((service)
         : service,
 );
 
+/** Asking the Chief of Staff only writes its draft; here it settles at once. */
+const chiefOfStaffAsk = () => Promise.resolve();
+
+/* claude_extra is hidden: its account is not offered, but a conversation on it
+   keeps running there. grok_api has been switched off. */
+const HIDDEN_SERVICES: readonly ComposerModelService[] = SERVICES.map((service) =>
+    service.id === "claude"
+        ? { ...service, accounts: service.accounts.filter((account) => account.id === "claude") }
+        : service.id === "grok"
+          ? { ...service, accounts: service.accounts.filter((account) => account.id === "grok") }
+          : service,
+);
+
+const ON_HIDDEN: ComposerModelSelection = {
+    service: "claude",
+    account: "claude_extra",
+    model: "opus-5-5",
+    effort: "high",
+};
+
+const ON_UNAVAILABLE: ComposerModelSelection = {
+    service: "grok",
+    account: "grok_api",
+    model: "grok-4.7",
+    effort: "medium",
+};
+
+const UNAVAILABLE_NOTICE: ComposerModelAccountNotice = {
+    kind: "unavailable",
+    explanation: "The grok_api account is switched off, so nothing is sent to it.",
+    request: [
+        "Troubleshooting: account unavailable (grok_api)",
+        "A conversation is set to the grok_api account, which is switched off on this Happy Agent, so nothing is routed to it.",
+        "Account: grok_api, model grok-4.7\nAgent: agent-7f3k2",
+        "Please help me manage my connected accounts: bring this account back, or tell me which account to move the conversation to. Use the multiple accounts recipe, and ask before changing anything.",
+    ].join("\n\n"),
+    onAsk: chiefOfStaffAsk,
+};
+
 /** A live picker over fixture data; the preview only seeds its transient state. */
 function Picker(props: {
     preview?: ComposerModelControlPreview;
     selection?: ComposerModelSelection;
+    selectionModel?: ComposerModelChoice;
+    accountNotice?: ComposerModelAccountNotice;
     services?: readonly ComposerModelService[];
     usageWatch?: ComposerModelUsageWatch;
 }) {
     const [selection, selectionSet] = useState(props.selection ?? ASTRA);
     return (
         <ComposerModelControl
+            accountNotice={props.accountNotice}
+            onAccountsManage={chiefOfStaffAsk}
             onSelect={selectionSet}
             preview={props.preview}
             selection={selection}
+            selectionModel={props.selectionModel}
             services={props.services ?? SERVICES}
             usageWatch={props.usageWatch ?? usageWatch}
         />
@@ -277,6 +322,8 @@ function Anchor(props: { children: ReactNode; height?: number; width?: number | 
 function Open(props: {
     preview?: ComposerModelControlPreview;
     selection?: ComposerModelSelection;
+    selectionModel?: ComposerModelChoice;
+    accountNotice?: ComposerModelAccountNotice;
     services?: readonly ComposerModelService[];
     usageWatch?: ComposerModelUsageWatch;
     height?: number;
@@ -285,8 +332,10 @@ function Open(props: {
     return (
         <Anchor height={props.height} width={props.width}>
             <Picker
+                accountNotice={props.accountNotice}
                 preview={{ panel: "model", ...props.preview }}
                 selection={props.selection}
+                selectionModel={props.selectionModel}
                 services={props.services}
                 usageWatch={props.usageWatch}
             />
@@ -558,6 +607,51 @@ export function ComposerModelControlPage() {
                         />
                     </Anchor>
                 </div>
+            </Specimen>
+            <Specimen
+                number="19"
+                label="Hidden account selected"
+                detail="The conversation runs on claude_extra, which is hidden from the pickers. It stays selected and keeps working; a quiet grey triangle beside the pill explains it on hover. The account list does not offer it."
+                stage="surface"
+            >
+                <Anchor height={120}>
+                    <Picker
+                        accountNotice={{ kind: "hidden" }}
+                        preview={{ accountNoticeOpen: true }}
+                        selection={ON_HIDDEN}
+                        selectionModel={OPUS_5_5}
+                        services={HIDDEN_SERVICES}
+                    />
+                </Anchor>
+            </Specimen>
+            <Specimen
+                number="20"
+                label="Unavailable account selected"
+                detail="The conversation is set to grok_api, which is switched off. The triangle is red; clicking it explains what happened, shows the exact request, and offers to put it in the Chief of Staff's draft. Nothing is sent."
+                stage="surface"
+            >
+                <Anchor height={400}>
+                    <Picker
+                        accountNotice={UNAVAILABLE_NOTICE}
+                        preview={{ accountNoticeOpen: true }}
+                        selection={ON_UNAVAILABLE}
+                        selectionModel={{ ...GROK_MODELS[0]!, disabled: true }}
+                        services={HIDDEN_SERVICES}
+                    />
+                </Anchor>
+            </Specimen>
+            <Specimen
+                number="21"
+                label="Manage accounts"
+                detail="The model list's footer offers Manage accounts directly above Latest benchmarks, on the same line style. It adds a Manage connected accounts request to the Chief of Staff's draft and opens that conversation."
+                stage="surface"
+            >
+                <Open
+                    accountNotice={{ kind: "hidden" }}
+                    selection={ON_HIDDEN}
+                    selectionModel={OPUS_5_5}
+                    services={HIDDEN_SERVICES}
+                />
             </Specimen>
         </ComponentPage>
     );
