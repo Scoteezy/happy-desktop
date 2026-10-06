@@ -120,6 +120,8 @@ describe("Chief of Staff account requests", () => {
         expect(text.split("\n\n")[0]).toBe("Troubleshooting: account unavailable (claude_extra)");
         expect(text).toContain("switched off");
         expect(text).toContain("Account: claude_extra, model opus-5-5\nAgent: agent-1");
+        expect(text).toContain('Use the "Accounts and models" recipe');
+        expect(text).not.toContain("multiple accounts");
         expect(text).not.toMatch(/[~/]\.?[a-z]+\//);
     });
 
@@ -137,6 +139,7 @@ describe("Chief of Staff account requests", () => {
     it("asks to manage connected accounts", () => {
         const text = happyAgentChiefOfStaffRequestText({ kind: "accountsManage" });
         expect(text.split("\n\n")[0]).toBe("Manage connected accounts");
-        expect(text).toContain("multiple accounts recipe");
+        expect(text).toContain('Use the "Accounts and models" recipe');
+        expect(text).not.toContain("multiple accounts");
     });
 });

@@ -31,12 +31,12 @@ export function happyAgentChiefOfStaffRequestText(request: HappyAgentChiefOfStaf
                     `Account: ${request.providerId}, model ${request.modelId}`,
                     ...(request.sessionId === undefined ? [] : [`Agent: ${request.sessionId}`]),
                 ].join("\n"),
-                "Please help me manage my connected accounts: bring this account back, or tell me which account to move the conversation to. Use the multiple accounts recipe, and ask before changing anything.",
+                'Please help me manage my connected accounts: bring this account back, or tell me which account to move the conversation to. Use the "Accounts and models" recipe, and ask before changing anything.',
             ].join("\n\n");
         case "accountsManage":
             return [
                 "Manage connected accounts",
-                "I want to manage my connected accounts: add an account, pool accounts, or hide some from the picker. Use the multiple accounts recipe and help me set it up.",
+                'I want to manage my connected accounts: add an account, pool accounts, or hide some from the picker. Use the "Accounts and models" recipe and help me set it up.',
             ].join("\n\n");
     }
 }

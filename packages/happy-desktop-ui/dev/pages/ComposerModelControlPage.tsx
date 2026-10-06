@@ -273,7 +273,7 @@ const UNAVAILABLE_NOTICE: ComposerModelAccountNotice = {
         "Troubleshooting: account unavailable (grok_api)",
         "A conversation is set to the grok_api account, which is switched off on this Happy Agent, so nothing is routed to it.",
         "Account: grok_api, model grok-4.7\nAgent: agent-7f3k2",
-        "Please help me manage my connected accounts: bring this account back, or tell me which account to move the conversation to. Use the multiple accounts recipe, and ask before changing anything.",
+        'Please help me manage my connected accounts: bring this account back, or tell me which account to move the conversation to. Use the "Accounts and models" recipe, and ask before changing anything.',
     ].join("\n\n"),
     onAsk: chiefOfStaffAsk,
 };

@@ -794,7 +794,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     error={models.type === "error" ? models.error.message : undefined}
                     experimentalFeaturesEnabled={experiments.experimentalFeaturesEnabled}
                     loading={models.type !== "ready" && models.type !== "error"}
-                    modelOptions={modelOptions(catalog, settings)}
+                    modelOptions={modelOptions(catalog, settings, selection)}
                     onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}
                     onScrollbarVisibilityChange={(visibility) =>
                         props.appearance.scrollbarVisibilitySelect(visibility)
@@ -1094,15 +1094,23 @@ function defaultSelection(
     };
 }
 
-/** Every model a usable provider offers, labelled "Provider · Model" for one flat picker. */
+/**
+ * Every model a usable provider offers, labelled "Provider · Model" for one flat
+ * picker. A hidden account is not offered, as in the composer's picker, except
+ * the model already configured as the default, which stays shown as selected.
+ */
 function modelOptions(
     catalog: HappyAgentModelCatalog | undefined,
     settings: HappyAgentSettingsSnapshot,
+    selection: { readonly providerId: string; readonly modelId: string },
 ): readonly SelectOption[] {
     return (catalog?.providers ?? []).flatMap((provider) =>
         provider.models
             .filter(
-                (model) => !settings.disabledModels.has(happyAgentModelKey(provider.id, model.id)),
+                (model) =>
+                    !settings.disabledModels.has(happyAgentModelKey(provider.id, model.id)) &&
+                    (!provider.hidden ||
+                        (provider.id === selection.providerId && model.id === selection.modelId)),
             )
             .map((model) => ({
                 disabled: provider.disabledReason !== undefined,
