@@ -651,6 +651,7 @@ async function completeOnboarding(page: Page): Promise<void> {
             await clickIfVisible("Create profile");
             continue;
         }
+        if (await clickIfVisible("Continue")) continue;
         if (await clickIfVisible("Not now")) continue;
         if (await clickIfVisible("Skip")) continue;
         if (
@@ -673,7 +674,11 @@ async function completeOnboarding(page: Page): Promise<void> {
 
 async function clickButtonIfVisible(page: Page, label: string | RegExp): Promise<boolean> {
     const button = page.getByRole("button", { name: label }).first();
-    if ((await button.count()) === 0 || !(await button.isVisible().catch(() => false)))
+    if (
+        (await button.count()) === 0 ||
+        !(await button.isVisible().catch(() => false)) ||
+        !(await button.isEnabled().catch(() => false))
+    )
         return false;
     await button.click();
     await page.waitForTimeout(150);

@@ -24,7 +24,11 @@ export async function happyAgentRuntimeCreate(
 ): Promise<StartedHappyAgentRuntime> {
     const happyAgentExecutable = await happyAgentExecutableResolve();
     const command = await gymHappyAgentCommandCreate(paths, happyAgentExecutable);
-    const publicConfig = join(paths.root, "Happy", "Config");
+    const publicConfig = join(
+        paths.root,
+        process.platform === "darwin" ? "Happy" : "happy",
+        process.platform === "darwin" ? "Config" : "config",
+    );
     await Promise.all(
         [
             publicConfig,
@@ -39,7 +43,10 @@ export async function happyAgentRuntimeCreate(
     );
     await writeFile(
         join(publicConfig, "happy.toml"),
-        "[settings]\nhappy_integration = false\n",
+        // Onboarding scans the supported vendor IDs. The Agent's gym inference
+        // factory wraps this account, so discovery and verification exercise
+        // the ordinary API without reading credentials or contacting a vendor.
+        '[settings]\nhappy_integration = false\n\n[providers.codex]\ntype = "codex"\nenabled = true\ncredential_isolation = true\n',
         "utf8",
     );
     const environment = environmentCreate(paths, inference);
