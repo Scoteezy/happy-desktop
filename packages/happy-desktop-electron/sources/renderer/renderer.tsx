@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import {
     DesktopStartupScreen,
-    AppGptLiveSurface,
     happyAgentHistoryCreate,
     happyAgentWelcomeSlides,
     happyAgentRouterConversationOpen,
@@ -513,15 +512,13 @@ function DesktopRenderer(props: DesktopRendererProps) {
         // Outside every screen below, so one mark spans the whole run-up to a
         // workspace instead of being unmounted and remounted as the window moves
         // between the screens that boot crosses.
-        <AppGptLiveSurface store={props.gptLive} experiments={props.experiments}>
-            <DesktopBootGate
-                onboarding={props.onboarding}
-                happyAgents={props.happyAgents}
-                runtime={props.store}
-            >
-                <DesktopScreens {...props} />
-            </DesktopBootGate>
-        </AppGptLiveSurface>
+        <DesktopBootGate
+            onboarding={props.onboarding}
+            happyAgents={props.happyAgents}
+            runtime={props.store}
+        >
+            <DesktopScreens {...props} />
+        </DesktopBootGate>
     );
 }
 

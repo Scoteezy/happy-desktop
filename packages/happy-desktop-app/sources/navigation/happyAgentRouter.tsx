@@ -469,6 +469,7 @@ function HappyAgentWorkspaceLayout(
             groupId={params.groupId}
             {...(context.daemon ? { daemon: context.daemon } : {})}
             {...(context.experiments ? { experiments: context.experiments } : {})}
+            {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             {...(context.titleShimmer ? { titleShimmer: context.titleShimmer } : {})}
             {...(context.commandPalette ? { commandPalette: context.commandPalette } : {})}
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}

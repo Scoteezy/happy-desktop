@@ -65,7 +65,7 @@ it("reveals the entire Experimental category only after opting in and keeps save
     fireEvent.click(view.getByRole("button", { name: "Experimental" }));
     const control = view.getByRole("switch", { name: "Enable GPT-Live voice" });
     expect(control.getAttribute("aria-checked")).toBe("false");
-    expect(view.getByText("Choose an account, then explicitly start a call")).toBeTruthy();
+    expect(view.getByText("Adds a phone beside Settings.")).toBeTruthy();
     fireEvent.click(control);
     expect(gptLive.get().gptLiveEnabled).toBe(true);
     expect(gptLiveStoreCreate(persistence).get().gptLiveEnabled).toBe(true);

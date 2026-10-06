@@ -48,6 +48,8 @@ export type SidebarFooterProps = {
     onAppearanceToggle: () => void;
     /** Extra trailing controls, placed before the appearance toggle. */
     actions?: ReactNode;
+    /** Window voice control, immediately beside Settings. */
+    voice?: ReactNode;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -175,6 +177,7 @@ export function SidebarFooter(props: SidebarFooterProps) {
                     variant="ghost"
                 />
             ) : null}
+            {props.voice}
             {props.onSettingsOpen ? (
                 <Button
                     aria-label={props.settingsLabel ?? "Settings"}

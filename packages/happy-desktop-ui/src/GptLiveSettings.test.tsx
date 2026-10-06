@@ -8,7 +8,6 @@ import {
     happyAgentSettingsStoreCreate,
 } from "happy-desktop-state";
 import { AppHappyAgentSettingsView } from "../../happy-desktop-app/sources/views/AppHappyAgentSettingsView";
-import { AppGptLiveSurface } from "../../happy-desktop-app/sources/gptLive/AppGptLiveSurface";
 import "./styles.css";
 import { GptLiveSettings } from "./GptLiveSettings";
 import { createRenderer } from "./testing";
@@ -43,10 +42,7 @@ it("renders the default-off opt-in and preserves switch identity and focus when 
     expect(control.getAttribute("aria-checked")).toBe("false");
     expect(control.getAttribute("aria-label")).toBe("Enable GPT-Live voice");
     const section = view.$('[data-happy-desktop-ui="happy-agent-settings-section"]');
-    expect(section.element.textContent).toContain(
-        "Choose an account, then explicitly start a call",
-    );
-    expect(section.element.textContent).toContain("Running tasks are unaffected");
+    expect(section.element.textContent).toContain("Adds a phone beside Settings.");
     expect(section.computedStyle("display")).toBe("flex");
     expect(section.computedStyle("gap")).toBe("12px");
     expect(section.bounds().width).toBe(672);
@@ -120,21 +116,19 @@ it("hides the entire Experimental category until enabled and shows Voice only in
             () => route,
         );
         return (
-            <AppGptLiveSurface store={voice} experiments={experiments}>
-                <AppHappyAgentSettingsView
-                    appearance={appearance}
-                    experiments={experiments}
-                    gptLive={voice}
-                    happyAgents={directory}
-                    onCategorySelect={(next) => {
-                        route = next;
-                        for (const listener of listeners) listener();
-                    }}
-                    onClose={() => {}}
-                    section={section}
-                    settings={settings}
-                />
-            </AppGptLiveSurface>
+            <AppHappyAgentSettingsView
+                appearance={appearance}
+                experiments={experiments}
+                gptLive={voice}
+                happyAgents={directory}
+                onCategorySelect={(next) => {
+                    route = next;
+                    for (const listener of listeners) listener();
+                }}
+                onClose={() => {}}
+                section={section}
+                settings={settings}
+            />
         );
     }
     const view = createRenderer();

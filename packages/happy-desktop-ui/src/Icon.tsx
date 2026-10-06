@@ -12,6 +12,7 @@ export type IconName =
     | "files"
     | "search"
     | "settings"
+    | "call"
     | "clock"
     | "history"
     | "plus"
@@ -128,6 +129,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     files: { set: "ionicons", name: "documents-outline" },
     search: { set: "ionicons", name: "search-outline" },
     settings: { set: "ionicons", name: "settings-outline" },
+    call: { set: "ionicons", name: "call-outline" },
     clock: { set: "ionicons", name: "time-outline" },
     history: { set: "octicons", name: "history" },
     plus: { set: "ionicons", name: "add-outline" },

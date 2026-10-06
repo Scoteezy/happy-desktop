@@ -1,3 +1,5 @@
+import { UserError } from "happy-desktop-state";
+
 /** Browser-only media. Provider credentials and provider control events never enter here. */
 export interface GptLiveMedia {
     readonly offer: string;
@@ -79,10 +81,26 @@ export async function gptLiveMediaOpen(
         failed(message);
     };
     try {
-        stream = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: false,
-        });
+        stream = await navigator.mediaDevices
+            .getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                video: false,
+            })
+            .catch((error: unknown) => {
+                if (error instanceof DOMException && error.name === "NotAllowedError")
+                    throw new UserError(
+                        "Microphone access was denied.",
+                        "microphone-denied",
+                        error,
+                    );
+                if (error instanceof DOMException && error.name === "NotFoundError")
+                    throw new UserError(
+                        "No microphone is available.",
+                        "microphone-unavailable",
+                        error,
+                    );
+                throw error;
+            });
         if (closed || signal.aborted) {
             for (const track of stream.getTracks()) track.stop();
             throw aborted();

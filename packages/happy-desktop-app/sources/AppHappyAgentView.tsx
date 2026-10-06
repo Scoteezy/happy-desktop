@@ -1,11 +1,13 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { happyAgentBotSubtasks } from "happy-desktop-state";
+import { AppGptLivePhone } from "./gptLive/AppGptLivePhone";
 import type {
     AppearanceStore,
     CommandPaletteStore,
     ConversationEntry,
     ComposerSnapshot,
     ExperimentsStore,
+    GptLiveStore,
     ConversationToolCall,
     HappyAgentClockStore,
     HappyAgentCloudStore,
@@ -450,6 +452,7 @@ export interface AppHappyAgentViewProps {
      * that remembers no such choice supplies none, and they stay withheld.
      */
     experiments?: ExperimentsStore;
+    gptLive?: GptLiveStore;
     /**
      * Whether running session, project, and workspace titles shimmer. A host
      * without this preference uses the current product default.
@@ -1865,6 +1868,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             brand={desktop ? windowState.fullScreen && !windowState.connectionRail : true}
             footer={
                 <SidebarFooter
+                    voice={
+                        props.gptLive ? (
+                            <AppGptLivePhone
+                                store={props.gptLive}
+                                experiments={props.experiments}
+                            />
+                        ) : undefined
+                    }
                     actions={sidebarUpdate}
                     appearance={appearance.appearance}
                     devMenu={

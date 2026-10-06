@@ -23,7 +23,7 @@ export {
     type ReviewStreamSingleFile,
 } from "./ReviewStream";
 export { GptLiveSettings, type GptLiveSettingsProps } from "./GptLiveSettings";
-export { GptLiveSurface, type GptLiveSurfaceProps } from "./GptLiveSurface";
+export { GptLivePhone, type GptLivePhoneProps } from "./GptLivePhone";
 export { CompactActivityRow, type CompactActivityRowProps } from "./CompactActivityRow";
 export { compactCount } from "./countText";
 export { CodeBlock, codeBlockLanguage, type CodeBlockProps } from "./CodeBlock";

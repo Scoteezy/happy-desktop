@@ -8,10 +8,12 @@ import type {
     GptLiveTranscriptFragment,
 } from "./gptLiveRuntime.js";
 import type { ExperimentsStore } from "../experiments/experimentsStore.js";
+import { UserError } from "../types.js";
 
 /** A desktop preference, independent of any coding session or provider default. */
 export interface GptLiveDocument {
     readonly gptLiveEnabled: boolean;
+    readonly accountId?: string;
 }
 
 export interface GptLivePersistence {
@@ -91,7 +93,13 @@ export function gptLiveStoreCreate(
             (document as { gptLiveEnabled?: unknown }).gptLiveEnabled === true &&
             allowed()
         ) {
-            snapshot = { ...DISABLED, gptLiveEnabled: true, status: "idle" };
+            const accountId = (document as { accountId?: unknown }).accountId;
+            snapshot = {
+                ...DISABLED,
+                gptLiveEnabled: true,
+                status: "idle",
+                ...(typeof accountId === "string" ? { accountId } : {}),
+            };
         }
     } catch {
         // Keep the default when storage cannot be read.
@@ -102,11 +110,13 @@ export function gptLiveStoreCreate(
     let availabilityController: AbortController | undefined;
     let callController: AbortController | undefined;
     let call: GptLiveCall | undefined;
+    let startAfterAvailability = false;
     const publish = (next: GptLiveSnapshot) => {
         snapshot = next;
         for (const listener of listeners) listener();
     };
     const stop = () => {
+        startAfterAvailability = false;
         generation++;
         availabilityController?.abort();
         availabilityController = undefined;
@@ -234,10 +244,15 @@ export function gptLiveStoreCreate(
                             ? snapshot.accountId
                             : undefined,
                     });
+                    if (startAfterAvailability) {
+                        startAfterAvailability = false;
+                        if (availability.supported) store.callStart();
+                    }
                 },
                 () => {
                     if (disposed || controller.signal.aborted || generation !== epoch) return;
                     availabilityController = undefined;
+                    startAfterAvailability = false;
                     publish({
                         ...snapshot,
                         status: "unavailable",
@@ -255,6 +270,9 @@ export function gptLiveStoreCreate(
             )
                 return;
             publish({ ...snapshot, accountId: id });
+            try {
+                persistence?.write({ gptLiveEnabled: true, accountId: id });
+            } catch {}
         },
         callStart() {
             if (
@@ -263,15 +281,32 @@ export function gptLiveStoreCreate(
                 !snapshot.gptLiveEnabled ||
                 !runtime ||
                 callController ||
-                availabilityController ||
-                !snapshot.availability?.supported
+                availabilityController
             )
                 return;
+            if (!snapshot.accountId) {
+                publish({
+                    ...snapshot,
+                    status: "error",
+                    error: "Choose a voice account in Experimental settings.",
+                });
+                return;
+            }
+            if (!snapshot.availability || snapshot.status === "unavailable") {
+                startAfterAvailability = true;
+                store.availabilityRead();
+                return;
+            }
+            if (!snapshot.availability.supported) return;
             const account: GptLiveAccount | undefined = snapshot.availability.accounts.find(
                 (item) => item.id === snapshot.accountId,
             );
             if (!account) {
-                publish({ ...snapshot, error: "Choose a voice account before starting." });
+                publish({
+                    ...snapshot,
+                    status: "error",
+                    error: "Choose a voice account in Experimental settings.",
+                });
                 return;
             }
             const abort = new AbortController();
@@ -295,11 +330,13 @@ export function gptLiveStoreCreate(
                         call = opened;
                         opened.microphoneMutedUpdate(snapshot.microphoneMuted);
                     },
-                    () => {
+                    (error: unknown) => {
                         if (disposed || abort.signal.aborted || epoch !== generation) return;
                         stop();
                         idle(
-                            "GPT-Live could not connect. Check microphone permission and your selected account's Live access.",
+                            error instanceof UserError
+                                ? error.message
+                                : "The voice call could not connect.",
                         );
                     },
                 );

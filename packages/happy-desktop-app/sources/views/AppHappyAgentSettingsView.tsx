@@ -535,6 +535,11 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                 props.gptLive ? (
                     <GptLiveSettings
                         enabled={gptLive.gptLiveEnabled}
+                        accounts={gptLive.availability?.accounts}
+                        accountId={gptLive.accountId}
+                        checking={gptLive.status === "checking"}
+                        onAccountSelect={gptLiveStore.accountSelect}
+                        onAccountsRead={gptLiveStore.availabilityRead}
                         onEnabledChange={(enabled) => {
                             if (experimentsStore.get().experimentalFeaturesEnabled)
                                 gptLiveStore.gptLiveEnabledUpdate(enabled);

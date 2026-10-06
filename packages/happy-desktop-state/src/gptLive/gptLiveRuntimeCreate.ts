@@ -95,14 +95,14 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                         id: providerId,
                         providerId,
                         kind: "subscription",
-                        label: `${providerId} · Codex subscription (access checked on connection)`,
+                        label: `${providerId} · Codex subscription`,
                     });
                 else if (provider.type === "openai")
                     accounts.push({
                         id: providerId,
                         providerId,
                         kind: "api",
-                        label: `${providerId} · OpenAI API (access checked on connection)`,
+                        label: `${providerId} · OpenAI API`,
                     });
             }
             return {
@@ -427,7 +427,15 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                 permissionRequested = true;
                 await wait(
                     Promise.resolve()
-                        .then(() => options.permissionStart({ enabled: true }))
+                        .then(() =>
+                            options.permissionStart({ enabled: true }).catch((error: unknown) => {
+                                throw new UserError(
+                                    "Microphone access was denied.",
+                                    "microphone-denied",
+                                    error,
+                                );
+                            }),
+                        )
                         .then(() => {
                             if (phase === "ended") {
                                 permissionRevoke();

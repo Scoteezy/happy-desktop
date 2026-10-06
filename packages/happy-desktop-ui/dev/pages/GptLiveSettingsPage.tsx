@@ -1,77 +1,134 @@
 import { useState } from "react";
+import type { GptLiveSnapshot } from "happy-desktop-state";
 import { Box } from "../../src/Box";
 import { GptLiveSettings } from "../../src/GptLiveSettings";
-import { GptLiveSurface } from "../../src/GptLiveSurface";
+import { GptLivePhone } from "../../src/GptLivePhone";
+import { SidebarFooter } from "../../src/SidebarFooter";
 import { ComponentPage, Specimen } from "../kit";
 
 export const componentNumber = "P-012b";
+const base: GptLiveSnapshot = {
+    gptLiveEnabled: true,
+    status: "idle",
+    panelVisible: false,
+    microphoneMuted: false,
+    confirmationSending: false,
+    transcripts: [],
+};
+const accounts = [
+    {
+        id: "subscription",
+        label: "Codex subscription",
+        providerId: "codex",
+        kind: "subscription" as const,
+    },
+    { id: "api", label: "OpenAI API", providerId: "openai", kind: "api" as const },
+];
 
 export function GptLiveSettingsPage() {
     const [enabled, setEnabled] = useState(false);
-    const [voicePanel, setVoicePanel] = useState(false);
+    const [accountId, setAccountId] = useState("subscription");
     return (
         <ComponentPage
             number={componentNumber}
-            title="GPT-Live settings"
-            summary="Default-off desktop voice opt-in and explicit window-scoped call controls."
+            title="Voice"
+            summary="A phone beside Settings; the account lives in Experimental settings."
         >
             <Specimen
-                label="Off by default · interactive"
+                label="Experimental settings"
                 number="01"
-                detail="Opt-in only; no recording or connection starts."
+                detail="One opt-in and one account."
             >
                 <Box width={680}>
-                    <GptLiveSettings enabled={enabled} onEnabledChange={setEnabled} />
+                    <GptLiveSettings
+                        enabled={enabled}
+                        onEnabledChange={setEnabled}
+                        accounts={accounts}
+                        accountId={accountId}
+                        onAccountSelect={setAccountId}
+                    />
+                </Box>
+            </Specimen>
+            {(["idle", "connecting", "active", "error"] as const).map((status, index) => (
+                <Specimen
+                    key={status}
+                    label={status}
+                    number={String(index + 2).padStart(2, "0")}
+                    detail="Phone immediately before Settings, 28 × 28 px."
+                >
+                    <Box width={300} data-voice-state={status}>
+                        <SidebarFooter
+                            appearance="light"
+                            onAppearanceToggle={() => {}}
+                            onSettingsOpen={() => {}}
+                            voice={
+                                <GptLivePhone
+                                    state={{
+                                        ...base,
+                                        status,
+                                        ...(status === "error"
+                                            ? { error: "Microphone access was denied." }
+                                            : {}),
+                                    }}
+                                    onStart={() => {}}
+                                    onEnd={() => {}}
+                                    onMessageConfirm={() => {}}
+                                    onMessageCancel={() => {}}
+                                />
+                            }
+                        />
+                    </Box>
+                </Specimen>
+            ))}
+            <Specimen
+                label="Exact-message confirmation"
+                number="06"
+                detail="Target, exact text, Keep as draft / Send."
+            >
+                <Box
+                    width={320}
+                    height={260}
+                    style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}
+                >
+                    <SidebarFooter
+                        appearance="light"
+                        onAppearanceToggle={() => {}}
+                        onSettingsOpen={() => {}}
+                        voice={
+                            <GptLivePhone
+                                state={{
+                                    ...base,
+                                    status: "active",
+                                    confirmation: {
+                                        actionId: "one",
+                                        targetLabel: "Login test",
+                                        connectionLabel: "Development",
+                                        modeLabel: "Auto",
+                                        text: "Fix the flaky login test.",
+                                    },
+                                }}
+                                onStart={() => {}}
+                                onEnd={() => {}}
+                                onMessageConfirm={() => {}}
+                                onMessageCancel={() => {}}
+                            />
+                        }
+                    />
                 </Box>
             </Specimen>
             <Specimen
-                label="Window voice surface · active and exact-text confirmation"
-                number="03"
-                detail="Stable application frame, persistent End/Mute, explicit human send. Open voice to inspect the staged card."
+                label="Selected account"
+                number="07"
+                detail="API billing appears as one short line."
             >
-                <Box width={900} height={420}>
-                    <GptLiveSurface
-                        state={{
-                            gptLiveEnabled: true,
-                            status: "active",
-                            panelVisible: voicePanel,
-                            microphoneMuted: false,
-                            confirmationSending: false,
-                            transcripts: [
-                                {
-                                    id: "fragment1",
-                                    role: "user",
-                                    text: "Draft a review request in this conversation.",
-                                },
-                            ],
-                            confirmation: {
-                                actionId: "action1",
-                                targetLabel: "Review implementation",
-                                connectionLabel: "Development machine",
-                                modeLabel: "Auto",
-                                text: "Please review the current implementation and report any concrete issues.",
-                            },
-                        }}
-                        onOpen={() => setVoicePanel(true)}
-                        onClose={() => setVoicePanel(false)}
-                        onStart={() => {}}
-                        onEnd={() => setVoicePanel(false)}
+                <Box width={680}>
+                    <GptLiveSettings
+                        enabled
+                        onEnabledChange={() => {}}
+                        accounts={accounts}
+                        accountId="api"
                         onAccountSelect={() => {}}
-                        onMutedChange={() => {}}
-                        onMessageConfirm={() => setVoicePanel(false)}
-                        onMessageCancel={() => setVoicePanel(false)}
-                    >
-                        <Box>Application content stays mounted while voice changes.</Box>
-                    </GptLiveSurface>
-                </Box>
-            </Specimen>
-            <Specimen
-                label="Opted in · explicit Start still required"
-                number="02"
-                detail="Enabling the surface never starts a microphone or a call."
-            >
-                <Box width={680}>
-                    <GptLiveSettings enabled onEnabledChange={() => {}} />
+                    />
                 </Box>
             </Specimen>
         </ComponentPage>
