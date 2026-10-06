@@ -6388,7 +6388,12 @@ function HappyAgentPanelBody(props: {
                                 query !== ""
                                     ? `Nothing matches “${query}”.`
                                     : all
-                                      ? "No files."
+                                      ? // A root that failed to read is not an
+                                        // empty folder; it is retried on the
+                                        // next change in the checkout.
+                                        props.workspaceFiles?.directories.get("")?.error
+                                          ? "Files could not be loaded."
+                                          : "No files."
                                       : changesUnavailable
                                         ? "Git changes are temporarily unavailable."
                                         : "No changed files."

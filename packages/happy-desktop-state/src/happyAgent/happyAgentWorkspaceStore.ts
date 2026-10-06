@@ -410,6 +410,12 @@ type HappyAgentWorkspaceFileTreeLoadRequest = {
     readonly generation: number;
     readonly groupId: HappyAgentGroupId;
     readonly path: string;
+    /**
+     * Re-reads a directory already listed because the disk under it changed. Its
+     * answer replaces the listing instead of extending it, and the old rows stay
+     * on screen until it lands.
+     */
+    readonly refresh?: true;
 };
 
 type HappyAgentFilePreprocessRequest = {
@@ -2162,6 +2168,8 @@ export function happyAgentWorkspaceStoreCreate(
     /** Most-recent intent first; a repeated hover moves its pending read back to the front. */
     let workspaceFileTreeLoadQueue: HappyAgentWorkspaceFileTreeLoadRequest[] = [];
     let workspaceFileTreeLoadsActive = 0;
+    /** Directories that changed while their read was in flight; each reads again after it. */
+    let workspaceFilesRefreshPending = new Set<string>();
     let groupComposer: ComposerStore | undefined;
     let unsubscribeGroupComposer: (() => void) | undefined;
     /** How the addressed group's first session will be configured. */
@@ -3840,6 +3848,7 @@ export function happyAgentWorkspaceStoreCreate(
         const affected = (path: string): boolean =>
             change.paths === null || change.paths.includes(path);
         fileAddressesInvalidate(change.groupId, change.paths);
+        workspaceFilesTreeInvalidate(change.groupId, change.paths);
         fileCommentsStale(change.groupId, change.paths);
         reviewReconcile(change.groupId, change.paths);
         for (const tab of fileTabs) {
@@ -5263,14 +5272,23 @@ export function happyAgentWorkspaceStoreCreate(
         const previous = workspaceFiles?.directories.get(request.path);
         if (previous?.loading) return;
         workspaceFileTreeLoadsActive += 1;
-        let entries = [...(previous?.entries ?? [])];
+        const shown = previous?.entries ?? [];
+        let entries = request.refresh ? [] : [...shown];
         let nextCursor = request.cursor;
         workspaceFilesDirectorySet(request.path, {
-            entries,
+            entries: shown,
             loading: true,
-            ...(request.cursor === undefined ? {} : { nextCursor: request.cursor }),
+            ...(request.refresh
+                ? previous?.nextCursor === undefined
+                    ? {}
+                    : { nextCursor: previous.nextCursor }
+                : request.cursor === undefined
+                  ? {}
+                  : { nextCursor: request.cursor }),
         });
-        if (request.path === "") workspaceFilesLoading = true;
+        // A refresh keeps the listing in place, so it never turns the panel
+        // back into a loading state under the reader.
+        if (request.path === "" && !request.refresh) workspaceFilesLoading = true;
         recompute();
 
         const finish = (failed: boolean): void => {
@@ -5280,14 +5298,21 @@ export function happyAgentWorkspaceStoreCreate(
                 request.generation === workspaceFilesGeneration &&
                 request.groupId === workspaceFilesGroupId
             ) {
+                // A refresh that failed leaves the last good listing standing.
+                const settled = failed && request.refresh ? shown : entries;
+                const cursor = failed && request.refresh ? previous?.nextCursor : nextCursor;
                 workspaceFilesDirectorySet(request.path, {
-                    entries,
+                    entries: settled,
                     ...(failed ? { error: true } : {}),
                     loading: false,
-                    ...(nextCursor === undefined ? {} : { nextCursor }),
+                    ...(cursor === undefined ? {} : { nextCursor: cursor }),
                 });
                 if (request.path === "") workspaceFilesLoading = false;
                 recompute();
+                if (workspaceFilesRefreshPending.delete(request.path))
+                    workspaceFilesDirectoryLoadSchedule(request.groupId, request.path, {
+                        refresh: true,
+                    });
             }
             workspaceFilesDirectoryLoadPump();
         };
@@ -5327,38 +5352,75 @@ export function happyAgentWorkspaceStoreCreate(
     }
 
     /** Adds or promotes one directory request, so the latest intent runs next. */
-    const workspaceFilesDirectoryLoadSchedule = (
+    function workspaceFilesDirectoryLoadSchedule(
         groupId: HappyAgentGroupId,
         path: string,
-        cursor?: string,
-    ): void => {
+        read: { readonly cursor?: string; readonly refresh?: true } = {},
+    ): void {
         if (disposed || workspaceFilesGroupId !== groupId) return;
-        if (workspaceFiles?.directories.get(path)?.loading) return;
+        if (workspaceFiles?.directories.get(path)?.loading) {
+            if (read.refresh) workspaceFilesRefreshPending.add(path);
+            return;
+        }
         const queued = workspaceFileTreeLoadQueue.findIndex(
             (request) =>
                 request.generation === workspaceFilesGeneration &&
                 request.groupId === groupId &&
                 request.path === path,
         );
+        // A queued refresh already reads the directory from its first page,
+        // which is everything a "Show more" for it could have asked for.
+        const refresh = read.refresh ?? workspaceFileTreeLoadQueue[queued]?.refresh;
         if (queued >= 0) workspaceFileTreeLoadQueue.splice(queued, 1);
         workspaceFileTreeLoadQueue.unshift({
-            ...(cursor === undefined ? {} : { cursor }),
+            ...(refresh || read.cursor === undefined ? {} : { cursor: read.cursor }),
             generation: workspaceFilesGeneration,
             groupId,
             path,
+            ...(refresh ? { refresh } : {}),
         });
-        if (path === "" && !workspaceFilesLoading) {
+        if (path === "" && !refresh && !workspaceFilesLoading) {
             workspaceFilesLoading = true;
             recompute();
         }
         workspaceFilesDirectoryLoadPump();
-    };
+    }
 
     /** Loads a directory once, or retries the page that most recently failed. */
     const workspaceFilesDirectoryEnsure = (groupId: HappyAgentGroupId, path: string): void => {
         const directory = workspaceFiles?.directories.get(path);
         if (directory !== undefined && directory.error !== true) return;
-        workspaceFilesDirectoryLoadSchedule(groupId, path, directory?.nextCursor);
+        workspaceFilesDirectoryLoadSchedule(
+            groupId,
+            path,
+            directory?.nextCursor === undefined ? {} : { cursor: directory.nextCursor },
+        );
+    };
+
+    /**
+     * Re-reads every listed directory a disk change touched. The daemon names a
+     * changed entry by its own path, and that entry is a row of its parent's
+     * listing, so the parent is what reads again; a change without paths
+     * (a lost watch, a reconnect) re-reads everything listed.
+     */
+    const workspaceFilesTreeInvalidate = (
+        groupId: HappyAgentGroupId,
+        paths: readonly string[] | null,
+    ): void => {
+        if (workspaceFilesGroupId !== groupId || workspaceFiles === undefined) return;
+        const stale =
+            paths === null
+                ? [...workspaceFiles.directories.keys()]
+                : [
+                      ...new Set(
+                          paths.map((path) => {
+                              const slash = path.lastIndexOf("/");
+                              return slash < 0 ? "" : path.slice(0, slash);
+                          }),
+                      ),
+                  ].filter((path) => workspaceFiles?.directories.has(path));
+        for (const path of stale)
+            workspaceFilesDirectoryLoadSchedule(groupId, path, { refresh: true });
     };
 
     /**
@@ -5373,6 +5435,7 @@ export function happyAgentWorkspaceStoreCreate(
             workspaceFilesGroupId = groupId;
             workspaceFiles = { directories: new Map() };
             workspaceFileTreeLoadQueue = [];
+            workspaceFilesRefreshPending = new Set();
             workspaceFilesGeneration += 1;
         }
         workspaceFilesDirectoryEnsure(groupId, "");
@@ -5541,6 +5604,10 @@ export function happyAgentWorkspaceStoreCreate(
             readyDocumentCache.clear();
             readyDocumentCacheWeight = 0;
             fileTabLoadedIdentities.clear();
+            // The listing may also be stale for the same reason: nobody was
+            // hearing about the disk while this surface was off screen.
+            if (workspaceFilesGroupId !== undefined)
+                workspaceFilesTreeInvalidate(workspaceFilesGroupId, null);
         }
         workspaceFilesDirectoryLoadPump();
         filePreprocessLoadPump();
@@ -6801,7 +6868,7 @@ export function happyAgentWorkspaceStoreCreate(
             if (groupId === undefined || fileScopeOf(groupId) !== "all") return;
             const directory = workspaceFiles?.directories.get(path);
             if (directory?.nextCursor === undefined || directory.loading) return;
-            workspaceFilesDirectoryLoadSchedule(groupId, path, directory.nextCursor);
+            workspaceFilesDirectoryLoadSchedule(groupId, path, { cursor: directory.nextCursor });
         },
         fileDraftUpdate(tabId, draft) {
             // An edit that could never be saved is not an edit; the editor is
