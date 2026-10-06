@@ -33,8 +33,8 @@ export function GptLiveSettings(props: GptLiveSettingsProps) {
                 label="Enable GPT-Live voice"
             />
             <Banner tone="neutral" title="Choose an account, then explicitly start a call">
-                Enabling shows the window's voice controls. No microphone is opened and no desktop
-                context is sent until you start a call. Running tasks are unaffected.
+                Enabling shows the window&apos;s voice controls. No microphone is opened and no
+                desktop context is sent until you start a call. Running tasks are unaffected.
             </Banner>
         </HappyAgentSettingsSection>
     );

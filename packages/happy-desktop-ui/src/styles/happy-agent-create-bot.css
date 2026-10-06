@@ -26,6 +26,7 @@
     /* Four faces and the three gaps between them: the width of the centred
        column, and of the credit and the name that share its edges. */
     --happy-create-bot-column: 248px;
+    /* eslint-disable-next-line happy-layout/use-flex-layout -- A three-by-three grid centers the faces on both axes while side controls occupy independent outer tracks. */
     display: grid;
     /* The outer columns split the leftover width equally, so the middle
        column is centred whatever the die and Create beside it measure. */

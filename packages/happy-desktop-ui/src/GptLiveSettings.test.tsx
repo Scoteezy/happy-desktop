@@ -66,7 +66,11 @@ it("renders the default-off opt-in and preserves switch identity and focus when 
     expect(ink.bounds.y + ink.bounds.height).toBeLessThanOrEqual(label.bounds().height);
     await view.screenshot("GptLiveSettings.off.test");
 
-    await userEvent.click(control);
+    // Activate from the keyboard so every engine keeps the control focused
+    // while the update proves that its existing DOM node survives.
+    control.focus();
+    expect(document.activeElement).toBe(control);
+    await userEvent.keyboard(" ");
     await expect.poll(() => control.getAttribute("aria-checked")).toBe("true");
     expect(view.$('[role="switch"]').element).toBe(control);
     expect(document.activeElement).toBe(control);
@@ -163,7 +167,7 @@ it("hides the entire Experimental category until enabled and shows Voice only in
                 const track = control
                     .querySelector('[data-happy-desktop-ui="switch-track"]')!
                     .getBoundingClientRect();
-                return Math.round(thumb.x - track.x);
+                return thumb.x - track.x;
             })
             .toBe(14);
         await view.screenshot("GptLiveSettings.experimental-revealed.test");

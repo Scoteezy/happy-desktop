@@ -35,7 +35,12 @@
 .happy-switch:focus-visible {
     outline: 2px solid var(--radio-active);
     outline-offset: 2px;
-    border-radius: var(--happy-radius-sm);
+    /* The focus edge meets the track at zero inset, so their curves match. */
+    border-radius: 10px;
+}
+
+.happy-switch[data-size="small"]:focus-visible {
+    border-radius: 8px;
 }
 
 /* Track — the pill that carries the thumb and the on/off fill. */

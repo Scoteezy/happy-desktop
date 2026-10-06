@@ -5878,20 +5878,6 @@ export function happyAgentWorkspaceStoreCreate(
             groupTabRemember(addressedGroupId, openId);
     };
 
-    /**
-     * Puts the open conversation back on screen: no file tab, no tool tab.
-     *
-     * Selecting nothing is what "the conversation" means here, and the tab the
-     * group is then being read on is remembered as such.
-     */
-    const mainViewClear = (): void => {
-        activeMainViewId = undefined;
-        displayedMainViewId = undefined;
-        activeMainViewGroupId = undefined;
-        if (addressedGroupId !== undefined && openId !== undefined)
-            groupTabRemember(addressedGroupId, openId);
-    };
-
     return {
         get: () => snapshotStore.getState(),
         panel,
