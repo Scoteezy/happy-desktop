@@ -1,11 +1,5 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/slopus/happy-desktop/main/.github/logotype-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/slopus/happy-desktop/main/.github/logotype-light.png">
-  <img src="https://raw.githubusercontent.com/slopus/happy-desktop/main/.github/logotype-dark.png" width="400" height="106" alt="Happy">
-</picture>
-
 <h1>Any Model. Your Team.<br><em>Happy Harness.</em></h1>
 
 <p>Free and open source</p>
@@ -15,19 +9,7 @@
 https://github.com/user-attachments/assets/d193098c-4c60-440b-b91e-274a76d923d5
 
 <p align="center">
-<b>⬇️&nbsp;&nbsp;Download for macOS:</b>&nbsp; <a href="https://github.com/slopus/happy-desktop/releases/download/v0.0.90/Happy-0.0.90-arm64.dmg"><b>Apple Silicon</b></a> · <a href="https://github.com/slopus/happy-desktop/releases/download/v0.0.90/Happy-0.0.90-x64.dmg"><b>Intel</b></a>
-</p>
-
-```sh
-brew install --cask slopus/tap/happy
-```
-
-<p align="center">
-<a href="https://github.com/slopus/happy-desktop/releases/download/v0.0.90/Happy-0.0.90-x64.exe">Windows</a> · <a href="https://github.com/slopus/happy-desktop/releases/download/v0.0.90/Happy-0.0.90-x64.AppImage">Linux x64</a> · <a href="https://github.com/slopus/happy-desktop/releases/download/v0.0.90/Happy-0.0.90-arm64.AppImage">Linux arm64</a> · <a href="https://github.com/slopus/happy-desktop/releases">All releases</a>
-</p>
-
-<p align="center">
-<sub>Windows: if SmartScreen says "Windows protected your PC", click <b>More info → Run anyway</b>. &nbsp;·&nbsp; Linux: <code>chmod +x</code> the AppImage.</sub>
+<a href="https://happy.engineering/#download"><img width="245" height="56" alt="Download Desktop for macOS, Windows, and Linux" src="https://raw.githubusercontent.com/slopus/happy-desktop/main/.github/download-desktop.svg" /></a>
 </p>
 
 <table align="center">
@@ -37,7 +19,7 @@ brew install --cask slopus/tap/happy
 </tr>
 </table>
 
-## What you get with Happy
+## What you get
 
 1. **Multi-provider within one session.** Astra, Fable, and Grok in the same
    session. Switch models in the middle of a task or delegate to subagents.
@@ -50,21 +32,23 @@ brew install --cask slopus/tap/happy
 5. **End-to-end encrypted mobile app.** Left your desk? The same sessions are
    already on your phone, and what moves between your devices is encrypted.
 
-## Already using Happy?
+## How Happy fits together
 
-Your existing account and sessions still work. Connect Desktop from
-**Settings → Mobile Access**.
+| Repository                                                                            | What it is                                                                 |
+| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [slopus/happy](https://github.com/slopus/happy)                                       | The mobile app (iOS, Android, web), the original CLI, and the relay server |
+| **[slopus/happy-desktop](https://github.com/slopus/happy-desktop)** ← this repository | **The desktop app for macOS, Windows, and Linux**                          |
+| [slopus/happy-agent](https://github.com/slopus/happy-agent)                           | Happy Agent, the open-source agent runtime the desktop app runs on         |
+| [slopus/slopus.github.io](https://github.com/slopus/slopus.github.io)                 | The website and docs at happy.engineering                                  |
 
-## Love your terminal? Keep it.
+## Original Happy CLI
 
-The OG Happy experience (for those who have been around :D)
+The original CLI wraps the Claude Code and Codex harnesses directly in your
+terminal and lets you continue from your phone.
 
-Start Claude Code or Codex in your terminal. Resume that session or start a new
-one from your phone. No Desktop app required.
+For multi-model sessions and teams, move to the desktop app and Happy Harness.
 
 ```sh
-# Not using Happy Desktop?
-# Install the CLI here:
 npm install -g happy
 
 # Start Claude Code
@@ -73,17 +57,6 @@ happy claude
 # Or start Codex
 happy codex
 ```
-
-Using Desktop? Onboarding handles this setup for you.
-
-## How Happy fits together
-
-| Repository                                                                            | What it is                                                                             |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| [slopus/happy](https://github.com/slopus/happy)                                       | The Happy mobile app (iOS, Android, web), the original Happy CLI, and the relay server |
-| **[slopus/happy-desktop](https://github.com/slopus/happy-desktop)** ← this repository | **The Happy desktop app for macOS, Windows, and Linux**                                |
-| [slopus/happy-agent](https://github.com/slopus/happy-agent)                           | Happy Agent, the open-source agent runtime the desktop app runs on                     |
-| [slopus/slopus.github.io](https://github.com/slopus/slopus.github.io)                 | The website and docs at happy.engineering                                              |
 
 ---
 
