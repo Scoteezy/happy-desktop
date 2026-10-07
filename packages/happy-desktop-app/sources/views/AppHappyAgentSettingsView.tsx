@@ -28,6 +28,9 @@ import {
     happyAgentCloudStoreNoop,
     happyAgentAvailabilityProject,
     happyAgentIntegrationStoreNoop,
+    happyAgentIntegrationRemovalIncomplete,
+    happyAgentVersionAtLeast,
+    HAPPY_AGENT_COMPUTER_REMOVAL_VERSION,
     happyAgentProfileStoreNoop,
     happyAgentProviderUsageStoreNoop,
     happyAgentProvidersStoreNoop,
@@ -553,6 +556,19 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         happyIntegrationStore.terminalCliRegistrationRemovalUpdate
                     }
                     onSetup={happyIntegrationStore.mobileSetup?.start}
+                    // What Disconnect does depends on the running Agent: from
+                    // this version it deletes the computer from the account.
+                    removesComputer={happyAgentVersionAtLeast(
+                        host?.version,
+                        HAPPY_AGENT_COMPUTER_REMOVAL_VERSION,
+                    )}
+                    removalIncomplete={happyAgentIntegrationRemovalIncomplete(happyIntegration)}
+                    onRemovalRetry={() => {
+                        if (happyAgentOnline()) happyIntegrationStore.happyIntegrationDisconnect();
+                    }}
+                    onReconnect={() => {
+                        if (happyAgentOnline()) happyIntegrationStore.happyIntegrationReconnect();
+                    }}
                     disconnecting={happyIntegration.disconnecting}
                     onDisconnect={() => {
                         if (happyAgentOnline())

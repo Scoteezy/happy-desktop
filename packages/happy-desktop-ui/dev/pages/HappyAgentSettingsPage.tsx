@@ -537,6 +537,35 @@ export function HappyAgentSettingsBlueprintPage() {
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
             <FullScreenSpecimen
+                detail="Happy could not confirm removing this computer: one banner with Try again and Keep linked; the status line does not repeat the reason."
+                label="Happy Agent settings — Mobile Access removal incomplete"
+                number="01e-removal"
+            >
+                <HappyAgentSettingsShell
+                    activeCategoryId="mobile-access"
+                    categories={categories}
+                    description={mobileDescription}
+                    onCategorySelect={noop}
+                    onClose={noop}
+                    title="Mobile Access"
+                >
+                    <HappyAgentMobileSettings
+                        configured
+                        disconnectError="Happy Agent couldn't remove this computer from Happy Mobile. Check your internet connection and try again. This computer stays linked until it is removed."
+                        message="Happy Agent couldn't remove this computer from Happy Mobile. Check your internet connection and try again. This computer stays linked until it is removed."
+                        onDisconnect={noop}
+                        onPair={noop}
+                        onPairingCancel={noop}
+                        onReconnect={noop}
+                        onRemovalRetry={noop}
+                        onSetup={noop}
+                        removalIncomplete
+                        removesComputer
+                        status="failed"
+                    />
+                </HappyAgentSettingsShell>
+            </FullScreenSpecimen>
+            <FullScreenSpecimen
                 detail="Remote Agent-only pairing remains unchanged; local Desktop opens the shared mobile setup instead."
                 label="Happy Agent settings — Remote Mobile Access pairing"
                 number="01f"

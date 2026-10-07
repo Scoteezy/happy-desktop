@@ -55,7 +55,7 @@ export function MobileAccessConfirmationPage() {
             title="MobileAccessConfirmation"
         >
             <Specimen
-                detail="480px · removes only this Happy Agent's pairing · phones and CLI stay"
+                detail="480px · Happy Agent before 0.4.84 · removes only this Happy Agent's pairing · phones and CLI stay"
                 label="Disconnect"
                 number="01"
                 stage="app"
@@ -100,6 +100,58 @@ export function MobileAccessConfirmationPage() {
                         }}
                     />,
                     640,
+                )}
+            </Specimen>
+
+            <Specimen
+                detail="480px · Happy Agent 0.4.84+ · removes this computer and its published chats"
+                label="Remove this computer"
+                number="03a"
+                stage="app"
+            >
+                {frame(
+                    <MobileAccessConfirmation
+                        {...handlers}
+                        confirmation={{ kind: "disconnect", pending: false }}
+                        removesComputer
+                    />,
+                    680,
+                )}
+            </Specimen>
+
+            <Specimen
+                detail="480px · removal in flight · Removing…"
+                label="Removing this computer"
+                number="03b"
+                stage="app"
+            >
+                {frame(
+                    <MobileAccessConfirmation
+                        {...handlers}
+                        confirmation={{ kind: "disconnect", pending: true }}
+                        removesComputer
+                    />,
+                    680,
+                )}
+            </Specimen>
+
+            <Specimen
+                detail="480px · Happy could not confirm the removal · confirm retries"
+                label="Removal refused"
+                number="03c"
+                stage="app"
+            >
+                {frame(
+                    <MobileAccessConfirmation
+                        {...handlers}
+                        confirmation={{
+                            kind: "disconnect",
+                            pending: false,
+                            error: "Happy Agent couldn't remove this computer from Happy Mobile. Check your internet connection and try again. This computer stays linked until it is removed.",
+                        }}
+                        removesComputer
+                    />,
+                    760,
                 )}
             </Specimen>
 

@@ -65,6 +65,17 @@ export interface HappyAgentMobileSettingsProps {
     readonly pairingError?: string;
     /** Detail Happy Agent reported for a failed or disconnected integration. */
     readonly message?: string;
+    /**
+     * Whether Disconnect deletes this computer, and the chats it published,
+     * from the Happy account. Older Happy Agents only forget their pairing.
+     */
+    readonly removesComputer?: boolean;
+    /**
+     * This window asked to remove the computer and Happy could not confirm it.
+     * The pairing stays saved and closed until the removal is retried or
+     * abandoned; `message` carries the Agent's reason.
+     */
+    readonly removalIncomplete?: boolean;
     /** Why actions cannot currently reach this Happy Agent. */
     readonly unavailable?: string;
     /** The local terminal CLI; absent for a remote Agent, which has no local CLI. */
@@ -81,6 +92,10 @@ export interface HappyAgentMobileSettingsProps {
     onDisconnect(): void;
     onPair(): void;
     onPairingCancel(): void;
+    /** Retries a refused removal without asking again; the person already confirmed. */
+    onRemovalRetry?(): void;
+    /** Keeps a saved pairing and connects it again. */
+    onReconnect?(): void;
     onManagementCancel?(): void;
     onManagementConfirm?(): void;
     onTerminalRegistrationRemovalChange?(remove: boolean): void;
@@ -113,7 +128,35 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                         {props.error}
                     </Banner>
                 ) : null}
-                {props.disconnectError ? (
+                {props.removalIncomplete ? (
+                    <Box
+                        className="happy-agent-mobile-settings__removal"
+                        data-testid="happy-mobile-settings-removal-incomplete"
+                    >
+                        <Banner tone="danger" title="Couldn't remove this computer from your phone">
+                            {props.message ?? props.disconnectError}
+                        </Banner>
+                        <Box className="happy-agent-mobile-settings__removal-actions">
+                            <Button
+                                disabled={blocked || props.pairingStarting === true}
+                                onClick={() => props.onReconnect?.()}
+                                size="small"
+                                variant="ghost"
+                            >
+                                Keep linked
+                            </Button>
+                            <Button
+                                disabled={blocked || props.pairingStarting === true}
+                                loading={props.disconnecting}
+                                onClick={() => props.onRemovalRetry?.()}
+                                size="small"
+                                variant="primary"
+                            >
+                                Try again
+                            </Button>
+                        </Box>
+                    </Box>
+                ) : props.disconnectError ? (
                     <Banner tone="danger" title="Pairing could not be removed">
                         {props.disconnectError}
                     </Banner>
@@ -231,7 +274,11 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                                 Disconnect
                             </Button>
                         }
-                        description="Remove this Happy Agent's saved pairing with Happy Mobile. Your account, phones, session history, and the Happy CLI's sign-in stay as they are."
+                        description={
+                            props.removesComputer
+                                ? "Remove this computer and the chats it published from your Happy account. Your phones, this computer's local history, and the Happy CLI stay as they are."
+                                : "Remove this Happy Agent's saved pairing with Happy Mobile. Your account, phones, session history, and the Happy CLI's sign-in stay as they are."
+                        }
                         label="Disconnect this computer"
                     />
                 </HappyAgentSettingsSection>
@@ -240,6 +287,7 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                 <MobileAccessConfirmation
                     confirmation={props.management}
                     data-testid="happy-mobile-settings-confirmation"
+                    removesComputer={props.removesComputer === true}
                     onCancel={() => props.onManagementCancel?.()}
                     onConfirm={() => props.onManagementConfirm?.()}
                     onRegistrationRemovalChange={props.onTerminalRegistrationRemovalChange}
@@ -497,6 +545,13 @@ function mobileState(props: HappyAgentMobileSettingsProps): MobileState {
                         description: "Reading whether this Happy Agent has a saved pairing.",
                     };
         case "failed":
+            if (props.configured === true && props.removalIncomplete)
+                return {
+                    label: "Removal incomplete",
+                    variant: "warning",
+                    description:
+                        "This computer is still linked but not connected while the removal is unfinished.",
+                };
             return props.configured === true
                 ? {
                       label: "Can't connect",
@@ -515,7 +570,12 @@ function mobileState(props: HappyAgentMobileSettingsProps): MobileState {
 /** The state line, the Agent's own detail, and when the Agent last saw it change. */
 function statusDetail(description: string, props: HappyAgentMobileSettingsProps): string {
     const parts = [description];
-    if (props.message && (props.status === "failed" || props.status === "disconnected"))
+    // The removal banner already says it; the status line does not repeat it.
+    if (
+        props.message &&
+        !props.removalIncomplete &&
+        (props.status === "failed" || props.status === "disconnected")
+    )
         parts.push(props.message);
     if (props.updatedAt !== undefined)
         parts.push(

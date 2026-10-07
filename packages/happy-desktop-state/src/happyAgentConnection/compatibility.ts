@@ -17,12 +17,25 @@ export const MINIMUM_HAPPY_AGENT_PROTOCOL_VERSION = HAPPY_AGENT_PROTOCOL_VERSION
 export const MINIMUM_HAPPY_AGENT_VERSION = "0.4.44";
 
 /**
- * Orders two daemon product versions by their dotted numeric fields. A
- * prerelease suffix on a field ("29-beta") counts as the number it starts
- * with; the daemon and this client share one version scheme, so nothing finer
- * is needed to say "at least".
+ * Orders two daemon product versions the way releases are cut: by the dotted
+ * numeric release, then a prerelease (`0.4.84-preview.2`) before the release it
+ * previews and in its own numeric order. A feature that first ships in a
+ * preview is therefore present in that preview, later ones, and the release.
  */
 function versionCompare(left: string, right: string): number {
+    const [leftRelease = "", leftPreview] = left.split("-", 2);
+    const [rightRelease = "", rightPreview] = right.split("-", 2);
+    const release = dottedCompare(leftRelease, rightRelease);
+    if (release !== 0) return release;
+    if (leftPreview === undefined || rightPreview === undefined)
+        return leftPreview === rightPreview ? 0 : leftPreview === undefined ? 1 : -1;
+    return dottedCompare(
+        leftPreview.replace(/^[^.\d]*\.?/u, ""),
+        rightPreview.replace(/^[^.\d]*\.?/u, ""),
+    );
+}
+
+function dottedCompare(left: string, right: string): number {
     const leftParts = left.split(".");
     const rightParts = right.split(".");
     const length = Math.max(leftParts.length, rightParts.length);

@@ -1,4 +1,10 @@
-import type { HappyAgentClient, HappyIntegration } from "@slopus/happy-agent-client";
+import {
+    HappyAgentApiError,
+    happyIntegrationSchema,
+    type HappyAgentClient,
+    type HappyIntegration,
+} from "@slopus/happy-agent-client";
+import { Value } from "@sinclair/typebox/value";
 import { createStore } from "zustand/vanilla";
 import type { UserError } from "../types.js";
 import { happyAgentUserError } from "./happyAgentSupport.js";
@@ -50,6 +56,8 @@ export interface HappyAgentIntegrationSnapshot {
     };
     /** The daemon's own detail for a disconnected or failed integration. */
     readonly message?: string;
+    /** The daemon's stable code for `message`, such as `happy_unavailable`. */
+    readonly messageCode?: string;
     readonly status: HappyAgentIntegrationStatus;
     readonly updatedAt?: number;
     readonly terminalCli?: HappyTerminalCliSnapshot;
@@ -68,6 +76,12 @@ export interface HappyAgentIntegrationStore {
     happyIntegrationDisconnect(): void;
     /** Starts the authenticated owner's Happy Agent pairing with Happy Mobile. */
     happyIntegrationPair(): void;
+    /**
+     * Keeps a saved pairing and asks the daemon to connect it again. This is
+     * how a failed removal is abandoned ("Keep linked") and how any other
+     * failed saved pairing is retried; it never replaces the credentials.
+     */
+    happyIntegrationReconnect(): void;
     /** Cancels the pairing authorization currently shown by this window. */
     happyIntegrationPairingCancel(): void;
     happyIntegrationDisconnectRequest(): void;
@@ -409,6 +423,15 @@ export function happyAgentIntegrationStoreCreate(
                 },
                 (error: unknown) => {
                     if (disposed) return;
+                    // A refused removal answers with the integration it left
+                    // behind: still linked, and failed. Adopting it here does
+                    // not depend on the stream event having arrived first.
+                    const integration =
+                        error instanceof HappyAgentApiError
+                            ? error.body?.["integration"]
+                            : undefined;
+                    if (Value.Check(happyIntegrationSchema, integration))
+                        integrationAdopt(integration);
                     store.setState(
                         {
                             disconnectError: happyAgentUserError(error),
@@ -561,6 +584,33 @@ export function happyAgentIntegrationStoreCreate(
                 },
             );
         },
+        happyIntegrationReconnect() {
+            const current = store.getState();
+            if (
+                disposed ||
+                current.configured !== true ||
+                current.status !== "failed" ||
+                current.disconnecting ||
+                current.pairingStarting
+            )
+                return;
+            const { disconnectError: _removal, pairingError: _pairing, ...rest } = current;
+            store.setState({ ...rest, pairingStarting: true }, true);
+            void deps.client.startHappyIntegration().then(
+                (response) => {
+                    if (disposed) return;
+                    integrationAdopt(response.integration);
+                    store.setState({ pairingStarting: false }, false);
+                },
+                (error: unknown) => {
+                    if (disposed) return;
+                    store.setState(
+                        { pairingError: happyAgentUserError(error), pairingStarting: false },
+                        false,
+                    );
+                },
+            );
+        },
         happyIntegrationPairingCancel() {
             const current = store.getState();
             if (disposed || current.status !== "pairing" || current.pairingCanceling) return;
@@ -612,9 +662,33 @@ function integrationProject(integration: HappyIntegration): HappyAgentIntegratio
             : {}),
         ...((integration.status === "disconnected" || integration.status === "failed") &&
         integration.error
-            ? { message: integration.error.message }
+            ? { message: integration.error.message, messageCode: integration.error.code }
             : {}),
     };
+}
+
+/**
+ * The first Happy Agent whose Disconnect deletes this computer, and the chats
+ * it published, from the Happy account. Older Agents only forget the pairing,
+ * and the copy shown for Disconnect must say which of the two will happen.
+ */
+export const HAPPY_AGENT_COMPUTER_REMOVAL_VERSION = "0.4.84-preview.1";
+
+/**
+ * Whether this window asked to remove the computer and Happy could not confirm
+ * it: the pairing is still saved and closed until the removal is retried or
+ * abandoned. Without this window's own refused request, a failed saved pairing
+ * is an ordinary connection failure.
+ */
+export function happyAgentIntegrationRemovalIncomplete(
+    snapshot: HappyAgentIntegrationSnapshot,
+): boolean {
+    return (
+        snapshot.configured === true &&
+        snapshot.status === "failed" &&
+        snapshot.messageCode === "happy_unavailable" &&
+        snapshot.disconnectError !== undefined
+    );
 }
 
 const UNAVAILABLE: HappyAgentIntegrationSnapshot = {
@@ -630,6 +704,7 @@ export const happyAgentIntegrationStoreNoop: HappyAgentIntegrationStore = {
     subscribe: () => () => undefined,
     happyIntegrationDisconnect: () => undefined,
     happyIntegrationPair: () => undefined,
+    happyIntegrationReconnect: () => undefined,
     happyIntegrationPairingCancel: () => undefined,
     happyIntegrationDisconnectRequest: () => undefined,
     terminalCliResetRequest: () => undefined,

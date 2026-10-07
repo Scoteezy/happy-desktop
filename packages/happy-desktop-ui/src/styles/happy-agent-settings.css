@@ -149,6 +149,20 @@
     line-height: 20px;
 }
 
+/* A refused removal: the reason, then its two ways forward beneath it. */
+.happy-agent-mobile-settings__removal {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.happy-agent-mobile-settings__removal-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
 /* Adding a phone happens on the phones; the steps are read, not acted on. */
 .happy-agent-mobile-settings__steps {
     box-sizing: border-box;

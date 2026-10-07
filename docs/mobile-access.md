@@ -36,9 +36,11 @@ CLI status is checked every few seconds only while the surface is visible.
 2. For **Waiting for phone**, approve the existing code or cancel the attempt.
    Codes expire; a later explicit attempt creates a new one.
 3. For a saved offline pairing, keep the pairing and inspect the reported
-   connection error. Do not disconnect as routine troubleshooting. Starting an
-   existing configured integration retries its connection without replacing
-   credentials; this is a recovery action, not a refresh control.
+   connection error. Do not disconnect as routine troubleshooting; with Happy
+   Agent 0.4.84-preview.1 and later, disconnecting deletes this computer's chats
+   from your phones. Starting an existing configured integration retries its
+   connection without replacing credentials; this is a recovery action, not a
+   refresh control.
 4. Inspect the terminal section separately. Installing or linking the CLI is
    optional and must not turn successful Agent phone pairing into a failure.
    Desktop reports and manages an existing terminal CLI login independently;
@@ -77,11 +79,12 @@ per-device revocation guarantee.
 
 ## Remove only the intended connection
 
-| Action | Changes | Preserves |
-| --- | --- | --- |
-| **Disconnect this computer** | Cancels Agent pairing, closes the selected owner's Happy connections, and removes that owner's Agent credential copy. Standalone mode also suppresses re-import of the exact external login present at unlink. | Other team users, the CLI login and daemon, phone accounts, history, and local Agent work. It does not delete a remote computer registration. |
-| **Remove saved terminal login** | Stops only a verified matching CLI daemon, deletes its root `access.key`, and removes `machineId` and `machineIdConfirmedByServer` from its settings. | The Agent pairing, other settings, running terminal sessions, projects, logs, history, binaries, provider credentials, and recovery keys. |
-| Optional **remove the CLI registration** in the same confirmation | Deletes exactly the CLI's displayed machine ID on its displayed server using that CLI account's authority. | Account and session history. It does not delete an Agent registration whose ID is unknown. |
+| Action                                                                | Changes                                                                                                                                                                                                                                                                                                                                                                                                                                                | Preserves                                                                                                                                     |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Disconnect this computer** (Happy Agent 0.4.84-preview.1 and later) | Deletes this computer and the chats it published from the selected owner's Happy account, then removes that owner's Agent credential copy and forgets the computer's identity, so connecting again adds it as a new computer. If Happy can't confirm the removal, nothing local is removed: **Try again**, or **Keep linked** to reconnect the saved pairing. Standalone mode also suppresses re-import of the exact external login present at unlink. | Other team users, the CLI login, daemon and CLI sessions, other computers, phone accounts, and local Agent work and history.                  |
+| **Disconnect this computer** (older Happy Agent)                      | Cancels Agent pairing, closes the selected owner's Happy connections, and removes that owner's Agent credential copy. The dialog says so.                                                                                                                                                                                                                                                                                                              | Other team users, the CLI login and daemon, phone accounts, history, and local Agent work. It does not delete a remote computer registration. |
+| **Remove saved terminal login**                                       | Stops only a verified matching CLI daemon, deletes its root `access.key`, and removes `machineId` and `machineIdConfirmedByServer` from its settings.                                                                                                                                                                                                                                                                                                  | The Agent pairing, other settings, running terminal sessions, projects, logs, history, binaries, provider credentials, and recovery keys.     |
+| Optional **remove the CLI registration** in the same confirmation     | Deletes exactly the CLI's displayed machine ID on its displayed server using that CLI account's authority.                                                                                                                                                                                                                                                                                                                                             | Account and session history. It does not delete an Agent registration whose ID is unknown.                                                    |
 
 The CLI confirmation names the exact absolute paths, fields, account fingerprint,
 server, and optional machine registration. Its private identity guard remains
