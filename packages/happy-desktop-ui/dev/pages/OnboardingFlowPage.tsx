@@ -123,12 +123,6 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
             }),
     },
     {
-        id: "profile",
-        label: "Profile",
-        render: () =>
-            onboarding({ busy: false, email: "", kind: "profile-required", name: "" }, "profile"),
-    },
-    {
         id: "mobile",
         label: "Mobile · take Happy with you",
         render: () =>

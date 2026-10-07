@@ -19,19 +19,9 @@ const recordVersion = 3;
 const LOCAL_ASSISTANT_IDS: readonly LocalAssistantId[] = ["claude", "codex", "grok"];
 
 export type LocalHappyAgentOnboardingState =
-    | {
-          /** Whether provider setup is the only gate in front of the profile. */
-          readonly profileDone: boolean;
-          readonly state: "complete" | "profile_required" | "provider_setup";
-      }
+    | { readonly state: "complete" | "provider_setup" }
     | { readonly message: string; readonly state: "happy_agent_unreachable" };
 
-export interface LocalHappyAgentProfile {
-    readonly email: string | null;
-    readonly name: string | null;
-    readonly updatedAt: number;
-    readonly version: string;
-}
 /**
  * How often the machine is re-examined while setup is waiting on something the
  * person does outside Happy — installing Node or Happy Agent, or repairing a Happy Agent that
@@ -189,11 +179,6 @@ export interface LocalOnboardingRuntime {
     subscribe(listener: (snapshot: DesktopRuntimeSnapshot) => void): () => void;
     retry(): Promise<void>;
     localOnboardingResolve(connectionId: number): Promise<LocalHappyAgentOnboardingState>;
-    localOnboardingProfileCreate(
-        connectionId: number,
-        input: { readonly email: string; readonly name: string },
-    ): Promise<LocalHappyAgentProfile>;
-    localOnboardingProfileRead(connectionId: number): Promise<LocalHappyAgentProfile>;
     localOnboardingFreshness(connectionId: number): Promise<"fresh" | "used">;
     localOnboardingProjectAdd(
         connectionId: number,
@@ -343,8 +328,6 @@ export class LocalOnboarding implements Disposable {
      * keeps the flow linear.
      */
     private reopened?: LocalOnboardingStepBack;
-    /** What the connected Happy Agent holds, read when the profile step is revisited. */
-    private happyAgentProfile?: { readonly email: string; readonly name: string };
     /** Where the sequence stands while a finished step is being looked at again. */
     private liveStage?: LocalOnboardingSnapshot["stage"];
     private runtimeKey?: string;
@@ -422,8 +405,8 @@ export class LocalOnboarding implements Disposable {
      * Goes back to a step that is already done.
      *
      * Nothing is undone. Subscriptions un-acknowledges a report so the machine
-     * is examined again; setup and profile put one finished step back on screen
-     * until it is left. A step that is not behind the current one is refused,
+     * is examined again; setup puts its finished step back on screen until it
+     * is left. A step that is not behind the current one is refused,
      * because the bar only offers the ones that are.
      */
     stepBack(step: LocalOnboardingStepBack): void {
@@ -436,25 +419,7 @@ export class LocalOnboarding implements Disposable {
             return;
         }
         this.reopened = step;
-        // A revisited profile shows what is saved rather than an empty form,
-        // so the identity is read back from the Happy Agent that holds it.
-        if (step === "profile") void this.profileRead();
         this.publish();
-    }
-
-    /** Reads the saved identity for the connection that is current right now. */
-    private async profileRead(): Promise<void> {
-        const connection = this.freshnessConnection;
-        if (connection === undefined) return;
-        try {
-            const profile = await this.options.runtime.localOnboardingProfileRead(connection);
-            if (this.closed || this.freshnessConnection !== connection) return;
-            this.happyAgentProfile = { email: profile.email ?? "", name: profile.name ?? "" };
-            this.publish();
-        } catch {
-            // A profile that cannot be read leaves the form as the person left
-            // it; the step still works, and saving overwrites either way.
-        }
     }
 
     /** Finishes the desktop decisions without discovering or registering a project. */
@@ -550,22 +515,6 @@ export class LocalOnboarding implements Disposable {
             // again, and it now holds the project that was just registered.
             reread();
         });
-    }
-
-    async profileCreate(input: { readonly email: string; readonly name: string }): Promise<void> {
-        const connection = this.freshnessConnection;
-        await this.durable(
-            "Happy could not create that profile",
-            ["profileRequired"],
-            async (working) => {
-                if (connection === undefined) throw new Error("The local Happy Agent changed.");
-                await this.options.runtime.localOnboardingProfileCreate(connection, input);
-                if (!working.current()) return;
-                // Saving is how a revisited profile step is left.
-                this.reopened = undefined;
-                this.freshnessInvalidate();
-            },
-        );
     }
 
     [Symbol.dispose](): void {
@@ -1025,7 +974,6 @@ export class LocalOnboarding implements Disposable {
             stage === "providersMissing" || stage === "assistantsFound"
                 ? this.assistantsProject()
                 : undefined;
-        const onboardingProfile = this.happyAgentProfile;
         const retrying = runtime.phase === "error" && runtime.retrying === true;
         // Only the first install is watched here. A background update fetched
         // for a machine that already works is not a step of setting one up, and
@@ -1044,7 +992,6 @@ export class LocalOnboarding implements Disposable {
             freshness: this.freshness,
             ...(message ? { message } : {}),
             ...(assistants ? { assistants } : {}),
-            ...(onboardingProfile ? { profile: onboardingProfile } : {}),
             ...(this.liveStage ? { reachedStage: this.liveStage } : {}),
             ...(retrying ? { retrying } : {}),
             ...(node ? { node } : {}),
@@ -1096,19 +1043,13 @@ export class LocalOnboarding implements Disposable {
         if (!onboarding) return this.freshness === "error" ? "connectFailed" : "examining";
         const next = ((): LocalOnboardingSnapshot["stage"] => {
             switch (onboarding.state) {
+                case "provider_setup":
+                    if (!this.providerSetupAcknowledged) return "providersMissing";
+                // falls through
                 case "complete":
                     return this.freshness === "fresh" && !this.record.chiefOfStaffSetup
                         ? "project"
                         : "complete";
-                case "provider_setup":
-                    if (!this.providerSetupAcknowledged) return "providersMissing";
-                    return onboarding.profileDone
-                        ? this.freshness === "fresh" && !this.record.chiefOfStaffSetup
-                            ? "project"
-                            : "complete"
-                        : "profileRequired";
-                case "profile_required":
-                    return "profileRequired";
                 case "happy_agent_unreachable":
                     return "connectFailed";
             }
@@ -1116,8 +1057,7 @@ export class LocalOnboarding implements Disposable {
         // The agent is answering and the machine was read on the way here, so
         // what it turned out to have goes in front of the steps that are still
         // owed — which is where somebody wants it, since a machine with no
-        // assistant on it is worth knowing about before filling in a name and
-        // picking a folder for it.
+        // assistant on it is worth knowing about before picking a folder for it.
         //
         // It is tied to the steps that remain rather than to an install Happy
         // watched happen: whether this run was the one that fetched the agent is
@@ -1125,9 +1065,7 @@ export class LocalOnboarding implements Disposable {
         // deserves the same report. A machine with nothing left to do never sees
         // it, because there is nothing for it to go in front of.
         const live =
-            (next === "profileRequired" || next === "project") &&
-            !this.assistantsAcknowledged &&
-            this.probed
+            next === "project" && !this.assistantsAcknowledged && this.probed
                 ? "assistantsFound"
                 : next;
         // A step somebody went back to, shown only while the sequence has
@@ -1137,10 +1075,6 @@ export class LocalOnboarding implements Disposable {
         if (this.reopened === "setup") {
             this.liveStage = live;
             return "agentReady";
-        }
-        if (this.reopened === "profile" && (live === "project" || live === "complete")) {
-            this.liveStage = live;
-            return "profileRequired";
         }
         this.liveStage = undefined;
         return live;

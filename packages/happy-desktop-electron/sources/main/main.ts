@@ -1824,21 +1824,9 @@ void app
         });
         ipcMain.handle(desktopIpc.onboardingStepBack, (event, step: unknown) => {
             onboardingSenderRequire(event.sender);
-            if (step !== "setup" && step !== "subscriptions" && step !== "profile")
+            if (step !== "setup" && step !== "subscriptions")
                 throw new Error("That is not a first-run setup step.");
             onboarding.stepBack(step);
-        });
-        ipcMain.handle(desktopIpc.onboardingProfileCreate, (event, input: unknown) => {
-            onboardingSenderRequire(event.sender);
-            if (
-                !input ||
-                typeof input !== "object" ||
-                typeof (input as { name?: unknown }).name !== "string" ||
-                typeof (input as { email?: unknown }).email !== "string"
-            )
-                throw new Error("That profile is invalid.");
-            const profile = input as { readonly email: string; readonly name: string };
-            return onboarding.profileCreate({ email: profile.email, name: profile.name });
         });
         ipcMain.handle(desktopIpc.runtimeStart, (_event, request: unknown) =>
             runtime.start(desktopStartRequestValidate(request)),

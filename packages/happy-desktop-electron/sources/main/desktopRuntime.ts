@@ -26,7 +26,7 @@ import {
     type LocalHappyAgentConnector,
 } from "./localHappyAgent";
 import { HappyAgentClient } from "@slopus/happy-agent-client";
-import type { LocalHappyAgentOnboardingState, LocalHappyAgentProfile } from "./localOnboarding";
+import type { LocalHappyAgentOnboardingState } from "./localOnboarding";
 import {
     happyAgentDaemonConnectionUnavailable,
     type HappyAgentDaemonInspectorResponse,
@@ -199,32 +199,6 @@ export class DesktopRuntime implements AsyncDisposable {
         )
             throw new Error("The local Happy Agent changed while Happy was examining it.");
         return state;
-    }
-
-    async localOnboardingProfileCreate(
-        expectedConnectionId: number,
-        input: { readonly email: string; readonly name: string },
-    ): Promise<LocalHappyAgentProfile> {
-        return this.serial(async () => {
-            this.localConnectionRequire(expectedConnectionId);
-            const client = this.localHappyAgentClient();
-            if (!client) throw new Error("The local Happy Agent daemon is unavailable.");
-            const current = await client.getProfile();
-            return (
-                await client.updateProfile(input, {
-                    ifMatch: current.profile.version,
-                })
-            ).profile;
-        });
-    }
-
-    localOnboardingProfileRead(expectedConnectionId: number): Promise<LocalHappyAgentProfile> {
-        return this.serial(async () => {
-            this.localConnectionRequire(expectedConnectionId);
-            const client = this.localHappyAgentClient();
-            if (!client) throw new Error("The local Happy Agent daemon is unavailable.");
-            return (await client.getProfile()).profile;
-        });
     }
 
     localOnboardingFreshness(expectedConnectionId: number): Promise<"fresh" | "used"> {
@@ -635,10 +609,9 @@ async function connectedHappyAgentOnboardingResolve(
         const state = await client.getOnboarding({
             signal: AbortSignal.timeout(onboardingRequestTimeoutMs),
         });
-        const profileDone = state.steps.profile.done;
-        if (!state.steps.providers.done) return { profileDone, state: "provider_setup" };
-        if (!profileDone) return { profileDone, state: "profile_required" };
-        return { profileDone, state: "complete" };
+        // A profile is not asked for here: a solo machine runs without one, and a
+        // team deployment sets it up as part of joining the team.
+        return { state: state.steps.providers.done ? "complete" : "provider_setup" };
     } catch (error) {
         return happyAgentUnreachableState(error);
     }

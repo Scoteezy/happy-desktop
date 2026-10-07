@@ -24,9 +24,7 @@ export interface DesktopMobileSetupProps {
     /** Pinned bottom-right on every step, the way the rest of setup carries it. */
     readonly help?: ReactNode;
     /** Returns to an earlier onboarding step from the shared step bar. */
-    onStageSelect?(
-        stage: "setup" | "subscriptions" | "profile" | "get-app" | "connect-phone",
-    ): void;
+    onStageSelect?(stage: "setup" | "subscriptions" | "get-app" | "connect-phone"): void;
     readonly appearance: ThemeMode;
     readonly step: DesktopMobileSetupStep;
     readonly onContinue: () => void;

@@ -40,8 +40,6 @@ export interface LocalOnboardingViewSnapshot {
     readonly pending: boolean;
     /** Why the last request could not be delivered, until another is made. */
     readonly failure?: string;
-    readonly profileName: string;
-    readonly profileEmail: string;
     /** The optional mobile step, materialized only before the first project. */
     readonly happyMobile?: HappyMobileOnboardingSnapshot;
     readonly chiefOfStaffReady: boolean;
@@ -57,9 +55,6 @@ export interface LocalOnboardingStore {
     chiefOfStaffSetup(): void;
     assistantsContinue(): void;
     stepBack(step: LocalOnboardingStepBack): void;
-    profileNameUpdate(value: string): void;
-    profileEmailUpdate(value: string): void;
-    profileCreate(): void;
     happyMobileConnect(): void;
     happyMobileSkip(): void;
     happyMobilePlatformSelect(platform: "ios" | "android"): void;
@@ -116,8 +111,6 @@ export function localOnboardingStoreCreate(
         agentStarting: false,
         chiefOfStaffReady: false,
         pending: false,
-        profileEmail: "",
-        profileName: "",
         providerAuthentication: { complete: false },
     };
     let bridgeUnsubscribe: (() => void) | undefined;
@@ -132,7 +125,6 @@ export function localOnboardingStoreCreate(
     let eventReceived = false;
     let daemonEventReceived = false;
     let runtimeEventReceived = false;
-    let profileDraftDirty = false;
     let verificationAbort: AbortController | undefined;
     let verificationRunning = false;
     let verificationGeneration = 0;
@@ -155,15 +147,7 @@ export function localOnboardingStoreCreate(
     };
     const onboardingSet = (next: LocalOnboardingSnapshot) => {
         if (Object.is(snapshot.onboarding, next)) return;
-        const savedProfileArrived =
-            next.profile !== undefined && snapshot.onboarding?.profile === undefined;
-        publish({
-            ...snapshot,
-            onboarding: next,
-            ...(savedProfileArrived && !profileDraftDirty
-                ? { profileEmail: next.profile.email, profileName: next.profile.name }
-                : {}),
-        });
+        publish({ ...snapshot, onboarding: next });
         setupSynchronize();
     };
     const daemonSet = (next: DesktopDaemonSnapshot) => {
@@ -734,24 +718,6 @@ export function localOnboardingStoreCreate(
         stepBack(step) {
             attempt(bridge.onboardingStepBack(step), "Happy could not go back to that step.");
         },
-        profileNameUpdate(value) {
-            profileDraftDirty = true;
-            publish({ ...snapshot, profileName: value });
-        },
-        profileEmailUpdate(value) {
-            profileDraftDirty = true;
-            publish({ ...snapshot, profileEmail: value });
-        },
-        profileCreate() {
-            if (snapshot.pending) return;
-            attempt(
-                bridge.onboardingProfileCreate({
-                    email: snapshot.profileEmail.trim(),
-                    name: snapshot.profileName.trim(),
-                }),
-                "Happy could not create that profile.",
-            );
-        },
         happyMobileConnect() {
             happyMobileStore?.happyMobileConnect();
         },
@@ -816,14 +782,6 @@ export function localOnboardingView(
                     : {}),
                 ...(onboarding.node ? { nodeVersion: onboarding.node.version } : {}),
             };
-        case "profileRequired":
-            return {
-                busy,
-                email: snapshot.profileEmail,
-                kind: "profile-required",
-                name: snapshot.profileName,
-                ...(message ? { message } : {}),
-            };
         case "examining":
             return { kind: "examining" };
         case "project": {
@@ -881,8 +839,6 @@ export function localOnboardingReachedStage(
         case "assistantsFound":
         case "examining":
             return "subscriptions";
-        case "profileRequired":
-            return "profile";
         case "project":
         case "complete":
             return "connect-phone";

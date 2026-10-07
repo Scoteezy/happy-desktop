@@ -395,13 +395,13 @@ function DesktopOnboardingGate(props: {
             onHappyMobilePlatformSelect={(platform) =>
                 props.store.happyMobilePlatformSelect(platform)
             }
-            onProfileCreate={() => props.store.profileCreate()}
-            onProfileEmailChange={(value) => props.store.profileEmailUpdate(value)}
-            onProfileNameChange={(value) => props.store.profileNameUpdate(value)}
+            // Local setup never asks for a profile; only a remote Happy Agent does.
+            onProfileCreate={() => undefined}
+            onProfileEmailChange={() => undefined}
+            onProfileNameChange={() => undefined}
             onProjectChoose={() => props.store.projectChoose()}
             onStageSelect={(stage) => {
-                if (stage === "setup" || stage === "subscriptions" || stage === "profile")
-                    props.store.stepBack(stage);
+                if (stage === "setup" || stage === "subscriptions") props.store.stepBack(stage);
             }}
             {...(reached ? { reachedStage: reached } : {})}
             onExternalOpen={

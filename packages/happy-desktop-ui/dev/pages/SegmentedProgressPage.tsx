@@ -185,7 +185,7 @@ export function SegmentedProgressPage() {
                                 label: "Subscriptions",
                                 state: "running",
                             },
-                            { id: "profile", label: "Profile", state: "pending" },
+                            { id: "get-app", label: "Get app", state: "pending" },
                         ]}
                         tone="inverse"
                     />

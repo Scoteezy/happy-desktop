@@ -200,7 +200,6 @@ export function browserDevBridgeCreate(): HappyDesktopBridge {
         onboardingSubscribe: () => () => undefined,
         onboardingAssistantsContinue: async () => undefined,
         onboardingStepBack: async () => undefined,
-        onboardingProfileCreate: async () => undefined,
         onboardingProjectChoose: async () => undefined,
         onboardingChiefOfStaffComplete: async () => undefined,
         runtimeGet: async () => {

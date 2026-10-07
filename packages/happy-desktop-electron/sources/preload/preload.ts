@@ -185,8 +185,6 @@ const bridge: HappyDesktopBridge = {
         ipcRenderer.on(desktopIpc.onboardingChanged, receive);
         return () => ipcRenderer.removeListener(desktopIpc.onboardingChanged, receive);
     },
-    onboardingProfileCreate: (input) =>
-        ipcRenderer.invoke(desktopIpc.onboardingProfileCreate, input),
     onboardingProjectChoose: () => ipcRenderer.invoke(desktopIpc.onboardingProjectChoose),
     onboardingChiefOfStaffComplete: () =>
         ipcRenderer.invoke(desktopIpc.onboardingChiefOfStaffComplete),

@@ -431,8 +431,6 @@ export type LocalOnboardingStage =
      * and see what Happy put on their machine.
      */
     | "agentReady"
-    /** Happy Agent requires a human identity before it can finish setup. */
-    | "profileRequired"
     /** Happy Agent Connect is resolving the daemon-owned onboarding status. */
     | "examining"
     /** Everything else is settled and this Happy Agent is demonstrably unused. */
@@ -518,11 +516,6 @@ export interface LocalOnboardingSnapshot {
     /** An attempt to reach Happy Agent is running, started from a failed stage. */
     readonly retrying?: boolean;
     /**
-     * The identity this Happy Agent already holds, so a profile step reopened
-     * from the step bar shows what is saved rather than an empty form.
-     */
-    readonly profile?: { readonly email: string; readonly name: string };
-    /**
      * Where the sequence actually stands, when `stage` is a finished step
      * someone went back to. The step bar draws the work already done from
      * this, so a revisit lights an earlier step without unwinding the rest.
@@ -531,7 +524,7 @@ export interface LocalOnboardingSnapshot {
 }
 
 /** A step of first-run setup a person may deliberately return to. */
-export type LocalOnboardingStepBack = "setup" | "subscriptions" | "profile";
+export type LocalOnboardingStepBack = "setup" | "subscriptions";
 
 /**
  * One file a window of its own is showing, as that window is allowed to see it:
@@ -788,10 +781,6 @@ export interface HappyDesktopBridge {
     /** Where local first-run setup stands, without waiting for its next change. */
     onboardingGet(): Promise<LocalOnboardingSnapshot>;
     onboardingSubscribe(listener: (snapshot: LocalOnboardingSnapshot) => void): () => void;
-    onboardingProfileCreate(input: {
-        readonly email: string;
-        readonly name: string;
-    }): Promise<void>;
     /**
      * Opens the native folder picker, requires a Git repository root, and opens
      * it as this Happy Agent's first project. Picking, validating, and registering all
@@ -898,7 +887,6 @@ export const desktopIpc = {
     onboardingStepBack: "happy:onboarding:step-back",
     onboardingChanged: "happy:onboarding:changed",
     onboardingGet: "happy:onboarding:get",
-    onboardingProfileCreate: "happy:onboarding:profile-create",
     onboardingProjectChoose: "happy:onboarding:project-choose",
     onboardingChiefOfStaffComplete: "happy:onboarding:chief-of-staff-complete",
     runtimeChanged: "happy:runtime:changed",

@@ -697,9 +697,9 @@ function onboardingStage(view: LocalOnboardingView): OnboardingStage {
     switch (view.kind) {
         case "examining":
         case "provider-authentication":
-            return "subscriptions";
+        // Only a remote Happy Agent asks for a profile, and it draws no step bar.
         case "profile-required":
-            return "profile";
+            return "subscriptions";
         case "happy-mobile-desktop":
             return view.step.kind === "intro" ? "get-app" : "connect-phone";
         case "happy-mobile-checking":

@@ -5,7 +5,7 @@ import { SegmentedProgress, type SegmentedProgressSegment } from "./SegmentedPro
  * than a branch: a sequence that nests inside itself has to be read twice to
  * answer where you are.
  */
-export type OnboardingStage = "setup" | "subscriptions" | "profile" | "get-app" | "connect-phone";
+export type OnboardingStage = "setup" | "subscriptions" | "get-app" | "connect-phone";
 /** The same two mobile steps, on their own, for Settings rather than first run. */
 export type MobileOnboardingStage = "get-app" | "connect-phone" | "complete";
 
@@ -31,7 +31,6 @@ export type OnboardingStepsProps =
 const desktopStages = [
     { id: "setup", label: "Setup" },
     { id: "subscriptions", label: "Subscriptions" },
-    { id: "profile", label: "Profile" },
     { id: "get-app", label: "Get app" },
     { id: "connect-phone", label: "Connect phone" },
 ] as const satisfies readonly { readonly id: OnboardingStage; readonly label: string }[];

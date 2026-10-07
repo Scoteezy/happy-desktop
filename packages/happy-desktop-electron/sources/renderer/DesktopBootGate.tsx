@@ -95,7 +95,6 @@ function bootReady(
         case "connectFailed":
         case "providersMissing":
         case "assistantsFound":
-        case "profileRequired":
         case "project":
             return true;
     }
