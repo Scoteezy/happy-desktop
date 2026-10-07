@@ -49,6 +49,14 @@ scripts/demo/
 │       ├── assets/rocket-dino.png
 │       ├── patches/sticker.patch
 │       └── artifacts/             generated and gitignored
+├── compositions/
+│   └── readme/
+│       ├── composition.mjs        layout, cues, poster, encode budget
+│       ├── cues.json              v21-r2 phone-focus cues
+│       ├── backdrop.jpg           generated photograph, see CREDITS
+│       ├── readme-demo.mp4        selected README movie, committed
+│       ├── readme-demo-poster.png
+│       └── artifacts/             generated and gitignored
 ├── patches/        reusable literal patches
 └── assets/         shared project icons and sticker palette
 ```
@@ -169,6 +177,47 @@ By default a finished video lands in its own gitignored
 more takes elsewhere. On this machine the recorder needs sandbox-exempt
 execution: the daemon, the inference gateway, Vite, and the browser all bind
 loopback listeners.
+
+## Composing the README movie
+
+A composition stages takes that were already recorded; it never re-records or
+retimes them. `compositions/readme` puts the core take's desktop movie and its
+synchronized phone movie on one photographic backdrop, staged like the
+website's player. The desktop window is centered with a macOS-style shadow. The
+phone, in the core demo's iPhone 16 Pro frame, parks with its right edge
+running off the frame. Between the take's `phone-enter` and `phone-exit` cues it
+grows by the website's 1.18 and slides left only far enough to keep its right
+bezel inside the frame. The transition uses the website's 850ms
+`cubic-bezier(.22,.8,.24,1)`. Both movies decode in lockstep from frame zero, so
+the output keeps the take's one clock, and the desktop's soundtrack is retained.
+
+    pnpm demo compose readme --desktop <desktop.mp4> --phone <phone.mp4> [--cues <cues.json>] [--out <dir>]
+
+The inputs are the composed 1950×1660 desktop movie and the 1206×2622 phone
+screen movie of one take, at the same frame rate and frame count. The current
+selection is the website's `v22` export of take `v21-r2`, in the
+`slopus.github.io` checkout at `public/video/happy-one/v22/{desktop,phone}.mp4`.
+Without `--cues`, the committed `cues.json` supplies that take's focus window,
+2087/60–2974/60s, as documented by the website. A newly recorded core take
+writes the same `cues.json` format beside its MP4.
+
+The output is `compositions/readme/artifacts/readme.mp4`, plus a lossless
+`readme.poster.png` at the model-picker frame and a `readme.json` record of the
+inputs. It is 1920×1080 at 60fps in H.264 High yuv420p, with fast-start, CRF 18
+`veryslow`, and 96k AAC. A README video is uploaded as a GitHub
+user-attachments video, which accepts at most 10 MB on free accounts. The
+recipe therefore fails if the file is larger than 10,000,000 bytes. The v22
+take composes to 6.3 MB. If a longer take exceeds the ceiling, raise the CRF in
+`composition.mjs` before dropping the frame rate. At CRF 22, UI text is still
+indistinguishable from the lossless frame.
+
+The selected result is committed as
+[`readme-demo.mp4`](./compositions/readme/readme-demo.mp4) with
+[`readme-demo-poster.png`](./compositions/readme/readme-demo-poster.png).
+Composing again does not overwrite them. GitHub renders an inline README video
+only from a `github.com/user-attachments` URL. To get one, drag the MP4 into
+an issue or pull-request comment on github.com, then put the resulting URL in
+the README.
 
 ## Writing a demo
 

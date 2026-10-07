@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sinkCreate } from "./lib/capture.mjs";
 import { composeFrames } from "./lib/compose.mjs";
+import { compositionRender } from "./lib/composition.mjs";
 import { Director } from "./lib/director.mjs";
 import { encode } from "./lib/encode.mjs";
 import { soundtrackWrite } from "./lib/sounds.mjs";
@@ -26,6 +27,7 @@ import { mobileRunRead } from "./lib/mobile-run.mjs";
 
 const workspace = resolve(import.meta.dirname, "../..");
 const demosDirectory = resolve(import.meta.dirname, "demos");
+const compositionsDirectory = resolve(import.meta.dirname, "compositions");
 
 function parse(argv) {
     const options = {
@@ -54,6 +56,9 @@ function parse(argv) {
         else if (argument === "--mobile-run") options.mobileRun = resolve(rest.shift());
         else if (argument === "--phone-udid") options.phoneUdid = rest.shift();
         else if (argument === "--out") options.out = resolve(workspace, rest.shift());
+        else if (argument === "--desktop") options.desktop = resolve(rest.shift());
+        else if (argument === "--phone") options.phone = resolve(rest.shift());
+        else if (argument === "--cues") options.cues = resolve(rest.shift());
         else if (argument.startsWith("--")) throw new Error(`Unknown option: ${argument}`);
         else if (!options.command) options.command = argument;
         else options.ids.push(argument);
@@ -348,6 +353,28 @@ if (options.mobileRun) {
 if (options.command === "reset") {
     await gymReset();
     process.stdout.write("  demo gym world removed; the next run seeds a fresh one\n");
+    process.exit(0);
+}
+
+// Composing stages an already recorded take; it needs no gym, app, or browser.
+if (options.command === "compose") {
+    if (options.ids.length !== 1 || !options.desktop || !options.phone)
+        throw new Error(
+            "Usage: pnpm demo compose <composition> --desktop <mp4> --phone <mp4> [--cues <json>] [--out <dir>]",
+        );
+    const directory = join(compositionsDirectory, options.ids[0]);
+    const composition = (await import(pathToFileURL(join(directory, "composition.mjs")).href))
+        .default;
+    const out = options.out ?? join(directory, "artifacts");
+    await mkdir(out, { recursive: true });
+    await compositionRender({
+        composition,
+        directory,
+        desktop: options.desktop,
+        phone: options.phone,
+        cues: options.cues ?? join(directory, composition.cues),
+        out,
+    });
     process.exit(0);
 }
 
