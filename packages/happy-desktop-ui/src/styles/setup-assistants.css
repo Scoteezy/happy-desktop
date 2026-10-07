@@ -1,12 +1,13 @@
 /*
- * C-270 SetupAssistants — three assistants side by side, on a setup page.
+ * C-270 SetupAssistants — the assistants side by side, on a setup page, with
+ * a last column for model access configured some other way.
  *
- * Three equal columns with nothing drawn around them. The row sits under a
+ * Equal columns with nothing drawn around them. The row sits under a
  * centred paragraph on a plain surface, and a card, a border or a tile behind
  * each mark would be three boxes' worth of furniture around nine words. What
  * separates the columns is the space between them.
  *
- * They do not wrap: three fit the setup measure at any window size this app
+ * They do not wrap: four fit the setup measure at any window size this app
  * opens at, and a wrapped column would leave a stranded one under a centred
  * column of text. Every dimension is on the 4px grid.
  */
@@ -123,12 +124,105 @@
 }
 
 .happy-setup-assistants__link {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
     color: var(--text-link);
+    font-family: inherit;
     font-size: 12px;
     font-weight: 500;
     line-height: 16px;
     text-decoration: underline;
     text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+/*
+ * The prompts for the person's own coding agent, opened right over the link
+ * that asked for them. Right-aligned to it, because this is the last column
+ * and a popover centred on it would run off the window.
+ */
+.happy-setup-assistants__prompts {
+    position: relative;
+    display: flex;
+    flex: none;
+    justify-content: center;
+}
+
+.happy-setup-assistants__prompts-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--happy-z-overlay) - 1);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: default;
+}
+
+.happy-setup-assistants__popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: var(--happy-z-overlay);
+    display: flex;
+    flex-direction: column;
+    width: 380px;
+    max-width: calc(100vw - 32px);
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--modal-border);
+    border-radius: var(--happy-radius-md);
+    box-shadow: 0 2px 8px var(--shadow-color);
+    color: var(--text);
+    text-align: left;
+}
+
+.happy-setup-assistants__popover-title {
+    padding: 8px 12px 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+}
+
+.happy-setup-assistants__prompt {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 8px 8px 12px;
+}
+
+.happy-setup-assistants__prompt + .happy-setup-assistants__prompt {
+    border-top: 1px solid var(--modal-border);
+}
+
+.happy-setup-assistants__prompt-words {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.happy-setup-assistants__prompt-label {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.happy-setup-assistants__prompt-text {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* Copying is the whole point here, so the icon never hides behind hover. */
+.happy-setup-assistants__popover .happy-copy-button {
+    opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,22 +1,46 @@
+import { useState } from "react";
 import { AssistantMark, type AssistantMarkName } from "./AssistantMark";
+import { CopyButton } from "./CopyButton";
 import { SetupCommand } from "./SetupCommand";
+import { Ionicon } from "./vectorIcons/VectorIcon";
+
+/** One instruction somebody hands to the coding agent they already use. */
+export interface SetupAgentPrompt {
+    readonly id: string;
+    /** What the person is saying about their setup, for example "Sign me in". */
+    readonly label: string;
+    /** Exact text copied: the goal and where the installed documentation is. */
+    readonly text: string;
+}
 
 /**
- * What to do about an assistant that is not usable yet: run something, or go
- * and get it. Absent on one that is already signed in, because there is
- * nothing to do about it.
+ * What to do about an assistant that is not usable yet: run something, go and
+ * get it, or hand the job to the coding agent already on this machine. Absent
+ * on one that is already signed in, because there is nothing to do about it.
  */
 export type SetupAssistantAction =
     | { readonly kind: "command"; readonly command: string; readonly note?: string }
-    | { readonly kind: "link"; readonly label: string; readonly href: string };
+    | { readonly kind: "link"; readonly label: string; readonly href: string }
+    | {
+          readonly kind: "prompts";
+          readonly label: string;
+          /** One line over the prompts saying what to do with them. */
+          readonly title: string;
+          readonly prompts: readonly SetupAgentPrompt[];
+          /** Opens with the page, for the Blueprint. */
+          readonly defaultOpen?: boolean;
+      };
 
 /** What setup found out about one assistant on this machine. */
 export interface SetupAssistantEntry {
     /** Stable row key, and the command the person would type. */
     readonly id: string;
     readonly name: string;
-    /** Whose mark goes above the name. Codex is OpenAI's, so it is named that. */
-    readonly mark: AssistantMarkName;
+    /**
+     * Whose mark goes above the name. Codex is OpenAI's, so it is named that.
+     * `custom` is the column for a setup that is none of those vendors' CLIs.
+     */
+    readonly mark: AssistantMarkName | "custom";
     /**
      * `checking` is still being verified, `found` is usable, `signed-out` is
      * installed but unusable, and `missing` is not here at all.
@@ -101,7 +125,11 @@ export function SetupAssistants(props: SetupAssistantsProps) {
                             className="happy-setup-assistants__mark"
                             data-happy-desktop-ui="setup-assistants-mark"
                         >
-                            <AssistantMark name={assistant.mark} size={22} />
+                            {assistant.mark === "custom" ? (
+                                <Ionicon name="options-outline" size={22} />
+                            ) : (
+                                <AssistantMark name={assistant.mark} size={22} />
+                            )}
                         </span>
                         <span
                             className="happy-setup-assistants__name"
@@ -136,6 +164,8 @@ export function SetupAssistants(props: SetupAssistantsProps) {
                                                   </span>
                                               )}
                                           </>
+                                      ) : action.kind === "prompts" ? (
+                                          <SetupAssistantPrompts action={action} />
                                       ) : (
                                           <>
                                               <a
@@ -161,5 +191,73 @@ export function SetupAssistants(props: SetupAssistantsProps) {
                 ))}
             </div>
         </div>
+    );
+}
+
+/**
+ * The column's way through for somebody who would rather not do it by hand:
+ * a link like the other columns' remedies that opens, right over itself, the
+ * prompts to paste into the coding agent already on this machine.
+ */
+function SetupAssistantPrompts(props: {
+    readonly action: Extract<SetupAssistantAction, { readonly kind: "prompts" }>;
+}) {
+    const { action } = props;
+    const [open, setOpen] = useState(action.defaultOpen ?? false);
+    return (
+        <span
+            className="happy-setup-assistants__prompts"
+            data-happy-desktop-ui="setup-assistants-prompts"
+            onKeyDown={(event) => {
+                if (open && event.key === "Escape") {
+                    event.stopPropagation();
+                    setOpen(false);
+                }
+            }}
+        >
+            <button
+                aria-expanded={open}
+                aria-haspopup="dialog"
+                className="happy-setup-assistants__link"
+                data-happy-desktop-ui="setup-assistants-link"
+                onClick={() => setOpen(!open)}
+                type="button"
+            >
+                {action.label}
+            </button>
+            {open ? (
+                <>
+                    <button
+                        aria-label="Close"
+                        className="happy-setup-assistants__prompts-backdrop"
+                        onClick={() => setOpen(false)}
+                        tabIndex={-1}
+                        type="button"
+                    />
+                    <span
+                        aria-label={action.label}
+                        className="happy-setup-assistants__popover"
+                        role="dialog"
+                    >
+                        <span className="happy-setup-assistants__popover-title">
+                            {action.title}
+                        </span>
+                        {action.prompts.map((prompt) => (
+                            <span className="happy-setup-assistants__prompt" key={prompt.id}>
+                                <span className="happy-setup-assistants__prompt-words">
+                                    <span className="happy-setup-assistants__prompt-label">
+                                        {prompt.label}
+                                    </span>
+                                    <span className="happy-setup-assistants__prompt-text">
+                                        {prompt.text}
+                                    </span>
+                                </span>
+                                <CopyButton label={`Copy "${prompt.label}"`} text={prompt.text} />
+                            </span>
+                        ))}
+                    </span>
+                </>
+            ) : null}
+        </span>
     );
 }

@@ -1,5 +1,6 @@
 import type {
     LocalOnboardingAssistant,
+    LocalOnboardingCustom,
     LocalOnboardingView,
     OnboardingStage,
 } from "happy-desktop-ui";
@@ -24,6 +25,11 @@ interface ProviderAuthenticationSnapshot {
     readonly claude?: ProviderAuthenticationResult;
     readonly codex?: ProviderAuthenticationResult;
     readonly complete: boolean;
+    /** Model access configured some other way, and the kinds it was found to be. */
+    readonly custom?: {
+        readonly result: ProviderAuthenticationResult;
+        readonly providers: readonly string[];
+    };
     readonly grok?: ProviderAuthenticationResult;
     readonly key?: string;
 }
@@ -130,6 +136,7 @@ export function localOnboardingStoreCreate(
     let verificationGeneration = 0;
     let verificationConnectionId: number | undefined;
     const verificationRetryAt = new Map<LocalAssistantState["id"], number>();
+    let customVerificationRetryAt = 0;
     let providerRecheck: ReturnType<typeof setInterval> | undefined;
     let happyMobileStore: HappyMobileOnboardingStore | undefined;
     let happyMobileUnsubscribe: (() => void) | undefined;
@@ -459,6 +466,7 @@ export function localOnboardingStoreCreate(
         if (connectionChanged) {
             verificationConnectionId = runtime.connectionId;
             verificationRetryAt.clear();
+            customVerificationRetryAt = 0;
         }
         const previous = connectionChanged ? { complete: false } : snapshot.providerAuthentication;
         const generation = ++verificationGeneration;
@@ -473,6 +481,10 @@ export function localOnboardingStoreCreate(
                     claude: assistantAuthenticationInitial(assistants, "claude", previous),
                     codex: assistantAuthenticationInitial(assistants, "codex", previous),
                     complete: assistants.length === 0,
+                    custom:
+                        previous.custom?.result === "valid"
+                            ? previous.custom
+                            : { providers: [], result: "checking" },
                     grok: assistantAuthenticationInitial(assistants, "grok", previous),
                     key,
                 },
@@ -506,13 +518,70 @@ export function localOnboardingStoreCreate(
                 ),
             });
         };
+        const customPublish = (
+            result: Exclude<ProviderAuthenticationResult, "checking">,
+            providers: readonly string[],
+        ) => {
+            if (!current()) return;
+            const previous = snapshot.providerAuthentication.custom;
+            publish({
+                ...snapshot,
+                providerAuthentication: {
+                    ...snapshot.providerAuthentication,
+                    custom: {
+                        providers,
+                        result: authenticationResultProject(previous?.result, result),
+                    },
+                },
+            });
+        };
+        // The same proof the three CLIs get, for whatever else is configured:
+        // one real inference through it, backed off after a failure.
+        const customCheck = async () => {
+            const config = await client.getConfig({ signal: abort.signal }).catch(() => undefined);
+            if (!current()) return;
+            if (!config) {
+                customPublish("error", snapshot.providerAuthentication.custom?.providers ?? []);
+                return;
+            }
+            const configured = customProvidersFind(config);
+            const providers = [...new Set(configured.map(({ type }) => providerKindLabel(type)))];
+            if (configured.length === 0) {
+                customVerificationRetryAt = 0;
+                customPublish("invalid", []);
+                return;
+            }
+            if (snapshot.providerAuthentication.custom?.result === "valid") {
+                customPublish("valid", providers);
+                return;
+            }
+            if (Date.now() < customVerificationRetryAt) {
+                customPublish("error", providers);
+                return;
+            }
+            customVerificationRetryAt = Date.now() + providerVerificationRetryMs;
+            const passed = await Promise.all(
+                configured.map(({ id }) =>
+                    client
+                        .verifyProvider(id, { level: "inference" }, { signal: abort.signal })
+                        .then(
+                            (result) =>
+                                result.status === "passed" && result.performedLevel === "inference",
+                            () => false,
+                        ),
+                ),
+            );
+            if (passed.includes(true)) customVerificationRetryAt = 0;
+            customPublish(passed.includes(true) ? "valid" : "error", providers);
+        };
         void client
             .scanProviders({ signal: abort.signal })
             // A failed local scan says nothing about an earlier successful check.
             .catch(() => undefined)
             .then((scan) =>
-                Promise.all(
-                    assistants.map(async (assistant) => {
+                Promise.all([
+                    customCheck(),
+                    ...assistants.map(async (assistant) => {
                         if (!current()) return;
                         const credentials = scan?.providers.find(
                             (provider) => provider.providerId === assistant.id,
@@ -571,7 +640,7 @@ export function localOnboardingStoreCreate(
                             resultPublish(assistant.id, "error");
                         }
                     }),
-                ),
+                ]),
             )
             .then(() => {
                 if (generation !== verificationGeneration) return;
@@ -771,7 +840,9 @@ export function localOnboardingView(
                 assistants: assistantsProject(
                     onboarding.assistants,
                     snapshot.providerAuthentication,
+                    providersRefused(snapshot),
                 ),
+                custom: customProject(snapshot),
                 kind: "provider-authentication",
             };
         case "agentReady":
@@ -874,9 +945,14 @@ function agentSetupProject(
 function assistantsProject(
     assistants: readonly LocalAssistantState[] | undefined,
     authentication: ProviderAuthenticationSnapshot,
+    refused: boolean,
 ): readonly LocalOnboardingAssistant[] {
     return (assistants ?? []).map((assistant) => {
-        const result = authenticationFor(authentication, assistant.id) ?? "checking";
+        // Nothing can be checked against a daemon that would not start, and it
+        // already said why: none of these works yet.
+        const result = refused
+            ? "invalid"
+            : (authenticationFor(authentication, assistant.id) ?? "checking");
         return {
             authentication:
                 result === "invalid" && assistant.status === "missing" ? "unavailable" : result,
@@ -939,9 +1015,65 @@ function authenticationResultsProject(
         ...(claude ? { claude } : {}),
         ...(codex ? { codex } : {}),
         complete,
+        ...(previous.custom ? { custom: previous.custom } : {}),
         ...(grok ? { grok } : {}),
         key,
     };
+}
+
+/**
+ * Model access configured some other way than the three CLIs' own sign-ins:
+ * every enabled provider with models that is not `claude`, `codex`, or `grok`.
+ * Pools are left out because their members are providers of their own.
+ */
+function customProvidersFind(
+    config: Awaited<ReturnType<HappyAgentClient["getConfig"]>>,
+): readonly { readonly id: string; readonly type: string }[] {
+    return Object.entries(config.config.providers).flatMap(([id, provider]) =>
+        !LOCAL_PROVIDER_IDS.has(id) &&
+        provider.type !== "smart" &&
+        provider.enabled &&
+        provider.models.some((model) => model.enabled)
+            ? [{ id, type: provider.type }]
+            : [],
+    );
+}
+
+const LOCAL_PROVIDER_IDS: ReadonlySet<string> = new Set(["claude", "codex", "grok"]);
+
+/** A provider kind as a person would name it on the card. */
+function providerKindLabel(type: string): string {
+    switch (type) {
+        case "bedrock":
+            return "Bedrock";
+        case "claude":
+            return "Claude";
+        case "codex":
+            return "Codex";
+        case "grok":
+            return "Grok";
+        case "openai":
+            return "OpenAI";
+        default:
+            return type;
+    }
+}
+
+/**
+ * The custom column as the screen reads it. A daemon that refused to start
+ * because no provider works has answered for every column already, so nothing
+ * custom is configured; otherwise it is whatever the last check found.
+ */
+function customProject(snapshot: LocalOnboardingViewSnapshot): LocalOnboardingCustom {
+    if (providersRefused(snapshot)) return { authentication: "invalid", providers: [] };
+    const custom = snapshot.providerAuthentication.custom;
+    if (!custom) return { authentication: "checking", providers: [] };
+    return { authentication: custom.result, providers: custom.providers };
+}
+
+/** Happy Agent would not start because no inference provider works at all. */
+function providersRefused(snapshot: LocalOnboardingViewSnapshot): boolean {
+    return snapshot.onboarding?.stage === "providersMissing" && snapshot.runtime?.phase !== "ready";
 }
 
 /**

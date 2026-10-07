@@ -634,23 +634,6 @@ async function completeOnboarding(page: Page): Promise<void> {
             // the last answer and the workspace gate can mount.
             return;
         }
-        if (
-            (await page.getByRole("button", { name: "Create profile" }).count()) > 0 &&
-            (await page
-                .getByRole("button", { name: "Create profile" })
-                .first()
-                .isVisible()
-                .catch(() => false))
-        ) {
-            const name = page.locator('input[type="text"]').first();
-            const email = page.locator('input[type="email"]').first();
-            await name.waitFor({ state: "visible", timeout: 5_000 });
-            await email.waitFor({ state: "visible", timeout: 5_000 });
-            await name.fill("Happy Desktop Gym");
-            await email.fill("gym@example.invalid");
-            await clickIfVisible("Create profile");
-            continue;
-        }
         if (await clickIfVisible("Continue")) continue;
         if (await clickIfVisible("Not now")) continue;
         if (await clickIfVisible("Skip")) continue;

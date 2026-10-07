@@ -411,6 +411,7 @@ export function SetupPagePage() {
                                         status: "missing",
                                     },
                                 ],
+                                custom: { authentication: "checking", providers: [] },
                                 kind: "provider-authentication",
                             }}
                         />
@@ -456,6 +457,7 @@ export function SetupPagePage() {
                                         status: "missing",
                                     },
                                 ],
+                                custom: { authentication: "invalid", providers: [] },
                                 kind: "provider-authentication",
                             }}
                         />
@@ -499,6 +501,7 @@ export function SetupPagePage() {
                                         status: "missing",
                                     },
                                 ],
+                                custom: { authentication: "invalid", providers: [] },
                                 kind: "provider-authentication",
                             }}
                         />
@@ -573,6 +576,7 @@ export function SetupPagePage() {
                                         status: "found",
                                     },
                                 ],
+                                custom: { authentication: "invalid", providers: [] },
                                 kind: "provider-authentication",
                             }}
                         />

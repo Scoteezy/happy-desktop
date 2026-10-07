@@ -36,6 +36,16 @@ export interface LocalOnboardingAssistant {
 }
 
 /**
+ * Model access configured some other way than the three CLIs: an API key,
+ * Bedrock, a gateway, or more accounts. `invalid` means none is configured.
+ */
+export interface LocalOnboardingCustom {
+    readonly authentication: "checking" | "valid" | "invalid" | "error";
+    /** What is configured, named by kind, for example "Bedrock". */
+    readonly providers: readonly string[];
+}
+
+/**
  * The Happy Agent archive arriving, while it is arriving. Counted by the
  * process fetching it; absent before the first byte and after the last.
  */
@@ -73,6 +83,7 @@ export type LocalOnboardingView =
            */
           readonly kind: "provider-authentication";
           readonly assistants: readonly LocalOnboardingAssistant[];
+          readonly custom: LocalOnboardingCustom;
       }
     | {
           /**
@@ -117,6 +128,8 @@ export type LocalOnboardingView =
 
 export interface LocalOnboardingScreenProps {
     readonly showSteps?: boolean;
+    /** Opens the custom column's prompts with the page, for the Blueprint. */
+    readonly agentPromptsOpen?: boolean;
     readonly appearance: ThemeMode;
     readonly view: LocalOnboardingView;
     /** The furthest step setup has reached, for the bar's own drawing. */
@@ -311,16 +324,89 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
     };
 }
 
-/** The stable, dimmed three-vendor row shown before authentication resolves. */
-const CHECKING_ASSISTANTS: readonly SetupAssistantEntry[] = Object.entries(ASSISTANTS).map(
-    ([id, assistant]) => ({
-        detail: "Checking…",
-        id,
-        mark: assistant.mark,
-        name: assistant.name,
-        status: "checking",
-    }),
-);
+const HAPPY_DOCS = "~/.happy/docs";
+
+/** What the custom column hands to the coding agent somebody already uses. */
+const AGENT_PROMPTS = [
+    {
+        id: "sign-in",
+        label: "Sign me in",
+        text: `Sign me in to Claude Code, Codex, or Grok on this computer so Happy can use it. Guide: ${HAPPY_DOCS}/configuration.md (Providers).`,
+    },
+    {
+        id: "custom",
+        label: "My setup is custom",
+        text: `Set up Happy Agent on this computer with my custom model access (enterprise, Bedrock, API key, or a gateway). Guide: ${HAPPY_DOCS}/recipe/accounts-and-models.md`,
+    },
+] as const;
+
+const CUSTOM_NAME = "Custom configuration";
+
+/**
+ * The fourth card: model access set up some other way. It reads like the three
+ * beside it — a mark, a name, one line of state — and its remedy is the prompts
+ * for the coding agent already on the machine rather than a command.
+ */
+function customAuthenticationEntry(
+    custom: LocalOnboardingCustom,
+    promptsOpen = false,
+): SetupAssistantEntry {
+    switch (custom.authentication) {
+        case "valid":
+            return {
+                detail: `${custom.providers.join(", ")} · ready`,
+                id: "custom",
+                mark: "custom",
+                name: CUSTOM_NAME,
+                status: "found",
+            };
+        case "checking":
+            return {
+                detail: "Checking…",
+                id: "custom",
+                mark: "custom",
+                name: CUSTOM_NAME,
+                status: "checking",
+            };
+        case "error":
+            return {
+                detail: "Couldn't check — retrying",
+                id: "custom",
+                mark: "custom",
+                name: CUSTOM_NAME,
+                status: "checking",
+            };
+        case "invalid":
+            return {
+                action: {
+                    ...(promptsOpen ? { defaultOpen: true } : {}),
+                    kind: "prompts",
+                    label: "Set up with your agent",
+                    prompts: AGENT_PROMPTS,
+                    title: "Paste one into the coding agent you already use",
+                },
+                detail: "API key, Bedrock, or gateway",
+                id: "custom",
+                mark: "custom",
+                name: CUSTOM_NAME,
+                status: "signed-out",
+            };
+    }
+}
+
+/** The stable, dimmed row shown before authentication resolves. */
+const CHECKING_ASSISTANTS: readonly SetupAssistantEntry[] = [
+    ...Object.entries(ASSISTANTS).map(
+        ([id, assistant]): SetupAssistantEntry => ({
+            detail: "Checking…",
+            id,
+            mark: assistant.mark,
+            name: assistant.name,
+            status: "checking",
+        }),
+    ),
+    customAuthenticationEntry({ authentication: "checking", providers: [] }),
+];
 
 interface MachineSetupProjection {
     readonly assistants?: readonly SetupAssistantEntry[];
@@ -334,7 +420,10 @@ interface MachineSetupProjection {
 const SETUP_COPY = "One-time download for this machine.";
 const SUBSCRIPTIONS_COPY = "Looking for Claude, Codex, and Grok.";
 
-function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection | undefined {
+function machineSetupProject(
+    view: LocalOnboardingView,
+    promptsOpen: boolean,
+): MachineSetupProjection | undefined {
     if (view.kind === "agent-setup")
         return {
             copy: SETUP_COPY,
@@ -358,27 +447,31 @@ function machineSetupProject(view: LocalOnboardingView): MachineSetupProjection 
             title: "Checking subscriptions",
         };
     if (view.kind === "provider-authentication") {
-        const valid = view.assistants.some((assistant) => assistant.authentication === "valid");
-        const checking = view.assistants.some(
-            (assistant) => assistant.authentication === "checking",
-        );
-        const failed = view.assistants.some((assistant) => assistant.authentication === "error");
-        if (valid)
+        const states = [
+            ...view.assistants.map((assistant) => assistant.authentication),
+            view.custom.authentication,
+        ];
+        const assistants = [
+            ...view.assistants.map(assistantAuthenticationEntry),
+            customAuthenticationEntry(view.custom, promptsOpen),
+        ];
+        if (states.includes("valid"))
             return {
-                assistants: view.assistants.map(assistantAuthenticationEntry),
+                assistants,
                 hasValidAuthentication: true,
                 title: "You're set",
             };
-        if (checking || failed)
+        const failed = states.includes("error");
+        if (states.includes("checking") || failed)
             return {
-                assistants: view.assistants.map(assistantAuthenticationEntry),
+                assistants,
                 copy: SUBSCRIPTIONS_COPY,
                 hasValidAuthentication: false,
                 status: { busy: true, label: failed ? "Couldn't check · retrying…" : "Checking…" },
                 title: "Checking subscriptions",
             };
         return {
-            assistants: view.assistants.map(assistantAuthenticationEntry),
+            assistants,
             copy: "One signed-in CLI is required.",
             hasValidAuthentication: false,
             status: { busy: true, label: "Waiting for sign-in…" },
@@ -455,7 +548,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
             />
         ) : undefined,
     } as const;
-    const machineSetup = machineSetupProject(view);
+    const machineSetup = machineSetupProject(view, props.agentPromptsOpen === true);
 
     if (machineSetup)
         return (

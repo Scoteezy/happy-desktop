@@ -52,6 +52,25 @@ const signIn = [
         name: "Grok",
         status: "missing",
     },
+    {
+        detail: "API key, Bedrock, or gateway",
+        id: "custom",
+        mark: "custom",
+        name: "Custom configuration",
+        status: "signed-out",
+        action: {
+            kind: "prompts",
+            label: "Set up with your agent",
+            title: "Paste one into the coding agent you already use",
+            prompts: [
+                {
+                    id: "custom",
+                    label: "My setup is custom",
+                    text: "Set up Happy Agent with my custom model access.",
+                },
+            ],
+        },
+    },
 ] as const;
 
 export function SetupAssistantsPage() {

@@ -528,6 +528,7 @@ export {
     type LocalOnboardingAgentSetupPhase,
     type LocalOnboardingAssistant,
     type LocalOnboardingAssistantId,
+    type LocalOnboardingCustom,
     type LocalOnboardingDownload,
     type LocalOnboardingScreenProps,
     type LocalOnboardingView,
@@ -560,6 +561,7 @@ export {
 export { SetupChoice, type SetupChoiceOption, type SetupChoiceProps } from "./SetupChoice";
 export {
     SetupAssistants,
+    type SetupAgentPrompt,
     type SetupAssistantAction,
     type SetupAssistantEntry,
     type SetupAssistantsProps,

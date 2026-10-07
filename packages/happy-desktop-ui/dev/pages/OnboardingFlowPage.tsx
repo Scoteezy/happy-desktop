@@ -28,9 +28,14 @@ const pitch: readonly WelcomeSlide[] = [
     },
 ];
 
-function onboarding(view: LocalOnboardingView, reachedStage?: OnboardingStage) {
+function onboarding(
+    view: LocalOnboardingView,
+    reachedStage?: OnboardingStage,
+    agentPromptsOpen = false,
+) {
     return (
         <LocalOnboardingScreen
+            agentPromptsOpen={agentPromptsOpen}
             appearance="dark"
             onAssistantsContinue={noop}
             onConnectRetry={noop}
@@ -101,6 +106,53 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
                     { authentication: "unavailable", id: "codex", status: "missing" },
                     { authentication: "unavailable", id: "grok", status: "missing" },
                 ],
+                custom: { authentication: "invalid", providers: [] },
+                kind: "provider-authentication",
+            }),
+    },
+    {
+        id: "subscriptions-empty",
+        label: "Subscriptions · nothing on this machine",
+        render: () =>
+            onboarding({
+                assistants: [
+                    { authentication: "unavailable", id: "claude", status: "missing" },
+                    { authentication: "unavailable", id: "codex", status: "missing" },
+                    { authentication: "unavailable", id: "grok", status: "missing" },
+                ],
+                custom: { authentication: "invalid", providers: [] },
+                kind: "provider-authentication",
+            }),
+    },
+    {
+        id: "subscriptions-agent-prompts",
+        label: "Subscriptions · set up with your agent",
+        render: () =>
+            onboarding(
+                {
+                    assistants: [
+                        { authentication: "unavailable", id: "claude", status: "missing" },
+                        { authentication: "unavailable", id: "codex", status: "missing" },
+                        { authentication: "unavailable", id: "grok", status: "missing" },
+                    ],
+                    custom: { authentication: "invalid", providers: [] },
+                    kind: "provider-authentication",
+                },
+                undefined,
+                true,
+            ),
+    },
+    {
+        id: "subscriptions-custom-ready",
+        label: "Subscriptions · custom configuration ready",
+        render: () =>
+            onboarding({
+                assistants: [
+                    { authentication: "unavailable", id: "claude", status: "missing" },
+                    { authentication: "unavailable", id: "codex", status: "missing" },
+                    { authentication: "unavailable", id: "grok", status: "missing" },
+                ],
+                custom: { authentication: "valid", providers: ["Bedrock"] },
                 kind: "provider-authentication",
             }),
     },
@@ -119,6 +171,7 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
                     { authentication: "unavailable", id: "codex", status: "missing" },
                     { authentication: "unavailable", id: "grok", status: "missing" },
                 ],
+                custom: { authentication: "invalid", providers: [] },
                 kind: "provider-authentication",
             }),
     },
