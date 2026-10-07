@@ -25,6 +25,15 @@ be overwritten. Renderer metadata contains the version and full source SHA; note
 and identity are recorded in the workflow summary. A renderer request never ships
 a native app or switches the Agent binary.
 
+For combined releases, follow the [cross-project sequence in Happy Agent's release
+master plan](https://github.com/slopus/happy-agent/blob/main/master-plans/25-releases.md).
+After any required SDK is published and pinned, prepare and dispatch requested
+Agent, native Desktop, and renderer previews independently in parallel. Desktop
+does not bundle the Agent binary, so its macOS preview does not wait for Agent
+publication or artifact verification. Stable Windows retains its published-Agent
+signature and boot check. Report completion of a combined release after each
+requested workflow and any required matching Agent version are verified.
+
 Use `gh workflow run ... --ref main` with `-f version=<chosen-version>` and
 `-F release_notes=@.context/release-notes.md` (the `@` reads the file contents).
 For Agent/native previews also pass `-F prerelease=true`; renderer has no such input.

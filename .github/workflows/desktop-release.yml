@@ -119,15 +119,23 @@ jobs:
               run: pnpm test
 
     build:
-        name: Build macOS ${{ matrix.arch }}
+        name: Build macOS ${{ matrix.arch }} ${{ matrix.flavor }}
         needs: verify
         strategy:
             fail-fast: false
             matrix:
                 include:
                     - arch: arm64
+                      flavor: standard
+                      runner: macos-14
+                    - arch: arm64
+                      flavor: local-web
                       runner: macos-14
                     - arch: x64
+                      flavor: standard
+                      runner: macos-15-intel
+                    - arch: x64
+                      flavor: local-web
                       runner: macos-15-intel
         runs-on: ${{ matrix.runner }}
         timeout-minutes: 60
@@ -175,43 +183,44 @@ jobs:
               run: pnpm install --frozen-lockfile
 
             - name: Typecheck desktop source
-              if: matrix.arch == 'arm64'
+              if: matrix.arch == 'arm64' && matrix.flavor == 'standard'
               run: |
                   pnpm --dir packages/happy-desktop-electron typecheck
                   pnpm --dir packages/happy-desktop-app typecheck
 
-            - name: Build, sign, notarize, and verify desktop distributions
+            - name: Build, sign, notarize, and verify desktop distribution
               env:
                   RELEASE_ARCH: ${{ matrix.arch }}
+                  RELEASE_FLAVOR: ${{ matrix.flavor }}
               run: |
-                  pnpm desktop:mac:release -- --arch "$RELEASE_ARCH" --flavor all
+                  pnpm desktop:mac:release -- --arch "$RELEASE_ARCH" --flavor "$RELEASE_FLAVOR"
 
             - name: Remove App Store Connect API key
               if: always()
               run: rm -f "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
 
-            - name: Upload architecture artifacts
+            - name: Upload signed distribution
               uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
               with:
-                  name: happy-desktop-macos-${{ matrix.arch }}
+                  name: happy-desktop-macos-${{ matrix.arch }}-${{ matrix.flavor }}
                   retention-days: 7
+                  compression-level: 0
+                  # Keep the flavor directory under the first wildcard so the
+                  # publish job merges all four artifacts into the same layout.
                   path: |
-                      packages/happy-desktop-electron/release/standard/*.dmg
-                      packages/happy-desktop-electron/release/standard/*.zip
-                      packages/happy-desktop-electron/release/standard/*.blockmap
-                      packages/happy-desktop-electron/release/local-web/*.dmg
-                      packages/happy-desktop-electron/release/local-web/*.zip
-                      packages/happy-desktop-electron/release/local-web/*.blockmap
+                      packages/happy-desktop-electron/release/*/*.dmg
+                      packages/happy-desktop-electron/release/*/*.zip
+                      packages/happy-desktop-electron/release/*/*.blockmap
                   if-no-files-found: error
 
             - name: Build hosted local renderer
-              if: matrix.arch == 'arm64'
+              if: matrix.arch == 'arm64' && matrix.flavor == 'local-web'
               env:
                   HAPPY_LOCAL_WEB_BUILD_ID: ${{ inputs.version }}-${{ github.sha }}
               run: pnpm desktop:local:web
 
             - name: Upload hosted local renderer
-              if: matrix.arch == 'arm64'
+              if: matrix.arch == 'arm64' && matrix.flavor == 'local-web'
               uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
               with:
                   name: happy-desktop-local-web-site
