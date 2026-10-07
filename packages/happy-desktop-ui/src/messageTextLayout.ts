@@ -70,6 +70,7 @@ const WEBKIT_INLINE_SLICE =
     typeof navigator !== "undefined" &&
     /AppleWebKit\//u.test(navigator.userAgent) &&
     !/(?:Chrome|Chromium|CriOS|Edg|OPR)\//u.test(navigator.userAgent);
+const GECKO_INLINE_SLICE = typeof navigator !== "undefined" && /Gecko\//u.test(navigator.userAgent);
 /** `.happy-system-notice__text` — 13px copy on a 20px line. */
 const NOTICE_SIZE = 13;
 const NOTICE_LINE = 20;
@@ -494,16 +495,33 @@ function markdownInlineItemsAppend(
     if (node.type === "inlineCode") {
         const text = node.value.replace(/\r?\n|\r/gu, " ");
         const font = `14px ${MONO_FAMILY}`;
+        /* An opening bracket in the preceding prose cannot end a browser line
+           independently of the code it introduces: `(` + `code` wraps as one
+           run. Keep its whitespace in flow, but charge the bracket to the
+           first code fragment so a font boundary cannot create that break. */
+        const previous = current().at(-1);
+        const opening = previous?.text.match(/[\p{Ps}\p{Pi}]+$/u)?.[0];
+        const openingWidth =
+            opening && previous ? naturalTextWidth(opening, previous.font, cache) : 0;
+        if (opening && previous) previous.text = previous.text.slice(0, -opening.length);
         const textWidth = naturalTextWidth(text, font, cache);
+        /* Gecko reserves sliced code padding while breaking continuation lines
+           too. A single breakable run carries that decoration on each fragment;
+           charging only the first/last words can omit a whole wrapped line. */
+        if (GECKO_INLINE_SLICE && textWidth > measure && /\s/u.test(text)) {
+            current().push({ extraWidth: 10 + openingWidth, font, text });
+            return;
+        }
         const decoratedFlow =
-            textWidth + (WEBKIT_INLINE_SLICE ? 0 : 10) > measure + INLINE_MEASURE_EPSILON;
+            openingWidth + textWidth + (WEBKIT_INLINE_SLICE ? 0 : 10) >
+            measure + INLINE_MEASURE_EPSILON;
         const segments = prepareWithSegments(text, font, { whiteSpace: "normal" }).segments;
         for (const [index, segment] of segments.entries()) {
             const items = markdownInlineFragmentItems(
                 segment,
                 font,
                 measure,
-                index === 0 ? 5 : 0,
+                index === 0 ? 5 + openingWidth : 0,
                 index === segments.length - 1 ? 5 : 0,
                 cache,
                 decoratedFlow,
