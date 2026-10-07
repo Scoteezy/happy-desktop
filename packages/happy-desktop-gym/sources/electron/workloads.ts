@@ -591,7 +591,7 @@ function linuxDisplayEnvironment(): Record<string, string> {
  * must exercise the same renderer and IPC boundary as a person, not seed
  * desktop settings behind the app.
  */
-async function completeOnboarding(page: Page): Promise<void> {
+export async function completeOnboarding(page: Page): Promise<void> {
     const deadline = Date.now() + 45_000;
     // The welcome deck mounts after the renderer's first paint. Waiting for its
     // owned action avoids treating a not-yet-mounted button as proof that no
@@ -634,6 +634,16 @@ async function completeOnboarding(page: Page): Promise<void> {
             // the last answer and the workspace gate can mount.
             return;
         }
+        // A configured isolated daemon can skip native onboarding entirely
+        // after the welcome deck. Its mounted shell is the completion barrier.
+        if (
+            !onboardingVisible &&
+            (await page
+                .locator(".happy-sidebar-footer")
+                .isVisible()
+                .catch(() => false))
+        )
+            return;
         if (await clickIfVisible("Continue")) continue;
         if (await clickIfVisible("Not now")) continue;
         if (await clickIfVisible("Skip")) continue;

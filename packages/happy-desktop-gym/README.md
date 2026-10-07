@@ -287,6 +287,37 @@ pnpm --dir packages/happy-desktop-gym gym:electron clean --root <printed-run-roo
 without the Gym ownership marker. Keep a run for inspection, or clean it
 explicitly after collecting the artifacts.
 
+## Real GPT-Live call
+
+The opt-in `live-voice` command launches a separate owned daemon and Electron
+window, enables voice through Settings, chooses an explicit Codex subscription,
+and clicks the normal Start/End controls. It uses real provider inference and
+WebRTC; no deterministic inference server or voice transport fixture is started.
+The existing Codex sign-in file is referenced by path, never copied or printed.
+This lane uses the selected subscription and currently requires macOS speech tools.
+
+```sh
+# The source-agent flag is a renderer build-time setting, needed only for a 0.0.0 daemon.
+HAPPY_ALLOW_SOURCE_AGENT=1 pnpm --dir packages/happy-desktop-electron build
+HAPPY_DESKTOP_AGENT_EXECUTABLE=/absolute/path/to/patched/happy-agent \
+node --import tsx packages/happy-desktop-gym/sources/electron/cli.ts live-voice \
+  --auth-file /absolute/path/to/codex/auth.json \
+  --artifact-dir "$PWD/.context/live-voice"
+```
+
+After the app and provider both confirm the call is active, a controllable virtual
+microphone plays: “Hello. Say hi and tell me what you are capable of and what you
+see.” The gym requires the real provider's user transcript, a greeting and
+capabilities in its assistant transcript, a randomly named project from the
+visible desktop (not named in the spoken prompt), and nonzero inbound RTP audio
+energy. Media recorders capture the actual sent microphone track and received
+speaker track. The artifact folder contains the source WAV, input/output WebM,
+Settings/desktop/call screenshots, typed control events, and `result.json`, whose
+stage distinguishes setup failures from call failures. SDP, socket URLs and
+credentials are excluded from the capture. `--pool-default` exercises a smart
+controller default backed by a hidden concrete Codex account; the voice credential
+remains that concrete account.
+
 ## Browser rendering harness
 
 `gym/playwright` owns the reusable real-browser measurement harness. A consumer

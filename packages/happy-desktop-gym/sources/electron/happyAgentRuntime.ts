@@ -20,8 +20,11 @@ export interface StartedHappyAgentRuntime extends HappyAgentRuntime {
 
 export async function happyAgentRuntimeCreate(
     paths: GymRunPaths,
-    inference: GymInferenceServer,
+    inference: GymInferenceServer | undefined,
+    liveConfiguration?: string,
 ): Promise<StartedHappyAgentRuntime> {
+    if (inference === undefined && liveConfiguration === undefined)
+        throw new Error("Live inference requires an explicit run-owned provider configuration.");
     const happyAgentExecutable = await happyAgentExecutableResolve();
     const command = await gymHappyAgentCommandCreate(paths, happyAgentExecutable);
     const publicConfig = join(
@@ -46,7 +49,8 @@ export async function happyAgentRuntimeCreate(
         // Onboarding scans the supported vendor IDs. The Agent's gym inference
         // factory wraps this account, so discovery and verification exercise
         // the ordinary API without reading credentials or contacting a vendor.
-        '[settings]\nhappy_integration = false\n\n[providers.codex]\ntype = "codex"\nenabled = true\ncredential_isolation = true\n',
+        liveConfiguration ??
+            '[settings]\nhappy_integration = false\n\n[providers.codex]\ntype = "codex"\nenabled = true\ncredential_isolation = true\n',
         "utf8",
     );
     const environment = environmentCreate(paths, inference);
@@ -71,7 +75,7 @@ export async function happyAgentRuntimeCreate(
 
 class LocalHappyAgentRuntime implements StartedHappyAgentRuntime {
     readonly #paths: GymRunPaths;
-    readonly #inference: GymInferenceServer;
+    readonly #inference: GymInferenceServer | undefined;
     readonly #environment: Record<string, string>;
     readonly #command: string;
     #token = "";
@@ -81,7 +85,7 @@ class LocalHappyAgentRuntime implements StartedHappyAgentRuntime {
         paths: GymRunPaths,
         command: string,
         environment: Record<string, string>,
-        inference: GymInferenceServer,
+        inference: GymInferenceServer | undefined,
     ) {
         this.#paths = paths;
         this.#command = command;
@@ -142,13 +146,13 @@ class LocalHappyAgentRuntime implements StartedHappyAgentRuntime {
         this.#client = undefined;
         this.#token = "";
         await unlink(this.socketPath).catch(() => undefined);
-        await this.#inference.stop().catch(() => undefined);
+        await this.#inference?.stop().catch(() => undefined);
     }
 }
 
 function environmentCreate(
     paths: GymRunPaths,
-    inference: GymInferenceServer,
+    inference: GymInferenceServer | undefined,
 ): Record<string, string> {
     return {
         ...gymHostEnvironment(paths),
@@ -157,8 +161,12 @@ function environmentCreate(
         HAPPY_AGENT_SERVER_SOCKET_PATH: paths.socketPath,
         HAPPY_AGENT_SERVER_TOKEN_PATH: paths.tokenPath,
         HAPPY_AGENT_WORKSPACES_DIRECTORY: paths.workspaces,
-        HAPPY_GYM_INFERENCE_URL: inference.url,
-        HAPPY_GYM_TOKEN: inference.token,
+        ...(inference
+            ? {
+                  HAPPY_GYM_INFERENCE_URL: inference.url,
+                  HAPPY_GYM_TOKEN: inference.token,
+              }
+            : {}),
         ...(process.env.HAPPY_DESKTOP_GYM_AGENT_PROFILE === "1"
             ? { BUN_OPTIONS: `--cpu-prof --cpu-prof-dir "${paths.artifacts}"` }
             : {}),
