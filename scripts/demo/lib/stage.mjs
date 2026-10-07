@@ -332,7 +332,7 @@ export async function stageOpen(options) {
                             providerId: "codex",
                             modelId: "openai/gpt-6-astra",
                             lastEffort: effort,
-                            lastSpeed: "standard",
+                            lastSpeed: null,
                         },
                     ],
                     scrollbarVisibility: "automatic",

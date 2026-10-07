@@ -3,7 +3,6 @@ import {
     deepEqual,
     referencesPreserve,
     happyAgentPermissionLabel,
-    happyAgentServiceTierLabel,
     happyAgentThinkingLabel,
 } from "./happyAgentSupport.js";
 import type {
@@ -114,21 +113,15 @@ export function happyAgentMenusDerive(
         }),
     );
 
-    const serviceTierOptions: HappyAgentServiceTierOption[] = [
-        {
-            tier: null,
-            label: happyAgentServiceTierLabel(null),
-            current: selection.serviceTier === undefined,
-        },
-        ...(selectedProvider?.disabledReason === undefined
-            ? (currentModel?.serviceTiers ?? [])
+    const serviceTierOptions: HappyAgentServiceTierOption[] = (
+        selectedProvider?.disabledReason === undefined
+            ? (currentModel?.serviceTierOptions ?? [])
             : []
-        ).map((tier) => ({
-            tier,
-            label: happyAgentServiceTierLabel(tier),
-            current: selection.serviceTier === tier,
-        })),
-    ];
+    ).map((option) => ({
+        tier: option.id,
+        label: option.label,
+        current: (selection.serviceTier ?? null) === option.id,
+    }));
 
     return {
         modelOptions,

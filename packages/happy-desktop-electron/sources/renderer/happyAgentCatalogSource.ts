@@ -15,7 +15,6 @@ import {
     type HappyAgentProjectAvatar,
     type HappyAgentProjectCatalog,
     type HappyAgentProjectId,
-    type HappyAgentServiceTier,
     type HappyAgentSessionCatalogSnapshot,
     type HappyAgentSessionCatalogSource,
     type HappyAgentSessionId,
@@ -314,10 +313,7 @@ function sessionProject(
  */
 function conversationProject(session: GroupSession): HappyAgentConversationSummaryInput {
     const effort = thinkingLevel(session.effort);
-    const serviceTier =
-        session.serviceTier === "fast" || session.serviceTier === "ultrafast"
-            ? (session.serviceTier as HappyAgentServiceTier)
-            : undefined;
+    const serviceTier = session.serviceTier;
     return {
         id: session.id as HappyAgentSessionId,
         ...(session.archivedAt === undefined ? {} : { archivedAt: session.archivedAt }),

@@ -139,7 +139,8 @@ export function happyAgentSelectionModelUpdate(
     const tierSupported =
         current.serviceTier === undefined ||
         (provider?.disabledReason === undefined &&
-            (model?.serviceTiers.includes(current.serviceTier) ?? false));
+            (model?.serviceTierOptions.some((option) => option.id === current.serviceTier) ??
+                false));
     return {
         providerId,
         modelId: input.modelId,
@@ -161,7 +162,7 @@ export function happyAgentSelectionServiceTierReconcile(
     const model = provider?.models.find((candidate) => candidate.id === selection.modelId);
     if (
         provider?.disabledReason === undefined &&
-        model?.serviceTiers.includes(selection.serviceTier)
+        model?.serviceTierOptions.some((option) => option.id === selection.serviceTier)
     )
         return selection;
     const { serviceTier: _serviceTier, ...regular } = selection;

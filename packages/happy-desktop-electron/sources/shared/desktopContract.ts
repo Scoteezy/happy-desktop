@@ -36,8 +36,8 @@ export interface DesktopDefaultModel extends DesktopModelIdentity {
 /** The choices most recently made while using one provider-qualified model. */
 export interface DesktopModelPreference extends DesktopModelIdentity {
     readonly lastEffort?: string;
-    /** `standard` names the provider's ordinary tier; every other value is a catalog tier. */
-    readonly lastSpeed: string;
+    /** The exact agent-owned tier ID; null selects the agent's labeled default route. */
+    readonly lastSpeed: string | null;
 }
 
 /**

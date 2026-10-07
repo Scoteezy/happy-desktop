@@ -2,7 +2,6 @@ import { UserError } from "../types.js";
 import type {
     HappyAgentAvatarImage,
     HappyAgentPermissionMode,
-    HappyAgentServiceTier,
     HappyAgentThinkingLevel,
 } from "./happyAgentTypes.js";
 
@@ -100,11 +99,6 @@ const PERMISSION_LABELS: Record<HappyAgentPermissionMode, string> = {
 
 export function happyAgentPermissionLabel(mode: HappyAgentPermissionMode): string {
     return PERMISSION_LABELS[mode];
-}
-
-export function happyAgentServiceTierLabel(tier: HappyAgentServiceTier | null): string {
-    if (tier === "ultrafast") return "Ultrafast";
-    return tier === "fast" ? "Fast" : "Regular";
 }
 
 /**

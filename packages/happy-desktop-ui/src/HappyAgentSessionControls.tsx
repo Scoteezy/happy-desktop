@@ -15,7 +15,6 @@ import { Menu, type MenuItem } from "./Menu";
  * mangle) and neither provider nor model identifiers contain spaces.
  */
 const MODEL_ID_SEP = " ";
-const SERVICE_TIER_OFF = "__happy_agent_service_tier_off__";
 
 export type HappyAgentControlMenuProps = {
     /**
@@ -289,20 +288,14 @@ export function HappyAgentSessionControls(props: HappyAgentSessionControlsProps)
 
     const serviceTierItems: MenuItem[] = (menus?.serviceTierOptions ?? []).map((option) => ({
         kind: "item",
-        id: option.tier ?? SERVICE_TIER_OFF,
+        id: JSON.stringify(option.tier),
         label: option.label,
         icon: option.current ? "check" : undefined,
     }));
 
     const currentTierLabel =
         menus?.serviceTierOptions.find((option) => option.current)?.label ??
-        (menus
-            ? menus.currentServiceTier === "ultrafast"
-                ? "Ultrafast"
-                : menus.currentServiceTier === "fast"
-                  ? "Fast"
-                  : "Regular"
-            : "…");
+        (menus ? "Unavailable" : "…");
 
     const control = (field: HappyAgentSessionControlField) => {
         if (field === "model")
@@ -351,9 +344,7 @@ export function HappyAgentSessionControls(props: HappyAgentSessionControlsProps)
                     value={menus ? PERMISSION_LABELS[menus.currentPermissionMode] : "…"}
                 />
             );
-        // Speed is a choice only where the provider actually offers a fast tier.
-        // On a regular-only model the menu would hold one unchangeable row, so
-        // the control is absent rather than shown as a decision nobody can make.
+        // Only show a choice when the agent supplies more than the default option.
         if (serviceTierItems.length < 2) return null;
         return (
             <HappyAgentControlMenu
@@ -364,11 +355,12 @@ export function HappyAgentSessionControls(props: HappyAgentSessionControlsProps)
                 label={props.variant === "ghost" ? undefined : "Speed"}
                 menuPlacement={props.menuPlacement}
                 variant={props.variant}
-                onSelect={(id) =>
-                    props.onServiceTierChange(
-                        id === SERVICE_TIER_OFF ? undefined : (id as HappyAgentServiceTier),
-                    )
-                }
+                onSelect={(id) => {
+                    const option = menus?.serviceTierOptions.find(
+                        (candidate) => JSON.stringify(candidate.tier) === id,
+                    );
+                    if (option) props.onServiceTierChange(option.tier ?? undefined);
+                }}
                 value={currentTierLabel}
             />
         );

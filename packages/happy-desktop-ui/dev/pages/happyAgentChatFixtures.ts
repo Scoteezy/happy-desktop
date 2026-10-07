@@ -399,7 +399,7 @@ const happyAgentMenusListed: Omit<HappyAgentMenusSnapshot, "currentOption"> = {
     ],
     serviceTierOptions: [
         { tier: null, label: "Regular", current: true },
-        { tier: "fast", label: "Fast", current: false },
+        { tier: "priority", label: "Fast", current: false },
     ],
     currentProviderId: "codex",
     currentModelId: "gpt-5.6-sol",

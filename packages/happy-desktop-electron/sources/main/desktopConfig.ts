@@ -239,14 +239,14 @@ function modelPreferenceParse(candidate: unknown): DesktopModelPreference | unde
     const allowed = new Set(["lastEffort", "lastSpeed", "modelId", "providerId"]);
     if (
         Object.keys(candidate).some((key) => !allowed.has(key)) ||
-        !preferenceValueValid(candidate.lastSpeed) ||
+        (candidate.lastSpeed !== null && !preferenceValueValid(candidate.lastSpeed)) ||
         (candidate.lastEffort !== undefined && !preferenceValueValid(candidate.lastEffort))
     )
         return undefined;
     return {
         ...identity,
         ...(typeof candidate.lastEffort === "string" ? { lastEffort: candidate.lastEffort } : {}),
-        lastSpeed: candidate.lastSpeed as string,
+        lastSpeed: candidate.lastSpeed as string | null,
     };
 }
 

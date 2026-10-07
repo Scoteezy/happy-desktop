@@ -56,7 +56,10 @@ const modelCatalog: HappyAgentModelCatalog = {
             name: "Luna",
             thinkingLevels: ["medium", "high"],
             defaultThinkingLevel: "medium",
-            serviceTiers: ["fast"],
+            serviceTierOptions: [
+                { id: null, label: "Regular" },
+                { id: "priority", label: "Fast" },
+            ],
         },
     ],
     providers: [
@@ -71,7 +74,10 @@ const modelCatalog: HappyAgentModelCatalog = {
                     name: "Luna",
                     thinkingLevels: ["medium", "high"],
                     defaultThinkingLevel: "medium",
-                    serviceTiers: ["fast"],
+                    serviceTierOptions: [
+                        { id: null, label: "Regular" },
+                        { id: "priority", label: "Fast" },
+                    ],
                 },
             ],
         },

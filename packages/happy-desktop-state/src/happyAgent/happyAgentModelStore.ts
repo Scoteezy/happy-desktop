@@ -369,14 +369,16 @@ export function happyAgentModelStoreCreate(
                 model?.thinkingLevels.includes(preference.effort)
                     ? preference.effort
                     : selected.effort;
+            // A revoked remembered tier resets to the agent's default; only absent memory carries over.
             const serviceTier =
-                preference?.serviceTier === null
-                    ? undefined
-                    : preference?.serviceTier &&
-                        provider?.disabledReason === undefined &&
-                        model?.serviceTiers.includes(preference.serviceTier)
-                      ? preference.serviceTier
-                      : selected.serviceTier;
+                preference?.serviceTier === undefined
+                    ? selected.serviceTier
+                    : provider?.disabledReason === undefined &&
+                        model?.serviceTierOptions.some(
+                            (option) => option.id === preference.serviceTier,
+                        )
+                      ? (preference.serviceTier ?? undefined)
+                      : undefined;
             return {
                 providerId: selected.providerId,
                 modelId: selected.modelId,
@@ -466,7 +468,8 @@ function preferenceSelection(
     const supportedDefaultEffort =
         defaultEffort && model.thinkingLevels.includes(defaultEffort) ? defaultEffort : undefined;
     const serviceTier =
-        preference?.serviceTier && model.serviceTiers.includes(preference.serviceTier)
+        preference?.serviceTier != null &&
+        model.serviceTierOptions.some((option) => option.id === preference.serviceTier)
             ? preference.serviceTier
             : undefined;
     return {

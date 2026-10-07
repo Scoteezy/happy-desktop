@@ -50,7 +50,8 @@ reasoning. Evidence records requested tiers, not a provider-served-tier claim.
 ## Runtime
 
 Use an explicitly selected preview Happy Agent binary that advertises native
-Astra Ultrafast for the selected account. `--inference native` refuses seeded
+Astra Ultrafast and the complete labeled `serviceTierOptions` for the selected account.
+`--inference native` refuses seeded
 fictional turns, scripted inference, missing account identity, or a catalog
 without Ultrafast. It never participates in `--all`.
 

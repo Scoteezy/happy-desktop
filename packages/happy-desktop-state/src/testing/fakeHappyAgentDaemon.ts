@@ -160,6 +160,7 @@ function configDefault(): DaemonConfig {
                 efforts: ["low", "medium", "high"],
                 name: "Test Model",
                 serviceTiers: [],
+                serviceTierOptions: [{ id: null, label: "Regular" }],
             },
         },
         network: {

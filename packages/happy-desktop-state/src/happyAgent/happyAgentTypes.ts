@@ -193,8 +193,8 @@ export type HappyAgentGoalStatus = "active" | "blocked" | "complete" | "paused";
 export interface HappyAgentModel {
     readonly id: string;
     readonly name: string;
-    /** The speed tiers offered by this model on its owning provider account. */
-    readonly serviceTiers: readonly HappyAgentServiceTier[];
+    /** The complete, labeled speed menu offered by this model/account, including its default. */
+    readonly serviceTierOptions: readonly HappyAgentServiceTierChoice[];
     readonly thinkingLevels: readonly HappyAgentThinkingLevel[];
     readonly defaultThinkingLevel: HappyAgentThinkingLevel;
     /** The hard window in tokens; absent for a custom model whose limit is unknown. */
@@ -789,6 +789,11 @@ export interface HappyAgentPermissionModeOption {
     readonly mode: HappyAgentPermissionMode;
     readonly label: string;
     readonly current: boolean;
+}
+
+export interface HappyAgentServiceTierChoice {
+    readonly id: HappyAgentServiceTier | null;
+    readonly label: string;
 }
 
 export interface HappyAgentServiceTierOption {

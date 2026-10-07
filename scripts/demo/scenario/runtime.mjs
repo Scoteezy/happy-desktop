@@ -571,7 +571,16 @@ export async function gymOpen(options = {}) {
             );
             const tiers =
                 reference?.serviceTiers ?? config.models["openai/gpt-6-astra"]?.serviceTiers ?? [];
-            if (config.providers.codex?.enabled && reference && tiers.includes("ultrafast")) {
+            const tierOptions =
+                reference?.serviceTierOptions ??
+                config.models["openai/gpt-6-astra"]?.serviceTierOptions;
+            if (
+                config.providers.codex?.enabled &&
+                reference &&
+                tiers.includes("ultrafast") &&
+                tierOptions?.some((option) => option.id === "ultrafast") &&
+                tierOptions.some((option) => option.id === null)
+            ) {
                 nativeRuntimeEvidence = {
                     daemonVersion: (await client.getHealth()).version.daemon,
                     codexVersion: daemon.codexVersion,
@@ -579,13 +588,17 @@ export async function gymOpen(options = {}) {
                     providerId: "codex",
                     modelId: reference.id,
                     serviceTiers: [...tiers],
+                    serviceTierOptions: tierOptions.map((option) => ({
+                        id: option.id,
+                        label: option.label,
+                    })),
                     source: "Real getConfig response before camera or comparison requests",
                 };
                 break;
             }
             if (Date.now() > deadline)
                 throw new Error(
-                    "The real account did not advertise Astra Ultrafast; recording refused.",
+                    "The real account did not advertise Astra Ultrafast with labeled speed choices; recording refused.",
                 );
             await delay(250);
         }

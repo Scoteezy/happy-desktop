@@ -18,7 +18,6 @@ import type {
     HappyDesktopBridge,
 } from "../shared/desktopContract";
 
-const STANDARD_SPEED = "standard";
 const THINKING_LEVELS: ReadonlySet<string> = new Set([
     "off",
     "on",
@@ -134,7 +133,7 @@ export function desktopPreferencesCreate(
                     providerId: nextDefault.providerId,
                     modelId: nextDefault.modelId,
                     lastEffort: nextDefault.effort,
-                    lastSpeed: preference?.lastSpeed ?? STANDARD_SPEED,
+                    lastSpeed: preference?.lastSpeed ?? null,
                 };
                 modelPreferences = [
                     ...modelPreferences.filter(
@@ -205,10 +204,7 @@ function preferenceDocument(config: DesktopConfig): HappyAgentModelPreferenceDoc
         const provider = preferences[preference.providerId] ?? {};
         provider[preference.modelId] = {
             effort: thinkingLevel(preference.lastEffort) ?? null,
-            serviceTier:
-                preference.lastSpeed === "fast" || preference.lastSpeed === "ultrafast"
-                    ? preference.lastSpeed
-                    : null,
+            serviceTier: preference.lastSpeed,
         };
         preferences[preference.providerId] = provider;
     }
@@ -243,7 +239,7 @@ function configFromPreferenceDocument(
                 providerId,
                 modelId,
                 ...(preference.effort ? { lastEffort: preference.effort } : {}),
-                lastSpeed: preference.serviceTier ?? STANDARD_SPEED,
+                lastSpeed: preference.serviceTier ?? null,
             });
         }
     }

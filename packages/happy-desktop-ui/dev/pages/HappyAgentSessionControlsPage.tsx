@@ -155,10 +155,34 @@ export function HappyAgentSessionControlsPage() {
                             ...happyAgentMenus,
                             serviceTierOptions: [
                                 { tier: null, label: "Regular", current: false },
-                                { tier: "fast", label: "Fast", current: false },
+                                { tier: "priority", label: "Fast", current: false },
                                 { tier: "ultrafast", label: "Ultrafast", current: true },
                             ],
                             currentServiceTier: "ultrafast",
+                        }}
+                        onEffortChange={() => undefined}
+                        onModelChange={() => undefined}
+                        onPermissionModeChange={() => undefined}
+                        onServiceTierChange={() => undefined}
+                    />
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="IDs and labels come from the agent; unfamiliar tiers need no component change"
+                label="Agent-supplied speed"
+                number="09"
+                stage="surface"
+            >
+                <div style={{ width: "620px", padding: "12px", background: "var(--surface)" }}>
+                    <HappyAgentSessionControls
+                        menus={{
+                            ...happyAgentMenus,
+                            serviceTierOptions: [
+                                { tier: null, label: "Regular", current: false },
+                                { tier: "standard", label: "Account speed", current: true },
+                            ],
+                            currentServiceTier: "standard",
                         }}
                         onEffortChange={() => undefined}
                         onModelChange={() => undefined}

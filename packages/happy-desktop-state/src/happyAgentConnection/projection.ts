@@ -17,10 +17,7 @@ import type {
     UsageBreakdown,
     Workspace,
 } from "@slopus/happy-agent-client";
-import {
-    happyAgentServiceTierFromWire,
-    happyAgentServiceTiersFromWire,
-} from "../happyAgentServiceTier.js";
+import { happyAgentServiceTierFromWire } from "../happyAgentServiceTier.js";
 import type { UserProfile } from "./userProfiles.js";
 import type {
     BotGroup,
@@ -1216,14 +1213,6 @@ function modelCatalog(config: DaemonConfig): SessionState["modelCatalog"] {
         providers: Object.entries(config.providers).map(([id, provider]) => ({
             id,
             ...provider,
-            models: provider.models.map((model) => ({
-                ...model,
-                ...(model.serviceTiers === undefined
-                    ? {}
-                    : {
-                          serviceTiers: happyAgentServiceTiersFromWire(model.serviceTiers),
-                      }),
-            })),
         })),
     };
 }
@@ -1232,7 +1221,6 @@ function modelDefinitionsProject(config: DaemonConfig): readonly unknown[] {
     return Object.entries(config.models).map(([id, model]) => ({
         id,
         ...model,
-        serviceTiers: happyAgentServiceTiersFromWire(model.serviceTiers),
     }));
 }
 

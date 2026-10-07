@@ -1,5 +1,4 @@
 import type { DaemonConfig, GitFileChange, Project } from "@slopus/happy-agent-client";
-import { happyAgentServiceTiersFromWire } from "../happyAgentServiceTier.js";
 import type {
     HappyAgentChangedFileDocument,
     HappyAgentGitChangedFile,
@@ -24,9 +23,11 @@ function modelProject(
     return {
         id: modelId,
         name: reference?.name ?? definition.name,
-        serviceTiers: happyAgentServiceTiersFromWire(
-            reference?.serviceTiers ?? definition.serviceTiers,
-        ),
+        serviceTierOptions: (
+            reference?.serviceTierOptions ??
+            definition.serviceTierOptions ??
+            []
+        ).map((option) => ({ id: option.id, label: option.label })),
         thinkingLevels: (reference?.efforts ?? definition.efforts) as HappyAgentThinkingLevel[],
         defaultThinkingLevel: (reference?.defaultEffort ??
             definition.defaultEffort) as HappyAgentThinkingLevel,

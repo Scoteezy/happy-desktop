@@ -26,8 +26,25 @@ function tierConfig(daemon: FakeHappyAgentDaemon, eligible = true): DaemonConfig
         defaults: { ...config.defaults, modelId: "astra", providerId: "codex" },
         models: {
             ...config.models,
-            astra: { ...model, name: "GPT-6 Astra", serviceTiers: ["priority", "ultrafast"] },
-            sol: { ...model, name: "GPT-6.1 Sol", serviceTiers: ["priority"] },
+            astra: {
+                ...model,
+                name: "GPT-6 Astra",
+                serviceTiers: ["priority", "ultrafast"],
+                serviceTierOptions: [
+                    { id: null, label: "Regular" },
+                    { id: "priority", label: "Fast" },
+                    { id: "ultrafast", label: "Ultrafast" },
+                ],
+            },
+            sol: {
+                ...model,
+                name: "GPT-6.1 Sol",
+                serviceTiers: ["priority"],
+                serviceTierOptions: [
+                    { id: null, label: "Regular" },
+                    { id: "priority", label: "Fast" },
+                ],
+            },
         },
         providers: {
             codex: {
@@ -38,14 +55,36 @@ function tierConfig(daemon: FakeHappyAgentDaemon, eligible = true): DaemonConfig
                         id: "astra",
                         enabled: true,
                         serviceTiers: eligible ? ["priority", "ultrafast"] : [],
+                        serviceTierOptions: eligible
+                            ? [
+                                  { id: null, label: "Regular" },
+                                  { id: "priority", label: "Fast" },
+                                  { id: "ultrafast", label: "Ultrafast" },
+                              ]
+                            : [{ id: null, label: "Regular" }],
                     },
-                    { id: "sol", enabled: true, serviceTiers: ["priority"] },
+                    {
+                        id: "sol",
+                        enabled: true,
+                        serviceTiers: ["priority"],
+                        serviceTierOptions: [
+                            { id: null, label: "Regular" },
+                            { id: "priority", label: "Fast" },
+                        ],
+                    },
                 ],
             },
             codex_other: {
                 type: "codex",
                 enabled: true,
-                models: [{ id: "astra", enabled: true, serviceTiers: [] }],
+                models: [
+                    {
+                        id: "astra",
+                        enabled: true,
+                        serviceTiers: [],
+                        serviceTierOptions: [{ id: null, label: "Regular" }],
+                    },
+                ],
             },
         },
     };
