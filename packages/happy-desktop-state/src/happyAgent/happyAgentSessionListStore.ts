@@ -97,6 +97,13 @@ export interface HappyAgentSessionListSnapshot {
     /** Sessions whose optimistic peer creation this window saw refused. */
     readonly sessionCreateFailures: ReadonlyMap<HappyAgentSessionId, UserError>;
     /**
+     * Bot subtasks whose archive or move this window asked for and the host
+     * refused, by the task's conversation. The task is still where the host
+     * keeps it, so the reason is kept beside it until the reader acts on that
+     * task again.
+     */
+    readonly subtaskFailures: ReadonlyMap<HappyAgentSessionId, HappyAgentSubtaskFailure>;
+    /**
      * Worktrees this window asked for that the host refused, by the identity it
      * refused them under — which is the identity the worktree would have had, so
      * the reader who was sent to that address finds the refusal waiting there
@@ -109,6 +116,12 @@ export interface HappyAgentSessionListSnapshot {
      * identity, so a refusal can never land on a later attempt's row.
      */
     readonly worktreeCreateFailures: ReadonlyMap<HappyAgentWorktreeId, UserError>;
+}
+
+/** A refused act on one bot subtask, and the host's reason. */
+export interface HappyAgentSubtaskFailure {
+    readonly action: "archive" | "reorder";
+    readonly error: UserError;
 }
 
 /**
@@ -275,6 +288,22 @@ export interface HappyAgentSessionListStore {
     botArchive(botId: HappyAgentBotId): Promise<void>;
     /** Moves one bot after `afterId`, or to the front of the bot list when null. */
     botReorder(botId: HappyAgentBotId, afterId: HappyAgentBotId | null): Promise<void>;
+    /**
+     * Archives one bot subtask by its conversation. The host stops the task and
+     * its descendants but archives only the task, keeping its history and its
+     * workspace. Deliberately not optimistic: the row leaves the bot's tree when
+     * the host's own update says the task is archived.
+     */
+    subtaskArchive(sessionId: HappyAgentSessionId): Promise<void>;
+    /**
+     * Moves one bot subtask after `afterId`, or to the front of its siblings
+     * when null. A subtask only moves among the children of its own parent;
+     * an `afterId` that is not one of them leaves the tree as it is.
+     */
+    subtaskReorder(
+        sessionId: HappyAgentSessionId,
+        afterId: HappyAgentSessionId | null,
+    ): Promise<void>;
     /** Starts one peer-owned managed project and returns its optimistic identity. */
     projectCloneGithub(repository: string, name: string): HappyAgentProjectId;
 
@@ -444,6 +473,7 @@ export interface HappyAgentSessionListDeps {
         | "reorderBot"
         | "reorderProject"
         | "reorderSession"
+        | "reorderSubtask"
         | "reorderWorkspace"
         | "setBotAvatar"
         | "setEffort"
@@ -500,6 +530,8 @@ export function happyAgentSessionListStoreCreate(
     const NO_WORKTREE_CREATE_FAILURES: ReadonlyMap<HappyAgentWorktreeId, UserError> = new Map();
     const NO_PROJECT_CREATE_FAILURES: ReadonlyMap<HappyAgentProjectId, UserError> = new Map();
     const NO_SESSION_CREATE_FAILURES: ReadonlyMap<HappyAgentSessionId, UserError> = new Map();
+    const NO_SUBTASK_FAILURES: ReadonlyMap<HappyAgentSessionId, HappyAgentSubtaskFailure> =
+        new Map();
     const NO_BOTS_CREATING: readonly HappyAgentBotCreating[] = [];
 
     const store = createStore<HappyAgentSessionListSnapshot>()(() => ({
@@ -510,6 +542,7 @@ export function happyAgentSessionListStoreCreate(
         projectCreateFailures: NO_PROJECT_CREATE_FAILURES,
         projects: { type: "loading" },
         sessionCreateFailures: NO_SESSION_CREATE_FAILURES,
+        subtaskFailures: NO_SUBTASK_FAILURES,
         worktreeCreateFailures: NO_WORKTREE_CREATE_FAILURES,
     }));
 
@@ -602,6 +635,11 @@ export function happyAgentSessionListStoreCreate(
     }
     const sessionArchiveIntents = new Map<HappyAgentSessionId, SessionArchiveIntent>();
     const sessionArchiveMutationIds = new Map<string, HappyAgentSessionId>();
+    /** Mutations acting on one bot subtask, by mutation, so a refusal finds its task. */
+    const subtaskMutations = new Map<
+        string,
+        { readonly sessionId: HappyAgentSessionId; readonly action: "archive" | "reorder" }
+    >();
     /**
      * A picture for a bot that the host has not served back yet. The row wears
      * the local copy meanwhile, so a bot made and given a face in one act has
@@ -855,6 +893,121 @@ export function happyAgentSessionListStoreCreate(
         return true;
     };
 
+    /**
+     * Sibling orders of bot subtasks this window moved and the host has not yet
+     * echoed, keyed by the parent's conversation — the bot's own or a task's.
+     * Each is laid over every catalog read until the host's tree lists the
+     * same order, and dropped when the move it belongs to is refused.
+     */
+    const subtaskOrders = new Map<
+        string,
+        { readonly mutationId: string; readonly order: readonly string[] }
+    >();
+
+    /** Acting on a task again withdraws the reason its last act was refused. */
+    const subtaskFailureWithdraw = (sessionId: HappyAgentSessionId): void => {
+        const { subtaskFailures } = store.getState();
+        if (!subtaskFailures.has(sessionId)) return;
+        const failures = new Map(subtaskFailures);
+        failures.delete(sessionId);
+        store.setState({ ...store.getState(), subtaskFailures: failures });
+    };
+
+    /** The conversation whose children `sessionId` is listed among. */
+    const subtaskParentFind = (
+        bots: readonly HappyAgentBot[],
+        sessionId: string,
+    ): string | undefined => {
+        const visit = (
+            tasks: readonly HappyAgentBotSubtask[],
+            parentId: string,
+        ): string | undefined => {
+            for (const task of tasks) {
+                if (task.conversation.id === sessionId) return parentId;
+                const found = visit(task.subtasks, task.conversation.id);
+                if (found !== undefined) return found;
+            }
+            return undefined;
+        };
+        for (const bot of bots) {
+            const found = visit(bot.subtasks, bot.conversation.id);
+            if (found !== undefined) return found;
+        }
+        return undefined;
+    };
+
+    /** The children of one parent conversation, as the tree lists them. */
+    const subtaskSiblingsFind = (
+        bots: readonly HappyAgentBot[],
+        parentId: string,
+    ): readonly HappyAgentBotSubtask[] | undefined => {
+        const visit = (
+            tasks: readonly HappyAgentBotSubtask[],
+        ): readonly HappyAgentBotSubtask[] | undefined => {
+            for (const task of tasks) {
+                if (task.conversation.id === parentId) return task.subtasks;
+                const found = visit(task.subtasks);
+                if (found !== undefined) return found;
+            }
+            return undefined;
+        };
+        for (const bot of bots) {
+            if (bot.conversation.id === parentId) return bot.subtasks;
+            const found = visit(bot.subtasks);
+            if (found !== undefined) return found;
+        }
+        return undefined;
+    };
+
+    /** Lays each pending sibling order over the host's tree, settling the ones it now lists. */
+    const subtaskOrdersApply = (bots: readonly HappyAgentBot[]): readonly HappyAgentBot[] => {
+        if (subtaskOrders.size === 0) return bots;
+        const arrange = (
+            parentId: string,
+            tasks: readonly HappyAgentBotSubtask[],
+        ): readonly HappyAgentBotSubtask[] => {
+            let children = tasks;
+            const pending = subtaskOrders.get(parentId);
+            if (pending !== undefined) {
+                const listed = tasks.map((task) => task.conversation.id);
+                if (
+                    listed.length === pending.order.length &&
+                    listed.every((id, index) => id === pending.order[index])
+                ) {
+                    subtaskOrders.delete(parentId);
+                } else {
+                    const position = new Map(pending.order.map((id, index) => [id, index]));
+                    children = tasks
+                        .map((task, index) => ({ task, index }))
+                        .sort(
+                            (left, right) =>
+                                (position.get(left.task.conversation.id) ??
+                                    pending.order.length + left.index) -
+                                (position.get(right.task.conversation.id) ??
+                                    pending.order.length + right.index),
+                        )
+                        .map(({ task }) => task);
+                }
+            }
+            let changed = children !== tasks;
+            const next = children.map((task) => {
+                const subtasks = arrange(task.conversation.id, task.subtasks);
+                if (subtasks === task.subtasks) return task;
+                changed = true;
+                return { ...task, subtasks };
+            });
+            return changed ? next : tasks;
+        };
+        let changed = false;
+        const next = bots.map((bot) => {
+            const subtasks = arrange(bot.conversation.id, bot.subtasks);
+            if (subtasks === bot.subtasks) return bot;
+            changed = true;
+            return { ...bot, subtasks };
+        });
+        return changed ? next : bots;
+    };
+
     const orderByIds = <T extends { readonly id: string }>(
         entries: readonly T[],
         order: readonly string[] | undefined,
@@ -1040,7 +1193,7 @@ export function happyAgentSessionListStoreCreate(
                     snapshot.sessions,
                     observedArchivedSessions,
                 );
-                const bots = botAvatarIntentsApply(snapshot.catalog.bots);
+                const bots = subtaskOrdersApply(botAvatarIntentsApply(snapshot.catalog.bots));
                 internal.setState({
                     archivedSessions: pending.archivedSessions,
                     catalog:
@@ -1262,6 +1415,10 @@ export function happyAgentSessionListStoreCreate(
         // the next incidental read: what the row shows is the host's face or
         // none, never one the host does not have.
         if (botAvatarIntentWithdraw(rejection.mutationId)) void reconcile();
+        // A refused sibling move lets go of its order, so the reconcile below
+        // lays the host's own arrangement back down.
+        for (const [parentId, pending] of subtaskOrders)
+            if (pending.mutationId === rejection.mutationId) subtaskOrders.delete(parentId);
         const reordered = reorderMutations.get(rejection.mutationId);
         reorderMutations.delete(rejection.mutationId);
         const { optimisticProjectOrder, optimisticWorkspaceOrders } = internal.getState();
@@ -1297,6 +1454,15 @@ export function happyAgentSessionListStoreCreate(
                       error,
                   )
                 : previous.sessionCreateFailures;
+        const refusedSubtask = subtaskMutations.get(rejection.mutationId);
+        subtaskMutations.delete(rejection.mutationId);
+        const subtaskFailures =
+            refusedSubtask === undefined
+                ? previous.subtaskFailures
+                : new Map(previous.subtaskFailures).set(refusedSubtask.sessionId, {
+                      action: refusedSubtask.action,
+                      error,
+                  });
         projectArchiveSettle(rejection.mutationId, {
             type: "failed",
             error,
@@ -1314,6 +1480,7 @@ export function happyAgentSessionListStoreCreate(
             mutationError: error,
             projectCreateFailures,
             sessionCreateFailures,
+            subtaskFailures,
             worktreeCreateFailures,
         });
         if (reordered !== undefined) publish();
@@ -1392,6 +1559,7 @@ export function happyAgentSessionListStoreCreate(
             const expired = pendingMutationOrder.shift();
             if (expired) {
                 pendingMutationIds.delete(expired);
+                subtaskMutations.delete(expired);
                 const sessionId = sessionArchiveMutationIds.get(expired);
                 sessionArchiveMutationIds.delete(expired);
                 if (sessionId && sessionArchiveIntents.get(sessionId)?.mutationId === expired)
@@ -1994,6 +2162,71 @@ export function happyAgentSessionListStoreCreate(
             mutate(async () => {
                 if (!internal.getState().catalog.bots.some((bot) => bot.id === botId)) return;
                 connectMutationTrack(deps.connectActions.archiveBot(botId));
+            }),
+        subtaskArchive: (sessionId) =>
+            mutate(async () => {
+                const { bots } = internal.getState().catalog;
+                if (!happyAgentBotSubtasks(bots).some((task) => task.conversation.id === sessionId))
+                    return;
+                subtaskFailureWithdraw(sessionId);
+                const mutationId = connectMutationTrack(
+                    deps.connectActions.setSessionArchived(sessionId, true),
+                );
+                subtaskMutations.set(mutationId, { sessionId, action: "archive" });
+            }),
+        subtaskReorder: (sessionId, afterId) =>
+            mutate(async () => {
+                // The row moves under the hand that dragged it, among its own
+                // siblings only. The host's answer carries the moved task's new
+                // place, and the next reconcile replaces this tree with its own.
+                const siblingsReorder = (
+                    tasks: readonly HappyAgentBotSubtask[],
+                ): readonly HappyAgentBotSubtask[] => {
+                    const ids = tasks.map((task) => task.conversation.id as HappyAgentSessionId);
+                    if (ids.includes(sessionId)) {
+                        if (afterId !== null && !ids.includes(afterId)) return tasks;
+                        const byId = new Map(tasks.map((task) => [task.conversation.id, task]));
+                        return reorderedIds(ids, sessionId, afterId).flatMap((id) => {
+                            const task = byId.get(id);
+                            return task === undefined ? [] : [task];
+                        });
+                    }
+                    let changed = false;
+                    const next = tasks.map((task) => {
+                        const subtasks = siblingsReorder(task.subtasks);
+                        if (subtasks === task.subtasks) return task;
+                        changed = true;
+                        return { ...task, subtasks };
+                    });
+                    return changed ? next : tasks;
+                };
+                const { bots } = internal.getState().catalog;
+                const parentId = subtaskParentFind(bots, sessionId);
+                if (parentId === undefined) return;
+                let moved = false;
+                const next = bots.map((bot) => {
+                    const subtasks = siblingsReorder(bot.subtasks);
+                    if (subtasks === bot.subtasks) return bot;
+                    moved = true;
+                    return { ...bot, subtasks };
+                });
+                if (!moved) return;
+                internal.setState((state) => ({ catalog: { ...state.catalog, bots: next } }));
+                publish();
+                subtaskFailureWithdraw(sessionId);
+                const mutationId = connectMutationTrack(
+                    deps.connectActions.reorderSubtask(sessionId, afterId),
+                );
+                subtaskMutations.set(mutationId, { sessionId, action: "reorder" });
+                // Held over every read until the host's own tree agrees, so a
+                // catalog published for something else meanwhile cannot put
+                // the row back under the hand that just moved it.
+                subtaskOrders.set(parentId, {
+                    mutationId,
+                    order: (subtaskSiblingsFind(next, parentId) ?? []).map(
+                        (task) => task.conversation.id,
+                    ),
+                });
             }),
         botReorder: (botId, afterId) =>
             mutate(async () => {

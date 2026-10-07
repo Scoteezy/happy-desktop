@@ -680,6 +680,43 @@ export function happyAgentRouterFileForget(
 }
 
 /**
+ * Takes bot subtasks the host stopped listing out of this window's navigation.
+ * Each removed conversation's remembered addresses go, so Back never reopens a
+ * task that was archived. A reader who stood in one is then put on `open`, the
+ * nearest conversation above it that is still listed, in place of where they
+ * were rather than as a new step.
+ */
+export function happyAgentRouterSubtasksForget(
+    router: HappyAgentRouter,
+    happyAgentId: string,
+    removed: readonly HappyAgentSessionLocation[],
+    open: HappyAgentSessionLocation | undefined,
+): void {
+    // Read before the stack is repaired: the repair itself moves a reader off
+    // a removed conversation, and only one who stood there is moved on again.
+    const shown = happyAgentRoutePathParse(router.history.location.pathname);
+    const stoodInRemoved =
+        (shown?.kind === "chat" || shown?.kind === "file") &&
+        shown.happyAgentId === happyAgentId &&
+        removed.some((location) => location.sessionId === shown.chatId);
+    let changed = false;
+    for (const location of removed)
+        changed =
+            router.history.sessionForget(happyAgentId, location.groupId, location.sessionId) ||
+            changed;
+    if (open !== undefined && stoodInRemoved) {
+        void router.navigate({
+            params: { chatId: open.sessionId, groupId: open.groupId, happyAgentId },
+            replace: true,
+            to: "/chats/$happyAgentId/$groupId/$chatId",
+        });
+        return;
+    }
+    if (changed && router.history.subscribers.size === 0)
+        void router.load({ action: { type: "REPLACE" } });
+}
+
+/**
  * Takes a group that stopped existing out of this window's navigation — archived
  * here, or from another window or machine.
  *

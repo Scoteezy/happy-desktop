@@ -8,6 +8,7 @@ import {
     happyAgentRouterConversationOpen,
     happyAgentRouterGroupOpen,
     happyAgentRouterGroupForget,
+    happyAgentRouterSubtasksForget,
     happyAgentRouterCreate,
     type AppHappyAgentDaemonStore,
     type AppHappyAgentUpdate,
@@ -1112,6 +1113,13 @@ if (mediaPreviewBridge) {
                     connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,
                     happyAgentId,
                     groupId,
+                ),
+            subtasksForget: (happyAgentId, removed, open) =>
+                happyAgentRouterSubtasksForget(
+                    connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,
+                    happyAgentId,
+                    removed,
+                    open,
                 ),
             modelPreferencePersistence: preferencesFor,
             // Remote connections ride through the local daemon, so a local

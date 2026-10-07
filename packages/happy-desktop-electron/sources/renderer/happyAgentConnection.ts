@@ -125,6 +125,11 @@ export interface HappyAgentSessionDeps {
      * to a row that no longer exists.
      */
     readonly groupForget: (groupId: string) => void;
+    /** Takes bot subtasks the host stopped listing out of this window's navigation. */
+    readonly subtasksForget: (
+        removed: readonly HappyAgentSessionLocation[],
+        open: HappyAgentSessionLocation | undefined,
+    ) => void;
     /** Announces that this connection's session is ready or has been replaced. */
     readonly changed: () => void;
     readonly unavailable?: (error: unknown) => void;
@@ -430,6 +435,9 @@ export function happyAgentConnectionOpen(input: {
                             return;
                         case "addressedGroupRemoved":
                             input.deps.groupForget(event.groupId);
+                            return;
+                        case "subtasksRemoved":
+                            input.deps.subtasksForget(event.removed, event.open);
                             return;
                     }
                 },

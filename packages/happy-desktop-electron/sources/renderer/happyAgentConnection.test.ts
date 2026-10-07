@@ -37,6 +37,7 @@ it("follows a daemon restarted behind the same endpoint onto its version and mod
             changed,
             conversationOpen: () => undefined,
             groupForget: () => undefined,
+            subtasksForget: () => undefined,
             groupOpen: () => undefined,
         },
         happyAgentHttpUrl: "http://happy-agent.test",

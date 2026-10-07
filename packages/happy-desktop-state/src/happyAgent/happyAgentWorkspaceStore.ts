@@ -83,6 +83,8 @@ import type {
 import type {
     HappyAgentAvatarImage,
     HappyAgentBackgroundProcess,
+    HappyAgentBot,
+    HappyAgentBotSubtask,
     HappyAgentChangedFileDocument,
     HappyAgentFileSearchResult,
     HappyAgentBotId,
@@ -1285,7 +1287,20 @@ export type HappyAgentWorkspaceOutput =
      * prediction; if that queued mutation is rejected, the exact address this
      * event replaced is requested again once the folder view rolls back.
      */
-    | { readonly type: "addressedGroupRemoved"; readonly groupId: HappyAgentGroupId };
+    | { readonly type: "addressedGroupRemoved"; readonly groupId: HappyAgentGroupId }
+    /**
+     * Bot subtasks the host's tree no longer lists — archived here, from another
+     * window, or by the agent that made them. Archiving keeps a task's
+     * workspace, so the group-removal report never covers them. `removed` names
+     * every conversation that left, so the owner can take each out of its
+     * navigation; `open` is present when the reader stood in one of them, and
+     * names the nearest conversation above it the tree still lists.
+     */
+    | {
+          readonly type: "subtasksRemoved";
+          readonly removed: readonly HappyAgentSessionLocation[];
+          readonly open?: HappyAgentSessionLocation;
+      };
 
 export interface HappyAgentWorkspaceDeps {
     readonly output?: (event: HappyAgentWorkspaceOutput) => void;
@@ -1453,6 +1468,13 @@ export interface HappyAgentWorkspaceStore {
     botArchive(botId: HappyAgentBotId): Promise<void>;
     /** Moves one bot after `afterId`, or to the front of the bot list when null. */
     botReorder(botId: HappyAgentBotId, afterId: HappyAgentBotId | null): Promise<void>;
+    /** Archives one bot subtask by its conversation, keeping its history and workspace. */
+    subtaskArchive(sessionId: HappyAgentSessionId): Promise<void>;
+    /** Moves one bot subtask among its siblings, after `afterId` or first when null. */
+    subtaskReorder(
+        sessionId: HappyAgentSessionId,
+        afterId: HappyAgentSessionId | null,
+    ): Promise<void>;
     /**
      * Archives a project, taking its conversations and its worktrees' checkouts
      * with it, and resolves with the verified outcome. The caller does not
@@ -1870,6 +1892,36 @@ function githubRepositoryParse(
     const name = match[2];
     if (!owner || !name) return undefined;
     return { repository: `${owner}/${name}`, name };
+}
+
+/**
+ * Every listed bot subtask by its conversation: where it is addressed, and the
+ * conversation it was made by — a bot's own, or another task's.
+ */
+function subtaskIndex(
+    bots: readonly HappyAgentBot[],
+): ReadonlyMap<
+    string,
+    { readonly location: HappyAgentSessionLocation; readonly parentId: string }
+> {
+    const index = new Map<
+        string,
+        { readonly location: HappyAgentSessionLocation; readonly parentId: string }
+    >();
+    const visit = (tasks: readonly HappyAgentBotSubtask[], parentId: string): void => {
+        for (const task of tasks) {
+            index.set(task.conversation.id, {
+                location: {
+                    groupId: task.workspaceId,
+                    sessionId: task.conversation.id as HappyAgentSessionId,
+                },
+                parentId,
+            });
+            visit(task.subtasks, task.conversation.id);
+        }
+    };
+    for (const bot of bots) visit(bot.subtasks, bot.conversation.id);
+    return index;
 }
 
 /**
@@ -2371,6 +2423,11 @@ export function happyAgentWorkspaceStoreCreate(
      * Happy Agent's own root leaves the former alone and empties this.
      */
     let address: HappyAgentWorkspaceAddress = ADDRESS_NOWHERE;
+    /**
+     * The bot subtasks the list last held, so one that leaves the host's tree
+     * can be told apart from one that was never there.
+     */
+    let subtasksListed: ReturnType<typeof subtaskIndex> | undefined;
     /**
      * The address as the outside is allowed to act on it. Navigation is kept
      * privately across a remount, because the URL still names the same place
@@ -5470,6 +5527,48 @@ export function happyAgentWorkspaceStoreCreate(
      * confirm is about to stop matching, so the confirmation is restarted on the
      * new name rather than left standing over a stale copy.
      */
+    /**
+     * Reports the bot subtasks the host's tree stopped listing since the last
+     * read. Removal is never predicted locally — an archive waits for the
+     * host — so any task gone from the list is gone from the host. A reader
+     * inside one is sent to the nearest conversation above it still listed:
+     * its parent task, or its bot.
+     */
+    const subtasksRemovedApply = (): void => {
+        const snapshot = list.get();
+        if (snapshot.projects.type !== "ready") return;
+        const previous = subtasksListed;
+        const current = subtaskIndex(snapshot.bots);
+        subtasksListed = current;
+        if (previous === undefined) return;
+        const removed = [...previous].filter(([id]) => !current.has(id));
+        if (removed.length === 0) return;
+        const bots = new Map(
+            snapshot.bots.map((bot) => [
+                bot.conversation.id,
+                {
+                    groupId: bot.workspaceId,
+                    sessionId: bot.conversation.id as HappyAgentSessionId,
+                },
+            ]),
+        );
+        const addressed =
+            address.conversationId === undefined ? undefined : previous.get(address.conversationId);
+        let open: HappyAgentSessionLocation | undefined;
+        if (addressed !== undefined && !current.has(address.conversationId!)) {
+            let parentId: string | undefined = addressed.parentId;
+            while (parentId !== undefined && open === undefined) {
+                open = current.get(parentId)?.location ?? bots.get(parentId);
+                parentId = previous.get(parentId)?.parentId;
+            }
+        }
+        output({
+            type: "subtasksRemoved",
+            removed: removed.map(([, entry]) => entry.location),
+            ...(open === undefined ? {} : { open }),
+        });
+    };
+
     const catalogAuthoritativeApply = (): void => {
         const listSnapshot = list.get();
         if (listSnapshot.catalogRevision === catalogRevisionSeen) return;
@@ -5621,8 +5720,11 @@ export function happyAgentWorkspaceStoreCreate(
             pendingProjectClonesApply();
             sessionCreateFailureApply();
             catalogAuthoritativeApply();
+            subtasksRemovedApply();
             recompute();
         });
+        // The tree already listed is where removals are counted from.
+        subtasksRemovedApply();
         unsubscribeWorkspaceFiles = client.workspaceFilesSubscribe(workspaceFilesChanged);
         // The addressed conversation survives losing every subscriber (the URL
         // still names it), so remounting re-acquires it rather than opening
@@ -6516,6 +6618,8 @@ export function happyAgentWorkspaceStoreCreate(
         projectReorder: (projectId, afterId) => list.projectReorder(projectId, afterId),
         botArchive: (botId) => list.botArchive(botId),
         botReorder: (botId, afterId) => list.botReorder(botId, afterId),
+        subtaskArchive: (sessionId) => list.subtaskArchive(sessionId),
+        subtaskReorder: (sessionId, afterId) => list.subtaskReorder(sessionId, afterId),
         projectArchive: (projectId) => list.projectArchive(projectId),
         async worktreeCreate(projectId) {
             // The new checkout is forked from the project's own folder, so a

@@ -322,6 +322,18 @@
     margin-left: 6px;
 }
 
+/* The heading's controls, side by side at the far edge. Optical, for the
+   reason the rows' trailing slot carries the same: a glyph is smaller than its
+   cell, so the lane hangs into the padding to put the last control's ink where
+   a row's trailing marks put theirs. */
+.happy-sidebar__section-actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    margin-right: -3px;
+    margin-left: auto;
+}
+
 /* The whole control is one target in a desktop window: a native title-bar drag
    region that overlapped this heading would otherwise hand the press to the
    window manager instead of to the button. Stated here rather than relying on
@@ -336,10 +348,6 @@
     -webkit-app-region: no-drag;
     app-region: no-drag;
     margin: 0;
-    /* Optical, for the reason the rows' trailing slot carries the same: the
-       glyph is smaller than its cell, so the cell hangs into the padding to put
-       its ink where a row's trailing marks put theirs. */
-    margin-right: -3px;
     padding: 0;
     border: none;
     border-radius: 4px;
@@ -356,6 +364,14 @@
 
 .happy-sidebar__section-head:hover .happy-sidebar__section-action,
 .happy-sidebar__section-action:focus-visible {
+    opacity: 1;
+}
+
+/* The secondary control acts on the section's rows, so it shows while the
+   pointer is anywhere over them or the keyboard is among them, not only over
+   the heading. */
+.happy-sidebar__section:hover .happy-sidebar__section-action[data-slot="secondary"],
+.happy-sidebar__section:has(:focus-visible) .happy-sidebar__section-action[data-slot="secondary"] {
     opacity: 1;
 }
 

@@ -44,6 +44,7 @@ export {
     happyAgentRouterGroupOpen,
     happyAgentRouterWorkspaceVisible,
     happyAgentRouterGroupForget,
+    happyAgentRouterSubtasksForget,
     happyAgentRouterCreate,
     type HappyAgentRouter,
     type HappyAgentRouterContext,

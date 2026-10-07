@@ -660,7 +660,8 @@ export type MutationAction =
     | "rename_group"
     | "reorder_group"
     | "reorder_bot"
-    | "reorder_session";
+    | "reorder_session"
+    | "reorder_subtask";
 
 export interface MutationRejectedDelta {
     action: string;
@@ -877,6 +878,8 @@ export interface HappyAgentConnection {
     reorderProject(projectId: string, afterId: string | null): MutationId;
     reorderWorkspace(workspaceId: string, afterId: string | null): MutationId;
     reorderSession(sessionId: string, afterId: string | null): MutationId;
+    /** Moves one bot subtask among its siblings, after `afterId` or first when null. */
+    reorderSubtask(sessionId: string, afterId: string | null): MutationId;
     close(): void;
 }
 

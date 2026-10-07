@@ -71,6 +71,7 @@ async function fixture(withHistory = false) {
             conversationOpen: (location) =>
                 handle.get()?.workspace.conversationOpen(location.sessionId, location.groupId),
             groupForget: () => {},
+            subtasksForget: () => {},
             groupOpen: () => {},
         },
         happyAgentHttpUrl: "http://happy-agent.test",

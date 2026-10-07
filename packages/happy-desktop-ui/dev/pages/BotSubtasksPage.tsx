@@ -12,8 +12,8 @@ const items: SidebarItem[] = [
         kind: "workspace",
         label: "Plan the autumn trip",
         contextAvatars: [{ id: "household", label: "Project: Household", initials: "H" }],
+        changeStats: { added: 81, deleted: 1 },
         status: "working",
-        reorderable: false,
     },
     {
         id: "flights",
@@ -21,8 +21,8 @@ const items: SidebarItem[] = [
         kind: "workspace",
         label: "Compare flights",
         contextAvatars: [{ id: "household", label: "Project: Household", initials: "H" }],
+        changeStats: { added: 12, deleted: 4 },
         status: "working",
-        reorderable: false,
     },
     {
         id: "hotels",
@@ -31,7 +31,6 @@ const items: SidebarItem[] = [
         label: "Shortlist hotels",
         contextAvatars: [{ id: "household", label: "Project: Household", initials: "H" }],
         unread: true,
-        reorderable: false,
     },
     {
         id: "invoices",
@@ -39,14 +38,12 @@ const items: SidebarItem[] = [
         kind: "workspace",
         label: "Reconcile invoices",
         status: "waiting",
-        reorderable: false,
     },
     {
         id: "receipts",
         depth: 2,
         kind: "workspace",
         label: "Collect receipts",
-        reorderable: false,
     },
     { id: "builder", kind: "project", label: "Builder", avatarId: "builder" },
     {
@@ -55,7 +52,7 @@ const items: SidebarItem[] = [
         kind: "workspace",
         label: "Research the new API",
         contextAvatars: [{ id: "happy", label: "Project: Happy", initials: "H" }],
-        reorderable: false,
+        changeStats: { added: 3, deleted: 0 },
     },
 ];
 
@@ -66,7 +63,7 @@ export function BotSubtasksPage() {
         <ComponentPage
             number={componentNumber}
             title="Bot subtasks"
-            summary="Active interactive subtasks belong beneath their parent bot, recursively. Each keeps its own activity, unread state, and conversation identity."
+            summary="Active interactive subtasks belong beneath their parent bot, recursively. Each keeps its own activity, unread state, and conversation identity, and a subtask with a worktree of its own carries that worktree's line delta in place of a second row under Projects."
         >
             <Specimen
                 number="01"
@@ -98,6 +95,12 @@ export function BotSubtasksPage() {
                             {
                                 id: "projects",
                                 label: "Projects",
+                                action: {
+                                    icon: "plus",
+                                    label: "Add project",
+                                    reveal: "always",
+                                },
+                                secondaryAction: { icon: "eye-off", label: "Hide projects" },
                                 items: [
                                     {
                                         id: "household",
@@ -106,38 +109,27 @@ export function BotSubtasksPage() {
                                         initials: "H",
                                     },
                                     {
-                                        id: "trip-workspace",
-                                        kind: "workspace",
-                                        depth: 1,
-                                        label: "Autumn trip",
-                                        contextAvatars: [
-                                            {
-                                                id: "chief",
-                                                label: "Bot: Chief of Staff",
-                                                avatarId: "chief",
-                                            },
-                                        ],
+                                        id: "happy",
+                                        kind: "project",
+                                        label: "Happy",
+                                        initials: "H",
+                                        changeStats: { added: 99, deleted: 0 },
                                     },
-                                    { id: "happy", kind: "project", label: "Happy", initials: "H" },
+                                    // Only worktrees no bot's subtask works in;
+                                    // the others are their subtasks' rows above.
                                     {
-                                        id: "api-workspace",
+                                        id: "comparison-workspace",
                                         kind: "workspace",
                                         depth: 1,
-                                        label: "API integration",
-                                        contextAvatars: [
-                                            {
-                                                id: "builder",
-                                                label: "Bot: Builder",
-                                                avatarId: "builder",
-                                            },
-                                        ],
+                                        label: "changes-comparison-base",
+                                        changeStats: { added: 40, deleted: 2 },
                                     },
                                 ],
                             },
                         ]}
                     />
                 </div>
-                <DimensionRule label="32px rows · stable agent IDs · no task reparenting or child reordering" />
+                <DimensionRule label="32px rows · stable agent IDs · siblings reorder within their parent · no task reparenting" />
             </Specimen>
         </ComponentPage>
     );

@@ -298,6 +298,15 @@ export interface AppHappyAgentEntry {
      * a host with no live stores supplies no `session`.
      */
     readonly projectAdd?: HappyAgentProjectAddSnapshot;
+    /**
+     * Bot subtasks whose archive or move the host refused, by the task's
+     * conversation. The reason is stated under the Bots heading for as long as
+     * the task is still listed. Absent reads as none.
+     */
+    readonly subtaskFailures?: ReadonlyMap<
+        string,
+        { readonly action: "archive" | "reorder"; readonly error: { readonly message: string } }
+    >;
     /** The live stores for this Happy Agent, present once its connection is up. */
     readonly session?: AppHappyAgentSession;
     /** Authenticated setup is available before protected product stores load. */
@@ -681,12 +690,16 @@ function botSubtaskSidebarItems(
         const project = projects.find((candidate) =>
             candidate.worktrees.some((worktree) => worktree.id === task.workspaceId),
         );
+        // A task working in a worktree of its own is that worktree's row: the
+        // Projects section leaves the worktree out, so its delta and its phase
+        // are said here. A task sharing its bot's folder has no checkout of its
+        // own and so no delta to report.
+        const worktree = project?.worktrees.find((entry) => entry.id === task.workspaceId);
         return [
             {
                 id: task.conversation.id,
                 kind: "workspace" as const,
                 depth,
-                reorderable: false,
                 label: task.conversation.title,
                 labelShimmer: titleShimmerEnabled,
                 ...(project
@@ -702,12 +715,21 @@ function botSubtaskSidebarItems(
                           ],
                       }
                     : {}),
+                ...(worktree ? sidebarLifecycle(worktree.lifecycle) : {}),
                 ...(task.conversation.activity === "running"
                     ? { status: "working" as const }
                     : task.conversation.activity === "waiting"
                       ? { status: "waiting" as const }
                       : {}),
                 ...(task.conversation.unread ? { unread: true } : {}),
+                ...((worktree?.addedLines ?? 0) > 0 || (worktree?.deletedLines ?? 0) > 0
+                    ? {
+                          changeStats: {
+                              added: worktree?.addedLines ?? 0,
+                              deleted: worktree?.deletedLines ?? 0,
+                          },
+                      }
+                    : {}),
             },
             ...botSubtaskSidebarItems(task.subtasks, projects, titleShimmerEnabled, depth + 1),
         ];
@@ -721,6 +743,13 @@ function sidebarItems(
     newWorkspaceShortcut: boolean,
 ): SidebarItem[] {
     const projectHasLineChanges = (project.addedLines ?? 0) > 0 || (project.deletedLines ?? 0) > 0;
+    // A worktree a bot's subtask works in is listed once, as that subtask
+    // under its bot, so the Projects section keeps only the worktrees no bot
+    // owns. The project's own delta is its root checkout's and stays.
+    const subtaskWorkspaceIds = new Set(
+        happyAgentBotSubtasks(bots).map((task) => task.workspaceId),
+    );
+    const worktrees = project.worktrees.filter((worktree) => !subtaskWorkspaceIds.has(worktree.id));
     return [
         {
             id: project.id,
@@ -774,22 +803,12 @@ function sidebarItems(
                   }
                 : {}),
         },
-        ...project.worktrees.map((worktree) => ({
+        ...worktrees.map((worktree) => ({
             id: worktree.id,
             kind: "workspace" as const,
             depth: 1,
             label: worktree.name,
             labelShimmer: titleShimmerEnabled,
-            contextAvatars: bots
-                .filter((bot) =>
-                    happyAgentBotSubtasks([bot]).some((task) => task.workspaceId === worktree.id),
-                )
-                .map((bot) => ({
-                    id: bot.id,
-                    label: `Bot: ${bot.name}`,
-                    avatarId: bot.id,
-                    ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
-                })),
             // Archiving throws away a checkout, so it stays out of sight until
             // the reader is actually on the row.
             action: {
@@ -877,6 +896,19 @@ function rowMenuItems(
     bots: readonly HappyAgentBot[],
     item: SidebarItem,
 ): MenuItem[] {
+    // A subtask's title is the daemon's to write, so archiving is all its row
+    // offers. The task stops and leaves its bot; its history and its worktree
+    // stay, and the worktree is listed under its project again.
+    if (happyAgentBotSubtasks(bots).some((task) => task.conversation.id === item.id))
+        return [
+            {
+                kind: "item",
+                id: ROW_MENU_ARCHIVE,
+                label: "Archive subtask",
+                icon: "archive",
+                danger: true,
+            },
+        ];
     if (bots.some((bot) => bot.workspaceId === item.id))
         return [
             { kind: "item", id: ROW_MENU_RENAME, label: "Rename bot", icon: "edit" },
@@ -964,6 +996,25 @@ function toolTabItems(tabs: readonly HappyAgentPanelTabSnapshot[]): TabItem[] {
         label: tab.label,
         icon: tab.kind === "terminal" ? ("terminal" as const) : ("globe" as const),
     }));
+}
+
+/**
+ * The sidebar row an address lands on. A subtask is its own row, addressed by
+ * its conversation. A worktree a subtask works in is not listed under its
+ * project at all, so any other address inside it — the workspace alone, a file,
+ * another conversation there — lands on that subtask's row too. A bot's own
+ * folder is the bot's row, whichever of its folder-sharing tasks it holds.
+ */
+function activeRowId(
+    bots: readonly HappyAgentBot[],
+    groupId: string,
+    chatId: string | undefined,
+): string {
+    const tasks = happyAgentBotSubtasks(bots);
+    const addressed = tasks.find((task) => task.conversation.id === chatId);
+    if (addressed) return addressed.conversation.id;
+    if (bots.some((bot) => bot.workspaceId === groupId)) return groupId;
+    return tasks.find((task) => task.workspaceId === groupId)?.conversation.id ?? groupId;
 }
 
 /** The project a sidebar row belongs to, and whether the row is one of its worktrees. */
@@ -1485,6 +1536,7 @@ function happyAgentSections(
     directory: AppHappyAgentDirectorySnapshot,
     titleShimmerEnabled: boolean,
     shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
+    folded?: ReadonlySet<string>,
 ): SidebarSection[] {
     return directory.happyAgents.flatMap((happyAgent) => [
         // Keep the heading even with no bots: its action is where the first
@@ -1521,37 +1573,78 @@ function happyAgentSections(
                       },
                   }
                 : {}),
+            ...subtaskFailureError(happyAgent),
         },
-        happyAgentProjectsSection(happyAgent, titleShimmerEnabled, shortcutProject),
+        happyAgentProjectsSection(happyAgent, titleShimmerEnabled, shortcutProject, folded),
     ]);
+}
+
+/**
+ * The Bots heading's word on a subtask archive or move the host refused. The task is
+ * still in its bot's tree, so the reason stands under the heading it is listed
+ * in until the reader asks again; a refusal for a task no longer listed has
+ * nothing left to explain.
+ */
+function subtaskFailureError(happyAgent: AppHappyAgentEntry): Pick<SidebarSection, "error"> {
+    const failures = happyAgent.subtaskFailures;
+    if (failures === undefined || failures.size === 0) return {};
+    for (const task of happyAgentBotSubtasks(happyAgent.bots)) {
+        const failure = failures.get(task.conversation.id);
+        if (failure)
+            return {
+                error: `Could not ${failure.action === "archive" ? "archive" : "move"} “${task.conversation.title}”. ${failure.error.message}`,
+            };
+    }
+    return {};
 }
 
 function happyAgentProjectsSection(
     happyAgent: AppHappyAgentEntry,
     titleShimmerEnabled: boolean,
     shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
+    /**
+     * The window's folding record, when it keeps one. The whole Projects list
+     * folds under its own heading the way a project folds its worktrees, kept
+     * in the same record by the section's id; a window that remembers no
+     * folding offers no control to fold.
+     */
+    folded?: ReadonlySet<string>,
 ): SidebarSection {
+    const id = happyAgentSectionId(happyAgent.id);
+    const hidden = folded?.has(id) === true;
     return {
-        id: happyAgentSectionId(happyAgent.id),
+        id,
         // Which machine this is belongs to the connection rail and the window,
         // not to a heading over the list: the heading names the kind of thing
         // beneath it, the way "Bots" does above.
         label: "Projects",
-        items: happyAgent.projects
-            .flatMap((project) =>
-                sidebarItems(
-                    project,
-                    happyAgent.bots,
-                    titleShimmerEnabled,
-                    shortcutProject?.happyAgentId === happyAgent.id &&
-                        shortcutProject.projectId === project.id,
-                ),
-            )
-            .map((item) => ({
-                ...item,
-                id: happyAgentItemId(happyAgent.id, item.id),
-                ...happyAgentSidebarItemAvailability(item, happyAgent),
-            })),
+        items: hidden
+            ? []
+            : happyAgent.projects
+                  .flatMap((project) =>
+                      sidebarItems(
+                          project,
+                          happyAgent.bots,
+                          titleShimmerEnabled,
+                          shortcutProject?.happyAgentId === happyAgent.id &&
+                              shortcutProject.projectId === project.id,
+                      ),
+                  )
+                  .map((item) => ({
+                      ...item,
+                      id: happyAgentItemId(happyAgent.id, item.id),
+                      ...happyAgentSidebarItemAvailability(item, happyAgent),
+                  })),
+        // The heading stays, so the list can always be shown again from it.
+        ...(folded === undefined
+            ? {}
+            : {
+                  secondaryAction: {
+                      icon: hidden ? ("eye" as const) : ("eye-off" as const),
+                      label: hidden ? "Show projects" : "Hide projects",
+                      reveal: "hover" as const,
+                  },
+              }),
         // Project creation belongs to the Happy Agent named by this section.
         ...(happyAgent.status === "connected" && happyAgent.session
             ? {
@@ -1570,7 +1663,7 @@ function happyAgentProjectsSection(
         ...(happyAgent.status === "error" && happyAgent.message !== undefined
             ? { error: happyAgent.message }
             : {}),
-        ...(happyAgent.projects.length === 0
+        ...(happyAgent.projects.length === 0 && !hidden
             ? {
                   empty:
                       happyAgent.status === "connected"
@@ -1852,9 +1945,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     : props.groupId
                       ? happyAgentItemId(
                             props.happyAgentId,
-                            happyAgentBotSubtasks(active?.bots ?? []).find(
-                                (task) => task.conversation.id === props.chatId,
-                            )?.conversation.id ?? props.groupId,
+                            activeRowId(active?.bots ?? [], props.groupId, props.chatId),
                         )
                       : ""
             }
@@ -1933,9 +2024,15 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             // Each heading makes its own kind of thing on the Happy Agent it
             // names: a bot is named on a surface of its own, a project is chosen
             // from this machine's folders.
-            onSectionAction={(sectionId) => {
+            onSectionAction={(sectionId, source) => {
                 const section = happyAgentSectionParse(sectionId);
                 if (!section) return;
+                // Folding the list is this window's own record, whatever the
+                // machine behind it is doing.
+                if (source === "secondary") {
+                    sidebarCollapseStore.rowCollapseToggle(sectionId);
+                    return;
+                }
                 const happyAgent = happyAgentOf(section.happyAgentId);
                 if (happyAgent?.status !== "connected") {
                     props.onSettingsOpen();
@@ -1953,6 +2050,17 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 if (happyAgent.status !== "connected") return;
                 const workspace = happyAgent.session?.workspace;
                 if (!workspace) return;
+                const subtask = happyAgentBotSubtasks(happyAgent.bots).find(
+                    (task) => task.conversation.id === row.id,
+                );
+                if (subtask) {
+                    // No navigation, for the reason the archive below gives.
+                    if (actionId === ROW_MENU_ARCHIVE)
+                        void workspace
+                            .subtaskArchive(subtask.conversation.id as HappyAgentSessionId)
+                            .catch(() => undefined);
+                    return;
+                }
                 const bot = happyAgent.bots.find((candidate) => candidate.workspaceId === row.id);
                 if (bot) {
                     if (actionId === ROW_MENU_RENAME) workspace.botRenameOpen(bot.id);
@@ -2070,6 +2178,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 // sidebar reports names workspaces and the bots behind them are
                 // what is actually arranged.
                 if (section.kind === "bots") {
+                    // A nested drag only ever rearranges one parent's children,
+                    // so it is a subtask moved among its siblings. Its row is
+                    // addressed by its conversation, which is the task.
+                    if (move.parentId) {
+                        void workspace
+                            .subtaskReorder(
+                                moved as HappyAgentSessionId,
+                                after as HappyAgentSessionId | null,
+                            )
+                            .catch(() => undefined);
+                        return;
+                    }
                     const botOf = (workspaceId: string | null) =>
                         workspaceId === null
                             ? undefined
@@ -2106,7 +2226,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                   }
                 : {})}
             sections={sectionsCollapsed(
-                happyAgentSections(directory, titleShimmerEnabled, workspaceCreateTarget),
+                happyAgentSections(
+                    directory,
+                    titleShimmerEnabled,
+                    workspaceCreateTarget,
+                    props.sidebarCollapse ? sidebarCollapse.collapsed : undefined,
+                ),
                 sidebarCollapse.collapsed,
             )}
         />

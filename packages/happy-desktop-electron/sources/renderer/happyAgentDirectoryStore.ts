@@ -15,6 +15,7 @@ import type {
     HappyAgentCloudHost,
     HappyAgentProjectAddSnapshot,
     HappyAgentProjectGroup,
+    HappyAgentSessionListSnapshot,
     HappyAgentSessionLocation,
     TerminalColorScheme,
 } from "happy-desktop-state";
@@ -29,6 +30,8 @@ import type { DesktopRuntimeStore } from "./runtimeStore";
 
 export const LOCAL_HAPPY_AGENT_ID = "local";
 const PROJECT_ADD_IDLE: HappyAgentProjectAddSnapshot = { pending: false };
+const NO_SUBTASK_FAILURES: HappyAgentSessionListSnapshot["subtaskFailures"] =
+    new Map();
 
 export interface HappyAgentDirectoryEntry {
     readonly id: string;
@@ -47,6 +50,8 @@ export interface HappyAgentDirectoryEntry {
     readonly botsCreating: readonly HappyAgentBotCreating[];
     readonly projectsStatus: "loading" | "ready" | "error";
     readonly projectAdd: HappyAgentProjectAddSnapshot;
+    /** Bot subtasks whose archive or move the host refused, with the reason to show. */
+    readonly subtaskFailures: HappyAgentSessionListSnapshot["subtaskFailures"];
     readonly session?: HappyAgentSession;
     readonly setup?: HappyAgentConnectionHandle["setup"];
 }
@@ -82,6 +87,15 @@ export interface HappyAgentDirectoryDeps {
      * background one reporting a removal must not move the reader.
      */
     readonly groupForget: (happyAgentId: string, groupId: string) => void;
+    /**
+     * Takes bot subtasks the host stopped listing out of the window's
+     * navigation, moving a reader who stood in one to `open`.
+     */
+    readonly subtasksForget: (
+        happyAgentId: string,
+        removed: readonly HappyAgentSessionLocation[],
+        open: HappyAgentSessionLocation | undefined,
+    ) => void;
     /** Desktop-wide model memory for this window's Happy Agent connection. */
     readonly modelPreferencePersistence: (id: string) => HappyAgentModelPreferencePersistence;
     /**
@@ -117,7 +131,12 @@ function projectsRead(
     session: HappyAgentSession,
 ): Pick<
     HappyAgentDirectoryEntry,
-    "bots" | "botsCreating" | "projects" | "projectsStatus" | "projectAdd"
+    | "bots"
+    | "botsCreating"
+    | "projects"
+    | "projectsStatus"
+    | "projectAdd"
+    | "subtaskFailures"
 > {
     const workspace = session.workspace.get();
     const projects = workspace.list.projects;
@@ -128,6 +147,7 @@ function projectsRead(
         projectsStatus:
             projects.type === "ready" ? "ready" : projects.type === "error" ? "error" : "loading",
         projectAdd: workspace.projectAdd,
+        subtaskFailures: workspace.list.subtaskFailures,
     };
 }
 
@@ -135,7 +155,12 @@ function projectsMatch(
     entry: HappyAgentDirectoryEntry,
     next: Pick<
         HappyAgentDirectoryEntry,
-        "bots" | "botsCreating" | "projects" | "projectsStatus" | "projectAdd"
+        | "bots"
+        | "botsCreating"
+        | "projects"
+        | "projectsStatus"
+        | "projectAdd"
+        | "subtaskFailures"
     >,
 ): boolean {
     return (
@@ -143,7 +168,8 @@ function projectsMatch(
         entry.botsCreating === next.botsCreating &&
         entry.projects === next.projects &&
         entry.projectsStatus === next.projectsStatus &&
-        entry.projectAdd === next.projectAdd
+        entry.projectAdd === next.projectAdd &&
+        entry.subtaskFailures === next.subtaskFailures
     );
 }
 
@@ -204,6 +230,7 @@ export function happyAgentDirectoryStoreCreate(
             projects: [],
             projectsStatus: "loading",
             projectAdd: PROJECT_ADD_IDLE,
+            subtaskFailures: NO_SUBTASK_FAILURES,
             status: "connecting",
         },
     };
@@ -268,6 +295,7 @@ export function happyAgentDirectoryStoreCreate(
             projects: [],
             projectsStatus: "loading",
             projectAdd: PROJECT_ADD_IDLE,
+            subtaskFailures: NO_SUBTASK_FAILURES,
             session: undefined,
             setup: undefined,
         };
@@ -306,6 +334,8 @@ export function happyAgentDirectoryStoreCreate(
                     deps.conversationOpen(happyAgent.entry.id, location),
                 groupOpen: (groupId) => deps.groupOpen(happyAgent.entry.id, groupId),
                 groupForget: (groupId) => deps.groupForget(happyAgent.entry.id, groupId),
+                subtasksForget: (removed, open) =>
+                    deps.subtasksForget(happyAgent.entry.id, removed, open),
                 compatibility: (mismatch) => {
                     if (happyAgent.protocolMismatch?.message === mismatch?.message) return;
                     happyAgent.protocolMismatch = mismatch;
@@ -503,6 +533,7 @@ export function happyAgentDirectoryStoreCreate(
                                 projects: [],
                                 projectsStatus: "loading",
                                 projectAdd: PROJECT_ADD_IDLE,
+                                subtaskFailures: NO_SUBTASK_FAILURES,
                                 status: "connecting",
                             },
                         };

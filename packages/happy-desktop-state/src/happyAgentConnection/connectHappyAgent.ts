@@ -3496,6 +3496,23 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 `agent:${sessionId}`,
             );
         },
+        reorderSubtask(sessionId, afterId) {
+            const mutationId = nextId();
+            return mutation(
+                "reorder_subtask",
+                mutationId,
+                () =>
+                    client.reorderSubtask(
+                        sessionId,
+                        { afterId, mutationId },
+                        { signal: rootController.signal },
+                    ),
+                ({ agent }) => adoptAgent(agent),
+                undefined,
+                sessionId,
+                `agent:${sessionId}`,
+            );
+        },
         close() {
             if (closed) return;
             closed = true;

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import type { HappyAgentSessionId, HappyAgentWorkspaceStore } from "happy-desktop-state";
+import type {
+    HappyAgentGroupId,
+    HappyAgentSessionId,
+    HappyAgentWorkspaceStore,
+} from "happy-desktop-state";
 import { appearanceStoreCreate, happyAgentSettingsStoreCreate } from "happy-desktop-state";
 import type {
     AppHappyAgentDirectorySnapshot,
@@ -9,6 +13,7 @@ import { happyAgentHistoryCreate } from "../../sources/navigation/happyAgentHist
 import {
     happyAgentRouterCreate,
     happyAgentRouterGroupForget,
+    happyAgentRouterSubtasksForget,
     type HappyAgentRouterContext,
 } from "../../sources/navigation/happyAgentRouter";
 import {
@@ -378,5 +383,52 @@ describe("the router the window actually renders", () => {
         await router.load();
 
         expect(router.state.location.pathname).toBe("/chats/local/prj_one/ses_one");
+    });
+
+    // A bot subtask keeps its workspace when it is archived, so the group stays;
+    // only its conversation leaves, and Back must not reopen it.
+    it("takes an archived subtask out of the stack and puts its reader on the parent", async () => {
+        const { history, router } = await routerAt(
+            "/chats/local/ws_bot/ses_bot",
+            "/chats/local/wt_task/ses_task",
+        );
+
+        happyAgentRouterSubtasksForget(
+            router,
+            "local",
+            [
+                {
+                    groupId: "wt_task" as HappyAgentGroupId,
+                    sessionId: "ses_task" as HappyAgentSessionId,
+                },
+            ],
+            { groupId: "ws_bot" as HappyAgentGroupId, sessionId: "ses_bot" as HappyAgentSessionId },
+        );
+        await router.load();
+
+        expect(router.state.location.pathname).toBe("/chats/local/ws_bot/ses_bot");
+        // Back walks past where the task was rather than reopening it.
+        history.back();
+        await router.load();
+        expect(router.state.location.pathname).not.toContain("ses_task");
+    });
+
+    it("leaves a reader elsewhere where they are when a subtask is archived", async () => {
+        const { router } = await routerAt("/chats/local/wt_task/ses_task", "/settings/general");
+
+        happyAgentRouterSubtasksForget(
+            router,
+            "local",
+            [
+                {
+                    groupId: "wt_task" as HappyAgentGroupId,
+                    sessionId: "ses_task" as HappyAgentSessionId,
+                },
+            ],
+            { groupId: "ws_bot" as HappyAgentGroupId, sessionId: "ses_bot" as HappyAgentSessionId },
+        );
+        await router.load();
+
+        expect(router.state.location.pathname).toBe("/settings/general");
     });
 });

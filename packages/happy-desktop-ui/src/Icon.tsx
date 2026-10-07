@@ -44,6 +44,7 @@ export type IconName =
     | "shield"
     | "lock"
     | "eye"
+    | "eye-off"
     | "link"
     | "open-external"
     | "fold"
@@ -176,6 +177,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     shield: { set: "ionicons", name: "shield-checkmark-outline" },
     lock: { set: "ionicons", name: "lock-closed-outline" },
     eye: { set: "ionicons", name: "eye-outline" },
+    "eye-off": { set: "ionicons", name: "eye-off-outline" },
     link: { set: "ionicons", name: "link-outline" },
     // A box with an arrow leaving it: the same thing, opened somewhere of its
     // own. Never "a link" — `link` is that — and never a navigation arrow.
