@@ -30,8 +30,7 @@ import type { DesktopRuntimeStore } from "./runtimeStore";
 
 export const LOCAL_HAPPY_AGENT_ID = "local";
 const PROJECT_ADD_IDLE: HappyAgentProjectAddSnapshot = { pending: false };
-const NO_SUBTASK_FAILURES: HappyAgentSessionListSnapshot["subtaskFailures"] =
-    new Map();
+const NO_SUBTASK_FAILURES: HappyAgentSessionListSnapshot["subtaskFailures"] = new Map();
 
 export interface HappyAgentDirectoryEntry {
     readonly id: string;
@@ -131,12 +130,7 @@ function projectsRead(
     session: HappyAgentSession,
 ): Pick<
     HappyAgentDirectoryEntry,
-    | "bots"
-    | "botsCreating"
-    | "projects"
-    | "projectsStatus"
-    | "projectAdd"
-    | "subtaskFailures"
+    "bots" | "botsCreating" | "projects" | "projectsStatus" | "projectAdd" | "subtaskFailures"
 > {
     const workspace = session.workspace.get();
     const projects = workspace.list.projects;
@@ -155,12 +149,7 @@ function projectsMatch(
     entry: HappyAgentDirectoryEntry,
     next: Pick<
         HappyAgentDirectoryEntry,
-        | "bots"
-        | "botsCreating"
-        | "projects"
-        | "projectsStatus"
-        | "projectAdd"
-        | "subtaskFailures"
+        "bots" | "botsCreating" | "projects" | "projectsStatus" | "projectAdd" | "subtaskFailures"
     >,
 ): boolean {
     return (
