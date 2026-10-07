@@ -117,7 +117,7 @@ pnpm --dir packages/happy-desktop-electron lint
 | `packages/happy-desktop-state`    | Framework-independent product state and agent protocol |
 | `packages/happy-desktop-ui`       | Reusable components and the component blueprint        |
 | `packages/happy-desktop-app`      | Application composition and routing                    |
-| `packages/happy-desktop-electron` | macOS Electron shell and local daemon boundary         |
+| `packages/happy-desktop-electron` | Electron shell and local daemon boundary               |
 | `packages/happy-desktop-web`      | Browser development entry                              |
 | `packages/happy-desktop-gym`      | Rendering and desktop verification utilities           |
 

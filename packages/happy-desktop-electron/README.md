@@ -1,9 +1,9 @@
 # Happy Desktop shell
 
-This package is the macOS Electron shell for Happy Desktop. It starts or
-connects to the user's normal local Happy Agent daemon, projects the daemon through a
-loopback boundary, and hosts the shared local application renderer. The shell
-opens one Happy Agent connection — its host — and that Happy Agent owns whatever peering it
+This package is the Electron shell for Happy Desktop on macOS, Windows, and
+Linux. It starts or connects to the user's normal local Happy Agent daemon,
+projects the daemon through a loopback boundary, and hosts the shared local
+application renderer. The shell opens one Happy Agent connection — its host — and that Happy Agent owns whatever peering it
 does with other machines.
 
 It contains no Happy server, account authentication, hosted workspace topology,

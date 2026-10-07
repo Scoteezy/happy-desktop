@@ -9,12 +9,15 @@
 <h3>Any team. Any model. One harness.</h3>
 
 <p>
-  Happy integrates models, teams, and compute into one secure, open-source
-  harness — accessible from terminal, desktop, and mobile, deployable
-  anywhere, and adaptable to your team.
+  Happy is the open-source desktop app for coding agents. It runs the agents
+  you already pay for (Claude, Codex, and Grok) in one harness, keeps every
+  session alive and shareable with your team, and puts conversations beside
+  the files, diffs, terminals, and previews the work touches. Pair your phone
+  to follow and steer your agents from anywhere. Everything between your
+  devices is end-to-end encrypted, and nothing goes anywhere you didn't send it.
 </p>
 
-[🖥️ **Download for macOS**](https://github.com/slopus/happy-desktop/releases/latest) • [📱 **iOS App**](https://apps.apple.com/us/app/happy-claude-code-client/id6748571505) • [🤖 **Android App**](https://play.google.com/store/apps/details?id=com.ex3ndr.happy) • [📚 **Documentation**](https://happy.engineering/docs/) • [💬 **Discord**](https://discord.gg/fX9WBAhyfD)
+[🌐 **Website**](https://happy.engineering/) • [🖥️ **Download**](https://github.com/slopus/happy-desktop/releases/latest) • [📱 **iOS App**](https://apps.apple.com/us/app/happy-claude-code-client/id6748571505) • [🤖 **Android App**](https://play.google.com/store/apps/details?id=com.ex3ndr.happy) • [📚 **Documentation**](https://happy.engineering/desktop/docs/) • [💬 **Discord**](https://discord.gg/fX9WBAhyfD)
 
 </div>
 
@@ -25,26 +28,43 @@ Step 1: Download the desktop app
 </h3>
 
 <p align="center">
-<a href="https://github.com/slopus/happy-desktop/releases/latest"><b>⬇️&nbsp;&nbsp;Download Happy for macOS</b></a>
+<a href="https://github.com/slopus/happy-desktop/releases/latest"><b>⬇️&nbsp;&nbsp;Download Happy for macOS, Windows, or Linux</b></a>
 </p>
 
 <p align="center">
-Open it — setup runs itself.
+Open it and setup runs itself: Happy starts its own agent runtime and picks up
+the Claude, Codex, and Grok sign-ins already on your machine.
 </p>
 
-Or install through our [Homebrew tap](https://github.com/slopus/homebrew-tap):
+Every download is on the [latest release](https://github.com/slopus/happy-desktop/releases/latest).
+Pick the standard `Happy-<version>-…` file; the `Happy-Nightly-…` files are a
+separate preview flavor.
 
-```sh
-brew install --cask slopus/tap/happy
-```
+- **macOS** (Apple Silicon and Intel): download Happy from the latest release,
+  or use our [Homebrew tap](https://github.com/slopus/homebrew-tap):
 
-The cask selects the native macOS build, or a Linux AppImage on x64/arm64 for
-releases that include Linux. On Linux, launch with `happy-desktop`; a graphical
-session and FUSE support are required. Upgrade with
-`brew upgrade --cask slopus/tap/happy`.
+    ```sh
+    brew install --cask slopus/tap/happy
+    ```
+
+    Then open **Happy** from Applications or Spotlight. The `happy` command in
+    your terminal is the original Happy CLI, not the desktop app. Upgrade with
+    `brew upgrade --cask slopus/tap/happy` (the app also updates itself).
+
+- **Windows** (x64): download the installer (`Happy-<version>-x64.exe`) from
+  the latest release.
+
+    > If Windows SmartScreen says "Windows protected your PC", click **More info → Run anyway**. The installer is signed; SmartScreen warns about new releases until they build up reputation.
+
+- **Linux** (x64 and arm64): download the AppImage
+  (`Happy-<version>-x64.AppImage` or `Happy-<version>-arm64.AppImage`) from the
+  latest release and make it executable with `chmod +x`, or
+  `brew install --cask slopus/tap/happy` and launch with `happy-desktop`. Needs
+  a graphical session and FUSE. Linux doesn't auto-update; upgrade Homebrew
+  installs with `brew upgrade --cask slopus/tap/happy`.
 
 <h3 align="center">
-Step 2: Connect your phone
+Step 2: Happy on your phone
 </h3>
 
 <p align="center">
@@ -52,7 +72,10 @@ Step 2: Connect your phone
 </p>
 
 <p align="center">
-Scan the QR code in the desktop app — your sessions follow you everywhere.
+Happy for iOS and Android is the companion to the desktop app. Pair it once by
+scanning the QR code in the desktop app (Settings → Mobile Access), then follow,
+steer, and approve your agents' work from anywhere. Sessions stay on your
+computer; your phone gets an end-to-end encrypted view of them.
 </p>
 
 <h3 align="center">
@@ -75,7 +98,7 @@ someone asks where the code is going and who can read it.
 Happy exists to remove those walls. One harness runs every agent you already
 pay for, keeps every session alive and durable, lets your whole team work
 inside the same conversation, and never ships your work anywhere you didn't
-point it. This repository is the macOS app — the place where that harness
+point it. This repository is the Happy desktop app — the place where that harness
 becomes a full working environment: conversations beside the files, diffs,
 terminals, and previews the work actually touches.
 
@@ -119,9 +142,10 @@ is the model provider you chose, under its own terms.
 ## 🚀 How to use it
 
 Download the desktop app and open it — that is the whole setup. Happy
-downloads and starts its agent runtime on its own, finds the Claude, Codex,
-and Grok sign-ins already on your machine, and asks you to point it at a
-folder you work in. From there, just work: open a project, start a session,
+downloads and starts its agent runtime,
+[Happy Agent](https://github.com/slopus/happy-agent), on its own, finds the
+Claude, Codex, and Grok sign-ins already on your machine, and asks you to
+point it at a folder you work in. From there, just work: open a project, start a session,
 and ask for what you want.
 
 When you want company, invite people. Share a session with a teammate and
@@ -173,7 +197,9 @@ scratching your own itch and sharing with the community.
 
 ## 📚 Documentation & Contributing
 
-- **[Documentation Website](https://happy.engineering/docs/)** - Learn how to use Happy effectively
+- **[Documentation Website](https://happy.engineering/desktop/docs/)** - Learn how to use Happy effectively
+- **[Happy Agent](https://github.com/slopus/happy-agent)** - The open-source agent runtime inside the desktop app
+- **[Original Happy CLI](https://github.com/slopus/happy)** - The `happy` terminal CLI, now in maintenance mode ([legacy docs](https://happy.engineering/docs/))
 - **[Development Guide](DEVELOPMENT.md)** - Repository setup, browser mode, profiling, and validation
 - **[Discord](https://discord.gg/fX9WBAhyfD)** - Ask questions and share what you build
 
