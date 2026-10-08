@@ -63,6 +63,7 @@ jobs:
 
             - name: Build local web renderer
               env:
+                  HAPPY_POSTHOG_API_KEY: ${{ secrets.HAPPY_POSTHOG_API_KEY }}
                   HAPPY_LOCAL_WEB_BUILD_ID: ${{ inputs.version }}-${{ github.sha }}
               run: pnpm desktop:local:web
 

@@ -2,6 +2,15 @@ name: Build and boot Linux AppImages
 
 on:
     workflow_call:
+        inputs:
+            release_analytics:
+                description: Embed the PostHog key; only release builds send analytics.
+                type: boolean
+                default: false
+        secrets:
+            HAPPY_POSTHOG_API_KEY:
+                description: PostHog project key, embedded only when release_analytics is true.
+                required: false
     workflow_dispatch:
 
 permissions:
@@ -38,6 +47,7 @@ jobs:
                   pnpm --dir packages/happy-desktop-gym typecheck
             - name: Build the standard desktop AppImage on its native architecture
               env:
+                  HAPPY_POSTHOG_API_KEY: ${{ inputs.release_analytics && secrets.HAPPY_POSTHOG_API_KEY || '' }}
                   RELEASE_ARCH: ${{ matrix.arch }}
               run: |
                   VERSION="$(node -p "require('./package.json').version")"

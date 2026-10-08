@@ -6,6 +6,14 @@ on:
             verify_agent_release:
                 type: boolean
                 default: false
+            release_analytics:
+                description: Embed the PostHog key; only release builds send analytics.
+                type: boolean
+                default: false
+        secrets:
+            HAPPY_POSTHOG_API_KEY:
+                description: PostHog project key, embedded only when release_analytics is true.
+                required: false
 
 permissions:
     contents: read
@@ -86,6 +94,8 @@ jobs:
                   }
                   Get-Command Invoke-TrustedSigning -ErrorAction Stop | Out-Null
             - name: Build NSIS installer and update metadata
+              env:
+                  HAPPY_POSTHOG_API_KEY: ${{ inputs.release_analytics && secrets.HAPPY_POSTHOG_API_KEY || '' }}
               run: pnpm desktop:win:release ${{ matrix.flavor }}
             - name: Install the actual release package
               shell: pwsh
