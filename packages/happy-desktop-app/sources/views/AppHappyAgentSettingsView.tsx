@@ -16,6 +16,7 @@ import type {
     HappyAgentThinkingLevel,
     HappyAgentWindowStore,
     TitleShimmerStore,
+    UsageAnalyticsStore,
 } from "happy-desktop-state";
 import {
     HAPPY_AGENT_INSTRUCTIONS_MAX_BYTES,
@@ -282,6 +283,14 @@ const PERMISSION_MODES: readonly HappyAgentPermissionMode[] = [
     "full_access",
 ];
 
+/** Stands in where the host sends no usage events, so the view subscribes unconditionally. */
+const usageAnalyticsAbsentSnapshot = { usageAnalyticsEnabled: false } as const;
+const usageAnalyticsAbsent: UsageAnalyticsStore = {
+    get: () => usageAnalyticsAbsentSnapshot,
+    subscribe: () => () => undefined,
+    usageAnalyticsUpdate: () => undefined,
+};
+
 export interface AppHappyAgentSettingsViewProps {
     appearance: AppearanceStore;
     /** Managed Happy Agent controls, present only in the native desktop shell. */
@@ -291,6 +300,8 @@ export interface AppHappyAgentSettingsViewProps {
      * in a host that remembers no such choice, which withholds them.
      */
     experiments?: ExperimentsStore;
+    /** Whether this window sends anonymous usage events. Absent where it sends none. */
+    usageAnalytics?: UsageAnalyticsStore;
     gptLive?: GptLiveStore;
     /** Every Happy Agent in this window, including the one whose catalog is read. */
     debug?: AppHappyAgentDebugStore;
@@ -332,6 +343,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         experimentsStore.subscribe,
         experimentsStore.get,
         experimentsStore.get,
+    );
+    const usageAnalyticsStore = props.usageAnalytics ?? usageAnalyticsAbsent;
+    const usageAnalytics = useSyncExternalStore(
+        usageAnalyticsStore.subscribe,
+        usageAnalyticsStore.get,
+        usageAnalyticsStore.get,
     );
     const section =
         props.section === "experimental" && !experiments.experimentalFeaturesEnabled
@@ -814,6 +831,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     }))}
                     error={models.type === "error" ? models.error.message : undefined}
                     experimentalFeaturesEnabled={experiments.experimentalFeaturesEnabled}
+                    {...(props.usageAnalytics
+                        ? {
+                              usageAnalyticsEnabled: usageAnalytics.usageAnalyticsEnabled,
+                              onUsageAnalyticsChange: usageAnalyticsStore.usageAnalyticsUpdate,
+                          }
+                        : {})}
                     loading={models.type !== "ready" && models.type !== "error"}
                     modelOptions={modelOptions(catalog, settings, selection)}
                     onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}

@@ -63,6 +63,7 @@
         "concurrently": "^10.0.3",
         "electron": "^43.1.0",
         "electron-builder": "^26.15.3",
+        "happy-desktop-analytics": "workspace:*",
         "happy-desktop-app": "workspace:*",
         "happy-desktop-state": "workspace:*",
         "happy-desktop-ui": "workspace:*",

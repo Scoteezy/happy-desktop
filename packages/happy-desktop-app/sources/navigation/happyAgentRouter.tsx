@@ -19,6 +19,7 @@ import type {
     ExperimentsStore,
     GptLiveStore,
     HappyAgentGroupId,
+    UsageAnalyticsStore,
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
@@ -109,6 +110,8 @@ export interface HappyAgentRouterContext {
      * in a host that remembers no such choice, which withholds them.
      */
     readonly experiments?: ExperimentsStore;
+    /** Whether this window sends anonymous usage events. Absent where it sends none. */
+    readonly usageAnalytics?: UsageAnalyticsStore;
     /** Window-owned GPT-Live opt-in; unrelated to coding-provider settings. */
     readonly gptLive?: GptLiveStore;
     /** Window-local preference for animated activity titles. */
@@ -589,6 +592,7 @@ function HappyAgentSettingsRoute() {
             {...(context.debug ? { debug: context.debug } : {})}
             {...(context.profiler ? { profiler: context.profiler } : {})}
             {...(context.experiments ? { experiments: context.experiments } : {})}
+            {...(context.usageAnalytics ? { usageAnalytics: context.usageAnalytics } : {})}
             {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             onCategorySelect={(section) =>
                 void navigate({ params: { section }, to: "/settings/$section" })

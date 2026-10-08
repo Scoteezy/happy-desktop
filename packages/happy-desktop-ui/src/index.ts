@@ -525,6 +525,7 @@ export {
 } from "./StatTile";
 export {
     LocalOnboardingScreen,
+    localOnboardingStage,
     type LocalOnboardingAgentSetupPhase,
     type LocalOnboardingAssistant,
     type LocalOnboardingAssistantId,
@@ -646,6 +647,10 @@ export {
     type HappyAgentScrollbarVisibilityChoice,
 } from "./pages/settings/HappyAgentGeneralSettings";
 export {
+    HappyAgentProductAnalyticsSettings,
+    type HappyAgentProductAnalyticsSettingsProps,
+} from "./pages/settings/HappyAgentProductAnalyticsSettings";
+export {
     HappyAgentAccountSettings,
     type HappyAgentAccountSettingsProps,
 } from "./pages/settings/HappyAgentAccountSettings";
@@ -718,3 +723,8 @@ export {
 export { providerAccountName } from "./pages/settings/providerAccountName";
 export { ConnectionShell, type ConnectionShellItem } from "./ConnectionShell";
 export { ConnectionSurface } from "./ConnectionSurface";
+export {
+    DataDisclosure,
+    type DataDisclosureGroup,
+    type DataDisclosureProps,
+} from "./DataDisclosure";

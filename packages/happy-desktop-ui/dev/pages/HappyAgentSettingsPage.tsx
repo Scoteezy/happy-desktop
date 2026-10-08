@@ -479,6 +479,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         onAgentVersionSelect={noop}
                         onPreviewUpdatesChange={noop}
                         previewUpdatesEnabled
+                        onUsageAnalyticsChange={noop}
+                        usageAnalyticsEnabled
                         onExperimentalFeaturesChange={noop}
                         onDefaultModelChange={noop}
                         onEffortChange={noop}

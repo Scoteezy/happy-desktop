@@ -7,6 +7,7 @@ import {
     type HappyAgentNodeStore,
 } from "happy-desktop-state";
 import type {
+    HappyAgentActivity,
     HappyAgentBot,
     HappyAgentBotCreating,
     HappyAgentConnectionSnapshot,
@@ -95,6 +96,8 @@ export interface HappyAgentDirectoryDeps {
         removed: readonly HappyAgentSessionLocation[],
         open: HappyAgentSessionLocation | undefined,
     ) => void;
+    /** A reader-initiated act one Happy Agent's workspace finished. */
+    readonly activity?: (happyAgentId: string, activity: HappyAgentActivity) => void;
     /** Desktop-wide model memory for this window's Happy Agent connection. */
     readonly modelPreferencePersistence: (id: string) => HappyAgentModelPreferencePersistence;
     /**
@@ -325,6 +328,7 @@ export function happyAgentDirectoryStoreCreate(
                 groupForget: (groupId) => deps.groupForget(happyAgent.entry.id, groupId),
                 subtasksForget: (removed, open) =>
                     deps.subtasksForget(happyAgent.entry.id, removed, open),
+                activity: (activity) => deps.activity?.(happyAgent.entry.id, activity),
                 compatibility: (mismatch) => {
                     if (happyAgent.protocolMismatch?.message === mismatch?.message) return;
                     happyAgent.protocolMismatch = mismatch;

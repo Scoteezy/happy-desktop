@@ -537,7 +537,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
         steps: props.showSteps ? (
             <OnboardingSteps
                 scope="desktop"
-                stage={onboardingStage(view)}
+                stage={localOnboardingStage(view)}
                 {...(props.reachedStage ? { reached: props.reachedStage } : {})}
                 {...(props.onStageSelect ? { onStageSelect: props.onStageSelect } : {})}
                 failed={
@@ -786,7 +786,8 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
     return null;
 }
 
-function onboardingStage(view: LocalOnboardingView): OnboardingStage {
+/** Which step of the bar a view belongs to. */
+export function localOnboardingStage(view: LocalOnboardingView): OnboardingStage {
     switch (view.kind) {
         case "examining":
         case "provider-authentication":

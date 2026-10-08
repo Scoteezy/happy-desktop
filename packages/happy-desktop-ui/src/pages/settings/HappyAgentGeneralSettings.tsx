@@ -6,6 +6,7 @@ import { SegmentedControl } from "../../SegmentedControl";
 import { Select, type SelectOption } from "../../Select";
 import { Spinner } from "../../Spinner";
 import { Switch } from "../../Switch";
+import { HappyAgentProductAnalyticsSettings } from "./HappyAgentProductAnalyticsSettings";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 export type HappyAgentAppearanceChoice = "system" | "light" | "dark";
@@ -35,6 +36,9 @@ export type HappyAgentGeneralSettingsProps = {
     experimentalFeaturesEnabled: boolean;
     /** Whether active session, project, and workspace titles shimmer. */
     titleShimmerEnabled: boolean;
+    /** Whether this window sends anonymous usage events. Absent where the host sends none. */
+    usageAnalyticsEnabled?: boolean;
+    onUsageAnalyticsChange?: (enabled: boolean) => void;
     /** Absent where the host does not manage updates. */
     previewUpdatesEnabled?: boolean;
     onPreviewUpdatesChange?: (enabled: boolean) => void;
@@ -426,6 +430,12 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     label="Enable experimental features"
                 />
             </HappyAgentSettingsSection>
+            {props.usageAnalyticsEnabled !== undefined && props.onUsageAnalyticsChange ? (
+                <HappyAgentProductAnalyticsSettings
+                    enabled={props.usageAnalyticsEnabled}
+                    onChange={props.onUsageAnalyticsChange}
+                />
+            ) : null}
         </>
     );
 }

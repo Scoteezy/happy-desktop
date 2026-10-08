@@ -1,0 +1,21 @@
+{
+    "name": "happy-desktop-analytics",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts"
+    },
+    "scripts": {
+        "typecheck": "tsc --project tsconfig.json",
+        "format": "oxfmt --write .",
+        "format:check": "oxfmt --check .",
+        "lint": "oxlint ."
+    },
+    "dependencies": {
+        "posthog-js": "^1.438.3"
+    },
+    "devDependencies": {
+        "typescript": "^7.0.2"
+    }
+}

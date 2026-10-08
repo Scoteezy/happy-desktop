@@ -1,0 +1,70 @@
+/*
+ * DataDisclosure — what a feature sends beside what it never sends.
+ *
+ * Two flex columns on the 4px grid: 24px between groups, 8px between a
+ * group's title and its list, 6px between items, and an 8px mark→text gutter.
+ */
+
+.happy-data-disclosure {
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--divider);
+    font-family: var(--happy-font-ui);
+}
+
+.happy-data-disclosure__group {
+    display: flex;
+    flex: 1 1 240px;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-data-disclosure__title {
+    margin: 0;
+    color: var(--text);
+    font-size: 12px;
+    font-synthesis: none;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.happy-data-disclosure__items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-data-disclosure__item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-synthesis: none;
+    line-height: 16px;
+}
+
+/* The mark's box is one text line tall, so its glyph centres on the first line. */
+.happy-data-disclosure__mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    color: var(--text-secondary);
+}
+
+.happy-data-disclosure__group[data-kind="withheld"] .happy-data-disclosure__mark {
+    color: var(--text);
+}
+
+.happy-data-disclosure__text {
+    min-width: 0;
+}

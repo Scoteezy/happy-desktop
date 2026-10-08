@@ -65,6 +65,14 @@ export default defineConfig({
         __HAPPY_DESKTOP_PROFILE__: JSON.stringify(profileBuild),
         __HAPPY_LOCAL_WEB_BUILD_ID__: JSON.stringify(localWebBuild?.buildId ?? null),
         __HAPPY_LOCAL_WEB_VERSION__: JSON.stringify(localWebBuild?.version ?? null),
+        // The version this renderer was built as, which is what analytics
+        // reports: a hosted Nightly renderer can be newer than its shell.
+        __HAPPY_RENDERER_VERSION__: JSON.stringify(
+            localWebBuild?.version ?? process.env.RELEASE_VERSION ?? packageJson.version,
+        ),
+        // PostHog's public project key, supplied by the release build the way
+        // the phone receives EXPO_PUBLIC_POSTHOG_API_KEY. Unset sends nothing.
+        __HAPPY_POSTHOG_API_KEY__: JSON.stringify(process.env.HAPPY_POSTHOG_API_KEY || null),
     },
     plugins: [
         // The Happy Agent terminal protocol (@slopus/ghostty-web) decodes compressed wire

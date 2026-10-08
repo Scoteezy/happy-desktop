@@ -93,6 +93,7 @@ import {
     happyAgentWindowStoreNoop,
     happyAgentSettingsStoreCreate,
     titleShimmerStoreNoop,
+    type HappyAgentConversationSource,
 } from "happy-desktop-state";
 import {
     type AgentWaitStatus,
@@ -3028,7 +3029,9 @@ function paletteCommandRun(
                 !props.happyAgentOnline()
             )
                 return;
-            void workspace.conversationCreate(group.id, group.create).catch(() => undefined);
+            void workspace
+                .conversationCreate(group.id, group.create, "command_palette")
+                .catch(() => undefined);
             return;
         }
         case "workspaceCreate": {
@@ -3238,9 +3241,14 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
 
     // Inside an open project the directory is already decided, so every "new
     // session" affordance here starts one in it rather than asking again.
-    const groupConversationCreate = (group: OpenGroup) => {
+    const groupConversationCreate = (
+        group: OpenGroup,
+        source: HappyAgentConversationSource = "workspace",
+    ) => {
         if (!happyAgentOnline() || !group.create) return;
-        void props.workspace.conversationCreate(group.id, group.create).catch(() => undefined);
+        void props.workspace
+            .conversationCreate(group.id, group.create, source)
+            .catch(() => undefined);
     };
 
     const projects = workspace.list.projects;
@@ -4174,7 +4182,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                             ...(sessionCreateAvailable
                                 ? [
                                       {
-                                          run: () => groupConversationCreate(openGroup),
+                                          run: () => groupConversationCreate(openGroup, "shortcut"),
                                           shortcut: APP_SHORTCUTS.sessionCreate,
                                       },
                                   ]

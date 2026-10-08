@@ -17,6 +17,7 @@ import {
     HappyAgentApiError,
     type MutationRejectedDelta,
     type HappyAgentWorkspaceClient,
+    type HappyAgentActivity,
     type HappyAgentClockStore,
     type HappyAgentCloudHost,
     type HappyAgentCloudStore,
@@ -130,6 +131,8 @@ export interface HappyAgentSessionDeps {
         removed: readonly HappyAgentSessionLocation[],
         open: HappyAgentSessionLocation | undefined,
     ) => void;
+    /** A reader-initiated act this connection's workspace finished. */
+    readonly activity?: (activity: HappyAgentActivity) => void;
     /** Announces that this connection's session is ready or has been replaced. */
     readonly changed: () => void;
     readonly unavailable?: (error: unknown) => void;
@@ -438,6 +441,9 @@ export function happyAgentConnectionOpen(input: {
                             return;
                         case "subtasksRemoved":
                             input.deps.subtasksForget(event.removed, event.open);
+                            return;
+                        case "activityRecorded":
+                            input.deps.activity?.(event.activity);
                             return;
                     }
                 },

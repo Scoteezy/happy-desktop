@@ -32,6 +32,7 @@ import {
     type AppearanceStore,
     type CommandPaletteStore,
     type ExperimentsStore,
+    type UsageAnalyticsStore,
     type GptLiveStore,
     type WelcomeStore,
     type HappyAgentNavigationOrderStore,
@@ -109,6 +110,7 @@ import { desktopWelcomePersistence } from "./desktopWelcome";
 import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
 import { DesktopBootGate, desktopBootSkip } from "./DesktopBootGate";
+import { desktopAnalyticsCreate } from "./desktopAnalytics";
 import { desktopRestartStoreCreate, type DesktopRestartStore } from "./desktopRestartStore";
 import {
     DesktopMediaPreviewWindow,
@@ -286,6 +288,7 @@ function HappyAgentBoundary(props: {
     experiments: ExperimentsStore;
     platform: "desktop" | "web";
     gptLive: GptLiveStore;
+    usageAnalytics: UsageAnalyticsStore;
     router: HappyAgentRouter;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
@@ -330,6 +333,7 @@ function HappyAgentBoundary(props: {
                     : {}),
                 experiments: props.experiments,
                 gptLive: props.gptLive,
+                usageAnalytics: props.usageAnalytics,
                 navigationOrder: props.navigationOrder,
                 sidebarCollapse: props.sidebarCollapse,
                 sidebarVisibility: props.sidebarVisibility,
@@ -452,6 +456,7 @@ interface DesktopRendererProps {
     bridge: HappyDesktopBridge;
     experiments: ExperimentsStore;
     gptLive: GptLiveStore;
+    usageAnalytics: UsageAnalyticsStore;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
@@ -633,6 +638,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 connectionOnboarding
                                 experiments={props.experiments}
                                 gptLive={props.gptLive}
+                                usageAnalytics={props.usageAnalytics}
                                 htmlPreview={props.htmlPreview}
                                 mediaWindow={props.mediaWindow}
                                 navigationOrder={ui.navigationOrder}
@@ -887,6 +893,7 @@ function DesktopRuntimeContent(
             mediaWindow={props.mediaWindow}
             experiments={props.experiments}
             gptLive={props.gptLive}
+            usageAnalytics={props.usageAnalytics}
             navigationOrder={props.navigationOrder}
             sidebarCollapse={props.sidebarCollapse}
             sidebarVisibility={props.sidebarVisibility}
@@ -1114,6 +1121,7 @@ if (mediaPreviewBridge) {
                     happyAgentId,
                     groupId,
                 ),
+            activity: (happyAgentId, activity) => analytics.activity(happyAgentId, activity),
             subtasksForget: (happyAgentId, removed, open) =>
                 happyAgentRouterSubtasksForget(
                     connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,
@@ -1132,6 +1140,14 @@ if (mediaPreviewBridge) {
             // showing at the moment it is opened and keeps it.
             terminalColorScheme: () => appearance.get().appearance,
         });
+        // What this window reports about how it is used, read from the same
+        // directory the sidebar reads. Development windows send nothing.
+        const analytics = desktopAnalyticsCreate({
+            development: browserLocal || desktopBridge.buildIdentity !== undefined,
+            happyAgents,
+        });
+        appDisposers.push(analytics.dispose);
+        analytics.appOpened();
         const windowState = windowStateStoreCreate(desktopBridge);
         const gptLive = gptLiveStoreCreate(
             desktopGptLivePersistence(),
@@ -1283,7 +1299,7 @@ if (mediaPreviewBridge) {
                         debug={debug}
                         {...(livePerformance ? { performance: livePerformance } : {})}
                         profiler={profiler}
-                        onboarding={onboardingStore}
+                        onboarding={analytics.onboardingObserve(onboardingStore, welcome)}
                         browserContent={browserLocal ? undefined : desktopBrowserContentRender}
                         htmlPreview={browserLocal ? undefined : desktopHtmlPreviewRender}
                         bridge={desktopBridge}
@@ -1292,6 +1308,7 @@ if (mediaPreviewBridge) {
                         }
                         experiments={experiments}
                         gptLive={gptLive}
+                        usageAnalytics={analytics.preference}
                         navigationOrder={navigationOrder}
                         sidebarCollapse={sidebarCollapse}
                         sidebarVisibility={sidebarVisibility}
