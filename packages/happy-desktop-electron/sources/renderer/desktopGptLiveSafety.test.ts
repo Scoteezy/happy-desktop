@@ -76,6 +76,7 @@ async function fixture(withHistory = false) {
         },
         happyAgentHttpUrl: "http://happy-agent.test",
         happyAgentId: "voice-test",
+        memberProfileRequired: true,
         host: { applicationMenuOpen: () => {}, directoryPick: async () => undefined },
         modelPreferencePersistence: { read: () => undefined, write: () => {} },
         terminalColorScheme: () => "light",

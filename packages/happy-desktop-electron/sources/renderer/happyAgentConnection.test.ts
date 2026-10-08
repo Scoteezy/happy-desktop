@@ -1,16 +1,172 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { fakeHappyAgentDaemonCreate } from "happy-desktop-state/testing";
+import type {
+    DesktopRuntimeSnapshot,
+    HappyDesktopBridge,
+    LocalOnboardingSnapshot,
+} from "../shared/desktopContract";
 import { happyAgentConnectionOpen, type HappyAgentConnectionHandle } from "./happyAgentConnection";
+import { localOnboardingStoreCreate, localOnboardingView } from "./localOnboardingStore";
 
 // The app package brings the whole renderer UI with it; this connection only
 // hands its terminal driver on, and no terminal is opened here.
 vi.mock("happy-desktop-app", () => ({ terminalDriverCreate: () => undefined }));
 
 const handles: HappyAgentConnectionHandle[] = [];
+const unsubscribes: (() => void)[] = [];
 
 afterEach(() => {
+    for (const unsubscribe of unsubscribes.splice(0)) unsubscribe();
     for (const handle of handles.splice(0)) handle.dispose();
+});
+
+function connectionOpen(
+    daemon: ReturnType<typeof fakeHappyAgentDaemonCreate>,
+    options: { readonly local: boolean },
+): HappyAgentConnectionHandle {
+    const handle = happyAgentConnectionOpen({
+        client: daemon.client,
+        cloudHost: {
+            cloudAuthCallbackSubscribe: () => () => undefined,
+            cloudAuthCallbackTake: async () => undefined,
+            cloudAuthConfigurationGet: () => new Promise(() => undefined),
+            cloudAuthOpen: async () => undefined,
+        },
+        deps: {
+            changed: () => undefined,
+            conversationOpen: () => undefined,
+            groupForget: () => undefined,
+            subtasksForget: () => undefined,
+            groupOpen: () => undefined,
+        },
+        guidedMobileSetup: options.local,
+        happyAgentHttpUrl: "http://happy-agent.test",
+        happyAgentId: options.local ? "local" : "remote",
+        host: { applicationMenuOpen: () => undefined, directoryPick: async () => undefined },
+        memberProfileRequired: !options.local,
+        modelPreferencePersistence: { read: () => undefined, write: () => undefined },
+        terminalColorScheme: () => "light",
+    });
+    handles.push(handle);
+    return handle;
+}
+
+/** What a machine that has never had Happy reports before its first project. */
+const freshMachineOnboarding = {
+    completed: false,
+    steps: {
+        profile: { done: false },
+        project: { done: false },
+        providers: { done: true, signedIn: ["claude"] },
+    },
+};
+
+it("loads the local workspace on a fresh machine that has no profile", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.onboardingSet(freshMachineOnboarding);
+    const handle = connectionOpen(daemon, { local: true });
+
+    await vi.waitFor(() => expect(handle.get()).toBeDefined());
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(handle.failure()).toBeUndefined();
+});
+
+it("keeps a remote member without a profile out of the workspace", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.onboardingSet(freshMachineOnboarding);
+    const handle = connectionOpen(daemon, { local: false });
+
+    // Startup state arrives, so the member can be asked for a profile...
+    await vi.waitFor(() => expect(handle.setup?.onboarding.get().available).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // ...but nothing that needs one is read.
+    expect(handle.get()).toBeUndefined();
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(0);
+    expect(daemon.callCount("streamEvents")).toBe(0);
+});
+
+it("offers mobile setup on a fresh machine's project stage", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.onboardingSet(freshMachineOnboarding);
+    const handle = connectionOpen(daemon, { local: true });
+    const onboarding: LocalOnboardingSnapshot = {
+        busy: false,
+        freshness: "fresh",
+        stage: "project",
+    };
+    const runtime = {
+        activeTarget: { happyAgentHttpUrl: "http://happy-agent.test", mode: "local" },
+        activeTargetId: "local",
+        connectionId: 1,
+        mode: "local",
+        phase: "ready",
+        targets: [],
+        update: { status: "idle" },
+    } as unknown as DesktopRuntimeSnapshot;
+    const bridge = {
+        daemonGet: () => new Promise(() => undefined),
+        daemonSubscribe: () => () => undefined,
+        onboardingGet: async () => onboarding,
+        onboardingSubscribe: () => () => undefined,
+        runtimeGet: async () => runtime,
+        subscribe: () => () => undefined,
+    } as unknown as HappyDesktopBridge;
+    const store = localOnboardingStoreCreate(bridge, {
+        chiefOfStaff: { get: () => handle.get()?.workspace, subscribe: () => () => undefined },
+        chiefOfStaffPrepare: () => new Promise(() => undefined),
+        happyMobile: {
+            get: () => handle.setup?.onboarding.mobile,
+            subscribe: () => () => undefined,
+        },
+    });
+    unsubscribes.push(store.subscribe(() => undefined));
+
+    await vi.waitFor(() =>
+        expect(localOnboardingView(store.get())).toEqual({
+            kind: "happy-mobile-desktop",
+            step: { kind: "intro", platform: "ios" },
+        }),
+    );
+    // The first conversation after mobile setup needs the workspace as well.
+    await vi.waitFor(() => expect(handle.get()?.workspace).toBeDefined());
+});
+
+it("lets mobile setup be skipped before the local connection offers it", async () => {
+    const onboarding: LocalOnboardingSnapshot = {
+        busy: false,
+        freshness: "fresh",
+        stage: "project",
+    };
+    const bridge = {
+        daemonGet: () => new Promise(() => undefined),
+        daemonSubscribe: () => () => undefined,
+        onboardingGet: async () => onboarding,
+        onboardingSubscribe: () => () => undefined,
+        runtimeGet: async () =>
+            ({
+                activeTarget: { happyAgentHttpUrl: "http://happy-agent.test", mode: "local" },
+                activeTargetId: "local",
+                connectionId: 1,
+                mode: "local",
+                phase: "ready",
+                targets: [],
+                update: { status: "idle" },
+            }) as unknown as DesktopRuntimeSnapshot,
+        subscribe: () => () => undefined,
+    } as unknown as HappyDesktopBridge;
+    const store = localOnboardingStoreCreate(bridge, {
+        chiefOfStaff: { get: () => undefined, subscribe: () => () => undefined },
+        chiefOfStaffPrepare: () => new Promise(() => undefined),
+        happyMobile: { get: () => undefined, subscribe: () => () => undefined },
+    });
+    unsubscribes.push(store.subscribe(() => undefined));
+    await vi.waitFor(() =>
+        expect(localOnboardingView(store.get())).toEqual({ kind: "happy-mobile-checking" }),
+    );
+
+    store.happyMobileSkip();
+    expect(localOnboardingView(store.get())).toMatchObject({ kind: "finishing" });
 });
 
 it("follows a daemon restarted behind the same endpoint onto its version and models", async () => {
@@ -43,6 +199,7 @@ it("follows a daemon restarted behind the same endpoint onto its version and mod
         happyAgentHttpUrl: "http://happy-agent.test",
         happyAgentId: "local",
         host: { applicationMenuOpen: () => undefined, directoryPick: async () => undefined },
+        memberProfileRequired: false,
         modelPreferencePersistence: {
             read: () => undefined,
             write: () => undefined,

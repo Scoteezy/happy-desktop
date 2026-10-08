@@ -293,6 +293,12 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
 export function happyAgentConnectionOpen(input: {
     /** The local desktop pairs Happy Mobile through the guided setup. */
     readonly guidedMobileSetup?: boolean;
+    /**
+     * Whether product stores wait for the member's profile. A remote Happy
+     * Agent may be a team that authorizes nothing else until one exists; the
+     * machine's own Happy Agent is solo and never asks for one.
+     */
+    readonly memberProfileRequired: boolean;
     readonly readLegacyCli?: () => Promise<
         import("happy-desktop-state").HappyTerminalCliInspection
     >;
@@ -344,6 +350,7 @@ export function happyAgentConnectionOpen(input: {
         client: directClient,
         endpoint: input.happyAgentHttpUrl,
         token: "happy-local-capability",
+        memberProfileRequired: input.memberProfileRequired,
         onDebugEntry: debugEntry,
         onMutationRejected: (rejection) => {
             for (const listener of mutationListeners) listener(rejection);
@@ -417,13 +424,17 @@ export function happyAgentConnectionOpen(input: {
             session ||
             modelsLoading ||
             !startup.available ||
-            !(startup.state?.completed || startup.state?.steps.profile.done) ||
+            !startup.state ||
+            (input.memberProfileRequired &&
+                !startup.state.completed &&
+                !startup.state.steps.profile.done) ||
             startup.error
         )
             return;
-        // Profile completion is the first authorized opportunity to load the
-        // workspace. Warm its empty state and bot catalog alongside models,
-        // while onboarding is still on the steps before first-project setup.
+        // This is the first authorized opportunity to load the workspace — for
+        // a team member, once their profile exists. Warm its empty state and
+        // bot catalog alongside models, while onboarding is still on the steps
+        // before first-project setup.
         if (!workspace) {
             workspace = happyAgentWorkspaceStoreCreate(client, {
                 host: input.host,

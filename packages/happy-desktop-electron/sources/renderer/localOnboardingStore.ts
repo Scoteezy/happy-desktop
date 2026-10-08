@@ -93,6 +93,7 @@ export interface LocalOnboardingStoreOptions {
 const providerRecheckMs = 2_000;
 /** A failed network check must not turn the local discovery poll into paid traffic. */
 const providerVerificationRetryMs = 30_000;
+const HAPPY_MOBILE_SKIPPED: HappyMobileOnboardingSnapshot = { status: "skipped" };
 const downloadRetryMinimumMs = 3_000;
 const downloadRetryMaximumMs = 30_000;
 const startRetryMinimumMs = 3_000;
@@ -141,6 +142,8 @@ export function localOnboardingStoreCreate(
     let happyMobileStore: HappyMobileOnboardingStore | undefined;
     let happyMobileUnsubscribe: (() => void) | undefined;
     let happyMobileSourceUnsubscribe: (() => void) | undefined;
+    /** Skipped before the local connection offered the step; applied once it does. */
+    let happyMobileSkipped = false;
     let chiefOfStaffWorkspace: HappyAgentWorkspaceStore | undefined;
     let chiefOfStaffUnsubscribe: (() => void) | undefined;
     let chiefOfStaffSourceUnsubscribe: (() => void) | undefined;
@@ -384,7 +387,8 @@ export function localOnboardingStoreCreate(
         happyMobileUnsubscribe?.();
         happyMobileUnsubscribe = undefined;
         happyMobileStore = undefined;
-        if (snapshot.happyMobile) publish({ ...snapshot, happyMobile: undefined });
+        const next = happyMobileSkipped ? HAPPY_MOBILE_SKIPPED : undefined;
+        if (snapshot.happyMobile !== next) publish({ ...snapshot, happyMobile: next });
     };
 
     function happyMobileSynchronize() {
@@ -406,12 +410,14 @@ export function localOnboardingStoreCreate(
         happyMobileStop();
         if (!store) return;
         happyMobileStore = store;
-        publish({ ...snapshot, happyMobile: store.get() });
         happyMobileUnsubscribe = store.subscribe(() => {
             if (happyMobileStore !== store) return;
             publish({ ...snapshot, happyMobile: store.get() });
             chiefOfStaffSetupAutomatically();
         });
+        // The store records the skip, so a later launch remembers it too.
+        if (happyMobileSkipped) store.happyMobileSkip();
+        publish({ ...snapshot, happyMobile: store.get() });
         chiefOfStaffSetupAutomatically();
     }
 
@@ -791,7 +797,15 @@ export function localOnboardingStoreCreate(
             happyMobileStore?.happyMobileConnect();
         },
         happyMobileSkip() {
-            happyMobileStore?.happyMobileSkip();
+            if (happyMobileStore) {
+                happyMobileStore.happyMobileSkip();
+                return;
+            }
+            // Pairing is optional, so a step that has not come up yet must
+            // not hold the person on it.
+            happyMobileSkipped = true;
+            publish({ ...snapshot, happyMobile: HAPPY_MOBILE_SKIPPED });
+            chiefOfStaffSetupAutomatically();
         },
         happyMobilePlatformSelect(platform) {
             happyMobileStore?.happyMobilePlatformSelect(platform);

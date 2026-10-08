@@ -32,10 +32,14 @@ afterEach(() => {
     for (const connection of openConnections.splice(0)) connection.close();
 });
 
-function harnessOpen(daemon = fakeHappyAgentDaemonCreate()): Harness {
+function harnessOpen(
+    daemon = fakeHappyAgentDaemonCreate(),
+    options: { readonly memberProfileRequired?: boolean } = {},
+): Harness {
     const waits: number[] = [];
     const rejections: MutationRejectedDelta[] = [];
     const connection = connectHappyAgent({
+        ...options,
         endpoint: "http://happy-agent.test/",
         token: "token",
         client: daemon.client,
@@ -296,6 +300,39 @@ it("polls health until the daemon is ready before opening the stream", async () 
 
     daemon.healthSet({ ready: true });
     await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+});
+
+const freshMachineOnboarding = {
+    completed: false,
+    steps: {
+        profile: { done: false },
+        project: { done: false },
+        providers: { done: true, signedIn: ["claude"] },
+    },
+};
+
+it("holds a team member without a profile before bootstrap and the stream", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.onboardingSet(freshMachineOnboarding);
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+
+    await vi.waitFor(() => expect(daemon.callCount("getOnboarding")).toBeGreaterThanOrEqual(2));
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(0);
+    expect(daemon.callCount("streamEvents")).toBe(0);
+    expect(groups.state.connection).toBe("connecting");
+});
+
+it("bootstraps a fresh solo machine that has no profile", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.onboardingSet(freshMachineOnboarding);
+    daemon.projectSeed({ id: "project-a" });
+    const { connection } = harnessOpen(daemon, { memberProfileRequired: false });
+    const groups = groupsWatch(connection);
+
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
 });
 
 it("accepts a newer additive protocol", async () => {

@@ -628,6 +628,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 {...frame}
                 data-testid="local-onboarding-screen"
                 scene="snail"
+                secondary={skipMobile}
                 status={{ busy: true, label: "Checking…" }}
                 title="Checking Happy Mobile"
             />
@@ -789,9 +790,9 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
 /** Which step of the bar a view belongs to. */
 export function localOnboardingStage(view: LocalOnboardingView): OnboardingStage {
     switch (view.kind) {
+        // Only a remote Happy Agent asks for a profile, and it draws no step bar.
         case "examining":
         case "provider-authentication":
-        // Only a remote Happy Agent asks for a profile, and it draws no step bar.
         case "profile-required":
             return "subscriptions";
         case "happy-mobile-desktop":

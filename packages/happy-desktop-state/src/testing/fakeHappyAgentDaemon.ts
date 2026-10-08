@@ -108,6 +108,15 @@ export interface FakeHappyAgentDaemon {
         protocol?: number;
         desktopLiveControl?: boolean;
     }): void;
+    /** Replace what `getOnboarding` and the desktop bootstrap report. */
+    onboardingSet(state: {
+        completed: boolean;
+        steps: {
+            profile: { done: boolean };
+            project: { done: boolean };
+            providers: { done: boolean; signedIn: string[] };
+        };
+    }): void;
     /** Authoritative Live resource state; control frames are supplied by the test's socket port. */
     liveSessionSet(session: LiveSession): void;
     liveSessionGet(id: string): LiveSession | undefined;
@@ -271,7 +280,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     let latestCursor = cursorOf((cursorCounter += 1));
 
     let config = configDefault();
-    const onboarding = {
+    let onboarding: Parameters<FakeHappyAgentDaemon["onboardingSet"]>[0] = {
         completed: true,
         steps: {
             profile: { done: true },
@@ -886,6 +895,9 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         streamOpens,
         gapOnNextStream() {
             nextStreamGap = true;
+        },
+        onboardingSet(state) {
+            onboarding = state;
         },
         healthSet(options) {
             if (options.ready !== undefined) healthReady = options.ready;

@@ -304,6 +304,9 @@ export function happyAgentDirectoryStoreCreate(
         happyAgent.connection = happyAgentConnectionOpen({
             cloudHost: deps.cloudHostFor(happyAgent.entry.id),
             guidedMobileSetup: happyAgent.entry.id === LOCAL_HAPPY_AGENT_ID,
+            // The local daemon is the one this app installed and runs solo;
+            // only a remote Happy Agent can be a team that needs a profile.
+            memberProfileRequired: happyAgent.entry.id !== LOCAL_HAPPY_AGENT_ID,
             readLegacyCli:
                 happyAgent.entry.id === LOCAL_HAPPY_AGENT_ID ? deps.readLegacyCli : undefined,
             resetLegacyCli:
@@ -429,6 +432,10 @@ export function happyAgentDirectoryStoreCreate(
                 },
             },
         });
+        // Setup stores open nothing until they are watched, so they are
+        // offered at once rather than after the daemon first answers: first-run
+        // mobile pairing must not wait on anything the workspace needs.
+        happyAgent.entry = { ...happyAgent.entry, setup: happyAgent.connection.setup };
         // The installation's own name and picture ride the same sync feed as
         // the rest of this connection, so the rail tile follows a rename or a
         // new picture as soon as the daemon announces it.

@@ -2050,6 +2050,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     // Team members without a profile can read these endpoints,
                     // but cannot read config/bootstrap or open the event stream.
                     // Keep that authorization boundary identical for every route.
+                    // A solo Happy Agent has no such boundary: it reports a
+                    // missing profile too, but authorizes bootstrap regardless.
                     const signal = AbortSignal.any([
                         attemptSignal,
                         AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
@@ -2060,7 +2062,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     ]);
                     if (attemptSignal.aborted) continue;
                     sync.writer.onboardingReceived({ onboarding, profile: profile.profile });
-                    if (!onboarding.completed && !onboarding.steps.profile.done) {
+                    if (
+                        options.memberProfileRequired !== false &&
+                        !onboarding.completed &&
+                        !onboarding.steps.profile.done
+                    ) {
                         // There is no authorized SSE channel yet. Reconcile
                         // narrow startup state until this member can bootstrap.
                         reconnectMs = INITIAL_RECONNECT_MS;
