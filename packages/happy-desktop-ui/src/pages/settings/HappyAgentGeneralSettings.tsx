@@ -36,7 +36,7 @@ export type HappyAgentGeneralSettingsProps = {
     experimentalFeaturesEnabled: boolean;
     /** Whether active session, project, and workspace titles shimmer. */
     titleShimmerEnabled: boolean;
-    /** Whether this window sends anonymous usage events. Absent where the host sends none. */
+    /** Whether this window sends product analytics events. Absent where the host sends none. */
     usageAnalyticsEnabled?: boolean;
     onUsageAnalyticsChange?: (enabled: boolean) => void;
     /** Absent where the host does not manage updates. */

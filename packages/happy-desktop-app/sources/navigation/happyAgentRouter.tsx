@@ -110,7 +110,7 @@ export interface HappyAgentRouterContext {
      * in a host that remembers no such choice, which withholds them.
      */
     readonly experiments?: ExperimentsStore;
-    /** Whether this window sends anonymous usage events. Absent where it sends none. */
+    /** Whether this window sends product analytics events. Absent where it sends none. */
     readonly usageAnalytics?: UsageAnalyticsStore;
     /** Window-owned GPT-Live opt-in; unrelated to coding-provider settings. */
     readonly gptLive?: GptLiveStore;

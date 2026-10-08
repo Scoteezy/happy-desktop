@@ -36,7 +36,7 @@ export interface HappyAgentProductAnalyticsSettingsProps {
 }
 
 /**
- * The switch for anonymous product analytics, with what it sends beside what
+ * The switch for product analytics, with what it sends beside what
  * it never sends, so the choice is made knowing both.
  */
 export function HappyAgentProductAnalyticsSettings(props: HappyAgentProductAnalyticsSettingsProps) {
@@ -45,16 +45,16 @@ export function HappyAgentProductAnalyticsSettings(props: HappyAgentProductAnaly
             <FormRow
                 control={
                     <Switch
-                        aria-label="Share anonymous product analytics"
+                        aria-label="Share product analytics"
                         checked={props.enabled}
                         id="happy-agent-settings-product-analytics"
                         onChange={props.onChange}
                         size="small"
                     />
                 }
-                description="Helps us see where setup gets stuck and which features people use. Events are tied to a random ID for this installation, not to you, and we don't use your IP address or location."
+                description="Helps us see where setup gets stuck and which features people use. Events are tied to a random ID for this installation, not to you. Our analytics provider, PostHog, receives your IP address with each event and may keep it; we turn off its location lookup and don't use your IP."
                 htmlFor="happy-agent-settings-product-analytics"
-                label="Share anonymous product analytics"
+                label="Share product analytics"
             />
             <DataDisclosure
                 data-testid="happy-agent-settings-product-analytics-disclosure"

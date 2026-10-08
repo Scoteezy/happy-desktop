@@ -300,7 +300,7 @@ export interface AppHappyAgentSettingsViewProps {
      * in a host that remembers no such choice, which withholds them.
      */
     experiments?: ExperimentsStore;
-    /** Whether this window sends anonymous usage events. Absent where it sends none. */
+    /** Whether this window sends product analytics events. Absent where it sends none. */
     usageAnalytics?: UsageAnalyticsStore;
     gptLive?: GptLiveStore;
     /** Every Happy Agent in this window, including the one whose catalog is read. */

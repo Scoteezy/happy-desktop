@@ -8,7 +8,7 @@ onboarding and how they create and use things. Nothing else.
 ## Privacy
 
 - Only the user ID and enum or count fields defined in the table below. Anything else does not typecheck.
-- No IP from the desktop: events set `$ip: null` and `$geoip_disable: true`. The project's "Discard client IP data" stays off, so PostHog can still record the request's IP; Settings therefore says "we don't use your IP address or location", not that it is never sent.
+- No IP from the desktop: events set `$ip: null` and `$geoip_disable: true`. The project's "Discard client IP data" stays off, so PostHog still receives and may keep the request's IP. Settings says so: "Our analytics provider, PostHog, receives your IP address with each event and may keep it; we turn off its location lookup and don't use your IP."
 - No `$current_url`, no paths, no project, repo, branch or bot names, no prompts or message text, no emails, display names or hostnames.
 - No autocapture, pageviews, session recording or person properties.
 - Every event carries only `app_version`, `flavor` (`standard | nightly`), `os` (`mac | win | linux`, where the desktop runs), and for the connected Happy Agent `agent_os` (`mac | win | linux`), `agent_location` (`local | remote`) and `happy_agent_version`.

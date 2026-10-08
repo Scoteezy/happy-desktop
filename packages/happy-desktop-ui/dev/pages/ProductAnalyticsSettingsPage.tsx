@@ -36,7 +36,7 @@ export function ProductAnalyticsSettingsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The General settings switch for anonymous product analytics, with examples of what is sent beside what is never sent."
+            summary="The General settings switch for product analytics, with examples of what is sent beside what is never sent."
             title="Product analytics settings"
         >
             <FullScreenSpecimen

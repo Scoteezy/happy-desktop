@@ -1,5 +1,5 @@
 /**
- * Whether this installation sends anonymous usage events.
+ * Whether this installation sends product analytics events.
  *
  * It is the window's own switch, kept by the host's storage like the
  * experiments switch beside it: it describes this app on this machine, so no
