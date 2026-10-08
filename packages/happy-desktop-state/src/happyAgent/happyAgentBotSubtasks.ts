@@ -14,3 +14,31 @@ export function happyAgentBotSubtasks(
     for (const bot of bots) visit(bot.subtasks);
     return result;
 }
+
+/** How deep the walk goes before giving up on a tree that never ends. */
+const TASK_DEPTH_LIMIT = 32;
+
+/**
+ * How many tasks each bot conversation sits below, by conversation id: a bot's
+ * own conversation is 0, a subtask it delegated is 1, that subtask's subtask
+ * 2, and so on, following each task's place in its parent's `subtasks`. A
+ * conversation reached twice keeps its first depth, and anything past the
+ * limit is left out rather than counted, so a malformed tree cannot loop.
+ */
+export function happyAgentTaskDepths(bots: readonly HappyAgentBot[]): ReadonlyMap<string, number> {
+    const depths = new Map<string, number>();
+    const visit = (tasks: readonly HappyAgentBotSubtask[], depth: number): void => {
+        if (depth > TASK_DEPTH_LIMIT) return;
+        for (const task of tasks) {
+            if (depths.has(task.conversation.id)) continue;
+            depths.set(task.conversation.id, depth);
+            visit(task.subtasks, depth + 1);
+        }
+    };
+    for (const bot of bots) {
+        if (depths.has(bot.conversation.id)) continue;
+        depths.set(bot.conversation.id, 0);
+        visit(bot.subtasks, 1);
+    }
+    return depths;
+}

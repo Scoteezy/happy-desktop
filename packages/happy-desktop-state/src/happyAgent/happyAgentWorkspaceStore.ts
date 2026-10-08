@@ -1,5 +1,5 @@
 import { createStore } from "zustand/vanilla";
-import { happyAgentBotSubtasks } from "./happyAgentBotSubtasks.js";
+import { happyAgentBotSubtasks, happyAgentTaskDepths } from "./happyAgentBotSubtasks.js";
 import type {
     ConversationEntry,
     ConversationErrorAssistance,
@@ -69,7 +69,17 @@ import {
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
     type HappyAgentGroupAccess,
 } from "./happyAgentGroupAccess.js";
-import { happyAgentUserError } from "./happyAgentSupport.js";
+import {
+    HAPPY_AGENT_ACTION_OK,
+    happyAgentActionFailed,
+    happyAgentUserError,
+} from "./happyAgentSupport.js";
+import type {
+    HappyAgentActivity,
+    HappyAgentActivityAddress,
+    HappyAgentActivityModel,
+    HappyAgentConversationSource,
+} from "./happyAgentActivity.js";
 import { orderKeyAfter } from "../utils/orderKeyAfter.js";
 import { orderKeySequence } from "../utils/orderKeySequence.js";
 import type {
@@ -1300,7 +1310,9 @@ export type HappyAgentWorkspaceOutput =
           readonly type: "subtasksRemoved";
           readonly removed: readonly HappyAgentSessionLocation[];
           readonly open?: HappyAgentSessionLocation;
-      };
+      }
+    /** A reader-initiated act finished; the owner decides whether anyone hears of it. */
+    | { readonly type: "activityRecorded"; readonly activity: HappyAgentActivity };
 
 export interface HappyAgentWorkspaceDeps {
     readonly output?: (event: HappyAgentWorkspaceOutput) => void;
@@ -1422,6 +1434,7 @@ export interface HappyAgentWorkspaceStore {
     conversationCreate(
         groupId: HappyAgentGroupId,
         input: HappyAgentSessionCreateInput,
+        source: HappyAgentConversationSource,
     ): Promise<void>;
     /**
      * Closes a conversation: it leaves the list durably without ending the
@@ -1977,6 +1990,61 @@ export function happyAgentWorkspaceStoreCreate(
 ): HappyAgentWorkspaceStore {
     const list: HappyAgentSessionListStore = client.sessionList();
     const output = deps.output ?? (() => undefined);
+    const activityRecord = (activity: HappyAgentActivity): void =>
+        output({ type: "activityRecorded", activity });
+    /**
+     * Names a model the way activity reports it: the provider by the kind of
+     * service its catalog entry says it is, so two accounts with one service
+     * are reported as that service.
+     */
+    const activityModel = (selection: {
+        readonly providerId?: string;
+        readonly modelId?: string;
+        readonly effort?: HappyAgentThinkingLevel;
+    }): HappyAgentActivityModel => {
+        const models = client.models.get();
+        const providerType =
+            models.type === "ready" && selection.providerId !== undefined
+                ? models.catalog.providers.find((provider) => provider.id === selection.providerId)
+                      ?.type
+                : undefined;
+        return {
+            ...(selection.providerId === undefined || providerType === undefined
+                ? {}
+                : { providerId: selection.providerId, providerType }),
+            ...(selection.modelId === undefined ? {} : { modelId: selection.modelId }),
+            ...(selection.effort === undefined ? {} : { effort: selection.effort }),
+        };
+    };
+    /**
+     * Who a message to this conversation is addressed to and how deep it sits:
+     * a bot's own conversation and any project session are top-level, a task
+     * a bot delegated is one below it, and a conversation found nowhere has
+     * no depth to report.
+     */
+    const activityAddress = (conversationId: HappyAgentSessionId): HappyAgentActivityAddress => {
+        const snapshot = list.get();
+        const bot = snapshot.bots.find((entry) => entry.conversation.id === conversationId);
+        if (bot)
+            return {
+                target: bot.systemKey === "chief_of_staff" ? "chief_of_staff" : "bot",
+                botSystemKey: bot.systemKey ?? null,
+                taskDepth: 0,
+            };
+        const depth = happyAgentTaskDepths(snapshot.bots).get(conversationId);
+        if (depth !== undefined) return { target: "session", botSystemKey: null, taskDepth: depth };
+        const projects = snapshot.projects;
+        const listed =
+            projects.type === "ready" &&
+            projects.value.some(
+                (project) =>
+                    project.conversations.some((summary) => summary.id === conversationId) ||
+                    project.worktrees.some((worktree) =>
+                        worktree.conversations.some((summary) => summary.id === conversationId),
+                    ),
+            );
+        return { target: "session", botSystemKey: null, taskDepth: listed ? 0 : null };
+    };
     const draftOrigin = `happy_${Math.random().toString(36).slice(2)}`;
     let draftUpdatedAt = 0;
     const nextDraftUpdatedAt = (): number => {
@@ -4547,6 +4615,12 @@ export function happyAgentWorkspaceStoreCreate(
                                     event.text,
                                     state.session.value.permissionMode,
                                 );
+                                activityRecord({
+                                    kind: "messageSent",
+                                    ...activityAddress(conversationId),
+                                    source: "voice",
+                                    model: activityModel(state.session.value),
+                                });
                             });
                             return;
                         }
@@ -4568,7 +4642,19 @@ export function happyAgentWorkspaceStoreCreate(
                                     event.text,
                                     event.attachments,
                                 );
-                                await withChatStore((store) => store.messageSend(text, images));
+                                const session = await withChatStore(async (store) => {
+                                    await store.messageSend(text, images);
+                                    return store.get().session;
+                                });
+                                activityRecord({
+                                    kind: "messageSent",
+                                    ...activityAddress(conversationId),
+                                    source: "chat",
+                                    model:
+                                        session.type === "ready"
+                                            ? activityModel(session.value)
+                                            : {},
+                                });
                                 conversationAttachments.delete(conversationId);
                                 fileCommentsSpend(event.attachments);
                             },
@@ -4957,6 +5043,8 @@ export function happyAgentWorkspaceStoreCreate(
                 : list.sessionCreate(create);
             return started.then(async (location) => {
                 if (!location) throw new Error("The conversation could not be started.");
+                const model = activityModel(create);
+                activityRecord({ kind: "conversationCreated", source: "workspace", model });
                 output({ type: "conversationOpenRequested", location });
                 const placed = await attachmentsPlace(location.groupId, text, attachments);
                 const acquired = await client.chat(location.sessionId);
@@ -4965,6 +5053,14 @@ export function happyAgentWorkspaceStoreCreate(
                 } finally {
                     acquired[Symbol.dispose]();
                 }
+                activityRecord({
+                    kind: "messageSent",
+                    target: "session",
+                    botSystemKey: null,
+                    taskDepth: 0,
+                    source: "new_session",
+                    model,
+                });
                 return location;
             });
         });
@@ -5127,11 +5223,17 @@ export function happyAgentWorkspaceStoreCreate(
                 ...(selection === undefined ? {} : { selection }),
             });
         } catch (error) {
+            activityRecord({
+                kind: "botCreated",
+                source: "sidebar",
+                result: happyAgentActionFailed(error),
+            });
             if (disposed) return;
             botCreateDraft = { ...pending, submitting: false };
             recompute();
             throw happyAgentUserError(error);
         }
+        activityRecord({ kind: "botCreated", source: "sidebar", result: HAPPY_AGENT_ACTION_OK });
         if (disposed) return;
         const { location } = created;
         // The surface stays up, composer and all, until the window turns to
@@ -5179,6 +5281,15 @@ export function happyAgentWorkspaceStoreCreate(
                 message.attachments,
             );
             await withAddressedChat(location.sessionId, (store) => store.messageSend(text, images));
+            activityRecord({
+                kind: "messageSent",
+                // A bot made from here is always the reader's own, never a system bot.
+                target: "bot",
+                botSystemKey: null,
+                taskDepth: 0,
+                source: "new_session",
+                model: activityModel(selection ?? {}),
+            });
         } catch (error) {
             // The bot exists but its first message did not go. It cannot be
             // retried from here — a second attempt would ask for a second bot
@@ -5648,6 +5759,11 @@ export function happyAgentWorkspaceStoreCreate(
             const failure = listSnapshot.projectCreateFailures.get(projectId);
             if (failure) {
                 pendingProjectClones.delete(projectId);
+                activityRecord({
+                    kind: "projectAdded",
+                    source: "clone_github",
+                    result: happyAgentActionFailed(failure),
+                });
                 if (pending.generation === projectCloneGeneration && projectClone === undefined) {
                     projectClone = {
                         repository: pending.repository,
@@ -5660,6 +5776,17 @@ export function happyAgentWorkspaceStoreCreate(
             const project = projects?.find((candidate) => candidate.id === projectId);
             if (project && project.lifecycle.phase !== "creating") {
                 pendingProjectClones.delete(projectId);
+                // The host answered for the clone in the row's own lifecycle:
+                // a checkout it could not prepare is a refusal, anything else
+                // is a project to work in.
+                activityRecord({
+                    kind: "projectAdded",
+                    source: "clone_github",
+                    result:
+                        project.lifecycle.phase === "failed"
+                            ? { ok: false, failure: "refused" }
+                            : HAPPY_AGENT_ACTION_OK,
+                });
             }
         }
     };
@@ -6380,6 +6507,13 @@ export function happyAgentWorkspaceStoreCreate(
                             type: "voiceMessageSent",
                             revision: current.revision,
                         });
+                        const session = acquired.store.get().session;
+                        activityRecord({
+                            kind: "messageSent",
+                            ...activityAddress(sessionId),
+                            source: "voice",
+                            model: session.type === "ready" ? activityModel(session.value) : {},
+                        });
                     } catch (error) {
                         target.getState().composerInput({
                             type: "submissionFailed",
@@ -6406,6 +6540,11 @@ export function happyAgentWorkspaceStoreCreate(
                 : await list.sessionCreate(start.create);
             if (!location) throw new Error("The conversation could not be started.");
             await list.sessionCreationWait(location.sessionId);
+            activityRecord({
+                kind: "conversationCreated",
+                source: "voice",
+                model: activityModel(start.create),
+            });
             await list.sessionsRefresh();
             return location;
         },
@@ -6419,14 +6558,38 @@ export function happyAgentWorkspaceStoreCreate(
                 throw new Error(
                     "The workspace was requested, but its conversation could not be requested.",
                 );
-            await Promise.all([
-                list.workspaceCreationWait(worktreeId),
-                list.sessionCreationWait(location.sessionId),
-            ]);
+            try {
+                await Promise.all([
+                    list.workspaceCreationWait(worktreeId),
+                    list.sessionCreationWait(location.sessionId),
+                ]);
+            } catch (error) {
+                activityRecord({ kind: "workspaceCreated", result: happyAgentActionFailed(error) });
+                throw error;
+            }
+            activityRecord({ kind: "workspaceCreated", result: HAPPY_AGENT_ACTION_OK });
             await list.sessionsRefresh();
             return { worktreeId, location };
         },
-        voiceBotCreate: (name) => list.botCreate(name ? { name } : {}),
+        voiceBotCreate: (name) =>
+            list.botCreate(name ? { name } : {}).then(
+                (created) => {
+                    activityRecord({
+                        kind: "botCreated",
+                        source: "voice",
+                        result: HAPPY_AGENT_ACTION_OK,
+                    });
+                    return created;
+                },
+                (error: unknown) => {
+                    activityRecord({
+                        kind: "botCreated",
+                        source: "voice",
+                        result: happyAgentActionFailed(error),
+                    });
+                    throw error;
+                },
+            ),
         draftUpdate: (sessionId, message) =>
             writeGuard(sessionConversationRefusal(sessionId), () =>
                 withAddressedChat(sessionId, (store) =>
@@ -6458,22 +6621,31 @@ export function happyAgentWorkspaceStoreCreate(
             }
         },
         // Anything the caller names wins over the connection's last selection.
-        conversationCreate: (groupId, input) => {
+        conversationCreate: (groupId, input, source) => {
             const refusal = groupConversationRefusalFind(groupId);
             if (refusal) return Promise.reject(new Error(refusal));
             const models = client.models.get();
             const selection = models.type === "ready" ? models.lastUsedSelection : undefined;
             const create = selection ? { ...selectionCreateFields(selection), ...input } : input;
+            const created = (location: HappyAgentSessionLocation | undefined): void => {
+                if (!location) return;
+                activityRecord({
+                    kind: "conversationCreated",
+                    source,
+                    model: activityModel(create),
+                });
+                openRequest(location);
+            };
             // A worktree goes through the route that waits for the host to name
             // its directory, whatever the caller passed as `cwd`. The caller
             // reads that from the row it drew, and a workspace the host has not
             // answered for yet has no directory on its row to read.
             const worktreeId = worktreeGroupIdOf(groupId);
             if (worktreeId !== undefined) {
-                openRequest(list.worktreeSessionStart(worktreeId, create));
+                created(list.worktreeSessionStart(worktreeId, create));
                 return Promise.resolve();
             }
-            return list.sessionCreate(create).then(openRequest);
+            return list.sessionCreate(create).then(created);
         },
         conversationArchive: async (conversationId) => {
             await list.sessionArchive(conversationId);
@@ -6548,6 +6720,11 @@ export function happyAgentWorkspaceStoreCreate(
                         return;
                     }
                     const projectId = await client.projectAdd(path);
+                    activityRecord({
+                        kind: "projectAdded",
+                        source: "open_folder",
+                        result: HAPPY_AGENT_ACTION_OK,
+                    });
                     if (disposed) return;
                     projectAdd = PROJECT_ADD_IDLE;
                     recompute();
@@ -6558,6 +6735,11 @@ export function happyAgentWorkspaceStoreCreate(
                     // as a new worktree does, so nothing is started in it.
                     output({ type: "groupOpenRequested", groupId: projectId });
                 } catch (error) {
+                    activityRecord({
+                        kind: "projectAdded",
+                        source: "open_folder",
+                        result: happyAgentActionFailed(error),
+                    });
                     if (disposed) return;
                     projectAdd = { pending: false, error: happyAgentUserError(error).message };
                     recompute();
@@ -6606,6 +6788,11 @@ export function happyAgentWorkspaceStoreCreate(
                 // route can address its cloning row before the peer answers.
                 output({ type: "groupOpenRequested", groupId: projectId });
             } catch (error) {
+                activityRecord({
+                    kind: "projectAdded",
+                    source: "clone_github",
+                    result: happyAgentActionFailed(error),
+                });
                 if (disposed) return;
                 projectClone = {
                     ...editor,
@@ -6635,6 +6822,16 @@ export function happyAgentWorkspaceStoreCreate(
             // in themselves.
             const worktreeId = list.worktreeCreate(projectId);
             if (worktreeId === undefined) return;
+            // The checkout is prepared after this returns; its outcome is the
+            // host's answer to the creation, not the request leaving here.
+            void list.workspaceCreationWait(worktreeId).then(
+                () => activityRecord({ kind: "workspaceCreated", result: HAPPY_AGENT_ACTION_OK }),
+                (error: unknown) =>
+                    activityRecord({
+                        kind: "workspaceCreated",
+                        result: happyAgentActionFailed(error),
+                    }),
+            );
             output({ type: "groupOpenRequested", groupId: worktreeId });
             const location = worktreeFirstConversationStart(worktreeId);
             if (location === undefined) return;

@@ -1,3 +1,4 @@
+import { HappyAgentApiError } from "@slopus/happy-agent-client";
 import { UserError } from "../types.js";
 import type {
     HappyAgentAvatarImage,
@@ -10,6 +11,32 @@ export function happyAgentUserError(error: unknown): UserError {
     if (error instanceof UserError) return error;
     if (error instanceof Error) return new UserError(error.message, undefined, error);
     return new UserError(String(error), undefined, error);
+}
+
+/**
+ * Why an action did not complete, as a closed kind rather than its words: the
+ * daemon answered and refused, the request never reached it, or anything else.
+ */
+export type HappyAgentActionFailure = "refused" | "offline" | "unknown";
+
+/** How one reader-initiated action ended. */
+export type HappyAgentActionResult =
+    | { readonly ok: true }
+    | { readonly ok: false; readonly failure: HappyAgentActionFailure };
+
+export const HAPPY_AGENT_ACTION_OK: HappyAgentActionResult = { ok: true };
+
+/**
+ * Classifies a thrown value by walking its cause chain. A daemon refusal is
+ * the client's typed error; a request the browser could not deliver at all
+ * surfaces from `fetch` as a `TypeError`, which is the platform's own contract.
+ */
+export function happyAgentActionFailed(error: unknown): HappyAgentActionResult {
+    for (let current = error; current instanceof Error; current = current.cause) {
+        if (current instanceof HappyAgentApiError) return { ok: false, failure: "refused" };
+        if (current instanceof TypeError) return { ok: false, failure: "offline" };
+    }
+    return { ok: false, failure: "unknown" };
 }
 
 /**
