@@ -73,6 +73,15 @@
     text-wrap: pretty;
 }
 
+/* A sentence is one line, so every column's remedy starts at one height and
+   the row of actions reads across as a single line. */
+.happy-setup-assistants__detail[data-kind="sentence"] {
+    overflow: hidden;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* A location rather than a sentence: the monospace face, one size down, and
    free to break at the separators the path already has. */
 .happy-setup-assistants__detail[data-kind="path"] {
@@ -96,22 +105,28 @@
 .happy-setup-assistants__item[data-status="checking"] .happy-setup-assistants__detail,
 .happy-setup-assistants__item[data-status="missing"] .happy-setup-assistants__mark,
 .happy-setup-assistants__item[data-status="missing"] .happy-setup-assistants__name,
-.happy-setup-assistants__item[data-status="missing"] .happy-setup-assistants__detail {
+.happy-setup-assistants__item[data-status="missing"]:not(:has(.happy-setup-assistants__action))
+    .happy-setup-assistants__detail {
     opacity: 0.45;
 }
 
-.happy-setup-assistants__item[data-status="signed-out"] .happy-setup-assistants__detail {
+/* A line that introduces a remedy is an instruction, read at full ink. */
+.happy-setup-assistants__item[data-status="signed-out"] .happy-setup-assistants__detail,
+.happy-setup-assistants__item[data-status="missing"] .happy-setup-assistants__detail {
     color: var(--text);
 }
 
 /* The remedy sits under the column it belongs to and is never dimmed: a
-   machine missing an assistant is exactly the column somebody has to act on. */
+   machine missing an assistant is exactly the column somebody has to act on.
+   It is never wider than its column; a long command scrolls in its own well. */
 .happy-setup-assistants__action {
     display: flex;
     flex: none;
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    min-width: 0;
+    max-width: 100%;
     margin-top: 4px;
     opacity: 1;
 }
@@ -123,9 +138,12 @@
     text-wrap: pretty;
 }
 
+/* As tall as a command well, with its line centred the same way, so a link and
+   a command in neighbouring columns share one text baseline. */
 .happy-setup-assistants__link {
+    display: block;
     margin: 0;
-    padding: 0;
+    padding: 10px 0;
     border: 0;
     background: none;
     color: var(--text-link);

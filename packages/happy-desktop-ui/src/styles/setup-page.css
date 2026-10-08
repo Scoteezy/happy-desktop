@@ -228,8 +228,8 @@
 }
 
 /* First-run pages use the same photographic treatment as the welcome deck:
-   white words and one white primary action in either appearance. Functional
-   wells such as commands and text inputs retain their themed surfaces. */
+   white words and one white primary action in either appearance. Text inputs
+   retain their themed surfaces; commands become glass, below. */
 .happy-setup-page[data-backdrop="sky"] .happy-setup-page__title,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-page__copy,
 .happy-setup-page[data-backdrop="sky"] .happy-setup-page__progress-line,
@@ -244,6 +244,39 @@
 .happy-setup-page[data-backdrop="sky"] .happy-local-onboarding__facts,
 .happy-setup-page[data-backdrop="sky"] .happy-text-field__label {
     color: var(--button-primary-tint);
+}
+
+/* Outranks the column's own status inks, which would otherwise put a themed
+   (and in the light appearance, black) line on the photograph. */
+.happy-setup-page[data-backdrop="sky"]
+    .happy-setup-assistants__item[data-status]
+    .happy-setup-assistants__detail {
+    color: var(--button-primary-tint);
+}
+
+/* A command on the photograph is a pane of frosted glass with white ink rather
+   than a black terminal slab cut out of the sky. The prompt and the monospace
+   line still say "type this"; the surface no longer shouts it. */
+.happy-setup-page[data-backdrop="sky"] .happy-setup-command {
+    border-color: color-mix(in srgb, white 28%, transparent);
+    background: color-mix(in srgb, white 14%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    color: white;
+}
+
+.happy-setup-page[data-backdrop="sky"] .happy-setup-command__prompt {
+    color: color-mix(in srgb, white 64%, transparent);
+}
+
+.happy-setup-page[data-backdrop="sky"] .happy-setup-command__copy {
+    color: color-mix(in srgb, white 78%, transparent);
+}
+
+.happy-setup-page[data-backdrop="sky"] .happy-setup-command__copy:hover,
+.happy-setup-page[data-backdrop="sky"] .happy-setup-command__copy:focus-visible {
+    color: white;
+    background: color-mix(in srgb, white 14%, transparent);
 }
 
 /* Quiet controls on the photograph take the same white ink, and the same
@@ -393,9 +426,10 @@
 }
 
 /* Three columns that may each carry a command well need more measure than a
-   paragraph does, so this one page is wider than the setup default. */
+   paragraph does, so this one page is wider than the setup default and a long
+   install command keeps as much of itself in view as the window allows. */
 .happy-local-onboarding__machine-setup .happy-setup-page__body {
-    max-width: 720px;
+    max-width: 960px;
 }
 
 .happy-local-onboarding__machine-assistants {

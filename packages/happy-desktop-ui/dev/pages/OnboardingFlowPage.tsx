@@ -32,11 +32,12 @@ function onboarding(
     view: LocalOnboardingView,
     reachedStage?: OnboardingStage,
     agentPromptsOpen = false,
+    appearance: "dark" | "light" = "dark",
 ) {
     return (
         <LocalOnboardingScreen
             agentPromptsOpen={agentPromptsOpen}
-            appearance="dark"
+            appearance={appearance}
             onAssistantsContinue={noop}
             onConnectRetry={noop}
             onExternalOpen={noop}
@@ -55,7 +56,28 @@ function onboarding(
 }
 
 /** First run in the order a new person meets it, one happy path, then a restart. */
-const screens: readonly { id: string; label: string; render: () => ReactNode }[] = [
+/** One of each card state side by side: signed in, not installed, not signed in, custom. */
+const mixedSubscriptions: LocalOnboardingView = {
+    assistants: [
+        {
+            authentication: "valid",
+            command: "/opt/homebrew/bin/claude",
+            id: "claude",
+            status: "found",
+        },
+        { authentication: "unavailable", id: "codex", status: "missing" },
+        { authentication: "invalid", command: "/usr/local/bin/grok", id: "grok", status: "found" },
+    ],
+    custom: { authentication: "invalid", providers: [] },
+    kind: "provider-authentication",
+};
+
+const screens: readonly {
+    appearance?: "dark" | "light";
+    id: string;
+    label: string;
+    render: () => ReactNode;
+}[] = [
     {
         id: "welcome",
         label: "Welcome deck · first slide",
@@ -176,6 +198,17 @@ const screens: readonly { id: string; label: string; render: () => ReactNode }[]
             }),
     },
     {
+        id: "subscriptions-mixed",
+        label: "Subscriptions · every card state",
+        render: () => onboarding(mixedSubscriptions),
+    },
+    {
+        appearance: "light",
+        id: "subscriptions-mixed-light",
+        label: "Subscriptions · every card state, light appearance",
+        render: () => onboarding(mixedSubscriptions, undefined, false, "light"),
+    },
+    {
         id: "mobile",
         label: "Mobile · take Happy with you",
         render: () =>
@@ -254,7 +287,9 @@ export function OnboardingFlowPage() {
                             screen={`${number}-${screen.id}-${String(window.width)}x${String(window.height)}`}
                             window={window}
                         >
-                            <ThemeScope mode="dark">{screen.render()}</ThemeScope>
+                            <ThemeScope mode={screen.appearance ?? "dark"}>
+                                {screen.render()}
+                            </ThemeScope>
                         </FullScreenSpecimen>
                     );
                 }),

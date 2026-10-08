@@ -220,7 +220,7 @@ const ASSISTANTS: Record<
         command: string;
         mark: AssistantMarkName;
         name: string;
-        /** Where the vendor tells you to get it, when the machine has not. */
+        /** What the vendor's own install page says to run, when the machine has not got it. */
         install: string;
         /** What signs you in, taken from each vendor's own documentation. */
         signIn: string;
@@ -228,21 +228,21 @@ const ASSISTANTS: Record<
 > = {
     claude: {
         command: "claude",
-        install: "https://code.claude.com/docs/en/setup",
+        install: "curl -fsSL https://claude.ai/install.sh | bash",
         mark: "claude",
         name: "Claude Code",
         signIn: "claude auth login",
     },
     codex: {
         command: "codex",
-        install: "https://developers.openai.com/codex/cli",
+        install: "npm i -g @openai/codex",
         mark: "openai",
         name: "Codex",
         signIn: "codex login",
     },
     grok: {
         command: "grok",
-        install: "https://docs.x.ai/build/overview",
+        install: "curl -fsSL https://x.ai/cli/install.sh | bash",
         mark: "grok",
         name: "Grok",
         // Grok has no login subcommand: running it is the sign-in.
@@ -279,11 +279,11 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
             case "valid":
                 return "Signed in";
             case "invalid":
-                return "Not signed in";
+                return "Sign in by running:";
             case "error":
                 return "Couldn't check — retrying";
             case "unavailable":
-                return "Not installed";
+                return "Install by running:";
         }
     })();
     // What to do about it: get the thing, or sign in to the thing that is
@@ -292,14 +292,15 @@ function assistantAuthenticationEntry(assistant: LocalOnboardingAssistant): Setu
         switch (assistant.authentication) {
             case "unavailable":
                 return {
-                    href: vendor.install,
-                    kind: "link",
-                    label: `Install ${vendor.name} CLI`,
+                    command: vendor.install,
+                    kind: "command",
+                    label: `${vendor.name} install command`,
                 };
             case "invalid":
                 return {
                     command: vendor.signIn,
                     kind: "command",
+                    label: `${vendor.name} sign-in command`,
                 };
             case "error":
             case "checking":
@@ -385,7 +386,7 @@ function customAuthenticationEntry(
                     prompts: AGENT_PROMPTS,
                     title: "Paste one into the coding agent you already use",
                 },
-                detail: "API key, Bedrock, or gateway",
+                detail: "API key, Bedrock, other",
                 id: "custom",
                 mark: "custom",
                 name: CUSTOM_NAME,

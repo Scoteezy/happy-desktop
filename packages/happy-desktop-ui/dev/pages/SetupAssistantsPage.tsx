@@ -53,7 +53,7 @@ const signIn = [
         status: "missing",
     },
     {
-        detail: "API key, Bedrock, or gateway",
+        detail: "API key, Bedrock, other",
         id: "custom",
         mark: "custom",
         name: "Custom configuration",

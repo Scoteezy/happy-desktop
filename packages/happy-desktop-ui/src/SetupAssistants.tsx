@@ -19,7 +19,13 @@ export interface SetupAgentPrompt {
  * on one that is already signed in, because there is nothing to do about it.
  */
 export type SetupAssistantAction =
-    | { readonly kind: "command"; readonly command: string; readonly note?: string }
+    | {
+          readonly kind: "command";
+          readonly command: string;
+          /** Names this command for assistive technology, e.g. "Codex install command". */
+          readonly label: string;
+          readonly note?: string;
+      }
     | { readonly kind: "link"; readonly label: string; readonly href: string }
     | {
           readonly kind: "prompts";
@@ -156,7 +162,7 @@ export function SetupAssistants(props: SetupAssistantsProps) {
                                           <>
                                               <SetupCommand
                                                   command={action.command}
-                                                  label={`${assistant.name} sign-in command`}
+                                                  label={action.label}
                                               />
                                               {action.note === undefined ? null : (
                                                   <span className="happy-setup-assistants__note">
