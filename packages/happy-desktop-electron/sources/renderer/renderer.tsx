@@ -430,8 +430,7 @@ function DesktopOnboardingGate(props: {
  * available in the terminal, on desktop, and on mobile. The next two slides
  * make the differentiators concrete — the team inside the live session first,
  * then every agent mixed in one harness. Open source and being yours to change
- * explain who controls the product; the final security slide closes with how
- * that control protects a corporate deployment and its mobile clients.
+ * close the deck with who controls the product.
  */
 
 /** True while the runtime is working on, or running, this machine's own Happy Agent. */

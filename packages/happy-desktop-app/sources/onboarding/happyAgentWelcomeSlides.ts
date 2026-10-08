@@ -26,10 +26,4 @@ export const happyAgentWelcomeSlides: readonly WelcomeSlide[] = [
         id: "open",
         title: "Yours to run. Yours to change.",
     },
-    {
-        art: { kind: "scene", name: "closed-lock" },
-        copy: "No telemetry. No third-party servers by default. Run Happy safely inside corporate networks without leaking data. Every connection between agents, teammates, and mobile clients is end-to-end encrypted.",
-        id: "security",
-        title: "Secure and compliant",
-    },
 ];
