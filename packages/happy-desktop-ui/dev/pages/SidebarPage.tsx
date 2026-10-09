@@ -54,6 +54,14 @@ const workspaceSections: SidebarSection[] = [
                 status: "working",
             },
             {
+                changeStats: { added: 842, deleted: 74 },
+                depth: 1,
+                id: "launch-week-confirm",
+                kind: "workspace",
+                label: "archive-worktree-confirm",
+                unread: true,
+            },
+            {
                 archived: true,
                 depth: 1,
                 id: "launch-week-legacy",
@@ -1036,7 +1044,10 @@ export function SidebarPage() {
                 number="01"
                 stage="app"
             >
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                <div
+                    data-screen="01-full-sidebar"
+                    style={{ display: "flex", flexDirection: "column", gap: "10px" }}
+                >
                     <Frame height={620}>
                         <Sidebar
                             activeItemId="inbox"

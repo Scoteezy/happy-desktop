@@ -940,8 +940,15 @@ function SidebarRow({
 }) {
     const item = () => props.item;
     const unread = () => item().unread === true;
+    // A place's unread mark sits on its face, in the corner of the avatar. A
+    // nested worktree has no face — the branch line beside it is its whole
+    // mark — so its dot goes to the trailing lane instead, where every other
+    // faceless row keeps it. Deciding by kind alone left such a row with no dot
+    // at all: the face it would have worn was never drawn.
     const unreadOnLeading = () =>
-        unread() && (item().kind === "project" || item().kind === "workspace");
+        unread() &&
+        (item().kind === "project" || item().kind === "workspace") &&
+        (showsLeadingSlot(item()) || activityLeading());
     const mentioned = () => (item().badge ?? 0) > 0;
     const hasChangeStats = () =>
         (item().changeStats?.added ?? 0) > 0 || (item().changeStats?.deleted ?? 0) > 0;
