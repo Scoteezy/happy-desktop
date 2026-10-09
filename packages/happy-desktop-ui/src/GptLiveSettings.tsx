@@ -18,11 +18,12 @@ export interface GptLiveSettingsProps {
 /** Window-level voice preference and the account used by the footer phone. */
 export function GptLiveSettings(props: GptLiveSettingsProps) {
     const switchId = useId();
+    const { enabled, onAccountsRead } = props;
     const accountsMount = useCallback(
         (node: HTMLDivElement | null) => {
-            if (node && props.enabled) props.onAccountsRead?.();
+            if (node && enabled) onAccountsRead?.();
         },
-        [props.enabled, props.onAccountsRead],
+        [enabled, onAccountsRead],
     );
     return (
         <div ref={accountsMount} className="happy-gpt-live-settings">
