@@ -80,8 +80,17 @@ export function happyAgentConversationSummaryProject(
         title: summaryTitle(session),
         subtitle: session.displayCwd || session.cwd,
         activity,
+        createdAt: session.createdAt,
         updatedAt: session.lastMessageAt ?? session.updatedAt,
-        ...(session.unreadReason === undefined ? {} : { unread: true }),
+        ...(session.unreadReason === undefined
+            ? {}
+            : {
+                  unread: true,
+                  unreadReason: session.unreadReason,
+                  ...(session.unreadSince === undefined
+                      ? {}
+                      : { unreadSince: session.unreadSince }),
+              }),
         participants: [happyAgentOwnerAuthor, agentAuthor],
     };
     summaryCache.set(session, value);

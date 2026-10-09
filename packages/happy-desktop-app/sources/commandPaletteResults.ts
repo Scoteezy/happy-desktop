@@ -64,7 +64,13 @@ export type CommandPaletteCommand =
     | { readonly kind: "workspaceCreate" }
     | { readonly kind: "settingsOpen" }
     | { readonly kind: "settingsSectionOpen"; readonly section: string }
-    | { readonly kind: "updateApply" };
+    | { readonly kind: "updateApply" }
+    /** Switches the sidebar between its workspace list and its attention list. */
+    | { readonly kind: "sidebarViewSelect"; readonly view: "workspaces" | "attention" }
+    /** Jumps to the next conversation in that queue. */
+    | { readonly kind: "attentionNext" }
+    /** Marks every waiting conversation read. */
+    | { readonly kind: "attentionReadAll" };
 
 /** A row that goes somewhere or does something, and then closes the palette. */
 export interface CommandPaletteCommandRow {
@@ -201,6 +207,10 @@ export interface CommandPaletteContext {
     readonly sessionCreateAvailable: boolean;
     /** Whether a new workspace can be made in the addressed project. */
     readonly workspaceCreateAvailable: boolean;
+    /** How many conversations are waiting on the person, across every machine. */
+    readonly attentionCount: number;
+    /** Which list the sidebar is showing. */
+    readonly sidebarView: "workspaces" | "attention";
 }
 
 export interface CommandPaletteInput extends CommandPaletteContext {
@@ -782,6 +792,44 @@ function actionRows(
                       glyph: { kind: "icon" as const, name: "branch" as const },
                       shortcut: APP_SHORTCUTS.workspaceCreate,
                       command: { kind: "workspaceCreate" as const },
+                  },
+              ]
+            : []),
+        context.sidebarView === "attention"
+            ? {
+                  kind: "command" as const,
+                  id: "action:sidebar-workspaces",
+                  title: "Show workspaces in sidebar",
+                  glyph: { kind: "icon" as const, name: "branch" as const },
+                  command: { kind: "sidebarViewSelect" as const, view: "workspaces" as const },
+              }
+            : {
+                  kind: "command" as const,
+                  id: "action:sidebar-attention",
+                  title: "Show attention in sidebar",
+                  ...(context.attentionCount > 0
+                      ? { meta: `${context.attentionCount} waiting` }
+                      : { meta: "Nothing waiting" }),
+                  glyph: { kind: "icon" as const, name: "bell" as const },
+                  command: { kind: "sidebarViewSelect" as const, view: "attention" as const },
+              },
+        ...(context.attentionCount > 0
+            ? [
+                  {
+                      kind: "command" as const,
+                      id: "action:attention-next",
+                      title: "Next conversation needing you",
+                      glyph: { kind: "icon" as const, name: "arrow-right" as const },
+                      shortcut: APP_SHORTCUTS.attentionNext,
+                      command: { kind: "attentionNext" as const },
+                  },
+                  {
+                      kind: "command" as const,
+                      id: "action:attention-read-all",
+                      title: "Mark everything read",
+                      glyph: { kind: "icon" as const, name: "check" as const },
+                      shortcut: APP_SHORTCUTS.attentionReadAll,
+                      command: { kind: "attentionReadAll" as const },
                   },
               ]
             : []),

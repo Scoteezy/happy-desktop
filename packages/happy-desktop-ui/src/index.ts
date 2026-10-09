@@ -193,7 +193,9 @@ export { FileEditor, type FileEditorProps } from "./FileEditor";
 export {
     commandShortcut,
     commandShortcutMatches,
+    keyShortcut,
     windowShortcutBlocked,
+    windowShortcutEditing,
     type CommandShortcut,
     type KeyboardShortcut,
 } from "./keyboardShortcut";
@@ -253,6 +255,7 @@ export {
     type SidebarProps,
     type SidebarReorder,
     type SidebarSection,
+    type SidebarSectionDrop,
 } from "./Sidebar";
 export { SidebarFooter, type SidebarFooterProps } from "./SidebarFooter";
 export {
@@ -589,6 +592,8 @@ export {
     type HappyAgentInboxAnswerMap,
     type HappyAgentInboxPageProps,
 } from "./pages/inbox/HappyAgentInboxPage";
+export { UndoToast, type UndoToastProps } from "./UndoToast";
+export { SidebarListBar, type SidebarListBarProps, type SidebarListView } from "./SidebarListBar";
 export {
     HappyAgentSettingsSection,
     HappyAgentSettingsShell,

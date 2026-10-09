@@ -47,6 +47,15 @@
     --happy-tooltip-rise: 3px;
 }
 
+/* The chord, when the bubble names one, stands after the words with a
+   breath between; the cap is the same cap the palette and buttons wear. */
+.happy-tooltip__shortcut {
+    display: flex;
+    flex: none;
+    align-items: center;
+    margin-left: 8px;
+}
+
 /* The bubble is an overlay that intentionally leaves the flow: the trigger's
    row must measure exactly as it does with no tooltip at all. It is also
    centered on the trigger rather than on any sibling, which is a translation by
@@ -106,6 +115,21 @@
     transform: translate(-50%, calc(-1 * var(--happy-tooltip-rise)));
 }
 
+/* Ended on the trailing edge, the bubble needs no centring translation: it
+   hangs from its own right edge, and only the rise remains to animate. */
+.happy-tooltip__bubble[data-align="end"] {
+    right: 0;
+    left: auto;
+}
+
+.happy-tooltip__bubble[data-align="end"][data-placement="top"] {
+    transform: translate(0, var(--happy-tooltip-rise));
+}
+
+.happy-tooltip__bubble[data-align="end"][data-placement="bottom"] {
+    transform: translate(0, calc(-1 * var(--happy-tooltip-rise)));
+}
+
 /* Opening waits out the dwell. Closing inherits the base delay of zero, so the
    bubble starts fading the moment the pointer leaves. */
 .happy-tooltip:hover > .happy-tooltip__bubble {
@@ -121,6 +145,13 @@
     opacity: 1;
     transform: translateX(-50%);
     transition-delay: 0ms;
+}
+
+/* Shown, the end-aligned bubble has no centring to keep; it only stops rising. */
+.happy-tooltip:hover > .happy-tooltip__bubble[data-align="end"],
+.happy-tooltip:has(:focus-visible) > .happy-tooltip__bubble[data-align="end"],
+.happy-tooltip[data-open] > .happy-tooltip__bubble[data-align="end"] {
+    transform: translateX(0);
 }
 
 @media (prefers-reduced-motion: reduce) {

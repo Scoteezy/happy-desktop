@@ -101,6 +101,13 @@ export type SidebarItem = {
     label: string;
     /** Whether a busy or creating row shimmers its label. Defaults to true. */
     labelShimmer?: boolean;
+    /**
+     * A second line under the name saying where the row's conversation lives,
+     * with a glyph for the kind of place. A row with one stands taller and,
+     * unless it also names an icon or context avatars, carries no leading mark:
+     * the place line is what identifies it.
+     */
+    sublabel?: { icon?: IconName; text: string };
     meta?: string;
     /**
      * A control at the trailing edge of the row, reported through
@@ -231,6 +238,13 @@ export type SidebarSection = {
     id: string;
     /** Renders only the labeled action row, useful as a hierarchy heading. */
     headingOnly?: boolean;
+    /**
+     * Whether the section's rows are folded away under its heading, for a
+     * section that can be folded at all. Absent means it cannot: its rows are
+     * always shown and the heading offers no disclosure. Stated by the caller
+     * and reported back through `onSectionCollapseToggle`, like a row's fold.
+     */
+    collapsed?: boolean;
     items: SidebarItem[];
     label?: string;
     /**
@@ -245,6 +259,17 @@ export type SidebarSection = {
      * it, and a reader shown "nothing here" would believe the wrong thing.
      */
     error?: string;
+};
+
+/**
+ * A section a row can be carried into by dragging it past the edge of its own,
+ * and the word for what that does — "Pin", "Settle", "Reopen" — worn on the
+ * row while it is past the edge.
+ */
+export type SidebarSectionDrop = {
+    readonly sectionId: string;
+    readonly verb: string;
+    readonly icon?: IconName;
 };
 
 /** One visible sidebar destination the caller wants Command-numbered. */
@@ -340,6 +365,26 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
      */
     onItemReorder?: (sectionId: string, move: SidebarReorder) => void;
     /**
+     * Where a top-level row can be carried out of its section, and what
+     * carrying it there means: past the top of the section into the one named
+     * `above`, past the bottom into the one named `below`. The verb is worn on
+     * the carried row while it is past the edge, so the reader is told what
+     * letting go will do before they do it. Without this a drag stays inside
+     * its section, which is what a list whose sections are not states offers.
+     */
+    sectionDropTargets?: (sectionId: string) => {
+        readonly above?: SidebarSectionDrop;
+        readonly below?: SidebarSectionDrop;
+    };
+    /** Reports a row let go of past its section's edge, with the target it was over. */
+    onItemSectionDrop?: (sectionId: string, itemId: string, target: SidebarSectionDrop) => void;
+    /**
+     * Invoked by a section heading's disclosure, for a section that states
+     * `collapsed`. Whether it is now open is the caller's to record and to say
+     * back, the same way a row's fold is.
+     */
+    onSectionCollapseToggle?: (sectionId: string) => void;
+    /**
      * Invoked by a foldable row's disclosure control, with the row that was
      * folded or unfolded. Whether it is now open is the caller's to record and
      * to say back through `collapsed`, so the sidebar never holds an opinion
@@ -390,6 +435,7 @@ function leadingIcon(item: SidebarItem): IconName {
  */
 function showsLeadingSlot(item: SidebarItem): boolean {
     if (item.contextAvatars?.length) return true;
+    if (item.sublabel !== undefined) return item.icon !== undefined || item.emoji !== undefined;
     if ((item.depth ?? 0) === 0) return true;
     if (item.kind === "person" || item.kind === "agent" || item.kind === "project") return true;
     return item.icon !== undefined || item.emoji !== undefined;
@@ -550,6 +596,14 @@ interface SidebarDrag {
     readonly parentId?: string;
     /** False until the pointer passes the threshold, so a click still selects. */
     readonly moved: boolean;
+    /**
+     * Set while the pointer is held past the section's edge, over a section
+     * the caller said the row may be carried into. The row itself stays at
+     * the edge; the crossing is what letting go will report.
+     */
+    readonly crossing?: "above" | "below";
+    /** The targets the section offered when the drag began. */
+    readonly targets?: { readonly above?: SidebarSectionDrop; readonly below?: SidebarSectionDrop };
 }
 
 /**
@@ -834,17 +888,37 @@ function SidebarDragSurface(props: { readonly drag: SidebarDrag; readonly carrie
     const last = held?.[held.length - 1];
     if (first === undefined || last === undefined) return null;
     const rowPitch = SIDEBAR_ROW_HEIGHT + SIDEBAR_ROW_GAP;
+    // What letting go past the edge will do, worn on the carried surface while
+    // the pointer is out there: the verb the caller gave the edge, and its
+    // glyph when it has one.
+    const target =
+        props.drag.crossing === "above"
+            ? props.drag.targets?.above
+            : props.drag.crossing === "below"
+              ? props.drag.targets?.below
+              : undefined;
     return (
         <span
             aria-hidden="true"
             className="happy-sidebar__tree-drag-surface"
             data-happy-desktop-ui="sidebar-tree-drag-surface"
             data-carried={props.carried ? "" : undefined}
+            data-crossing={props.drag.crossing}
             style={{
                 height: `${String((last - first) * rowPitch + SIDEBAR_ROW_HEIGHT)}px`,
                 top: `${String(first * rowPitch + rowDragShift(props.drag, first))}px`,
             }}
-        />
+        >
+            {target ? (
+                <span
+                    className="happy-sidebar__tree-drag-badge"
+                    data-happy-desktop-ui="sidebar-tree-drag-badge"
+                >
+                    {target.icon ? <Icon name={target.icon} size={12} /> : null}
+                    <span className="happy-sidebar__tree-drag-badge-label">{target.verb}</span>
+                </span>
+            ) : null}
+        </span>
     );
 }
 
@@ -1151,6 +1225,7 @@ function SidebarRow({
             className={["happy-sidebar__item", props.className].filter(Boolean).join(" ")}
             data-active={props.active ? "" : undefined}
             data-archived={item().archived ? "" : undefined}
+            data-sublabel={item().sublabel !== undefined ? "" : undefined}
             /* Both are needed and neither implies the other: a row that folds is
                styled as one whether it is open or shut, and a row still says it
                is shut while the pointer is elsewhere. */
@@ -1287,21 +1362,55 @@ function SidebarRow({
                     {foldControl()}
                 </span>
             ) : null}
-            <span className="happy-sidebar__item-label" data-happy-desktop-ui="sidebar-item-label">
-                {/* The row's own colour, with a near-white band wiping through
+            {((label) =>
+                item().sublabel === undefined ? (
+                    label
+                ) : (
+                    /* The name and, under it, the place: one column standing
+                       where the label alone would, so the trailing lane keeps
+                       its edge. */
+                    <span
+                        className="happy-sidebar__item-text"
+                        data-happy-desktop-ui="sidebar-item-text"
+                    >
+                        {label}
+                        <span
+                            className="happy-sidebar__item-sublabel"
+                            data-happy-desktop-ui="sidebar-item-sublabel"
+                        >
+                            {item().sublabel?.icon !== undefined ? (
+                                <span
+                                    aria-hidden="true"
+                                    className="happy-sidebar__item-sublabel-icon"
+                                >
+                                    <Icon name={item().sublabel!.icon!} size={12} />
+                                </span>
+                            ) : null}
+                            <span className="happy-sidebar__item-sublabel-text">
+                                {item().sublabel?.text}
+                            </span>
+                        </span>
+                    </span>
+                ))(
+                <span
+                    className="happy-sidebar__item-label"
+                    data-happy-desktop-ui="sidebar-item-label"
+                >
+                    {/* The row's own colour, with a near-white band wiping through
                         it. Busy is a passing state, so it may not restyle the name:
                         an unread row is already heavier and darker than its
                         neighbours, and painting the name again here would stack a
                         second emphasis on top of one the row had already earned.
                         Only the travelling band is new. */}
-                {shimmerLabel() ? (
-                    <ShimmerText sweep="sheen" tone="inherit">
-                        {item().label}
-                    </ShimmerText>
-                ) : (
-                    item().label
-                )}
-            </span>
+                    {shimmerLabel() ? (
+                        <ShimmerText sweep="sheen" tone="inherit">
+                            {item().label}
+                        </ShimmerText>
+                    ) : (
+                        item().label
+                    )}
+                </span>,
+            )}
             {props.shortcut ? (
                 <KeyCap
                     className="happy-sidebar__item-shortcut"
@@ -1441,6 +1550,9 @@ export function Sidebar(props: SidebarProps) {
         "onItemMenuSelect",
         "onItemCollapseToggle",
         "onItemReorder",
+        "onItemSectionDrop",
+        "onSectionCollapseToggle",
+        "sectionDropTargets",
         "numberShortcuts",
         "numberShortcutTargets",
         "onSectionAction",
@@ -1619,7 +1731,15 @@ export function Sidebar(props: SidebarProps) {
         const blocks = units;
         const blockIndex = units.findIndex((unit) => unit.includes(rowIndex));
         dragClick.current = false;
-        if (!reorderOf(listId) || event.button !== 0 || blocks.length < 2) return;
+        // A top-level row may also be carried out of its section, when the
+        // section names somewhere for it to go; a lone row in a section still
+        // has that way out even though it has no peers to be arranged among.
+        const targets =
+            listId !== ACTIONS_LIST && parentId === undefined
+                ? local.sectionDropTargets?.(listId)
+                : undefined;
+        const canCross = targets?.above !== undefined || targets?.below !== undefined;
+        if (!reorderOf(listId) || event.button !== 0 || (blocks.length < 2 && !canCross)) return;
         // A pointer-down on the row's own control is that control's, not a drag.
         if ((event.target as HTMLElement).closest('[data-happy-desktop-ui="sidebar-item-action"]'))
             return;
@@ -1664,6 +1784,7 @@ export function Sidebar(props: SidebarProps) {
                 to: blockIndex,
                 units,
                 ...(parentId !== undefined ? { parentId } : {}),
+                ...(canCross ? { targets } : {}),
             },
         });
     };
@@ -1675,12 +1796,25 @@ export function Sidebar(props: SidebarProps) {
         if (!current.drag.moved && Math.abs(pointerDeltaY) < DRAG_THRESHOLD) return;
         const deltaY = dragDeltaWithinPeers(current.drag, pointerDeltaY);
         const to = dragTargetIndex(current.drag, deltaY);
-        // A tick each time the row crosses into a new slot, so the arrangement
-        // can be felt without watching it.
-        if (to !== current.drag.to) haptic("selection");
+        // Past the edge by more than a row, over a section the row may be
+        // carried into: the row itself stays at the edge, and what letting go
+        // will do is worn on it instead.
+        const targets = current.drag.targets;
+        const crossing =
+            targets?.above !== undefined &&
+            pointerDeltaY < current.drag.minimumDeltaY - SIDEBAR_ROW_HEIGHT
+                ? ("above" as const)
+                : targets?.below !== undefined &&
+                    pointerDeltaY > current.drag.maximumDeltaY + SIDEBAR_ROW_HEIGHT
+                  ? ("below" as const)
+                  : undefined;
+        // A tick each time the row crosses into a new slot, or over an edge,
+        // so the arrangement can be felt without watching it.
+        if (to !== current.drag.to || crossing !== current.drag.crossing) haptic("selection");
+        const { crossing: _previous, ...rest } = current.drag;
         dragSet({
             ...current,
-            drag: { ...current.drag, deltaY, moved: true, to },
+            drag: { ...rest, deltaY, moved: true, to, ...(crossing ? { crossing } : {}) },
         });
     };
 
@@ -1750,6 +1884,23 @@ export function Sidebar(props: SidebarProps) {
         }
         dragClick.current = true;
         const movedId = drag.peers[drag.from];
+        // Let go past the edge: the row leaves this section for the one it was
+        // held over, which is the caller's to arrange. Nothing here is
+        // rearranged, so there is no settle to capture — only the lift to let
+        // go of.
+        const target =
+            drag.crossing === "above"
+                ? drag.targets?.above
+                : drag.crossing === "below"
+                  ? drag.targets?.below
+                  : undefined;
+        if (target !== undefined && movedId !== undefined && current.listId !== ACTIONS_LIST) {
+            liftFadeStart(current);
+            dragSet(undefined);
+            haptic("impact");
+            local.onItemSectionDrop?.(current.listId, movedId, target);
+            return;
+        }
         if (!reducedMotion() && drag.from !== drag.to && movedId !== undefined)
             settleCapture({
                 carried: true,
@@ -2204,12 +2355,52 @@ export function Sidebar(props: SidebarProps) {
                                         className="happy-sidebar__section-head"
                                         data-happy-desktop-ui="sidebar-section-head"
                                     >
-                                        <span
-                                            className="happy-sidebar__section-label"
-                                            data-happy-desktop-ui="sidebar-section-label"
-                                        >
-                                            {section.label}
-                                        </span>
+                                        {section.collapsed !== undefined &&
+                                        local.onSectionCollapseToggle ? (
+                                            /* A section that folds names itself on
+                                               a control: the whole label is the
+                                               disclosure, so there is nothing
+                                               small to aim at. */
+                                            <button
+                                                aria-expanded={!section.collapsed}
+                                                className="happy-sidebar__section-label happy-sidebar__section-toggle"
+                                                data-collapsed={section.collapsed ? "" : undefined}
+                                                data-happy-desktop-ui="sidebar-section-toggle"
+                                                onClick={() =>
+                                                    local.onSectionCollapseToggle?.(section.id)
+                                                }
+                                                type="button"
+                                            >
+                                                <span
+                                                    aria-hidden="true"
+                                                    className="happy-sidebar__section-toggle-chevron"
+                                                >
+                                                    <Icon
+                                                        name={
+                                                            section.collapsed
+                                                                ? "chevron-right"
+                                                                : "chevron-down"
+                                                        }
+                                                        size={12}
+                                                    />
+                                                </span>
+                                                <span data-happy-desktop-ui="sidebar-section-label">
+                                                    {section.label}
+                                                </span>
+                                                {section.collapsed && section.items.length > 0 ? (
+                                                    <span className="happy-sidebar__section-toggle-count">
+                                                        {section.items.length}
+                                                    </span>
+                                                ) : null}
+                                            </button>
+                                        ) : (
+                                            <span
+                                                className="happy-sidebar__section-label"
+                                                data-happy-desktop-ui="sidebar-section-label"
+                                            >
+                                                {section.label}
+                                            </span>
+                                        )}
                                         {section.action
                                             ? ((action) => (
                                                   <button
@@ -2247,7 +2438,7 @@ export function Sidebar(props: SidebarProps) {
                                         {section.error}
                                     </p>
                                 ) : null}
-                                {!section.headingOnly ? (
+                                {!section.headingOnly && section.collapsed !== true ? (
                                     <div
                                         className="happy-sidebar__tree"
                                         data-connector-dragging={surfaceLift ? "" : undefined}

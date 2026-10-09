@@ -2,6 +2,7 @@ import { type CSSProperties } from "react";
 import { Button } from "../../src/Button";
 import { Tooltip } from "../../src/Tooltip";
 import { TurnSummary } from "../../src/TurnSummary";
+import { commandShortcut } from "../../src/keyboardShortcut";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
@@ -83,6 +84,21 @@ export function TooltipPage() {
                         />
                     </div>
                     <DimensionRule label="640 px transcript measure · bubble anchored to the label" />
+                </div>
+            </Specimen>
+            <Specimen
+                detail="A bubble that names the chord wears it as a cap after the words."
+                label="With a chord"
+                number="04"
+            >
+                <div style={{ display: "flex", justifyContent: "center", padding: "40px 0 8px" }}>
+                    <Tooltip
+                        label="Search sessions"
+                        open
+                        shortcut={commandShortcut("f", { shift: true })}
+                    >
+                        <span style={{ padding: "4px 8px" }}>Search</span>
+                    </Tooltip>
                 </div>
             </Specimen>
         </ComponentPage>

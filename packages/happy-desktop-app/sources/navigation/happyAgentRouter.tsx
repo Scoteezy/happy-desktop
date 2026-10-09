@@ -21,10 +21,12 @@ import type {
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
+    HappyAgentSidebarViewStore,
     HappyAgentSidebarVisibilityStore,
     HappyAgentSessionId,
     HappyAgentSessionLocation,
     HappyAgentSettingsStore,
+    HappyAgentWorkspaceTriageStore,
     TitleShimmerStore,
     HappyAgentWindowStore,
     HappyAgentWorkspaceStore,
@@ -103,6 +105,18 @@ export interface HappyAgentRouterContext {
     readonly sidebarCollapse?: HappyAgentSidebarCollapseStore;
     /** Whether this window's left side is folded away; shared by every connection. */
     readonly sidebarVisibility?: HappyAgentSidebarVisibilityStore;
+    /**
+     * Which rows this window leaves out of the sidebar to keep it to what is
+     * being worked on. Absent in a host that keeps no such record, which shows
+     * every row.
+     */
+    readonly sidebarView?: HappyAgentSidebarViewStore;
+    /**
+     * Where this window remembers which workspaces were pinned, snoozed, or
+     * settled. Absent in a host that keeps no such record, which lists every
+     * workspace as active.
+     */
+    readonly workspaceTriage?: HappyAgentWorkspaceTriageStore;
     /**
      * Whether this window offers the features that are not finished yet. Absent
      * in a host that remembers no such choice, which withholds them.
@@ -332,18 +346,6 @@ const botCreateRoute = createRoute({
 });
 
 /**
- * One machine's inbox of agent questions. The Happy Agent is in the address because the
- * queue is that machine's — its agents are the ones waiting — so the window's
- * back and forward move between machines' inboxes rather than between two views
- * of one ambiguous list.
- */
-const inboxRoute = createRoute({
-    component: HappyAgentInboxRoute,
-    getParentRoute: () => rootRoute,
-    path: "/inbox/$happyAgentId",
-});
-
-/**
  * The component workbench, addressed without a Happy Agent because it renders component
  * pages rather than anything a machine holds. The route is registered only in a
  * development build, which is also the only build whose sidebar offers it.
@@ -395,21 +397,11 @@ const routeTree = rootRoute.addChildren([
         groupFileRoute,
         chatFileRoute,
     ]),
-    inboxRoute,
     botCreateRoute,
     ...(import.meta.env.DEV ? [blueprintRoute] : []),
     settingsIndexRoute,
     settingsSectionRoute,
 ]);
-
-/**
- * The inbox address renders the same window a conversation does: the shell and
- * its sidebar stay, and only the content area changes, so working through
- * questions is not leaving the workspace.
- */
-function HappyAgentInboxRoute() {
-    return <HappyAgentWorkspaceLayout inbox />;
-}
 
 /**
  * The naming address renders the same window a conversation does: the shell and
@@ -432,7 +424,6 @@ function HappyAgentWorkspaceLayout(
     props: {
         blueprint?: boolean;
         botCreate?: boolean;
-        inbox?: boolean;
     } = {},
 ) {
     // Read loosely because this component renders under several routes, which
@@ -466,8 +457,9 @@ function HappyAgentWorkspaceLayout(
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
             {...(context.sidebarCollapse ? { sidebarCollapse: context.sidebarCollapse } : {})}
             {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
+            {...(context.sidebarView ? { sidebarView: context.sidebarView } : {})}
+            {...(context.workspaceTriage ? { workspaceTriage: context.workspaceTriage } : {})}
             botCreateOpen={props.botCreate}
-            inboxOpen={props.inbox}
             blueprintOpen={props.blueprint}
             // Offered only where the route exists, which is what puts the
             // workbench row in a development sidebar and nowhere else.
@@ -476,12 +468,6 @@ function HappyAgentWorkspaceLayout(
                 : {})}
             onBotCreateOpen={(happyAgentId) =>
                 void navigate({ params: { happyAgentId }, to: "/bots/new/$happyAgentId" })
-            }
-            onInboxOpen={() =>
-                void navigate({
-                    params: { happyAgentId: params.happyAgentId ?? happyAgentDefaultId(context) },
-                    to: "/inbox/$happyAgentId",
-                })
             }
             onUpdateApply={context.onUpdateApply}
             platform={context.platform}

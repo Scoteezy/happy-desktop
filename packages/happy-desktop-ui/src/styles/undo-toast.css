@@ -1,0 +1,46 @@
+/*
+ * The undo toast: one line pinned to the bottom of the window, over whatever is
+ * there, saying what was just done and offering to take it back. It is a
+ * status, not a dialog — nothing behind it is blocked — so it is small, dark
+ * on light and light on dark, and never in the way of the content's column.
+ * Layout is flexbox; colors and type come from theme roles.
+ */
+
+.happy-undo-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-sizing: border-box;
+    max-width: calc(100% - 48px);
+    padding: 8px 8px 8px 12px;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-md);
+    background: var(--surface-elevated, var(--surface));
+    box-shadow: var(--happy-shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.18));
+    font-family: var(--happy-font-ui);
+    transform: translateX(-50%);
+}
+
+.happy-undo-toast__mark {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: var(--success);
+}
+
+.happy-undo-toast__label {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

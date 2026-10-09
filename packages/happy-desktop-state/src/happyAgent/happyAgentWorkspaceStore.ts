@@ -999,6 +999,15 @@ export interface HappyAgentWorkspaceStore {
     /** Returns an archived conversation to its workspace strip. Navigation remains the caller's. */
     conversationRestore(conversationId: HappyAgentSessionId): Promise<void>;
     /**
+     * Marks one conversation read without opening it — the attention queue's
+     * "seen" for a turn that finished and needs no answer. The row's dot, the
+     * queue's entry and the Dock count all clear together because they all read
+     * the same durable fact.
+     */
+    conversationRead(conversationId: HappyAgentSessionId): void;
+    /** Marks every unread conversation on this machine read, bots included. */
+    conversationsAllRead(): void;
+    /**
      * Moves one tab of the addressed group directly after `afterId`, or to the
      * front of the strip when null. The order is this client's own and takes
      * effect at once: nothing is asked of the daemon, which orders sessions but
@@ -4876,6 +4885,33 @@ export function happyAgentWorkspaceStoreCreate(
             const result = await list.sessionRestore(conversationId);
             if (result.type === "failed") throw result.error;
             client.chatRestore(conversationId);
+        },
+        conversationRead(conversationId) {
+            if (disposed) return;
+            list.sessionRead(conversationId, true);
+        },
+        conversationsAllRead() {
+            if (disposed) return;
+            const listSnapshot = list.get();
+            const unread: HappyAgentSessionId[] = [];
+            if (listSnapshot.projects.type === "ready") {
+                for (const project of listSnapshot.projects.value) {
+                    for (const conversation of project.conversations)
+                        if (conversation.unread)
+                            unread.push(conversation.id as HappyAgentSessionId);
+                    for (const worktree of project.worktrees)
+                        for (const conversation of worktree.conversations)
+                            if (conversation.unread)
+                                unread.push(conversation.id as HappyAgentSessionId);
+                }
+            }
+            for (const bot of listSnapshot.bots)
+                if (bot.conversation.unread)
+                    unread.push(bot.conversation.id as HappyAgentSessionId);
+            for (const subtask of happyAgentBotSubtasks(listSnapshot.bots))
+                if (subtask.conversation.unread)
+                    unread.push(subtask.conversation.id as HappyAgentSessionId);
+            for (const id of unread) list.sessionRead(id, true);
         },
         tabReorder(tabId, afterId) {
             if (disposed || addressedGroupId === undefined) return;

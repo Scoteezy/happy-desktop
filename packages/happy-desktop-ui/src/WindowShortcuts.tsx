@@ -2,12 +2,21 @@ import { useEffectEvent, useLayoutEffect } from "react";
 import {
     commandShortcutMatches,
     windowShortcutBlocked,
+    windowShortcutEditing,
     type CommandShortcut,
 } from "./keyboardShortcut";
 
 export interface WindowShortcutAction {
     readonly run: () => void;
     readonly shortcut: CommandShortcut;
+    /**
+     * Whether the chord still runs while a text field has focus. It does by
+     * default: a Command chord is a window command wherever the caret is. A
+     * chord the field itself answers — Command-Z, a bare Shift-Escape — says
+     * `false` here and is left to the field, so a window undo never takes the
+     * place of undoing what was just typed.
+     */
+    readonly whenEditing?: boolean;
 }
 
 /**
@@ -20,6 +29,7 @@ export function WindowShortcuts(props: { readonly actions: readonly WindowShortc
             commandShortcutMatches(event, candidate.shortcut),
         );
         if (!action || windowShortcutBlocked()) return;
+        if (action.whenEditing === false && windowShortcutEditing()) return;
         event.preventDefault();
         action.run();
     });

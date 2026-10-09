@@ -1,9 +1,19 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
+import { KeyCap } from "./Badge";
 import { partitionComponentProps } from "./componentProps";
+import type { KeyboardShortcut } from "./keyboardShortcut";
 
 export type TooltipPlacement = "top" | "bottom";
+/** Where the bubble sits across the trigger: centred on it, or ending on its trailing edge. */
+export type TooltipAlign = "center" | "end";
 
 export interface TooltipProps {
+    /**
+     * Ends the bubble on the trigger's trailing edge instead of centring it,
+     * for a trigger at the edge of a clipped region where a centred bubble
+     * would be cut off.
+     */
+    readonly align?: TooltipAlign;
     /** The trigger. It keeps its own box; the bubble leaves the flow entirely. */
     readonly children: ReactNode;
     readonly className?: string;
@@ -16,6 +26,8 @@ export interface TooltipProps {
      */
     readonly open?: boolean;
     readonly placement?: TooltipPlacement;
+    /** The chord that does what the trigger does, worn after the words. */
+    readonly shortcut?: KeyboardShortcut;
     readonly style?: CSSProperties;
 }
 
@@ -38,12 +50,14 @@ export interface TooltipProps {
  */
 export function Tooltip(props: TooltipProps) {
     const [local] = partitionComponentProps(props, [
+        "align",
         "children",
         "className",
         "data-testid",
         "label",
         "open",
         "placement",
+        "shortcut",
         "style",
     ]);
     const bubbleId = useId();
@@ -61,11 +75,20 @@ export function Tooltip(props: TooltipProps) {
             <span
                 className="happy-tooltip__bubble"
                 data-happy-desktop-ui="tooltip-bubble"
+                data-align={local.align ?? "center"}
                 data-placement={local.placement ?? "top"}
                 id={bubbleId}
                 role="tooltip"
             >
                 {local.label}
+                {local.shortcut ? (
+                    <span
+                        className="happy-tooltip__shortcut"
+                        data-happy-desktop-ui="tooltip-shortcut"
+                    >
+                        <KeyCap decorative keys={local.shortcut.caps} />
+                    </span>
+                ) : null}
             </span>
         </span>
     );

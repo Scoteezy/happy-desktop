@@ -335,7 +335,9 @@ function conversationProject(session: GroupSession): HappyAgentConversationSumma
         ...(session.wait === undefined
             ? {}
             : { wait: { startedAt: session.wait.startedAt, dueAt: session.wait.dueAt } }),
-        ...(session.unread === undefined ? {} : { unreadReason: session.unread.reason }),
+        ...(session.unread === undefined
+            ? {}
+            : { unreadReason: session.unread.reason, unreadSince: session.unread.since }),
         ...(session.title === undefined ? {} : { title: session.title }),
         ...(session.recap === undefined ? {} : { recap: session.recap }),
         createdAt: session.createdAt,
