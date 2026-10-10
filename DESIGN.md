@@ -289,6 +289,25 @@ entirely.
 
 Moving between two setup screens must change the words, not where they are.
 
+## User-facing errors
+
+Prefer fewer buttons.
+
+Errors and troubleshooting go to the Chief of Staff. An error does not say
+"show the log", and it does not get its own diagnostic buttons such as "View
+log", "Copy details", or "Open logs folder". It offers one way out, "Ask Chief
+of Staff", which hands the error and its context to the Chief of Staff. A direct
+retry may sit beside it when retrying is the obvious recovery.
+
+Use the existing handoff rather than building another one. It writes a labelled
+draft into the Chief of Staff's conversation and opens it; nothing is sent on
+the user's behalf. `HappyAgentWorkspaceStore.errorAssistanceRequest` hands off a
+conversation error (`ConversationErrorCard`), and
+`HappyAgentWorkspaceStore.chiefOfStaffDraftAppend` takes any other
+`HappyAgentChiefOfStaffRequest`
+(`happy-desktop-state/src/happyAgent/happyAgentChiefOfStaffRequest.ts`); a new
+kind of error adds a variant there.
+
 ## Nested rounded corners
 
 Nested rounded corners must be true parallel curves. When a descendant edge
