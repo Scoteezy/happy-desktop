@@ -85,6 +85,7 @@ import type {
     HappyAgentProviderUsageStore,
     HappyAgentProvidersStore,
     HappyAgentSessionLocation,
+    HappyAgentVoiceSettingsStore,
     HappyAgentBot,
     HappyAgentBotCreating,
     HappyAgentBotSubtask,
@@ -487,6 +488,7 @@ export interface AppHappyAgentSession {
      */
     readonly providers?: HappyAgentProvidersStore;
     /** The voice controller and prompt this machine's calls start with, as Voice settings edit them. */
+    readonly voiceSettings?: HappyAgentVoiceSettingsStore;
     /** This Happy Agent's machine-wide instructions, as the settings window edits them. */
     readonly instructions?: HappyAgentInstructionsStore;
     /** This Happy Agent's machine-wide permission-review policy. */

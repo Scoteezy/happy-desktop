@@ -93,6 +93,10 @@ import {
     type HappyAgentProvidersStore,
 } from "./happyAgentProvidersStore.js";
 import {
+    happyAgentVoiceSettingsStoreCreate,
+    type HappyAgentVoiceSettingsStore,
+} from "./happyAgentVoiceSettingsStore.js";
+import {
     happyAgentIntegrationStoreCreate,
     type HappyAgentIntegrationStore,
 } from "./happyAgentIntegrationStore.js";
@@ -176,6 +180,12 @@ export interface HappyAgentWorkspaceClient {
      * catalog `models` holds, so a provider switched off stops being offered.
      */
     providers(): HappyAgentProvidersStore;
+    /**
+     * The voice controller and prompt this machine's calls start with, as the
+     * Voice settings read and change them. Materialized on first access and
+     * shared, so every settings window edits the same prompt draft.
+     */
+    voiceSettings(): HappyAgentVoiceSettingsStore;
     /**
      * This Happy Agent's own machine-wide instructions, as one editable document.
      * Materialized on first access and shared, so the settings window and
@@ -514,6 +524,7 @@ export function happyAgentWorkspaceClientCreate(
     let teamsStore: HappyAgentTeamsStore | undefined;
     let profileStore: HappyAgentProfileStore | undefined;
     let providersStore: HappyAgentProvidersStore | undefined;
+    let voiceSettingsStore: HappyAgentVoiceSettingsStore | undefined;
     let instructionsStore: HappyAgentInstructionsStore | undefined;
     let securityPolicyStore: HappyAgentSecurityPolicyStore | undefined;
     let secretsStore: HappyAgentSecretsStore | undefined;
@@ -823,6 +834,11 @@ export function happyAgentWorkspaceClientCreate(
             });
             return providersStore;
         },
+        voiceSettings() {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            voiceSettingsStore ??= happyAgentVoiceSettingsStoreCreate({ client: deps.client });
+            return voiceSettingsStore;
+        },
         instructions() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
             instructionsStore ??= happyAgentInstructionsStoreCreate({ client: deps.client });
@@ -961,6 +977,8 @@ export function happyAgentWorkspaceClientCreate(
             profileStore = undefined;
             providersStore?.[Symbol.dispose]();
             providersStore = undefined;
+            voiceSettingsStore?.[Symbol.dispose]();
+            voiceSettingsStore = undefined;
             instructionsStore?.[Symbol.dispose]();
             instructionsStore = undefined;
             securityPolicyStore?.[Symbol.dispose]();

@@ -46,6 +46,7 @@ import {
     happyAgentProviderUsageStoreNoop,
     happyAgentProvidersStoreNoop,
     happyAgentSecretsStoreNoop,
+    happyAgentVoiceSettingsStoreNoop,
     happyAgentWindowStoreNoop,
     happyAgentAttentionConnection,
     happyAgentAttentionStoreNoop,
@@ -54,6 +55,8 @@ import {
     titleShimmerStoreNoop,
 } from "happy-desktop-state";
 import {
+    happyAgentComposerModelControlProps,
+    GptLiveVoiceSettings,
     DesktopMobileSetup,
     HappyAgentAccountSettings,
     HappyAgentGeneralSettings,
@@ -520,6 +523,17 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         providersStore.get,
         providersStore.get,
     );
+    // The voice controller and prompt are read, and re-read every few seconds,
+    // only while the voice settings beneath the calls switch are on screen.
+    const voiceSettingsStore =
+        ((section === "experimental" && gptLive.gptLiveEnabled) || stateOpen
+            ? host?.session?.voiceSettings
+            : undefined) ?? happyAgentVoiceSettingsStoreNoop;
+    const voiceSettings = useSyncExternalStore(
+        voiceSettingsStore.subscribe,
+        voiceSettingsStore.get,
+        voiceSettingsStore.get,
+    );
     // The Usage category is the only thing that reads these, and subscribing is
     // what starts the work: the daemon is asked what its accounts have spent,
     // and the clock ticks the time left until each reset, only while that
@@ -616,18 +630,98 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         >
             {section === "experimental" ? (
                 props.gptLive ? (
-                    <GptLiveSettings
-                        enabled={gptLive.gptLiveEnabled}
-                        accounts={gptLive.availability?.accounts}
-                        accountId={gptLive.accountId}
-                        checking={gptLive.status === "checking"}
-                        onAccountSelect={gptLiveStore.accountSelect}
-                        onAccountsRead={gptLiveStore.availabilityRead}
-                        onEnabledChange={(enabled) => {
-                            if (experimentsStore.get().experimentalFeaturesEnabled)
-                                gptLiveStore.gptLiveEnabledUpdate(enabled);
-                        }}
-                    />
+                    <>
+                        <GptLiveSettings
+                            enabled={gptLive.gptLiveEnabled}
+                            accounts={gptLive.availability?.accounts}
+                            accountId={gptLive.accountId}
+                            checking={gptLive.status === "checking"}
+                            onAccountSelect={gptLiveStore.accountSelect}
+                            onAccountsRead={gptLiveStore.availabilityRead}
+                            onEnabledChange={(enabled) => {
+                                if (experimentsStore.get().experimentalFeaturesEnabled)
+                                    gptLiveStore.gptLiveEnabledUpdate(enabled);
+                            }}
+                        />
+                        {gptLive.gptLiveEnabled ? (
+                            <GptLiveVoiceSettings
+                                loading={voiceSettings.loading}
+                                unavailable={
+                                    unavailable ??
+                                    voiceSettings.error?.message ??
+                                    (voiceSettings.settings
+                                        ? undefined
+                                        : "This Happy Agent has no voice settings yet. Update it to choose the voice controller and prompt.")
+                                }
+                                {...(voiceSettings.menus
+                                    ? {
+                                          controller: happyAgentComposerModelControlProps(
+                                              voiceSettings.menus,
+                                              {
+                                                  disabled: voiceSettings.saving,
+                                                  onModelChange: (selection) => {
+                                                      if (happyAgentOnline())
+                                                          voiceSettingsStore.controllerModelUpdate(
+                                                              selection,
+                                                          );
+                                                  },
+                                                  onEffortChange: (effort) => {
+                                                      if (happyAgentOnline())
+                                                          voiceSettingsStore.controllerEffortUpdate(
+                                                              effort,
+                                                          );
+                                                  },
+                                              },
+                                          ),
+                                      }
+                                    : {})}
+                                {...(voiceSettings.settings?.effectiveController.notice
+                                    ? {
+                                          controllerNotice:
+                                              voiceSettings.settings.effectiveController.notice,
+                                      }
+                                    : {})}
+                                fastMode={voiceSettings.settings?.controller.fastMode ?? false}
+                                {...(voiceSettings.fastModeAvailable
+                                    ? {}
+                                    : {
+                                          fastModeUnavailable: `${voiceSettings.menus?.currentOption?.name ?? "This model"} has no fast mode.`,
+                                      })}
+                                onFastModeChange={(enabled) => {
+                                    if (happyAgentOnline())
+                                        voiceSettingsStore.fastModeUpdate(enabled);
+                                }}
+                                prompt={
+                                    voiceSettings.promptDraft ??
+                                    voiceSettings.settings?.effectiveSystemPrompt ??
+                                    ""
+                                }
+                                promptCustom={
+                                    (voiceSettings.settings?.systemPromptOverride ?? null) !== null
+                                }
+                                promptEditing={voiceSettings.promptDraft !== undefined}
+                                onPromptChange={voiceSettingsStore.promptDraftUpdate}
+                                onPromptCancel={voiceSettingsStore.promptDraftCancel}
+                                onPromptSave={() => {
+                                    if (happyAgentOnline()) voiceSettingsStore.promptSave();
+                                }}
+                                onPromptReset={() => {
+                                    if (happyAgentOnline()) voiceSettingsStore.promptReset();
+                                }}
+                                onPromptDefaultCopy={() => {
+                                    const text = voiceSettings.settings?.defaultSystemPrompt;
+                                    if (text !== undefined)
+                                        void navigator.clipboard
+                                            ?.writeText(text)
+                                            .catch(() => undefined);
+                                }}
+                                saving={voiceSettings.saving}
+                                {...(voiceSettings.saveError
+                                    ? { saveError: voiceSettings.saveError.message }
+                                    : {})}
+                            />
+                        ) : null}
+                    </>
                 ) : null
             ) : section === "mobile-access" ? (
                 <HappyAgentMobileSettings

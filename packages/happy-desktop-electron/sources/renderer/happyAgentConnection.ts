@@ -35,6 +35,7 @@ import {
     type HappyAgentProfileStore,
     type HappyAgentProviderUsageStore,
     type HappyAgentProvidersStore,
+    type HappyAgentVoiceSettingsStore,
     type HappyAgentSecurityPolicyStore,
     type HappyAgentSecretsStore,
     type HappyAgentArtifacts,
@@ -112,6 +113,7 @@ export interface HappyAgentSession {
     readonly profile: () => HappyAgentProfileStore | undefined;
     readonly providerUsage: HappyAgentProviderUsageStore | undefined;
     readonly providers: HappyAgentProvidersStore;
+    readonly voiceSettings: HappyAgentVoiceSettingsStore;
     readonly workspace: HappyAgentWorkspaceStore;
     readonly instructions: HappyAgentInstructionsStore;
     readonly securityPolicy: HappyAgentSecurityPolicyStore;
@@ -530,6 +532,7 @@ export function happyAgentConnectionOpen(input: {
                     profile: () => profileStore,
                     providerUsage: client.providerUsage(),
                     providers: client.providers(),
+                    voiceSettings: client.voiceSettings(),
                     workspace: preparedWorkspace,
                     instructions: client.instructions(),
                     securityPolicy: client.securityPolicy(),

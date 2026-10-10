@@ -10,3 +10,33 @@
     flex-direction: column;
     width: 100%;
 }
+/* Two settings sections in one block: keep the page's own gap between them. */
+.happy-gpt-live-voice-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    width: 100%;
+}
+.happy-gpt-live-voice-settings__prompt {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+}
+.happy-gpt-live-voice-settings__prompt-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 28px;
+}
+.happy-gpt-live-voice-settings__prompt-tools {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.happy-gpt-live-voice-settings__prompt-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
