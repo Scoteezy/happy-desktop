@@ -50,6 +50,25 @@ export type MarkdownDocumentProps = {
      * neighbours should say so by not offering the click.
      */
     onFileOpen?: FileOpenHandler;
+    /**
+     * Resolves the document's own relative references, for a document that is
+     * one file of a bundle whose other files it can show — an artifact's entry
+     * beside its pictures. Without it a picture stays its label and a relative
+     * link is read as a workspace path.
+     */
+    references?: MarkdownDocumentReferences;
+};
+
+/**
+ * How a document that is one file of a bundle reaches the rest of it. Both
+ * answer `undefined` for a reference that names nothing in the bundle, which
+ * leaves it inert rather than letting it reach anywhere else.
+ */
+export type MarkdownDocumentReferences = {
+    /** The address a picture the document shows loads from. */
+    readonly image: (src: string) => string | undefined;
+    /** The file of the bundle a link names, as `onFileOpen` receives it. */
+    readonly link: (href: string) => string | undefined;
 };
 
 /** Schemes a document link may navigate the browser to. */
@@ -158,6 +177,7 @@ export const markdownFileUrlTransform: UrlTransform = (url, key, node) =>
 
 const FileOpenContext = createContext<FileOpenHandler | undefined>(undefined);
 const MarkdownCacheKeyContext = createContext<string | undefined>(undefined);
+const MarkdownReferencesContext = createContext<MarkdownDocumentReferences | undefined>(undefined);
 
 /**
  * A link in a document. A web address opens in a fresh browsing context severed
@@ -166,6 +186,7 @@ const MarkdownCacheKeyContext = createContext<string | undefined>(undefined);
  */
 const DocumentLink = ({ children, href }: ComponentPropsWithoutRef<"a"> & ExtraProps) => {
     const onFileOpen = useContext(FileOpenContext);
+    const references = useContext(MarkdownReferencesContext);
     const web = webHref(href);
     if (web !== undefined)
         return (
@@ -179,6 +200,32 @@ const DocumentLink = ({ children, href }: ComponentPropsWithoutRef<"a"> & ExtraP
                 {children}
             </a>
         );
+    // A document that is one file of a bundle names its neighbours relative to
+    // itself, so the bundle decides what a link means; nothing it does not
+    // recognize is read as a path on this machine instead.
+    if (references !== undefined) {
+        const path = typeof href === "string" ? references.link(href) : undefined;
+        if (path === undefined || onFileOpen === undefined)
+            return (
+                <span
+                    className="happy-markdown-document__link"
+                    data-happy-desktop-ui="markdown-document-link"
+                >
+                    {children}
+                </span>
+            );
+        return (
+            <button
+                className="happy-markdown-document__link happy-markdown-document__link--file"
+                data-happy-desktop-ui="markdown-document-file-link"
+                data-path={path}
+                onClick={() => onFileOpen(path)}
+                type="button"
+            >
+                {children}
+            </button>
+        );
+    }
     const target = markdownDocumentLinkTarget(href);
     if (target === undefined || onFileOpen === undefined)
         return (
@@ -206,9 +253,24 @@ const DocumentLink = ({ children, href }: ComponentPropsWithoutRef<"a"> & ExtraP
  * A document image renders as a labelled link rather than an `<img>`: the bytes
  * of a relative image live in a workspace this viewer has no reader for, and a
  * remote one would make merely opening a document fetch from its author's host.
+ * A document whose bundle is readable shows the pictures that are part of it,
+ * and only those.
  */
 const DocumentImage = ({ alt, src }: ComponentPropsWithoutRef<"img"> & ExtraProps) => {
+    const references = useContext(MarkdownReferencesContext);
     const label = alt?.trim() || (typeof src === "string" ? src : "") || "image";
+    const url =
+        references !== undefined && typeof src === "string" ? references.image(src) : undefined;
+    if (url !== undefined)
+        return (
+            <img
+                alt={alt ?? ""}
+                className="happy-markdown-document__picture"
+                data-happy-desktop-ui="markdown-document-picture"
+                loading="lazy"
+                src={url}
+            />
+        );
     return (
         <span
             className="happy-markdown-document__image"
@@ -322,6 +384,7 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
         "text",
         "cacheKey",
         "onFileOpen",
+        "references",
     ]);
     return (
         <ScrollArea
@@ -337,15 +400,17 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
                 data-happy-desktop-ui="markdown-document-body"
             >
                 <MarkdownCacheKeyContext.Provider value={local.cacheKey}>
-                    <FileOpenContext.Provider value={local.onFileOpen}>
-                        <MemoMarkdown
-                            components={documentComponents}
-                            urlTransform={markdownFileUrlTransform}
-                            remarkPlugins={MARKDOWN_REMARK_PLUGINS}
-                        >
-                            {local.text}
-                        </MemoMarkdown>
-                    </FileOpenContext.Provider>
+                    <MarkdownReferencesContext.Provider value={local.references}>
+                        <FileOpenContext.Provider value={local.onFileOpen}>
+                            <MemoMarkdown
+                                components={documentComponents}
+                                urlTransform={markdownFileUrlTransform}
+                                remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+                            >
+                                {local.text}
+                            </MemoMarkdown>
+                        </FileOpenContext.Provider>
+                    </MarkdownReferencesContext.Provider>
                 </MarkdownCacheKeyContext.Provider>
             </article>
         </ScrollArea>

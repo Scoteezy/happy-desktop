@@ -4,6 +4,11 @@ import { AppGptLivePhone } from "./gptLive/AppGptLivePhone";
 import type {
     AppearanceStore,
     CommandPaletteStore,
+    HappyAgentArtifactCatalogStore,
+    HappyAgentArtifactChatContext,
+    HappyAgentArtifactId,
+    HappyAgentArtifactPlaces,
+    HappyAgentArtifacts,
     ConversationEntry,
     ComposerSnapshot,
     ExperimentsStore,
@@ -85,6 +90,11 @@ import type {
 import {
     HAPPY_AGENT_PANEL_FILE_VIEW_ID,
     agentAuthor,
+    happyAgentArtifactAuthorLabel,
+    happyAgentArtifactCatalogStoreNoop,
+    happyAgentArtifactChatContext,
+    happyAgentArtifactNames,
+    happyAgentArtifactSourceLabel,
     commandPaletteStoreNoop,
     experimentsStoreNoop,
     projectsVisibilityStoreNoop,
@@ -179,6 +189,11 @@ import {
     SidebarUpdateAction,
     Switch,
     HappyAgentInboxPage,
+    HappyAgentArtifactsPage,
+    HappyAgentArtifactsPanel,
+    HappyAgentArtifactViewer,
+    type HappyAgentArtifactLabels,
+    type HappyAgentArtifactSourceChoice,
     TabbedPane,
     TextField,
     TerminalPanel,
@@ -219,6 +234,7 @@ import {
 import { openExternalLink } from "./externalLink";
 import { fileDownload } from "./fileDownload";
 import { reactFrameInputUpdate, reactFrameSubscribe } from "./reactFrameSubscribe";
+import { useDisposableLease } from "./useDisposableLease";
 import { BlueprintView } from "./views/BlueprintView";
 import type {
     AppHappyAgentDaemonSnapshot,
@@ -407,6 +423,12 @@ export interface AppHappyAgentSession {
     readonly securityPolicy?: HappyAgentSecurityPolicyStore;
     /** This Happy Agent's global write-only environment bundles. */
     readonly secrets?: () => HappyAgentSecretsStore;
+    /**
+     * What this Happy Agent's agents and people have published. A Happy Agent
+     * that keeps none reports so through its catalog, and every surface that
+     * would show artifacts stays away.
+     */
+    readonly artifacts?: HappyAgentArtifacts;
 }
 
 export interface AppHappyAgentDirectorySnapshot {
@@ -619,6 +641,16 @@ export interface AppHappyAgentViewProps {
     inboxOpen?: boolean;
     /** Addresses that inbox. */
     onInboxOpen?(): void;
+    /** Whether the URL addresses the addressed Happy Agent's artifacts. */
+    artifactsOpen?: boolean;
+    /** The artifact the URL opens in the viewer, within those artifacts. */
+    artifactId?: string;
+    /** Addresses the addressed Happy Agent's artifacts. */
+    onArtifactsOpen?(): void;
+    /** Addresses one artifact on one Happy Agent. */
+    onArtifactOpen?(happyAgentId: string, artifactId: string): void;
+    /** Leaves the open artifact for wherever it was opened from. */
+    onArtifactClose?(happyAgentId: string): void;
     /** Whether the URL addresses the enrolled account's friends surface. */
     /** Addresses that friends surface. */
     /** Whether the URL addresses the component workbench, in a development build. */
@@ -1138,7 +1170,8 @@ function toolTabsPlaced(
 }
 
 function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefined {
-    if (!panel.open || panel.activeViewId === "files") return undefined;
+    if (!panel.open || panel.activeViewId === "files" || panel.activeViewId === "artifacts")
+        return undefined;
     if (panel.activeViewId === "activity") return "activity";
     if (panel.activeViewId === "usage") return "usage";
     if (panel.activeViewId === "preview") return panel.previewEntryId ? "preview" : undefined;
@@ -2119,6 +2152,13 @@ function happyAgentStatusLabel(happyAgent: AppHappyAgentEntry): string {
 const INBOX_ITEM = "inbox";
 
 /**
+ * The pinned row that opens the addressed Happy Agent's artifacts. Like the
+ * inbox it gathers from every chat on the machine at once, so it is pinned
+ * rather than filed under any one of them.
+ */
+const ARTIFACTS_ITEM = "artifacts";
+
+/**
  * The workspace window. It owns no product state: it subscribes to the directory
  * of Happy Agents, renders their projects as one sidebar, and hands the addressed Happy Agent's
  * own stores to the surface below. A Happy Agent that is still connecting, or one the
@@ -2257,6 +2297,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     const daemonStore = props.daemon ?? sidebarDaemonStoreNoop;
     const daemon = useSyncExternalStore(daemonStore.subscribe, daemonStore.get, daemonStore.get);
     const inboxPending = inbox.pending.length;
+    // Whether the addressed Happy Agent keeps artifacts at all. The catalog is
+    // read whether or not it is on screen, because the row that opens it and
+    // the panel beside every chat exist only once the machine has answered
+    // that it does; one too old to know about them answers 404 and is offered
+    // neither.
+    const artifactCatalog: HappyAgentArtifactCatalogStore =
+        active?.session?.artifacts?.catalog() ?? happyAgentArtifactCatalogStoreNoop;
+    const artifactsAvailable = useSyncExternalStore(
+        artifactCatalog.subscribe,
+        () => artifactCatalog.get().availability === "available",
+        () => artifactCatalog.get().availability === "available",
+    );
     const desktop = props.platform === "desktop";
     // Happy's own update wins the row. Restarting the app is the larger event of
     // the two, and it carries the agent with it, so the agent states its case
@@ -2318,8 +2370,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // The inbox belongs to the addressed machine, so it appears only while that
     // machine is reachable: a queue of questions is meaningless from a Happy Agent that
     // cannot say what it is waiting on.
-    const pinnedOffered: SidebarItem[] =
-        experimental && active?.session?.inbox
+    const pinnedOffered: SidebarItem[] = [
+        ...(experimental && active?.session?.inbox
             ? [
                   {
                       badge: inboxPending,
@@ -2327,9 +2379,20 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       id: INBOX_ITEM,
                       kind: "action",
                       label: "Inbox",
-                  },
+                  } satisfies SidebarItem,
               ]
-            : [];
+            : []),
+        ...(artifactsAvailable
+            ? [
+                  {
+                      icon: "package",
+                      id: ARTIFACTS_ITEM,
+                      kind: "action",
+                      label: "Artifacts",
+                  } satisfies SidebarItem,
+              ]
+            : []),
+    ];
     const pinned = pinnedArrange(pinnedOffered, navigationOrder.order);
     const sidebar = (
         <Sidebar
@@ -2343,17 +2406,19 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             activeItemId={
                 experimental && props.inboxOpen
                     ? INBOX_ITEM
-                    : props.groupId
-                      ? happyAgentItemId(
-                            props.happyAgentId,
-                            activeRowId(
-                                active?.bots ?? [],
-                                active?.tasks ?? [],
-                                props.groupId,
-                                props.chatId,
-                            ),
-                        )
-                      : ""
+                    : props.artifactsOpen
+                      ? ARTIFACTS_ITEM
+                      : props.groupId
+                        ? happyAgentItemId(
+                              props.happyAgentId,
+                              activeRowId(
+                                  active?.bots ?? [],
+                                  active?.tasks ?? [],
+                                  props.groupId,
+                                  props.chatId,
+                              ),
+                          )
+                        : ""
             }
             // The desktop window puts the traffic lights and the sidebar
             // toggle in this heading, so the product mark stands down and the
@@ -2531,6 +2596,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             onItemSelect={(id) => {
                 if (id === INBOX_ITEM) {
                     props.onInboxOpen?.();
+                    return;
+                }
+                if (id === ARTIFACTS_ITEM) {
+                    props.onArtifactsOpen?.();
                     return;
                 }
                 const row = happyAgentItemParse(id);
@@ -2816,6 +2885,33 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 </>
             );
 
+        // The artifacts belong to the addressed machine, like its inbox. A
+        // machine that keeps none says so here rather than showing an empty
+        // catalog, in case its address was reached some other way.
+        if (props.artifactsOpen && active?.session?.artifacts) {
+            const artifacts = active.session.artifacts;
+            return (
+                <>
+                    {desktop ? <WindowDragRegion /> : null}
+                    <HappyAgentArtifactsSurface
+                        artifacts={artifacts}
+                        {...(props.artifactId === undefined
+                            ? {}
+                            : { artifactId: props.artifactId as HappyAgentArtifactId })}
+                        onArtifactClose={() => props.onArtifactClose?.(active.id)}
+                        onArtifactOpen={(artifactId) =>
+                            props.onArtifactOpen?.(active.id, artifactId)
+                        }
+                        places={{
+                            bots: active.bots,
+                            projects: active.projects,
+                            tasks: active.tasks ?? [],
+                        }}
+                    />
+                </>
+            );
+        }
+
         // The inbox belongs to the addressed machine, so it is shown only while that
         // machine has stores to answer through.
         if (experimental && props.inboxOpen && active?.session?.inbox)
@@ -2876,6 +2972,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     titleShimmerEnabled={titleShimmerEnabled}
                     viewerId={viewerId}
                     workspace={active.session.workspace}
+                    {...(artifactsAvailable && active.session.artifacts
+                        ? {
+                              artifacts: active.session.artifacts,
+                              onArtifactOpen: (artifactId: string) =>
+                                  props.onArtifactOpen?.(active.id, artifactId),
+                          }
+                        : {})}
                     {...(workspaceCreateTarget
                         ? { workspaceCreateProjectId: workspaceCreateTarget.projectId }
                         : {})}
@@ -3658,7 +3761,219 @@ function inboxItemTime(value: number | undefined): string | undefined {
     );
 }
 
+/** When something happened to an artifact, as an absolute local time. */
+function artifactTime(value: number): string {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
+        new Date(value),
+    );
+}
+
+/**
+ * How the artifact surfaces name places, people, and moments: the window's own
+ * names for this Happy Agent's bots, tasks, projects, and conversations, and
+ * the people the artifact stores have read.
+ */
+function artifactLabels(
+    places: HappyAgentArtifactPlaces,
+    people: ReadonlyMap<string, string>,
+): HappyAgentArtifactLabels {
+    const names = happyAgentArtifactNames(places, people);
+    return {
+        author: (author) => happyAgentArtifactAuthorLabel(author, names),
+        source: (source) => happyAgentArtifactSourceLabel(source, names),
+        time: artifactTime,
+    };
+}
+
+/**
+ * Every place the catalog can be narrowed to: each kind of place, then each
+ * bot, task, project, and workspace this window lists, by the name it lists
+ * it under.
+ */
+function artifactSourceChoices(
+    places: HappyAgentArtifactPlaces,
+): readonly HappyAgentArtifactSourceChoice[] {
+    return [
+        { kind: "bot", label: "Any bot" },
+        { kind: "task", label: "Any task" },
+        { kind: "project", label: "Any project root" },
+        { kind: "workspace", label: "Any workspace" },
+        { kind: "agent", label: "Any other conversation" },
+        ...places.bots.map((bot) => ({ kind: "bot" as const, id: bot.id, label: bot.name })),
+        ...places.tasks.map((task) => ({ kind: "task" as const, id: task.id, label: task.name })),
+        ...places.projects.flatMap((project) => [
+            { kind: "project" as const, id: project.id, label: project.name },
+            ...project.worktrees.map((worktree) => ({
+                kind: "workspace" as const,
+                id: worktree.id,
+                label: `${project.name} / ${worktree.name}`,
+            })),
+        ]),
+    ];
+}
+
+/**
+ * One Happy Agent's artifacts inside the window's shell: the catalog, or the
+ * one artifact the address opens. The places come from the directory the
+ * window already holds, so a bot or a project is called here what the sidebar
+ * calls it.
+ */
+function HappyAgentArtifactsSurface(props: {
+    artifacts: HappyAgentArtifacts;
+    artifactId?: HappyAgentArtifactId;
+    places: HappyAgentArtifactPlaces;
+    onArtifactOpen(artifactId: string): void;
+    onArtifactClose(): void;
+}) {
+    const peopleStore = props.artifacts.people();
+    const people = useSyncExternalStore(peopleStore.subscribe, peopleStore.get, peopleStore.get);
+    const labels = artifactLabels(props.places, people);
+    if (props.artifactId !== undefined)
+        return (
+            <HappyAgentArtifactViewerSurface
+                artifactId={props.artifactId}
+                artifacts={props.artifacts}
+                labels={labels}
+                onClose={props.onArtifactClose}
+            />
+        );
+    return (
+        <HappyAgentArtifactCatalogSurface
+            artifacts={props.artifacts}
+            labels={labels}
+            onArtifactOpen={props.onArtifactOpen}
+            places={props.places}
+        />
+    );
+}
+
+function HappyAgentArtifactCatalogSurface(props: {
+    artifacts: HappyAgentArtifacts;
+    labels: HappyAgentArtifactLabels;
+    places: HappyAgentArtifactPlaces;
+    onArtifactOpen(artifactId: string): void;
+}) {
+    const store = props.artifacts.catalog();
+    const catalog = useSyncExternalStore(store.subscribe, store.get, store.get);
+    if (catalog.availability === "unsupported")
+        return (
+            <EmptyState
+                description="This Happy Agent does not keep artifacts. Updating it adds them."
+                icon="package"
+                size="panel"
+                title="No artifacts here"
+            />
+        );
+    return (
+        <HappyAgentArtifactsPage
+            catalog={catalog}
+            labels={props.labels}
+            onArtifactOpen={props.onArtifactOpen}
+            onDeletedShownChange={store.deletedShownUpdate}
+            onLoadMore={store.pageNextLoad}
+            onSourceChange={store.filterSourceUpdate}
+            onTypeChange={store.filterTypeUpdate}
+            sources={artifactSourceChoices(props.places)}
+        />
+    );
+}
+
+function HappyAgentArtifactViewerSurface(props: {
+    artifacts: HappyAgentArtifacts;
+    artifactId: HappyAgentArtifactId;
+    labels: HappyAgentArtifactLabels;
+    onClose(): void;
+}) {
+    const store = props.artifacts.viewer();
+    // The address decides which artifact the viewer holds, for exactly as long
+    // as this surface shows it; leaving lets the viewer drop it and everything
+    // read for it.
+    useDisposableLease(props.artifactId, () => {
+        store.artifactOpen(props.artifactId);
+        return { [Symbol.dispose]: () => store.artifactOpen(undefined) };
+    });
+    const viewer = useSyncExternalStore(store.subscribe, store.get, store.get);
+    return (
+        <HappyAgentArtifactViewer
+            labels={props.labels}
+            onBack={props.onClose}
+            onDeletionCancel={store.deletionCancel}
+            onDeletionConfirm={store.deletionConfirm}
+            onDeletionRequest={store.deletionRequest}
+            onFileDownload={(link) => {
+                void fileDownload(link.file.path, { type: "url", url: link.url }).catch(
+                    () => undefined,
+                );
+            }}
+            onVersionSelect={store.versionSelect}
+            onVersionsLoadMore={store.versionsNextLoad}
+            viewer={viewer.artifactId === props.artifactId ? viewer : VIEWER_OPENING}
+        />
+    );
+}
+
+/**
+ * What the viewer shows in the one commit between an address naming an
+ * artifact and the viewer being told to open it, so the previous artifact is
+ * never drawn under the new address.
+ */
+const VIEWER_OPENING = {
+    artifact: { type: "loading" },
+    versions: [],
+    versionsLoading: false,
+    versionsHasMore: false,
+    files: [],
+    content: { type: "loading" },
+    deletion: { phase: "idle" },
+} as const satisfies import("happy-desktop-state").HappyAgentArtifactViewerSnapshot;
+
+/** The identity of a chat's narrowing, so the list is told only when it changes. */
+function artifactChatContextKey(context: HappyAgentArtifactChatContext | undefined): string {
+    if (context === undefined) return "none";
+    const narrowing = (value: HappyAgentArtifactChatContext["chat"]): string =>
+        value.by === "agent" ? `agent:${value.agentId}` : `${value.kind}:${value.id}`;
+    return context.place
+        ? `${narrowing(context.chat)}|${context.place.kind}:${narrowing(context.place.narrowing)}`
+        : narrowing(context.chat);
+}
+
+/**
+ * The side panel's list of what the open chat has published. The chat the
+ * panel sits beside narrows it; the reader widens it to the chat's place or to
+ * everything.
+ */
+function HappyAgentArtifactsPanelSurface(props: {
+    artifacts: HappyAgentArtifacts;
+    context?: HappyAgentArtifactChatContext;
+    places: HappyAgentArtifactPlaces;
+    onArtifactOpen(artifactId: string): void;
+}) {
+    const store = props.artifacts.panel();
+    // Navigation decides which chat the list sits beside; the list is told
+    // once per chat rather than on every render of the workspace around it.
+    useDisposableLease(artifactChatContextKey(props.context), () => {
+        store.contextApply(props.context);
+        return { [Symbol.dispose]: () => undefined };
+    });
+    const catalog = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const peopleStore = props.artifacts.people();
+    const people = useSyncExternalStore(peopleStore.subscribe, peopleStore.get, peopleStore.get);
+    return (
+        <HappyAgentArtifactsPanel
+            catalog={catalog}
+            labels={artifactLabels(props.places, people)}
+            onArtifactOpen={props.onArtifactOpen}
+            onLoadMore={store.pageNextLoad}
+            onScopeChange={store.scopeUpdate}
+        />
+    );
+}
+
 interface HappyAgentWorkspaceSurfaceProps {
+    /** The machine's artifacts, present only once it has said it keeps them. */
+    artifacts?: HappyAgentArtifacts;
+    /** Opens one artifact in the viewer. */
+    onArtifactOpen?: (artifactId: string) => void;
     /** Account usage for the model picker's account submenu; read only while that submenu is open. */
     providerUsage?: HappyAgentProviderUsageStore;
     browserConnectionId: string | null;
@@ -3801,6 +4116,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         props.groupId,
         props.chatId,
     );
+    // Where this machine's artifacts can have been made, as the list names it.
+    const artifactPlaces: HappyAgentArtifactPlaces = {
+        bots: workspace.list.bots,
+        projects: rows,
+        tasks: workspace.list.tasks,
+    };
     // A bot and each subtask are separate single-chat destinations, even when
     // they share a workspace. Only the root bot gets bot-specific content.
     const openBot = workspace.list.bots.find(
@@ -4468,6 +4789,20 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 panel.open && !checkoutClosed ? (
                     <HappyAgentPanelBody
                         {...(panelCloseTarget ? { closeShortcut: APP_SHORTCUTS.tabClose } : {})}
+                        {...(props.artifacts && props.onArtifactOpen
+                            ? {
+                                  artifacts: {
+                                      artifacts: props.artifacts,
+                                      context: happyAgentArtifactChatContext(
+                                          artifactPlaces,
+                                          props.groupId,
+                                          props.chatId,
+                                      ),
+                                      onOpen: props.onArtifactOpen,
+                                      places: artifactPlaces,
+                                  },
+                              }
+                            : {})}
                         activity={conversation.type === "ready" ? conversation.value : undefined}
                         canStartBrowser={availability.online && openGroup !== undefined}
                         canStartTerminal={availability.online && props.chatId !== undefined}
@@ -6939,6 +7274,17 @@ function workspaceFileTreeNodes(
 
 function HappyAgentPanelBody(props: {
     activity?: HappyAgentConversationSnapshot;
+    /**
+     * What the open chat has published, offered only where the machine keeps
+     * artifacts: the machine's artifact stores, the chat the list narrows to,
+     * the places it names, and where an artifact opens.
+     */
+    artifacts?: {
+        readonly artifacts: HappyAgentArtifacts;
+        readonly context: HappyAgentArtifactChatContext | undefined;
+        readonly places: HappyAgentArtifactPlaces;
+        readonly onOpen: (artifactId: string) => void;
+    };
     browserContent?: BrowserContentRenderer;
     browserConnectionId: string | null;
     htmlPreview?: HtmlPreviewRenderer;
@@ -7088,6 +7434,9 @@ function HappyAgentPanelBody(props: {
             : undefined;
     const baseTabs: TabItem[] = [
         { closable: false, icon: "files", id: "files", label: "Files" },
+        ...(props.artifacts
+            ? [{ closable: false, icon: "package" as const, id: "artifacts", label: "Artifacts" }]
+            : []),
         ...(activityTabShown
             ? [{ closable: true, icon: "agents" as const, id: "activity", label: "Activity" }]
             : []),
@@ -7189,6 +7538,7 @@ function HappyAgentPanelBody(props: {
                     onClose={props.onViewClose}
                     onSelect={(tabId) => {
                         if (tabId === "files") props.store.filesSelect();
+                        else if (tabId === "artifacts") props.store.artifactsSelect();
                         else if (tabId === "activity") props.onActivityOpen();
                         else if (tabId === "usage") props.onUsageOpen();
                         else if (tabId === "preview" && props.panel.previewEntryId)
@@ -7204,6 +7554,7 @@ function HappyAgentPanelBody(props: {
                     // the main content is showing; neither has a form over there.
                     transferable={(tab) =>
                         tab.id !== "files" &&
+                        tab.id !== "artifacts" &&
                         tab.id !== "activity" &&
                         tab.id !== "usage" &&
                         tab.id !== "preview"
@@ -7293,6 +7644,24 @@ function HappyAgentPanelBody(props: {
                             scope={props.scope}
                             selectedId={props.selectedPath}
                         />
+                    ) : props.panel.activeViewId === "artifacts" ? (
+                        props.artifacts ? (
+                            <HappyAgentArtifactsPanelSurface
+                                artifacts={props.artifacts.artifacts}
+                                {...(props.artifacts.context === undefined
+                                    ? {}
+                                    : { context: props.artifacts.context })}
+                                onArtifactOpen={props.artifacts.onOpen}
+                                places={props.artifacts.places}
+                            />
+                        ) : (
+                            <EmptyState
+                                description="This Happy Agent does not keep artifacts."
+                                icon="package"
+                                size="panel"
+                                title="No artifacts"
+                            />
+                        )
                     ) : props.panel.activeViewId === "activity" ? (
                         props.activity ? (
                             <HappyAgentActivityPanel

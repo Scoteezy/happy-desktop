@@ -69,11 +69,12 @@ export interface HappyAgentPanelSnapshot {
     /** Whether the transient Usage tab is open for this conversation. */
     readonly usageViewOpen: boolean;
     /**
-     * The permanent files view, the transient tool preview, the transient file
-     * viewer, or one live tool tab.
+     * The permanent files view, the permanent list of the chat's artifacts, the
+     * transient tool preview, the transient file viewer, or one live tool tab.
      */
     readonly activeViewId:
         | "files"
+        | "artifacts"
         | "activity"
         | "usage"
         | "preview"
@@ -108,6 +109,12 @@ export interface HappyAgentPanelStore {
     panelToggle(): void;
     /** Selects the permanent workspace-files tab and opens the panel. */
     filesSelect(): void;
+    /**
+     * Selects the permanent list of what the open chat has published and opens
+     * the panel. The owner offers the tab only where the Happy Agent has
+     * artifacts at all.
+     */
+    artifactsSelect(): void;
     /** Opens or selects the transient Activity tab for the current conversation. */
     activitySelect(): void;
     /** Hides Activity while another panel is shown without dismissing its tab. */
@@ -472,6 +479,13 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         filesSelect() {
             if (disposed) return;
             activeViewId = "files";
+            open = true;
+            remember();
+            recompute();
+        },
+        artifactsSelect() {
+            if (disposed) return;
+            activeViewId = "artifacts";
             open = true;
             remember();
             recompute();

@@ -157,6 +157,15 @@
     font-style: italic;
 }
 
+/* A picture that is part of the document's own bundle, set inside the reading
+   measure and never wider than it. */
+.happy-markdown-document__picture {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--happy-radius-md);
+}
+
 /* ---- Lists ------------------------------------------------------------ */
 
 .happy-markdown-document__body ul,

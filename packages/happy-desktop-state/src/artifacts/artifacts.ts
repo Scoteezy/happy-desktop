@@ -1,0 +1,113 @@
+import type { HappyAgentClient } from "@slopus/happy-agent-client";
+import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import {
+    happyAgentArtifactCatalogStoreCreate,
+    type HappyAgentArtifactCatalogStore,
+} from "./artifactCatalogStore.js";
+import {
+    happyAgentArtifactPeopleCreate,
+    type HappyAgentArtifactPeople,
+    type HappyAgentArtifactPeopleStore,
+} from "./artifactPeopleStore.js";
+import {
+    happyAgentArtifactViewerStoreCreate,
+    type HappyAgentArtifactViewerStore,
+} from "./artifactViewerStore.js";
+
+/**
+ * One Happy Agent's artifact surfaces. Each store is materialized on first
+ * access and opens nothing until something subscribes to it, so a window that
+ * never shows artifacts costs this connection nothing.
+ */
+export interface HappyAgentArtifacts {
+    /** The whole catalog, as the Artifacts page and its sidebar row read it. */
+    catalog(): HappyAgentArtifactCatalogStore;
+    /** The list beside the open chat, narrowed to it by the chat's own context. */
+    panel(): HappyAgentArtifactCatalogStore;
+    /** The open artifact, its history, and the version on screen. */
+    viewer(): HappyAgentArtifactViewerStore;
+    /** The names of the people artifacts credit. */
+    people(): HappyAgentArtifactPeopleStore;
+    [Symbol.dispose](): void;
+}
+
+export interface HappyAgentArtifactsDeps {
+    readonly client: Pick<
+        HappyAgentClient,
+        | "listArtifacts"
+        | "getArtifact"
+        | "listArtifactVersions"
+        | "getArtifactVersion"
+        | "getArtifactFile"
+        | "artifactFileUrl"
+        | "deleteArtifact"
+        | "getUsers"
+    >;
+    readonly sync: HappyAgentSync;
+    /** Whether this host renders a document of this media type inline. */
+    readonly documentInline?: (mimeType: string) => boolean;
+}
+
+export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyAgentArtifacts {
+    let catalog: HappyAgentArtifactCatalogStore | undefined;
+    let panel: HappyAgentArtifactCatalogStore | undefined;
+    let viewer: HappyAgentArtifactViewerStore | undefined;
+    let people: HappyAgentArtifactPeople | undefined;
+    let disposed = false;
+    /*
+     * A window can render one last time from a session whose connection has
+     * just been disposed. A surface asking then gets a store that is already
+     * disposed — it holds nothing and opens nothing — rather than an exception
+     * thrown out of a render.
+     */
+    const inert = <Store extends { [Symbol.dispose](): void }>(store: Store): Store => {
+        if (disposed) store[Symbol.dispose]();
+        return store;
+    };
+    const peopleOf = (): HappyAgentArtifactPeople =>
+        (people ??= inert(happyAgentArtifactPeopleCreate(deps.client)));
+    return {
+        catalog() {
+            return (catalog ??= inert(
+                happyAgentArtifactCatalogStoreCreate({
+                    client: deps.client,
+                    sync: deps.sync,
+                    authorsSeen: (authors) => peopleOf().request(authors),
+                }),
+            ));
+        },
+        panel() {
+            return (panel ??= inert(
+                happyAgentArtifactCatalogStoreCreate(
+                    {
+                        client: deps.client,
+                        sync: deps.sync,
+                        authorsSeen: (authors) => peopleOf().request(authors),
+                    },
+                    { scope: "chat" },
+                ),
+            ));
+        },
+        viewer() {
+            return (viewer ??= inert(
+                happyAgentArtifactViewerStoreCreate({
+                    client: deps.client,
+                    sync: deps.sync,
+                    ...(deps.documentInline ? { documentInline: deps.documentInline } : {}),
+                    authorsSeen: (authors) => peopleOf().request(authors),
+                }),
+            ));
+        },
+        people() {
+            return peopleOf().store;
+        },
+        [Symbol.dispose]() {
+            if (disposed) return;
+            disposed = true;
+            catalog?.[Symbol.dispose]();
+            panel?.[Symbol.dispose]();
+            viewer?.[Symbol.dispose]();
+            people?.[Symbol.dispose]();
+        },
+    };
+}

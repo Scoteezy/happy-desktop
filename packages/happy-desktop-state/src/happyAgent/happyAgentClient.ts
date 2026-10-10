@@ -97,6 +97,7 @@ import {
     type HappyAgentCloudStore,
 } from "./happyAgentCloudStore.js";
 import { happyAgentTeamsStoreCreate, type HappyAgentTeamsStore } from "./happyAgentTeamsStore.js";
+import { happyAgentArtifactsCreate, type HappyAgentArtifacts } from "../artifacts/artifacts.js";
 
 /** A disposable view lease on one retained session chat store. */
 export interface HappyAgentChatHandle {
@@ -166,6 +167,12 @@ export interface HappyAgentWorkspaceClient {
     securityPolicy(): HappyAgentSecurityPolicyStore;
     /** Global write-only environment bundles, materialized while Settings reads them. */
     secrets(): HappyAgentSecretsStore;
+    /**
+     * This Happy Agent's published artifacts: the catalog, the list beside a
+     * chat, and the viewer. Materialized on first access; a daemon too old to
+     * have artifacts says so through each surface's availability.
+     */
+    artifacts(): HappyAgentArtifacts;
     /** Reads one bounded page of one checkout directory. */
     workspaceFileTreeRead(
         groupId: HappyAgentGroupId,
@@ -304,6 +311,12 @@ export interface HappyAgentWorkspaceClientDeps {
      * Omitted leaves the inbox unavailable rather than empty.
      */
     readonly inboxSource?: HappyAgentInboxSource;
+    /**
+     * Whether this host renders a document artifact of this media type inline,
+     * such as a PDF where the window has a PDF viewer. Omitted offers every
+     * document as its file.
+     */
+    readonly artifactDocumentInline?: (mimeType: string) => boolean;
     /**
      * Repeating read of each provider account's plan usage. Omitted leaves usage
      * unavailable rather than empty.
@@ -450,6 +463,7 @@ export function happyAgentWorkspaceClientCreate(
     let instructionsStore: HappyAgentInstructionsStore | undefined;
     let securityPolicyStore: HappyAgentSecurityPolicyStore | undefined;
     let secretsStore: HappyAgentSecretsStore | undefined;
+    let artifacts: HappyAgentArtifacts | undefined;
     const chats = new Map<HappyAgentSessionId, ChatBinding>();
     let disposed = false;
     let chatUseOrder = 0;
@@ -619,6 +633,17 @@ export function happyAgentWorkspaceClientCreate(
                 });
             }
             return sessionListStore;
+        },
+        artifacts() {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            artifacts ??= happyAgentArtifactsCreate({
+                client: deps.client,
+                sync: deps.connection.sync,
+                ...(deps.artifactDocumentInline
+                    ? { documentInline: deps.artifactDocumentInline }
+                    : {}),
+            });
+            return artifacts;
         },
         inbox() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
@@ -830,6 +855,8 @@ export function happyAgentWorkspaceClientCreate(
             securityPolicyStore = undefined;
             secretsStore?.[Symbol.dispose]();
             secretsStore = undefined;
+            artifacts?.[Symbol.dispose]();
+            artifacts = undefined;
             deps.catalogSource[Symbol.dispose]();
             for (const binding of chats.values()) {
                 chatDeactivate(binding);

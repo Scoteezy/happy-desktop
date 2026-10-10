@@ -13,6 +13,10 @@ import type { HappyAgentFileTabKind } from "happy-desktop-state";
  * route must carry becomes a field here.
  */
 export type HappyAgentRoute =
+    /** One machine's published artifacts, newest first. */
+    | { readonly kind: "artifacts"; readonly happyAgentId: string }
+    /** One artifact on one machine, open in the viewer. */
+    | { readonly kind: "artifact"; readonly happyAgentId: string; readonly artifactId: string }
     | { readonly kind: "blueprint" }
     /**
      * Where a new bot is named. The machine is in the address because the bot
@@ -57,6 +61,10 @@ export const HAPPY_AGENT_ROUTE_HOME: HappyAgentRoute = { kind: "home" };
 export function happyAgentRoutePath(route: HappyAgentRoute): string {
     const part = encodeURIComponent;
     switch (route.kind) {
+        case "artifacts":
+            return `/artifacts/${part(route.happyAgentId)}`;
+        case "artifact":
+            return `/artifacts/${part(route.happyAgentId)}/${part(route.artifactId)}`;
         case "blueprint":
             return "/blueprint";
         case "botCreate":
@@ -118,6 +126,11 @@ export function happyAgentRoutePathParse(pathname: string): HappyAgentRoute | un
     const [head, first, second, third, fourth, fifth, sixth] = segments;
     if (head === undefined) return HAPPY_AGENT_ROUTE_HOME;
     switch (head) {
+        case "artifacts":
+            if (first === undefined || segments.length > 3) return undefined;
+            return second === undefined
+                ? { kind: "artifacts", happyAgentId: first }
+                : { artifactId: second, kind: "artifact", happyAgentId: first };
         case "blueprint":
             return segments.length === 1 ? { kind: "blueprint" } : undefined;
         case "bots":
@@ -187,6 +200,17 @@ export function happyAgentRouteParse(value: unknown): HappyAgentRoute | undefine
     if (typeof value !== "object" || value === null) return undefined;
     const record = value as Record<string, unknown>;
     switch (record["kind"]) {
+        case "artifacts": {
+            const happyAgentId = fieldOf(record, "happyAgentId");
+            return happyAgentId ? { kind: "artifacts", happyAgentId } : undefined;
+        }
+        case "artifact": {
+            const happyAgentId = fieldOf(record, "happyAgentId");
+            const artifactId = fieldOf(record, "artifactId");
+            return happyAgentId && artifactId
+                ? { artifactId, kind: "artifact", happyAgentId }
+                : undefined;
+        }
         case "blueprint":
             return { kind: "blueprint" };
         case "botCreate": {

@@ -37,6 +37,7 @@ import {
     type HappyAgentProvidersStore,
     type HappyAgentSecurityPolicyStore,
     type HappyAgentSecretsStore,
+    type HappyAgentArtifacts,
     type HappyAgentSessionLocation,
     type HappyAgentWorkspaceMemoryDocument,
     type HappyAgentWorkspaceMemoryPersistence,
@@ -114,6 +115,8 @@ export interface HappyAgentSession {
     readonly instructions: HappyAgentInstructionsStore;
     readonly securityPolicy: HappyAgentSecurityPolicyStore;
     readonly secrets: () => HappyAgentSecretsStore;
+    /** This Happy Agent's published artifacts, materialized as their surfaces open. */
+    readonly artifacts: HappyAgentArtifacts;
     readonly clock: HappyAgentClockStore;
 }
 
@@ -403,6 +406,10 @@ export function happyAgentConnectionOpen(input: {
         },
         terminalDriverCreate,
         terminalColorScheme: input.terminalColorScheme,
+        // Chromium's own viewer shows a PDF inline when this window has one;
+        // anything else is offered as a download.
+        artifactDocumentInline: (mimeType) =>
+            mimeType === "application/pdf" && navigator.pdfViewerEnabled,
     });
     // Keep account authentication subscribed for this connection's lifetime so
     // browser callbacks are handled even when Settings is closed or reloading.
@@ -512,6 +519,7 @@ export function happyAgentConnectionOpen(input: {
                     instructions: client.instructions(),
                     securityPolicy: client.securityPolicy(),
                     secrets: () => client.secrets(),
+                    artifacts: client.artifacts(),
                     clock: happyAgentClockStoreCreate(),
                 };
                 debugEntry({

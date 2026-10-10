@@ -42,6 +42,32 @@ export * from "./happyAgent/happyAgentIntegrationStore.js";
 export * from "./happyAgent/happyAgentCloudStore.js";
 export * from "./happyAgent/happyAgentTeamsStore.js";
 export * from "./happyAgent/happyAgentInboxStore.js";
+export * from "./artifacts/artifactTypes.js";
+export {
+    happyAgentArtifactFilterMatches,
+    happyAgentArtifactSourceId,
+} from "./artifacts/artifactCatalog.js";
+export * from "./artifacts/artifactLabels.js";
+export * from "./artifacts/artifactReference.js";
+export {
+    happyAgentArtifactCatalogStoreNoop,
+    type HappyAgentArtifactCatalogSnapshot,
+    type HappyAgentArtifactCatalogStore,
+    type HappyAgentArtifactChatContext,
+    type HappyAgentArtifactNarrowing,
+    type HappyAgentArtifactScope,
+} from "./artifacts/artifactCatalogStore.js";
+export * from "./artifacts/artifactChatContext.js";
+export type {
+    HappyAgentArtifactContent,
+    HappyAgentArtifactDeletion,
+    HappyAgentArtifactFileLink,
+    HappyAgentArtifactViewerArtifact,
+    HappyAgentArtifactViewerSnapshot,
+    HappyAgentArtifactViewerStore,
+} from "./artifacts/artifactViewerStore.js";
+export type { HappyAgentArtifactPeopleStore } from "./artifacts/artifactPeopleStore.js";
+export type { HappyAgentArtifacts } from "./artifacts/artifacts.js";
 export * from "./happyAgent/happyAgentInstructionsStore.js";
 export * from "./happyAgent/happyAgentMenusStore.js";
 export * from "./happyAgent/happyAgentModelStore.js";

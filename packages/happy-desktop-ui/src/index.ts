@@ -229,6 +229,7 @@ export {
     markdownDocumentLinkPath,
     markdownDocumentLinkTarget,
     type MarkdownDocumentProps,
+    type MarkdownDocumentReferences,
 } from "./MarkdownDocument";
 export {
     fileReferenceFragment,
@@ -650,6 +651,23 @@ export {
     type HappyAgentInboxAnswerMap,
     type HappyAgentInboxPageProps,
 } from "./pages/inbox/HappyAgentInboxPage";
+export {
+    type HappyAgentArtifactLabels,
+    type HappyAgentArtifactSourceChoice,
+} from "./pages/artifacts/artifactPresentation";
+export {
+    HappyAgentArtifactsPage,
+    type HappyAgentArtifactsPageProps,
+} from "./pages/artifacts/HappyAgentArtifactsPage";
+export {
+    HappyAgentArtifactsPanel,
+    type HappyAgentArtifactsPanelProps,
+} from "./pages/artifacts/HappyAgentArtifactsPanel";
+export {
+    HappyAgentArtifactViewer,
+    type HappyAgentArtifactViewerProps,
+} from "./pages/artifacts/HappyAgentArtifactViewer";
+export { artifactHtmlDocument } from "./pages/artifacts/artifactHtmlDocument";
 export {
     HappyAgentSettingsSection,
     HappyAgentSettingsShell,

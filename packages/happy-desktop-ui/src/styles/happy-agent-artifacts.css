@@ -1,0 +1,708 @@
+/*
+ * P-017 Happy Agent artifacts: the catalog page, the list beside a chat, and
+ * the viewer for one artifact.
+ *
+ * The catalog is read down one column under a surface header, at the same
+ * measure as the inbox and the usage screens. A row is one button: the type
+ * glyph, then the title over a line of facts. The viewer is a header, a strip
+ * of facts, and the version on screen beside its history.
+ *
+ * Layout is flexbox throughout; colors, radii, and type come only from theme
+ * roles.
+ */
+
+/* ---- Catalog page ------------------------------------------------------ */
+
+.happy-agent-artifacts {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-artifacts__header {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 720px;
+    /* The toolbar insets its own title by 16px, so the strip carries the
+       remaining 8px that puts that title over the column below it. */
+    padding: 0 8px;
+}
+
+/* The filters sit on the reading column's leading edge, under the title. */
+.happy-agent-artifacts__filters {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 720px;
+    padding: 0 24px 12px;
+}
+
+.happy-agent-artifacts__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+
+.happy-agent-artifacts__scroll-viewport {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.happy-agent-artifacts__content {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    gap: 12px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 720px;
+    padding: 4px 24px 48px;
+}
+
+.happy-agent-artifacts__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+}
+
+.happy-agent-artifacts__item {
+    display: flex;
+    min-width: 0;
+}
+
+.happy-agent-artifacts__more {
+    display: flex;
+    justify-content: center;
+}
+
+/* ---- Row --------------------------------------------------------------- */
+
+.happy-agent-artifact-row {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    min-width: 0;
+    margin: 0;
+    padding: 8px;
+    border: 0;
+    border-radius: var(--happy-radius-md);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.happy-agent-artifact-row[data-density="panel"] {
+    gap: 8px;
+    padding: 6px 8px;
+}
+
+.happy-agent-artifact-row:hover {
+    background: var(--surface-pressed);
+}
+
+.happy-agent-artifact-row[aria-current="true"] {
+    background: var(--surface-selected);
+}
+
+.happy-agent-artifact-row:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: -2px;
+}
+
+.happy-agent-artifact-row__glyph {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--happy-radius-md);
+    background: var(--surface-high);
+    color: var(--text-secondary);
+}
+
+.happy-agent-artifact-row[data-density="panel"] .happy-agent-artifact-row__glyph {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--happy-radius-sm);
+}
+
+.happy-agent-artifact-row__text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.happy-agent-artifact-row__headline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-agent-artifact-row__title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-artifact-row[data-density="panel"] .happy-agent-artifact-row__title {
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.happy-agent-artifact-row[data-status="deleted"] .happy-agent-artifact-row__title {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+}
+
+.happy-agent-artifact-row__version {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums lining-nums;
+}
+
+.happy-agent-artifact-row__meta {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+}
+
+.happy-agent-artifact-row__meta-part {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.happy-agent-artifact-row__meta-dot,
+.happy-agent-artifact-row__meta-time {
+    flex: 0 0 auto;
+}
+
+/* ---- Panel beside a chat ---------------------------------------------- */
+
+.happy-agent-artifacts-panel {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-artifacts-panel__scope {
+    display: flex;
+    flex: 0 0 auto;
+    padding: 8px 12px;
+}
+
+.happy-agent-artifacts-panel__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+
+.happy-agent-artifacts-panel__scroll-viewport {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.happy-agent-artifacts-panel__content {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    gap: 8px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 4px 8px 24px;
+}
+
+.happy-agent-artifacts-panel__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.happy-agent-artifacts-panel__item {
+    display: flex;
+    min-width: 0;
+}
+
+.happy-agent-artifacts-panel__more {
+    display: flex;
+    justify-content: center;
+}
+
+/* ---- Viewer ------------------------------------------------------------ */
+
+.happy-agent-artifact-viewer {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-artifact-viewer__header {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    padding: 0 8px;
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-agent-artifact-viewer__facts {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 12px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-agent-artifact-viewer__glyph {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--happy-radius-sm);
+    background: var(--surface-high);
+    color: var(--text-secondary);
+}
+
+.happy-agent-artifact-viewer__fact-list {
+    display: flex;
+    flex: 1 1 0%;
+    flex-wrap: wrap;
+    gap: 4px 24px;
+    min-width: 0;
+    margin: 0;
+}
+
+.happy-agent-artifact-viewer__fact {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.happy-agent-artifact-viewer__fact dt {
+    color: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.happy-agent-artifact-viewer__fact dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.happy-agent-artifact-viewer__older {
+    display: flex;
+    flex: 1 0 100%;
+}
+
+.happy-agent-artifact-viewer__main {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: row;
+    min-width: 0;
+    min-height: 0;
+}
+
+.happy-agent-artifact-viewer__body {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.happy-agent-artifact-viewer__document {
+    flex: 1 1 0%;
+    min-height: 0;
+    width: 100%;
+    border: 0;
+    background: var(--surface);
+}
+
+.happy-agent-artifact-viewer__fallback {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 720px;
+    padding: 24px;
+}
+
+.happy-agent-artifact-viewer__file-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-md);
+}
+
+.happy-agent-artifact-viewer__file-card-glyph {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--happy-radius-sm);
+    background: var(--surface-high);
+    color: var(--text-secondary);
+}
+
+.happy-agent-artifact-viewer__file-card-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.happy-agent-artifact-viewer__file-card-name {
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-artifact-viewer__file-card-meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/* ---- Static page preview ---------------------------------------------- */
+
+.happy-agent-artifact-html {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    min-height: 0;
+    padding: 8px 0 0;
+}
+
+.happy-agent-artifact-html__notice {
+    display: flex;
+    flex: 0 0 auto;
+    padding: 0 16px;
+}
+
+.happy-agent-artifact-html__frame {
+    flex: 1 1 0%;
+    min-height: 0;
+    width: 100%;
+    border: 0;
+    border-top: 1px solid var(--divider);
+    background: var(--surface);
+}
+
+/* ---- Image series ------------------------------------------------------ */
+
+.happy-agent-artifact-gallery {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.happy-agent-artifact-gallery__stage {
+    display: flex;
+    flex: 1 1 0%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.happy-agent-artifact-gallery__strip {
+    flex: 0 0 auto;
+    width: 100%;
+    border-top: 1px solid var(--divider);
+}
+
+.happy-agent-artifact-gallery__strip-viewport {
+    display: flex;
+    overflow-x: auto;
+}
+
+.happy-agent-artifact-gallery__thumbs {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 8px 12px;
+}
+
+.happy-agent-artifact-gallery__thumb {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 64px;
+    height: 64px;
+    margin: 0;
+    padding: 2px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    border-radius: var(--happy-radius-md);
+    background: var(--surface-high);
+    cursor: pointer;
+}
+
+.happy-agent-artifact-gallery__thumb[aria-pressed="true"] {
+    border-color: var(--text-link);
+}
+
+.happy-agent-artifact-gallery__thumb:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: 2px;
+}
+
+.happy-agent-artifact-gallery__thumb-image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* Parallel to the thumb's corner: its radius less the 4px border-and-padding inset. */
+    border-radius: calc(var(--happy-radius-md) - 4px);
+    object-fit: cover;
+}
+
+/* ---- History column --------------------------------------------------- */
+
+.happy-agent-artifact-history {
+    display: flex;
+    flex: 0 0 260px;
+    flex-direction: column;
+    min-height: 0;
+    border-left: 1px solid var(--divider);
+}
+
+.happy-agent-artifact-history__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+
+.happy-agent-artifact-history__scroll-viewport {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.happy-agent-artifact-history__content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 12px 8px 24px;
+}
+
+.happy-agent-artifact-history__heading {
+    margin: 0;
+    padding: 4px 8px 0;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 16px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.happy-agent-artifact-history__note {
+    margin: 0;
+    padding: 0 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.happy-agent-artifact-history__versions {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-agent-artifact-history__version {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 8px;
+    border: 0;
+    border-radius: var(--happy-radius-md);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.happy-agent-artifact-history__version:hover {
+    background: var(--surface-pressed);
+}
+
+.happy-agent-artifact-history__version[aria-current="true"] {
+    background: var(--surface-selected);
+}
+
+.happy-agent-artifact-history__version:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: -2px;
+}
+
+.happy-agent-artifact-history__version-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.happy-agent-artifact-history__version-number {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 18px;
+}
+
+.happy-agent-artifact-history__version-meta {
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ---- File list --------------------------------------------------------- */
+
+.happy-agent-artifact-files {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-agent-artifact-files__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 2px 0 2px 8px;
+}
+
+.happy-agent-artifact-files__text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.happy-agent-artifact-files__name {
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-artifact-files__meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/* ---- Delete confirmation ---------------------------------------------- */
+
+.happy-agent-artifact-delete-dialog__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.happy-agent-artifact-delete-dialog__message {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.happy-agent-artifact-delete-dialog__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}

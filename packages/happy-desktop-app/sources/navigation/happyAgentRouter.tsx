@@ -380,6 +380,23 @@ const inboxRoute = createRoute({
 });
 
 /**
+ * One machine's published artifacts. The Happy Agent is in the address because
+ * the catalog is that machine's, the way its inbox is.
+ */
+const artifactsRoute = createRoute({
+    component: HappyAgentArtifactsRoute,
+    getParentRoute: () => rootRoute,
+    path: "/artifacts/$happyAgentId",
+});
+
+/** One artifact open in the viewer, on the machine that keeps it. */
+const artifactRoute = createRoute({
+    component: HappyAgentArtifactsRoute,
+    getParentRoute: () => rootRoute,
+    path: "/artifacts/$happyAgentId/$artifactId",
+});
+
+/**
  * The component workbench, addressed without a Happy Agent because it renders component
  * pages rather than anything a machine holds. The route is registered only in a
  * development build, which is also the only build whose sidebar offers it.
@@ -437,6 +454,8 @@ const routeTree = rootRoute.addChildren([
         chatFileRoute,
     ]),
     inboxRoute,
+    artifactsRoute,
+    artifactRoute,
     botCreateRoute,
     taskCreateRoute,
     ...(import.meta.env.DEV ? [blueprintRoute] : []),
@@ -451,6 +470,15 @@ const routeTree = rootRoute.addChildren([
  */
 function HappyAgentInboxRoute() {
     return <HappyAgentWorkspaceLayout inbox />;
+}
+
+/**
+ * The artifact addresses render the same window a conversation does: the shell
+ * and its sidebar stay, and the catalog or the open artifact takes the content
+ * area.
+ */
+function HappyAgentArtifactsRoute() {
+    return <HappyAgentWorkspaceLayout artifacts />;
 }
 
 /**
@@ -477,6 +505,7 @@ function HappyAgentBlueprintRoute() {
 
 function HappyAgentWorkspaceLayout(
     props: {
+        artifacts?: boolean;
         blueprint?: boolean;
         botCreate?: boolean;
         inbox?: boolean;
@@ -524,6 +553,10 @@ function HappyAgentWorkspaceLayout(
             botCreateOpen={props.botCreate}
             taskCreateOpen={props.taskCreate}
             inboxOpen={props.inbox}
+            artifactsOpen={props.artifacts}
+            {...(props.artifacts && params.artifactId !== undefined
+                ? { artifactId: params.artifactId }
+                : {})}
             blueprintOpen={props.blueprint}
             // Offered only where the route exists, which is what puts the
             // workbench row in a development sidebar and nowhere else.
@@ -542,6 +575,31 @@ function HappyAgentWorkspaceLayout(
                     to: "/inbox/$happyAgentId",
                 })
             }
+            onArtifactsOpen={() =>
+                void navigate({
+                    params: { happyAgentId: params.happyAgentId ?? happyAgentDefaultId(context) },
+                    to: "/artifacts/$happyAgentId",
+                })
+            }
+            onArtifactOpen={(happyAgentId, artifactId) =>
+                void navigate({
+                    params: { artifactId, happyAgentId },
+                    to: "/artifacts/$happyAgentId/$artifactId",
+                })
+            }
+            // Leaving an artifact returns to wherever it was opened from — the
+            // catalog, or the chat whose panel listed it. A window opened
+            // straight onto an artifact has nowhere behind it, so it lands on
+            // the catalog.
+            onArtifactClose={(happyAgentId) => {
+                if (router.history.canGoBack()) router.history.back();
+                else
+                    void navigate({
+                        params: { happyAgentId },
+                        replace: true,
+                        to: "/artifacts/$happyAgentId",
+                    });
+            }}
             onUpdateApply={context.onUpdateApply}
             platform={context.platform}
             happyAgentId={params.happyAgentId ?? happyAgentDefaultId(context)}
