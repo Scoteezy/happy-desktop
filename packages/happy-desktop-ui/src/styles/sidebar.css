@@ -1157,6 +1157,37 @@
     background: var(--status-error);
 }
 
+/* Where a voice call is pointing. It wears the live call's own green — the
+   phone in the footer is that colour while a call is up — as an inset ring and
+   a microphone after the name, so it can sit on a selected or unread row
+   without being mistaken for either. The ring is inset so the row keeps its
+   exact box. */
+.happy-sidebar__item[data-voice-focus] {
+    box-shadow: inset 0 0 0 2px var(--success);
+}
+
+.happy-sidebar__item-voice,
+.happy-sidebar__section-voice {
+    display: flex;
+    align-items: center;
+    color: var(--success);
+}
+
+.happy-sidebar__item-voice {
+    flex: none;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+}
+
+/* Takes the heading's free space so the microphone stands beside the label
+   rather than midway between it and the heading's controls. */
+.happy-sidebar__section-voice {
+    flex: 1 1 auto;
+    height: 24px;
+    padding-left: 6px;
+}
+
 /* Meta never claims free space, but it must give space back and it must never
    take more than half the row. A meta longer than the row (a filesystem path,
    say) would otherwise overflow it and — because the label absorbs the row's

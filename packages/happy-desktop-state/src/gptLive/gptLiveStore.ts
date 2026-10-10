@@ -5,6 +5,7 @@ import type {
     GptLiveRuntime,
     GptLiveRuntimeEvent,
     GptLiveTranscriptFragment,
+    GptLiveVoiceFocus,
 } from "./gptLiveRuntime.js";
 import type { ExperimentsStore } from "../experiments/experimentsStore.js";
 import { UserError } from "../types.js";
@@ -37,7 +38,16 @@ export interface GptLiveSnapshot {
     readonly transcripts: readonly GptLiveTranscriptFragment[];
     readonly actionStatus?: string;
     readonly error?: string;
+    /**
+     * What the call is pointing at, separate from the window's own selection.
+     * It lasts until the call points elsewhere, the call ends, or
+     * `GPT_LIVE_VOICE_FOCUS_MS` passes, whichever comes first.
+     */
+    readonly voiceFocus?: GptLiveVoiceFocus;
 }
+
+/** How long a voice highlight stays up when nothing replaces or clears it. */
+export const GPT_LIVE_VOICE_FOCUS_MS = 30_000;
 
 export interface GptLiveStore {
     get(): GptLiveSnapshot;
@@ -105,12 +115,33 @@ export function gptLiveStoreCreate(
     let callController: AbortController | undefined;
     let call: GptLiveCall | undefined;
     let startAfterAvailability = false;
+    let focusTimer: ReturnType<typeof setTimeout> | undefined;
     const publish = (next: GptLiveSnapshot) => {
         snapshot = next;
         for (const listener of listeners) listener();
     };
+    const focusTimerClear = () => {
+        if (focusTimer !== undefined) clearTimeout(focusTimer);
+        focusTimer = undefined;
+    };
+    const focusUpdate = (focus: GptLiveVoiceFocus | null) => {
+        focusTimerClear();
+        const { voiceFocus: _previous, ...rest } = snapshot;
+        if (!focus) {
+            if (snapshot.voiceFocus) publish(rest);
+            return;
+        }
+        publish({ ...rest, voiceFocus: focus });
+        focusTimer = setTimeout(() => {
+            focusTimer = undefined;
+            if (disposed || snapshot.voiceFocus?.id !== focus.id) return;
+            const { voiceFocus: _expired, ...remaining } = snapshot;
+            publish(remaining);
+        }, GPT_LIVE_VOICE_FOCUS_MS);
+    };
     const stop = () => {
         startAfterAvailability = false;
+        focusTimerClear();
         generation++;
         availabilityController?.abort();
         availabilityController = undefined;
@@ -121,7 +152,12 @@ export function gptLiveStoreCreate(
         callController = undefined;
     };
     const idle = (error?: string) => {
-        const { actionStatus: _actionStatus, error: _error, ...rest } = snapshot;
+        const {
+            actionStatus: _actionStatus,
+            error: _error,
+            voiceFocus: _voiceFocus,
+            ...rest
+        } = snapshot;
         publish({
             ...rest,
             status: snapshot.gptLiveEnabled ? (error ? "error" : "idle") : "disabled",
@@ -154,6 +190,11 @@ export function gptLiveStoreCreate(
             }
             case "actionStatusUpdated":
                 publish({ ...snapshot, actionStatus: event.message });
+                break;
+            case "voiceFocusUpdated":
+                // Only a live call points anywhere; a late event from a call
+                // that is still connecting or already ending changes nothing.
+                if (snapshot.status === "active") focusUpdate(event.focus);
                 break;
         }
     };

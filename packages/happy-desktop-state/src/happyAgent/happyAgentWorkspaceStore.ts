@@ -101,12 +101,12 @@ import type {
 import { orderKeyAfter } from "../utils/orderKeyAfter.js";
 import { orderKeySequence } from "../utils/orderKeySequence.js";
 import type {
-    HappyAgentBotCreation,
     HappyAgentProjectArchiveResult,
     HappyAgentWorktreeArchiveResult,
     HappyAgentSessionListSnapshot,
     HappyAgentSessionListStore,
     HappyAgentSessionLocation,
+    HappyAgentTaskCreation,
 } from "./happyAgentSessionListStore.js";
 import type {
     HappyAgentAvatarImage,
@@ -1414,6 +1414,13 @@ export interface HappyAgentVoiceSession {
     draftRead(): ComposerSnapshot | undefined;
     subscribe(listener: () => void): () => void;
     draftAppend(text: string, expectedDraft: string): Promise<void>;
+    /**
+     * Switches the model the next message runs on, the way the composer's
+     * model picker does: effort and speed follow the model, and the draft, its
+     * attachments, the access mode, and any running turn are left alone.
+     * Resolves once the session reports the new model.
+     */
+    modelChange(input: { readonly providerId: string; readonly modelId: string }): Promise<void>;
     [Symbol.dispose](): void;
 }
 
@@ -1500,13 +1507,16 @@ export interface HappyAgentWorkspaceStore {
     draftAppend(sessionId: HappyAgentSessionId, message: string): Promise<void>;
     /** Retains a concrete target for public-text reads, watches and guarded voice drafts. */
     voiceSessionAcquire(sessionId: HappyAgentSessionId): Promise<HappyAgentVoiceSession>;
-    /** Creates in the named group without sending a prompt; the controller then navigates explicitly. */
-    voiceConversationCreate(groupId: HappyAgentGroupId): Promise<HappyAgentSessionLocation>;
-    voiceWorkspaceCreate(projectId: HappyAgentProjectId): Promise<{
-        readonly worktreeId: HappyAgentWorktreeId;
-        readonly location: HappyAgentSessionLocation;
-    }>;
-    voiceBotCreate(name?: string): Promise<HappyAgentBotCreation>;
+    /**
+     * Creates a task the way the sidebar's New task does, its conversation
+     * starting on the named model or else the connection's most recent
+     * selection. Nothing is sent; the controller then opens it and stages its
+     * opening text as a draft.
+     */
+    voiceTaskCreate(input: {
+        readonly name?: string;
+        readonly model?: { readonly providerId: string; readonly modelId: string };
+    }): Promise<HappyAgentTaskCreation>;
     /** Starts the new conversation described by a slot action and optionally submits its prompt. */
     chatStart(input: HappyAgentWorkspaceNewChatInput): Promise<void>;
     /**
@@ -6924,6 +6934,43 @@ export function happyAgentWorkspaceStoreCreate(
                         );
                     current.composerInput({ type: "voiceTextAppended", text });
                 },
+                async modelChange(input) {
+                    // Unlike text, a model change is no answer to a pending
+                    // question, so only a conversation that is not ours or not
+                    // there refuses it.
+                    if (released || disposed)
+                        throw new Error("This conversation is no longer open.");
+                    const refusal = sessionConversationRefusal(sessionId);
+                    if (refusal) throw new Error(refusal);
+                    if (acquired.store.get().session.type !== "ready")
+                        throw new Error("The conversation is not ready.");
+                    const confirmed = () => {
+                        const menus = acquired.store.get().menus;
+                        return (
+                            menus?.currentProviderId === input.providerId &&
+                            menus.currentModelId === input.modelId
+                        );
+                    };
+                    acquired.store.modelUpdate(input);
+                    if (confirmed()) return;
+                    await new Promise<void>((resolve, reject) => {
+                        const timeout = setTimeout(() => {
+                            stop();
+                            reject(new Error("The session did not confirm the new model."));
+                        }, 10_000);
+                        const stop = acquired.store.subscribe(() => {
+                            if (released || disposed) {
+                                clearTimeout(timeout);
+                                stop();
+                                reject(new Error("This conversation is no longer open."));
+                            } else if (confirmed()) {
+                                clearTimeout(timeout);
+                                stop();
+                                resolve();
+                            }
+                        });
+                    });
+                },
                 [Symbol.dispose]() {
                     if (released) return;
                     released = true;
@@ -6931,66 +6978,20 @@ export function happyAgentWorkspaceStoreCreate(
                 },
             };
         },
-        async voiceConversationCreate(groupId) {
-            const refusal = groupConversationRefusalFind(groupId);
-            if (refusal) throw new Error(refusal);
-            const start = groupStartFind(groupId);
-            if (!start) throw new Error("That project or workspace is not ready.");
-            const location = start.worktreeId
-                ? list.worktreeSessionStart(start.worktreeId, start.create)
-                : await list.sessionCreate(start.create);
-            if (!location) throw new Error("The conversation could not be started.");
-            await list.sessionCreationWait(location.sessionId);
-            activityRecord({
-                kind: "conversationCreated",
-                source: "voice",
-                model: activityModel(start.create),
+        async voiceTaskCreate(input) {
+            const loaded = await client.models.load();
+            const latest = client.models.get();
+            const models = latest.type === "ready" ? latest : loaded;
+            // What the sidebar's New task would open on, with the named model
+            // in place of the last one and that model's own effort and speed.
+            const selection = input.model
+                ? client.models.modelSelect(models.lastUsedSelection, input.model)
+                : models.lastUsedSelection;
+            return list.taskCreate({
+                ...(input.name === undefined ? {} : { name: input.name }),
+                selection,
             });
-            await list.sessionsRefresh();
-            return location;
         },
-        async voiceWorkspaceCreate(projectId) {
-            const refusal = groupWorkRefusalFind(projectId);
-            if (refusal) throw new Error(refusal);
-            const worktreeId = list.worktreeCreate(projectId);
-            if (!worktreeId) throw new Error("The workspace could not be requested.");
-            const location = list.worktreeSessionStart(worktreeId, {});
-            if (!location)
-                throw new Error(
-                    "The workspace was requested, but its conversation could not be requested.",
-                );
-            try {
-                await Promise.all([
-                    list.workspaceCreationWait(worktreeId),
-                    list.sessionCreationWait(location.sessionId),
-                ]);
-            } catch (error) {
-                activityRecord({ kind: "workspaceCreated", result: happyAgentActionFailed(error) });
-                throw error;
-            }
-            activityRecord({ kind: "workspaceCreated", result: HAPPY_AGENT_ACTION_OK });
-            await list.sessionsRefresh();
-            return { worktreeId, location };
-        },
-        voiceBotCreate: (name) =>
-            list.botCreate(name ? { name } : {}).then(
-                (created) => {
-                    activityRecord({
-                        kind: "botCreated",
-                        source: "voice",
-                        result: HAPPY_AGENT_ACTION_OK,
-                    });
-                    return created;
-                },
-                (error: unknown) => {
-                    activityRecord({
-                        kind: "botCreated",
-                        source: "voice",
-                        result: happyAgentActionFailed(error),
-                    });
-                    throw error;
-                },
-            ),
         draftUpdate: (sessionId, message) =>
             writeGuard(sessionConversationRefusal(sessionId), () =>
                 withAddressedChat(sessionId, (store) =>

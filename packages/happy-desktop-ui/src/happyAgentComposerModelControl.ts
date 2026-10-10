@@ -1,5 +1,6 @@
 import {
     happyAgentChiefOfStaffRequestText,
+    happyAgentServiceName,
     type HappyAgentChiefOfStaffRequest,
     type HappyAgentMenusSnapshot,
     type HappyAgentModelOption,
@@ -20,26 +21,6 @@ import type {
     ComposerModelUsageWatch,
     ComposerModelUsageWindow,
 } from "./ComposerModelControl";
-
-/** Display names for the provider types the daemon configures. */
-const SERVICE_NAMES: Readonly<Record<string, string>> = {
-    bedrock: "Bedrock",
-    claude: "Claude",
-    codex: "Codex",
-    grok: "Grok",
-};
-
-/** A type without a known display name is shown as the configured key, titled. */
-function serviceName(type: string): string {
-    return (
-        SERVICE_NAMES[type] ??
-        type
-            .split(/[_-]/)
-            .filter(Boolean)
-            .map((part) => part[0]!.toUpperCase() + part.slice(1))
-            .join(" ")
-    );
-}
 
 function choiceOf(option: HappyAgentModelOption): ComposerModelChoice {
     return {
@@ -110,7 +91,7 @@ export function happyAgentComposerModelControlProps(
         if (service === undefined) {
             service = {
                 id: option.providerType,
-                label: serviceName(option.providerType),
+                label: happyAgentServiceName(option.providerType),
                 account: option.providerId,
                 accounts: [],
             };

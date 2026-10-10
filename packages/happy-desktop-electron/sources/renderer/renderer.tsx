@@ -622,6 +622,13 @@ function DesktopScreens(props: DesktopRendererProps) {
         props.attention.get,
         props.attention.get,
     );
+    // Only which machine a voice call points into: the call's transcript moves
+    // many times a second and must not re-render the shell.
+    const voiceFocusConnectionId = useSyncExternalStore(
+        props.gptLive.subscribe,
+        () => props.gptLive.get().voiceFocus?.target.connectionId,
+        () => props.gptLive.get().voiceFocus?.target.connectionId,
+    );
     const main = props.connectionUis.get(LOCAL_HAPPY_AGENT_ID);
     const surfaceWindowState = props.surfaceWindowState;
     // An update of the local daemon does not take the window: the shell stays
@@ -641,6 +648,10 @@ function DesktopScreens(props: DesktopRendererProps) {
                     working: listed.some((conversation) => conversation.activity === "running"),
                     unread: happyAgentEntryUnreadCount(entry, projectsVisibility, attention) > 0,
                     ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
+                    ...(voiceFocusConnectionId === entry.id &&
+                    entry.id !== (directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID)
+                        ? { voiceFocus: true }
+                        : {}),
                 };
             })}
             selectedId={directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID}

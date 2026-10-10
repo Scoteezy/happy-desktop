@@ -164,6 +164,24 @@
     flex: none;
 }
 
+/* Where a voice call is pointing: the live call's green as an inset ring and a
+   microphone after the title. Inset, so the strip's geometry never moves, and
+   distinct from the active tab's ink and the unread dot. */
+.happy-tabs__tab[data-voice-focus] {
+    border-radius: var(--happy-radius-sm);
+    box-shadow: inset 0 0 0 2px var(--success);
+}
+
+.happy-tabs__tab-voice {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--success);
+}
+
 /*
  * The trailing lane, holding what the tab is doing and the control that closes
  * it. One fixed 16px box whichever of them is showing, so a tab starting work,

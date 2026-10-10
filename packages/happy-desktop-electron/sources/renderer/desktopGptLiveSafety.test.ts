@@ -25,8 +25,12 @@ afterEach(() => {
     for (const handle of handles.splice(0)) handle.dispose();
 });
 
-async function fixture(withHistory = false) {
+async function fixture(
+    withHistory = false,
+    configure?: (daemon: ReturnType<typeof fakeHappyAgentDaemonCreate>) => void,
+) {
     const daemon = fakeHappyAgentDaemonCreate();
+    configure?.(daemon);
     const project = daemon.projectSeed({ id: "project-voice", name: "Voice test project" });
     const agent = daemon.agentSeed(project.id, { id: "agent-voice", title: "Voice safety" });
     const other = daemon.agentSeed(project.id, { id: "agent-other", title: "Other task" });
@@ -123,6 +127,7 @@ async function fixture(withHistory = false) {
     return {
         daemon,
         workspace,
+        models: handle.get()!.models,
         voice,
         id,
         group,
@@ -139,7 +144,13 @@ it("serializes the real Desktop public-context projection without reasoning or t
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online: true,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: () => () => {},
@@ -165,7 +176,13 @@ it("reads immutable context during a mutation, stages in the existing composer a
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online: true,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: () => () => {},
@@ -202,12 +219,9 @@ it("reads immutable context during a mutation, stages in the existing composer a
             expect.objectContaining({ type: "actionResult", actionId: request.actionId }),
         );
         controller.actionReceive({ ...request, actionId: "write-during-mutation" });
-        expect(frames).toContainEqual(
-            expect.objectContaining({
-                type: "actionResult",
-                actionId: "write-during-mutation",
-                result: expect.objectContaining({ status: "refused", code: "unavailable" }),
-            }),
+        // Queued behind the running action rather than refused for being busy.
+        expect(frames).not.toContainEqual(
+            expect.objectContaining({ type: "actionResult", actionId: "write-during-mutation" }),
         );
         await vi.waitFor(() =>
             expect(frames).toContainEqual({
@@ -216,6 +230,17 @@ it("reads immutable context during a mutation, stages in the existing composer a
                 result: { status: "succeeded", output: { type: "staged" } },
             }),
         );
+        // It then runs against the draft the first one staged, and refuses.
+        await vi.waitFor(() =>
+            expect(frames).toContainEqual(
+                expect.objectContaining({
+                    type: "actionResult",
+                    actionId: "write-during-mutation",
+                    result: expect.objectContaining({ status: "refused", code: "staleContext" }),
+                }),
+            ),
+        );
+        expect(f.voice.draftRead()?.text).toBe("Review this exact change");
         expect(f.daemon.callCount("sendMessage")).toBe(0);
         expect(f.daemon.callCount("saveAgentDraft")).toBe(0);
         controller.actionReceive(stateRequest);
@@ -295,7 +320,13 @@ it("refuses sessionSend and composerDraftAppend over an existing human draft wit
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online: true,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: () => () => {},
@@ -366,7 +397,13 @@ it("keeps accepted context immutable while real runtime streams focused public t
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online: true,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: () => () => {},
@@ -455,7 +492,13 @@ it.each(["edit", "empty", "submit"] as const)(
                 get: () => ({
                     activeConnectionId: "local",
                     connections: [
-                        { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                        {
+                            id: "local",
+                            name: "Test desktop",
+                            kind: "local" as const,
+                            online: true,
+                            workspace: f.workspace,
+                        },
                     ],
                 }),
                 subscribe: () => () => {},
@@ -518,7 +561,13 @@ it("allows desktopState to recover after a stale mutation refuses before any sid
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: (listener) => {
@@ -587,7 +636,7 @@ it("allows desktopState to recover after a stale mutation refuses before any sid
     }
 });
 
-it.each(["open", "create"] as const)(
+it.each(["open"] as const)(
     "executes real runtime %s then state and exact draft actions using each accepted revision",
     async (first) => {
         const f = await fixture();
@@ -597,7 +646,13 @@ it.each(["open", "create"] as const)(
                 get: () => ({
                     activeConnectionId: "local",
                     connections: [
-                        { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                        {
+                            id: "local",
+                            name: "Test desktop",
+                            kind: "local" as const,
+                            online: true,
+                            workspace: f.workspace,
+                        },
                     ],
                 }),
                 subscribe: () => () => {},
@@ -629,24 +684,23 @@ it.each(["open", "create"] as const)(
                 actionId: "sequence-first",
                 contextRevision: initial,
                 inputTranscriptIds: [],
-                action:
-                    first === "open"
-                        ? {
-                              type: "desktopOpen",
-                              target: {
-                                  kind: "session",
-                                  connectionId: "local",
-                                  groupId: f.group,
-                                  sessionId: f.otherId,
-                              },
-                          }
-                        : {
-                              type: "sessionCreate",
-                              group: { connectionId: "local", groupId: f.group },
-                          },
+                action: {
+                    type: "desktopOpen",
+                    target: {
+                        kind: "session",
+                        connectionId: "local",
+                        groupId: f.group,
+                        sessionId: f.otherId,
+                    },
+                },
             });
-            await vi.waitFor(() =>
-                expect(result("sequence-first")).toMatchObject({ result: { status: "succeeded" } }),
+            // The target is highlighted and held on screen before the view moves.
+            await vi.waitFor(
+                () =>
+                    expect(result("sequence-first")).toMatchObject({
+                        result: { status: "succeeded" },
+                    }),
+                { timeout: 3_000 },
             );
             expect(revision()).toBeGreaterThan(initial);
             const updated = live.sent.findIndex(
@@ -709,7 +763,7 @@ it("cancels a slow Desktop action at fifty seconds and remains able to read stat
     const f = await fixture();
     const frames: Parameters<Parameters<typeof gptLiveControllerCreate>[0]["send"]>[0][] = [];
     const creation = vi
-        .spyOn(f.workspace, "voiceConversationCreate")
+        .spyOn(f.workspace, "voiceTaskCreate")
         .mockImplementation(() => new Promise(() => {}));
     vi.useFakeTimers();
     const controller = gptLiveControllerCreate({
@@ -718,7 +772,13 @@ it("cancels a slow Desktop action at fifty seconds and remains able to read stat
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online: true,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: () => () => {},
@@ -735,7 +795,7 @@ it("cancels a slow Desktop action at fifty seconds and remains able to read stat
             actionId: "slow-create",
             contextRevision: revision,
             inputTranscriptIds: [],
-            action: { type: "sessionCreate", group: { connectionId: "local", groupId: f.group } },
+            action: { type: "taskCreate", connectionId: "local", text: "Look into the slow build" },
         });
         await vi.advanceTimersByTimeAsync(49_999);
         expect(frames.some((frame) => frame.type === "actionResult")).toBe(false);
@@ -782,7 +842,13 @@ it("retains watch selections across disconnection, resumes public updates, and s
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: (listener) => {
@@ -870,12 +936,14 @@ it("keeps watch quota consistent and idempotently disables targets missing from 
                               ? Array.from({ length: 100 }, (_, index) => ({
                                     id: `prefix-${index}`,
                                     name: `Other ${index}`,
+                                    kind: "remote" as const,
                                     online: true,
                                 }))
                               : []),
                           {
                               id: "local",
                               name: "Test desktop",
+                              kind: "local" as const,
                               online: true,
                               workspace: f.workspace,
                           },
@@ -1038,7 +1106,13 @@ it("revalidates the context after asynchronous acquisition before appending or r
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online: true,
+                        workspace: f.workspace,
+                    },
                 ],
             }),
             subscribe: () => () => {},
@@ -1099,21 +1173,29 @@ it("revalidates the context after asynchronous acquisition before appending or r
     }
 });
 
-it("creates one acknowledged session with a local-only prompt and blocks a later permission question", async () => {
-    const f = await fixture();
-    const frames: Parameters<Parameters<typeof gptLiveControllerCreate>[0]["send"]>[0][] = [];
-    const controller = gptLiveControllerCreate({
+function controllerFor(
+    f: Awaited<ReturnType<typeof fixture>>,
+    frames: Parameters<Parameters<typeof gptLiveControllerCreate>[0]["send"]>[0][],
+) {
+    return gptLiveControllerCreate({
         windowId: "window-test",
         source: {
             get: () => ({
                 activeConnectionId: "local",
                 connections: [
-                    { id: "local", name: "Test desktop", online: true, workspace: f.workspace },
+                    {
+                        id: "local",
+                        name: "Test desktop",
+                        kind: "local" as const,
+                        online: true,
+                        workspace: f.workspace,
+                        models: f.models,
+                    },
                 ],
             }),
             subscribe: () => () => {},
             targetOpen: (target) => {
-                if (target.kind === "session" || target.kind === "bot")
+                if (target.kind === "session" || target.kind === "bot" || target.kind === "task")
                     f.workspace.conversationOpen(
                         target.sessionId as HappyAgentSessionId,
                         target.groupId as HappyAgentProjectId,
@@ -1122,42 +1204,86 @@ it("creates one acknowledged session with a local-only prompt and blocks a later
         },
         send: (frame) => frames.push(frame),
         receive: () => {},
+        capabilities: ["appState", "voiceFocus", "taskCreate", "sessionModelChange"],
     });
+}
+
+const resultOf = (
+    frames: Parameters<Parameters<typeof gptLiveControllerCreate>[0]["send"]>[0][],
+    actionId: string,
+) => frames.find((frame) => frame.type === "actionResult" && frame.actionId === actionId);
+
+it("creates one acknowledged task with its opening text as a local-only draft and blocks a later permission question", async () => {
+    const f = await fixture();
+    const frames: Parameters<Parameters<typeof gptLiveControllerCreate>[0]["send"]>[0][] = [];
+    const controller = controllerFor(f, frames);
     let created: Awaited<ReturnType<typeof f.workspace.voiceSessionAcquire>> | undefined;
     try {
-        controller.start();
+        controller.start(["appState", "voiceFocus", "taskCreate", "sessionModelChange"]);
+        await vi.waitFor(() => expect(f.models.get().type).toBe("ready"));
+        // A model the server does not offer is refused before anything is made.
+        controller.actionReceive({
+            type: "actionRequested",
+            actionId: "create-unknown-model",
+            contextRevision: controller.contextRead().revision,
+            inputTranscriptIds: [],
+            action: {
+                type: "taskCreate",
+                connectionId: "local",
+                text: "Approve",
+                model: { providerId: "test-provider", modelId: "no-such-model" },
+            },
+        });
+        await vi.waitFor(() =>
+            expect(resultOf(frames, "create-unknown-model")).toMatchObject({
+                result: { status: "refused", code: "notFound" },
+            }),
+        );
+        expect(f.daemon.callCount("createTask")).toBe(0);
         const request = {
             type: "actionRequested" as const,
             actionId: "create-draft",
             contextRevision: controller.contextRead().revision,
             inputTranscriptIds: [],
             action: {
-                type: "sessionCreate" as const,
-                group: { connectionId: "local", groupId: f.group },
-                prompt: "Approve",
+                type: "taskCreate" as const,
+                connectionId: "local",
+                name: "Approval check",
+                text: "Approve",
+                model: { providerId: "test-provider", modelId: "test-model" },
             },
         };
         controller.actionReceive(request);
         await vi.waitFor(() =>
-            expect(frames).toContainEqual(
-                expect.objectContaining({
-                    type: "actionResult",
-                    actionId: "create-draft",
-                    result: expect.objectContaining({
-                        status: "succeeded",
-                        output: expect.objectContaining({ type: "created" }),
-                    }),
-                }),
-            ),
+            expect(resultOf(frames, "create-draft")).toMatchObject({
+                result: {
+                    status: "succeeded",
+                    output: { type: "created", target: { kind: "task", connectionId: "local" } },
+                },
+            }),
         );
+        const output = resultOf(frames, "create-draft");
+        const target =
+            output?.type === "actionResult" &&
+            output.result.status === "succeeded" &&
+            output.result.output.type === "created"
+                ? output.result.output.target
+                : undefined;
         const newId = f.workspace.get().address.conversationId!;
-        expect(newId).not.toBe(f.id);
+        expect(target).toMatchObject({
+            sessionId: newId,
+            groupId: f.workspace.get().address.groupId,
+        });
+        expect(f.workspace.get().list.tasks.map((task) => task.name)).toContain("Approval check");
         created = await f.workspace.voiceSessionAcquire(newId);
         expect(created.draftRead()).toMatchObject({ text: "Approve", voiceDraft: true });
+        // A repeated request is answered from the ledger, never made again.
         controller.actionReceive(request);
-        expect(f.daemon.callCount("createAgent")).toBe(1);
+        expect(f.daemon.callCount("createTask")).toBe(1);
         expect(f.daemon.callCount("sendMessage")).toBe(0);
-        expect(f.daemon.callCount("saveAgentDraft")).toBe(0);
+        expect(
+            JSON.stringify(f.daemon.calls.filter((call) => call.method === "saveAgentDraft")),
+        ).not.toContain("Approve");
         f.question(newId);
         await vi.waitFor(() => expect(created?.get().pendingUserInputs).toHaveLength(1));
         f.workspace.composerTextSubmit();
@@ -1167,6 +1293,102 @@ it("creates one acknowledged session with a local-only prompt and blocks a later
     } finally {
         controller.close();
         created?.[Symbol.dispose]();
+        f.voice[Symbol.dispose]();
+    }
+});
+
+it("switches the model the next message runs on, keeping the staged draft, and refuses one the session does not offer", async () => {
+    const f = await fixture(false, (daemon) => {
+        const config = daemon.configGet();
+        daemon.configSet({
+            ...config,
+            models: {
+                ...config.models,
+                "second-model": { ...config.models["test-model"]!, name: "Second Model" },
+            },
+            providers: {
+                ...config.providers,
+                "test-provider": {
+                    ...config.providers["test-provider"]!,
+                    models: [
+                        { enabled: true, id: "test-model" },
+                        { enabled: true, id: "second-model" },
+                    ],
+                },
+            },
+        });
+    });
+    const frames: Parameters<Parameters<typeof gptLiveControllerCreate>[0]["send"]>[0][] = [];
+    const controller = controllerFor(f, frames);
+    const target = { connectionId: "local", groupId: f.group, sessionId: f.id };
+    const request = (
+        actionId: string,
+        action: Parameters<typeof controller.actionReceive>[0]["action"],
+    ) => ({
+        type: "actionRequested" as const,
+        actionId,
+        contextRevision: controller.contextRead().revision,
+        inputTranscriptIds: [],
+        action,
+    });
+    try {
+        controller.start(["appState", "voiceFocus", "taskCreate", "sessionModelChange"]);
+        controller.actionReceive(
+            request("stage", {
+                type: "composerDraftAppend",
+                target,
+                text: "Keep this voice draft",
+            }),
+        );
+        await vi.waitFor(() =>
+            expect(resultOf(frames, "stage")).toMatchObject({ result: { status: "succeeded" } }),
+        );
+        await vi.waitFor(() =>
+            expect(f.voice.get().menus?.modelOptions.map((option) => option.modelId)).toContain(
+                "second-model",
+            ),
+        );
+        controller.actionReceive(
+            request("missing", {
+                type: "sessionModelChange",
+                target,
+                providerId: "test-provider",
+                modelId: "no-such-model",
+            }),
+        );
+        await vi.waitFor(() =>
+            expect(resultOf(frames, "missing")).toMatchObject({
+                result: { status: "refused", code: "notFound" },
+            }),
+        );
+        expect(f.voice.get().menus?.currentModelId).toBe("test-model");
+        controller.actionReceive(
+            request("switch", {
+                type: "sessionModelChange",
+                target,
+                providerId: "test-provider",
+                modelId: "second-model",
+            }),
+        );
+        await vi.waitFor(() =>
+            expect(resultOf(frames, "switch")).toEqual({
+                type: "actionResult",
+                actionId: "switch",
+                result: { status: "succeeded", output: { type: "ack" } },
+            }),
+        );
+        expect(f.voice.get().menus?.currentModelId).toBe("second-model");
+        expect(f.voice.draftRead()).toMatchObject({
+            text: "Keep this voice draft",
+            voiceDraft: true,
+        });
+        expect(f.daemon.callCount("sendMessage")).toBe(0);
+        // The switch goes through the composer's own path; the voice text stays local.
+        expect(
+            JSON.stringify(f.daemon.calls.filter((call) => call.method === "saveAgentDraft")),
+        ).not.toContain("Keep this voice draft");
+    } finally {
+        controller.close();
         f.voice[Symbol.dispose]();
     }
 });

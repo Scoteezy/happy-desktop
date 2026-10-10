@@ -71,6 +71,11 @@ export type TabItem = {
      * same for as long as the entity does. `icon` outranks it.
      */
     avatarId?: string;
+    /**
+     * The tab is what a voice call is pointing at. Its own ring and microphone,
+     * never the active or unread treatment.
+     */
+    voiceFocus?: boolean;
 };
 
 /**
@@ -647,6 +652,7 @@ export function Tabs(props: TabsProps) {
                         data-active={active() ? "" : undefined}
                         data-carried={dragged() && drag?.carried ? "" : undefined}
                         data-dragged={dragged() ? "" : undefined}
+                        data-voice-focus={tab.voiceFocus ? "" : undefined}
                         data-happy-desktop-ui="tab"
                         data-preview={tab.preview ? "" : undefined}
                         data-reorderable={local.onReorder || movable(tab) ? "" : undefined}
@@ -692,6 +698,16 @@ export function Tabs(props: TabsProps) {
                                 tab.label
                             )}
                         </span>
+                        {tab.voiceFocus ? (
+                            <span
+                                aria-label="Voice focus"
+                                className="happy-tabs__tab-voice"
+                                data-happy-desktop-ui="tab-voice"
+                                role="img"
+                            >
+                                <Icon name="mic" size={12} />
+                            </span>
+                        ) : null}
                         {tab.badge !== undefined ? (
                             <CountBadge
                                 className="happy-tabs__tab-badge"

@@ -172,6 +172,13 @@ export type SidebarItem = {
      * asked not to.
      */
     muted?: boolean;
+    /**
+     * The row is what a voice call is pointing at right now. It is its own
+     * mark — a ring and a microphone after the name — and never borrows the
+     * selected or unread treatment: the reader is told where voice is about to
+     * go without the sidebar claiming they already went there.
+     */
+    voiceFocus?: boolean;
 };
 /**
  * Left inset of the row content at depth 0. It is the shared row padding —
@@ -320,6 +327,11 @@ export type SidebarSection = {
      * it, and a reader shown "nothing here" would believe the wrong thing.
      */
     error?: string;
+    /**
+     * A voice call is pointing at a row this section is not showing — the list
+     * is folded away — so the heading carries the microphone for it.
+     */
+    voiceFocus?: boolean;
 };
 
 /** One visible sidebar destination the caller wants Command-numbered. */
@@ -1284,6 +1296,7 @@ function SidebarRow({
             data-shortcut-row={props.shortcut ? "" : undefined}
             data-unread={unread() ? "" : undefined}
             data-muted={item().muted ? "" : undefined}
+            data-voice-focus={item().voiceFocus ? "" : undefined}
             data-dragging={props.dragging ? "" : undefined}
             data-grabbed={props.grabbed ? "" : undefined}
             onClick={() => props.onSelect(item().id)}
@@ -1420,6 +1433,16 @@ function SidebarRow({
                     item().label
                 )}
             </span>
+            {item().voiceFocus ? (
+                <span
+                    aria-label="Voice focus"
+                    className="happy-sidebar__item-voice"
+                    data-happy-desktop-ui="sidebar-item-voice"
+                    role="img"
+                >
+                    <Icon name="mic" size={12} />
+                </span>
+            ) : null}
             {props.shortcut ? (
                 <KeyCap
                     className="happy-sidebar__item-shortcut"
@@ -2396,6 +2419,16 @@ export function Sidebar(props: SidebarProps) {
                                         >
                                             {section.label}
                                         </span>
+                                        {section.voiceFocus ? (
+                                            <span
+                                                aria-label="Voice focus inside"
+                                                className="happy-sidebar__section-voice"
+                                                data-happy-desktop-ui="sidebar-section-voice"
+                                                role="img"
+                                            >
+                                                <Icon name="mic" size={12} />
+                                            </span>
+                                        ) : null}
                                         {section.action || section.secondaryAction ? (
                                             // The controls share one lane, a row's
                                             // control gap apart, and the lane rather

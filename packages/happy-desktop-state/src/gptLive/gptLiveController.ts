@@ -6,17 +6,15 @@ import type {
     LiveDesktopTarget,
     LiveSessionRef,
 } from "@slopus/happy-agent-client";
-import type {
-    HappyAgentGroupId,
-    HappyAgentProjectId,
-    HappyAgentSessionId,
-} from "../happyAgent/happyAgentTypes.js";
+import type { HappyAgentSessionId } from "../happyAgent/happyAgentTypes.js";
 import type {
     HappyAgentVoiceSession,
     HappyAgentWorkspaceStore,
 } from "../happyAgent/happyAgentWorkspaceStore.js";
+import type { HappyAgentModelStore } from "../happyAgent/happyAgentModelStore.js";
+import { gptLiveAppStateRead, type GptLiveAppState } from "./gptLiveAppState.js";
 import type { GptLiveDesktopSource } from "./gptLiveDesktopSource.js";
-import type { GptLiveRuntimeEvent } from "./gptLiveRuntime.js";
+import type { GptLiveRuntimeEvent, GptLiveVoiceFocus } from "./gptLiveRuntime.js";
 import {
     gptLiveContextDecisionKey,
     gptLiveDesktopContextRead,
@@ -27,19 +25,80 @@ import {
 } from "./gptLiveDesktopContext.js";
 
 type Request = Extract<LiveControlServerMessage, { type: "actionRequested" }>;
+type VoiceFocusFrame = Extract<LiveControlServerMessage, { type: "voiceFocus" }>;
 type RefusalCode = Extract<LiveDesktopActionResult, { code: string }>["code"];
 class Refusal extends Error {
     constructor(
         readonly code: RefusalCode,
         message: string,
+        readonly status: "refused" | "cancelled" = "refused",
     ) {
         super(message);
     }
 }
 const refKey = (target: LiveSessionRef) =>
     JSON.stringify([target.connectionId, target.groupId, target.sessionId]);
+/** Field by field, so two equal targets compare equal whatever order their keys arrived in. */
+const targetKey = (target: LiveDesktopTarget | null) =>
+    target === null
+        ? "null"
+        : JSON.stringify([
+              target.kind,
+              target.connectionId,
+              target.groupId,
+              "sessionId" in target ? target.sessionId : null,
+              "projectId" in target ? target.projectId : null,
+              "workspaceId" in target ? target.workspaceId : null,
+              "botId" in target ? target.botId : null,
+              "taskId" in target ? target.taskId : null,
+          ]);
 const targetEqual = (a: LiveDesktopTarget | null, b: LiveDesktopTarget | null) =>
-    JSON.stringify(a) === JSON.stringify(b);
+    targetKey(a) === targetKey(b);
+
+/** What this desktop can do beyond the base protocol, offered to a Happy Agent that lists them. */
+export const GPT_LIVE_DESKTOP_CAPABILITIES = [
+    "appState",
+    "voiceFocus",
+    "taskCreate",
+    "sessionModelChange",
+] as const;
+
+/** How long a navigation target stays highlighted before the window turns to it. */
+export const GPT_LIVE_NAVIGATION_HOLD_MS = 500;
+/** How long an opened conversation may take to load before its opening is reported anyway. */
+export const GPT_LIVE_OPEN_LOAD_MS = 5_000;
+/** AppState cadences: what is listed and focused, then how it is doing. */
+const APP_STATE_STRUCTURE_MS = 250;
+const APP_STATE_ACTIVITY_MS = 1_000;
+
+/** The parts of AppState whose change is worth a quick push: what exists, and what is on screen. */
+function appStateStructureKey(appState: GptLiveAppState): string {
+    const session = (item: { target: unknown; title: string | null }) => [item.target, item.title];
+    return JSON.stringify([
+        appState.timeZone,
+        appState.truncated,
+        appState.focused?.target ?? null,
+        appState.servers.map((server) => [
+            server.connectionId,
+            server.name,
+            server.online,
+            server.catalog,
+            server.models,
+            server.bots.map((bot) => [bot.target, bot.name]),
+            server.tasks.map((task) => [task.target, task.name]),
+            server.projects.map((project) => [
+                project.target,
+                project.name,
+                project.sessions.map(session),
+                project.workspaces.map((workspace) => [
+                    workspace.target,
+                    workspace.name,
+                    workspace.sessions.map(session),
+                ]),
+            ]),
+        ]),
+    ]);
+}
 
 /** Cancels the local waiter, never an already-issued Desktop/server mutation. */
 function duringCall<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -61,8 +120,13 @@ function duringCall<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
 
 export interface GptLiveController {
     contextRead(): { revision: number; context: LiveDesktopContext };
-    start(): void;
+    /** The window as voice should first see it, for the request that opens the call. */
+    appStateRead(): GptLiveAppState;
+    /** Begins delivery once the Happy Agent has said which capabilities it accepted. */
+    start(capabilities?: readonly string[]): void;
     actionReceive(request: Request): void;
+    /** Points the window at what voice is talking about; it never moves the window. */
+    focusReceive(frame: VoiceFocusFrame): void;
     close(): void;
 }
 
@@ -72,11 +136,16 @@ export function gptLiveControllerCreate(options: {
     readonly source: GptLiveDesktopSource;
     readonly send: (message: LiveControlClientMessage) => void;
     readonly receive: (event: GptLiveRuntimeEvent) => void;
+    /** What the opening request offers; `start` narrows it to what was accepted. None by default. */
+    readonly capabilities?: readonly string[];
 }): GptLiveController {
     const { source } = options;
     let closed = false;
     let started = false;
     let revision = 1;
+    let capabilities = new Set(options.capabilities ?? []);
+    const contextOf = () =>
+        gptLiveDesktopContextRead(options.windowId, source, capabilities.has("appState"));
     const decisionRead = (context: LiveDesktopContext) => {
         const active = source
             .get()
@@ -95,16 +164,31 @@ export function gptLiveControllerCreate(options: {
                     : null,
         });
     };
-    let acceptedContext = gptLiveDesktopContextRead(options.windowId, source);
+    let acceptedContext = contextOf();
     let decision = decisionRead(acceptedContext);
     let publishedRevision = 0;
     let activeUpdateKey: string | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let sourceStop: (() => void) | undefined;
-    let busy:
-        | { id: string; abort: AbortController; timer: ReturnType<typeof setTimeout> }
-        | undefined;
+    // AppState goes out whole and unrevisioned: a change in what is listed or
+    // focused within a quarter second, a change in status, activity, or the
+    // newest message within a second, and an unchanged one not at all.
+    let appStateTimer: ReturnType<typeof setTimeout> | undefined;
+    let appStateSentAt = 0;
+    let appStateSentKey: string | undefined;
+    let appStateSentStructure: string | undefined;
+    /**
+     * What voice last pointed at, and when that highlight was first on
+     * screen, so a navigation to a target already showing does not hold again.
+     */
+    let focus: (GptLiveVoiceFocus & { shownAt?: number }) | undefined;
+    const focusListeners = new Set<() => void>();
+    type Queued = { request: Request; abort: AbortController };
+    /** Actions run one at a time, in arrival order; a second request waits rather than being refused. */
+    const queue: Queued[] = [];
+    let running: (Queued & { timer: ReturnType<typeof setTimeout> }) | undefined;
     const workspaceStops = new Map<HappyAgentWorkspaceStore, () => void>();
+    const modelStops = new Map<HappyAgentModelStore, () => void>();
     const ledger = new Map<string, LiveDesktopActionResult | undefined>();
     type Watch = {
         target: LiveSessionRef;
@@ -136,7 +220,7 @@ export function gptLiveControllerCreate(options: {
         options.send(message);
     };
     const contextRead = () => {
-        const context = gptLiveDesktopContextRead(options.windowId, source);
+        const context = contextOf();
         const next = decisionRead(context);
         if (next !== decision) {
             decision = next;
@@ -172,7 +256,7 @@ export function gptLiveControllerCreate(options: {
         }
         // The focused conversation is always live; explicit watches are only
         // needed to retain additional conversations after navigating away.
-        const latest = gptLiveDesktopContextRead(options.windowId, source);
+        const latest = contextOf();
         const active = latest.activeSession;
         const activeOnline =
             active &&
@@ -208,10 +292,40 @@ export function gptLiveControllerCreate(options: {
             send(sessionUpdate(watch.target, watch.handle));
         }
     };
+    const appStateEnabled = () => started && !closed && capabilities.has("appState");
+    /**
+     * Sends AppState when it differs from what voice last heard. `now` is for
+     * a result about to be reported, which must not be read against an older
+     * picture; otherwise only a change in what is listed or focused goes at
+     * once, and one in status or activity waits out the slower cadence.
+     */
+    const appStateFlush = (now = false) => {
+        if (appStateTimer !== undefined) clearTimeout(appStateTimer);
+        appStateTimer = undefined;
+        if (!appStateEnabled()) return;
+        const appState = gptLiveAppStateRead(source);
+        const key = JSON.stringify(appState);
+        if (key === appStateSentKey) return;
+        const structure = appStateStructureKey(appState);
+        const wait = appStateSentAt + APP_STATE_ACTIVITY_MS - Date.now();
+        if (!now && structure === appStateSentStructure && wait > 0) {
+            appStateTimer = setTimeout(() => appStateFlush(), wait);
+            return;
+        }
+        send({ type: "appState", appState });
+        appStateSentKey = key;
+        appStateSentStructure = structure;
+        appStateSentAt = Date.now();
+    };
+    const appStateSchedule = () => {
+        if (appStateEnabled() && appStateTimer === undefined)
+            appStateTimer = setTimeout(() => appStateFlush(), APP_STATE_STRUCTURE_MS);
+    };
     const schedule = () => {
         if (closed || !started) return;
         contextRead(); // Stale-intent protection is synchronous even while delivery is coalesced.
         if (timer === undefined) timer = setTimeout(flush, 250);
+        appStateSchedule();
     };
     const follow = () => {
         const connections = source.get().connections;
@@ -220,6 +334,17 @@ export function gptLiveControllerCreate(options: {
                 connection.workspace ? [connection.workspace] : [],
             ),
         );
+        // Models are part of AppState only; a catalog change moves no decision.
+        const wantedModels = new Set(
+            connections.flatMap((connection) => (connection.models ? [connection.models] : [])),
+        );
+        for (const [models, stop] of modelStops)
+            if (!wantedModels.has(models)) {
+                stop();
+                modelStops.delete(models);
+            }
+        for (const models of wantedModels)
+            if (!modelStops.has(models)) modelStops.set(models, models.subscribe(appStateSchedule));
         for (const [key, watch] of watches) {
             const connection = connections.find((item) => item.id === watch.target.connectionId);
             if (connection?.online && connection.workspace === watch.workspace) continue;
@@ -370,6 +495,50 @@ export function gptLiveControllerCreate(options: {
             else if (signal.aborted) aborted();
             else observe();
         });
+    /**
+     * Waits for a conversation just opened to load, so the context sent before
+     * the result already describes it and the load cannot stale an action voice
+     * sends next. The window has moved either way: one slower than
+     * `GPT_LIVE_OPEN_LOAD_MS`, or one the reader has already left, is reported
+     * opened and loads in its own time.
+     */
+    const conversationLoaded = (target: LiveSessionRef, signal: AbortSignal) =>
+        new Promise<void>((resolve, reject) => {
+            if (signal.aborted) {
+                reject(new Refusal("ended", "This voice call or action has ended."));
+                return;
+            }
+            const { workspace } = connectionFind(target.connectionId);
+            let stop = () => {};
+            let settled = false;
+            const done = (error?: Refusal) => {
+                if (settled) return;
+                settled = true;
+                stop();
+                clearTimeout(timeout);
+                signal.removeEventListener("abort", aborted);
+                if (error) reject(error);
+                else resolve();
+            };
+            const aborted = () =>
+                done(new Refusal("ended", "This voice call or action has ended."));
+            const observe = () => {
+                const snapshot = workspace.get();
+                const conversation = snapshot.conversation;
+                if (
+                    snapshot.address.conversationId !== target.sessionId ||
+                    conversation.type === "error" ||
+                    (conversation.type === "ready" &&
+                        conversation.value.conversationId === target.sessionId)
+                )
+                    done();
+            };
+            const timeout = setTimeout(() => done(), GPT_LIVE_OPEN_LOAD_MS);
+            signal.addEventListener("abort", aborted, { once: true });
+            stop = workspace.subscribe(observe);
+            if (settled) stop();
+            else observe();
+        });
     const acquire = async (target: LiveSessionRef, signal: AbortSignal) => {
         const { workspace } = sessionFind(target);
         const operation = workspace.voiceSessionAcquire(target.sessionId as HappyAgentSessionId);
@@ -399,7 +568,63 @@ export function gptLiveControllerCreate(options: {
         // Make navigation/draft/creation decisions visible before the model can
         // issue its next action in response to this terminal result.
         flush();
+        appStateFlush(true);
         send({ type: "actionResult", actionId: id, result });
+    };
+    /** Publishes what voice points at, and notes when the window first painted it. */
+    const focusPublish = (next: GptLiveVoiceFocus | undefined) => {
+        const same = focus && next && targetEqual(focus.target, next.target);
+        const shownAt = same ? focus?.shownAt : undefined;
+        focus = next && { ...next, ...(shownAt === undefined ? {} : { shownAt }) };
+        options.receive({ type: "voiceFocusUpdated", focus: next ?? null });
+        for (const listener of focusListeners) listener();
+        if (!focus || focus.shownAt !== undefined) return;
+        const published = focus;
+        void (source.paint?.() ?? Promise.resolve()).then(() => {
+            if (focus === published) published.shownAt = Date.now();
+        });
+    };
+    /**
+     * Holds a navigation until its target has been highlighted long enough to
+     * be seen. Ending the call, or voice pointing somewhere else meanwhile,
+     * cancels it before anything moves.
+     */
+    const navigationHold = async (target: LiveDesktopTarget, id: string, signal: AbortSignal) => {
+        if (!focus || !targetEqual(focus.target, target))
+            focusPublish({ id: `navigation-${id}`, target, reason: "navigation" });
+        const held = focus!;
+        // Already on screen long enough, as when voice named it on arrival.
+        if (held.shownAt !== undefined && Date.now() - held.shownAt >= GPT_LIVE_NAVIGATION_HOLD_MS)
+            return;
+        const cancelled = () =>
+            new Refusal(
+                "ended",
+                "Navigation was cancelled before the view moved: voice pointed elsewhere or the call ended.",
+                "cancelled",
+            );
+        await new Promise<void>((resolve, reject) => {
+            let timeout: ReturnType<typeof setTimeout> | undefined;
+            const done = (error?: Refusal) => {
+                if (timeout !== undefined) clearTimeout(timeout);
+                signal.removeEventListener("abort", aborted);
+                focusListeners.delete(retargeted);
+                if (error) reject(error);
+                else resolve();
+            };
+            const aborted = () => done(cancelled());
+            const retargeted = () => {
+                if (!focus || !targetEqual(focus.target, target)) done(cancelled());
+            };
+            signal.addEventListener("abort", aborted, { once: true });
+            focusListeners.add(retargeted);
+            void (source.paint?.() ?? Promise.resolve()).then(() => {
+                if (signal.aborted || !focus || !targetEqual(focus.target, target)) return;
+                held.shownAt ??= Date.now();
+                const remaining = GPT_LIVE_NAVIGATION_HOLD_MS - (Date.now() - held.shownAt);
+                if (remaining <= 0) done();
+                else timeout = setTimeout(() => done(), remaining);
+            });
+        });
     };
     const creationFinish = async (
         target: LiveDesktopTarget,
@@ -419,7 +644,8 @@ export function gptLiveControllerCreate(options: {
                     `Created ${target.kind} in ${target.connectionId}, but the view changed. Do not repeat creation; find it in the Desktop catalog.`,
                 );
             await duringCall(Promise.resolve(source.targetOpen(target)), signal);
-            if (target.kind === "session" || target.kind === "bot") {
+            if (target.kind === "session" || target.kind === "bot" || target.kind === "task") {
+                await conversationLoaded(target, signal);
                 const connection = sessionFind(target, true);
                 activeCheck(target, connection.workspace);
                 if (prompt) {
@@ -475,106 +701,158 @@ export function gptLiveControllerCreate(options: {
             watches.delete(key);
             return { status: "succeeded", output: { type: "ack" } };
         }
+        // Older Happy Agents may still ask; voice now makes tasks instead.
+        if (
+            action.type === "workspaceCreate" ||
+            action.type === "sessionCreate" ||
+            action.type === "botCreate"
+        )
+            throw new Refusal(
+                "unavailable",
+                "Voice no longer creates workspaces, sessions, or bots. Nothing was created.",
+            );
         check(request.contextRevision, signal);
         if (action.type === "desktopOpen") {
-            const current = contextRead().context;
             const target = action.target;
-            const listed =
-                target.kind === "project"
-                    ? current.projects.some((item) => targetEqual(item.target, target))
-                    : target.kind === "workspace"
-                      ? current.workspaces.some((item) => targetEqual(item.target, target))
-                      : target.kind === "bot"
-                        ? current.bots.some((item) => targetEqual(item.target, target))
-                        : current.sessions.some((item) => refKey(item.target) === refKey(target));
-            if (!listed)
+            const listed = () => {
+                const current = contextRead().context;
+                if (target.kind === "project")
+                    return current.projects.some((item) => targetEqual(item.target, target));
+                if (target.kind === "workspace")
+                    return current.workspaces.some((item) => targetEqual(item.target, target));
+                if (target.kind === "bot")
+                    return current.bots.some((item) => targetEqual(item.target, target));
+                if (target.kind === "task")
+                    return (
+                        source
+                            .get()
+                            .connections.find((item) => item.id === target.connectionId)
+                            ?.workspace?.get()
+                            .list.tasks.some(
+                                (task) =>
+                                    task.id === target.taskId &&
+                                    task.workspaceId === target.groupId &&
+                                    task.conversation.id === target.sessionId,
+                            ) ?? false
+                    );
+                return current.sessions.some((item) => refKey(item.target) === refKey(target));
+            };
+            if (!listed())
                 throw new Refusal(
                     "notFound",
                     "The requested target is not in the current Desktop context.",
                 );
             connectionFind(target.connectionId);
+            // Highlight, let it paint and be seen, then look again: the hold is
+            // long enough for the reader or the window to have moved.
+            await navigationHold(target, request.actionId, signal);
+            check(request.contextRevision, signal);
+            if (!listed())
+                throw new Refusal(
+                    "notFound",
+                    "The requested target left the Desktop context before the view moved.",
+                );
             await duringCall(Promise.resolve(source.targetOpen(target)), signal);
             if (!targetEqual(contextRead().context.activeTarget, target))
                 throw new Refusal(
                     "failed",
                     "Navigation was requested, but the view changed before the target could be verified. Inspect the current Desktop state.",
                 );
+            if (target.kind === "session" || target.kind === "bot" || target.kind === "task")
+                await conversationLoaded(target, signal);
             options.receive({ type: "actionStatusUpdated", message: `Opened ${target.kind}.` });
             return { status: "succeeded", output: { type: "ack" } };
         }
-        if (
-            action.type === "workspaceCreate" ||
-            action.type === "sessionCreate" ||
-            action.type === "botCreate"
-        ) {
-            const before = contextRead().context.activeTarget;
-            if (action.type === "workspaceCreate") {
-                const { workspace } = connectionFind(action.project.connectionId, true);
+        if (action.type === "taskCreate") {
+            const { workspace, models } = connectionFind(action.connectionId, true);
+            const model = action.model;
+            if (model) {
+                const snapshot = models?.get();
                 if (
-                    !contextRead().context.projects.some(
-                        (item) =>
-                            item.target.connectionId === action.project.connectionId &&
-                            item.target.projectId === action.project.projectId,
-                    )
-                )
-                    throw new Refusal("notFound", "That project is not listed.");
-                const created = await duringCall(
-                    workspace.voiceWorkspaceCreate(action.project.projectId as HappyAgentProjectId),
-                    signal,
-                );
-                return creationFinish(
-                    {
-                        kind: "workspace",
-                        connectionId: action.project.connectionId,
-                        projectId: action.project.projectId,
-                        groupId: created.location.groupId,
-                        workspaceId: created.worktreeId,
-                    },
-                    undefined,
-                    before,
-                    signal,
-                );
-            }
-            if (action.type === "sessionCreate") {
-                const { workspace } = connectionFind(action.group.connectionId, true);
-                const current = contextRead().context;
-                if (
-                    ![...current.projects, ...current.workspaces].some(
-                        (item) =>
-                            item.target.connectionId === action.group.connectionId &&
-                            item.target.groupId === action.group.groupId,
+                    snapshot?.type !== "ready" ||
+                    !snapshot.menus.modelOptions.some(
+                        (option) =>
+                            !option.disabled &&
+                            option.providerId === model.providerId &&
+                            option.modelId === model.modelId,
                     )
                 )
                     throw new Refusal(
                         "notFound",
-                        "That group is not listed or does not accept another conversation.",
+                        "That model is not offered on this server. Nothing was created.",
                     );
-                const created = await duringCall(
-                    workspace.voiceConversationCreate(action.group.groupId as HappyAgentGroupId),
-                    signal,
-                );
-                return creationFinish(
-                    { kind: "session", connectionId: action.group.connectionId, ...created },
-                    action.prompt,
-                    before,
-                    signal,
-                );
             }
-            const { workspace } = connectionFind(action.connectionId, true);
-            const created = await duringCall(workspace.voiceBotCreate(action.name), signal);
+            const before = contextRead().context.activeTarget;
+            const created = await duringCall(
+                workspace.voiceTaskCreate({
+                    ...(action.name === undefined ? {} : { name: action.name }),
+                    ...(model
+                        ? { model: { providerId: model.providerId, modelId: model.modelId } }
+                        : {}),
+                }),
+                signal,
+            );
             return creationFinish(
                 {
-                    kind: "bot",
+                    kind: "task",
                     connectionId: action.connectionId,
-                    botId: created.botId,
-                    ...created.location,
+                    groupId: created.location.groupId,
+                    sessionId: created.location.sessionId,
+                    taskId: created.taskId,
                 },
-                action.prompt,
+                action.text,
                 before,
                 signal,
             );
         }
         const target = action.target;
+        if (action.type === "sessionModelChange") {
+            connectionFind(target.connectionId, true);
+            sessionFind(target);
+            const handle = await acquire(target, signal);
+            try {
+                check(request.contextRevision, signal);
+                const snapshot = handle.get();
+                if (snapshot.modelLocked)
+                    throw new Refusal(
+                        "unavailable",
+                        "This conversation's model is locked and cannot be changed.",
+                    );
+                const option = snapshot.menus?.modelOptions.find(
+                    (item) =>
+                        !item.disabled &&
+                        item.providerId === action.providerId &&
+                        item.modelId === action.modelId,
+                );
+                if (!option)
+                    throw new Refusal(
+                        "notFound",
+                        "That model is not offered for this conversation. Nothing was changed.",
+                    );
+                // The picker's own path: the next message runs on it; a turn
+                // already running is not touched, nor is the draft.
+                await duringCall(
+                    handle.modelChange({ providerId: option.providerId, modelId: option.modelId }),
+                    signal,
+                ).catch((error: unknown) => {
+                    throw error instanceof Refusal
+                        ? error
+                        : new Refusal(
+                              "failed",
+                              error instanceof Error
+                                  ? error.message
+                                  : "The model could not be changed.",
+                          );
+                });
+                options.receive({
+                    type: "actionStatusUpdated",
+                    message: `The next message uses ${option.name}; the draft was kept.`,
+                });
+                return { status: "succeeded", output: { type: "ack" } };
+            } finally {
+                handle[Symbol.dispose]();
+            }
+        }
         const connection = sessionFind(
             target,
             action.type === "sessionSend" || action.type === "composerDraftAppend",
@@ -657,13 +935,67 @@ export function gptLiveControllerCreate(options: {
             if (!retained) handle[Symbol.dispose]();
         }
     };
+    /** Starts the oldest waiting action once nothing else runs. */
+    const next = () => {
+        if (closed || running) return;
+        const queued = queue.shift();
+        if (!queued) return;
+        const { request, abort } = queued;
+        const timeout = setTimeout(() => {
+            abort.abort();
+            finish(request.actionId, {
+                status: "cancelled",
+                code: "ended",
+                message:
+                    "The action timed out; already-started creation is not undone. Do not automatically repeat it.",
+            });
+        }, 50_000);
+        running = { ...queued, timer: timeout };
+        void Promise.resolve()
+            .then(() => {
+                if (request.action.type === "desktopState")
+                    throw new Error("Desktop state reads are answered on arrival.");
+                return execute({ ...request, action: request.action }, abort.signal);
+            })
+            .then(
+                (result) => finish(request.actionId, result),
+                (error: unknown) =>
+                    finish(request.actionId, {
+                        status: error instanceof Refusal ? error.status : "failed",
+                        code: error instanceof Refusal ? error.code : "failed",
+                        message:
+                            error instanceof Refusal
+                                ? error.message.slice(0, 1024)
+                                : "The Desktop action failed. Check its visible state before trying again.",
+                    }),
+            )
+            .finally(() => {
+                clearTimeout(timeout);
+                if (running?.request.actionId === request.actionId) running = undefined;
+                schedule();
+                next();
+            });
+    };
     return {
         contextRead,
-        start() {
+        appStateRead: () => gptLiveAppStateRead(source),
+        start(accepted = []) {
             if (closed || started) return;
+            capabilities = new Set(accepted.filter((item) => capabilities.has(item)));
             started = true;
             sourceStop = source.subscribe(follow);
             follow();
+            // The opening request carried AppState already; this is only a
+            // correction if the window moved while the call connected.
+            appStateFlush(true);
+        },
+        focusReceive(frame) {
+            if (closed || !started || !capabilities.has("voiceFocus")) return;
+            focusPublish(
+                frame.target
+                    ? { id: frame.focusId, target: frame.target, reason: frame.reason }
+                    : undefined,
+            );
         },
         actionReceive(request) {
             if (closed || !started) return;
@@ -695,56 +1027,28 @@ export function gptLiveControllerCreate(options: {
                 });
                 return;
             }
-            if (busy) {
-                finish(request.actionId, {
-                    status: "refused",
-                    code: "unavailable",
-                    message: "Another Desktop action is still finishing.",
-                });
-                return;
-            }
-            const abort = new AbortController();
-            const timeout = setTimeout(() => {
-                abort.abort();
-                finish(request.actionId, {
-                    status: "cancelled",
-                    code: "ended",
-                    message:
-                        "The action timed out; already-started creation is not undone. Do not automatically repeat it.",
-                });
-            }, 50_000);
-            busy = { id: request.actionId, abort, timer: timeout };
-            void execute({ ...request, action: request.action }, abort.signal)
-                .then(
-                    (result) => finish(request.actionId, result),
-                    (error: unknown) =>
-                        finish(request.actionId, {
-                            status: error instanceof Refusal ? "refused" : "failed",
-                            code: error instanceof Refusal ? error.code : "failed",
-                            message:
-                                error instanceof Refusal
-                                    ? error.message.slice(0, 1024)
-                                    : "The Desktop action failed. Check its visible state before trying again.",
-                        }),
-                )
-                .finally(() => {
-                    clearTimeout(timeout);
-                    if (busy?.id === request.actionId) busy = undefined;
-                    schedule();
-                });
+            queue.push({ request, abort: new AbortController() });
+            next();
         },
         close() {
             if (closed) return;
             closed = true;
             if (timer !== undefined) clearTimeout(timer);
-            if (busy) {
-                clearTimeout(busy.timer);
-                busy.abort.abort();
-                busy = undefined;
+            if (appStateTimer !== undefined) clearTimeout(appStateTimer);
+            appStateTimer = undefined;
+            if (running) {
+                clearTimeout(running.timer);
+                running.abort.abort();
+                running = undefined;
             }
+            for (const queued of queue.splice(0)) queued.abort.abort();
+            focus = undefined;
+            focusListeners.clear();
             sourceStop?.();
             for (const stop of workspaceStops.values()) stop();
             workspaceStops.clear();
+            for (const stop of modelStops.values()) stop();
+            modelStops.clear();
             for (const watch of watches.values()) {
                 watchRelease(watch);
             }

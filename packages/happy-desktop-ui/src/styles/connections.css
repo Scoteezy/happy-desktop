@@ -155,6 +155,28 @@
     background: var(--status-error);
     box-shadow: 0 0 0 2px var(--groupped-background);
 }
+/* Voice is pointing at this machine's work while another machine is shown: the
+   live call's green ring around the tile, and a microphone badge on its
+   bottom-right corner, away from the unread dot's. */
+.happy-connections__item[data-voice-focus] {
+    box-shadow: 0 0 0 2px var(--success);
+}
+.happy-connections__voice {
+    /* The badge intentionally overlaps the tile's bottom-right corner. */
+    position: absolute;
+    z-index: 2;
+    right: -4px;
+    bottom: -4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--happy-radius-pill);
+    background: var(--success);
+    color: var(--text-inverse);
+    box-shadow: 0 0 0 2px var(--groupped-background);
+}
 .happy-connections__items[data-reordering] .happy-connections__item {
     transition:
         background-color 120ms ease,

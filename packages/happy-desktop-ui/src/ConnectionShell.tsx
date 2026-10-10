@@ -16,6 +16,8 @@ export interface ConnectionShellItem {
     readonly unread?: boolean;
     /** At least one conversation on this connection is running. */
     readonly working?: boolean;
+    /** A voice call is pointing at something on this connection while another is shown. */
+    readonly voiceFocus?: boolean;
     /**
      * The picture the Happy Agent itself wears. It outranks the home glyph and
      * the generated tile alike; the thumbhash stands in until the bytes arrive.
@@ -189,6 +191,7 @@ export function ConnectionShell(props: {
                                             (item.working && item.status === "connected") ||
                                             undefined
                                         }
+                                        data-voice-focus={item.voiceFocus || undefined}
                                     >
                                         <ConnectionShellTile item={item} />
                                         {item.unread ? (
@@ -197,6 +200,16 @@ export function ConnectionShell(props: {
                                                 className="happy-connections__unread"
                                                 data-happy-desktop-ui="connection-unread"
                                             />
+                                        ) : null}
+                                        {item.voiceFocus ? (
+                                            <span
+                                                aria-label="Voice focus on this connection"
+                                                className="happy-connections__voice"
+                                                data-happy-desktop-ui="connection-voice"
+                                                role="img"
+                                            >
+                                                <Icon name="mic" size={12} />
+                                            </span>
                                         ) : null}
                                     </button>
                                     {item === local.at(-1) && remotes.length > 0 ? (

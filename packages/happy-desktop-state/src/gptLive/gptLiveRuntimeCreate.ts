@@ -11,7 +11,7 @@ import {
     type LiveSessionResponse,
 } from "@slopus/happy-agent-client";
 import { UserError } from "../types.js";
-import { gptLiveControllerCreate } from "./gptLiveController.js";
+import { gptLiveControllerCreate, GPT_LIVE_DESKTOP_CAPABILITIES } from "./gptLiveController.js";
 import type { GptLiveDesktopSource } from "./gptLiveDesktopSource.js";
 import type {
     GptLiveAvailability,
@@ -64,28 +64,30 @@ const CLEANUP_MS = 30_000;
 
 /** Construction starts no transport, permission request, subscription, or timer. */
 export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptLiveRuntime {
-    async function availabilityRead(signal: AbortSignal): Promise<GptLiveAvailability> {
+    const unsupported = (reason: string) => ({
+        availability: { supported: false, reason, accounts: [] },
+        capabilities: undefined,
+    });
+    /**
+     * What a call could use, and the desktop capabilities to offer it:
+     * `undefined` for a Happy Agent that lists none, which is then sent none.
+     */
+    async function availabilityCheck(signal: AbortSignal): Promise<{
+        readonly availability: GptLiveAvailability;
+        readonly capabilities: readonly string[] | undefined;
+    }> {
         try {
             const client = options.client();
-            if (!client)
-                return {
-                    supported: false,
-                    reason: "Connect to Happy Agent to use GPT-Live.",
-                    accounts: [],
-                };
+            if (!client) return unsupported("Connect to Happy Agent to use GPT-Live.");
             const health = await client.getHealth({ signal });
             if (!health.ready || health.draining || health.shuttingDown)
-                return {
-                    supported: false,
-                    reason: "Happy Agent is not ready for a voice call.",
-                    accounts: [],
-                };
+                return unsupported("Happy Agent is not ready for a voice call.");
             if (health.capabilities?.desktopLiveControl !== true)
-                return {
-                    supported: false,
-                    reason: "This Happy Agent does not support GPT-Live desktop control.",
-                    accounts: [],
-                };
+                return unsupported("This Happy Agent does not support GPT-Live desktop control.");
+            const offered = health.capabilities.desktopLiveCapabilities;
+            const capabilities = offered
+                ? GPT_LIVE_DESKTOP_CAPABILITIES.filter((item) => offered.includes(item))
+                : undefined;
             const { config } = await client.getConfig({ signal });
             const accounts: GptLiveAvailability["accounts"][number][] = [];
             for (const [providerId, provider] of Object.entries(config.providers)) {
@@ -106,13 +108,16 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                     });
             }
             return {
-                supported: true,
-                accounts,
-                ...(accounts.length === 0
-                    ? {
-                          reason: "Configure an enabled Codex subscription or OpenAI API provider to use GPT-Live.",
-                      }
-                    : {}),
+                availability: {
+                    supported: true,
+                    accounts,
+                    ...(accounts.length === 0
+                        ? {
+                              reason: "Configure an enabled Codex subscription or OpenAI API provider to use GPT-Live.",
+                          }
+                        : {}),
+                },
+                capabilities,
             };
         } catch (error) {
             throw userError(error, "GPT-Live availability could not be checked.");
@@ -120,7 +125,8 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
     }
 
     return {
-        availabilityRead,
+        availabilityRead: (signal) =>
+            availabilityCheck(signal).then(({ availability }) => availability),
         async callOpen(input, receive, signal): Promise<GptLiveCall> {
             if (signal.aborted) throw cancelled();
             const lifetime = new AbortController();
@@ -347,7 +353,9 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                     }
                     helloVerified = true;
                     try {
-                        controller?.start();
+                        // Only what the hello names was accepted; a Happy Agent
+                        // that was offered nothing is asked for nothing.
+                        controller?.start(frame.capabilities ?? []);
                     } catch {
                         fail("Voice desktop context could not start.");
                         return;
@@ -401,6 +409,9 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                             fail("The requested voice action could not be handled.");
                         }
                         break;
+                    case "voiceFocus":
+                        if (active) controller?.focusReceive(frame);
+                        break;
                 }
             };
             signal.addEventListener("abort", aborted, { once: true });
@@ -409,7 +420,9 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                 CONNECT_MS,
             );
             try {
-                const availability = await wait(availabilityRead(lifetime.signal));
+                const { availability, capabilities } = await wait(
+                    availabilityCheck(lifetime.signal),
+                );
                 const account = availability.accounts.find(
                     (candidate) =>
                         candidate.id === input.account.id &&
@@ -471,6 +484,7 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                     source: options.source,
                     send,
                     receive,
+                    capabilities: capabilities ?? [],
                 });
                 const initial = controller.contextRead();
                 revision = initial.revision;
@@ -487,6 +501,16 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                     },
                     contextRevision: revision,
                     context: initial.context,
+                    // Offered only to a Happy Agent that listed them; voice
+                    // starts out knowing the window when AppState is among them.
+                    ...(capabilities
+                        ? {
+                              desktopCapabilities: [...capabilities],
+                              ...(capabilities.includes("appState")
+                                  ? { appState: controller.appStateRead() }
+                                  : {}),
+                          }
+                        : {}),
                 };
                 if (
                     !Value.Check(createLiveSessionRequestSchema, request) ||

@@ -128,6 +128,29 @@ export function happyAgentPermissionLabel(mode: HappyAgentPermissionMode): strin
     return PERMISSION_LABELS[mode];
 }
 
+/** Display names for the provider types the daemon configures. */
+const SERVICE_NAMES: Readonly<Record<string, string>> = {
+    bedrock: "Bedrock",
+    claude: "Claude",
+    codex: "Codex",
+    grok: "Grok",
+};
+
+/**
+ * The service a provider type names, as the model picker labels it. A type
+ * without a known display name is shown as the configured key, titled.
+ */
+export function happyAgentServiceName(type: string): string {
+    return (
+        SERVICE_NAMES[type] ??
+        type
+            .split(/[_-]/)
+            .filter(Boolean)
+            .map((part) => part[0]!.toUpperCase() + part.slice(1))
+            .join(" ")
+    );
+}
+
 /**
  * Bytes per base64 chunk. Divisibility by three means each chunk can be encoded
  * independently without padding in the middle of the joined result.

@@ -22,6 +22,7 @@ export * from "./gptLive/gptLiveStore.js";
 export * from "./gptLive/gptLiveRuntime.js";
 export * from "./gptLive/gptLiveRuntimeCreate.js";
 export * from "./gptLive/gptLiveDesktopSource.js";
+export * from "./gptLive/gptLiveAppState.js";
 export * from "./titleShimmer/titleShimmerStore.js";
 export * from "./modules/composer/composerState.js";
 export * from "./modules/terminal/terminalState.js";
@@ -159,6 +160,7 @@ export type {
 export * from "./happyAgent/happyAgentSidebarCollapseStore.js";
 export * from "./happyAgent/happyAgentSidebarSearchStore.js";
 export * from "./happyAgent/happyAgentAttentionStore.js";
+export * from "./happyAgent/happyAgentSidebarTree.js";
 export * from "./happyAgent/happyAgentSidebarVisibilityStore.js";
 export * from "./happyAgent/happyAgentChiefOfStaffRequest.js";
 export * from "./happyAgent/happyAgentSupport.js";

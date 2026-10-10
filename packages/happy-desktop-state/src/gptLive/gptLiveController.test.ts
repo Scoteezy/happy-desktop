@@ -1,0 +1,389 @@
+import type {
+    LiveControlClientMessage,
+    LiveControlServerMessage,
+} from "@slopus/happy-agent-client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { HappyAgentWorkspaceStore } from "../happyAgent/happyAgentWorkspaceStore.js";
+import {
+    GPT_LIVE_DESKTOP_CAPABILITIES,
+    GPT_LIVE_NAVIGATION_HOLD_MS,
+    GPT_LIVE_OPEN_LOAD_MS,
+    gptLiveControllerCreate,
+} from "./gptLiveController.js";
+import type { GptLiveNavigationTarget } from "./gptLiveDesktopSource.js";
+import type { GptLiveRuntimeEvent } from "./gptLiveRuntime.js";
+
+type Request = Extract<LiveControlServerMessage, { type: "actionRequested" }>;
+type FocusFrame = Extract<LiveControlServerMessage, { type: "voiceFocus" }>;
+
+const projectTarget = (id: string) =>
+    ({ kind: "project", connectionId: "local", projectId: id, groupId: id }) as const;
+const botTarget = {
+    kind: "bot",
+    connectionId: "local",
+    groupId: "bot-ws",
+    sessionId: "bot-session",
+    botId: "bot-1",
+} as const;
+
+/** A conversation as the workspace holds it once its transcript has loaded. */
+const loaded = (conversationId: string) => ({
+    type: "ready",
+    value: {
+        conversationId,
+        title: "Release bot",
+        entries: [],
+        transcriptComplete: true,
+        running: false,
+        workingWait: false,
+        composer: { text: "", attachments: [], revision: 1 },
+        session: { type: "ready", value: { pendingUserInputs: [], permissionMode: "read_only" } },
+    },
+});
+
+/**
+ * A workspace reduced to what the controller reads for projects and bots: the
+ * catalog, the address the window is on, and a listener list. Opening a target
+ * moves the address the way the router would.
+ */
+function fixture(options: { capabilities?: readonly string[] } = {}) {
+    const listeners = new Set<() => void>();
+    let snapshot = {
+        address: { groupId: "project-1" } as { groupId?: string; conversationId?: string },
+        tabOrder: [],
+        list: {
+            projects: {
+                type: "ready",
+                value: ["project-1", "project-2", "project-3"].map((id) => ({
+                    id,
+                    name: id,
+                    conversations: [],
+                    worktrees: [],
+                })),
+            },
+            bots: [
+                {
+                    id: "bot-1",
+                    workspaceId: "bot-ws",
+                    name: "Release bot",
+                    conversation: {
+                        id: "bot-session",
+                        title: "Release bot",
+                        activity: "idle",
+                        updatedAt: 0,
+                        participants: [],
+                    },
+                    subtasks: [],
+                },
+            ],
+            tasks: [],
+        },
+        conversation: { type: "loading" } as { type: string; value?: unknown },
+        groupAccess: { conversationRefusal: undefined as string | undefined },
+    };
+    const notify = () => {
+        for (const listener of [...listeners]) listener();
+    };
+    const workspace = {
+        get: () => snapshot,
+        subscribe: (listener: () => void) => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+    } as unknown as HappyAgentWorkspaceStore;
+    const opened: GptLiveNavigationTarget[] = [];
+    const frames: LiveControlClientMessage[] = [];
+    const events: GptLiveRuntimeEvent[] = [];
+    const controller = gptLiveControllerCreate({
+        windowId: "window-1",
+        source: {
+            get: () => ({
+                activeConnectionId: "local",
+                connections: [
+                    { id: "local", name: "This Mac", kind: "local", online: true, workspace },
+                ],
+            }),
+            subscribe: () => () => {},
+            targetOpen(target) {
+                opened.push(target);
+                snapshot = {
+                    ...snapshot,
+                    address: {
+                        groupId: target.groupId,
+                        ...("sessionId" in target ? { conversationId: target.sessionId } : {}),
+                    },
+                };
+                notify();
+            },
+            paint: () => Promise.resolve(),
+        },
+        send: (frame) => frames.push(frame),
+        receive: (event) => events.push(event),
+        capabilities: options.capabilities ?? GPT_LIVE_DESKTOP_CAPABILITIES,
+    });
+    const request = (actionId: string, action: Request["action"]): Request => ({
+        type: "actionRequested",
+        actionId,
+        contextRevision: controller.contextRead().revision,
+        inputTranscriptIds: [],
+        action,
+    });
+    const result = (actionId: string) =>
+        frames.find((frame) => frame.type === "actionResult" && frame.actionId === actionId);
+    const focus = (focusId: string, target: GptLiveNavigationTarget | null): FocusFrame =>
+        ({
+            type: "voiceFocus",
+            focusId,
+            contextRevision: controller.contextRead().revision,
+            target,
+            reason: "mention",
+        }) as FocusFrame;
+    return {
+        controller,
+        frames,
+        events,
+        opened,
+        request,
+        result,
+        focus,
+        update(next: (current: typeof snapshot) => typeof snapshot) {
+            snapshot = next(snapshot);
+            notify();
+        },
+    };
+}
+
+afterEach(() => vi.useRealTimers());
+
+describe("GPT-Live controller navigation", () => {
+    it("highlights a navigation target, holds it on screen, then revalidates and moves", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(
+            f.request("open", { type: "desktopOpen", target: projectTarget("project-2") }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.events).toContainEqual({
+            type: "voiceFocusUpdated",
+            focus: {
+                id: "navigation-open",
+                target: projectTarget("project-2"),
+                reason: "navigation",
+            },
+        });
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS - 1);
+        expect(f.opened).toEqual([]);
+        expect(f.result("open")).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(f.opened).toEqual([projectTarget("project-2")]);
+        expect(f.result("open")).toEqual({
+            type: "actionResult",
+            actionId: "open",
+            result: { status: "succeeded", output: { type: "ack" } },
+        });
+        // Voice hears the new focus before the result it will answer from.
+        const appState = f.frames
+            .map(
+                (frame) =>
+                    frame.type === "appState" &&
+                    frame.appState.focused?.target.groupId === "project-2",
+            )
+            .lastIndexOf(true);
+        const context = f.frames.map((frame) => frame.type === "desktopContext").lastIndexOf(true);
+        const done = f.frames.findIndex((frame) => frame.type === "actionResult");
+        expect(appState).toBeGreaterThanOrEqual(0);
+        expect(appState).toBeLessThan(done);
+        expect(context).toBeLessThan(done);
+        f.controller.close();
+    });
+
+    it("moves at once to a target voice already pointed at for the whole hold", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.focusReceive(f.focus("named", projectTarget("project-2")));
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS + 100);
+        f.controller.actionReceive(
+            f.request("open", { type: "desktopOpen", target: projectTarget("project-2") }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.opened).toEqual([projectTarget("project-2")]);
+        expect(f.result("open")).toMatchObject({ result: { status: "succeeded" } });
+        f.controller.close();
+    });
+
+    it("waits only the rest of the hold for a target highlighted a moment ago", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.focusReceive(f.focus("named", projectTarget("project-2")));
+        await vi.advanceTimersByTimeAsync(300);
+        f.controller.actionReceive(
+            f.request("open", { type: "desktopOpen", target: projectTarget("project-2") }),
+        );
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS - 300 - 1);
+        expect(f.opened).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(f.opened).toEqual([projectTarget("project-2")]);
+        f.controller.close();
+    });
+
+    it("cancels a held navigation when voice points elsewhere, or the call ends, before anything moves", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(
+            f.request("open", { type: "desktopOpen", target: projectTarget("project-2") }),
+        );
+        await vi.advanceTimersByTimeAsync(200);
+        f.controller.focusReceive(f.focus("elsewhere", projectTarget("project-3")));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.result("open")).toMatchObject({
+            result: { status: "cancelled", code: "ended" },
+        });
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS);
+        expect(f.opened).toEqual([]);
+
+        f.controller.actionReceive(
+            f.request("open-again", { type: "desktopOpen", target: projectTarget("project-2") }),
+        );
+        await vi.advanceTimersByTimeAsync(200);
+        f.controller.close();
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS);
+        expect(f.opened).toEqual([]);
+    });
+
+    it("keeps a highlight's start when voice names the same target again for navigation", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.focusReceive(f.focus("named", projectTarget("project-2")));
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS + 100);
+        f.controller.focusReceive({
+            ...f.focus("navigating", projectTarget("project-2")),
+            reason: "navigation",
+        });
+        f.controller.actionReceive(
+            f.request("open", { type: "desktopOpen", target: projectTarget("project-2") }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.opened).toEqual([projectTarget("project-2")]);
+        expect(f.result("open")).toMatchObject({ result: { status: "succeeded" } });
+        f.controller.close();
+    });
+
+    it("reports an opened conversation once it has loaded, with the context that describes it", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(f.request("open", { type: "desktopOpen", target: botTarget }));
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS + 10);
+        expect(f.opened).toEqual([botTarget]);
+        expect(f.result("open")).toBeUndefined();
+        f.update((current) => ({ ...current, conversation: loaded("bot-session") }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.result("open")).toMatchObject({ result: { status: "succeeded" } });
+        const at = f.frames.findIndex(
+            (frame) => frame.type === "actionResult" && frame.actionId === "open",
+        );
+        const contexts = f.frames.slice(0, at).filter((frame) => frame.type === "desktopContext");
+        expect(contexts.at(-1)).toMatchObject({
+            context: { activeSession: { target: { sessionId: "bot-session" } } },
+        });
+        // The load was reported before the result, so nothing it caused follows it.
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(f.frames.slice(at + 1).some((frame) => frame.type === "desktopContext")).toBe(false);
+        f.controller.close();
+    });
+
+    it("reports an opening whose conversation is still loading once the load bound passes", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(f.request("open", { type: "desktopOpen", target: botTarget }));
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS + 10);
+        expect(f.result("open")).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_OPEN_LOAD_MS);
+        expect(f.result("open")).toMatchObject({ result: { status: "succeeded" } });
+        f.controller.close();
+    });
+
+    it("runs actions in arrival order instead of refusing one that arrives while another runs", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(
+            f.request("open", { type: "desktopOpen", target: projectTarget("project-2") }),
+        );
+        f.controller.actionReceive(
+            f.request("create", {
+                type: "workspaceCreate",
+                project: { connectionId: "local", projectId: "project-1" },
+            }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.result("create")).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS);
+        const results = f.frames.filter((frame) => frame.type === "actionResult");
+        expect(results.map((frame) => frame.actionId)).toEqual(["open", "create"]);
+        // Voice makes tasks now; the older creations are refused, never attempted.
+        expect(f.result("create")).toMatchObject({
+            result: { status: "refused", code: "unavailable" },
+        });
+        f.controller.close();
+    });
+});
+
+describe("GPT-Live controller AppState delivery", () => {
+    it("sends AppState only to a Happy Agent that accepted it", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start([]);
+        f.update((current) => ({ ...current, address: { groupId: "project-3" } }));
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(f.frames.some((frame) => frame.type === "appState")).toBe(false);
+        f.controller.close();
+    });
+
+    it("sends what is listed or focused within a quarter second and how it is doing within a second", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        const sent = () => f.frames.filter((frame) => frame.type === "appState");
+        expect(sent()).toHaveLength(1);
+        // Status only: held to the slower cadence, counted from the last send.
+        f.update((current) => ({
+            ...current,
+            list: {
+                ...current.list,
+                bots: current.list.bots.map((bot) => ({
+                    ...bot,
+                    conversation: { ...bot.conversation, activity: "running" },
+                })),
+            },
+        }));
+        await vi.advanceTimersByTimeAsync(999);
+        expect(sent()).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(sent()).toHaveLength(2);
+        expect(sent()[1]).toMatchObject({
+            appState: { servers: [{ bots: [{ status: "running" }] }] },
+        });
+        // A move on screen: a quarter second, however recently the last went.
+        f.update((current) => ({ ...current, address: { groupId: "project-3" } }));
+        await vi.advanceTimersByTimeAsync(250);
+        expect(sent()).toHaveLength(3);
+        expect(sent()[2]).toMatchObject({
+            appState: { focused: { target: projectTarget("project-3") } },
+        });
+        // Nothing changed: nothing is sent.
+        f.update((current) => ({ ...current }));
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(sent()).toHaveLength(3);
+        f.controller.close();
+        f.update((current) => ({ ...current, address: { groupId: "project-1" } }));
+        await vi.advanceTimersByTimeAsync(2_000);
+        expect(sent()).toHaveLength(3);
+    });
+});

@@ -1,3 +1,5 @@
+import type { GptLiveNavigationTarget } from "./gptLiveDesktopSource.js";
+
 /** Product choices, never provider credentials or transport addresses. */
 export interface GptLiveAccount {
     readonly id: string;
@@ -20,13 +22,27 @@ export interface GptLiveTranscriptFragment {
     readonly endMs?: number;
 }
 
+/**
+ * What a voice call is pointing at, apart from what the window has selected.
+ * `mention` marks something the call is talking about; `navigation` marks the
+ * target of a navigation that is about to happen, which the window may reveal
+ * inside folded rows for as long as it lasts.
+ */
+export interface GptLiveVoiceFocus {
+    readonly id: string;
+    readonly target: GptLiveNavigationTarget;
+    readonly reason: "mention" | "navigation";
+}
+
 /** Events are already validated and projected by the owning call integration. */
 export type GptLiveRuntimeEvent =
     | { readonly type: "callActive" }
     | { readonly type: "callClosed" }
     | { readonly type: "callFailed"; readonly message: string }
     | { readonly type: "transcriptReceived"; readonly fragment: GptLiveTranscriptFragment }
-    | { readonly type: "actionStatusUpdated"; readonly message: string };
+    | { readonly type: "actionStatusUpdated"; readonly message: string }
+    /** `null` clears whatever the call was pointing at. */
+    | { readonly type: "voiceFocusUpdated"; readonly focus: GptLiveVoiceFocus | null };
 
 export interface GptLiveCall {
     /** Stops recording/actions synchronously; bounded transport finalization may finish asynchronously. Never aborts tasks. */

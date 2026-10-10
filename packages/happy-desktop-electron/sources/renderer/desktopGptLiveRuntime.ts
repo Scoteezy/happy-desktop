@@ -30,8 +30,11 @@ export function desktopGptLiveRuntimeCreate(options: {
                 connections: snapshot.happyAgents.map((entry) => ({
                     id: entry.id,
                     name: entry.label,
+                    kind: entry.id === LOCAL_HAPPY_AGENT_ID ? "local" : "remote",
                     online: entry.status === "connected",
-                    ...(entry.session ? { workspace: entry.session.workspace } : {}),
+                    ...(entry.session
+                        ? { workspace: entry.session.workspace, models: entry.session.models }
+                        : {}),
                 })),
             };
         },
@@ -61,7 +64,7 @@ export function desktopGptLiveRuntimeCreate(options: {
             const router = connectionUis.get(target.connectionId)?.router;
             if (!router) throw new UserError("This Desktop connection is no longer open.");
             directory.happyAgentActivate(target.connectionId);
-            if (target.kind === "session" || target.kind === "bot")
+            if (target.kind === "session" || target.kind === "bot" || target.kind === "task")
                 await router.navigate({
                     to: "/chats/$happyAgentId/$groupId/$chatId",
                     params: {
@@ -76,6 +79,20 @@ export function desktopGptLiveRuntimeCreate(options: {
                     params: { happyAgentId: target.connectionId, groupId: target.groupId },
                 });
         },
+        // Two frames: the first lets React commit the highlight, the second
+        // runs after the browser has painted that commit. A hidden window
+        // paints nothing and runs no frames, so it waits no longer than a
+        // quarter second for them.
+        paint: () =>
+            new Promise<void>((resolve) => {
+                const timer = setTimeout(resolve, 250);
+                requestAnimationFrame(() =>
+                    requestAnimationFrame(() => {
+                        clearTimeout(timer);
+                        resolve();
+                    }),
+                );
+            }),
     };
     const current = () => {
         if (!bridge.liveWindowId || !bridge.liveMicrophoneStart || !bridge.liveMicrophoneRevoke)

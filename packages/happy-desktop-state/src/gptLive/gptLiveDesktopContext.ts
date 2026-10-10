@@ -1,10 +1,13 @@
 import type {
     LiveDesktopContext,
     LiveDesktopSessionStatus,
+    LiveDesktopTarget,
     LivePublicText,
+    LiveWorkspaceStatus,
 } from "@slopus/happy-agent-client";
 import type { ConversationEntry } from "../conversation/conversationEntry.js";
 import type { HappyAgentChatSnapshot } from "../happyAgent/happyAgentChatStore.js";
+import type { HappyAgentWorktreeLifecycle } from "../happyAgent/happyAgentProjectGroupProject.js";
 import type { GptLiveDesktopSource } from "./gptLiveDesktopSource.js";
 
 const encoder = new TextEncoder();
@@ -14,6 +17,17 @@ const CONTEXT_BYTES = 192 * 1024;
 
 export function gptLiveSerializedBytes(value: object): number {
     return encoder.encode(JSON.stringify(value)).byteLength;
+}
+
+/** A worktree as voice hears of it: still being made, ready, or anything else gone wrong. */
+export function gptLiveWorkspaceStatus(
+    lifecycle: HappyAgentWorktreeLifecycle,
+): LiveWorkspaceStatus {
+    return lifecycle.phase === "creating"
+        ? "preparing"
+        : lifecycle.phase === "ready"
+          ? "ready"
+          : "error";
 }
 
 /** Whitelist authored public messages. No reasoning, tool output, requests, activities or attachments. */
@@ -61,10 +75,16 @@ export function gptLiveSessionStatus(snapshot: HappyAgentChatSnapshot): LiveDesk
     return snapshot.runStatus === "running" ? "running" : "idle";
 }
 
-/** Reads authoritative retained UI stores; catalog/activity data is not reconstructed from text. */
+/**
+ * Reads authoritative retained UI stores; catalog/activity data is not
+ * reconstructed from text. Task conversations are listed as sessions either
+ * way; `taskTargets` names an open task as a task, which only a Happy Agent
+ * that accepted the AppState capability understands.
+ */
 export function gptLiveDesktopContextRead(
     windowId: string,
     source: GptLiveDesktopSource,
+    taskTargets = false,
 ): LiveDesktopContext {
     const current = source.get();
     const context: LiveDesktopContext = {
@@ -117,12 +137,7 @@ export function gptLiveDesktopContextRead(
                     context.workspaces.push({
                         target,
                         name: worktree.name.slice(0, 256),
-                        status:
-                            worktree.lifecycle.phase === "creating"
-                                ? "preparing"
-                                : worktree.lifecycle.phase === "ready"
-                                  ? "ready"
-                                  : "error",
+                        status: gptLiveWorkspaceStatus(worktree.lifecycle),
                     });
                     if (active && workspace.address.groupId === worktree.id)
                         context.activeTarget = target;
@@ -151,13 +166,39 @@ export function gptLiveDesktopContextRead(
             if (active && workspace.address.groupId === bot.workspaceId)
                 context.activeTarget = target;
         }
+        let activeTask: Extract<LiveDesktopTarget, { kind: "task" }> | undefined;
+        for (const task of workspace.list.tasks) {
+            context.sessions.push({
+                target: {
+                    connectionId,
+                    groupId: task.workspaceId,
+                    sessionId: task.conversation.id,
+                },
+                title: task.name.slice(0, 256),
+                status: task.conversation.activity,
+            });
+            if (
+                taskTargets &&
+                active &&
+                workspace.address.groupId === task.workspaceId &&
+                workspace.address.conversationId === task.conversation.id
+            )
+                activeTask = {
+                    kind: "task",
+                    connectionId,
+                    groupId: task.workspaceId,
+                    sessionId: task.conversation.id,
+                    taskId: task.id,
+                };
+        }
         if (!active || !workspace.address.groupId || !workspace.address.conversationId) continue;
         const target = {
             connectionId,
             groupId: workspace.address.groupId,
             sessionId: workspace.address.conversationId,
         };
-        if (context.activeTarget?.kind !== "bot")
+        if (activeTask) context.activeTarget = activeTask;
+        else if (context.activeTarget?.kind !== "bot")
             context.activeTarget = { kind: "session", ...target };
         const conversation = workspace.conversation;
         if (conversation.type !== "ready") continue;

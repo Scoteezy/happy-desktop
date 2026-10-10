@@ -1,5 +1,13 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { happyAgentBotSubtasks, happyAgentTodoHeading } from "happy-desktop-state";
+import {
+    gptLiveStoreNoop,
+    happyAgentBotSubtasks,
+    happyAgentSidebarTree,
+    happyAgentTabsOrdered,
+    happyAgentTodoHeading,
+    type GptLiveVoiceFocus,
+    type HappyAgentSidebarProject,
+} from "happy-desktop-state";
 import { AppGptLivePhone } from "./gptLive/AppGptLivePhone";
 import {
     ARTIFACT_READING,
@@ -478,6 +486,7 @@ export interface AppHappyAgentSession {
      * machine's configuration, which leaves that category saying so.
      */
     readonly providers?: HappyAgentProvidersStore;
+    /** The voice controller and prompt this machine's calls start with, as Voice settings edit them. */
     /** This Happy Agent's machine-wide instructions, as the settings window edits them. */
     readonly instructions?: HappyAgentInstructionsStore;
     /** This Happy Agent's machine-wide permission-review policy. */
@@ -1000,19 +1009,14 @@ function botSubtaskSidebarItems(
 }
 
 function sidebarItems(
-    project: HappyAgentProjectGroup,
-    roots: readonly HappyAgentSubtaskRoot[],
+    { project, worktrees }: HappyAgentSidebarProject,
     titleShimmerEnabled: boolean,
     newWorkspaceShortcut: boolean,
 ): SidebarItem[] {
     const projectHasLineChanges = (project.addedLines ?? 0) > 0 || (project.deletedLines ?? 0) > 0;
-    // A worktree a bot's subtask works in is listed once, as that subtask
-    // under its bot, so the Projects section keeps only the worktrees no bot
-    // owns. The project's own delta is its root checkout's and stays.
-    const subtaskWorkspaceIds = new Set(
-        happyAgentBotSubtasks(roots).map((task) => task.workspaceId),
-    );
-    const worktrees = project.worktrees.filter((worktree) => !subtaskWorkspaceIds.has(worktree.id));
+    // The shared sidebar tree already leaves out a worktree a bot's or task's
+    // subtask works in: it is listed once, as that subtask under its root. The
+    // project's own delta is its root checkout's and stays.
     return [
         {
             id: project.id,
@@ -1507,24 +1511,8 @@ function botTabPin(items: readonly TabItem[], sessionId: string | undefined): Ta
     return [{ ...pinned, closable: false }, ...items.filter((item) => item.id !== sessionId)];
 }
 
-/**
- * The group's tabs in the order the workspace records. Tabs it has no position
- * for follow in the order they arrived, so one opened this instant lands at the
- * end of the strip instead of appearing somewhere in the middle of it.
- */
-function tabsOrdered<Item extends { readonly id: string }>(
-    items: readonly Item[],
-    order: readonly string[],
-): Item[] {
-    const remaining = new Map(items.map((item) => [item.id, item]));
-    const placed = order.flatMap((id) => {
-        const item = remaining.get(id);
-        if (!item) return [];
-        remaining.delete(id);
-        return [item];
-    });
-    return [...placed, ...remaining.values()];
-}
+/** The group's tabs in the order the workspace records; shared with voice's AppState. */
+const tabsOrdered = happyAgentTabsOrdered;
 
 /** The tab action ids the strip's context menu dispatches back to this surface. */
 const TAB_MENU_CLOSE = "close";
@@ -2028,6 +2016,102 @@ function hiddenBotsAction(
     };
 }
 
+/**
+ * The sidebar rows a voice target can be: a subtask's own row, which is named
+ * by its conversation, then the row of the group it lives in — a bot's or
+ * task's workspace, a project, or a worktree. A session has no row of its own,
+ * so it is pointed at through its group.
+ */
+function voiceFocusRowIds(focus: GptLiveVoiceFocus): string[] {
+    const { target } = focus;
+    return [
+        ...("sessionId" in target ? [happyAgentItemId(target.connectionId, target.sessionId)] : []),
+        happyAgentItemId(target.connectionId, target.groupId),
+    ];
+}
+
+/**
+ * The sections with the reader's folding applied and the row a voice call
+ * points at marked, separately from the row the window has selected.
+ *
+ * A navigation about to happen unfolds whatever is folded over its row for as
+ * long as voice points there; the reader's folding is never written, so it is
+ * back the moment the call points elsewhere. A mere mention leaves the folding
+ * alone and marks the outermost folded row instead, or the Projects heading
+ * when the whole list is folded away.
+ */
+function sectionsVoiceFocused(
+    sections: readonly SidebarSection[],
+    collapsed: ReadonlySet<string>,
+    focus: GptLiveVoiceFocus | undefined,
+): SidebarSection[] {
+    if (!focus) return sectionsCollapsed(sections, collapsed);
+    let place: { readonly section: number; readonly index: number } | undefined;
+    for (const id of voiceFocusRowIds(focus)) {
+        for (let section = 0; section < sections.length && !place; section++) {
+            const index = sections[section]!.items.findIndex((item) => item.id === id);
+            if (index >= 0) place = { section, index };
+        }
+        if (place) break;
+    }
+    if (!place) {
+        const heading = happyAgentSectionId(focus.target.connectionId);
+        return sectionsCollapsed(
+            sections.map((section) =>
+                section.id === heading && section.items.length === 0
+                    ? { ...section, voiceFocus: true }
+                    : section,
+            ),
+            collapsed,
+        );
+    }
+    const items = sections[place.section]!.items;
+    // Walking up: each earlier row shallower than the last one found is the next ancestor out.
+    const folded: string[] = [];
+    let depth = items[place.index]!.depth ?? 0;
+    for (let index = place.index - 1; index >= 0 && depth > 0; index--) {
+        const ancestor = items[index]!;
+        if ((ancestor.depth ?? 0) >= depth) continue;
+        depth = ancestor.depth ?? 0;
+        if (collapsed.has(ancestor.id)) folded.push(ancestor.id);
+    }
+    const reveal = focus.reason === "navigation";
+    const marked = reveal || folded.length === 0 ? items[place.index]!.id : folded.at(-1)!;
+    const shown =
+        reveal && folded.length > 0
+            ? new Set([...collapsed].filter((id) => !folded.includes(id)))
+            : collapsed;
+    const section = place.section;
+    return sectionsCollapsed(sections, shown).map((entry, index) =>
+        index !== section
+            ? entry
+            : {
+                  ...entry,
+                  items: entry.items.map((item) =>
+                      item.id === marked ? { ...item, voiceFocus: true } : item,
+                  ),
+              },
+    );
+}
+
+/** Whether a voice target lives in one of a Happy Agent's projects, so its Projects list must show. */
+function voiceFocusInProjects(
+    focus: GptLiveVoiceFocus | undefined,
+    directory: AppHappyAgentDirectorySnapshot,
+): boolean {
+    if (!focus) return false;
+    const { target } = focus;
+    return (
+        directory.happyAgents
+            .find((entry) => entry.id === target.connectionId)
+            ?.projects.some(
+                (project) =>
+                    project.id === target.groupId ||
+                    project.worktrees.some((worktree) => worktree.id === target.groupId),
+            ) === true
+    );
+}
+
 function happyAgentSections(
     directory: AppHappyAgentDirectorySnapshot,
     titleShimmerEnabled: boolean,
@@ -2045,7 +2129,7 @@ function happyAgentSections(
             id: happyAgentBotsSectionId(happyAgent.id),
             label: "Bots",
             items: [
-                ...happyAgent.bots.flatMap((bot) => {
+                ...happyAgentSidebarTree(happyAgent).bots.flatMap((bot) => {
                     // A hidden bot leaves the list with everything nested
                     // under it; a muted one stays, with its whole tree quiet.
                     const botAttention = happyAgentBotAttention(attention, happyAgent.id, bot.id);
@@ -2131,8 +2215,8 @@ function happyAgentTasksSection(
     return {
         id: happyAgentTasksSectionId(happyAgent.id),
         label: "Tasks",
-        items: (happyAgent.tasks ?? [])
-            .flatMap((task) => [
+        items: happyAgentSidebarTree(happyAgent)
+            .tasks.flatMap((task) => [
                 taskSidebarItem(task, titleShimmerEnabled),
                 ...botSubtaskSidebarItems(task.subtasks, happyAgent.projects, titleShimmerEnabled),
             ])
@@ -2710,14 +2794,13 @@ function happyAgentProjectsSection(
         label: "Projects",
         items: hidden
             ? []
-            : happyAgent.projects
-                  .flatMap((project) =>
+            : happyAgentSidebarTree(happyAgent)
+                  .projects.flatMap((entry) =>
                       sidebarItems(
-                          project,
-                          [...happyAgent.bots, ...(happyAgent.tasks ?? [])],
+                          entry,
                           titleShimmerEnabled,
                           shortcutProject?.happyAgentId === happyAgent.id &&
-                              shortcutProject.projectId === project.id,
+                              shortcutProject.projectId === entry.project.id,
                       ),
                   )
                   .map((item) => ({
@@ -3008,6 +3091,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         commandPaletteStore.subscribe,
         () => commandPaletteStore.get().open,
         () => commandPaletteStore.get().open,
+    );
+    // What a voice call is pointing at. Only that is read here: the call's
+    // transcript moves many times a second and must not re-render the window.
+    const gptLiveStore = props.gptLive ?? gptLiveStoreNoop;
+    const voiceFocus = useSyncExternalStore(
+        gptLiveStore.subscribe,
+        () => gptLiveStore.get().voiceFocus,
+        () => gptLiveStore.get().voiceFocus,
     );
     const windowStateStore = props.windowState ?? happyAgentWindowStoreNoop;
     const windowState = useSyncExternalStore(
@@ -3760,17 +3851,28 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               surfaceCatalog,
                               activeTodoCounts,
                           ),
-                          ...sectionsCollapsed(
+                          ...sectionsVoiceFocused(
                               happyAgentSections(
                                   directory,
                                   titleShimmerEnabled,
                                   projectsHidden,
                                   attention,
                                   workspaceCreateTarget,
-                                  props.sidebarCollapse ? sidebarCollapse.collapsed : undefined,
+                                  props.sidebarCollapse
+                                      ? voiceFocus?.reason === "navigation" &&
+                                        voiceFocusInProjects(voiceFocus, directory)
+                                          ? new Set(
+                                                [...sidebarCollapse.collapsed].filter(
+                                                    (id) =>
+                                                        id !== happyAgentSectionId(voiceFocus.target.connectionId),
+                                                ),
+                                            )
+                                          : sidebarCollapse.collapsed
+                                      : undefined,
                                   taskCreateTarget,
                               ),
                               sidebarCollapse.collapsed,
+                              voiceFocus,
                           ),
                       ]
             }
@@ -4037,6 +4139,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     providerUsage={active.session.providerUsage}
                     titleShimmerEnabled={titleShimmerEnabled}
                     viewerId={viewerId}
+                    {...(voiceFocus?.target.connectionId === active.id &&
+                    "sessionId" in voiceFocus.target
+                        ? { voiceFocusSessionId: voiceFocus.target.sessionId }
+                        : {})}
                     workspace={active.session.workspace}
                     {...(changeTiersStore === undefined ? {} : { changeTiers: changeTiersStore })}
                     {...(artifactsAvailable && active.session.artifacts
@@ -5513,6 +5619,8 @@ interface HappyAgentWorkspaceSurfaceProps {
     onArtifactOpen?: (artifactId: string) => void;
     /** Account usage for the model picker's account submenu; read only while that submenu is open. */
     providerUsage?: HappyAgentProviderUsageStore;
+    /** The conversation a voice call points at in this Happy Agent, marked on its tab. */
+    voiceFocusSessionId?: string;
     browserConnectionId: string | null;
     /** Unified outer route and daemon health for this already materialized Happy Agent. */
     availability: HappyAgentAvailabilitySnapshot;
@@ -5824,7 +5932,15 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                     openGroup.singleConversationId !== undefined &&
                                         openBot === undefined,
                                 )
-                          ).map((tab) => (availability.online ? tab : { ...tab, closable: false })),
+                          )
+                              .map((tab) =>
+                                  availability.online ? tab : { ...tab, closable: false },
+                              )
+                              .map((tab) =>
+                                  tab.id === props.voiceFocusSessionId
+                                      ? { ...tab, voiceFocus: true }
+                                      : tab,
+                              ),
                           ...(openReview ? [reviewTabItem(openReview)] : []),
                           ...groupFileTabs.map(fileTabItem),
                           ...toolTabItems(mainTools, (artifactId) =>
