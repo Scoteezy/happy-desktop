@@ -497,7 +497,6 @@ function FilePreviewBody(props: {
                 axes="both"
                 className="happy-file-preview__source"
                 data-happy-desktop-ui="file-preview-code"
-                placement="overlay"
                 viewportClassName="happy-file-preview__source-viewport"
             >
                 <CodeBlock

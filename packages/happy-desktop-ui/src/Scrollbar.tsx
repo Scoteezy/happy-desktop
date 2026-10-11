@@ -14,7 +14,12 @@ const SCROLLBAR_MIN_THUMB = 24;
 
 export type ScrollbarAxis = "horizontal" | "vertical";
 export type ScrollbarAxes = ScrollbarAxis | "both";
-export type ScrollbarPlacement = "gutter" | "overlay" | "stable-gutter";
+/**
+ * Overlay lays the track over the scrollport's trailing edge, so overflow never
+ * changes the content width. A text input uses the stable gutter instead: its
+ * lane is reserved before overflow so the thumb never covers typed text.
+ */
+export type ScrollbarPlacement = "overlay" | "stable-gutter";
 
 type AxisElements = {
     thumb: HTMLDivElement | null;
@@ -536,7 +541,7 @@ export function ScrollArea(props: ScrollAreaProps) {
         axes = "vertical",
         children,
         className,
-        placement = "gutter",
+        placement = "overlay",
         viewportClassName,
         viewportProps,
         viewportRef: externalViewportRef,

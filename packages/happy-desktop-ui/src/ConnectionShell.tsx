@@ -98,7 +98,7 @@ export function ConnectionShell(props: {
                               } as CSSProperties)
                     }
                 >
-                    <ScrollArea placement="overlay">
+                    <ScrollArea>
                         <div
                             className="happy-connections__items"
                             ref={railRef}

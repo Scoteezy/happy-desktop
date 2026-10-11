@@ -155,7 +155,7 @@ export function TextField(props: TextFieldProps) {
                         className="happy-text-field__textarea-scroll"
                         data-scrollbar-axes="vertical"
                         data-scrollbar-host=""
-                        data-scrollbar-placement="gutter"
+                        data-scrollbar-placement="stable-gutter"
                         ref={textareaHost}
                     >
                         <textarea

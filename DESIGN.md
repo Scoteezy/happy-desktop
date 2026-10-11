@@ -251,13 +251,18 @@ Every scrolling surface uses the shared scrollbar. Its pointer track is always
 - Always visible uses three restrained neutral strengths: 0.32 inactive, 0.50
   on the surface that would receive the wheel, and 0.68 on track hover or drag.
   Automatic uses the latter two after reveal.
-- Row panels place the track beside their content only while they overflow;
-  their existing panel inset remains the content-to-track gap. File previews,
-  diffs, and editors overlay it so painted rows reach the pane edge. Code keeps
-  `8px + 1ch` of trailing text clearance in both wrap modes.
-- The composer alone always reserves the 8px lane and keeps an overflowing thumb
-  visible in either appearance mode, so its text never rewraps when overflow
-  begins.
+- Every ordinary surface overlays the track on the scrollport's trailing edge
+  (and bottom edge for horizontal overflow). Nothing reserves space that
+  appears or disappears, so overflow beginning or ending never moves, narrows,
+  or rewraps content. Row panels keep the track over their trailing panel
+  inset, where the ink stays clear of row text and trailing marks; other
+  surfaces keep at least 8px of trailing padding under it. Painted file, diff,
+  and editor rows still reach the pane edge, and code keeps `8px + 1ch` of
+  trailing text clearance in both wrap modes.
+- Text inputs — the composer and multiline text fields — are the exception:
+  they always reserve the 8px lane beside their text, so a thumb never covers
+  what is typed and text never rewraps when overflow begins. The composer also
+  keeps an overflowing thumb visible in either appearance mode.
 
 The browser remains responsible for scrolling, momentum, selection, and scroll
 position. Happy hides only its chrome and paints a shared DOM track because

@@ -101,10 +101,9 @@
        card states its own inset and its own corners, but not its own bar: a
        scrollbar that appeared in a different colour, at a different width, on
        the surface a reader reaches for most is the sort of difference nobody
-       chose. It marks itself `data-scrollbar-rows`, because a command sits on a
-       selected row and the bar must be beside that row rather than on it. No
-       gutter is stated here: reserving the width is the bar's own job, and only
-       when the list is long enough to have one. */
+       chose. The bar lies over the content's 8px inset, beside the selected row
+       rather than on it, so no gutter is stated here and nothing moves when the
+       list grows long enough to scroll. */
 }
 
 /* Inner content wrapper carries the 8px inset around the command groups. It is

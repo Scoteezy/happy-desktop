@@ -834,7 +834,7 @@ const ALIGNMENT_CASES: readonly {
     },
     {
         height: 300,
-        label: "Scrollbar present · sessions running · still 6 px, now to the bar",
+        label: "Scrollbar present · sessions running · same columns, bar over the inset",
         sections: alignmentSections({ rows: 8, working: true }),
         testId: "alignment-scrolling-working",
     },
@@ -1558,7 +1558,7 @@ export function SidebarPage() {
             </Specimen>
 
             <Specimen
-                detail="A quiet row ends on the delta, on the same column the panel gives every other row. A running row — and only a running row — moves it left by the one activity cell. Hover changes neither: the controls are laid over the lane, so what they cover is hidden where it stands and the row is the same width with the pointer on it as without. The scrolling frames show the other half of it: the list is inset by 6px on both sides and the bar's ink begins at the scrollport's edge, so a row keeps the same 6px from the panel edge and from the bar; the column narrows by the bar's width when it arrives."
+                detail="A quiet row ends on the delta, on the same column the panel gives every other row. A running row — and only a running row — moves it left by the one activity cell. Hover changes neither: the controls are laid over the lane, so what they cover is hidden where it stands and the row is the same width with the pointer on it as without. The scrolling frames show the other half of it: the bar is laid over the 6px trailing inset rather than beside it, so rows, deltas, and controls keep exactly the columns they have without a scrollbar."
                 label="Trailing lane alignment · real workspaces"
                 number="06"
                 stage="app"

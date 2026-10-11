@@ -37,7 +37,7 @@ it("keeps fixed geometry and three restrained strengths without programmatic rev
     expect(track.bounds().width).toBe(8);
     expect(thumb.bounds().width).toBe(8);
     expect(thumb.computedStyle("border-right-width")).toBe("2px");
-    expect(viewport.bounds().width).toBe(host.bounds().width - 8);
+    expect(viewport.bounds().width).toBe(host.bounds().width);
     expect(thumb.computedStyle("background-color")).toBe("rgba(128, 128, 128, 0.32)");
 
     await userEvent.hover(viewport.element);
@@ -72,22 +72,21 @@ it("keeps fixed geometry and three restrained strengths without programmatic rev
     expect(track.bounds().width).toBe(8);
 }, 10_000);
 
-it("supports overflow, overlay, and stable gutters with a draggable real track", async () => {
+it("overlays by default and keeps a stable gutter with a draggable real track", async () => {
     const view = createRenderer();
     view.render(
         () => (
             <div data-scrollbar-visibility="always" style={{ display: "flex", gap: "20px" }}>
                 <ScrollArea
-                    data-testid="gutter"
+                    data-testid="fits"
                     style={{ height: "100px", width: "200px" }}
                     viewportStyle={{ overflow: "auto" }}
                 >
-                    <div style={{ height: "600px" }} />
+                    <div style={{ height: "20px" }} />
                 </ScrollArea>
                 <ScrollArea
                     axes="both"
                     data-testid="overlay"
-                    placement="overlay"
                     style={{ height: "100px", width: "200px" }}
                     viewportStyle={{ overflow: "auto" }}
                 >
@@ -106,8 +105,8 @@ it("supports overflow, overlay, and stable gutters with a draggable real track",
         { width: 700, height: 140, padding: 20 },
     );
     await view.ready();
-    const gutter = view.$('[data-testid="gutter"]');
-    const gutterViewport = view.$('[data-testid="gutter"] [data-scrollbar-viewport]');
+    const fits = view.$('[data-testid="fits"]');
+    const fitsViewport = view.$('[data-testid="fits"] [data-scrollbar-viewport]');
     const overlay = view.$('[data-testid="overlay"]');
     const overlayViewport = view.$('[data-testid="overlay"] [data-scrollbar-viewport]');
     const overlayTrack = view.$(
@@ -124,7 +123,8 @@ it("supports overflow, overlay, and stable gutters with a draggable real track",
     const stableThumb = view.$('[data-testid="stable"] .happy-scrollbar__thumb');
     await expect.poll(() => overlay.element.hasAttribute("data-scrollbar-overflow-y")).toBe(true);
 
-    expect(gutterViewport.bounds().width).toBe(gutter.bounds().width - 8);
+    expect(fits.element.hasAttribute("data-scrollbar-overflow-y")).toBe(false);
+    expect(fitsViewport.bounds().width).toBe(fits.bounds().width);
     expect(overlayViewport.bounds().width).toBe(overlay.bounds().width);
     expect(
         (overlayViewport.element as HTMLElement).offsetWidth -

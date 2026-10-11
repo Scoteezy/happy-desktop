@@ -404,7 +404,6 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
             <ScrollArea
                 className="happy-changed-file-diff__body"
                 data-happy-desktop-ui="changed-file-diff-body"
-                placement="overlay"
                 viewportClassName="happy-changed-file-diff__viewport"
                 viewportRef={viewportRef}
             >

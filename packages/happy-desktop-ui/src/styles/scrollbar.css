@@ -1,8 +1,9 @@
 /*
  * One custom-painted scrollbar for every Happy-owned scrollport. The browser
- * still owns scrolling; only its chrome is hidden. Ordinary surfaces place the
- * fixed 8px track beside content when it overflows, file/code surfaces overlay
- * it, and the composer alone keeps the lane before overflow.
+ * still owns scrolling; only its chrome is hidden. The fixed 8px track overlays
+ * the scrollport's trailing edge, so overflow beginning or ending never changes
+ * the width content lays out in. Text inputs alone keep a stable lane beside
+ * their text, reserved before overflow, so a thumb never covers what is typed.
  *
  * Automatic bars answer trusted reader input, hold for two seconds, and fade
  * for 480ms. Always-visible bars have three deliberately close neutral levels:
@@ -65,7 +66,8 @@
     --happy-scrollbar-color: var(--happy-scrollbar-interaction-color);
 }
 
-/* Viewport + two optional tracks + their corner are a genuine 2D control. */
+/* Viewport + two optional tracks + their corner are a genuine 2D control. An
+   overlaid track leaves its grid cell empty, so only a stable lane takes room. */
 [data-scrollbar-host][data-scrollbar-placement] {
     /* eslint-disable-next-line happy-layout/use-flex-layout -- A scroll viewport and its two perpendicular tracks form a two-dimensional control with a shared corner. */
     display: grid;
@@ -97,7 +99,7 @@
 }
 
 .happy-scrollbar__track {
-    position: relative;
+    position: absolute;
     z-index: 2;
     display: none;
     box-sizing: border-box;
@@ -109,16 +111,47 @@
 }
 
 .happy-scrollbar__track[data-axis="vertical"] {
-    grid-row: 1;
-    grid-column: 2;
+    top: 0;
+    right: 0;
+    bottom: var(--happy-scrollbar-end-inset, 0px);
     width: var(--happy-scrollbar-track);
-    margin-bottom: var(--happy-scrollbar-end-inset, 0px);
+}
+
+[data-scrollbar-host][data-scrollbar-overflow-x] > .happy-scrollbar__track[data-axis="vertical"] {
+    bottom: calc(var(--happy-scrollbar-end-inset, 0px) + var(--happy-scrollbar-track));
 }
 
 .happy-scrollbar__track[data-axis="horizontal"] {
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: var(--happy-scrollbar-track);
+}
+
+[data-scrollbar-host][data-scrollbar-overflow-y] > .happy-scrollbar__track[data-axis="horizontal"] {
+    right: var(--happy-scrollbar-track);
+}
+
+/* A text input keeps its lane in the adjoining grid cell from the start. */
+[data-scrollbar-host][data-scrollbar-placement="stable-gutter"]
+    > .happy-scrollbar__track[data-axis="vertical"] {
+    position: relative;
+    top: auto;
+    right: auto;
+    bottom: auto;
+    grid-row: 1;
+    grid-column: 2;
+    margin-bottom: var(--happy-scrollbar-end-inset, 0px);
+}
+
+[data-scrollbar-host][data-scrollbar-placement="stable-gutter"]
+    > .happy-scrollbar__track[data-axis="horizontal"] {
+    position: relative;
+    right: auto;
+    bottom: auto;
+    left: auto;
     grid-row: 2;
     grid-column: 1;
-    height: var(--happy-scrollbar-track);
 }
 
 [data-scrollbar-host][data-scrollbar-overflow-y] > .happy-scrollbar__track[data-axis="vertical"],
@@ -173,32 +206,4 @@
     border-bottom: var(--happy-scrollbar-edge-inset) solid transparent;
     border-radius: var(--happy-scrollbar-cap) / var(--happy-scrollbar-cap)
         var(--happy-scrollbar-cap) var(--happy-scrollbar-outer-cap) var(--happy-scrollbar-outer-cap);
-}
-
-/* File, diff, and editor tracks sit above full-width painted content. */
-[data-scrollbar-host][data-scrollbar-placement="overlay"]
-    > .happy-scrollbar__track[data-axis="vertical"] {
-    position: absolute;
-    top: 0;
-    right: 0;
-    bottom: var(--happy-scrollbar-end-inset, 0px);
-    margin-bottom: 0;
-}
-
-[data-scrollbar-host][data-scrollbar-placement="overlay"][data-scrollbar-overflow-x]
-    > .happy-scrollbar__track[data-axis="vertical"] {
-    bottom: calc(var(--happy-scrollbar-end-inset, 0px) + var(--happy-scrollbar-track));
-}
-
-[data-scrollbar-host][data-scrollbar-placement="overlay"]
-    > .happy-scrollbar__track[data-axis="horizontal"] {
-    position: absolute;
-    right: 0;
-    bottom: 0;
-    left: 0;
-}
-
-[data-scrollbar-host][data-scrollbar-placement="overlay"][data-scrollbar-overflow-y]
-    > .happy-scrollbar__track[data-axis="horizontal"] {
-    right: var(--happy-scrollbar-track);
 }

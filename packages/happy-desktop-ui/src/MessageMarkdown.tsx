@@ -371,7 +371,6 @@ const MarkdownPre = ({
             axes="horizontal"
             className="happy-message__code-block"
             data-happy-desktop-ui="message-code-block"
-            placement="overlay"
             viewportClassName="happy-message__code-block-viewport"
         >
             <pre {...props}>{children}</pre>
@@ -387,7 +386,6 @@ const MarkdownTable = ({
         axes="horizontal"
         className="happy-message__table-scroll"
         data-happy-desktop-ui="message-table-scroll"
-        placement="overlay"
         viewportClassName="happy-message__table-scroll-viewport"
     >
         <table {...props}>{children}</table>

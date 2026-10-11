@@ -1367,26 +1367,15 @@ export function MessageList(props: MessageListProps) {
                 reportRect(element.clientWidth, element.clientHeight);
             });
         };
-        const host = element.parentElement;
-        const overflowObserver =
-            host && targetWindow.MutationObserver
-                ? new targetWindow.MutationObserver(geometryChanged)
-                : undefined;
-        overflowObserver?.observe(host!, {
-            attributeFilter: ["data-scrollbar-overflow-x", "data-scrollbar-overflow-y"],
-            attributes: true,
-        });
         const observer = targetWindow.ResizeObserver
             ? new targetWindow.ResizeObserver(geometryChanged)
             : undefined;
-        /* Observe the viewport's content box, not its unchanged outer border
-           box. A vertical scrollbar changes clientWidth without changing the
-           border box; that width is the measure every virtual row actually
-           paints at and must rebuild the whole keyed size model. */
+        /* Observe the viewport's content box: that width is the measure every
+           virtual row actually paints at and must rebuild the whole keyed size
+           model. The overlaid scrollbar never changes it. */
         observer?.observe(element);
         return () => {
             observer?.unobserve(element);
-            overflowObserver?.disconnect();
         };
     };
     // TanStack Virtual deliberately owns mutable measurement functions; this leaf

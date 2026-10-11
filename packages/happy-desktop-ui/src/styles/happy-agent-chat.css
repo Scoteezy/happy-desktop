@@ -27,11 +27,11 @@
 /* Match the composer's actual card edges, not only the shared max measure. */
 .happy-conversation .happy-agent-input[data-variant="card"] {
     width: auto;
-    /* The transcript may carry the shared scrollbar gutter while the dock does
-       not. The asymmetric margins keep this block's painted edges on the
-       composer's painted edges when that 8px track is present. */
-    margin-right: 14px;
-    margin-left: 18px;
+    /* The scrollbar overlays the transcript, so it is exactly as wide as the
+       dock. The dock's own side insets (`.happy-conversation__dock > *`) put
+       this block's painted edges on the composer's. */
+    margin-right: 20px;
+    margin-left: 12px;
 }
 
 .happy-agent-input__questions {

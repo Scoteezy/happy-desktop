@@ -196,15 +196,6 @@
     padding: 0 var(--happy-panel-inset);
 }
 
-/* While the list overflows, the footer keeps clear of the scrollbar lane too,
- * so the benchmarks link stays on the rows' text column. */
-.happy-composer-model-control__models:has(
-        > .happy-composer-model-control__list[data-scrollbar-overflow-y]
-    )
-    > .happy-composer-model-control__footer {
-    padding-right: calc(var(--happy-panel-inset) + var(--happy-scrollbar-track));
-}
-
 .happy-composer-model-control__service,
 .happy-composer-model-control__account-list {
     display: flex;

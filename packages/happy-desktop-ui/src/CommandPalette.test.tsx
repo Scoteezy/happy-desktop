@@ -177,9 +177,9 @@ it("holds the fixed 640x461 CommandPalette frame with a real short result set", 
         "overflow-y": "auto",
         "padding-left": "0px",
         "padding-top": "0px",
-        /* No hand-reserved lane: the bar reserves its own track, and only when
-           the list is long enough to have one. This result set is short, so the
-           638px body above is the full width between the card's borders. */
+        /* No reserved lane: the bar is laid over the content's inset, so the
+           638px body above is the full width between the card's borders
+           whether or not the list is long enough to scroll. */
         "scrollbar-gutter": "auto",
     });
     const bodyContent = view.$(
