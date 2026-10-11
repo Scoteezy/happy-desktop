@@ -66,6 +66,8 @@ export type ConversationEntryViewProps = {
     onAttachmentOpen?: (attachment: ConversationLinkedAttachment) => void;
     /** Opens this entry's tool call in an owner-provided preview surface. */
     onToolSelect?: (entryId: string, tool: ConversationToolCall) => void;
+    /** Opens one file this entry's tool call presented, by its media position. */
+    onToolMediaOpen?: (entryId: string, tool: ConversationToolCall, index: number) => void;
     /** Opens one child session represented by a delegated-agent entry. */
     onDelegationSelect?: (sessionId: string) => void;
     /** Reference epoch millis used by live delegated-agent timers. */
@@ -227,6 +229,12 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                         : undefined
                 }
                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+                {...(props.onToolMediaOpen
+                    ? {
+                          onMediaOpen: (tool: ConversationToolCall, index: number) =>
+                              props.onToolMediaOpen?.(entry.id, tool, index),
+                      }
+                    : {})}
                 {...(props.references ? { references: props.references } : {})}
                 singleLine={entry.activity.kind === "tool"}
                 time={

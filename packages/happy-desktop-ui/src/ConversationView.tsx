@@ -193,6 +193,8 @@ export type ConversationViewProps = {
     onAttachmentOpen?: ConversationEntryViewProps["onAttachmentOpen"];
     /** Opens one tool entry in the workspace's replaceable Preview tab. */
     onToolSelect?: (entryId: string, tool: ConversationToolCall) => void;
+    /** Opens one file a tool call presented: a picture full size, a file in its preview. */
+    onToolMediaOpen?: ConversationEntryViewProps["onToolMediaOpen"];
     /** Opens a child session from an inline delegated-agent row. */
     onDelegationSelect?: ConversationEntryViewProps["onDelegationSelect"];
     /** Reference epoch millis used by delegated-agent timers. */
@@ -752,6 +754,9 @@ export function ConversationView(props: ConversationViewProps) {
                                         : undefined
                                 }
                                 onToolSelect={props.onToolSelect}
+                                {...(props.onToolMediaOpen
+                                    ? { onToolMediaOpen: props.onToolMediaOpen }
+                                    : {})}
                                 onDelegationSelect={props.onDelegationSelect}
                                 now={props.now}
                                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}

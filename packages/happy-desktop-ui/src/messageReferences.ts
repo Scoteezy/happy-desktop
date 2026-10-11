@@ -15,7 +15,17 @@ import {
  *   this reader, or a kind this build does not know. It reads as plain words.
  */
 export type MessageReferenceView =
-    | { readonly type: "link"; readonly label: string; readonly busy: boolean }
+    | {
+          readonly type: "link";
+          readonly label: string;
+          readonly busy: boolean;
+          /**
+           * The live title is still being read and `label` stands in for it. A
+           * surface holding a better stand-in of its own, such as the title an
+           * artifact had when a tool call published it, shows that instead.
+           */
+          readonly reading?: boolean;
+      }
     | { readonly type: "text"; readonly label: string };
 
 /**

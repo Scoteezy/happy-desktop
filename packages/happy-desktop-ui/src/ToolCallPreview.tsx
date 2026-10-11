@@ -3,8 +3,12 @@ import type {
     ConversationFileDiff,
     ConversationToolCall,
 } from "happy-desktop-state";
+import { happyAgentArtifactTypeLabel } from "happy-desktop-state";
+import { ConversationMedia } from "./ConversationMedia";
 import { DiffSnippet, type DiffLine } from "./DiffSnippet";
 import { Icon } from "./Icon";
+import { ArtifactTypeGlyph } from "./pages/artifacts/artifactPresentation";
+import { ResultCard } from "./ResultCard";
 import { ScrollArea } from "./Scrollbar";
 
 export interface ToolCallPreviewProps {
@@ -59,8 +63,10 @@ function statusLabel(tool: ConversationToolCall): string {
 
 function presentationTitle(
     presentation: ConversationActivityPresentation | undefined,
-): "File edit" | "Terminal" | "Sub-agent spawn" | "Tool call" {
+): "File edit" | "Terminal" | "Sub-agent spawn" | "Presented files" | "Artifact" | "Tool call" {
     if (presentation?.type === "agentSpawn") return "Sub-agent spawn";
+    if (presentation?.type === "media") return "Presented files";
+    if (presentation?.type === "artifact") return "Artifact";
     if (presentation?.type === "fileDiff") return "File edit";
     if (
         presentation?.type === "execCommand" ||
@@ -102,11 +108,13 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
                         name={
                             title === "Terminal"
                                 ? "terminal"
-                                : title === "File edit"
+                                : title === "File edit" || title === "Presented files"
                                   ? "doc"
-                                  : title === "Sub-agent spawn"
-                                    ? "agents"
-                                    : "zap"
+                                  : title === "Artifact"
+                                    ? "package"
+                                    : title === "Sub-agent spawn"
+                                      ? "agents"
+                                      : "zap"
                         }
                         size={16}
                     />
@@ -197,6 +205,24 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
                               />
                           ))
                         : null}
+                    {presentation?.type === "media" ? (
+                        <section className="happy-tool-call-preview__section">
+                            <span className="happy-tool-call-preview__label">Files</span>
+                            <ConversationMedia items={presentation.items} />
+                        </section>
+                    ) : null}
+                    {presentation?.type === "artifact" ? (
+                        <section className="happy-tool-call-preview__section">
+                            <span className="happy-tool-call-preview__label">Published</span>
+                            <ResultCard
+                                detail={`${happyAgentArtifactTypeLabel(presentation.artifactType)} · Version ${String(presentation.version)}`}
+                                glyph={
+                                    <ArtifactTypeGlyph size={20} type={presentation.artifactType} />
+                                }
+                                title={presentation.title || "Untitled artifact"}
+                            />
+                        </section>
+                    ) : null}
                     {presentation?.type === "exploration" ? (
                         <section className="happy-tool-call-preview__section">
                             <span className="happy-tool-call-preview__label">Operations</span>

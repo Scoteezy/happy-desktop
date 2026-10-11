@@ -1,0 +1,107 @@
+/*
+ * C-290 ResultCard — one produced thing as a full-width, 64px card button:
+ * a 40px kind chip, the title over a line of facts, and a trailing chevron.
+ */
+
+.happy-result-card,
+.happy-result-card__glyph,
+.happy-result-card__copy,
+.happy-result-card__title,
+.happy-result-card__detail,
+.happy-result-card__action {
+    box-sizing: border-box;
+}
+
+.happy-result-card {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+    height: 64px;
+    margin: 0;
+    padding: 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-window);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+    text-align: left;
+    appearance: none;
+    transition:
+        background-color 120ms ease,
+        border-color 120ms ease;
+}
+
+button.happy-result-card {
+    cursor: pointer;
+}
+
+button.happy-result-card:hover {
+    background: var(--surface-high);
+}
+
+button.happy-result-card:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+/* The chip sits 11px inside the 1px border on every side it is near, which is
+   outside the card's 8px corner field: an independent rounded shape. */
+.happy-result-card__glyph {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--surface-selected);
+    border-radius: var(--happy-radius-sm);
+    color: var(--text-secondary);
+}
+
+.happy-result-card__copy {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+.happy-result-card__title,
+.happy-result-card__detail {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-result-card__title {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-result-card__detail {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 450;
+    line-height: 18px;
+}
+
+.happy-result-card__action {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: var(--text-secondary);
+}
+
+button.happy-result-card:hover .happy-result-card__action {
+    color: var(--text);
+}

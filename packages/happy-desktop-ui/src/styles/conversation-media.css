@@ -1,0 +1,128 @@
+/*
+ * C-291–C-293 — the files a tool call presented, beneath its transcript line.
+ * Every box here is the one `conversationRowHeight` reserves; change both.
+ */
+
+.happy-conversation-media {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+}
+
+/* Several pictures tile two to a row as squares, at most as wide as a
+   message's photo grid; one picture keeps its own box. */
+.happy-conversation-media__images {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.happy-conversation-media__images:not([data-count="1"]) {
+    width: min(100%, 420px);
+}
+
+.happy-conversation-media__images:not([data-count="1"]) > .happy-media-image-tile {
+    width: calc((100% - 4px) / 2);
+    aspect-ratio: 1 / 1;
+}
+
+.happy-conversation-media > .happy-result-card {
+    align-self: stretch;
+    width: auto;
+}
+
+/* ---- MediaImageTile --------------------------------------------------- */
+
+.happy-media-image-tile {
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+    background: var(--surface-pressed);
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-window);
+    appearance: none;
+    transition: border-color 120ms ease;
+}
+
+button.happy-media-image-tile {
+    cursor: zoom-in;
+}
+
+button.happy-media-image-tile:hover {
+    border-color: var(--surface-selected);
+}
+
+button.happy-media-image-tile:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+/* The placeholder and the picture are two layers of one box, not two items
+   in a row: the picture must cover the placeholder exactly as it fades in. */
+.happy-media-image-tile__placeholder,
+.happy-media-image-tile__image {
+    /* Absolute: the placeholder and the decoded picture stack in one box,
+       which flex cannot do with two children. */
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.happy-media-image-tile__placeholder {
+    background-position: center;
+    background-size: cover;
+}
+
+.happy-media-image-tile__image {
+    display: block;
+    object-fit: cover;
+    opacity: 0;
+    transition: opacity 160ms ease;
+    -webkit-user-drag: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.happy-media-image-tile[data-state="loaded"] .happy-media-image-tile__image {
+    opacity: 1;
+}
+
+.happy-media-image-tile__failure {
+    /* Absolute: the failure mark is laid over the placeholder it explains. */
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+}
+
+/* ---- MediaVideoTile --------------------------------------------------- */
+
+.happy-media-video-tile {
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    overflow: hidden;
+    background: var(--surface-pressed);
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-window);
+}
+
+.happy-media-video-tile__video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: transparent;
+}

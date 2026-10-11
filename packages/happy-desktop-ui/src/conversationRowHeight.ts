@@ -3,6 +3,7 @@ import {
     type AgentTurnTraceSummary,
     type ConversationEntry,
     type ConversationErrorAssistance,
+    type ConversationMediaItem,
     type ConversationRequest,
 } from "happy-desktop-state";
 import {
@@ -291,6 +292,78 @@ function mediaHeight(
     const rows = Math.ceil(count / 2);
     return margin + rows * column + (rows - 1) * MEDIA_GAP;
 }
+/**
+ * `.happy-conversation-media`: the blocks a tool call's presented files stack
+ * into, the gap between them, and the 8px gap that separates them from the
+ * call's own line.
+ */
+const TOOL_MEDIA_GAP = 8;
+/** `.happy-conversation-media__images` caps a 2+ image grid at the message grid's width. */
+const TOOL_MEDIA_GRID_MAX_WIDTH = MEDIA_MAX_WIDTH;
+/** A file or document presented by a tool is one 64px `ResultCard`. */
+const RESULT_CARD_HEIGHT = 64;
+/** A recording whose producer stated no frame size takes a 16:9 box at the photo cap. */
+const MEDIA_VIDEO_FALLBACK_W = MEDIA_SINGLE_MAX_W;
+const MEDIA_VIDEO_FALLBACK_H = Math.round((MEDIA_SINGLE_MAX_W * 9) / 16);
+
+/** The box an inline recording is drawn in: its own frame like a photo, or 16:9. */
+export function conversationMediaVideoBox(item: {
+    readonly width?: number;
+    readonly height?: number;
+}): { readonly width: number; readonly height: number } {
+    if (!item.width || !item.height)
+        return { width: MEDIA_VIDEO_FALLBACK_W, height: MEDIA_VIDEO_FALLBACK_H };
+    return messageMediaSingleBox(item);
+}
+
+/**
+ * The side of one square tile in a grid of two or more presented images, at
+ * the measure the row gives the grid. `ConversationMedia` draws its tiles with
+ * this, and the row model reserves the same, so the two cannot disagree.
+ */
+export function conversationMediaGridTile(measure: number): number {
+    return (Math.min(measure, TOOL_MEDIA_GRID_MAX_WIDTH) - MEDIA_GAP) / 2;
+}
+
+/**
+ * Painted height of the files one tool call presented, laid out the way
+ * `ConversationMedia` lays them out: every image together first — one at its
+ * own box, several as a two-column square grid — then each recording at its
+ * frame, then one card per document or file.
+ */
+export function conversationMediaHeight(
+    items: readonly ConversationMediaItem[],
+    measure: number,
+): number {
+    const images = items.filter((item) => item.kind === "image");
+    const blocks: number[] = [];
+    if (images.length === 1) blocks.push(messageMediaSingleBox(images[0]!).height);
+    else if (images.length > 1) {
+        const rows = Math.ceil(images.length / 2);
+        blocks.push(rows * conversationMediaGridTile(measure) + (rows - 1) * MEDIA_GAP);
+    }
+    for (const item of items)
+        if (item.kind === "video") blocks.push(conversationMediaVideoBox(item).height);
+        else if (item.kind !== "image") blocks.push(RESULT_CARD_HEIGHT);
+    if (blocks.length === 0) return 0;
+    return blocks.reduce((total, block) => total + block, 0) + (blocks.length - 1) * TOOL_MEDIA_GAP;
+}
+
+/**
+ * What a tool call's result adds beneath its line, from its presentation
+ * alone: presented files, or the card for the artifact it published. Zero for
+ * every other call, which stays one line.
+ */
+function toolResultHeight(entry: ConversationEntry, measure: number): number {
+    if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return 0;
+    const tool = entry.activity.tool;
+    const presentation = tool.presentation;
+    if (presentation?.type === "media" && presentation.items.length > 0)
+        return TOOL_MEDIA_GAP + conversationMediaHeight(presentation.items, measure);
+    if (presentation?.type === "artifact") return TOOL_MEDIA_GAP + RESULT_CARD_HEIGHT;
+    return 0;
+}
+
 /** Which of the three author treatments a message row takes. */
 export type MessageTreatment = "agent" | "incoming" | "own";
 /**
@@ -569,7 +642,9 @@ export function conversationRowHeight(
                           width - activityInset - 16,
                           cache?.text,
                       )
-                    : conversationActivityHeight(entry.activity.kind);
+                    : entry.activity.kind === "tool"
+                      ? ACTIVITY_HEIGHT.tool + toolResultHeight(entry, width - activityInset)
+                      : conversationActivityHeight(entry.activity.kind);
         return rowHeightCached(
             cache,
             entry,

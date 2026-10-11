@@ -3,6 +3,15 @@ import { AgentActivityRow } from "../../src/AgentActivityRow";
 import { ComponentPage, Specimen } from "../kit";
 import { agentSpawnRows } from "./agentSpawnFixtures";
 import {
+    artifactReferences,
+    createdArtifactTool,
+    generatedImageTool,
+    generatedImagesTool,
+    presentedFilesTool,
+    presentedVideoTool,
+    updatedArtifactTool,
+} from "./conversationMediaFixtures";
+import {
     happyAgentAwaitingTool,
     happyAgentCompactionCompletedTool,
     happyAgentCompactionFailedTool,
@@ -49,6 +58,40 @@ export function AgentActivityRowPage() {
                             activity={{ kind: "tool", tool }}
                             key={tool.toolCallId}
                             motion="calm"
+                            singleLine
+                            treatment="focused"
+                        />
+                    ))}
+                </div>
+            </Specimen>
+            <Specimen
+                detail="Generated pictures, a presented recording and files, and published artifacts · the result sits 8px under the call's line · focused production treatment"
+                label="Presented media and artifacts"
+                number="media"
+                stage="surface"
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                        width: "720px",
+                    }}
+                >
+                    {[
+                        generatedImageTool,
+                        generatedImagesTool,
+                        presentedVideoTool,
+                        presentedFilesTool,
+                        createdArtifactTool,
+                        updatedArtifactTool,
+                    ].map((tool) => (
+                        <AgentActivityRow
+                            activity={{ kind: "tool", tool }}
+                            key={tool.toolCallId}
+                            motion="calm"
+                            onMediaOpen={() => {}}
+                            references={artifactReferences}
                             singleLine
                             treatment="focused"
                         />
