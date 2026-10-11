@@ -2,6 +2,7 @@ import type {
     HappyAgentTerminalHandle,
     HappyAgentTerminalStore,
 } from "./happyAgentTerminalStore.js";
+import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
 import type { HappyAgentGroupId, HappyAgentSessionId } from "./happyAgentTypes.js";
 import type { HappyAgentPanelMemory } from "./happyAgentWorkspaceMemory.js";
 
@@ -79,6 +80,7 @@ export interface HappyAgentPanelSnapshot {
         | "usage"
         | "preview"
         | "file"
+        | "artifact"
         | HappyAgentPanelTabId;
     /** Conversation entry selected into the replaceable Preview tab. */
     readonly previewEntryId?: string;
@@ -89,12 +91,23 @@ export interface HappyAgentPanelSnapshot {
      */
     readonly fileViewOpen: boolean;
     /**
+     * The artifact a conversation link opened in the transient artifact tab,
+     * and the version it named when it named one. Absent, the tab is closed.
+     */
+    readonly artifactView?: HappyAgentPanelArtifactView;
+    /**
      * Why a new terminal cannot be opened here, or absent when one can. A shell
      * runs in the checkout, so a checkout that is not there cannot host one; the
      * owner supplies the sentence with the scope, since it is the one that knows
      * the group's state. Terminals already running are untouched by it.
      */
     readonly terminalRefusal?: string;
+}
+
+/** What the transient artifact tab is showing. */
+export interface HappyAgentPanelArtifactView {
+    readonly artifactId: HappyAgentArtifactId;
+    readonly version?: number;
 }
 
 export interface HappyAgentPanelStore {
@@ -137,6 +150,14 @@ export interface HappyAgentPanelStore {
     fileViewOpen(): void;
     /** Closes the file-viewer tab and returns to Files. */
     fileViewClose(): void;
+    /**
+     * Shows one artifact — at one version, when a link named one — in the
+     * transient artifact tab and opens the panel. Like the file viewer it is a
+     * replaceable tab: the next artifact link opened lands in it.
+     */
+    artifactViewOpen(artifactId: HappyAgentArtifactId, version?: number): void;
+    /** Closes the artifact tab and returns to Files. */
+    artifactViewClose(): void;
     /**
      * Adds a terminal tab to the open group and selects it. The shell runs in
      * the open session, so there has to be one; the tab itself belongs to the
@@ -272,6 +293,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
     let previewEntryId: string | undefined;
     let previewConversationId: HappyAgentSessionId | undefined;
     let fileViewShown = false;
+    let artifactView: HappyAgentPanelArtifactView | undefined;
     let nextTabNumber = 1;
     let disposed = false;
     let snapshot: HappyAgentPanelSnapshot = {
@@ -292,6 +314,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             activityViewOpen: activityViewShown,
             usageViewOpen: usageViewShown,
             fileViewOpen: fileViewShown,
+            ...(artifactView === undefined ? {} : { artifactView }),
             open,
             tabs: visible.map(
                 (tab): HappyAgentPanelTabSnapshot =>
@@ -334,6 +357,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             next.usageViewOpen === snapshot.usageViewOpen &&
             next.previewEntryId === snapshot.previewEntryId &&
             next.fileViewOpen === snapshot.fileViewOpen &&
+            next.artifactView === snapshot.artifactView &&
             next.terminalRefusal === snapshot.terminalRefusal &&
             tabsSame
         )
@@ -352,6 +376,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             activityViewOpen: next.activityViewOpen,
             usageViewOpen: next.usageViewOpen,
             fileViewOpen: next.fileViewOpen,
+            ...(next.artifactView === undefined ? {} : { artifactView: next.artifactView }),
             open: next.open,
             tabs: projectedTabs,
             ...(next.previewEntryId === undefined ? {} : { previewEntryId: next.previewEntryId }),
@@ -563,6 +588,22 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             remember();
             recompute();
         },
+        artifactViewOpen(artifactId, version) {
+            if (disposed) return;
+            if (artifactView?.artifactId !== artifactId || artifactView.version !== version)
+                artifactView = version === undefined ? { artifactId } : { artifactId, version };
+            activeViewId = "artifact";
+            open = true;
+            remember();
+            recompute();
+        },
+        artifactViewClose() {
+            if (disposed) return;
+            artifactView = undefined;
+            if (activeViewId === "artifact") activeViewId = "files";
+            remember();
+            recompute();
+        },
         terminalAdd() {
             if (disposed || !groupId || !conversationId || terminalRefusal !== undefined) return;
             terminalTabAdd(groupId, conversationId);
@@ -667,6 +708,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             activityViewDismissed = false;
             usageViewShown = false;
             fileViewShown = false;
+            artifactView = undefined;
             if (nextGroupId) groupRestore(nextGroupId);
             const chrome = nextGroupId ? chromeByGroup.get(nextGroupId) : undefined;
             open = chrome?.open ?? false;

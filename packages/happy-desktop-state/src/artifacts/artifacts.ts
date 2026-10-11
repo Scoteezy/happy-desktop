@@ -12,6 +12,10 @@ import {
     type HappyAgentArtifactPeopleStore,
 } from "./artifactPeopleStore.js";
 import {
+    happyAgentArtifactTitlesStoreCreate,
+    type HappyAgentArtifactTitlesStore,
+} from "./artifactTitlesStore.js";
+import {
     happyAgentArtifactViewerStoreCreate,
     type HappyAgentArtifactViewerStore,
 } from "./artifactViewerStore.js";
@@ -28,6 +32,14 @@ export interface HappyAgentArtifacts {
     panel(): HappyAgentArtifactCatalogStore;
     /** The open artifact, its history, and the version on screen. */
     viewer(): HappyAgentArtifactViewerStore;
+    /**
+     * The artifact a conversation link opened beside it, in the side panel.
+     * It is its own viewer so the panel and the Artifacts page never fight
+     * over which artifact one store holds.
+     */
+    panelViewer(): HappyAgentArtifactViewerStore;
+    /** The live titles of the artifacts conversations name. */
+    titles(): HappyAgentArtifactTitlesStore;
     /** The names of the people artifacts credit. */
     people(): HappyAgentArtifactPeopleStore;
     [Symbol.dispose](): void;
@@ -59,6 +71,8 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
     let catalog: HappyAgentArtifactCatalogStore | undefined;
     let panel: HappyAgentArtifactCatalogStore | undefined;
     let viewer: HappyAgentArtifactViewerStore | undefined;
+    let panelViewer: HappyAgentArtifactViewerStore | undefined;
+    let titles: HappyAgentArtifactTitlesStore | undefined;
     let people: HappyAgentArtifactPeople | undefined;
     let disposed = false;
     /*
@@ -71,6 +85,16 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
         if (disposed) store[Symbol.dispose]();
         return store;
     };
+    const viewerCreate = (): HappyAgentArtifactViewerStore =>
+        inert(
+            happyAgentArtifactViewerStoreCreate({
+                client: deps.client,
+                sync: deps.sync,
+                ...(deps.documentInline ? { documentInline: deps.documentInline } : {}),
+                ...(deps.siteOpen ? { siteOpen: deps.siteOpen } : {}),
+                authorsSeen: (authors) => peopleOf().request(authors),
+            }),
+        );
     const peopleOf = (): HappyAgentArtifactPeople =>
         (people ??= inert(happyAgentArtifactPeopleCreate(deps.client)));
     return {
@@ -96,14 +120,14 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
             ));
         },
         viewer() {
-            return (viewer ??= inert(
-                happyAgentArtifactViewerStoreCreate({
-                    client: deps.client,
-                    sync: deps.sync,
-                    ...(deps.documentInline ? { documentInline: deps.documentInline } : {}),
-                    ...(deps.siteOpen ? { siteOpen: deps.siteOpen } : {}),
-                    authorsSeen: (authors) => peopleOf().request(authors),
-                }),
+            return (viewer ??= viewerCreate());
+        },
+        panelViewer() {
+            return (panelViewer ??= viewerCreate());
+        },
+        titles() {
+            return (titles ??= inert(
+                happyAgentArtifactTitlesStoreCreate({ client: deps.client, sync: deps.sync }),
             ));
         },
         people() {
@@ -115,6 +139,8 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
             catalog?.[Symbol.dispose]();
             panel?.[Symbol.dispose]();
             viewer?.[Symbol.dispose]();
+            panelViewer?.[Symbol.dispose]();
+            titles?.[Symbol.dispose]();
             people?.[Symbol.dispose]();
         },
     };

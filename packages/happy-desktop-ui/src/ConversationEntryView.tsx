@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode } from "react";
 import type { FileOpenHandler } from "./fileReference";
 import type { LinkOpenHandler, LinkOpenPlacement } from "./MessageMarkdown";
+import type { MessageReferences } from "./messageReferences";
 import { thumbhashDataUrl } from "./thumbhashDataUrl";
 import type {
     AgentTurnTraceSummary,
@@ -75,6 +76,8 @@ export type ConversationEntryViewProps = {
     onLinkOpen?: LinkOpenHandler;
     /** Which of the two places a plain click on a link goes, marked in its menu. */
     linkOpenDefault?: LinkOpenPlacement;
+    /** What the Happy references a message names read as, and where opening one goes. */
+    references?: MessageReferences;
     /** Disables request controls while a prior submission is in flight. */
     requestPending?: boolean;
     /** Last failed submission for this request. */
@@ -444,6 +447,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
             {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
             {...(props.onLinkOpen ? { onLinkOpen: props.onLinkOpen } : {})}
             {...(props.linkOpenDefault ? { linkOpenDefault: props.linkOpenDefault } : {})}
+            {...(props.references ? { references: props.references } : {})}
             own={own}
             style={props.style}
             time={messageTime(message.createdAt)}

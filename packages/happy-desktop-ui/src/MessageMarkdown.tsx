@@ -8,7 +8,7 @@ import {
     type ComponentPropsWithoutRef,
     type ReactNode,
 } from "react";
-import Markdown, { type Components, type ExtraProps } from "react-markdown";
+import Markdown, { type Components, type ExtraProps, type UrlTransform } from "react-markdown";
 import { ContextMenu } from "./ContextMenu";
 import { filePreviewKind } from "./FilePreview";
 import { type MenuItem } from "./Menu";
@@ -18,7 +18,14 @@ import { markdownDocumentLinkTarget, markdownFileUrlTransform } from "./Markdown
 import { MermaidDiagram } from "./MermaidDiagram";
 import { FILE_REFERENCE_LINK_ATTRIBUTE } from "./messageFileReferences";
 import { MESSAGE_MARKDOWN_REMARK_PLUGINS } from "./messageMarkdownAst";
+import {
+    messageReferenceFromHref,
+    messageReferenceHrefIs,
+    messageReferencesResolve,
+    type MessageReferences,
+} from "./messageReferences";
 import { ScrollArea } from "./Scrollbar";
+import { ShimmerText } from "./ShimmerText";
 
 // Keep unchanged streamed message bodies from re-running react-markdown's
 // parser when an unrelated conversation notification reaches the parent.
@@ -99,6 +106,52 @@ function linkMenuItems(defaultPlacement: LinkOpenPlacement | undefined): MenuIte
         },
     ];
 }
+/**
+ * The live side of the Happy references a message names: what each reads as,
+ * and where opening one goes. Absent, every reference reads as inert text.
+ */
+const MarkdownReferencesContext = createContext<MessageReferences | undefined>(undefined);
+/**
+ * A Happy reference the agent named: an underlined link like any other in the
+ * body, reading as the live title of what it names. While that thing is busy
+ * the title carries the same travelling band a busy sidebar row or tab does,
+ * and nothing else changes — the words wrap where they would without it.
+ */
+const MarkdownReferenceLink = ({
+    children,
+    href,
+    references,
+    reference,
+}: {
+    children?: ReactNode;
+    href: string;
+    references: MessageReferences;
+    reference: NonNullable<ReturnType<typeof messageReferenceFromHref>>;
+}) => {
+    const view = references.view(reference);
+    const busy = view.type === "link" && view.busy;
+    return (
+        <a
+            className="happy-message__md-link happy-message__md-reference"
+            data-busy={busy ? "" : undefined}
+            data-happy-desktop-ui="message-md-reference"
+            data-reference-kind={reference.kind}
+            href={href}
+            onClick={(event) => {
+                event.preventDefault();
+                references.open(reference);
+            }}
+        >
+            {busy ? (
+                <ShimmerText inline sweep="sheen" tone="inherit">
+                    {children}
+                </ShimmerText>
+            ) : (
+                children
+            )}
+        </a>
+    );
+};
 const MarkdownTrailingContext = createContext<{
     endOffset: number;
     node: ReactNode;
@@ -152,6 +205,8 @@ const MarkdownLink = ({
     node: _node,
     ...props
 }: ComponentPropsWithoutRef<"a"> & ExtraProps) => {
+    const references = useContext(MarkdownReferencesContext);
+    const reference = references === undefined ? undefined : messageReferenceFromHref(href);
     const safe = safeHref(href);
     const onFileOpen = useContext(MarkdownFileOpenContext);
     const onLinkOpen = useContext(MarkdownLinkOpenContext);
@@ -159,6 +214,12 @@ const MarkdownLink = ({
     // The link's own context menu, while it is up: where the pointer asked
     // for it. Local to the link because nothing else in the message reads it.
     const [menuAt, setMenuAt] = useState<{ x: number; y: number }>();
+    if (reference !== undefined && references !== undefined)
+        return (
+            <MarkdownReferenceLink href={href!} reference={reference} references={references}>
+                {children}
+            </MarkdownReferenceLink>
+        );
     const target = safe === undefined ? markdownDocumentLinkTarget(href) : undefined;
     // Only a file this product can actually show is offered as a click. An
     // archive or an executable stays plain text rather than promising a preview
@@ -358,6 +419,11 @@ const markdownComponents: Components = {
     h5: headingOverride("h5"),
     h6: headingOverride("h6"),
 };
+/** Keeps the reference links this module wrote; every other URL is filtered as before. */
+const messageUrlTransform: UrlTransform = (url, key, node) =>
+    key === "href" && node.tagName === "a" && messageReferenceHrefIs(url)
+        ? url
+        : markdownFileUrlTransform(url, key, node);
 /**
  * Render untrusted Markdown as React nodes. Raw HTML is never activated because
  * no raw-HTML plugin is present; block nodes are emitted as direct siblings so
@@ -366,16 +432,20 @@ const markdownComponents: Components = {
  * independently at the paragraph boundary. `onFileOpen` turns a link that names
  * a workspace file into a click that opens Happy's own viewer instead of an
  * inert anchor. `onLinkOpen` gives a web link a context menu offering the
- * machine's browser or the side panel.
+ * machine's browser or the side panel. `references` resolves the Happy
+ * reference tags an agent wrote to their live titles; without it each reads as
+ * inert placeholder text, and a tag never shows raw.
  */
 export function renderMessageMarkdown(
-    text: string,
+    source: string,
     trailing?: ReactNode,
     onFileOpen?: FileOpenHandler,
     generationStatus?: MessageGenerationStatus,
     onLinkOpen?: LinkOpenHandler,
     linkOpenDefault?: LinkOpenPlacement,
+    references?: MessageReferences,
 ): ReactNode {
+    const text = messageReferencesResolve(source, references, generationStatus === "streaming");
     return (
         <MarkdownGenerationStatusContext.Provider value={generationStatus}>
             <MarkdownTrailingContext.Provider
@@ -385,20 +455,22 @@ export function renderMessageMarkdown(
                         : { endOffset: text.trimEnd().length, node: trailing }
                 }
             >
-                <MarkdownFileOpenContext.Provider value={onFileOpen}>
-                    <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
-                        <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
-                            <MemoMarkdown
-                                components={markdownComponents}
-                                urlTransform={markdownFileUrlTransform}
-                                remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
-                                skipHtml
-                            >
-                                {text}
-                            </MemoMarkdown>
-                        </MarkdownLinkDefaultContext.Provider>
-                    </MarkdownLinkOpenContext.Provider>
-                </MarkdownFileOpenContext.Provider>
+                <MarkdownReferencesContext.Provider value={references}>
+                    <MarkdownFileOpenContext.Provider value={onFileOpen}>
+                        <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
+                            <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
+                                <MemoMarkdown
+                                    components={markdownComponents}
+                                    urlTransform={messageUrlTransform}
+                                    remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
+                                    skipHtml
+                                >
+                                    {text}
+                                </MemoMarkdown>
+                            </MarkdownLinkDefaultContext.Provider>
+                        </MarkdownLinkOpenContext.Provider>
+                    </MarkdownFileOpenContext.Provider>
+                </MarkdownReferencesContext.Provider>
             </MarkdownTrailingContext.Provider>
         </MarkdownGenerationStatusContext.Provider>
     );

@@ -71,6 +71,13 @@ export type {
 } from "./artifacts/artifactViewerStore.js";
 export type { HappyAgentArtifactPeopleStore } from "./artifacts/artifactPeopleStore.js";
 export type { HappyAgentArtifacts } from "./artifacts/artifacts.js";
+export type {
+    HappyAgentArtifactTitle,
+    HappyAgentArtifactTitlesSnapshot,
+    HappyAgentArtifactTitlesStore,
+} from "./artifacts/artifactTitlesStore.js";
+// Vendored until the client release that exports the grammar is published.
+export * from "./references/happyReferences.js";
 export * from "./happyAgent/happyAgentInstructionsStore.js";
 export * from "./happyAgent/happyAgentMenusStore.js";
 export * from "./happyAgent/happyAgentModelStore.js";

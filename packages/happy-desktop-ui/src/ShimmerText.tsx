@@ -30,6 +30,15 @@ export type ShimmerTextProps = {
      * legible as everything around it while it shimmers.
      */
     sweep?: ShimmerTextSweep;
+    /**
+     * Lets the run wrap like the prose around it. By default the shimmer is one
+     * unbreakable box, which suits a label that sits on a line of its own. A
+     * run inside a paragraph — a link in a message — has to break exactly where
+     * its words would without the shimmer, so turning the sweep on and off
+     * never reflows the text or the row it is in. The sweep still crosses the
+     * whole run as one band, across every line it wraps onto.
+     */
+    inline?: boolean;
     /** One sweep, in milliseconds. */
     durationMs?: number;
     /**
@@ -68,6 +77,7 @@ export function ShimmerText(props: ShimmerTextProps) {
         "data-happy-desktop-ui",
         "data-testid",
         "durationMs",
+        "inline",
         "phase",
         "style",
         "sweep",
@@ -84,6 +94,7 @@ export function ShimmerText(props: ShimmerTextProps) {
         <span
             className={["happy-shimmer-text", local.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui={local["data-happy-desktop-ui"] ?? "shimmer-text"}
+            data-inline={local.inline ? "" : undefined}
             data-paused={paused() ? "" : undefined}
             data-sweep={local.sweep ?? "lift"}
             data-testid={local["data-testid"]}

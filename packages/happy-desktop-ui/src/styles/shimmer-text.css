@@ -72,6 +72,18 @@
     animation-delay: calc(-1 * var(--happy-shimmer-offset) * var(--happy-shimmer-duration));
 }
 
+/*
+ * An inline run breaks wherever the words around it would. Its background is
+ * sliced across the line fragments as if they were laid end to end, so the
+ * ramp — and the band in it — still spans the whole run once rather than
+ * restarting on each line.
+ */
+.happy-shimmer-text[data-inline] {
+    display: inline;
+    box-decoration-break: slice;
+    -webkit-box-decoration-break: slice;
+}
+
 .happy-shimmer-text[data-paused] {
     animation-play-state: paused;
 }

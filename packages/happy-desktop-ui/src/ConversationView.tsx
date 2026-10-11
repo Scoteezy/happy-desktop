@@ -1,6 +1,7 @@
 import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
 import type { FileOpenHandler } from "./fileReference";
 import type { LinkOpenHandler, LinkOpenPlacement } from "./MessageMarkdown";
+import type { MessageReferences } from "./messageReferences";
 import {
     entryKey,
     type ComposerSnapshot,
@@ -211,6 +212,12 @@ export type ConversationViewProps = {
     onLinkOpen?: LinkOpenHandler;
     /** Which of the two places a plain click on a link goes, marked in its menu. */
     linkOpenDefault?: LinkOpenPlacement;
+    /**
+     * What the Happy references agents name read as right now, and where
+     * opening one goes. Supplied by the owner of the live stores behind them;
+     * a new value re-renders the references and re-sizes the rows naming them.
+     */
+    references?: MessageReferences;
     /** Runs a command chosen from the `/` palette. */
     onCommandInvoke?: (commandId: string) => void;
     /** Stops the current run; the composer's send control becomes this while running. */
@@ -598,6 +605,7 @@ export function ConversationView(props: ConversationViewProps) {
                         workingStatusStartsGroup,
                         props.activityControl !== undefined,
                         rowExpansion,
+                        props.references,
                     ]}
                     estimateRowSize={(index, width) =>
                         conversationRowHeight(
@@ -612,6 +620,7 @@ export function ConversationView(props: ConversationViewProps) {
                                         : rowExpanded(transcript[index]),
                                 surface: "conversation",
                                 liveStatus: statusVisible,
+                                ...(props.references ? { references: props.references } : {}),
                                 viewerId: props.viewerId,
                                 width,
                             },
@@ -637,6 +646,9 @@ export function ConversationView(props: ConversationViewProps) {
                                                     ? entry.message.id
                                                     : entry.id
                                             }
+                                            {...(props.references
+                                                ? { references: props.references }
+                                                : {})}
                                             viewerId={props.viewerId}
                                         />
                                     ))}
@@ -664,6 +676,9 @@ export function ConversationView(props: ConversationViewProps) {
                                                 ? false
                                                 : rowExpanded(queued[index]),
                                         surface: "conversation",
+                                        ...(props.references
+                                            ? { references: props.references }
+                                            : {}),
                                         viewerId: props.viewerId,
                                         width,
                                     },
@@ -741,6 +756,7 @@ export function ConversationView(props: ConversationViewProps) {
                                 now={props.now}
                                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
                                 {...(props.onLinkOpen ? { onLinkOpen: props.onLinkOpen } : {})}
+                                {...(props.references ? { references: props.references } : {})}
                                 {...(props.linkOpenDefault
                                     ? { linkOpenDefault: props.linkOpenDefault }
                                     : {})}

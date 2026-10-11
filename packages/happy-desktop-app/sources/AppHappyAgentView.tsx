@@ -1,6 +1,11 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { happyAgentBotSubtasks } from "happy-desktop-state";
 import { AppGptLivePhone } from "./gptLive/AppGptLivePhone";
+import {
+    ARTIFACT_READING,
+    artifactTitlesStoreNoop,
+    messageReferencesCreate,
+} from "./messageReferences";
 import type {
     AppearanceStore,
     CommandPaletteStore,
@@ -41,6 +46,7 @@ import type {
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
     HappyAgentSidebarVisibilityStore,
+    HappyAgentPanelArtifactView,
     HappyAgentPanelSnapshot,
     HappyAgentProjectAddSnapshot,
     HappyAgentPanelStore,
@@ -1187,6 +1193,7 @@ function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefine
     if (panel.activeViewId === "usage") return "usage";
     if (panel.activeViewId === "preview") return panel.previewEntryId ? "preview" : undefined;
     if (panel.activeViewId === "file") return panel.fileViewOpen ? "file" : undefined;
+    if (panel.activeViewId === "artifact") return panel.artifactView ? "artifact" : undefined;
     const tab = panel.tabs.find(
         (entry) => entry.id === panel.activeViewId && entry.placement === "panel",
     );
@@ -3022,6 +3029,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     {...(artifactsAvailable && active.session.artifacts
                         ? {
                               artifacts: active.session.artifacts,
+                              ...(props.artifactPage ? { artifactPage: props.artifactPage } : {}),
                               onArtifactOpen: (artifactId: string) =>
                                   props.onArtifactOpen?.(active.id, artifactId),
                           }
@@ -3966,6 +3974,49 @@ function HappyAgentArtifactViewerSurface(props: {
 }
 
 /**
+ * The artifact a reference in the conversation opened, beside it in the side
+ * panel. It is the same viewer the Artifacts page shows, held in a store of
+ * its own, opened on the version the reference named when it named one.
+ */
+function HappyAgentArtifactPanelViewerSurface(props: {
+    artifacts: HappyAgentArtifacts;
+    artifactPage?: HtmlPreviewRenderer;
+    places: HappyAgentArtifactPlaces;
+    view: HappyAgentPanelArtifactView;
+    onClose(): void;
+}) {
+    const store = props.artifacts.panelViewer();
+    const peopleStore = props.artifacts.people();
+    const people = useSyncExternalStore(peopleStore.subscribe, peopleStore.get, peopleStore.get);
+    const { artifactId, version } = props.view;
+    // The panel decides which artifact this viewer holds for as long as the
+    // tab shows it; closing the tab lets the viewer drop everything read.
+    useDisposableLease(`${artifactId}@${String(version ?? "latest")}`, () => {
+        store.artifactOpen(artifactId, version);
+        return { [Symbol.dispose]: () => store.artifactOpen(undefined) };
+    });
+    const viewer = useSyncExternalStore(store.subscribe, store.get, store.get);
+    return (
+        <HappyAgentArtifactViewer
+            labels={artifactLabels(props.places, people)}
+            onBack={props.onClose}
+            onDeletionCancel={store.deletionCancel}
+            onDeletionConfirm={store.deletionConfirm}
+            onDeletionRequest={store.deletionRequest}
+            onFileDownload={(link) => {
+                void fileDownload(link.file.path, { type: "url", url: link.url }).catch(
+                    () => undefined,
+                );
+            }}
+            onVersionSelect={store.versionSelect}
+            onVersionsLoadMore={store.versionsNextLoad}
+            {...(props.artifactPage ? { renderPage: props.artifactPage } : {})}
+            viewer={viewer.artifactId === artifactId ? viewer : VIEWER_OPENING}
+        />
+    );
+}
+
+/**
  * What the viewer shows in the one commit between an address naming an
  * artifact and the viewer being told to open it, so the previous artifact is
  * never drawn under the new address.
@@ -4025,6 +4076,8 @@ function HappyAgentArtifactsPanelSurface(props: {
 interface HappyAgentWorkspaceSurfaceProps {
     /** The machine's artifacts, present only once it has said it keeps them. */
     artifacts?: HappyAgentArtifacts;
+    /** Shows an HTML artifact opened beside the conversation as a site of its own. */
+    artifactPage?: HtmlPreviewRenderer;
     /** Opens one artifact in the viewer. */
     onArtifactOpen?: (artifactId: string) => void;
     /** Account usage for the model picker's account submenu; read only while that submenu is open. */
@@ -4497,6 +4550,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         else if (viewId === "usage") props.workspace.usagePanelClose();
         else if (viewId === "preview") props.workspace.panel.previewClose();
         else if (viewId === "file") props.workspace.filePanelClose();
+        else if (viewId === "artifact") props.workspace.panel.artifactViewClose();
         else props.workspace.panel.tabClose(viewId as HappyAgentPanelTabId);
     };
     const activeTabClose = () => {
@@ -4745,6 +4799,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         ) : (
             <HappyAgentConversationBody
                 modelUsageWatch={modelUsageWatch}
+                {...(props.artifacts ? { artifacts: props.artifacts } : {})}
                 activitySelected={panel.open && panel.activeViewId === "activity"}
                 conversation={conversation}
                 {...(workspace.fileOpenFailure === undefined
@@ -4853,6 +4908,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                       ),
                                       onOpen: props.onArtifactOpen,
                                       places: artifactPlaces,
+                                      ...(props.artifactPage ? { page: props.artifactPage } : {}),
                                   },
                               }
                             : {})}
@@ -6094,6 +6150,8 @@ function HappyAgentGroupComposer(props: {
 /** The open conversation's materialization states, inside the directory's tabs. */
 function HappyAgentConversationBody(props: {
     activitySelected: boolean;
+    /** The machine's artifacts, which the transcript's references name. */
+    artifacts?: HappyAgentArtifacts;
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentWorkspaceSnapshot["conversation"];
     emptyContent?: ReactNode;
@@ -6142,6 +6200,7 @@ function HappyAgentConversationBody(props: {
         return (
             <HappyAgentConversationSurface
                 activitySelected={props.activitySelected}
+                {...(props.artifacts ? { artifacts: props.artifacts } : {})}
                 modelUsageWatch={props.modelUsageWatch}
                 conversation={conversation.value}
                 emptyContent={props.emptyContent}
@@ -6286,6 +6345,8 @@ function happyAgentDelegatedElapsedMs(
 
 function HappyAgentConversationSurface(props: {
     activitySelected: boolean;
+    /** The machine's artifacts, which the transcript's references name. */
+    artifacts?: HappyAgentArtifacts;
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentConversationSnapshot;
     emptyContent?: ReactNode;
@@ -6323,6 +6384,10 @@ function HappyAgentConversationSurface(props: {
     workspace: HappyAgentWorkspaceStore;
 }) {
     const { conversation, workspace } = props;
+    // The one subscription the transcript's references read through: every
+    // reference row fans out from this snapshot rather than subscribing itself.
+    const titlesStore = props.artifacts?.titles() ?? artifactTitlesStoreNoop;
+    const titles = useSyncExternalStore(titlesStore.subscribe, titlesStore.get, titlesStore.get);
     // A session that is still being read is not a reason to unmount this
     // surface: the composer is already live, the header already carries the
     // title the list knew, and the transcript fills in underneath. Only a
@@ -6373,8 +6438,21 @@ function HappyAgentConversationSurface(props: {
     const configurable = !composerDisabled && sendRefusal === undefined;
     const activeActivity = happyAgentActiveActivityCounts(conversation);
     const activityTotal = activeActivity.agents + activeActivity.terminals;
+    const references = messageReferencesCreate({
+        titles,
+        titlesStore,
+        ...(props.artifacts
+            ? {
+                  // A reference opens beside the conversation, the way a file
+                  // the transcript names does, rather than leaving it.
+                  onArtifactOpen: (artifactId: HappyAgentArtifactId, version?: number) =>
+                      workspace.panel.artifactViewOpen(artifactId, version),
+              }
+            : {}),
+    });
     return (
         <ConversationView
+            references={references}
             emptyContent={props.emptyContent}
             agentAuthor={agentAuthor}
             activityControl={
@@ -7337,6 +7415,8 @@ function HappyAgentPanelBody(props: {
         readonly context: HappyAgentArtifactChatContext | undefined;
         readonly places: HappyAgentArtifactPlaces;
         readonly onOpen: (artifactId: string) => void;
+        /** Shows an HTML artifact opened here as a site of its own. */
+        readonly page?: HtmlPreviewRenderer;
     };
     browserContent?: BrowserContentRenderer;
     browserConnectionId: string | null;
@@ -7472,6 +7552,23 @@ function HappyAgentPanelBody(props: {
     const panelTools = toolTabsPlaced(props.panel, "panel");
     const activeToolTab = panelTools.find((tab) => tab.id === props.panel.activeViewId);
     const panelFile = props.panelFile;
+    // The artifact a reference opened here, named by the same live title the
+    // reference itself reads as.
+    const titlesStore = props.artifacts?.artifacts.titles() ?? artifactTitlesStoreNoop;
+    const titles = useSyncExternalStore(titlesStore.subscribe, titlesStore.get, titlesStore.get);
+    const artifactView = props.panel.artifactView;
+    const artifactTabView =
+        artifactView === undefined
+            ? undefined
+            : messageReferencesCreate({
+                  titles,
+                  titlesStore,
+                  onArtifactOpen: () => undefined,
+              }).view({ kind: "artifact", id: artifactView.artifactId });
+    const artifactTabLabel =
+        artifactTabView?.type === "link" && artifactTabView !== ARTIFACT_READING
+            ? artifactTabView.label
+            : "Artifact";
     const activityTabShown =
         props.panel.activityViewOpen ||
         (props.activity?.activityAvailable === true && !props.panel.activityViewDismissed);
@@ -7504,6 +7601,19 @@ function HappyAgentPanelBody(props: {
                       id: HAPPY_AGENT_PANEL_FILE_VIEW_ID,
                       // The viewer holds whatever the transcript last pointed
                       // at, so it is marked as the replaceable tab it is.
+                      preview: true,
+                  } satisfies TabItem,
+              ]
+            : []),
+        ...(props.panel.artifactView && props.artifacts
+            ? [
+                  {
+                      closable: true,
+                      icon: "package" as const,
+                      id: "artifact",
+                      label: artifactTabLabel,
+                      // Like the file viewer, it holds whatever the transcript
+                      // last pointed at, so it is the replaceable tab it is.
                       preview: true,
                   } satisfies TabItem,
               ]
@@ -7598,6 +7708,11 @@ function HappyAgentPanelBody(props: {
                             props.store.previewOpen(props.panel.previewEntryId);
                         else if (tabId === HAPPY_AGENT_PANEL_FILE_VIEW_ID)
                             props.store.fileViewOpen();
+                        else if (tabId === "artifact" && props.panel.artifactView)
+                            props.store.artifactViewOpen(
+                                props.panel.artifactView.artifactId,
+                                props.panel.artifactView.version,
+                            );
                         else props.store.tabSelect(tabId as HappyAgentPanelTabId);
                     }}
                     onTransfer={(tabId) => props.onViewTransfer(tabId)}
@@ -7610,7 +7725,8 @@ function HappyAgentPanelBody(props: {
                         tab.id !== "artifacts" &&
                         tab.id !== "activity" &&
                         tab.id !== "usage" &&
-                        tab.id !== "preview"
+                        tab.id !== "preview" &&
+                        tab.id !== "artifact"
                     }
                     transferTargets={PANEL_TRANSFER_TARGETS}
                 >
@@ -7713,6 +7829,25 @@ function HappyAgentPanelBody(props: {
                                 icon="package"
                                 size="panel"
                                 title="No artifacts"
+                            />
+                        )
+                    ) : props.panel.activeViewId === "artifact" ? (
+                        props.artifacts && props.panel.artifactView ? (
+                            <HappyAgentArtifactPanelViewerSurface
+                                artifacts={props.artifacts.artifacts}
+                                {...(props.artifacts.page
+                                    ? { artifactPage: props.artifacts.page }
+                                    : {})}
+                                onClose={() => props.store.artifactViewClose()}
+                                places={props.artifacts.places}
+                                view={props.panel.artifactView}
+                            />
+                        ) : (
+                            <EmptyState
+                                description="The artifact this conversation pointed at is no longer open."
+                                icon="package"
+                                size="panel"
+                                title="No artifact open"
                             />
                         )
                     ) : props.panel.activeViewId === "activity" ? (

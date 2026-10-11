@@ -269,6 +269,7 @@ export {
     type LinkOpenPlacement,
     type MessageGenerationStatus,
 } from "./MessageMarkdown";
+export { type MessageReferences, type MessageReferenceView } from "./messageReferences";
 export { Lightbox, type LightboxProps } from "./Lightbox";
 export { Rail, type RailItem, type RailProps } from "./Rail";
 export {

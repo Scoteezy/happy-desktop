@@ -121,8 +121,13 @@ export interface HappyAgentArtifactViewerSnapshot {
 export interface HappyAgentArtifactViewerStore {
     get(): HappyAgentArtifactViewerSnapshot;
     subscribe(listener: () => void): () => void;
-    /** Owner input: the artifact navigation opened, or none. */
-    artifactOpen(artifactId: HappyAgentArtifactId | undefined): void;
+    /**
+     * Owner input: the artifact navigation opened, or none, and the numbered
+     * version it named when it named one. Without a version the viewer follows
+     * the latest; with one it opens on that version, as if the reader had
+     * picked it from the history.
+     */
+    artifactOpen(artifactId: HappyAgentArtifactId | undefined, version?: number): void;
     /** Shows one numbered version; the latest number follows the latest again. */
     versionSelect(number: number): void;
     /** Reads the next page of older versions. */
@@ -168,9 +173,13 @@ export interface HappyAgentArtifactViewerDeps {
 const LOADING = { type: "loading" } as const;
 const DELETION_IDLE: HappyAgentArtifactDeletion = { phase: "idle" };
 
-function snapshotEmpty(artifactId?: HappyAgentArtifactId): HappyAgentArtifactViewerSnapshot {
+function snapshotEmpty(
+    artifactId?: HappyAgentArtifactId,
+    versionSelected?: number,
+): HappyAgentArtifactViewerSnapshot {
     return {
         ...(artifactId === undefined ? {} : { artifactId }),
+        ...(versionSelected === undefined ? {} : { versionSelected }),
         artifact: LOADING,
         versions: [],
         versionsLoading: false,
@@ -441,6 +450,12 @@ export function happyAgentArtifactViewerStoreCreate(
         const held = snapshot.artifact.type === "ready" ? snapshot.artifact.value : undefined;
         if (held && happyAgentArtifactVersionNewer(held.version, artifact.version)) return;
         deps.authorsSeen?.(happyAgentArtifactAuthors([artifact]));
+        // A version named on opening that turns out to be the latest is the
+        // latest, and follows it from here like any other.
+        if (held === undefined && snapshot.versionSelected === artifact.latestVersion) {
+            const { versionSelected: _selected, ...rest } = snapshot;
+            snapshot = rest;
+        }
         publish({ artifact: { type: "ready", value: artifact } });
     };
 
@@ -551,6 +566,17 @@ export function happyAgentArtifactViewerStoreCreate(
         return happyAgentUserError(error);
     };
 
+    const versionSelect = (number: number): void => {
+        if (disposed || snapshot.artifact.type !== "ready") return;
+        const latest = snapshot.artifact.value.latestVersion;
+        const next = number === latest ? undefined : number;
+        if (next === snapshot.versionSelected) return;
+        const { versionSelected: _selected, ...rest } = snapshot;
+        snapshot = next === undefined ? rest : { ...rest, versionSelected: next };
+        for (const listener of listeners) listener();
+        contentLoad();
+    };
+
     return {
         get: () => snapshot,
         subscribe(listener) {
@@ -565,8 +591,12 @@ export function happyAgentArtifactViewerStoreCreate(
                 if (listeners.size === 0) stop();
             };
         },
-        artifactOpen(artifactId) {
-            if (disposed || artifactId === snapshot.artifactId) return;
+        artifactOpen(artifactId, version) {
+            if (disposed) return;
+            if (artifactId === snapshot.artifactId) {
+                if (version !== undefined && artifactId !== undefined) versionSelect(version);
+                return;
+            }
             opened.abort();
             opened = new AbortController();
             contentRead = undefined;
@@ -574,20 +604,11 @@ export function happyAgentArtifactViewerStoreCreate(
             versionsCursor = null;
             deletionMutationId = undefined;
             inlineRelease();
-            snapshot = snapshotEmpty(artifactId);
+            snapshot = snapshotEmpty(artifactId, version);
             for (const listener of listeners) listener();
             reconcile();
         },
-        versionSelect(number) {
-            if (disposed || snapshot.artifact.type !== "ready") return;
-            const latest = snapshot.artifact.value.latestVersion;
-            const next = number === latest ? undefined : number;
-            if (next === snapshot.versionSelected) return;
-            const { versionSelected: _selected, ...rest } = snapshot;
-            snapshot = next === undefined ? rest : { ...rest, versionSelected: next };
-            for (const listener of listeners) listener();
-            contentLoad();
-        },
+        versionSelect,
         versionsNextLoad() {
             const artifactId = snapshot.artifactId;
             if (

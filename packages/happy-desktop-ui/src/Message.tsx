@@ -20,6 +20,7 @@ import { AutomatedTag } from "./AutomatedTag";
 import { ReactionChip } from "./Badge";
 import { Icon, type IconName } from "./Icon";
 import { messageMediaSingleBox } from "./conversationRowHeight";
+import type { MessageReferences } from "./messageReferences";
 import {
     MessageListDisclosureAnchorProvider,
     type MessageListDisclosureAnchor,
@@ -210,6 +211,11 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     onLinkOpen?: LinkOpenHandler;
     /** Which of the two places a plain click on a link goes, marked in its menu. */
     linkOpenDefault?: LinkOpenPlacement;
+    /**
+     * What the Happy references in a Markdown body read as, and where opening
+     * one goes. Absent, each reference reads as inert placeholder text.
+     */
+    references?: MessageReferences;
     /** Makes the avatar and author name clickable to open the author's profile.
      *  Only the leading message of a group renders an avatar/name, so grouped
      *  follow-ups intentionally carry no profile affordance. */
@@ -309,6 +315,7 @@ export function Message(props: MessageProps) {
         "onFileOpen",
         "onLinkOpen",
         "linkOpenDefault",
+        "references",
         "initials",
         "metaAccessory",
         "onAuthorSelect",
@@ -470,6 +477,7 @@ export function Message(props: MessageProps) {
                           local.generationStatus,
                           local.onLinkOpen,
                           local.linkOpenDefault,
+                          local.references,
                       )
                     : null}
                 {/* An empty generated reply keeps a non-breaking-space line box
