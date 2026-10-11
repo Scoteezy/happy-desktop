@@ -248,8 +248,8 @@ importers:
   packages/happy-desktop-gym:
     dependencies:
       '@slopus/happy-agent-client':
-        specifier: 0.0.79
-        version: 0.0.79
+        specifier: 0.0.80
+        version: 0.0.80
     devDependencies:
       '@fontsource-variable/jetbrains-mono':
         specifier: ^5.2.8
@@ -285,8 +285,8 @@ importers:
         specifier: ^0.34.49
         version: 0.34.52
       '@slopus/happy-agent-client':
-        specifier: 0.0.79
-        version: 0.0.79
+        specifier: 0.0.80
+        version: 0.0.80
       yjs:
         specifier: ^13.6.31
         version: 13.6.31
@@ -1993,8 +1993,8 @@ packages:
     resolution: {integrity: sha512-/QC75rcy1ZdwY7BsbKmjk2hED6W+A7Oe+C8pjTAc4p5yoQcL3Kndyeeui9kgff1ilWTGLOT12/jCh9KiuFTTFQ==}
     engines: {node: '>=20'}
 
-  '@slopus/happy-agent-client@0.0.79':
-    resolution: {integrity: sha512-9mqJXVYDdFAw1vfxsPse/SwYOdrNJbPRmt78nP4vu76X2AIz6b0qnGXavvgqxrbBNA1CYcgb5oeTQthOMPatwA==}
+  '@slopus/happy-agent-client@0.0.80':
+    resolution: {integrity: sha512-xU+yUr2VI7LIKBRMZRdM9QxPF084ZyxetOPLYE4LO0N0Kt3aMbUyTtn+SigjWoednwEllrzUqOuWhvY+spNcVQ==}
     engines: {node: '>=20'}
 
   '@standard-schema/spec@1.1.0':
@@ -7238,7 +7238,7 @@ snapshots:
     dependencies:
       '@sinclair/typebox': 0.34.52
 
-  '@slopus/happy-agent-client@0.0.79':
+  '@slopus/happy-agent-client@0.0.80':
     dependencies:
       '@sinclair/typebox': 0.34.52
 
