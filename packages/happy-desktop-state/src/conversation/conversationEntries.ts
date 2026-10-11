@@ -11,6 +11,7 @@ import {
     type ConversationEntry,
     type ConversationFileDiff,
     type ConversationJson,
+    type ConversationMediaItem,
     type ConversationMessageEntry,
     type ConversationReaction,
     type ConversationRequest,
@@ -511,7 +512,34 @@ function presentationEqual(
             left.files.length === right.files.length &&
             left.files.every((file, index) => fileDiffEqual(file, right.files[index]))
         );
+    if (left.type === "media" && right.type === "media")
+        return (
+            left.items.length === right.items.length &&
+            left.items.every((item, index) => mediaItemEqual(item, right.items[index]))
+        );
+    if (left.type === "artifact" && right.type === "artifact")
+        return (
+            left.artifactId === right.artifactId &&
+            left.version === right.version &&
+            left.artifactType === right.artifactType &&
+            left.title === right.title
+        );
     return false;
+}
+
+function mediaItemEqual(left: ConversationMediaItem, right: ConversationMediaItem | undefined) {
+    if (left === right) return true;
+    if (!right) return false;
+    return (
+        left.kind === right.kind &&
+        left.name === right.name &&
+        left.mimeType === right.mimeType &&
+        left.size === right.size &&
+        left.width === right.width &&
+        left.height === right.height &&
+        left.thumbhash === right.thumbhash &&
+        left.url === right.url
+    );
 }
 
 function fileDiffEqual(

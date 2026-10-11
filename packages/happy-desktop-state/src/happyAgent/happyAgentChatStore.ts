@@ -361,13 +361,31 @@ function contextGaugeDerive(
     };
 }
 
-interface HappyAgentImageRef {
-    readonly messageId: string;
-    readonly attachmentId: string;
+/**
+ * One picture the conversation shows, by where it lives: an attachment on a
+ * message, or an item a tool call presented.
+ */
+type HappyAgentImageRef =
+    | { readonly kind: "attachment"; readonly messageId: string; readonly attachmentId: string }
+    | { readonly kind: "toolMedia"; readonly entryId: string; readonly index: number };
+
+interface HappyAgentGalleryImage {
+    readonly ref: HappyAgentImageRef;
+    readonly id: string;
+    readonly url: string;
+    readonly alt: string;
 }
 
-interface HappyAgentGalleryImage extends HappyAgentImageRef {
-    readonly attachment: ConversationAttachment;
+function imageRefEqual(left: HappyAgentImageRef, right: HappyAgentImageRef): boolean {
+    if (left.kind === "attachment")
+        return (
+            right.kind === "attachment" &&
+            left.messageId === right.messageId &&
+            left.attachmentId === right.attachmentId
+        );
+    return (
+        right.kind === "toolMedia" && left.entryId === right.entryId && left.index === right.index
+    );
 }
 
 function imageSourceOf(
@@ -383,17 +401,42 @@ function imageSourceOf(
     return undefined;
 }
 
+/**
+ * Every picture the transcript shows, in reading order: message attachments
+ * and the pictures tool calls presented, so stepping through them walks the
+ * conversation the way the reader sees it.
+ */
 function imageGalleryOf(entries: readonly ConversationEntry[]): readonly HappyAgentGalleryImage[] {
     const gallery: HappyAgentGalleryImage[] = [];
     for (const entry of entries) {
-        if (entry.kind !== "message") continue;
-        for (const attachment of entry.message.attachments)
-            if (imageSourceOf(attachment))
+        if (entry.kind === "message") {
+            for (const attachment of entry.message.attachments) {
+                const source = imageSourceOf(attachment);
+                if (source)
+                    gallery.push({
+                        ref: {
+                            kind: "attachment",
+                            messageId: entry.message.id,
+                            attachmentId: attachment.id,
+                        },
+                        id: attachment.id,
+                        ...source,
+                    });
+            }
+            continue;
+        }
+        if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") continue;
+        const presentation = entry.activity.tool.presentation;
+        if (presentation?.type !== "media") continue;
+        presentation.items.forEach((item, index) => {
+            if (item.kind === "image")
                 gallery.push({
-                    messageId: entry.message.id,
-                    attachmentId: attachment.id,
-                    attachment,
+                    ref: { kind: "toolMedia", entryId: entry.id, index },
+                    id: `${entry.id}:${String(index)}`,
+                    url: item.url,
+                    alt: item.name,
                 });
+        });
     }
     return gallery;
 }
@@ -412,21 +455,10 @@ function openImageProject(
 ): HappyAgentOpenImage | undefined {
     if (!ref) return undefined;
     const gallery = imageGalleryOf(entries);
-    const index = gallery.findIndex(
-        (image) => image.messageId === ref.messageId && image.attachmentId === ref.attachmentId,
-    );
+    const index = gallery.findIndex((image) => imageRefEqual(image.ref, ref));
     const found = gallery[index];
     if (!found) return undefined;
-    const source = imageSourceOf(found.attachment);
-    return source === undefined
-        ? undefined
-        : {
-              id: found.attachmentId,
-              url: source.url,
-              alt: source.alt,
-              index,
-              total: gallery.length,
-          };
+    return { id: found.id, url: found.url, alt: found.alt, index, total: gallery.length };
 }
 
 function sessionStatusProject(session: SessionState): HappyAgentSessionStatus {
@@ -576,6 +608,8 @@ export interface HappyAgentChatStore {
     activityPanelShow(): void;
     activityPanelClose(): void;
     imageOpen(messageId: string, attachmentId: string): void;
+    /** Opens one picture a tool call presented, by the entry and its media position. */
+    toolImageOpen(entryId: string, index: number): void;
     imageNext(): void;
     imagePrevious(): void;
     imageClose(): void;
@@ -1122,15 +1156,12 @@ export function happyAgentChatStoreCreate(
         if (openImageRef === undefined) return;
         const gallery = imageGalleryOf(store.getState().entries);
         if (gallery.length < 2) return;
-        const at = gallery.findIndex(
-            (image) =>
-                image.messageId === openImageRef?.messageId &&
-                image.attachmentId === openImageRef.attachmentId,
-        );
+        const current = openImageRef;
+        const at = gallery.findIndex((image) => imageRefEqual(image.ref, current));
         if (at < 0) return;
         const next = gallery[(at + direction + gallery.length) % gallery.length];
         if (next === undefined) return;
-        openImageRef = { messageId: next.messageId, attachmentId: next.attachmentId };
+        openImageRef = next.ref;
         commit();
     };
 
@@ -1328,7 +1359,13 @@ export function happyAgentChatStoreCreate(
             commit();
         },
         imageOpen(messageId, attachmentId) {
-            const ref = { messageId, attachmentId };
+            const ref = { kind: "attachment", messageId, attachmentId } as const;
+            if (openImageProject(store.getState().entries, ref) === undefined) return;
+            openImageRef = ref;
+            commit();
+        },
+        toolImageOpen(entryId, index) {
+            const ref = { kind: "toolMedia", entryId, index } as const;
             if (openImageProject(store.getState().entries, ref) === undefined) return;
             openImageRef = ref;
             commit();

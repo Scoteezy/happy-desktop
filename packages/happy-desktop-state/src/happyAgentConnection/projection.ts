@@ -48,6 +48,11 @@ export interface SessionProjectionInput {
     config: DaemonConfig;
     connection: SessionState["connection"];
     endpoint: string;
+    /**
+     * Where this connection serves the bytes of one item a completed tool call
+     * presented, on the same authenticated origin as every other image it names.
+     */
+    mediaUrl: (agentId: string, toolCallId: string, index: number) => string;
     hasMore: boolean;
     messages: readonly TranscriptMessage[];
     userProfiles?: ReadonlyMap<string, UserProfile>;
@@ -275,6 +280,7 @@ function projectQuestionElement(question: Question): Extract<ChatElement, { kind
 
 export function projectElements(input: SessionProjectionInput): readonly ChatElement[] {
     const reader: TranscriptReader = {
+        mediaUrl: input.mediaUrl,
         agentId: input.agent.id,
         parentAgentId: input.agent.parentAgentId,
         userProfiles: input.userProfiles,
@@ -930,6 +936,8 @@ interface MessageElements {
  * and would defeat the memory below.
  */
 interface TranscriptReader {
+    /** Stable for the connection's life, so it takes no part in the memory below. */
+    readonly mediaUrl: SessionProjectionInput["mediaUrl"];
     readonly userProfiles?: ReadonlyMap<string, UserProfile>;
     readonly currentUserId?: string;
     readonly agentId: string;
@@ -1106,7 +1114,11 @@ function messageElementsProject(
                 ...(block.result === undefined ? {} : { result: stringify(block.result) }),
                 ...(block.presentation === undefined
                     ? {}
-                    : { presentation: projectToolPresentation(block.presentation) }),
+                    : {
+                          presentation: projectToolPresentation(block.presentation, (index) =>
+                              reader.mediaUrl(reader.agentId, block.id, index),
+                          ),
+                      }),
                 // Only a reviewed call carries elevation, and only the granted
                 // one is worth carrying: "not elevated" is the ordinary case
                 // every unreviewed call is already in.
@@ -1208,6 +1220,7 @@ function usageTotal(usage: UsageBreakdown): number {
 
 function projectToolPresentation(
     presentation: NonNullable<Extract<MessageBlock, { type: "tool_call" }>["presentation"]>,
+    mediaUrl: (index: number) => string,
 ): ToolPresentation {
     switch (presentation.type) {
         case "agent_spawn":
@@ -1259,6 +1272,45 @@ function projectToolPresentation(
                 query: presentation.query,
                 ...(presentation.sources === undefined ? {} : { sources: presentation.sources }),
             };
+        case "media":
+            // The array position is the item's index on the bytes route.
+            return {
+                kind: "media",
+                items: presentation.items.map((item, index) => ({
+                    kind: mediaKindProject(item.kind),
+                    name: item.name,
+                    mimeType: item.mimeType,
+                    size: item.size,
+                    ...(item.width === undefined ? {} : { width: item.width }),
+                    ...(item.height === undefined ? {} : { height: item.height }),
+                    ...(item.thumbhash === undefined ? {} : { thumbhash: item.thumbhash }),
+                    url: mediaUrl(index),
+                })),
+            };
+        case "artifact":
+            return {
+                kind: "artifact",
+                artifactId: presentation.artifactId,
+                version: presentation.version,
+                artifactType: presentation.artifactType,
+                title: presentation.title,
+            };
+    }
+}
+
+/**
+ * The kind of one presented item as this build can show it. The daemon's set
+ * grows with the product, and anything this build has no inline face for is
+ * still a file the reader can open.
+ */
+function mediaKindProject(kind: string): "image" | "video" | "document" | "file" {
+    switch (kind) {
+        case "image":
+        case "video":
+        case "document":
+            return kind;
+        default:
+            return "file";
     }
 }
 

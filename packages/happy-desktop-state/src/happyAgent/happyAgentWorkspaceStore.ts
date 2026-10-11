@@ -1,3 +1,4 @@
+import type { HappyAgentToolMediaDocumentStore } from "./happyAgentToolMediaDocumentStore.js";
 import { createStore } from "zustand/vanilla";
 import {
     happyAgentBotSubtasks,
@@ -1389,6 +1390,11 @@ export interface HappyAgentWorkspaceStore {
      * do it. The workspace keeps it pointed at the addressed group.
      */
     readonly panel: HappyAgentPanelStore;
+    /**
+     * The document a presented-file preview shows, read for the host's viewer.
+     * Materialized on first access; the preview leases which document it holds.
+     */
+    toolMediaDocument(): HappyAgentToolMediaDocumentStore;
 
     // Navigation-applied conversation lifetime. These are not user selection:
     // the router applies them from the addressed URL.
@@ -1777,6 +1783,8 @@ export interface HappyAgentWorkspaceStore {
     reasoningToggle(): void;
     /** Opens one transcript image of the open conversation full size. */
     imageOpen(messageId: string, attachmentId: string): void;
+    /** Opens one picture a tool call of the open conversation presented, full size. */
+    toolImageOpen(entryId: string, index: number): void;
     /** Shows the conversation's next image, wrapping past the last one. */
     imageNext(): void;
     /** Shows the conversation's previous image, wrapping past the first one. */
@@ -6373,6 +6381,7 @@ export function happyAgentWorkspaceStoreCreate(
     return {
         get: () => snapshotStore.getState(),
         panel,
+        toolMediaDocument: () => client.toolMediaDocument(),
         subscribe(listener) {
             listeners.add(listener);
             if (listeners.size === 1 && !disposed) start();
@@ -7489,6 +7498,7 @@ export function happyAgentWorkspaceStoreCreate(
         },
         reasoningToggle: () => chatStore?.reasoningToggle(),
         imageOpen: (messageId, attachmentId) => chatStore?.imageOpen(messageId, attachmentId),
+        toolImageOpen: (entryId, index) => chatStore?.toolImageOpen(entryId, index),
         imageNext: () => chatStore?.imageNext(),
         imagePrevious: () => chatStore?.imagePrevious(),
         imageClose: () => chatStore?.imageClose(),

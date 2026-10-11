@@ -12,6 +12,8 @@ import {
     type ConversationToolCall,
 } from "../conversation/conversationEntry.js";
 import { inlineImageSize } from "../conversation/inlineImageSize.js";
+import { happyAgentArtifactTypeProject } from "../artifacts/artifactProject.js";
+import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
 import type { AgentTurnTraceSummary } from "../types.js";
 import { happyAgentInboundMessageOmit } from "./happyAgentInboundMessageProject.js";
 import {
@@ -987,10 +989,13 @@ function happyAgentConnectGroupProject(
             // reader's own message does: folding it away would leave the answer
             // standing over nothing.
             (entry.kind === "agentActivity" && entry.activity.kind === "agentMessage") ||
-            // File edits are a result the reader can open, even when execution traces are folded.
+            // File edits, presented media, and published artifacts are a result
+            // the reader can open, even when execution traces are folded.
             (entry.kind === "agentActivity" &&
                 entry.activity.kind === "tool" &&
-                entry.activity.tool.presentation?.type === "fileDiff") ||
+                (entry.activity.tool.presentation?.type === "fileDiff" ||
+                    entry.activity.tool.presentation?.type === "media" ||
+                    entry.activity.tool.presentation?.type === "artifact")) ||
             (entry.kind === "notice" && !noticeInformational(entry)),
     );
     const hiddenCount = entries.length - visibleCollapsed.length;
@@ -1185,6 +1190,16 @@ function presentationProject(
                 target: presentation.target,
                 query: presentation.query,
                 ...(presentation.sources === undefined ? {} : { sources: presentation.sources }),
+            };
+        case "media":
+            return { type: "media", items: presentation.items };
+        case "artifact":
+            return {
+                type: "artifact",
+                artifactId: presentation.artifactId as HappyAgentArtifactId,
+                version: presentation.version,
+                artifactType: happyAgentArtifactTypeProject(presentation.artifactType),
+                title: presentation.title,
             };
     }
 }

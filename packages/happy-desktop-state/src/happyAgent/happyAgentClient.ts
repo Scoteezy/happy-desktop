@@ -99,6 +99,10 @@ import {
 } from "./happyAgentCloudStore.js";
 import { happyAgentTeamsStoreCreate, type HappyAgentTeamsStore } from "./happyAgentTeamsStore.js";
 import { happyAgentArtifactsCreate, type HappyAgentArtifacts } from "../artifacts/artifacts.js";
+import {
+    happyAgentToolMediaDocumentStoreCreate,
+    type HappyAgentToolMediaDocumentStore,
+} from "./happyAgentToolMediaDocumentStore.js";
 
 /** A disposable view lease on one retained session chat store. */
 export interface HappyAgentChatHandle {
@@ -174,6 +178,12 @@ export interface HappyAgentWorkspaceClient {
      * have artifacts says so through each surface's availability.
      */
     artifacts(): HappyAgentArtifacts;
+    /**
+     * The document a presented-file preview shows, read into memory for the
+     * host's viewer. Materialized on first access and shared, since one
+     * preview shows one document at a time.
+     */
+    toolMediaDocument(): HappyAgentToolMediaDocumentStore;
     /** Reads one bounded page of one checkout directory. */
     workspaceFileTreeRead(
         groupId: HappyAgentGroupId,
@@ -467,6 +477,7 @@ export function happyAgentWorkspaceClientCreate(
     let securityPolicyStore: HappyAgentSecurityPolicyStore | undefined;
     let secretsStore: HappyAgentSecretsStore | undefined;
     let artifacts: HappyAgentArtifacts | undefined;
+    let toolMediaDocument: HappyAgentToolMediaDocumentStore | undefined;
     const chats = new Map<HappyAgentSessionId, ChatBinding>();
     let disposed = false;
     let chatUseOrder = 0;
@@ -652,6 +663,16 @@ export function happyAgentWorkspaceClientCreate(
                     : {}),
             });
             return artifacts;
+        },
+        toolMediaDocument() {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            toolMediaDocument ??= happyAgentToolMediaDocumentStoreCreate({
+                client: deps.client,
+                ...(deps.artifactDocumentInline
+                    ? { documentInline: deps.artifactDocumentInline }
+                    : {}),
+            });
+            return toolMediaDocument;
         },
         inbox() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
@@ -866,6 +887,7 @@ export function happyAgentWorkspaceClientCreate(
             secretsStore?.[Symbol.dispose]();
             secretsStore = undefined;
             artifacts?.[Symbol.dispose]();
+            toolMediaDocument?.[Symbol.dispose]();
             artifacts = undefined;
             deps.catalogSource[Symbol.dispose]();
             for (const binding of chats.values()) {

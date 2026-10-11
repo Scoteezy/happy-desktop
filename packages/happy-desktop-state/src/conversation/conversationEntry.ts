@@ -1,3 +1,4 @@
+import type { HappyAgentArtifactId, HappyAgentArtifactType } from "../artifacts/artifactTypes.js";
 import type { AgentTurnTraceSummary, UserError } from "../types.js";
 import type { ConversationAuthor } from "./conversationAuthor.js";
 
@@ -136,6 +137,32 @@ export interface ConversationFileDiff {
     readonly omittedLines?: number;
 }
 
+/**
+ * What one presented media item is, as the producer declared it: a picture and
+ * a recording play inline, a document and any other file open as a file.
+ */
+export type ConversationMediaKind = "image" | "video" | "document" | "file";
+
+/**
+ * One file a tool call put in front of the reader. The transcript carries its
+ * facts and a placeholder, never its bytes: `url` is where the owning Happy
+ * Agent serves them, on the same authenticated origin every other transcript
+ * image is read from.
+ */
+export interface ConversationMediaItem {
+    readonly kind: ConversationMediaKind;
+    readonly name: string;
+    readonly mimeType: string;
+    /** Size of the bytes behind `url`. */
+    readonly size: number;
+    /** Intrinsic pixel size, so the inline box is reserved before the bytes arrive. */
+    readonly width?: number;
+    readonly height?: number;
+    /** ThumbHash painted at the item's aspect ratio until the bytes load. */
+    readonly thumbhash?: string;
+    readonly url: string;
+}
+
 /** The rich body an activity expands into, when the producer knows its shape. */
 export type ConversationActivityPresentation =
     | {
@@ -192,6 +219,20 @@ export type ConversationActivityPresentation =
           readonly target: "web" | "x";
           readonly query: string;
           readonly sources?: readonly { readonly url: string; readonly title: string }[];
+      }
+    /** Files the call generated or presented, shown inline beneath the call. */
+    | {
+          readonly type: "media";
+          readonly items: readonly ConversationMediaItem[];
+      }
+    /** The artifact version the call published, shown as a card that opens it. */
+    | {
+          readonly type: "artifact";
+          readonly artifactId: HappyAgentArtifactId;
+          readonly version: number;
+          readonly artifactType: HappyAgentArtifactType;
+          /** The title at publication; a surface with live titles prefers those. */
+          readonly title: string;
       };
 
 export interface ConversationActivityFailure {

@@ -539,6 +539,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         return ordered;
     };
 
+    const toolCallMediaUrl = (agentId: string, toolCallId: string, index: number): string =>
+        client.toolCallMediaUrl(agentId, toolCallId, index);
+
     const projectionOf = (entry: SessionEntry): SessionProjectionInput | undefined => {
         if (entry.agent === undefined || config === undefined) return undefined;
         return {
@@ -546,6 +549,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             config,
             connection: groupsStore.getState().connection,
             endpoint,
+            mediaUrl: toolCallMediaUrl,
             hasMore: entry.hasMore,
             messages: [...entry.messages.values()],
             userProfiles: users.profiles,

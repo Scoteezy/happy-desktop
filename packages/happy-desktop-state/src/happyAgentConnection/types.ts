@@ -75,6 +75,28 @@ export type ToolPresentation =
           target: "web" | "x";
           query: string;
           sources?: readonly { url: string; title: string }[];
+      }
+    | {
+          kind: "media";
+          items: readonly {
+              kind: "image" | "video" | "document" | "file";
+              name: string;
+              mimeType: string;
+              size: number;
+              width?: number;
+              height?: number;
+              thumbhash?: string;
+              /** The item's bytes on this connection's authenticated origin. */
+              url: string;
+          }[];
+      }
+    | {
+          kind: "artifact";
+          artifactId: string;
+          version: number;
+          /** The daemon's artifact type, which grows with the product. */
+          artifactType: string;
+          title: string;
       };
 
 interface BaseChatElement {

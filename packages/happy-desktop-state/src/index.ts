@@ -70,6 +70,12 @@ export type {
     HappyAgentArtifactViewerStore,
 } from "./artifacts/artifactViewerStore.js";
 export type { HappyAgentArtifactPeopleStore } from "./artifacts/artifactPeopleStore.js";
+export type {
+    HappyAgentToolMediaDocumentContent,
+    HappyAgentToolMediaDocumentRef,
+    HappyAgentToolMediaDocumentSnapshot,
+    HappyAgentToolMediaDocumentStore,
+} from "./happyAgent/happyAgentToolMediaDocumentStore.js";
 export type { HappyAgentArtifacts } from "./artifacts/artifacts.js";
 export type {
     HappyAgentArtifactTitle,

@@ -85,6 +85,11 @@ export interface HappyAgentPanelSnapshot {
     /** Conversation entry selected into the replaceable Preview tab. */
     readonly previewEntryId?: string;
     /**
+     * One file that entry's tool call presented, by its media position: the
+     * tab previews that file instead of the call.
+     */
+    readonly previewMediaIndex?: number;
+    /**
      * A workspace file is open in the transient viewer tab. Which file it is
      * belongs to the workspace store, which reads it; this only says the tab
      * exists, so the two never disagree about the file being shown.
@@ -138,8 +143,11 @@ export interface HappyAgentPanelStore {
     usageSelect(): void;
     /** Closes the transient Usage tab. */
     usageClose(): void;
-    /** Opens or replaces the transient Preview tab with one conversation tool entry. */
-    previewOpen(entryId: string): void;
+    /**
+     * Opens or replaces the transient Preview tab with one conversation tool
+     * entry, or with one file it presented when `mediaIndex` names it.
+     */
+    previewOpen(entryId: string, mediaIndex?: number): void;
     /** Closes the transient Preview tab and returns to Files. */
     previewClose(): void;
     /**
@@ -291,6 +299,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
     let activityViewDismissed = false;
     let usageViewShown = false;
     let previewEntryId: string | undefined;
+    let previewMediaIndex: number | undefined;
     let previewConversationId: HappyAgentSessionId | undefined;
     let fileViewShown = false;
     let artifactView: HappyAgentPanelArtifactView | undefined;
@@ -335,6 +344,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
                           },
             ),
             ...(previewEntryId === undefined ? {} : { previewEntryId }),
+            ...(previewMediaIndex === undefined ? {} : { previewMediaIndex }),
             ...(terminalRefusal === undefined ? {} : { terminalRefusal }),
         };
     };
@@ -356,6 +366,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             next.activityViewOpen === snapshot.activityViewOpen &&
             next.usageViewOpen === snapshot.usageViewOpen &&
             next.previewEntryId === snapshot.previewEntryId &&
+            next.previewMediaIndex === snapshot.previewMediaIndex &&
             next.fileViewOpen === snapshot.fileViewOpen &&
             next.artifactView === snapshot.artifactView &&
             next.terminalRefusal === snapshot.terminalRefusal &&
@@ -380,6 +391,9 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             open: next.open,
             tabs: projectedTabs,
             ...(next.previewEntryId === undefined ? {} : { previewEntryId: next.previewEntryId }),
+            ...(next.previewMediaIndex === undefined
+                ? {}
+                : { previewMediaIndex: next.previewMediaIndex }),
             ...(next.terminalRefusal === undefined
                 ? {}
                 : { terminalRefusal: next.terminalRefusal }),
@@ -556,9 +570,10 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             remember();
             recompute();
         },
-        previewOpen(entryId) {
+        previewOpen(entryId, mediaIndex) {
             if (disposed || !conversationId) return;
             previewEntryId = entryId;
+            previewMediaIndex = mediaIndex;
             previewConversationId = conversationId;
             activeViewId = "preview";
             open = true;
@@ -568,6 +583,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         previewClose() {
             if (disposed) return;
             previewEntryId = undefined;
+            previewMediaIndex = undefined;
             previewConversationId = undefined;
             activeViewId = "files";
             remember();
@@ -693,6 +709,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             }
             if (previewConversationId !== nextConversationId) {
                 previewEntryId = undefined;
+                previewMediaIndex = undefined;
                 previewConversationId = undefined;
             }
             if (nextGroupId === groupId) {
