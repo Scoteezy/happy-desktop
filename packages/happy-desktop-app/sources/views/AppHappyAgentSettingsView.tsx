@@ -724,9 +724,21 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                             if (happyAgentOnline()) void profileStore.profileSave();
                         }}
                         saving={profile.saving}
-                        {...(profile.photo === undefined
+                        onPhotoChoose={(file) => {
+                            if (happyAgentOnline()) void profileStore.photoUpload(file);
+                        }}
+                        onPhotoRemove={() => {
+                            if (happyAgentOnline()) void profileStore.photoRemove();
+                        }}
+                        photoRemoving={profile.photoRemoving}
+                        photoUploading={profile.photoUploading}
+                        {...(profile.photo === undefined ? {} : { photo: profile.photo })}
+                        {...(profile.photoError ? { photoError: profile.photoError } : {})}
+                        // A team member's first save is what creates them, and
+                        // a photo belongs to someone who already exists.
+                        {...(profile.saved
                             ? {}
-                            : { imageUrl: profile.photo.imageUrl })}
+                            : { photoUnavailable: "Save your name first, then add a photo" })}
                         {...(profile.error ? { error: profile.error.message } : {})}
                         {...(profile.saveError ? { saveError: profile.saveError } : {})}
                         {...(unavailable === undefined ? {} : { unavailable })}

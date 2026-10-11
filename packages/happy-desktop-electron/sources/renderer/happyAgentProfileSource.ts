@@ -1,5 +1,6 @@
 import {
     type HappyAgentClient,
+    HappyAgentApiError,
     type HappyAgentProfile,
     type HappyAgentProfileActions,
     type HappyAgentProfileSource,
@@ -16,10 +17,24 @@ export interface HappyAgentProfileAdapter {
     readonly source: HappyAgentProfileSource;
 }
 
+/** The photo bytes in hand, the photo they were read for, and their tag. */
+interface PhotoBytes {
+    readonly thumbhash: string;
+    readonly etag: string | null;
+    readonly imageUrl: string;
+}
+
 /**
  * Adapts the daemon's current member profile to the profile surface. Narrow
  * onboarding reads establish it before protected bootstrap, then the daemon's complete
  * `profile.updated` replacements keep it current.
+ *
+ * The profile carries only its photo's ThumbHash, so the bytes are read here
+ * whenever the profile changes, conditionally on the tag of the bytes already
+ * held: an unchanged photo costs a `304`, a replaced one swaps its address, and
+ * a removed one is dropped. Until the bytes for the current photo arrive the
+ * profile reports the ThumbHash alone, so a surface shows the placeholder
+ * rather than the previous picture.
  */
 export function happyAgentProfileSourceCreate(
     client: HappyAgentClient,
@@ -34,14 +49,114 @@ export function happyAgentProfileSourceCreate(
     let retry: ReturnType<typeof setTimeout> | undefined;
     let latest: happyAgentProtocol.Profile | undefined;
     let initialized = false;
+    let photo: PhotoBytes | undefined;
+    /** The profile version whose photo was last read, or is being read now. */
+    let photoVersion: string | undefined;
+    let photoRead: AbortController | undefined;
 
     const profileProject = (profile: happyAgentProtocol.Profile): HappyAgentProfile | undefined => {
-        if (profile.email === null && profile.name === null) return undefined;
+        if (profile.email === null && profile.name === null && profile.photo === null)
+            return undefined;
         return {
             email: profile.email ?? "",
             name: profile.name ?? "",
             updatedAt: profile.updatedAt,
+            ...(profile.photo === null
+                ? {}
+                : {
+                      photo: {
+                          thumbhash: profile.photo.thumbhash,
+                          ...(photo?.thumbhash === profile.photo.thumbhash
+                              ? { imageUrl: photo.imageUrl }
+                              : {}),
+                      },
+                  }),
         };
+    };
+
+    const publish = (): void => {
+        if (!latest) return;
+        const projected = profileProject(latest);
+        for (const listener of subscribers.keys()) listener(projected);
+    };
+
+    const photoReplace = (next: PhotoBytes | undefined): void => {
+        const previous = photo;
+        photo = next;
+        publish();
+        // Only once nothing reports the old address may its bytes go.
+        if (previous && previous.imageUrl !== next?.imageUrl)
+            URL.revokeObjectURL(previous.imageUrl);
+    };
+
+    const photoFollow = (profile: happyAgentProtocol.Profile): void => {
+        if (profile.photo === null) {
+            photoRead?.abort();
+            photoRead = undefined;
+            photoVersion = profile.version;
+            if (photo) photoReplace(undefined);
+            return;
+        }
+        // Every change to the profile is a new version, and the photo may be
+        // among them; asking again for the same one would only answer `304`.
+        if (photoVersion === profile.version) return;
+        photoVersion = profile.version;
+        photoRead?.abort();
+        const controller = new AbortController();
+        photoRead = controller;
+        const thumbhash = profile.photo.thumbhash;
+        const held = photo;
+        void happyAgentSyncRead(
+            controller.signal,
+            async (): Promise<
+                happyAgentProtocol.BinaryContent | "unchanged" | "missing" | "refused"
+            > => {
+                try {
+                    return (
+                        (await client.getProfilePhoto({
+                            signal: controller.signal,
+                            ...(held?.etag ? { ifNoneMatch: held.etag } : {}),
+                        })) ?? "unchanged"
+                    );
+                } catch (error) {
+                    if (!(error instanceof HappyAgentApiError) || error.status >= 500) throw error;
+                    // Removed since this profile was read: the removal's own
+                    // profile is on its way, and there is nothing to retry.
+                    return error.status === 404 ? "missing" : "refused";
+                }
+            },
+            () => undefined,
+        )
+            .then((content) => {
+                if (controller.signal.aborted) return;
+                if (content === "missing") photoReplace(undefined);
+                // The ThumbHash stays; the next change to the profile asks again.
+                else if (content === "refused") photoVersion = undefined;
+                // The tag is content-derived, so these are the bytes already
+                // held, now known to be this photo's.
+                else if (content === "unchanged") {
+                    if (held) photoReplace({ ...held, thumbhash });
+                } else
+                    photoReplace({
+                        thumbhash,
+                        etag: content.etag,
+                        imageUrl: URL.createObjectURL(
+                            new Blob([content.data], { type: content.contentType }),
+                        ),
+                    });
+            })
+            .catch(() => undefined)
+            .finally(() => {
+                if (photoRead === controller) photoRead = undefined;
+            });
+    };
+
+    const photoForget = (): void => {
+        photoRead?.abort();
+        photoRead = undefined;
+        photoVersion = undefined;
+        if (photo) URL.revokeObjectURL(photo.imageUrl);
+        photo = undefined;
     };
 
     const profileAdopt = (profile: happyAgentProtocol.Profile, force = false): void => {
@@ -50,8 +165,8 @@ export function happyAgentProfileSourceCreate(
         initialized = true;
         // Re-deliver an unchanged successful value so a surface can clear its
         // previous read error without losing edits or replacing its snapshot.
-        const projected = profileProject(profile);
-        for (const listener of subscribers.keys()) listener(projected);
+        publish();
+        if (subscribers.size > 0) photoFollow(profile);
     };
 
     const follow = async (controller: AbortController): Promise<void> => {
@@ -126,6 +241,27 @@ export function happyAgentProfileSourceCreate(
             });
     };
 
+    /**
+     * Sends one photo change against the version last seen. A refusal because
+     * the profile moved on reads the profile again, so what is shown is the
+     * version the reader's next attempt will be made against.
+     */
+    const photoChange = async (
+        send: (version: string) => Promise<happyAgentProtocol.ProfileResponse>,
+    ): Promise<void> => {
+        const current = latest ?? (await client.getProfile()).profile;
+        try {
+            profileAdopt((await send(current.version)).profile);
+        } catch (error) {
+            if (error instanceof HappyAgentApiError && error.status === 409)
+                await client.getProfile().then(
+                    (response) => profileAdopt(response.profile),
+                    () => undefined,
+                );
+            throw error;
+        }
+    };
+
     return {
         actions: {
             async profileSave(input) {
@@ -147,11 +283,25 @@ export function happyAgentProfileSourceCreate(
                 onSaved();
                 return projected;
             },
+            photoUpload(image) {
+                return photoChange((version) =>
+                    client.setProfilePhoto(
+                        { contentType: image.contentType, data: image.data },
+                        { ifMatch: version },
+                    ),
+                );
+            },
+            photoRemove() {
+                return photoChange((version) => client.deleteProfilePhoto({ ifMatch: version }));
+            },
         },
         source: {
             subscribe(listener, onError) {
                 subscribers.set(listener, onError);
-                if (initialized && latest) listener(profileProject(latest));
+                if (initialized && latest) {
+                    listener(profileProject(latest));
+                    photoFollow(latest);
+                }
                 sourceStart();
                 let closed = false;
                 return () => {
@@ -163,6 +313,7 @@ export function happyAgentProfileSourceCreate(
                     active = undefined;
                     if (retry) clearTimeout(retry);
                     retry = undefined;
+                    photoForget();
                 };
             },
         },

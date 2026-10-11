@@ -1,18 +1,28 @@
 import { createStore } from "zustand/vanilla";
 import type { UserError } from "../types.js";
+import {
+    happyAgentProfilePhotoError,
+    happyAgentProfilePhotoRead,
+} from "./happyAgentProfilePhoto.js";
 import { happyAgentUserError } from "./happyAgentSupport.js";
+import type { HappyAgentAvatarImage } from "./happyAgentTypes.js";
 
 /** The one human identity this installation authors work as. */
 export interface HappyAgentProfile {
     readonly email: string;
     readonly name: string;
     readonly updatedAt: number;
-    readonly photo?: {
-        readonly imageUrl: string;
-        readonly width: number;
-        readonly height: number;
-        readonly thumbhash: string;
-    };
+    readonly photo?: HappyAgentProfilePhoto;
+}
+
+/**
+ * The stored photo. Its ThumbHash arrives with the profile; the bytes are read
+ * separately, so `imageUrl` follows once they are in hand.
+ */
+export interface HappyAgentProfilePhoto {
+    readonly thumbhash: string;
+    /** A local address for the photo's bytes, absent while they are still being read. */
+    readonly imageUrl?: string;
 }
 
 export interface HappyAgentProfileSource {
@@ -31,6 +41,10 @@ export interface HappyAgentProfileActions {
         readonly email: string;
         readonly name: string;
     }): Promise<HappyAgentProfile>;
+    /** Replaces the stored photo; the source reports the profile that results. */
+    photoUpload(image: HappyAgentAvatarImage): Promise<void>;
+    /** Removes the stored photo; the source reports the profile that results. */
+    photoRemove(): Promise<void>;
 }
 
 export interface HappyAgentProfileSnapshot {
@@ -45,7 +59,19 @@ export interface HappyAgentProfileSnapshot {
     readonly error?: UserError;
     /** The last save was refused or failed. */
     readonly saveError?: string;
-    readonly photo?: HappyAgentProfile["photo"];
+    /**
+     * Whether a named profile is stored. A photo belongs to one — a team
+     * member's first save is what creates them — so a photo can be added only
+     * once this is true.
+     */
+    readonly saved: boolean;
+    readonly photo?: HappyAgentProfilePhoto;
+    /** True while a chosen photo is being read and sent. */
+    readonly photoUploading: boolean;
+    /** True while the stored photo is being removed. */
+    readonly photoRemoving: boolean;
+    /** Why the last photo change was refused or failed. */
+    readonly photoError?: string;
 }
 
 export interface HappyAgentProfileStore {
@@ -56,6 +82,9 @@ export interface HappyAgentProfileStore {
     /** Puts the fields back to what is stored. */
     profileRevert(): void;
     profileSave(): Promise<void>;
+    /** Sends a picked file as the new photo, refusing first what the daemon would refuse. */
+    photoUpload(file: Blob): Promise<void>;
+    photoRemove(): Promise<void>;
     [Symbol.dispose](): void;
 }
 
@@ -69,8 +98,19 @@ const EMPTY: HappyAgentProfileSnapshot = {
     email: "",
     loading: true,
     name: "",
+    photoRemoving: false,
+    photoUploading: false,
+    saved: false,
     saving: false,
 };
+
+const photoEqual = (
+    left: HappyAgentProfilePhoto | undefined,
+    right: HappyAgentProfilePhoto | undefined,
+): boolean =>
+    left === undefined || right === undefined
+        ? left === right
+        : left.thumbhash === right.thumbhash && left.imageUrl === right.imageUrl;
 
 /**
  * The installation profile, edited in place: the snapshot's `name` and `email`
@@ -102,11 +142,13 @@ export function happyAgentProfileStoreCreate(
             ? { email: profile?.email ?? "", name: profile?.name ?? "" }
             : { email: current.email, name: current.name };
         const dirty = dirtyAgainst(profile, fields);
-        const photo = profile?.photo;
+        const saved = profile !== undefined && profile.name !== "";
+        const photo = photoEqual(current.photo, profile?.photo) ? current.photo : profile?.photo;
         if (
             fields.email === current.email &&
             fields.name === current.name &&
             dirty === current.dirty &&
+            saved === current.saved &&
             current.loading === false &&
             current.error === undefined &&
             current.photo === photo
@@ -116,10 +158,47 @@ export function happyAgentProfileStoreCreate(
             ...current,
             ...fields,
             dirty,
+            saved,
             loading: false,
             error: undefined,
-            ...(photo === undefined ? { photo: undefined } : { photo }),
+            photo,
         });
+    };
+
+    const photoChange = async (
+        change: "upload" | "removal",
+        send: () => Promise<void>,
+    ): Promise<void> => {
+        const current = store.getState();
+        if (current.photoUploading || current.photoRemoving) return;
+        if (change === "upload" && !current.saved) {
+            store.setState({
+                ...current,
+                photoError: "Save your name first, then add a photo.",
+            });
+            return;
+        }
+        store.setState({
+            ...current,
+            photoUploading: change === "upload",
+            photoRemoving: change === "removal",
+            photoError: undefined,
+        });
+        try {
+            // The source reports the profile that results through the
+            // subscription, so there is nothing to adopt from the answer here.
+            await send();
+            if (disposed) return;
+            store.setState({ ...store.getState(), photoUploading: false, photoRemoving: false });
+        } catch (error) {
+            if (disposed) return;
+            store.setState({
+                ...store.getState(),
+                photoUploading: false,
+                photoRemoving: false,
+                photoError: happyAgentProfilePhotoError(error, change).message,
+            });
+        }
     };
 
     const fieldUpdate = (fields: { readonly email?: string; readonly name?: string }): void => {
@@ -227,6 +306,14 @@ export function happyAgentProfileStoreCreate(
                 });
             }
         },
+        photoUpload(file) {
+            return photoChange("upload", async () =>
+                deps.actions.photoUpload(await happyAgentProfilePhotoRead(file)),
+            );
+        },
+        photoRemove() {
+            return photoChange("removal", () => deps.actions.photoRemove());
+        },
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
@@ -245,5 +332,7 @@ export const happyAgentProfileStoreNoop: HappyAgentProfileStore = {
     emailUpdate: () => undefined,
     profileRevert: () => undefined,
     profileSave: () => Promise.resolve(),
+    photoUpload: () => Promise.resolve(),
+    photoRemove: () => Promise.resolve(),
     [Symbol.dispose]: () => undefined,
 };

@@ -81,6 +81,17 @@ export interface FakeHappyAgentDaemon {
     userSeed(user: User): void;
     /** Change what `getProfile` and the desktop bootstrap say about the viewer. */
     profileSet(changes: Partial<Profile>): void;
+    /**
+     * Replace the viewer's photo bytes and its ThumbHash on the profile, as
+     * another client's upload would, without an event. `null` removes it.
+     */
+    profilePhotoSeed(
+        photo: {
+            readonly data: Uint8Array;
+            readonly contentType: string;
+            readonly thumbhash: string;
+        } | null,
+    ): void;
     /** Replace one agent's saved composer draft, served by its bootstrap. */
     draftSeed(agentId: string, draft: AgentDraftSnapshot): void;
     /** Replace one agent's stored message mode, served by its bootstrap. */
@@ -314,6 +325,8 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
     };
     let profile: Profile = { email: null, name: null, photo: null, updatedAt: 1, version: "v1" };
+    let profilePhoto: { data: Uint8Array; contentType: string; etag: string } | undefined;
+    let profilePhotoCounter = 0;
     const tasks = new Map<string, Task>();
     const memberships = new Map<string, TaskMembership>();
     const users = new Map<string, User>();
@@ -423,6 +436,44 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         return taskResponse(taskId);
     };
 
+    const profileVersionRequire = (ifMatch: string | undefined): void => {
+        if (ifMatch === undefined)
+            throw new HappyAgentApiError(
+                400,
+                "A valid If-Match resource version is required.",
+                "invalid_request",
+                null,
+            );
+        if (ifMatch !== profile.version)
+            throw new HappyAgentApiError(409, "The resource has changed.", "conflict", {
+                currentVersion: profile.version,
+                profile,
+            });
+    };
+    const profilePhotoReplace = (
+        photo: { data: Uint8Array; contentType: string; thumbhash: string } | null,
+    ): void => {
+        profilePhoto =
+            photo === null
+                ? undefined
+                : {
+                      data: photo.data,
+                      contentType: photo.contentType,
+                      etag: `"photo-${String((profilePhotoCounter += 1))}"`,
+                  };
+        profile = {
+            ...profile,
+            photo: photo === null ? null : { thumbhash: photo.thumbhash },
+            updatedAt: profile.updatedAt + 1,
+            version: versionOf((versionCounter += 1)),
+        };
+    };
+    // Standalone events carry the profile; a team member's are identity-only.
+    const profileUpdatedEmit = (): void => {
+        if (typeof profile.userId === "string") emit("profile.updated", { userId: profile.userId });
+        else emit("profile.updated", { profile });
+    };
+
     const emit = <TType extends HappyAgentEvent["type"]>(
         type: TType,
         payload: Extract<HappyAgentEvent, { type: TType }>["payload"],
@@ -517,6 +568,42 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         async getProfile(...args: unknown[]) {
             await record("getProfile", args);
+            return { profile };
+        },
+        async getProfilePhoto(options: { readonly ifNoneMatch?: string } = {}, ...rest: unknown[]) {
+            await record("getProfilePhoto", [options, ...rest]);
+            if (profilePhoto === undefined)
+                throw new HappyAgentApiError(404, "The profile has no photo.", "not_found", null);
+            if (options.ifNoneMatch === profilePhoto.etag) return null;
+            return {
+                contentType: profilePhoto.contentType,
+                data: profilePhoto.data.slice().buffer,
+                etag: profilePhoto.etag,
+            };
+        },
+        async setProfilePhoto(
+            image: { readonly contentType: string; readonly data: ArrayBuffer },
+            options: { readonly ifMatch?: string } = {},
+            ...rest: unknown[]
+        ) {
+            await record("setProfilePhoto", [image, options, ...rest]);
+            profileVersionRequire(options.ifMatch);
+            profilePhotoCounter += 1;
+            // The real daemon re-encodes the upload; a fake thumbhash per
+            // upload is all a client can tell apart.
+            profilePhotoReplace({
+                data: new Uint8Array(image.data),
+                contentType: image.contentType,
+                thumbhash: `thumbhash-${String(profilePhotoCounter)}`,
+            });
+            profileUpdatedEmit();
+            return { profile };
+        },
+        async deleteProfilePhoto(options: { readonly ifMatch?: string } = {}, ...rest: unknown[]) {
+            await record("deleteProfilePhoto", [options, ...rest]);
+            profileVersionRequire(options.ifMatch);
+            profilePhotoReplace(null);
+            profileUpdatedEmit();
             return { profile };
         },
         async getDesktopBootstrap(...args: unknown[]) {
@@ -1119,6 +1206,9 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         profileSet(changes) {
             profile = { ...profile, ...changes };
+        },
+        profilePhotoSeed(photo) {
+            profilePhotoReplace(photo === null ? null : { ...photo, data: photo.data.slice() });
         },
         draftSeed(agentId, draft) {
             drafts.set(agentId, draft);

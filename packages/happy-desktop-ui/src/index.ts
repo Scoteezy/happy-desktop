@@ -746,6 +746,7 @@ export {
 } from "./pages/settings/HappyAgentSecretCreateDialog";
 export {
     HappyAgentProfileSettings,
+    type HappyAgentProfileSettingsPhoto,
     type HappyAgentProfileSettingsProps,
 } from "./pages/settings/HappyAgentProfileSettings";
 export {

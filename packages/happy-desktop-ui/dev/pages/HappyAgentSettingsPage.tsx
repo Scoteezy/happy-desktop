@@ -14,6 +14,7 @@ import {
     HappyAgentSettingsShell,
     GptLiveSettings,
     HappyAgentUsageSettings,
+    type HappyAgentProfileSettingsProps,
     type HappyAgentProviderRow,
     type HappyAgentSecretRow,
     type HappyAgentSettingsCategory,
@@ -394,6 +395,45 @@ const secrets: readonly HappyAgentSecretRow[] = [
 
 const noop = () => undefined;
 
+/** A generated, fictional portrait standing in for an uploaded profile photo. */
+const profilePhoto = {
+    imageUrl: new URL("../assets/profile-photo.webp", import.meta.url).href,
+    thumbhash: "HfkJRw53iVdwioiHeYZot3iIiAK3CHIJ",
+};
+
+/** One profile state inside the account category, so each photo state reads in place. */
+function ProfileSpecimen(props: {
+    readonly detail: string;
+    readonly label: string;
+    readonly number: string;
+    readonly profile: Partial<HappyAgentProfileSettingsProps>;
+}) {
+    return (
+        <FullScreenSpecimen detail={props.detail} label={props.label} number={props.number}>
+            <HappyAgentSettingsShell
+                activeCategoryId="account"
+                categories={categories}
+                description={accountDescription}
+                onCategorySelect={noop}
+                onClose={noop}
+                title="Account"
+            >
+                <HappyAgentProfileSettings
+                    email="steve@korshakov.com"
+                    name="Steve Korshakov"
+                    onEmailChange={noop}
+                    onNameChange={noop}
+                    onPhotoChoose={noop}
+                    onPhotoRemove={noop}
+                    onRevert={noop}
+                    onSave={noop}
+                    {...props.profile}
+                />
+            </HappyAgentSettingsShell>
+        </FullScreenSpecimen>
+    );
+}
+
 export function HappyAgentSettingsBlueprintPage() {
     return (
         <ComponentPage
@@ -420,6 +460,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         name="Steve Korshakov"
                         onEmailChange={noop}
                         onNameChange={noop}
+                        onPhotoChoose={noop}
+                        onPhotoRemove={noop}
                         onRevert={noop}
                         onSave={noop}
                     />
@@ -827,12 +869,52 @@ export function HappyAgentSettingsBlueprintPage() {
                         name="Steve Korshakov"
                         onEmailChange={noop}
                         onNameChange={noop}
+                        onPhotoChoose={noop}
+                        onPhotoRemove={noop}
                         onRevert={noop}
                         onSave={noop}
                         saveError="Enter the email used for Git commits."
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
+            <ProfileSpecimen
+                detail="A stored photo, read and shown on the avatar, with removal beside the picker"
+                label="Happy Agent settings — profile photo"
+                number="02c"
+                profile={{ photo: profilePhoto }}
+            />
+            <ProfileSpecimen
+                detail="The photo's bytes are still being read: its ThumbHash stands in on the avatar"
+                label="Happy Agent settings — profile photo loading"
+                number="02d"
+                profile={{ photo: { thumbhash: profilePhoto.thumbhash } }}
+            />
+            <ProfileSpecimen
+                detail="A chosen photo is being sent; the picker carries the spinner and removal waits"
+                label="Happy Agent settings — profile photo uploading"
+                number="02e"
+                profile={{ photo: profilePhoto, photoUploading: true }}
+            />
+            <ProfileSpecimen
+                detail="The last photo change was refused, and the stored photo is unchanged"
+                label="Happy Agent settings — profile photo refused"
+                number="02f"
+                profile={{
+                    photo: profilePhoto,
+                    photoError: "The profile photo must be no larger than 8 MiB.",
+                }}
+            />
+            <ProfileSpecimen
+                detail="No profile is stored yet, so a photo has no one to belong to until the first save"
+                label="Happy Agent settings — profile photo before the first save"
+                number="02g"
+                profile={{
+                    dirty: true,
+                    email: "",
+                    name: "Steve",
+                    photoUnavailable: "Save your name first, then add a photo",
+                }}
+            />
             <FullScreenSpecimen
                 detail="Secrets category: safe metadata lists write-only environment bundles without exposing values"
                 label="Happy Agent settings — secrets"

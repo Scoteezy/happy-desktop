@@ -278,6 +278,8 @@ const cases: readonly BenchmarkCase[] = [
                         name,
                         updatedAt: 0,
                     }),
+                    photoUpload: async () => undefined,
+                    photoRemove: async () => undefined,
                 },
             });
             return {

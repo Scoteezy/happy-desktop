@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Avatar } from "../../Avatar";
 import { Banner } from "../../Banner";
 import { Box } from "../../Box";
@@ -5,13 +6,20 @@ import { Button } from "../../Button";
 import { FormRow } from "../../FormRow";
 import { Spinner } from "../../Spinner";
 import { TextField } from "../../TextField";
+import { thumbhashDataUrl } from "../../thumbhashDataUrl";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
+
+/** The stored photo: its ThumbHash, and the address of its bytes once they are read. */
+export interface HappyAgentProfileSettingsPhoto {
+    readonly thumbhash: string;
+    readonly imageUrl?: string;
+}
 
 export interface HappyAgentProfileSettingsProps {
     /** The name in the field, which is the stored one until it is edited. */
     readonly name: string;
     readonly email: string;
-    readonly imageUrl?: string;
+    readonly photo?: HappyAgentProfileSettingsPhoto;
     /** True while the fields differ from what this machine has stored. */
     readonly dirty?: boolean;
     readonly loading?: boolean;
@@ -22,11 +30,25 @@ export interface HappyAgentProfileSettingsProps {
     readonly saveError?: string;
     /** Why the profile cannot currently be saved. */
     readonly unavailable?: string;
+    /** True while a chosen photo is being sent. */
+    readonly photoUploading?: boolean;
+    /** True while the stored photo is being removed. */
+    readonly photoRemoving?: boolean;
+    /** Why the last photo change was refused. */
+    readonly photoError?: string;
+    /** Why a photo cannot be added yet, such as a profile that was never saved. */
+    readonly photoUnavailable?: string;
     onNameChange(value: string): void;
     onEmailChange(value: string): void;
     onRevert(): void;
     onSave(): void;
+    /** The reader picked a file to become the photo. */
+    onPhotoChoose(file: File): void;
+    onPhotoRemove(): void;
 }
+
+/** The encodings the daemon accepts, offered as the file picker's filter. */
+const PHOTO_ACCEPT = "image/png,image/jpeg,image/webp";
 
 const initials = (name: string): string =>
     name
@@ -49,12 +71,24 @@ const initials = (name: string): string =>
  * name, and the email — which is a summary of who this
  * machine is, not a control.
  *
+ * The photo is a row like the fields: its picker and removal sit where every
+ * other setting's control does, and the avatar above shows the result. Until
+ * the photo's bytes arrive the avatar shows its ThumbHash, so a replaced photo
+ * never shows the previous picture in the meantime.
+ *
  * The block carries no title of its own. The category header directly above it
  * already reads "Profile", and a second heading saying the same word was the
  * only thing between it and the first field.
  */
 export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps) {
     const blocked = props.unavailable !== undefined;
+    const photoInput = useRef<HTMLInputElement>(null);
+    const photoBusy = props.photoUploading === true || props.photoRemoving === true;
+    const photoBlocked = blocked || props.photoUnavailable !== undefined;
+    const photoUrl =
+        props.photo === undefined
+            ? undefined
+            : (props.photo.imageUrl ?? thumbhashDataUrl(props.photo.thumbhash));
     return (
         <HappyAgentSettingsSection>
             {props.unavailable ? <Banner tone="warning">{props.unavailable}</Banner> : null}
@@ -79,7 +113,8 @@ export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps)
                 >
                     <Box className="happy-agent-profile__identity">
                         <Avatar
-                            imageUrl={props.imageUrl}
+                            data-testid="happy-agent-profile-avatar"
+                            imageUrl={photoUrl}
                             initials={initials(props.name) || "?"}
                             size="lg"
                         />
@@ -94,11 +129,59 @@ export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps)
                             </span>
                         </Box>
                     </Box>
+                    {props.photoError ? (
+                        <Banner tone="danger" title="Photo not changed">
+                            {props.photoError}
+                        </Banner>
+                    ) : null}
                     {props.saveError ? (
                         <Banner tone="danger" title="Not saved">
                             {props.saveError}
                         </Banner>
                     ) : null}
+                    <FormRow
+                        control={
+                            <Box className="happy-agent-profile__photo-actions">
+                                {props.photo ? (
+                                    <Button
+                                        data-testid="happy-agent-profile-photo-remove"
+                                        disabled={blocked || photoBusy}
+                                        loading={props.photoRemoving}
+                                        onClick={props.onPhotoRemove}
+                                        size="small"
+                                        variant="ghost"
+                                    >
+                                        Remove
+                                    </Button>
+                                ) : null}
+                                <Button
+                                    data-testid="happy-agent-profile-photo-choose"
+                                    disabled={photoBlocked || photoBusy}
+                                    loading={props.photoUploading}
+                                    onClick={() => photoInput.current?.click()}
+                                    size="small"
+                                    variant="secondary"
+                                >
+                                    {props.photo ? "Replace photo" : "Upload photo"}
+                                </Button>
+                                <input
+                                    accept={PHOTO_ACCEPT}
+                                    data-testid="happy-agent-profile-photo-input"
+                                    hidden
+                                    onChange={(event) => {
+                                        const file = event.currentTarget.files?.[0];
+                                        // Picking the same file again is a new choice.
+                                        event.currentTarget.value = "";
+                                        if (file) props.onPhotoChoose(file);
+                                    }}
+                                    ref={photoInput}
+                                    type="file"
+                                />
+                            </Box>
+                        }
+                        description={props.photoUnavailable ?? "PNG, JPEG, or WebP, up to 8 MiB"}
+                        label="Photo"
+                    />
                     <FormRow
                         control={
                             <TextField
