@@ -116,7 +116,7 @@
 
 /* When the live status opens the agent turn, Message supplies identity rather
    than prose. Drop its prose-only right reserve so the trailing activity keeps
-   the same 20px gutter it owns on every other live status line. */
+   the same 30px inset it owns on every other live status line. */
 .happy-message[data-agent].happy-message--working-lead {
     padding-right: 0;
 }

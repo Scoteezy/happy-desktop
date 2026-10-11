@@ -421,12 +421,17 @@
  * The entry is the trailing half of the working-status line: the same 14px
  * secondary type as the clock and phase beside it, sized to its own text so
  * the line can put it at the far end or drop it to the next line whole.
+ *
+ * Its trailing inset mirrors the 30px the status text and prose start from on
+ * the left, so the line is framed evenly. A flex box lets the summary shrink
+ * and ellipsize inside that inset rather than spill across it when narrow.
  */
 .happy-agent-activity-transcript {
     box-sizing: border-box;
+    display: flex;
     height: 24px;
     min-width: 0;
-    padding: 2px 20px 2px 0;
+    padding: 2px 30px 2px 0;
     color: var(--text-secondary);
     font-family: var(--happy-font-ui);
     font-synthesis: none;
