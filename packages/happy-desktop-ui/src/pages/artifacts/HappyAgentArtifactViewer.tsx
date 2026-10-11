@@ -17,12 +17,10 @@ import { EmptyState } from "../../EmptyState";
 import { HtmlPreviewFrame } from "../../HtmlPreviewFrame";
 import type { HtmlPreviewRenderer } from "../../htmlPreview";
 import { ImageViewer } from "../../ImageViewer";
-import { SURFACE_HEADER_HEIGHT } from "../../InfoPanel";
 import { MarkdownDocument, type MarkdownDocumentReferences } from "../../MarkdownDocument";
 import { Modal } from "../../Modal";
 import { ModalOverlay } from "../../ModalOverlay";
 import { ScrollArea } from "../../Scrollbar";
-import { Toolbar } from "../../Toolbar";
 import { VideoViewer } from "../../VideoViewer";
 import { Ionicon } from "../../vectorIcons/VectorIcon";
 import {
@@ -32,6 +30,7 @@ import {
     artifactSizeText,
     type HappyAgentArtifactLabels,
 } from "./artifactPresentation";
+import { ArtifactHeader } from "./ArtifactHeader";
 import { HappyAgentArtifactHtmlFrame } from "./HappyAgentArtifactHtmlFrame";
 
 export interface HappyAgentArtifactViewerProps {
@@ -99,42 +98,39 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
         >
             {artifact ? (
                 <>
-                    <div className="happy-agent-artifact-viewer__header">
-                        <Toolbar
-                            height={SURFACE_HEADER_HEIGHT}
-                            leading={back}
-                            subtitle={happyAgentArtifactTypeLabel(artifact.type)}
-                            title={artifact.title || "Untitled"}
-                            titleLevel={1}
-                            trailing={
-                                <>
-                                    {artifact.status === "active" ? (
-                                        <Button
-                                            aria-pressed={historyShown}
-                                            icon="history"
-                                            onClick={() => setHistoryShown(!historyShown)}
-                                            size="small"
-                                            variant="ghost"
-                                        >
-                                            History
-                                        </Button>
-                                    ) : null}
-                                    {artifact.status === "active" ? (
-                                        <Button
-                                            data-testid="happy-agent-artifact-delete"
-                                            disabled={viewer.deletion.phase !== "idle"}
-                                            icon="trash"
-                                            onClick={props.onDeletionRequest}
-                                            size="small"
-                                            variant="ghost"
-                                        >
-                                            Delete
-                                        </Button>
-                                    ) : null}
-                                </>
-                            }
-                        />
-                    </div>
+                    <ArtifactHeader
+                        className="happy-agent-artifact-viewer__header"
+                        {...(back ? { leading: back } : {})}
+                        subtitle={happyAgentArtifactTypeLabel(artifact.type)}
+                        title={artifact.title || "Untitled"}
+                        trailing={
+                            <>
+                                {artifact.status === "active" ? (
+                                    <Button
+                                        aria-pressed={historyShown}
+                                        icon="history"
+                                        onClick={() => setHistoryShown(!historyShown)}
+                                        size="small"
+                                        variant="ghost"
+                                    >
+                                        History
+                                    </Button>
+                                ) : null}
+                                {artifact.status === "active" ? (
+                                    <Button
+                                        data-testid="happy-agent-artifact-delete"
+                                        disabled={viewer.deletion.phase !== "idle"}
+                                        icon="trash"
+                                        onClick={props.onDeletionRequest}
+                                        size="small"
+                                        variant="ghost"
+                                    >
+                                        Delete
+                                    </Button>
+                                ) : null}
+                            </>
+                        }
+                    />
                     <ArtifactFacts
                         artifact={artifact}
                         labels={props.labels}
@@ -192,14 +188,11 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                 </>
             ) : (
                 <>
-                    <div className="happy-agent-artifact-viewer__header">
-                        <Toolbar
-                            height={SURFACE_HEADER_HEIGHT}
-                            leading={back}
-                            title="Artifact"
-                            titleLevel={1}
-                        />
-                    </div>
+                    <ArtifactHeader
+                        className="happy-agent-artifact-viewer__header"
+                        {...(back ? { leading: back } : {})}
+                        title="Artifact"
+                    />
                     {state.type === "missing" ? (
                         <EmptyState
                             description="Nothing with this name is published on this Happy Agent."
@@ -383,6 +376,7 @@ function ArtifactContent(props: {
                     assets={content.page.assets}
                     entryPath={content.entryPath}
                     omitted={content.page.omitted}
+                    reason={content.page.reason}
                     text={content.page.text}
                     title={props.title || "Web page"}
                 />

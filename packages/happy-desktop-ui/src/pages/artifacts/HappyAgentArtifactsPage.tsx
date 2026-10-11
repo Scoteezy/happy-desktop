@@ -10,15 +10,14 @@ import {
 import { Banner } from "../../Banner";
 import { Button } from "../../Button";
 import { EmptyState } from "../../EmptyState";
-import { SURFACE_HEADER_HEIGHT } from "../../InfoPanel";
 import { ScrollArea } from "../../Scrollbar";
 import { Select, type SelectOption } from "../../Select";
 import { Switch } from "../../Switch";
-import { Toolbar } from "../../Toolbar";
 import type {
     HappyAgentArtifactLabels,
     HappyAgentArtifactSourceChoice,
 } from "./artifactPresentation";
+import { ArtifactHeader } from "./ArtifactHeader";
 import { HappyAgentArtifactRow } from "./HappyAgentArtifactRow";
 
 type KnownType = Exclude<HappyAgentArtifactType, "unknown">;
@@ -83,20 +82,15 @@ export function HappyAgentArtifactsPage(props: HappyAgentArtifactsPageProps) {
             data-testid={props["data-testid"]}
             style={props.style}
         >
-            <div
+            <ArtifactHeader
                 className="happy-agent-artifacts__header"
-                data-happy-desktop-ui="happy-agent-artifacts-header"
-            >
-                <Toolbar
-                    height={SURFACE_HEADER_HEIGHT}
-                    subtitle={
-                        catalog.loading
-                            ? "Loading…"
-                            : `${String(count)}${catalog.hasMore ? "+" : ""} ${count === 1 && !catalog.hasMore ? "artifact" : "artifacts"}`
-                    }
-                    title="Artifacts"
-                />
-            </div>
+                subtitle={
+                    catalog.loading
+                        ? "Loading…"
+                        : `${String(count)}${catalog.hasMore ? "+" : ""} ${count === 1 && !catalog.hasMore ? "artifact" : "artifacts"}`
+                }
+                title="Artifacts"
+            />
             <div
                 className="happy-agent-artifacts__filters"
                 data-happy-desktop-ui="happy-agent-artifacts-filters"

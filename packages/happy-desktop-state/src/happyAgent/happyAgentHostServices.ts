@@ -7,6 +7,16 @@ import type {
     HappyAgentWorkspaceFileBytes,
 } from "./happyAgentTypes.js";
 
+/** What the host made of a request to serve an HTML artifact version as a site. */
+export type HappyAgentArtifactSiteOpening =
+    | { readonly type: "opened"; readonly url: string }
+    /**
+     * The desktop app this renderer runs in predates artifact sites. The
+     * renderer is updated on its own, so it can be newer than the app around
+     * it; updating the app is what lets the page run.
+     */
+    | { readonly type: "app-outdated" };
+
 /**
  * Desktop-local services that are not Happy Agent product resources.
  *
@@ -34,10 +44,10 @@ export interface HappyAgentHostServices {
     /**
      * Serves one numbered version of an HTML artifact as a site of its own and
      * names the address of its entry. Absent where the host has no isolated
-     * guest to show such a site in; a host that refuses is shown the static
-     * preview instead.
+     * guest to show such a site in. Rejects when the host serves sites and
+     * could not serve this one.
      */
-    artifactSiteOpen?(artifactId: string, version: number): Promise<string>;
+    artifactSiteOpen?(artifactId: string, version: number): Promise<HappyAgentArtifactSiteOpening>;
     /**
      * Where a file the reader chose lives on this machine, when it lives
      * anywhere. A pasted screenshot exists only in the browser and answers

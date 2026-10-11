@@ -1,5 +1,6 @@
 import { HappyAgentApiError, type HappyAgentClient } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import type { HappyAgentArtifactSiteOpening } from "../happyAgent/happyAgentHostServices.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import { UserError } from "../types.js";
 import {
@@ -37,6 +38,15 @@ export interface HappyAgentArtifactFileLink {
     readonly url: string;
 }
 
+/** Why an HTML version is drawn as a static preview rather than run as a site. */
+export type HappyAgentArtifactStaticReason =
+    /** This host has no isolated guest to run a page in, as in a browser tab. */
+    | { readonly type: "no-guest" }
+    /** The desktop app around this renderer predates running pages; updating it runs them. */
+    | { readonly type: "app-outdated" }
+    /** The host runs pages, and could not serve this one. */
+    | { readonly type: "failed"; readonly error: UserError };
+
 /** How an HTML version's page is shown. */
 export type HappyAgentArtifactPage =
     /** Served by the host as a site of its own, where its scripts run. */
@@ -44,6 +54,7 @@ export type HappyAgentArtifactPage =
     /** Drawn from its own files with every asset inlined, and no script. */
     | {
           readonly kind: "static";
+          readonly reason: HappyAgentArtifactStaticReason;
           readonly text: string;
           /** The version's other files by path, as `data:` URLs the page can load. */
           readonly assets: ReadonlyMap<string, string>;
@@ -143,9 +154,13 @@ export interface HappyAgentArtifactViewerDeps {
     readonly documentInline?: (mimeType: string) => boolean;
     /**
      * Serves an HTML version as a live site and names its entry's address.
-     * Absent, or refused, the page is shown as a static preview instead.
+     * Absent, refused, or too old to serve one, the page is shown as a static
+     * preview that says which of those it is.
      */
-    readonly siteOpen?: (artifactId: HappyAgentArtifactId, version: number) => Promise<string>;
+    readonly siteOpen?: (
+        artifactId: HappyAgentArtifactId,
+        version: number,
+    ) => Promise<HappyAgentArtifactSiteOpening>;
     /** Reports who the artifact and its history credit, so the people among them can be named. */
     readonly authorsSeen?: (authors: readonly (HappyAgentArtifactAuthor | null)[]) => void;
 }
@@ -273,16 +288,24 @@ export function happyAgentArtifactViewerStoreCreate(
                 };
             }
             case "html": {
+                // Whatever keeps the page from running as a site, the static
+                // preview is still shown, and says why it is not the page.
+                let reason: HappyAgentArtifactStaticReason = { type: "no-guest" };
                 if (deps.siteOpen) {
-                    // A host that cannot serve this version, an older one
-                    // above all, still has the static preview to show.
-                    const url = await deps.siteOpen(id, number).catch(() => undefined);
-                    if (url !== undefined)
+                    const opening = await deps.siteOpen(id, number).then(
+                        (value) => value,
+                        (error: unknown) => ({
+                            type: "failed" as const,
+                            error: happyAgentUserError(error),
+                        }),
+                    );
+                    if (opening.type === "opened")
                         return {
                             type: "html",
                             entryPath: version.entry.path,
-                            page: { kind: "site", url },
+                            page: { kind: "site", url: opening.url },
                         };
+                    reason = opening;
                 }
                 const { data } = await fileText(id, number, version.entry.path, signal);
                 const assets = new Map<string, string>();
@@ -303,6 +326,7 @@ export function happyAgentArtifactViewerStoreCreate(
                     entryPath: version.entry.path,
                     page: {
                         kind: "static",
+                        reason,
                         text: new TextDecoder().decode(data),
                         assets,
                         omitted,

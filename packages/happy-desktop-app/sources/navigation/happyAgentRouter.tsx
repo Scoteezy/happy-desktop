@@ -594,19 +594,7 @@ function HappyAgentWorkspaceLayout(
                     to: "/artifacts/$happyAgentId/$artifactId",
                 })
             }
-            // Leaving an artifact returns to wherever it was opened from — the
-            // catalog, or the chat whose panel listed it. A window opened
-            // straight onto an artifact has nowhere behind it, so it lands on
-            // the catalog.
-            onArtifactClose={(happyAgentId) => {
-                if (router.history.canGoBack()) router.history.back();
-                else
-                    void navigate({
-                        params: { happyAgentId },
-                        replace: true,
-                        to: "/artifacts/$happyAgentId",
-                    });
-            }}
+            onArtifactClose={(happyAgentId) => happyAgentRouterArtifactClose(router, happyAgentId)}
             onUpdateApply={context.onUpdateApply}
             platform={context.platform}
             happyAgentId={params.happyAgentId ?? happyAgentDefaultId(context)}
@@ -766,6 +754,27 @@ export function happyAgentRouterConversationOpen(
 /** Uses the router's explicit route identity, never a pathname convention. */
 export function happyAgentRouterWorkspaceVisible(router: HappyAgentRouter): boolean {
     return router.state.matches.some((match) => match.routeId === workspaceRoute.id);
+}
+
+/**
+ * Leaves an artifact for wherever it was opened from — the catalog, or the chat
+ * whose panel listed it. A window opened straight onto an artifact has nowhere
+ * behind it, so it lands on the catalog in place rather than growing a step
+ * that Back would return to the artifact through.
+ */
+export function happyAgentRouterArtifactClose(
+    router: HappyAgentRouter,
+    happyAgentId: string,
+): void {
+    if (router.history.canGoBack()) {
+        router.history.back();
+        return;
+    }
+    void router.navigate({
+        params: { happyAgentId },
+        replace: true,
+        to: "/artifacts/$happyAgentId",
+    });
 }
 
 /**

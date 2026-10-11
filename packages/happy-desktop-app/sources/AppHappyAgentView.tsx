@@ -2931,12 +2931,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
 
         // The artifacts belong to the addressed machine, like its inbox. A
         // machine that keeps none says so here rather than showing an empty
-        // catalog, in case its address was reached some other way.
+        // catalog, in case its address was reached some other way. Their
+        // headers carry controls — Back, History, Delete — so the headers
+        // themselves are the window's drag band; a drag overlay would sit on
+        // those controls and take every click.
         if (props.artifactsOpen && active?.session?.artifacts) {
             const artifacts = active.session.artifacts;
             return (
                 <>
-                    {desktop ? <WindowDragRegion /> : null}
                     <HappyAgentArtifactsSurface
                         artifacts={artifacts}
                         {...(props.artifactPage ? { artifactPage: props.artifactPage } : {})}

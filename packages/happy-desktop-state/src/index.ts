@@ -62,6 +62,7 @@ export * from "./artifacts/artifactChatContext.js";
 export type {
     HappyAgentArtifactContent,
     HappyAgentArtifactPage,
+    HappyAgentArtifactStaticReason,
     HappyAgentArtifactDeletion,
     HappyAgentArtifactFileLink,
     HappyAgentArtifactViewerArtifact,

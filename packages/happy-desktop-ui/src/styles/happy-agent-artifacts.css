@@ -26,19 +26,52 @@
     font-synthesis: none;
 }
 
-.happy-agent-artifacts__header {
+/* ---- Header band -------------------------------------------------------
+   The band itself is the shared PanelHeader, so its height, inset, and drag
+   contract are a chat header's. These rules only lay out what it carries:
+   the title and its subtitle on one baseline, then the trailing controls. */
+
+.happy-agent-artifact-header__heading {
     display: flex;
-    flex: 0 0 auto;
-    flex-direction: column;
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 720px;
-    /* The toolbar insets its own title by 16px, so the strip carries the
-       remaining 8px that puts that title over the column below it. */
-    padding: 0 8px;
+    flex: 1 1 0%;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
 }
 
-/* The filters sit on the reading column's leading edge, under the title. */
+.happy-agent-artifact-header__title {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-artifact-header__subtitle {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-artifact-header__trailing {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+}
+
+/* The filters and the rows below them sit on the header's 16px inset, so
+   the title, the filters, and each row's highlight share one leading edge. */
 .happy-agent-artifacts__filters {
     display: flex;
     flex: 0 0 auto;
@@ -48,7 +81,7 @@
     box-sizing: border-box;
     width: 100%;
     max-width: 720px;
-    padding: 0 24px 12px;
+    padding: 0 16px 12px;
 }
 
 .happy-agent-artifacts__scroll {
@@ -71,7 +104,7 @@
     box-sizing: border-box;
     width: 100%;
     max-width: 720px;
-    padding: 4px 24px 48px;
+    padding: 4px 16px 48px;
 }
 
 .happy-agent-artifacts__list {
@@ -291,14 +324,6 @@
     color: var(--text);
     font-family: var(--happy-font-ui);
     font-synthesis: none;
-}
-
-.happy-agent-artifact-viewer__header {
-    display: flex;
-    flex: 0 0 auto;
-    flex-direction: column;
-    padding: 0 8px;
-    border-bottom: 1px solid var(--divider);
 }
 
 .happy-agent-artifact-viewer__facts {

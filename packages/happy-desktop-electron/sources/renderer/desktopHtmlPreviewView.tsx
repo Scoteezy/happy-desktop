@@ -207,7 +207,9 @@ export class DesktopHtmlPreviewView extends Component<DesktopHtmlPreviewViewProp
             "data-happy-html-preview-guest": "",
             key: this.props.source,
             partition: this.props.partition,
-            ...(this.props.popups ? { allowpopups: true } : {}),
+            // React drops `true` from an attribute it does not know, and the
+            // guest reads only whether the attribute is present.
+            ...(this.props.popups ? { allowpopups: "" } : {}),
             ref: this.elementApply,
             src: this.props.source,
             webpreferences: "contextIsolation=yes,nodeIntegration=no,sandbox=yes",

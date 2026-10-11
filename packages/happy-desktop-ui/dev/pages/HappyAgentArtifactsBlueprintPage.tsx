@@ -9,6 +9,7 @@ import {
     type HappyAgentArtifactFileLink,
     type HappyAgentArtifactId,
     type HappyAgentArtifactNames,
+    type HappyAgentArtifactStaticReason,
     type HappyAgentArtifactType,
     type HappyAgentArtifactVersion,
     type HappyAgentArtifactViewerSnapshot,
@@ -297,6 +298,7 @@ const landingViewer = viewerOf(
         entryPath: "index.html",
         page: {
             kind: "static",
+            reason: { type: "no-guest" },
             text: `<!doctype html><html><head><link rel="stylesheet" href="style.css"><script>document.body.textContent = "scripts ran"</script></head><body><main><img src="./assets/mark.svg" alt="Mark"><h1>Ship work, not screenshots</h1><p>Every version kept, every change attributed. <a href="https://example.com">Learn more</a>.</p></main></body></html>`,
             assets: new Map([
                 [
@@ -313,6 +315,13 @@ const landingViewer = viewerOf(
     },
     landingFiles.map((entry) => link("landing", 1, entry)),
 );
+
+/** The landing page drawn statically for another reason than a host with no guest. */
+function landingStatic(reason: HappyAgentArtifactStaticReason): HappyAgentArtifactViewerSnapshot {
+    const content = landingViewer.content;
+    if (content.type !== "html" || content.page.kind !== "static") return landingViewer;
+    return { ...landingViewer, content: { ...content, page: { ...content.page, reason } } };
+}
 
 const shotFiles = [
     file("01-welcome.svg", "image/svg+xml", 1_400),
@@ -641,6 +650,40 @@ export function HappyAgentArtifactsBlueprintPage() {
                             page: { kind: "site", url: "happy-artifact://landing-v1/index.html" },
                         },
                     }}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="A renderer newer than the desktop app around it: the app cannot run the page yet, so the static preview says to update it."
+                label="Viewer · web page, app too old"
+                screen="16-html-app-outdated-1100x760"
+                window={{ width: 1100, height: 760 }}
+                number="16"
+            >
+                <HappyAgentArtifactViewer
+                    {...viewerHandlers}
+                    labels={labels}
+                    viewer={landingStatic({ type: "app-outdated" })}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="The app runs pages and could not serve this one: its reason, above the static preview shown instead."
+                label="Viewer · web page, not served"
+                screen="17-html-failed-1100x760"
+                window={{ width: 1100, height: 760 }}
+                number="17"
+            >
+                <HappyAgentArtifactViewer
+                    {...viewerHandlers}
+                    labels={labels}
+                    viewer={landingStatic({
+                        type: "failed",
+                        error: {
+                            name: "UserError",
+                            message: "This artifact holds too many files to serve.",
+                        },
+                    })}
                 />
             </FullScreenSpecimen>
         </ComponentPage>

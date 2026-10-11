@@ -274,6 +274,10 @@
    hidden and the traffic lights plus the floating toggle sit over it. */
 .happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed] .happy-channel-header,
 .happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed]
+    .happy-agent-artifacts__header,
+.happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed]
+    .happy-agent-artifact-viewer__header,
+.happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed]
     .happy-desktop-app-shell__workspace
     > .happy-tabbed-pane:first-child
     .happy-tabbed-pane__bar {
