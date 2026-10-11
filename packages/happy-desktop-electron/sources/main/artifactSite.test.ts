@@ -56,6 +56,9 @@ function fixture(paths: readonly string[] = ["index.html", "app.js", "img/a b.pn
                 };
             },
         ) as never,
+        openArtifactApi: (async () => {
+            throw new Error("unreachable");
+        }) as never,
     };
     const sites = artifactSitesCreate();
     const site = sites.register(client);
@@ -250,6 +253,9 @@ describe("artifact site handler", () => {
             openArtifactFile: (async () => {
                 throw new Error("unreachable");
             }) as never,
+            openArtifactApi: (async () => {
+                throw new Error("unreachable");
+            }) as never,
         };
         await expect(artifactSitesCreate().register(wrong).open(ARTIFACT, 2)).rejects.toMatchObject(
             {
@@ -261,6 +267,9 @@ describe("artifact site handler", () => {
             getArtifactVersion: (async () =>
                 manifest(ARTIFACT, 2, ["index.html", "../secret"])) as never,
             openArtifactFile: (async () => {
+                throw new Error("unreachable");
+            }) as never,
+            openArtifactApi: (async () => {
                 throw new Error("unreachable");
             }) as never,
         };
@@ -281,6 +290,9 @@ describe("artifact site handler", () => {
             openArtifactFile: (async () => {
                 throw new Error("unreachable");
             }) as never,
+            openArtifactApi: (async () => {
+                throw new Error("unreachable");
+            }) as never,
         };
         await expect(
             artifactSitesCreate().register(entryless).open(ARTIFACT, 2),
@@ -294,6 +306,9 @@ describe("artifact site handler", () => {
                 throw new Error("read locally");
             }) as never,
             openArtifactFile: (async () => {
+                throw new Error("read locally");
+            }) as never,
+            openArtifactApi: (async () => {
                 throw new Error("read locally");
             }) as never,
             connection: (id) => {

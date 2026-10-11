@@ -8,7 +8,7 @@ export const artifactSiteScheme = "happy-artifact";
 /** The minimal Happy Agent surface an artifact site reads through. */
 export type ArtifactSiteClient = Pick<
     HappyAgentDaemonClient,
-    "getArtifactVersion" | "openArtifactFile"
+    "getArtifactVersion" | "openArtifactFile" | "openArtifactApi"
 > & {
     readonly connection?: (id: string) => ArtifactSiteClient;
 };
@@ -151,6 +151,21 @@ export function artifactSiteAddress(
     return path === undefined ? undefined : { host: address.hostname, path };
 }
 
+/**
+ * The already-encoded part after `/api/` when a site URL's path names its
+ * artifact's API, `undefined` when it names a file, and `null` when it names
+ * the API with a path no API route could have.
+ *
+ * `/api/` belongs to Happy Agent rather than to the manifest. What follows is
+ * forwarded as written and never interpreted, so it is held to segments that
+ * cannot climb out of the API or hide a second level, as file paths are.
+ */
+export function artifactSiteApiPath(pathname: string): string | null | undefined {
+    if (pathname !== "/api" && !pathname.startsWith("/api/")) return undefined;
+    const rest = pathname.slice("/api/".length);
+    return artifactSitePath(`/${rest}`) === undefined ? null : rest;
+}
+
 /** The address a manifest path is served at on one site. */
 function artifactSiteUrl(host: string, path: string): string {
     return `${artifactSiteScheme}://${host}/${path.split("/").map(encodeURIComponent).join("/")}`;
@@ -202,6 +217,9 @@ export function artifactSitesCreate(): ArtifactSiteHandle {
                     );
                 const files = new Map<string, string>();
                 for (const file of read.files) {
+                    // `/api/` is the artifact's API on every site, so a file
+                    // published there is shadowed rather than served.
+                    if (file.path === "api" || file.path.startsWith("api/")) continue;
                     // The daemon already refuses these paths; a manifest that
                     // still holds one is not served at all rather than in part.
                     if (
@@ -237,6 +255,11 @@ export function artifactSitesCreate(): ArtifactSiteHandle {
             );
         },
         handle: async (request) => {
+            const api = artifactSiteApi(request.url);
+            if (api) {
+                const site = sites.get(api.host);
+                return site ? forward(site, api.rest, api.search, request) : refuse(404);
+            }
             // A version is something to read. There is nothing on a site to
             // submit to, and a page asking to is answered as such.
             if (request.method !== "GET") return refuse(405, { allow: "GET" });
@@ -284,6 +307,125 @@ export function artifactSitesCreate(): ArtifactSiteHandle {
         },
         close: () => sites.clear(),
     };
+}
+
+/** Where a site URL names its artifact's API. */
+function artifactSiteApi(
+    candidate: string,
+): { readonly host: string; readonly rest: string | null; readonly search: string } | undefined {
+    let address: URL;
+    try {
+        address = new URL(candidate);
+    } catch {
+        return undefined;
+    }
+    if (
+        address.protocol !== `${artifactSiteScheme}:` ||
+        address.username !== "" ||
+        address.password !== "" ||
+        address.port !== "" ||
+        address.hostname === ""
+    )
+        return undefined;
+    const rest = artifactSiteApiPath(address.pathname);
+    return rest === undefined
+        ? undefined
+        : { host: address.hostname, rest, search: address.search };
+}
+
+/**
+ * The largest request body a page may send its API. A value is small
+ * structured data; the API itself decides what it accepts below this.
+ */
+const ARTIFACT_API_MAX_BODY_BYTES = 1024 * 1024;
+/** The only headers a page's API request carries: never a cookie, a credential, or where it came from. */
+const apiRequestHeaders = [
+    "accept",
+    "cache-control",
+    "content-type",
+    "if-match",
+    "if-none-match",
+    "last-event-id",
+];
+/** The only headers of the API's answer a page is shown. */
+const apiResponseHeaders = [
+    "cache-control",
+    "content-length",
+    "content-type",
+    "etag",
+    "last-modified",
+    "location",
+    "retry-after",
+];
+
+/**
+ * Forwards one request to the API of the artifact a site serves, through the
+ * connection it was opened on, and streams the answer back as it arrives: a
+ * realtime channel is one long response. The desktop knows the API's prefix
+ * and nothing else, so its answers, errors included, reach the page untouched.
+ */
+async function forward(
+    site: ArtifactSite,
+    rest: string | null,
+    search: string,
+    request: Request,
+): Promise<Response> {
+    if (rest === null) return refuse(404);
+    const reader =
+        site.connectionId === undefined ? site.client : site.client.connection?.(site.connectionId);
+    if (!reader) return refuse(502);
+    const headers: Record<string, string> = {};
+    for (const name of apiRequestHeaders) {
+        const value = request.headers.get(name);
+        if (value !== null) headers[name] = value;
+    }
+    let body: Buffer | undefined;
+    if (request.body) {
+        body = await bodyRead(request.body);
+        if (!body) return refuse(413);
+    }
+    let upstream: Awaited<ReturnType<ArtifactSiteClient["openArtifactApi"]>>;
+    try {
+        upstream = await reader.openArtifactApi(site.artifactId, rest, search, {
+            method: request.method,
+            headers,
+            ...(body === undefined ? {} : { body }),
+            signal: request.signal,
+        });
+    } catch {
+        return refuse(502);
+    }
+    const answered = new Headers(siteHeaders);
+    for (const name of apiResponseHeaders) {
+        const value = upstream.headers[name];
+        if (typeof value === "string") answered.set(name, value);
+    }
+    const status = upstream.statusCode;
+    if (request.method === "HEAD" || status === 204 || status === 205 || status === 304) {
+        upstream.body.resume();
+        return new Response(null, { status, headers: answered });
+    }
+    return new Response(Readable.toWeb(upstream.body) as ReadableStream<Uint8Array>, {
+        status,
+        headers: answered,
+    });
+}
+
+/** A request body, or nothing once it outgrows what an API request may carry. */
+async function bodyRead(stream: ReadableStream<Uint8Array>): Promise<Buffer | undefined> {
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    const reader = stream.getReader();
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return Buffer.concat(chunks);
+        size += value.byteLength;
+        if (size > ARTIFACT_API_MAX_BODY_BYTES) {
+            void reader.cancel();
+            return undefined;
+        }
+        chunks.push(value);
+    }
 }
 
 /**

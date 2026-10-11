@@ -83,6 +83,9 @@ const client: ArtifactSiteClient = {
             body: Readable.from([bytes]),
         };
     }) as never,
+    openArtifactApi: (async () => {
+        throw new Error("This page has no API.");
+    }) as never,
 };
 
 void app.whenReady().then(async () => {

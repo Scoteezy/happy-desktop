@@ -261,6 +261,33 @@ export class HappyAgentDaemonClient {
     }
 
     /**
+     * Forwards one request to an artifact's own API, `/v0/artifacts/:id/api/`,
+     * under this client's connection prefix, without interpreting either side:
+     * the API belongs to Happy Agent, so a new one needs no desktop release.
+     * `rest` is already-encoded path segments and `search` the raw query.
+     */
+    openArtifactApi(
+        artifactId: string,
+        rest: string,
+        search: string,
+        options: {
+            readonly method: string;
+            readonly headers: Readonly<Record<string, string>>;
+            readonly body?: Buffer;
+            readonly signal?: AbortSignal;
+        },
+    ): Promise<HappyAgentDaemonRawResponse> {
+        const connection = new URL(this.#client.endpoint).pathname.replace(/\/$/u, "");
+        const prefix = `${connection}/v0/artifacts/${encodeURIComponent(artifactId)}/api/`;
+        const path = `${prefix}${rest}${search}`;
+        // Dot segments resolved here would carry the daemon credential to a
+        // route outside the artifact's API.
+        if (!new URL(path, "http://happy").pathname.startsWith(prefix))
+            return Promise.reject(new Error("The artifact API path is invalid."));
+        return this.rawRequest({ ...options, path });
+    }
+
+    /**
      * Opens one daemon request without interpreting its response.
      *
      * Only `/v0` is accepted. The renderer supplies ordinary HTTP headers, but
