@@ -35,6 +35,12 @@ export interface AppHappyAgentUpdateSnapshot {
     /** Whether the card is open above the footer. */
     readonly expanded: boolean;
     /**
+     * Whether the update is shown yet. It is mounted, hidden, from its first
+     * report so its scene is loaded, and shown once there is something real
+     * to say, so it never appears half-built.
+     */
+    readonly revealed: boolean;
+    /**
      * Whether a failure can be handed to the Chief of Staff right now. It is
      * `unavailable` while the local Happy Agent is not serving, has no Chief of
      * Staff, or refused the handoff.

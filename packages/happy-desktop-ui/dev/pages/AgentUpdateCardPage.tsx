@@ -1,4 +1,5 @@
 import { AgentUpdateCard, type AgentUpdateCardView } from "../../src/AgentUpdateCard";
+import { Composer } from "../../src/Composer";
 import { Sidebar } from "../../src/Sidebar";
 import { SidebarAgentUpdate } from "../../src/SidebarAgentUpdate";
 import { SidebarFooter } from "../../src/SidebarFooter";
@@ -40,14 +41,9 @@ const PHASES: readonly {
         view: { agentCount: 5, agents: AGENTS, kind: "draining", operationCount: 0 },
     },
     {
-        detail: "An agent this window has no conversation for keeps its status, unnamed and not a link",
-        label: "Finishing work · unknown agent",
-        view: {
-            agentCount: 1,
-            agents: [{ id: "a9", stage: "settlement" }],
-            kind: "draining",
-            operationCount: 2,
-        },
+        detail: "Only internal workers are left: said once, never counted as +N more",
+        label: "Finishing work · background only",
+        view: { agentCount: 0, agents: [], kind: "draining", operationCount: 2 },
     },
     {
         detail: "Drained, the daemon is asked to exit",
@@ -219,6 +215,70 @@ export function AgentUpdateCardPage() {
                             </div>
                         </div>
                     ))}
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="Default 288px sidebar beside a real composer: where the card would cover the composer it rises until it clears the composer's top edge by 8px; it may overlap the transcript, never the input"
+                label="Clears the composer"
+                number="04"
+                stage="app"
+            >
+                <div
+                    data-screen="4-clears-composer"
+                    style={{ display: "flex", height: "420px", width: "900px" }}
+                >
+                    <div
+                        style={{
+                            border: "1px solid var(--divider)",
+                            display: "flex",
+                            width: "288px",
+                        }}
+                    >
+                        <Sidebar
+                            activeItemId=""
+                            footer={
+                                <SidebarFooter
+                                    actions={
+                                        <SidebarAgentUpdate
+                                            expanded
+                                            onCollapse={noop}
+                                            onToggle={noop}
+                                            view={{
+                                                agentCount: 2,
+                                                agents: AGENTS.slice(0, 2),
+                                                kind: "draining",
+                                                operationCount: 0,
+                                            }}
+                                        />
+                                    }
+                                    appearance="dark"
+                                    onAppearanceToggle={noop}
+                                    onSettingsOpen={noop}
+                                />
+                            }
+                            onCompose={noop}
+                            onItemSelect={noop}
+                            sections={[]}
+                        />
+                    </div>
+                    <div
+                        style={{
+                            display: "flex",
+                            flex: "1 1 auto",
+                            flexDirection: "column",
+                            justifyContent: "flex-end",
+                            padding: "12px",
+                        }}
+                    >
+                        <Composer
+                            mentions={[]}
+                            onSend={noop}
+                            onValueChange={noop}
+                            placeholder="Message Happy…"
+                            value="Keep the waveform quiet while I am reading another session."
+                        />
+                    </div>
                 </div>
             </Specimen>
         </ComponentPage>

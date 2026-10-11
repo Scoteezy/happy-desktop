@@ -17,8 +17,8 @@ export interface AgentUpdateCatalog {
 /**
  * The update as the card draws it. The daemon names each waiting agent by its
  * session ID; that is the conversation's own ID, so the card names it by the
- * conversation's title and opens it, and leaves unnamed any agent this window
- * does not have in its catalog.
+ * conversation's title and opens it. An agent this window has no conversation
+ * for — the daemon's own workers — is background work, not a row.
  */
 export function agentUpdateCardView(
     progress: AppHappyAgentUpdateProgress,
@@ -31,24 +31,27 @@ export function agentUpdateCardView(
             let agentCount = 0;
             let operationCount = 0;
             for (const component of progress.waitingFor) {
-                if (component.agents === undefined) {
-                    operationCount += component.count;
-                    continue;
-                }
-                agentCount += Math.max(component.count, component.agents.length);
-                for (const agent of component.agents) {
+                const listed = component.agents ?? [];
+                let recognised = 0;
+                for (const agent of listed) {
+                    // Only a conversation the reader has is named and counted.
+                    // The daemon's internal workers have none, and are said
+                    // once as background work rather than as "+N more".
                     const found = conversationFind(catalog, agent.id);
+                    if (!found) continue;
+                    recognised += 1;
                     agents.push({
                         id: agent.id,
+                        name: found.name,
+                        onSelect: () => open(found.groupId, agent.id),
                         stage: agent.stage,
-                        ...(found
-                            ? {
-                                  name: found.name,
-                                  onSelect: () => open(found.groupId, agent.id),
-                              }
-                            : {}),
                     });
                 }
+                // A long list the daemon cut short still names real agents.
+                const omitted =
+                    component.truncated === true ? Math.max(0, component.count - listed.length) : 0;
+                agentCount += recognised + omitted;
+                operationCount += Math.max(0, component.count - recognised - omitted);
             }
             const remaining = progress.waitingFor.reduce((total, one) => total + one.count, 0);
             return {

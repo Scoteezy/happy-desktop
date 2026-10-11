@@ -1005,6 +1005,7 @@ export function Composer(props: ComposerProps) {
             data-pending={props.pending ? "" : undefined}
             data-submit-disabled={props.submitDisabled ? "" : undefined}
             data-happy-desktop-ui="composer"
+            data-happy-floating-avoid=""
             data-testid={props["data-testid"]}
             onDragEnter={dragOverSurface}
             onDragLeave={dragLeaveSurface}

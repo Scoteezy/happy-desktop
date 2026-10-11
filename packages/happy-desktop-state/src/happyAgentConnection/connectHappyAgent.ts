@@ -250,7 +250,22 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const agentModes = new Map<string, MessageMode | null>();
     const draftRevisions = new Map<string, number>();
     const pendingDraftSaves = new Map<string, PendingDraftSave>();
+    /*
+     * Routine writes the window makes while someone simply reads and types —
+     * saving a draft, marking a conversation read — are held while the daemon
+     * cannot take them: while it drains for an update, and while the
+     * connection is down. Only the latest of each per session is kept, and it
+     * is sent once a daemon that admits work is live again. Nothing about a
+     * held write is reported, because nothing has gone wrong: the draft is
+     * still on screen and will be saved.
+     */
+    const heldDraftSaves = new Map<string, DraftSave>();
+    const heldReads = new Set<string>();
+    // Whether the daemon answering admits mutations. A daemon's drain is
+    // sticky, so this only becomes true again for a replacement process.
+    let admitting = true;
     const draftSaveCancel = (sessionId: string): void => {
+        heldDraftSaves.delete(sessionId);
         const pending = pendingDraftSaves.get(sessionId);
         if (pending === undefined) return;
         clearTimeout(pending.timer);
@@ -782,6 +797,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         ) {
             draftSaveCancel(agentId);
             if (draftRevisions.get(agentId) === pending.revision) draftRevisions.delete(agentId);
+        }
+        const held = heldDraftSaves.get(agentId);
+        if (held !== undefined && draft.updatedAt !== null && draft.updatedAt >= held.updatedAt) {
+            heldDraftSaves.delete(agentId);
+            if (draftRevisions.get(agentId) === held.revision) draftRevisions.delete(agentId);
         }
         replaceDraft(agentId, draft);
         return true;
@@ -2231,6 +2251,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             : "Happy Agent is not ready",
                         source: "connection",
                     });
+                    // Health is read for every new process, so this is where a
+                    // replacement that admits work again is first known.
+                    admitting = health.draining !== true && health.shuttingDown !== true;
                     const nextCompatibility = serverCompatibility(health.version);
                     reportCompatibility(nextCompatibility);
                     if (nextCompatibility.status !== "compatible" || !health.ready) {
@@ -2313,6 +2336,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             source: "sse",
                         });
                         publishConnection("live");
+                        heldWritesFlush();
                         reconnectMs = INITIAL_RECONNECT_MS;
                     } else if (update.kind === "state_lost") {
                         reportDebug({
@@ -2358,9 +2382,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             break;
                         }
                     } else if (update.kind === "draining") {
-                        // Reported rather than acted on: a draining agent still
-                        // answers and still streams, and the feed says so itself
-                        // when it finally stops.
+                        // A draining agent still answers and still streams, and
+                        // the feed says so itself when it finally stops. It no
+                        // longer admits writes, so routine ones are held.
+                        admitting = false;
                         reportDebug({
                             detail: debugDetail({
                                 cursor: update.cursor,
@@ -2592,21 +2617,43 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         );
     };
 
-    const draftSave = (sessionId: string, save: DraftSave): string =>
-        mutation(
+    const writesHeld = (): boolean => !admitting || groupsStore.getState().connection !== "live";
+
+    /** The daemon's own refusal of a mutation because it is draining. */
+    const drainingRefusal = (error: unknown): boolean =>
+        error instanceof HappyAgentApiError && error.code === "draining";
+
+    const draftSave = (sessionId: string, save: DraftSave): string => {
+        if (writesHeld()) {
+            heldDraftSaves.set(sessionId, save);
+            return save.mutationId;
+        }
+        return mutation(
             "set_draft",
             save.mutationId,
-            () =>
-                client.saveAgentDraft(
-                    sessionId,
-                    {
-                        draft: save.draft.value,
-                        mutationId: save.mutationId,
-                        updatedAt: save.updatedAt,
-                    },
-                    { signal: deadlineSignal() },
-                ),
-            ({ draft: saved }) => {
+            async () => {
+                try {
+                    return await client.saveAgentDraft(
+                        sessionId,
+                        {
+                            draft: save.draft.value,
+                            mutationId: save.mutationId,
+                            updatedAt: save.updatedAt,
+                        },
+                        { signal: deadlineSignal() },
+                    );
+                } catch (error) {
+                    if (!drainingRefusal(error)) throw error;
+                    // The drain began while this was on its way. Held, with
+                    // the same idempotency key, unless a newer save already is.
+                    admitting = false;
+                    if (!heldDraftSaves.has(sessionId)) heldDraftSaves.set(sessionId, save);
+                    return undefined;
+                }
+            },
+            (response) => {
+                if (response === undefined) return;
+                const saved = response.draft;
                 if (draftRevisions.get(sessionId) !== save.revision) return;
                 draftRevisions.delete(sessionId);
                 replaceDraft(sessionId, saved);
@@ -2619,6 +2666,54 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             sessionId,
             `agent:${sessionId}`,
         );
+    };
+
+    const sessionReadMark = (sessionId: string): string => {
+        const mutationId = nextId();
+        if (writesHeld()) {
+            heldReads.add(sessionId);
+            return mutationId;
+        }
+        return mutation(
+            "mark_session_read",
+            mutationId,
+            async () => {
+                try {
+                    return await client.markAgentRead(
+                        sessionId,
+                        { mutationId },
+                        { signal: deadlineSignal() },
+                    );
+                } catch (error) {
+                    if (!drainingRefusal(error)) throw error;
+                    admitting = false;
+                    heldReads.add(sessionId);
+                    return undefined;
+                }
+            },
+            (response) => {
+                if (response !== undefined) adoptAgent(response.agent);
+            },
+            undefined,
+            sessionId,
+            `agent:${sessionId}`,
+        );
+    };
+
+    /** Sends what was held, once a daemon that admits work is live again. */
+    const heldWritesFlush = (): void => {
+        if (closed || writesHeld()) return;
+        for (const [sessionId, save] of [...heldDraftSaves]) {
+            heldDraftSaves.delete(sessionId);
+            // A newer edit is already scheduled and supersedes this one.
+            if (pendingDraftSaves.has(sessionId)) continue;
+            draftSave(sessionId, save);
+        }
+        for (const sessionId of [...heldReads]) {
+            heldReads.delete(sessionId);
+            sessionReadMark(sessionId);
+        }
+    };
 
     const draftSaveSchedule = (sessionId: string, save: DraftSave): void => {
         draftSaveCancel(sessionId);
@@ -3122,16 +3217,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             );
         },
         markSessionRead(sessionId) {
-            const mutationId = nextId();
-            return mutation(
-                "mark_session_read",
-                mutationId,
-                () => client.markAgentRead(sessionId, { mutationId }, { signal: deadlineSignal() }),
-                ({ agent }) => adoptAgent(agent),
-                undefined,
-                sessionId,
-                `agent:${sessionId}`,
-            );
+            return sessionReadMark(sessionId);
         },
         sendMessage(sessionId, message) {
             const mutationId = nextId();

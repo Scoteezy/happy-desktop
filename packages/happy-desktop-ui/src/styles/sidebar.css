@@ -1266,6 +1266,10 @@
     flex: none;
 }
 
+.happy-sidebar-agent-update[hidden] {
+    display: none;
+}
+
 .happy-sidebar-agent-update[data-open] > .happy-button {
     background: var(--surface-ripple);
     color: var(--text);
@@ -1297,7 +1301,8 @@
    containing block. */
 .happy-sidebar-agent-update__panel {
     position: absolute;
-    bottom: calc(100% + 8px);
+    /* `--happy-floating-lift` raises it clear of the composer where they would meet. */
+    bottom: calc(100% + 8px + var(--happy-floating-lift, 0px));
     left: 0;
     z-index: 30;
     display: flex;

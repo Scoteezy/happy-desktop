@@ -20,11 +20,14 @@ export interface AgentUpdateCardAgent {
 export type AgentUpdateCardView =
     | {
           readonly kind: "draining";
-          /** The agents the daemon listed, in its order. */
+          /** The waiting agents the reader would recognise, in the daemon's order. */
           readonly agents: readonly AgentUpdateCardAgent[];
-          /** How many agents are waiting in all, which may exceed the list. */
+          /**
+           * How many such agents are waiting in all: the list, plus any the
+           * daemon left out of a long one. Internal workers are not counted.
+           */
           readonly agentCount: number;
-          /** Operations still open that are not agents, such as API writes. */
+          /** Other work still open, such as internal workers and API writes. */
           readonly operationCount: number;
           /** The share of the drain already finished, once the daemon has reported one. */
           readonly fraction?: number;
@@ -317,12 +320,12 @@ function linesFilled(view: AgentUpdateCardView): readonly Line[] {
                 return [
                     {
                         kind: "text",
+                        // Internal work has no name worth reading, so it is
+                        // said once rather than counted.
                         text:
                             view.operationCount === 0
                                 ? "No new work is being taken on."
-                                : view.operationCount === 1
-                                  ? "One operation is still finishing."
-                                  : `${String(view.operationCount)} operations are still finishing.`,
+                                : "Background work is finishing.",
                     },
                 ];
             // Everything fits only when every waiting agent was listed; past

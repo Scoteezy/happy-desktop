@@ -929,6 +929,15 @@ export function happyAgentChatStoreCreate(
             onChange: (elements, connected, answeredUserInputs) => {
                 if (!active || disposed) return;
                 transcriptElements = elements;
+                // A refusal belongs to the connection that made it. Once a
+                // new one is live — after an update or an outage — it no
+                // longer describes anything, so it does not outlive it.
+                if (
+                    transcriptSession !== undefined &&
+                    transcriptSession.connection !== "live" &&
+                    connected.connection === "live"
+                )
+                    mutationRejection = undefined;
                 transcriptSession = connected;
                 transcriptAnsweredUserInputs = answeredUserInputs;
                 // Only authoritative question state settles the local submission.

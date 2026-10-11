@@ -13,6 +13,12 @@ import {
 
 /** How long a finished update stays on its card before it clears itself. */
 const DONE_VISIBLE_MS = 3_000;
+/**
+ * How long a drain that has reported nothing yet is kept off screen. The
+ * main process polls the daemon every 400ms, so the first real report is
+ * usually in by then; a drain with nothing to wait for has moved on.
+ */
+const REVEAL_HOLD_MS = 1_200;
 
 /**
  * The local agent's update as the footer card tells it.
@@ -52,8 +58,15 @@ export function desktopAgentUpdateStoreCreate(input: {
     // The failure the card is showing, so a new one opens the card again.
     let failure: string | undefined;
     let chiefOfStaff: "idle" | "pending" | "refused" = "idle";
+    // The card appears whole: not on the drain's opening report, which knows
+    // nothing yet, but on its first real one, or once the hold runs out.
+    let revealed = false;
+    let revealTimer: ReturnType<typeof setTimeout> | undefined;
 
     const clear = (): void => {
+        revealed = false;
+        if (revealTimer !== undefined) clearTimeout(revealTimer);
+        revealTimer = undefined;
         active = false;
         held = false;
         dropped = false;
@@ -85,7 +98,18 @@ export function desktopAgentUpdateStoreCreate(input: {
                     install.waitingFor.length === 0
                 )
                     startedAt = Date.now();
+                revealTimer = setTimeout(() => {
+                    revealTimer = undefined;
+                    revealed = true;
+                    reconcile();
+                }, REVEAL_HOLD_MS);
             }
+            if (
+                install.phase !== "draining" ||
+                install.waitingFor.length > 0 ||
+                install.waitingPeak > 0
+            )
+                revealed = true;
             if (install.phase === "error") {
                 held = false;
                 const key = `${install.failedAt}:${install.message}`;
@@ -143,6 +167,9 @@ export function desktopAgentUpdateStoreCreate(input: {
                       : "available",
             expanded,
             progress,
+            // Anything past the opening report is real, including a window
+            // that arrived part-way or a held "reconnecting".
+            revealed: revealed || progress.kind !== "draining",
         };
     };
 

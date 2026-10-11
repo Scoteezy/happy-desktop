@@ -1795,9 +1795,12 @@ function happyAgentSections(
             })),
             // Naming a bot belongs to the Happy Agent named by this section, the
             // same way adding a project does.
-            ...(happyAgent.status === "connected" && happyAgent.session
+            // Once the machine has been seen, an outage disables the control
+            // rather than removing it, so the sidebar does not move.
+            ...(happyAgent.session
                 ? {
                       action: {
+                          disabled: happyAgent.status !== "connected",
                           icon: "plus" as const,
                           label: "New bot",
                           reveal: "always" as const,
@@ -1843,7 +1846,11 @@ function happyAgentTasksSection(
     titleShimmerEnabled: boolean,
     shortcutHappyAgentId?: string,
 ): SidebarSection {
-    const connected = happyAgent.status === "connected" && happyAgent.session !== undefined;
+    // The heading keeps its shape once the machine has been seen: an outage,
+    // such as an update restarting it, disables its controls rather than
+    // taking them away, so the rows below do not move.
+    const materialized = happyAgent.session !== undefined;
+    const offline = happyAgent.status !== "connected";
     return {
         id: happyAgentTasksSectionId(happyAgent.id),
         label: "Tasks",
@@ -1860,9 +1867,10 @@ function happyAgentTasksSection(
         // The heading makes a task the way the Bots heading makes a bot, with
         // browsing beside it. A Happy Agent from before task creation only
         // browses, so its search stands where the + would.
-        ...(connected && happyAgentTaskCreateSupported(happyAgent)
+        ...(materialized && happyAgentTaskCreateSupported(happyAgent)
             ? {
                   action: {
+                      disabled: offline,
                       icon: "plus" as const,
                       label: "New task",
                       reveal: "always" as const,
@@ -1873,28 +1881,30 @@ function happyAgentTasksSection(
                           : {}),
                   },
                   secondaryAction: {
+                      disabled: offline,
                       icon: "search" as const,
                       label: "Browse tasks",
                       reveal: "always" as const,
                   },
                   // Nothing joined yet says so under the heading, with making
-                  // the first one right beside it.
+                  // the first one right beside it while it can be made.
                   empty: {
-                      actionLabel: "New task",
+                      ...(offline ? {} : { actionLabel: "New task" }),
                       description: "Start a task, or browse to join one.",
                       icon: "tasks" as const,
                       title: "No tasks yet",
                   },
               }
-            : connected
+            : materialized
               ? {
                     action: {
+                        disabled: offline,
                         icon: "search" as const,
                         label: "Browse tasks",
                         reveal: "always" as const,
                     },
                     empty: {
-                        actionLabel: "Browse tasks",
+                        ...(offline ? {} : { actionLabel: "Browse tasks" }),
                         description: "Join a task to keep it here.",
                         icon: "tasks" as const,
                         title: "No tasks yet",
@@ -2022,10 +2032,12 @@ function happyAgentProjectsSection(
                   },
               }),
         // Project creation belongs to the Happy Agent named by this section.
-        ...(happyAgent.status === "connected" && happyAgent.session
+        // Disabled, not removed, while a machine already seen is offline.
+        ...(happyAgent.session
             ? {
                   action: {
                       busy: happyAgent.projectAdd?.pending === true,
+                      disabled: happyAgent.status !== "connected",
                       icon: "plus" as const,
                       label: "Add project",
                       reveal: "always" as const,
@@ -2327,6 +2339,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         <SidebarAgentUpdate
             chiefOfStaffPending={updateProgress.chiefOfStaff === "pending"}
             expanded={updateProgress.expanded}
+            hidden={!updateProgress.revealed}
             onCollapse={updateStore.cardToggle}
             onToggle={updateStore.cardToggle}
             view={agentUpdateCardView(
