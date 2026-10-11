@@ -304,7 +304,7 @@ export default {
             );
             evidence.installClickedWhileTool = true;
             await demo.daemonPublish(installSnapshot(drainingHealth, evidence.waitingPeak));
-            await demo.settle('[data-testid="agent-install-screen"]', {
+            await demo.settle('[data-happy-desktop-ui="agent-update-card"]', {
                 after: 650,
                 timeout: 30_000,
             });

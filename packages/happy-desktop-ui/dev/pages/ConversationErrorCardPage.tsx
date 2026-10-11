@@ -7,11 +7,11 @@ export function ConversationErrorCardPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Full diagnostic text stays readable in the transcript: paragraphs and indentation are preserved, long identifiers wrap, and Copy retains the original text."
+            summary="Full diagnostic text stays readable in the transcript: paragraphs and indentation are preserved, long identifiers wrap, and the one way out is Ask Chief of Staff, which receives the error itself."
             title="Conversation error card"
         >
             <Specimen
-                detail="Heading and reason stay separate; hover or focus reveals the full-text copy action."
+                detail="Heading and reason stay separate; there is no copy or log button."
                 label="Short failure"
                 number="01"
                 stage="surface"

@@ -126,6 +126,13 @@ export type LottieSceneProps = {
     /** When the single play happens. Defaults to `on-appear`. */
     play?: LottieScenePlay;
     /**
+     * Repeats the play for as long as it is true. Off by default, which is the
+     * play-once contract below. Turning it off never restarts or remounts the
+     * player: the cycle already under way finishes and its last frame holds.
+     * For a scene that stands for one continuous wait, such as an update.
+     */
+    loop?: boolean;
+    /**
      * The accessible name of the replay control. The artwork itself carries no
      * information — whatever it illustrates is already written beside it — so
      * the only thing assistive technology is told about is the one action:
@@ -143,7 +150,7 @@ export type LottieSceneProps = {
  * never touches again. There is no requestAnimationFrame loop here, no timer,
  * and no React render per frame. All scenes share one worker.
  *
- * It never loops. The scene plays once when the state it illustrates appears,
+ * It never loops unless its host passes `loop`. The scene plays once when the state it illustrates appears,
  * and then holds its last frame — which for all eighteen animations is the pose
  * they were drawn to return to, so the held picture is a picture worth holding.
  * After that it only moves when a reader asks: a click or tap, a fresh hover
@@ -178,6 +185,9 @@ export function LottieScene(props: LottieSceneProps) {
     // below. A ref rather than state because asking for a replay changes
     // nothing React renders.
     const replay = useRef<() => void>(() => {});
+    // Set by the effect once the player exists. Applies a changed `loop` to the
+    // running player; until then the effect reads `loop` when it builds one.
+    const loopApply = useRef<(loop: boolean) => void>(() => {});
     // Drives only the canvas's own opacity, so the still glyph underneath is not
     // crossed by a half-painted first frame. It is not product state and nothing
     // outside this component reads it.
@@ -203,6 +213,7 @@ export function LottieScene(props: LottieSceneProps) {
      * nothing.
      */
     const interactive = !reducedMotion && painted;
+    const loop = props.loop === true;
 
     /*
      * Owning a worker player, a transferred OffscreenCanvas, an
@@ -266,6 +277,9 @@ export function LottieScene(props: LottieSceneProps) {
          */
         let settle = () => {};
         let hold = () => {};
+        // Whether the play repeats. Read when the player is built and kept
+        // current by `loopApply`, so a change never rebuilds the player.
+        let looping = loop;
 
         /*
          * Subscribed now, not after the runtime resolves. Scrolling away,
@@ -320,9 +334,10 @@ export function LottieScene(props: LottieSceneProps) {
                      */
                     autoplay: false,
                     canvas: element,
-                    // Never. One play is the whole contract, and a second one is
-                    // always something a reader asked for.
-                    loop: false,
+                    // Only while the host asks for it. Otherwise one play is
+                    // the whole contract, and a second one is always
+                    // something a reader asked for.
+                    loop: looping,
                     renderConfig: {
                         autoResize: false,
                         devicePixelRatio: scenePixelRatio(view),
@@ -363,6 +378,18 @@ export function LottieScene(props: LottieSceneProps) {
                     owed = false;
                     settle();
                     void instance.setFrame(rest);
+                };
+
+                loopApply.current = (next) => {
+                    if (disposed || next === looping) return;
+                    looping = next;
+                    // Off: the cycle under way plays out and fires `complete`,
+                    // which holds its last frame. On: a rested scene starts again.
+                    void instance.setLoop(next);
+                    if (next && !owed && !reduced) {
+                        void instance.setFrame(0);
+                        start();
+                    }
                 };
 
                 replay.current = () => {
@@ -423,6 +450,7 @@ export function LottieScene(props: LottieSceneProps) {
         return () => {
             disposed = true;
             replay.current = () => {};
+            loopApply.current = () => {};
             setPainted(false);
             for (const off of release) off();
             release.length = 0;
@@ -435,7 +463,15 @@ export function LottieScene(props: LottieSceneProps) {
              */
             void player?.destroy();
         };
+        // `loop` is read only when a player is built; a later change goes
+        // through `loopApply` below, so it never rebuilds the player.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
     }, [play, props.name, props.size]);
+
+    // eslint-disable-next-line happy-react/no-layout-effect -- hands a changed `loop` to the worker player already running; rebuilding it would restart the scene, and there is nothing to clean up
+    useLayoutEffect(() => {
+        loopApply.current(loop);
+    }, [loop]);
 
     const box = `${String(props.size)}px`;
     const onKeyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {

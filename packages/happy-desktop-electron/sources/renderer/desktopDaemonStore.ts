@@ -35,7 +35,8 @@ export function desktopDaemonStoreCreate(bridge: HappyDesktopBridge): AppHappyAg
             void bridge.daemonCheck().catch(fail);
         },
         daemonInstall() {
-            if (busy() || snapshot.install.phase !== "idle" || !snapshot.readyVersion) return;
+            // A failed update may be run again straight from its failure.
+            if (busy() || !installSettled(snapshot) || !snapshot.readyVersion) return;
             publish({
                 ...snapshot,
                 error: undefined,
@@ -61,7 +62,7 @@ export function desktopDaemonStoreCreate(bridge: HappyDesktopBridge): AppHappyAg
             void bridge.daemonInstallKill().catch(fail);
         },
         daemonRestart() {
-            if (busy() || snapshot.install.phase !== "idle" || !snapshot.installedVersion) return;
+            if (busy() || !installSettled(snapshot) || !snapshot.installedVersion) return;
             publish({
                 ...snapshot,
                 error: undefined,
@@ -135,6 +136,11 @@ function daemonProject(snapshot: DesktopDaemonSnapshot): AppHappyAgentDaemonSnap
         updateAvailable: snapshot.updateAvailable,
         versions: snapshot.versions,
     };
+}
+
+/** No update is running: none has started, or the last one failed. */
+function installSettled(snapshot: AppHappyAgentDaemonSnapshot): boolean {
+    return snapshot.install.phase === "idle" || snapshot.install.phase === "error";
 }
 
 function displayError(error: unknown): string {

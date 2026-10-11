@@ -199,8 +199,8 @@ export const DIVIDER_HEIGHT = 60;
 /** Centered `.happy-system-notice`: 16px padding above and below. */
 const NOTICE_CHROME_CENTER = 32;
 const NOTICE_INSET = 50;
-/** Error card: 14px icon + 20px copy button + two 8px gaps beside the text. */
-const ERROR_TEXT_INSET = 50;
+/** Error card: 14px icon and the 8px gap beside the text. */
+const ERROR_TEXT_INSET = 22;
 /** Error card: 6px vertical padding per side, plus 4px between heading and reason. */
 const ERROR_TEXT_CHROME = 16;
 /* A steering notice keeps the notice row's 16px lead but closes to 4px above the

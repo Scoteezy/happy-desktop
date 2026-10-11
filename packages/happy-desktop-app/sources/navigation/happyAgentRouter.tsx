@@ -55,6 +55,7 @@ import {
     type AppHappyAgentDebugStore,
     type AppHappyAgentProfilerStore,
 } from "../views/AppHappyAgentSettingsView";
+import type { AppHappyAgentUpdateStore } from "../agentUpdate";
 
 /**
  * Everything the local route tree needs that the URL does not address: the
@@ -87,6 +88,8 @@ export interface HappyAgentRouterContext {
     /** Live renderer diagnostics, present only in an explicitly debug-launched desktop window. */
     readonly performance?: LivePerformanceStore;
     readonly daemon?: AppHappyAgentDaemonStore;
+    /** The local Happy Agent update card, beside `daemon` and only with it. */
+    readonly agentUpdate?: AppHappyAgentUpdateStore;
     readonly profiler?: AppHappyAgentProfilerStore;
     readonly happyAgents: AppHappyAgentDirectoryStore;
     /** This build's development identity; absent in the packaged product. */
@@ -505,6 +508,7 @@ function HappyAgentWorkspaceLayout(
             chatId={params.chatId}
             groupId={params.groupId}
             {...(context.daemon ? { daemon: context.daemon } : {})}
+            {...(context.agentUpdate ? { agentUpdate: context.agentUpdate } : {})}
             {...(context.experiments ? { experiments: context.experiments } : {})}
             {...(context.projectsVisibility
                 ? { projectsVisibility: context.projectsVisibility }

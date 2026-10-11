@@ -1,4 +1,4 @@
-import { Activity, useSyncExternalStore, type ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import {
@@ -11,6 +11,7 @@ import {
     happyAgentRouterSubtasksForget,
     happyAgentRouterCreate,
     type AppHappyAgentDaemonStore,
+    type AppHappyAgentUpdateStore,
     type AppHappyAgentUpdate,
     type AppHappyAgentDebugStore,
     type AppHappyAgentProfilerStore,
@@ -54,12 +55,10 @@ import {
     SetupHandoff,
     SetupPage,
     ThemeScope,
-    AgentInstallScreen,
     WelcomeScreen,
     ZoomIndicator,
     ConnectionShell,
     ConnectionSurface,
-    type AgentInstallView,
     type BrowserContentRenderer,
     type HtmlPreviewRenderer,
     type LivePerformanceStore,
@@ -117,7 +116,7 @@ import { desktopNavigationOrderPersistence } from "./desktopNavigationOrder";
 import { desktopSidebarCollapsePersistence } from "./desktopSidebarCollapse";
 import { DesktopBootGate, desktopBootSkip } from "./DesktopBootGate";
 import { desktopAnalyticsCreate } from "./desktopAnalytics";
-import { desktopRestartStoreCreate, type DesktopRestartStore } from "./desktopRestartStore";
+import { desktopAgentUpdateStoreCreate } from "./desktopAgentUpdateStore";
 import {
     DesktopMediaPreviewWindow,
     desktopMediaPreviewEscapeBind,
@@ -283,6 +282,8 @@ function HappyAgentBoundary(props: {
     appearance: AppearanceStore;
     commandPalette: CommandPaletteStore;
     daemon?: AppHappyAgentDaemonStore;
+    /** The local agent's update card; supplied with `daemon`, to the local surface only. */
+    agentUpdate?: AppHappyAgentUpdateStore;
     debug?: AppHappyAgentDebugStore;
     performance?: LivePerformanceStore;
     profiler?: AppHappyAgentProfilerStore;
@@ -319,6 +320,7 @@ function HappyAgentBoundary(props: {
                 commandPalette: props.commandPalette,
                 connectionOnboarding: props.connectionOnboarding,
                 ...(props.daemon ? { daemon: props.daemon } : {}),
+                ...(props.agentUpdate ? { agentUpdate: props.agentUpdate } : {}),
                 debug: props.debug,
                 ...(props.performance ? { performance: props.performance } : {}),
                 profiler: props.profiler,
@@ -482,8 +484,8 @@ interface DesktopRendererProps {
      * the closed-inset arrangement while the connection rail owns the left edge.
      */
     surfaceWindowState: HappyAgentWindowStore;
-    /** The local agent's restart as the window shows it, held until it is connected again. */
-    restart: DesktopRestartStore;
+    /** The local agent's update as the footer card tells it, held until it is connected again. */
+    agentUpdate: AppHappyAgentUpdateStore;
 }
 
 /**
@@ -551,22 +553,11 @@ function DesktopScreens(props: DesktopRendererProps) {
         props.sidebarVisibility.get,
         props.sidebarVisibility.get,
     );
-    const restart = useSyncExternalStore(
-        props.restart.subscribe,
-        props.restart.get,
-        props.restart.get,
-    );
     const main = props.connectionUis.get(LOCAL_HAPPY_AGENT_ID);
     const surfaceWindowState = props.surfaceWindowState;
-    // Every connection rides through the local daemon, so while it is being
-    // replaced nothing in this window is usable — the remotes on the rail no
-    // more than the local surface. The restart takes the whole window, rail
-    // included; the shell stays mounted but hidden so every surface keeps its
-    // state for the moment the daemon is back. The screen outlasts the main
-    // process's word for the restart: it stays until this window is connected
-    // again and the catalog is read, so nothing half-built is ever handed back.
-    const restarting = restart !== undefined;
-    const shell = (
+    // An update of the local daemon does not take the window: the shell stays
+    // usable, and the update is told on a card in the local sidebar's footer.
+    return (
         <ConnectionShell
             items={directory.happyAgents.map((entry) => ({
                 id: entry.id,
@@ -665,17 +656,6 @@ function DesktopScreens(props: DesktopRendererProps) {
                 })}
         </ConnectionShell>
     );
-    return (
-        <>
-            <Activity mode={restarting ? "hidden" : "visible"}>{shell}</Activity>
-            {restart ? (
-                <DesktopAgentRestartWindow
-                    daemon={props.daemon ?? unavailableDaemonStore}
-                    view={restart}
-                />
-            ) : null}
-        </>
-    );
 }
 
 function DesktopLocalScreens(props: DesktopRendererProps) {
@@ -713,34 +693,7 @@ function DesktopLocalScreens(props: DesktopRendererProps) {
                 {content}
             </DesktopOnboardingGate>
         );
-    // A restart is not gated here: it takes the whole window, rail included,
-    // so its screen lives in DesktopScreens above every connection surface.
     return gated;
-}
-
-/**
- * The whole window while the local machine's Happy Agent is being replaced.
- *
- * This is the entire tree for as long as a restart runs — not a screen over the
- * app, but the app's replacement. It renders one thing from one store, and that
- * store reaches the main process directly, so nothing here depends on a Happy Agent, a
- * session, a project, or a connection. That is what lets the rest be thrown
- * away: there is nothing left holding a reference to the machine going down.
- *
- * Only ever the local host. A Happy Agent on another machine is restarted by whoever
- * owns it and never touches this window.
- */
-function DesktopAgentRestartWindow(props: {
-    daemon: AppHappyAgentDaemonStore;
-    view: AgentInstallView;
-}) {
-    return (
-        <AgentInstallScreen
-            onDismiss={props.daemon.daemonInstallDismiss}
-            onKill={props.daemon.daemonInstallKill}
-            view={props.view}
-        />
-    );
 }
 
 /**
@@ -893,7 +846,7 @@ function DesktopRuntimeContent(
             appearance={props.appearance}
             bridge={props.bridge}
             commandPalette={props.commandPalette}
-            {...(props.daemon ? { daemon: props.daemon } : {})}
+            {...(props.daemon ? { agentUpdate: props.agentUpdate, daemon: props.daemon } : {})}
             debug={props.debug}
             {...(props.performance ? { performance: props.performance } : {})}
             profiler={props.profiler}
@@ -1185,9 +1138,9 @@ if (mediaPreviewBridge) {
             sidebarVisibility,
             happyAgents,
         });
-        // The restart screen outlives the main process's report of the restart
+        // The update card outlives the main process's report of the update
         // until this window has reconnected and read the catalog again.
-        const restart = desktopRestartStoreCreate({
+        const agentUpdate = desktopAgentUpdateStoreCreate({
             daemon: daemon ?? unavailableDaemonStore,
             happyAgents,
         });
@@ -1365,7 +1318,7 @@ if (mediaPreviewBridge) {
                         welcome={welcome}
                         windowState={windowState}
                         surfaceWindowState={surfaceWindowState}
-                        restart={restart}
+                        agentUpdate={agentUpdate}
                     />
                 </CodeHighlightWorkers>
             </DesktopAppearance>,

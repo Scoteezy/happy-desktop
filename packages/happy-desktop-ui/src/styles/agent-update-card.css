@@ -1,0 +1,193 @@
+/*
+ * C-288 AgentUpdateCard. Every dimension is fixed, so a phase change can only
+ * rewrite text:
+ *
+ *   card      380 × 128, 1px border, 16px padding
+ *   row       snail 76 × 76 (bare)  |  gap 12  |  content 76 (title 22 + 3 × 18)
+ *   gap       16
+ *   bar       4px, four equal tracks, no labels
+ */
+.happy-agent-update-card {
+    --happy-agent-update-card-title: 22px;
+    --happy-agent-update-card-line: 18px;
+    --happy-agent-update-card-row: calc(
+        var(--happy-agent-update-card-title) + 3 * var(--happy-agent-update-card-line)
+    );
+    position: relative;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 16px;
+    box-sizing: border-box;
+    width: 380px;
+    height: 128px;
+    padding: 16px;
+    overflow: hidden;
+    border: 1px solid var(--modal-border);
+    border-radius: 12px;
+    background: var(--surface);
+    box-shadow:
+        0 12px 32px var(--shadow-floating),
+        0 2px 8px var(--shadow-color);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+    user-select: none;
+}
+
+.happy-agent-update-card__row {
+    display: flex;
+    flex: none;
+    gap: 12px;
+    height: var(--happy-agent-update-card-row);
+}
+
+/* Bare: the snail sits directly on the card, in a box the row's height. */
+.happy-agent-update-card__scene {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--happy-agent-update-card-row);
+    height: var(--happy-agent-update-card-row);
+}
+
+.happy-agent-update-card__content {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    height: var(--happy-agent-update-card-row);
+}
+
+.happy-agent-update-card__title {
+    display: block;
+    flex: none;
+    height: var(--happy-agent-update-card-title);
+    /* The collapse control's lane. */
+    padding-right: 28px;
+    overflow: hidden;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: var(--happy-agent-update-card-title);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-update-card__title[data-tone="failed"] {
+    color: var(--text-destructive);
+}
+
+.happy-agent-update-card__line {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-width: 0;
+    height: var(--happy-agent-update-card-line);
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: var(--happy-agent-update-card-line);
+    white-space: nowrap;
+}
+
+.happy-agent-update-card__text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* The link hugs its words inside the full-width slot, so the target is the text. */
+.happy-agent-update-card__agent {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+
+button.happy-agent-update-card__agent {
+    cursor: pointer;
+}
+
+.happy-agent-update-card__agent-name {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-weight: 500;
+    text-overflow: ellipsis;
+}
+
+.happy-agent-update-card__agent-status {
+    flex: none;
+}
+
+.happy-agent-update-card__agent-go {
+    flex: none;
+    margin-left: 2px;
+    opacity: 0.7;
+}
+
+button.happy-agent-update-card__agent:hover .happy-agent-update-card__agent-name {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--text) 50%, transparent);
+    text-underline-offset: 2px;
+}
+
+button.happy-agent-update-card__agent:hover .happy-agent-update-card__agent-go {
+    color: var(--text);
+    opacity: 1;
+}
+
+.happy-agent-update-card__action {
+    flex: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, var(--text) 40%, transparent);
+    text-underline-offset: 2px;
+    cursor: pointer;
+}
+
+.happy-agent-update-card__action[data-quiet] {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.happy-agent-update-card__action:disabled {
+    cursor: default;
+    opacity: 0.6;
+}
+
+.happy-agent-update-card__agent:focus-visible,
+.happy-agent-update-card__action:focus-visible {
+    border-radius: 2px;
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+.happy-agent-update-card__collapse.happy-button {
+    position: absolute;
+    top: 13px;
+    right: 12px;
+}
+
+.happy-agent-update-card__bar {
+    flex: none;
+}

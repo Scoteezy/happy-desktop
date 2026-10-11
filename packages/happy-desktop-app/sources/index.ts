@@ -18,8 +18,14 @@ export {
     type HappyAgentVersionProviderProps,
 } from "./HappyAgentVersionProvider";
 export {
+    type AppHappyAgentUpdateProgress,
+    type AppHappyAgentUpdateSnapshot,
+    type AppHappyAgentUpdateStore,
+} from "./agentUpdate";
+export {
     type AppHappyAgentDaemonInstall,
     type AppHappyAgentDaemonRestartReason,
+    type AppHappyAgentDaemonRestartStep,
     type AppHappyAgentDaemonSnapshot,
     type AppHappyAgentDaemonStore,
     type AppHappyAgentDaemonVersion,

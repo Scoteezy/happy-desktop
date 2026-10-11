@@ -210,3 +210,16 @@
         transition: none;
     }
 }
+
+/* A host that names the live step itself keeps only the tracks. */
+.happy-segmented-progress[data-labels="hidden"] {
+    gap: 6px;
+}
+
+.happy-segmented-progress[data-labels="hidden"] .happy-segmented-progress__segment {
+    gap: 0;
+}
+
+.happy-segmented-progress[data-labels="hidden"] .happy-segmented-progress__label {
+    display: none;
+}

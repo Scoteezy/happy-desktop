@@ -558,13 +558,13 @@ export {
     type DesktopMobileSetupStep,
 } from "./DesktopMobileSetup";
 export {
-    AgentInstallScreen,
-    type AgentInstallDrainAgent,
-    type AgentInstallDrainComponent,
-    type AgentInstallReason,
-    type AgentInstallScreenProps,
-    type AgentInstallView,
-} from "./AgentInstallScreen";
+    AgentUpdateCard,
+    type AgentUpdateCardAgent,
+    type AgentUpdateCardProps,
+    type AgentUpdateCardView,
+    type AgentUpdateStep,
+} from "./AgentUpdateCard";
+export { SidebarAgentUpdate, type SidebarAgentUpdateProps } from "./SidebarAgentUpdate";
 export {
     WelcomeScreen,
     type WelcomeScreenBackdrop,

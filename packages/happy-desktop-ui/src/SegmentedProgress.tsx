@@ -35,6 +35,12 @@ export interface SegmentedProgressProps {
     /** User-paced steps highlight the current stage without implying background work. */
     readonly mode?: "progress" | "steps";
     readonly tone?: "default" | "inverse";
+    /**
+     * Whether each step names itself under its track. `hidden` is for a host that
+     * already names the live step in its own words; the tracks keep their names
+     * for a screen reader either way. Defaults to `visible`.
+     */
+    readonly labels?: "visible" | "hidden";
     readonly className?: string;
     readonly "data-testid"?: string;
     readonly style?: CSSProperties;
@@ -72,6 +78,7 @@ export function SegmentedProgress(props: SegmentedProgressProps) {
             className={["happy-segmented-progress", props.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="segmented-progress"
             data-mode={props.mode}
+            data-labels={props.labels === "hidden" ? "hidden" : undefined}
             data-tone={props.tone}
             data-testid={props["data-testid"]}
             role={props.mode === "steps" ? "list" : "group"}

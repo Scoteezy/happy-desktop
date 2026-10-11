@@ -2661,13 +2661,11 @@ export function happyAgentWorkspaceStoreCreate(
             if (entry.kind !== "notice" || entry.variant !== "notice" || entry.level !== "error")
                 continue;
             const attempt = attempts?.get(entry.id);
-            const refusal = !entry.source
-                ? "This error has no saved message to reference. Copy the error for manual help."
-                : !chief
-                  ? "Chief of Staff is not available on this Happy Agent."
-                  : chief.conversation.id === chat.sessionId
-                    ? "This is already the Chief of Staff conversation. Use the composer for follow-up."
-                    : list.groupConversationRefusal(chief.workspaceId);
+            const refusal = !chief
+                ? "Chief of Staff is not available on this Happy Agent."
+                : chief.conversation.id === chat.sessionId
+                  ? "This is already the Chief of Staff conversation. Use the composer for follow-up."
+                  : list.groupConversationRefusal(chief.workspaceId);
             projected.push({
                 entryId: entry.id,
                 assistance:
@@ -6546,8 +6544,7 @@ export function happyAgentWorkspaceStoreCreate(
                 availability.status === "unavailable" ||
                 availability.status === "pending" ||
                 entry?.kind !== "notice" ||
-                entry.variant !== "notice" ||
-                !entry.source
+                entry.variant !== "notice"
             )
                 return;
             const chief = list.get().bots.find((bot) => bot.systemKey === "chief_of_staff");
@@ -6579,8 +6576,9 @@ export function happyAgentWorkspaceStoreCreate(
                 ...(menus === undefined
                     ? {}
                     : { providerId: menus.currentProviderId, modelId: menus.currentModelId }),
-                messageId: entry.source.messageId,
-                runId: entry.source.runId,
+                ...(entry.source
+                    ? { messageId: entry.source.messageId, runId: entry.source.runId }
+                    : {}),
                 text: entry.text,
             });
             const generation = acquisitionGeneration;

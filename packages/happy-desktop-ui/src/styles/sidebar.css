@@ -1256,6 +1256,57 @@
     flex: none;
 }
 
+/*
+ * A Happy Agent update under way, in the same slot. An ordinary ghost footer
+ * button; open, it takes keep-awake's open treatment, and while the update
+ * runs its glyph turns slowly.
+ */
+.happy-sidebar-agent-update {
+    display: flex;
+    flex: none;
+}
+
+.happy-sidebar-agent-update[data-open] > .happy-button {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-sidebar-agent-update__glyph {
+    display: flex;
+}
+
+.happy-sidebar-agent-update[data-running] .happy-sidebar-agent-update__glyph {
+    animation: happy-sidebar-agent-update-turn 2.4s linear infinite;
+}
+
+@keyframes happy-sidebar-agent-update-turn {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-sidebar-agent-update[data-running] .happy-sidebar-agent-update__glyph {
+        animation: none;
+    }
+}
+
+/* The card hangs above the whole footer row from its left gutter, on the same
+   inset as the update panel. It is wider than a narrow sidebar and is allowed
+   to reach over the content beside it. `.happy-sidebar-footer` is the
+   containing block. */
+.happy-sidebar-agent-update__panel {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    z-index: 30;
+    display: flex;
+}
+
+.happy-sidebar-agent-update__panel[hidden] {
+    display: none;
+}
+
 .happy-sidebar-update__trigger {
     display: flex;
     flex: none;

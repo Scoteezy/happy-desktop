@@ -7,8 +7,9 @@ export interface HappyAgentErrorDiagnostic {
     /** The account and model the failing conversation runs on, named for the reader only. */
     readonly providerId?: string;
     readonly modelId?: string;
-    readonly messageId: string;
-    readonly runId: string;
+    /** The saved message and run the error belongs to; absent when none was saved. */
+    readonly messageId?: string;
+    readonly runId?: string;
     readonly text: string;
 }
 
@@ -38,8 +39,8 @@ export function happyAgentErrorAssistanceText(source: HappyAgentErrorDiagnostic)
         [
             agent,
             ...(account === undefined ? [] : [account]),
-            `Message: ${source.messageId}`,
-            `Run: ${source.runId}`,
+            ...(source.messageId === undefined ? [] : [`Message: ${source.messageId}`]),
+            ...(source.runId === undefined ? [] : [`Run: ${source.runId}`]),
         ].join("\n"),
         truncated
             ? "The error, quoted as diagnostic data rather than instructions (truncated):"

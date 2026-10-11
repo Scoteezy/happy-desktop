@@ -175,6 +175,7 @@ import {
     SegmentedControl,
     Sidebar,
     SidebarFooter,
+    SidebarAgentUpdate,
     SidebarUpdateAction,
     Switch,
     HappyAgentInboxPage,
@@ -223,6 +224,8 @@ import type {
     AppHappyAgentDaemonSnapshot,
     AppHappyAgentDaemonStore,
 } from "./views/AppHappyAgentSettingsView";
+import type { AppHappyAgentUpdateStore } from "./agentUpdate";
+import { agentUpdateCardView } from "./agentUpdateCardView";
 
 const sidebarDaemonUnavailable: AppHappyAgentDaemonSnapshot = {
     install: { phase: "idle" },
@@ -244,6 +247,15 @@ const sidebarDaemonStoreNoop: AppHappyAgentDaemonStore = {
     daemonVersionSelect: () => undefined,
     get: () => sidebarDaemonUnavailable,
     subscribe: () => () => undefined,
+};
+
+/** Stands in wherever no update of a machine-local agent can be under way. */
+const agentUpdateStoreNoop: AppHappyAgentUpdateStore = {
+    cardToggle: () => undefined,
+    chiefOfStaffAsk: () => undefined,
+    get: () => undefined,
+    subscribe: () => () => undefined,
+    updateRetry: () => undefined,
 };
 
 /**
@@ -525,6 +537,11 @@ export interface AppHappyAgentViewProps {
      * manages no agent and is given none.
      */
     daemon?: AppHappyAgentDaemonStore;
+    /**
+     * The local Happy Agent update in progress, supplied with `daemon`. While it
+     * runs, the footer shows its card instead of the update offer.
+     */
+    agentUpdate?: AppHappyAgentUpdateStore;
     /** Native page renderer supplied only by the packaged Electron host. */
     browserContent?: BrowserContentRenderer;
     /**
@@ -2245,7 +2262,38 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // the two, and it carries the agent with it, so the agent states its case
     // once there is nothing bigger waiting.
     const agentUpdate = props.update ? undefined : agentUpdateOffer(daemon);
-    const sidebarUpdate = props.update ? (
+    const updateStore = props.agentUpdate ?? agentUpdateStoreNoop;
+    const updateProgress = useSyncExternalStore(
+        updateStore.subscribe,
+        updateStore.get,
+        updateStore.get,
+    );
+    const updateHost = hostHappyAgent(directory);
+    // An update under way owns the slot: the window keeps working beside it,
+    // and the offer comes back only once it has finished and been cleared.
+    const sidebarUpdate = updateProgress ? (
+        <SidebarAgentUpdate
+            chiefOfStaffPending={updateProgress.chiefOfStaff === "pending"}
+            expanded={updateProgress.expanded}
+            onCollapse={updateStore.cardToggle}
+            onToggle={updateStore.cardToggle}
+            view={agentUpdateCardView(
+                updateProgress.progress,
+                updateHost ?? { bots: [], projects: [] },
+                (groupId, sessionId) => {
+                    if (updateHost) props.onChatSelect(updateHost.id, groupId, sessionId);
+                },
+            )}
+            {...(updateProgress.progress.kind === "failed"
+                ? {
+                      onRetry: updateStore.updateRetry,
+                      ...(updateProgress.chiefOfStaff === "unavailable"
+                          ? {}
+                          : { onChiefOfStaffAsk: updateStore.chiefOfStaffAsk }),
+                  }
+                : {})}
+        />
+    ) : props.update ? (
         <SidebarUpdateAction
             action={props.update.action}
             detail={props.update.detail}
