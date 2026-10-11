@@ -503,6 +503,27 @@ export { MenuButton, type MenuButtonProps } from "./MenuButton";
 export { Modal, type ModalProps, type ModalSize, type ModalTone } from "./Modal";
 export { ModalOverlay, type ModalOverlayProps } from "./ModalOverlay";
 export {
+    IMAGE_CROP_MAX_ZOOM,
+    imageCropClamp,
+    imageCropEdge,
+    imageCropInitial,
+    imageCropOpen,
+    imageCropPan,
+    imageCropRegion,
+    imageCropZoom,
+    type ImageCropRegion,
+    type ImageCropSize,
+    type ImageCropSource,
+    type ImageCropView,
+} from "./imageCrop";
+export {
+    PROFILE_PHOTO_CROP_FRAME,
+    PROFILE_PHOTO_CROP_STAGE,
+    ProfilePhotoCropDialog,
+    type ProfilePhotoCropDialogProps,
+    type ProfilePhotoCropSource,
+} from "./ProfilePhotoCropDialog";
+export {
     DefaultAgentForm,
     type DefaultAgentFormProps,
     DEFAULT_AGENT_LUCKY_LABEL,

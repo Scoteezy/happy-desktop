@@ -1,0 +1,98 @@
+/*
+ * C-290 ProfilePhotoCropDialog — a square crop seen through the avatar's
+ * circle. The stage is a fixed 312px square; the crop frame is the 248px square
+ * centred in it, and the circle inscribed in the frame is what the avatar will
+ * show. Everything outside the circle is dimmed with the overlay's own scrim.
+ */
+
+/* The keyboard boundary around the card; it adds no box of its own. */
+.happy-photo-crop-dialog {
+    display: contents;
+}
+
+.happy-photo-crop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+}
+
+.happy-photo-crop > .happy-banner {
+    align-self: stretch;
+}
+
+.happy-photo-crop__stage {
+    position: relative;
+    flex: none;
+    width: 312px;
+    height: 312px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: var(--groupped-background);
+    cursor: grab;
+    touch-action: none;
+    outline: none;
+}
+
+.happy-photo-crop__stage:active {
+    cursor: grabbing;
+}
+
+.happy-photo-crop__stage:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+/* The picture is placed by its own crop offset and scale, not by any flow. */
+.happy-photo-crop__image {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: block;
+    max-width: none;
+    image-orientation: from-image;
+    pointer-events: none;
+    transform-origin: 0 0;
+    user-select: none;
+}
+
+/* The circle the avatar shows; its spread shadow dims the rest of the stage. */
+.happy-photo-crop__mask {
+    position: absolute;
+    inset: 32px;
+    border-radius: var(--happy-radius-pill);
+    box-shadow:
+        0 0 0 1px var(--button-primary-tint),
+        0 0 0 312px var(--overlay-backdrop);
+    pointer-events: none;
+}
+
+/* The square that is actually uploaded; the avatar crops its corners. */
+.happy-photo-crop__frame {
+    position: absolute;
+    inset: 32px;
+    border: 1px dashed var(--button-primary-tint);
+    pointer-events: none;
+}
+
+.happy-photo-crop__zoom {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    gap: 12px;
+    color: var(--text-secondary);
+}
+
+.happy-photo-crop__slider {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 16px;
+    margin: 0;
+    accent-color: var(--text);
+    cursor: pointer;
+}
+
+.happy-photo-crop__slider:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}

@@ -45,6 +45,7 @@ import {
     type ServerCompatibility,
     type TerminalColorScheme,
 } from "happy-desktop-state";
+import { imageCropOpen } from "happy-desktop-ui";
 import { completionChimePlay } from "./completionChime";
 import { desktopViewPreferencesPersistence } from "./desktopViewPreferences";
 import { desktopWelcomePersistence } from "./desktopWelcome";
@@ -397,6 +398,7 @@ export function happyAgentConnectionOpen(input: {
         workspaceMemoryPersistence: workspaceMemoryPersistence(input.happyAgentId),
         catalogSource,
         profileActions: profile.actions,
+        profilePhotoCodec: { open: imageCropOpen },
         profileSource: profile.source,
         providerUsageSource: happyAgentUsageSourceCreate(directClient),
         transcriptConnect: happyAgentTranscriptConnectCreate(agentConnection),

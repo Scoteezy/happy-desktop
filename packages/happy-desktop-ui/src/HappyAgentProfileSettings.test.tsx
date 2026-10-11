@@ -40,6 +40,8 @@ function profile(testId: string, props: Partial<HappyAgentProfileSettingsProps> 
                 onEmailChange={noop}
                 onNameChange={noop}
                 onPhotoChoose={noop}
+                onPhotoCropCancel={noop}
+                onPhotoCropConfirm={noop}
                 onPhotoRemove={noop}
                 onRevert={noop}
                 onSave={noop}

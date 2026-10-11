@@ -83,6 +83,7 @@ import {
     type HappyAgentProfileSource,
     type HappyAgentProfileStore,
 } from "./happyAgentProfileStore.js";
+import type { HappyAgentProfilePhotoCodec } from "./happyAgentProfilePhoto.js";
 import {
     happyAgentProvidersStoreCreate,
     type HappyAgentProvidersStore,
@@ -325,6 +326,8 @@ export interface HappyAgentWorkspaceClientDeps {
     /** Host-only profile read and mutation. Omitted on a node connection. */
     readonly profileSource?: HappyAgentProfileSource;
     readonly profileActions?: HappyAgentProfileActions;
+    /** Opens and crops a picked profile photo; supplied with the profile by a host that has one. */
+    readonly profilePhotoCodec?: HappyAgentProfilePhotoCodec;
     /** Opens the core transcript stream for one materialized chat. */
     readonly transcriptConnect: HappyAgentChatTranscriptConnect;
     /** Maximum number of leased chat stores that may keep a live transcript subscription. */
@@ -701,10 +704,12 @@ export function happyAgentWorkspaceClientCreate(
         },
         profile() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
-            if (!deps.profileSource || !deps.profileActions) return undefined;
+            if (!deps.profileSource || !deps.profileActions || !deps.profilePhotoCodec)
+                return undefined;
             profileStore ??= happyAgentProfileStoreCreate({
                 source: deps.profileSource,
                 actions: deps.profileActions,
+                photoCodec: deps.profilePhotoCodec,
             });
             return profileStore;
         },

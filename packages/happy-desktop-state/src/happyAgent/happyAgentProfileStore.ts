@@ -1,8 +1,14 @@
 import { createStore } from "zustand/vanilla";
 import type { UserError } from "../types.js";
 import {
+    HAPPY_AGENT_PROFILE_PHOTO_SIZE,
     happyAgentProfilePhotoError,
     happyAgentProfilePhotoRead,
+    happyAgentProfilePhotoSourceCheck,
+    happyAgentProfilePhotoSourceError,
+    type HappyAgentProfilePhotoCodec,
+    type HappyAgentProfilePhotoCropRegion,
+    type HappyAgentProfilePhotoCropSource,
 } from "./happyAgentProfilePhoto.js";
 import { happyAgentUserError } from "./happyAgentSupport.js";
 import type { HappyAgentAvatarImage } from "./happyAgentTypes.js";
@@ -66,12 +72,23 @@ export interface HappyAgentProfileSnapshot {
      */
     readonly saved: boolean;
     readonly photo?: HappyAgentProfilePhoto;
-    /** True while a chosen photo is being read and sent. */
-    readonly photoUploading: boolean;
-    /** True while the stored photo is being removed. */
-    readonly photoRemoving: boolean;
+    /**
+     * The photo change in flight: a picked picture being opened for cropping,
+     * a crop being encoded and sent, or the stored photo being removed.
+     */
+    readonly photoActivity?: "opening" | "uploading" | "removing";
+    /** A picked picture being cropped; nothing is sent until the crop is confirmed. */
+    readonly photoCrop?: HappyAgentProfilePhotoCropView;
     /** Why the last photo change was refused or failed. */
     readonly photoError?: string;
+}
+
+/** The picture being cropped, as a surface draws it. */
+export interface HappyAgentProfilePhotoCropView {
+    readonly imageUrl: string;
+    /** Its size the right way up, in its own pixels. */
+    readonly width: number;
+    readonly height: number;
 }
 
 export interface HappyAgentProfileStore {
@@ -82,8 +99,12 @@ export interface HappyAgentProfileStore {
     /** Puts the fields back to what is stored. */
     profileRevert(): void;
     profileSave(): Promise<void>;
-    /** Sends a picked file as the new photo, refusing first what the daemon would refuse. */
-    photoUpload(file: Blob): Promise<void>;
+    /** Opens a picked file for cropping, refusing first what cannot be opened. */
+    photoChoose(file: Blob): Promise<void>;
+    /** Draws the chosen square, sends it as the new photo, and closes the crop once it is stored. */
+    photoCropConfirm(region: HappyAgentProfilePhotoCropRegion): Promise<void>;
+    /** Closes the crop without sending anything. */
+    photoCropCancel(): void;
     photoRemove(): Promise<void>;
     [Symbol.dispose](): void;
 }
@@ -91,6 +112,7 @@ export interface HappyAgentProfileStore {
 export interface HappyAgentProfileStoreDeps {
     readonly source: HappyAgentProfileSource;
     readonly actions: HappyAgentProfileActions;
+    readonly photoCodec: HappyAgentProfilePhotoCodec;
 }
 
 const EMPTY: HappyAgentProfileSnapshot = {
@@ -98,8 +120,6 @@ const EMPTY: HappyAgentProfileSnapshot = {
     email: "",
     loading: true,
     name: "",
-    photoRemoving: false,
-    photoUploading: false,
     saved: false,
     saving: false,
 };
@@ -125,6 +145,13 @@ export function happyAgentProfileStoreCreate(
     let stored: HappyAgentProfile | undefined;
     let unsubscribeSource: (() => void) | undefined;
     let disposed = false;
+    /** The decoded picture behind `photoCrop`, owned here until the crop closes. */
+    let cropSource: HappyAgentProfilePhotoCropSource | undefined;
+
+    const cropClose = (): void => {
+        cropSource?.close();
+        cropSource = undefined;
+    };
 
     const dirtyAgainst = (
         profile: HappyAgentProfile | undefined,
@@ -165,38 +192,28 @@ export function happyAgentProfileStoreCreate(
         });
     };
 
-    const photoChange = async (
-        change: "upload" | "removal",
+    /** Sends one photo change, reporting why it did not happen. */
+    const photoSend = async (
+        activity: "uploading" | "removing",
         send: () => Promise<void>,
+        settled: Partial<HappyAgentProfileSnapshot> = {},
     ): Promise<void> => {
-        const current = store.getState();
-        if (current.photoUploading || current.photoRemoving) return;
-        if (change === "upload" && !current.saved) {
-            store.setState({
-                ...current,
-                photoError: "Save your name first, then add a photo.",
-            });
-            return;
-        }
-        store.setState({
-            ...current,
-            photoUploading: change === "upload",
-            photoRemoving: change === "removal",
-            photoError: undefined,
-        });
+        store.setState({ ...store.getState(), photoActivity: activity, photoError: undefined });
         try {
             // The source reports the profile that results through the
             // subscription, so there is nothing to adopt from the answer here.
             await send();
             if (disposed) return;
-            store.setState({ ...store.getState(), photoUploading: false, photoRemoving: false });
+            store.setState({ ...store.getState(), ...settled, photoActivity: undefined });
         } catch (error) {
             if (disposed) return;
             store.setState({
                 ...store.getState(),
-                photoUploading: false,
-                photoRemoving: false,
-                photoError: happyAgentProfilePhotoError(error, change).message,
+                photoActivity: undefined,
+                photoError: happyAgentProfilePhotoError(
+                    error,
+                    activity === "uploading" ? "upload" : "removal",
+                ).message,
             });
         }
     };
@@ -306,17 +323,76 @@ export function happyAgentProfileStoreCreate(
                 });
             }
         },
-        photoUpload(file) {
-            return photoChange("upload", async () =>
-                deps.actions.photoUpload(await happyAgentProfilePhotoRead(file)),
+        async photoChoose(file) {
+            const current = store.getState();
+            if (current.photoActivity !== undefined || current.photoCrop !== undefined) return;
+            if (!current.saved) {
+                store.setState({
+                    ...current,
+                    photoError: "Save your name first, then add a photo.",
+                });
+                return;
+            }
+            store.setState({ ...current, photoActivity: "opening", photoError: undefined });
+            let opened: HappyAgentProfilePhotoCropSource;
+            try {
+                await happyAgentProfilePhotoSourceCheck(file);
+                opened = await deps.photoCodec.open(file);
+            } catch (error) {
+                if (disposed) return;
+                store.setState({
+                    ...store.getState(),
+                    photoActivity: undefined,
+                    photoError: happyAgentProfilePhotoSourceError(error).message,
+                });
+                return;
+            }
+            if (disposed) {
+                opened.close();
+                return;
+            }
+            cropSource = opened;
+            store.setState({
+                ...store.getState(),
+                photoActivity: undefined,
+                photoCrop: {
+                    imageUrl: opened.imageUrl,
+                    width: opened.width,
+                    height: opened.height,
+                },
+            });
+        },
+        photoCropConfirm(region) {
+            const source = cropSource;
+            if (source === undefined || store.getState().photoActivity !== undefined)
+                return Promise.resolve();
+            return photoSend(
+                "uploading",
+                async () => {
+                    const encoded = await source.crop(region, HAPPY_AGENT_PROFILE_PHOTO_SIZE);
+                    await deps.actions.photoUpload(await happyAgentProfilePhotoRead(encoded));
+                    // Stored: the crop has done its work, and its picture can go.
+                    if (cropSource === source) cropClose();
+                },
+                { photoCrop: undefined },
             );
         },
+        photoCropCancel() {
+            const current = store.getState();
+            if (current.photoCrop === undefined || current.photoActivity === "uploading") return;
+            cropClose();
+            store.setState({ ...current, photoCrop: undefined, photoError: undefined });
+        },
         photoRemove() {
-            return photoChange("removal", () => deps.actions.photoRemove());
+            const current = store.getState();
+            if (current.photoActivity !== undefined || current.photoCrop !== undefined)
+                return Promise.resolve();
+            return photoSend("removing", () => deps.actions.photoRemove());
         },
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
+            cropClose();
             stop();
             listeners.clear();
         },
@@ -332,7 +408,9 @@ export const happyAgentProfileStoreNoop: HappyAgentProfileStore = {
     emailUpdate: () => undefined,
     profileRevert: () => undefined,
     profileSave: () => Promise.resolve(),
-    photoUpload: () => Promise.resolve(),
+    photoChoose: () => Promise.resolve(),
+    photoCropConfirm: () => Promise.resolve(),
+    photoCropCancel: () => undefined,
     photoRemove: () => Promise.resolve(),
     [Symbol.dispose]: () => undefined,
 };

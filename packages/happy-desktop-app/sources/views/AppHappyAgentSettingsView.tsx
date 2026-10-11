@@ -724,16 +724,28 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                             if (happyAgentOnline()) void profileStore.profileSave();
                         }}
                         saving={profile.saving}
-                        onPhotoChoose={(file) => {
-                            if (happyAgentOnline()) void profileStore.photoUpload(file);
-                        }}
-                        onPhotoRemove={() => {
-                            if (happyAgentOnline()) void profileStore.photoRemove();
-                        }}
-                        photoRemoving={profile.photoRemoving}
-                        photoUploading={profile.photoUploading}
+                        // Photo changes are not held back while the Happy Agent
+                        // looks offline: picking and cropping are local, and a
+                        // send that cannot reach it says so in the dialog.
+                        onPhotoChoose={(file) => void profileStore.photoChoose(file)}
+                        onPhotoCropCancel={() => profileStore.photoCropCancel()}
+                        onPhotoCropConfirm={(region) => void profileStore.photoCropConfirm(region)}
+                        onPhotoRemove={() => void profileStore.photoRemove()}
+                        photoRemoving={profile.photoActivity === "removing"}
+                        photoUploading={profile.photoActivity === "uploading"}
                         {...(profile.photo === undefined ? {} : { photo: profile.photo })}
-                        {...(profile.photoError ? { photoError: profile.photoError } : {})}
+                        // While a crop is open its dialog says why a send failed.
+                        {...(profile.photoCrop
+                            ? {
+                                  photoCrop: {
+                                      source: profile.photoCrop,
+                                      saving: profile.photoActivity === "uploading",
+                                      ...(profile.photoError ? { error: profile.photoError } : {}),
+                                  },
+                              }
+                            : profile.photoError
+                              ? { photoError: profile.photoError }
+                              : {})}
                         // A team member's first save is what creates them, and
                         // a photo belongs to someone who already exists.
                         {...(profile.saved

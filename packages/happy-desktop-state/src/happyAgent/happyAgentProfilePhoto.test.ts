@@ -3,8 +3,11 @@ import { expect, it } from "vitest";
 import { UserError } from "../types.js";
 import {
     HAPPY_AGENT_PROFILE_PHOTO_MAX_BYTES,
+    HAPPY_AGENT_PROFILE_PHOTO_SOURCE_MAX_BYTES,
     happyAgentProfilePhotoError,
     happyAgentProfilePhotoRead,
+    happyAgentProfilePhotoSourceCheck,
+    happyAgentProfilePhotoSourceError,
 } from "./happyAgentProfilePhoto.js";
 
 /* A picked file is outside our contract: its encoding is read from its own
@@ -114,6 +117,34 @@ it("leaves a header it cannot measure for the daemon to judge", async () => {
     await expect(happyAgentProfilePhotoRead(blob(truncated))).resolves.toMatchObject({
         contentType: "image/jpeg",
     });
+});
+
+it("opens a larger picture for cropping than the daemon would store, within a decoding budget", async () => {
+    // A camera photo is cropped down to the stored size, so the daemon's own
+    // limits apply to the crop, not to the picture it is cut from.
+    await expect(happyAgentProfilePhotoSourceCheck(blob(png(8_000, 6_000)))).resolves.toBe(
+        undefined,
+    );
+    const heavy = new Uint8Array(HAPPY_AGENT_PROFILE_PHOTO_MAX_BYTES + 1);
+    heavy.set(png(4_000, 3_000));
+    await expect(happyAgentProfilePhotoSourceCheck(blob(heavy))).resolves.toBe(undefined);
+    await expect(happyAgentProfilePhotoSourceCheck(blob(jpeg(10_000, 5_001)))).rejects.toThrow(
+        "Choose a picture no larger than 50 megapixels.",
+    );
+    await expect(
+        happyAgentProfilePhotoSourceCheck(
+            blob(new Uint8Array(HAPPY_AGENT_PROFILE_PHOTO_SOURCE_MAX_BYTES + 1)),
+        ),
+    ).rejects.toThrow("Choose a picture no larger than 50 MiB.");
+    await expect(
+        happyAgentProfilePhotoSourceCheck(blob(new TextEncoder().encode("GIF89a"), "image/gif")),
+    ).rejects.toThrow("The profile photo must be a PNG, JPEG, or WebP image.");
+    // A file with the right signature that the engine still cannot decode.
+    expect(
+        happyAgentProfilePhotoSourceError(new DOMException("bad", "InvalidStateError")).message,
+    ).toBe("Happy could not read this picture. Try a different PNG, JPEG, or WebP file.");
+    const own = new UserError("Already displayable.");
+    expect(happyAgentProfilePhotoSourceError(own)).toBe(own);
 });
 
 it("explains each refusal in words the reader can act on", () => {

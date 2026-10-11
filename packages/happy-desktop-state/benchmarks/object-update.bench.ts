@@ -281,6 +281,9 @@ const cases: readonly BenchmarkCase[] = [
                     photoUpload: async () => undefined,
                     photoRemove: async () => undefined,
                 },
+                photoCodec: {
+                    open: () => Promise.reject(new Error("The benchmark never opens a picture.")),
+                },
             });
             return {
                 snapshot: store.get,

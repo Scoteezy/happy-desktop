@@ -424,6 +424,8 @@ function ProfileSpecimen(props: {
                     onEmailChange={noop}
                     onNameChange={noop}
                     onPhotoChoose={noop}
+                    onPhotoCropCancel={noop}
+                    onPhotoCropConfirm={noop}
                     onPhotoRemove={noop}
                     onRevert={noop}
                     onSave={noop}
@@ -461,6 +463,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         onEmailChange={noop}
                         onNameChange={noop}
                         onPhotoChoose={noop}
+                        onPhotoCropCancel={noop}
+                        onPhotoCropConfirm={noop}
                         onPhotoRemove={noop}
                         onRevert={noop}
                         onSave={noop}
@@ -870,6 +874,8 @@ export function HappyAgentSettingsBlueprintPage() {
                         onEmailChange={noop}
                         onNameChange={noop}
                         onPhotoChoose={noop}
+                        onPhotoCropCancel={noop}
+                        onPhotoCropConfirm={noop}
                         onPhotoRemove={noop}
                         onRevert={noop}
                         onSave={noop}

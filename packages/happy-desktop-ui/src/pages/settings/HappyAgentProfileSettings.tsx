@@ -4,6 +4,8 @@ import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
 import { FormRow } from "../../FormRow";
+import type { ImageCropRegion } from "../../imageCrop";
+import { ProfilePhotoCropDialog, type ProfilePhotoCropSource } from "../../ProfilePhotoCropDialog";
 import { Spinner } from "../../Spinner";
 import { TextField } from "../../TextField";
 import { thumbhashDataUrl } from "../../thumbhashDataUrl";
@@ -38,12 +40,24 @@ export interface HappyAgentProfileSettingsProps {
     readonly photoError?: string;
     /** Why a photo cannot be added yet, such as a profile that was never saved. */
     readonly photoUnavailable?: string;
+    /**
+     * A picked picture being cropped. The crop dialog shows it, and holds while
+     * a confirmed crop is `saving`, saying why it was not stored in `error`.
+     */
+    readonly photoCrop?: {
+        readonly source: ProfilePhotoCropSource;
+        readonly saving?: boolean;
+        readonly error?: string;
+    };
     onNameChange(value: string): void;
     onEmailChange(value: string): void;
     onRevert(): void;
     onSave(): void;
-    /** The reader picked a file to become the photo. */
+    /** The reader picked a file to crop into the photo. */
     onPhotoChoose(file: File): void;
+    onPhotoCropCancel(): void;
+    /** The square chosen, in the picked picture's own pixels. */
+    onPhotoCropConfirm(region: ImageCropRegion): void;
     onPhotoRemove(): void;
 }
 
@@ -72,9 +86,11 @@ const initials = (name: string): string =>
  * machine is, not a control.
  *
  * The photo is a row like the fields: its picker and removal sit where every
- * other setting's control does, and the avatar above shows the result. Until
- * the photo's bytes arrive the avatar shows its ThumbHash, so a replaced photo
- * never shows the previous picture in the meantime.
+ * other setting's control does, and the avatar above shows the result. A
+ * picked picture opens in a crop dialog first; nothing is sent until the
+ * reader confirms the square. Until the photo's bytes arrive the avatar shows
+ * its ThumbHash, so a replaced photo never shows the previous picture in the
+ * meantime.
  *
  * The block carries no title of its own. The category header directly above it
  * already reads "Profile", and a second heading saying the same word was the
@@ -83,7 +99,11 @@ const initials = (name: string): string =>
 export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps) {
     const blocked = props.unavailable !== undefined;
     const photoInput = useRef<HTMLInputElement>(null);
-    const photoBusy = props.photoUploading === true || props.photoRemoving === true;
+    // While the crop is open its own dialog shows the upload in flight, and
+    // the picker stays enabled underneath so focus can come back to it.
+    const photoBusy =
+        props.photoCrop === undefined &&
+        (props.photoUploading === true || props.photoRemoving === true);
     const photoBlocked = blocked || props.photoUnavailable !== undefined;
     const photoUrl =
         props.photo === undefined
@@ -157,8 +177,14 @@ export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps)
                                 <Button
                                     data-testid="happy-agent-profile-photo-choose"
                                     disabled={photoBlocked || photoBusy}
-                                    loading={props.photoUploading}
-                                    onClick={() => photoInput.current?.click()}
+                                    loading={props.photoCrop === undefined && props.photoUploading}
+                                    onClick={(event) => {
+                                        // The crop dialog hands focus back to
+                                        // whatever had it, and not every engine
+                                        // focuses a clicked button itself.
+                                        event.currentTarget.focus();
+                                        photoInput.current?.click();
+                                    }}
                                     size="small"
                                     variant="secondary"
                                 >
@@ -236,6 +262,17 @@ export function HappyAgentProfileSettings(props: HappyAgentProfileSettingsProps)
                     </Box>
                 </form>
             )}
+            {props.photoCrop ? (
+                <ProfilePhotoCropDialog
+                    // A new picture is a new crop, centred afresh.
+                    key={props.photoCrop.source.imageUrl}
+                    onCancel={props.onPhotoCropCancel}
+                    onConfirm={props.onPhotoCropConfirm}
+                    source={props.photoCrop.source}
+                    {...(props.photoCrop.saving ? { saving: true } : {})}
+                    {...(props.photoCrop.error ? { error: props.photoCrop.error } : {})}
+                />
+            ) : null}
         </HappyAgentSettingsSection>
     );
 }

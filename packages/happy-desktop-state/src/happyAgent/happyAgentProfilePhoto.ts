@@ -7,22 +7,82 @@ import type { HappyAgentAvatarImage } from "./happyAgentTypes.js";
 export const HAPPY_AGENT_PROFILE_PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 /** The daemon refuses to decode a profile photo with more pixels than this. */
 export const HAPPY_AGENT_PROFILE_PHOTO_MAX_PIXELS = 25_000_000;
+/** The edge of the square a crop is drawn into; the daemon keeps at most this much. */
+export const HAPPY_AGENT_PROFILE_PHOTO_SIZE = 512;
+/** The largest file opened for cropping, which bounds what is read into memory. */
+export const HAPPY_AGENT_PROFILE_PHOTO_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
+/** The most pixels opened for cropping, which bounds what is decoded. */
+export const HAPPY_AGENT_PROFILE_PHOTO_SOURCE_MAX_PIXELS = 50_000_000;
 
 const FORMAT_MESSAGE = "The profile photo must be a PNG, JPEG, or WebP image.";
 const SIZE_MESSAGE = "The profile photo must be no larger than 8 MiB.";
 const PIXELS_MESSAGE = "The profile photo must be no larger than 25 megapixels.";
+const SOURCE_SIZE_MESSAGE = "Choose a picture no larger than 50 MiB.";
+const SOURCE_PIXELS_MESSAGE = "Choose a picture no larger than 50 megapixels.";
+const UNREADABLE_MESSAGE =
+    "Happy could not read this picture. Try a different PNG, JPEG, or WebP file.";
+
+/** The square to cut out of a picked picture, in its own oriented pixels. */
+export interface HappyAgentProfilePhotoCropRegion {
+    readonly x: number;
+    readonly y: number;
+    readonly size: number;
+}
+
+/** A picked picture, decoded the right way up and held while it is cropped. */
+export interface HappyAgentProfilePhotoCropSource {
+    /** An address the picture can be drawn from until it is closed. */
+    readonly imageUrl: string;
+    readonly width: number;
+    readonly height: number;
+    /** Draws `region` into a `size`-pixel square and encodes it. */
+    crop(region: HappyAgentProfilePhotoCropRegion, size: number): Promise<Blob>;
+    close(): void;
+}
 
 /**
- * Reads a file the reader picked into the picture the daemon accepts, refusing
- * what the daemon would refuse with the same words.
+ * Decoding and drawing pictures, which only a host with an image engine can
+ * do. It rejects a picture it cannot decode.
+ */
+export interface HappyAgentProfilePhotoCodec {
+    open(file: Blob): Promise<HappyAgentProfilePhotoCropSource>;
+}
+
+/**
+ * Checks a file the reader picked before it is decoded for cropping.
  *
  * The file is not ours: its name and the browser's guess at its type say
- * nothing reliable about its bytes, and the daemon refuses a photo whose
- * declared type disagrees with them. So the encoding is detected from the
- * file's own signature, here at the boundary, and travels on explicitly. The
- * daemon answers an image it cannot decode or one with too many pixels with a
- * bare internal error, so the pixel limit is checked here from the header too.
- * A header this cannot measure is left for the daemon to judge.
+ * nothing reliable about its bytes. So the encoding is detected from the
+ * file's own signature, here at the boundary, and a picture too large to
+ * decode comfortably is refused from its header before any pixels exist. A
+ * header this cannot measure is left for the decoder to judge.
+ */
+export async function happyAgentProfilePhotoSourceCheck(file: Blob): Promise<void> {
+    if (file.size > HAPPY_AGENT_PROFILE_PHOTO_SOURCE_MAX_BYTES)
+        throw new UserError(SOURCE_SIZE_MESSAGE);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const contentType = contentTypeOf(bytes);
+    if (contentType === undefined) throw new UserError(FORMAT_MESSAGE);
+    const size = dimensionsOf(bytes, contentType);
+    if (
+        size !== undefined &&
+        size.width * size.height > HAPPY_AGENT_PROFILE_PHOTO_SOURCE_MAX_PIXELS
+    )
+        throw new UserError(SOURCE_PIXELS_MESSAGE);
+}
+
+/** Why a picked picture could not be opened for cropping. */
+export function happyAgentProfilePhotoSourceError(error: unknown): UserError {
+    if (error instanceof UserError) return error;
+    return new UserError(UNREADABLE_MESSAGE, undefined, error);
+}
+
+/**
+ * Reads an encoded crop into the picture the daemon accepts, refusing what the
+ * daemon would refuse with the same words. The daemon refuses a photo whose
+ * declared type disagrees with its bytes, so the type is taken from the bytes;
+ * and it answers one with too many pixels with a bare internal error, so the
+ * limits are checked here first.
  */
 export async function happyAgentProfilePhotoRead(file: Blob): Promise<HappyAgentAvatarImage> {
     if (file.size > HAPPY_AGENT_PROFILE_PHOTO_MAX_BYTES) throw new UserError(SIZE_MESSAGE);
