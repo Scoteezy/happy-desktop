@@ -4,3 +4,8 @@
 .happy-brand-logo {
     content: var(--happy-brand-logo-source);
 }
+
+/* The Happy Engineering wordmark, swapped for the dark file the same way. */
+.happy-wordmark {
+    content: var(--happy-wordmark-source);
+}

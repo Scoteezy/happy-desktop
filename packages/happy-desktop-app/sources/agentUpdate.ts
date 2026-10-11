@@ -14,6 +14,11 @@ export type AppHappyAgentUpdateProgress =
           readonly waitingFor: readonly AppHappyAgentDrainComponent[];
           /** The most open work the drain has held at once. */
           readonly waitingPeak: number;
+          /**
+           * Whether the drain can be cut short from the card. `pending` once
+           * the window has asked, until the daemon reports it stopping.
+           */
+          readonly restartNow: "available" | "pending";
       }
     | { readonly kind: "stopping"; readonly killed: boolean }
     | { readonly kind: "starting" }
@@ -57,6 +62,12 @@ export interface AppHappyAgentUpdateStore {
     cardToggle(): void;
     /** Runs a failed update again. */
     updateRetry(): void;
+    /**
+     * Stops waiting for the drain and restarts at once. Work the daemon had not
+     * finished is interrupted: a running non-durable tool, such as a shell
+     * command or a file edit, is recorded as interrupted and not run again.
+     */
+    restartNow(): void;
     /** Writes the failure into the Chief of Staff's draft and opens it. */
     chiefOfStaffAsk(): void;
 }

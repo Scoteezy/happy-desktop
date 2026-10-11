@@ -272,6 +272,7 @@ const agentUpdateStoreNoop: AppHappyAgentUpdateStore = {
     cardToggle: () => undefined,
     chiefOfStaffAsk: () => undefined,
     get: () => undefined,
+    restartNow: () => undefined,
     subscribe: () => () => undefined,
     updateRetry: () => undefined,
 };
@@ -2359,6 +2360,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     if (updateHost) props.onChatSelect(updateHost.id, groupId, sessionId);
                 },
             )}
+            {...(updateProgress.progress.kind === "draining"
+                ? {
+                      onRestartNow: updateStore.restartNow,
+                      restartNowPending: updateProgress.progress.restartNow === "pending",
+                  }
+                : {})}
             {...(updateProgress.progress.kind === "failed"
                 ? {
                       onRetry: updateStore.updateRetry,

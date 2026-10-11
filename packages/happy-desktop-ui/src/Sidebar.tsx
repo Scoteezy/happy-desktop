@@ -17,7 +17,7 @@ import { compactCount, changeCountLabel } from "./countText";
 import { haptic } from "./haptics";
 import { CountBadge, KeyCap } from "./Badge";
 import { Button } from "./Button";
-import { happyLogoBlackUrl } from "./assets";
+import { happyWordmarkLightUrl } from "./assets";
 import { Icon, type IconName } from "./Icon";
 import {
     commandShortcut,
@@ -2037,12 +2037,12 @@ export function Sidebar(props: SidebarProps) {
                     <div className="happy-sidebar__heading" data-happy-desktop-ui="sidebar-heading">
                         {local.brand ? (
                             <img
-                                alt=""
-                                aria-hidden="true"
-                                className="happy-brand-logo happy-sidebar__brand-logo"
+                                alt="Happy Engineering"
+                                aria-label="Happy Engineering"
+                                className="happy-wordmark happy-sidebar__brand-logo"
                                 data-happy-desktop-ui="sidebar-brand-logo"
                                 draggable={false}
-                                src={happyLogoBlackUrl}
+                                src={happyWordmarkLightUrl}
                             />
                         ) : local.title !== undefined ? (
                             <span className="happy-sidebar__title-row">

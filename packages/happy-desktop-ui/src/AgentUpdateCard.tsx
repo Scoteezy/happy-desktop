@@ -59,6 +59,13 @@ export interface AgentUpdateCardProps {
     onChiefOfStaffAsk?(): void;
     /** The handoff is being written; the link waits for it. */
     chiefOfStaffPending?: boolean;
+    /**
+     * Stops waiting for the work still running and restarts at once. Offered
+     * only while work is finishing; the link says what it costs.
+     */
+    onRestartNow?(): void;
+    /** The restart was asked for; the link waits for the daemon to stop. */
+    restartNowPending?: boolean;
     readonly className?: string;
     readonly "data-testid"?: string;
 }
@@ -81,21 +88,37 @@ const STEPS: readonly { readonly id: AgentUpdateStep; readonly label: string }[]
 /** Every card has exactly this many detail lines, filled or not. */
 const DETAIL_LINES = 3;
 
+/**
+ * What skipping the drain costs, said beside the action. A shell command or a
+ * file edit still running is stopped and recorded as interrupted, and is not
+ * run again after the restart; a read-only tool is, and a reply being written
+ * picks up from what was saved.
+ */
+const RESTART_COST = "stops tools";
+
 type Line =
     | { readonly kind: "empty" }
     | { readonly kind: "text"; readonly text: string }
     | { readonly kind: "agent"; readonly agent: AgentUpdateCardAgent }
     | { readonly kind: "more"; readonly count: number }
-    | { readonly kind: "actions" };
+    | { readonly kind: "restart" }
+    /** "Try again", and beside it whether the previous version is still serving. */
+    | { readonly kind: "retry"; readonly previousRunning: boolean }
+    | { readonly kind: "ask" };
 
 /**
  * C-288 AgentUpdateCard — a Happy Agent update, told while the window keeps
  * working.
  *
- * Every box has a fixed size: the 380 × 128 card, the 76px snail, one title
- * slot, three detail slots, and the four-track bar. A phase change rewrites the
- * text in those slots and nothing else, so the card never moves under the
- * pointer while the update runs on its own.
+ * Every box but the width has a fixed size: the 128px-tall card, the 56px
+ * snail, one title slot, three detail slots, and the four-track bar. The width
+ * is its host's — the sidebar column it sits in — and every line truncates
+ * inside it. A phase change rewrites the text in those slots and nothing else,
+ * so the card never moves under the pointer while the update runs on its own.
+ *
+ * The first detail slot is the one directly under the title. While work is
+ * finishing it holds "Restart now", which stops waiting; every other phase
+ * holds its own first line there.
  *
  * The title names the step. The bar says where in the sequence that step is,
  * so it carries no labels of its own, and there is no version or step count to
@@ -105,6 +128,19 @@ type Line =
 export function AgentUpdateCard(props: AgentUpdateCardProps) {
     const { view } = props;
     const settled = view.kind === "done" || view.kind === "failed";
+    const detail = (line: Line, index: number) => (
+        <DetailLine
+            // Slots, not entities: the lines are fixed positions whose words
+            // change.
+            key={index}
+            line={line}
+            onChiefOfStaffAsk={props.onChiefOfStaffAsk}
+            chiefOfStaffPending={props.chiefOfStaffPending === true}
+            onRestartNow={props.onRestartNow}
+            restartNowPending={props.restartNowPending === true}
+            onRetry={props.onRetry}
+        />
+    );
     return (
         <div
             aria-live="polite"
@@ -120,7 +156,7 @@ export function AgentUpdateCard(props: AgentUpdateCardProps) {
                         loop={!settled}
                         name="snail"
                         replayLabel="Play the snail again"
-                        size={76}
+                        size={56}
                     />
                 </span>
                 <span className="happy-agent-update-card__content">
@@ -131,17 +167,24 @@ export function AgentUpdateCard(props: AgentUpdateCardProps) {
                     >
                         {title(view)}
                     </span>
-                    {lines(view).map((line, index) => (
-                        <DetailLine
-                            // Slots, not entities: the three lines are fixed
-                            // positions whose words change.
-                            key={index}
-                            line={line}
-                            onChiefOfStaffAsk={props.onChiefOfStaffAsk}
-                            chiefOfStaffPending={props.chiefOfStaffPending === true}
-                            onRetry={props.onRetry}
-                        />
-                    ))}
+                    {view.kind === "draining" && props.onRestartNow ? (
+                        <>
+                            {detail({ kind: "restart" }, 0)}
+                            {/* The two slots under it, in each of the card's two
+                                widths; the narrow card cannot fit the cost
+                                beside the action, so it says it on its own line. */}
+                            <span className="happy-agent-update-card__lines" data-form="wide">
+                                {slots(drainLines(view, DETAIL_LINES - 1), DETAIL_LINES - 1).map(
+                                    detail,
+                                )}
+                            </span>
+                            <span className="happy-agent-update-card__lines" data-form="narrow">
+                                {slots(drainLinesNarrow(view), DETAIL_LINES - 1).map(detail)}
+                            </span>
+                        </>
+                    ) : (
+                        slots(linesFilled(view), DETAIL_LINES).map(detail)
+                    )}
                 </span>
             </div>
             <Button
@@ -168,9 +211,30 @@ function DetailLine(props: {
     onRetry: (() => void) | undefined;
     onChiefOfStaffAsk: (() => void) | undefined;
     chiefOfStaffPending: boolean;
+    onRestartNow: (() => void) | undefined;
+    restartNowPending: boolean;
 }) {
     const { line } = props;
     switch (line.kind) {
+        case "restart":
+            return (
+                <span
+                    className="happy-agent-update-card__line"
+                    data-happy-desktop-ui="agent-update-card-line"
+                    title="Restart without waiting. Running commands and file edits are stopped and not run again."
+                >
+                    <button
+                        className="happy-agent-update-card__action"
+                        data-happy-desktop-ui="agent-update-card-restart-now"
+                        disabled={props.restartNowPending}
+                        onClick={props.onRestartNow}
+                        type="button"
+                    >
+                        {props.restartNowPending ? "Restarting…" : "Restart now"}
+                    </button>
+                    <span className="happy-agent-update-card__text happy-agent-update-card__restart-cost">{`· ${RESTART_COST}`}</span>
+                </span>
+            );
         case "empty":
             return (
                 <span
@@ -248,10 +312,10 @@ function DetailLine(props: {
                     </span>
                 </span>
             );
-        case "actions":
+        case "retry":
             return (
                 <span
-                    className="happy-agent-update-card__line happy-agent-update-card__line--actions"
+                    className="happy-agent-update-card__line"
                     data-happy-desktop-ui="agent-update-card-line"
                 >
                     {props.onRetry ? (
@@ -264,11 +328,24 @@ function DetailLine(props: {
                             Try again
                         </button>
                     ) : null}
-                    {props.onRetry && props.onChiefOfStaffAsk ? (
-                        <span aria-hidden="true" className="happy-agent-update-card__separator">
-                            ·
+                    {line.previousRunning ? (
+                        <span
+                            className="happy-agent-update-card__text happy-agent-update-card__note"
+                            title="The previous version is still running."
+                        >
+                            {props.onRetry
+                                ? "· old version still running"
+                                : "Old version still running"}
                         </span>
                     ) : null}
+                </span>
+            );
+        case "ask":
+            return (
+                <span
+                    className="happy-agent-update-card__line"
+                    data-happy-desktop-ui="agent-update-card-line"
+                >
                     {props.onChiefOfStaffAsk ? (
                         <button
                             className="happy-agent-update-card__action"
@@ -303,52 +380,79 @@ function title(view: AgentUpdateCardView): string {
     }
 }
 
-/** The three detail slots, always three, filled from the top. */
-function lines(view: AgentUpdateCardView): readonly Line[] {
-    const filled = linesFilled(view);
-    return Array.from(
-        { length: DETAIL_LINES },
-        (_, index): Line => filled[index] ?? { kind: "empty" },
-    );
+/** Exactly `count` slots, filled from the top. */
+function slots(filled: readonly Line[], count: number): readonly Line[] {
+    return Array.from({ length: count }, (_, index): Line => filled[index] ?? { kind: "empty" });
+}
+
+/**
+ * The two slots under "Restart now" on a narrow card: what it costs, on a line
+ * of its own, then what the drain is waiting on, counted rather than listed.
+ */
+function drainLinesNarrow(view: Extract<AgentUpdateCardView, { kind: "draining" }>): Line[] {
+    const total = Math.max(view.agentCount, view.agents.length);
+    const only = view.agents.length === 1 && total === 1 ? view.agents[0] : undefined;
+    return [
+        { kind: "text", text: "Stops running tools" },
+        total === 0
+            ? {
+                  kind: "text",
+                  text: view.operationCount === 0 ? "Nothing new starts." : "Background only.",
+              }
+            : only
+              ? { agent: only, kind: "agent" }
+              : {
+                    kind: "text",
+                    text: `${String(total)} ${total === 1 ? "agent" : "agents"} working`,
+                },
+    ];
+}
+
+/** What a drain is waiting on, in `count` lines; past that the last one counts the rest. */
+function drainLines(
+    view: Extract<AgentUpdateCardView, { kind: "draining" }>,
+    count: number,
+): readonly Line[] {
+    const total = Math.max(view.agentCount, view.agents.length);
+    if (total === 0)
+        return [
+            {
+                kind: "text",
+                // Internal work has no name worth reading, so it is said once
+                // rather than counted.
+                text:
+                    view.operationCount === 0 ? "Nothing new is started." : "Background work only.",
+            },
+        ];
+    // Everything fits only when every waiting agent was listed; past that the
+    // last slot becomes the count of the rest.
+    if (total <= count && view.agents.length === total)
+        return view.agents.map((agent): Line => ({ kind: "agent", agent }));
+    const shown = view.agents.slice(0, count - 1);
+    return [
+        ...shown.map((agent): Line => ({ kind: "agent", agent })),
+        { kind: "more", count: total - shown.length },
+    ];
 }
 
 function linesFilled(view: AgentUpdateCardView): readonly Line[] {
     switch (view.kind) {
-        case "draining": {
-            const total = Math.max(view.agentCount, view.agents.length);
-            if (total === 0)
-                return [
-                    {
-                        kind: "text",
-                        // Internal work has no name worth reading, so it is
-                        // said once rather than counted.
-                        text:
-                            view.operationCount === 0
-                                ? "No new work is being taken on."
-                                : "Background work is finishing.",
-                    },
-                ];
-            // Everything fits only when every waiting agent was listed; past
-            // that the last slot becomes the count of the rest.
-            if (total <= DETAIL_LINES && view.agents.length === total)
-                return view.agents.map((agent): Line => ({ kind: "agent", agent }));
-            const shown = view.agents.slice(0, DETAIL_LINES - 1);
-            return [
-                ...shown.map((agent): Line => ({ kind: "agent", agent })),
-                { kind: "more", count: total - shown.length },
-            ];
-        }
+        case "draining":
+            return drainLines(view, DETAIL_LINES);
         case "stopping":
             return view.killed
-                ? [{ kind: "text", text: "Remaining work was interrupted." }]
+                ? [
+                      { kind: "text", text: "Tools stopped." },
+                      { kind: "text", text: "Edits, commands not rerun." },
+                  ]
                 : [
-                      { kind: "text", text: "All work has finished." },
-                      { kind: "text", text: "Nothing was interrupted." },
+                      { kind: "text", text: "All work is done." },
+                      { kind: "text", text: "Nothing was lost." },
                   ];
         case "starting":
-            return [{ kind: "text", text: "Your sessions and drafts are kept." }];
+            return [{ kind: "text", text: "Your work is kept." }];
         case "reconnecting":
-            return [{ kind: "text", text: "Restoring your sessions." }];
+            return [{ kind: "text", text: "Restoring sessions." }];
         case "done":
             return view.tookMs === undefined
                 ? []
@@ -359,9 +463,11 @@ function linesFilled(view: AgentUpdateCardView): readonly Line[] {
                 // Only a drain that failed leaves the old daemon in place. Past
                 // that it has been stopped, and saying otherwise would be untrue.
                 view.failedAt === "draining"
-                    ? { kind: "text", text: "The previous version is still running." }
-                    : { kind: "empty" },
-                { kind: "actions" },
+                    ? { kind: "retry", previousRunning: true }
+                    : { kind: "retry", previousRunning: false },
+                // A line of its own: beside "Try again" it would not fit the
+                // sidebar.
+                { kind: "ask" },
             ];
     }
 }

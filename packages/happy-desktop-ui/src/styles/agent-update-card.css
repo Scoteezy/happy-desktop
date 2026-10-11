@@ -1,11 +1,16 @@
 /*
- * C-288 AgentUpdateCard. Every dimension is fixed, so a phase change can only
- * rewrite text:
+ * C-288 AgentUpdateCard. Every dimension but the width is fixed, so a phase
+ * change can only rewrite text; the width is the host's, and every line
+ * truncates inside it:
  *
- *   card      380 × 128, 1px border, 16px padding
- *   row       snail 76 × 76 (bare)  |  gap 12  |  content 76 (title 22 + 3 × 18)
+ *   card      host width × 128, 1px border, 15px × 14px padding
+ *   row       snail 56 × 56 (bare, centred in 76)  |  gap 12  |  content 76 (title 22 + 3 × 18)
  *   gap       16
  *   bar       4px, four equal tracks, no labels
+ *
+ * Under 240px — a sidebar narrower than 264px — the snail draws at 40px and the
+ * fold control moves from the title's end to the bar's, so the title keeps
+ * the whole width beside the snail.
  */
 .happy-agent-update-card {
     --happy-agent-update-card-title: 22px;
@@ -14,14 +19,16 @@
         var(--happy-agent-update-card-title) + 3 * var(--happy-agent-update-card-line)
     );
     position: relative;
+    container-type: inline-size;
     display: flex;
     flex: none;
     flex-direction: column;
     gap: 16px;
     box-sizing: border-box;
-    width: 380px;
+    width: 100%;
+    min-width: 0;
     height: 128px;
-    padding: 16px;
+    padding: 15px 14px;
     overflow: hidden;
     border: 1px solid var(--modal-border);
     border-radius: 12px;
@@ -42,14 +49,17 @@
     height: var(--happy-agent-update-card-row);
 }
 
-/* Bare: the snail sits directly on the card, in a box the row's height. */
+/* Bare: the snail sits directly on the card, a square that never gives up
+   width to the text beside it, centred on the row. */
 .happy-agent-update-card__scene {
     display: flex;
     flex: none;
     align-items: center;
+    align-self: center;
     justify-content: center;
-    width: var(--happy-agent-update-card-row);
-    height: var(--happy-agent-update-card-row);
+    width: 56px;
+    min-width: 56px;
+    height: 56px;
 }
 
 .happy-agent-update-card__content {
@@ -129,8 +139,12 @@ button.happy-agent-update-card__agent {
     text-overflow: ellipsis;
 }
 
+/* The name is what the reader looks for, so the status gives way first. */
 .happy-agent-update-card__agent-status {
-    flex: none;
+    flex: 0 1000 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .happy-agent-update-card__agent-go {
@@ -184,10 +198,68 @@ button.happy-agent-update-card__agent:hover .happy-agent-update-card__agent-go {
 
 .happy-agent-update-card__collapse.happy-button {
     position: absolute;
-    top: 13px;
+    top: 12px;
     right: 12px;
 }
 
 .happy-agent-update-card__bar {
     flex: none;
+}
+
+/* The slots under "Restart now", in the wide and the narrow form; one shows. */
+.happy-agent-update-card__lines {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.happy-agent-update-card__lines[data-form="narrow"] {
+    display: none;
+}
+
+/* A narrow sidebar: see the header. The query reads the card's content box, so
+   209px is a 240px card. The canvas keeps its 56px bitmap and is drawn scaled
+   into the smaller square, so the scene is not rebuilt when the sidebar
+   crosses the line. */
+@container (max-width: 209px) {
+    .happy-agent-update-card__row {
+        gap: 10px;
+    }
+
+    .happy-agent-update-card__scene {
+        width: 40px;
+        min-width: 40px;
+        height: 40px;
+    }
+
+    .happy-agent-update-card__scene > .happy-lottie-scene {
+        transform: scale(calc(40 / 56));
+    }
+
+    .happy-agent-update-card__title {
+        padding-right: 0;
+    }
+
+    /* Centred on the bar, at its end. */
+    .happy-agent-update-card__collapse.happy-button {
+        top: auto;
+        right: 6px;
+        bottom: 4px;
+    }
+
+    .happy-agent-update-card .happy-agent-update-card__bar {
+        width: auto;
+        margin-right: 25px;
+    }
+
+    .happy-agent-update-card__restart-cost,
+    .happy-agent-update-card__note,
+    .happy-agent-update-card__lines[data-form="wide"] {
+        display: none;
+    }
+
+    .happy-agent-update-card__lines[data-form="narrow"] {
+        display: flex;
+    }
 }

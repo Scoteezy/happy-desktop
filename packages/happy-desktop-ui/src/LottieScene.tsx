@@ -323,6 +323,17 @@ export function LottieScene(props: LottieSceneProps) {
                 // transfer it to and it would leak a worker player.
                 if (disposed) return;
 
+                /*
+                 * The worker sizes its bitmap from the canvas's laid-out box,
+                 * and a canvas inside a host that is not displayed yet has no
+                 * box: it falls back to the element's own 300 × 150, which is
+                 * then drawn squeezed into the square. Giving the element the
+                 * square first makes that fallback the right size too.
+                 */
+                const ratio = scenePixelRatio(view);
+                element.width = Math.round(props.size * ratio);
+                element.height = Math.round(props.size * ratio);
+
                 const instance = new DotLottieWorker({
                     /*
                      * Nothing starts on its own. Every command to a player whose
@@ -334,13 +345,16 @@ export function LottieScene(props: LottieSceneProps) {
                      */
                     autoplay: false,
                     canvas: element,
+                    // The artwork keeps its own proportions inside the square
+                    // box, centred, whatever the source frame's shape.
+                    layout: { align: [0.5, 0.5], fit: "contain" },
                     // Only while the host asks for it. Otherwise one play is
                     // the whole contract, and a second one is always
                     // something a reader asked for.
                     loop: looping,
                     renderConfig: {
                         autoResize: false,
-                        devicePixelRatio: scenePixelRatio(view),
+                        devicePixelRatio: ratio,
                         // The worker's own offscreen check. The observer below
                         // still runs: this one knows about the viewport, and
                         // only the observer knows about a collapsed or

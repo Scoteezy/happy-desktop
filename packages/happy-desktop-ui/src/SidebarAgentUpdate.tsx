@@ -1,6 +1,5 @@
 import { AgentUpdateCard, type AgentUpdateCardProps } from "./AgentUpdateCard";
 import { Button } from "./Button";
-import { floatingAvoidBind } from "./floatingAvoid";
 import { Ionicon } from "./vectorIcons/VectorIcon";
 
 export type SidebarAgentUpdateProps = AgentUpdateCardProps & {
@@ -16,22 +15,16 @@ export type SidebarAgentUpdateProps = AgentUpdateCardProps & {
 };
 
 /**
- * Keeps the open card off the composer. Stable, so React binds it once per
- * opening rather than once per render.
- */
-const panelPlace = (node: HTMLDivElement): (() => void) => floatingAvoidBind(node, 8);
-
-/**
  * SidebarAgentUpdate — a Happy Agent update in the footer's update slot.
  *
  * It exists only while an update is under way, in the slot the orange
  * `SidebarUpdateAction` occupies before one starts: an ordinary ghost footer
  * button whose sync glyph turns slowly while the update runs, pressed while
- * its card is open. The card hangs above the footer on the same inset as the
- * update panel, and the window behind it stays fully usable.
+ * its card is open.
  *
- * Open, the card never covers the composer: where it would, it rises until
- * it clears the composer's top edge, and otherwise stays at its place.
+ * The card belongs to the sidebar: it sits directly above the footer, as wide
+ * as the footer's own row and inside the sidebar column, so it follows the
+ * sidebar as it is resized and never reaches over the conversation beside it.
  *
  * The card stays mounted while folded or hidden, so the snail playing through
  * the update is one scene from start to end rather than one per opening.
@@ -40,7 +33,6 @@ export function SidebarAgentUpdate(props: SidebarAgentUpdateProps) {
     const { expanded, hidden, onToggle, ...card } = props;
     const running = card.view.kind !== "done" && card.view.kind !== "failed";
     const label = expanded ? "Hide update progress" : "Show update progress";
-    const shown = expanded && hidden !== true;
     return (
         <div
             className="happy-sidebar-agent-update"
@@ -64,11 +56,7 @@ export function SidebarAgentUpdate(props: SidebarAgentUpdateProps) {
                     size={14}
                 />
             </Button>
-            <div
-                className="happy-sidebar-agent-update__panel"
-                hidden={!expanded}
-                ref={shown ? panelPlace : undefined}
-            >
+            <div className="happy-sidebar-agent-update__panel" hidden={!expanded}>
                 <AgentUpdateCard {...card} />
             </div>
         </div>

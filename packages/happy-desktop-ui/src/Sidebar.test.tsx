@@ -178,7 +178,7 @@ it("opens a row action menu on right click and reports the row with the selected
     expect(view.container.querySelector('[data-happy-desktop-ui="sidebar-item-menu"]')).toBeNull();
 });
 
-it("renders the Happy logo without a product title", async () => {
+it("renders the Happy Engineering wordmark without a product title", async () => {
     const view = createRenderer().render(
         () => (
             <Sidebar
@@ -196,17 +196,22 @@ it("renders the Happy logo without a product title", async () => {
     const logo = view.$('[data-happy-desktop-ui="sidebar-brand-logo"]');
     const logoImage = logo.element as HTMLImageElement;
     await logoImage.decode();
-    expect(logo.bounds()).toEqual({ x: 16, y: 22, width: 12, height: 12 });
-    expect(logo.computedStyles(["display", "height", "object-fit", "opacity", "width"])).toEqual({
+    // The stacked wordmark, at its own 5274 : 1932 proportions, centred in the
+    // 56px header band on the rows' ink inset.
+    const bounds = logo.bounds();
+    expect(bounds.x).toBe(16);
+    expect(bounds.y).toBe(14);
+    expect(bounds.height).toBe(28);
+    expect(bounds.width).toBeCloseTo((28 * 5274) / 1932, 1);
+    expect(logo.computedStyles(["display", "height", "object-fit", "opacity"])).toEqual({
         display: "block",
-        height: "12px",
+        height: "28px",
         "object-fit": "contain",
-        opacity: "0.55",
-        width: "12px",
+        opacity: "1",
     });
-    expect(logoImage.naturalWidth).toBe(1024);
-    expect(logoImage.getAttribute("alt")).toBe("");
-    expect(logoImage.getAttribute("aria-hidden")).toBe("true");
+    expect(logoImage.naturalWidth).toBe(211);
+    expect(logoImage.getAttribute("alt")).toBe("Happy Engineering");
+    expect(logoImage.getAttribute("aria-label")).toBe("Happy Engineering");
     expect((await logo.visibleMetrics()).pixelCount).toBeGreaterThan(0);
 
     expect(view.container.querySelector('[data-happy-desktop-ui="sidebar-title"]')).toBeNull();

@@ -28,6 +28,7 @@
 .happy-theme-light {
     color-scheme: light;
     --happy-brand-logo-source: url("./assets/brand/logo-black.png");
+    --happy-wordmark-source: url("./assets/brand/happy-engineering-stacked-light.svg");
 
     /* File tabs, their mode bars, and the path rows below them are one piece
        of chrome. Keep the containing row and its inset controls on one shared
@@ -317,6 +318,7 @@
     :root {
         color-scheme: dark;
         --happy-brand-logo-source: url("./assets/brand/logo-white.png");
+        --happy-wordmark-source: url("./assets/brand/happy-engineering-stacked-dark.svg");
         --text: #ffffff;
         --text-destructive: #f48fb1;
         --text-secondary: #cac4d0;
@@ -487,6 +489,7 @@
 .happy-theme-dark {
     color-scheme: dark;
     --happy-brand-logo-source: url("./assets/brand/logo-white.png");
+    --happy-wordmark-source: url("./assets/brand/happy-engineering-stacked-dark.svg");
     --text: #ffffff;
     --text-destructive: #f48fb1;
     --text-secondary: #cac4d0;

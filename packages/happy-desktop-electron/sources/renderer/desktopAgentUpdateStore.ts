@@ -58,6 +58,8 @@ export function desktopAgentUpdateStoreCreate(input: {
     // The failure the card is showing, so a new one opens the card again.
     let failure: string | undefined;
     let chiefOfStaff: "idle" | "pending" | "refused" = "idle";
+    // The reader asked to stop waiting for this drain; cleared once it ends.
+    let restartRequested = false;
     // The card appears whole: not on the drain's opening report, which knows
     // nothing yet, but on its first real one, or once the hold runs out.
     let revealed = false;
@@ -75,6 +77,7 @@ export function desktopAgentUpdateStoreCreate(input: {
         startedAt = undefined;
         expanded = true;
         chiefOfStaff = "idle";
+        restartRequested = false;
         if (doneTimer !== undefined) clearTimeout(doneTimer);
         doneTimer = undefined;
     };
@@ -110,6 +113,7 @@ export function desktopAgentUpdateStoreCreate(input: {
                 install.waitingPeak > 0
             )
                 revealed = true;
+            if (install.phase !== "draining") restartRequested = false;
             if (install.phase === "error") {
                 held = false;
                 const key = `${install.failedAt}:${install.message}`;
@@ -122,7 +126,7 @@ export function desktopAgentUpdateStoreCreate(input: {
                 held = true;
                 failure = undefined;
             }
-            return progressProject(install);
+            return progressProject(install, restartRequested);
         }
         if (done) return { kind: "done", ...done };
         if (!held) {
@@ -236,6 +240,15 @@ export function desktopAgentUpdateStoreCreate(input: {
                 input.daemon.daemonInstall();
             else input.daemon.daemonRestart();
         },
+        restartNow() {
+            const install = input.daemon.get().install;
+            if (install.phase !== "draining" || restartRequested) return;
+            restartRequested = true;
+            reconcile();
+            // The main process stops waiting and asks the daemon to exit; its
+            // next report is the stop, which clears the request.
+            input.daemon.daemonInstallKill();
+        },
         chiefOfStaffAsk() {
             const install = input.daemon.get().install;
             const workspace = local()?.session?.workspace;
@@ -279,11 +292,13 @@ function settled(entry: HappyAgentDirectoryEntry, dropped: boolean): boolean {
 
 function progressProject(
     install: Exclude<AppHappyAgentDaemonInstall, { phase: "idle" }>,
+    restartRequested: boolean,
 ): AppHappyAgentUpdateProgress {
     switch (install.phase) {
         case "draining":
             return {
                 kind: "draining",
+                restartNow: restartRequested ? "pending" : "available",
                 waitingFor: install.waitingFor,
                 waitingPeak: install.waitingPeak,
             };

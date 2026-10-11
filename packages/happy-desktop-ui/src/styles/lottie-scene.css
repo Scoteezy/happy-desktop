@@ -13,6 +13,10 @@
     /* A canvas is inline by default, so a text line box would add a few pixels
        under it and the declared square would not be the rendered square. */
     display: block;
+    /* The box is the bitmap's size, fixed when the canvas is handed to the
+       worker, so a flex host must never squeeze it: a squeezed canvas draws
+       the scene stretched. */
+    flex: none;
 }
 
 /* It is a control only where it can be replayed — under reduced motion it is
