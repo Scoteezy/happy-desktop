@@ -26,6 +26,7 @@ export const ARTIFACT_READING: MessageReferenceView = {
     type: "link",
     label: "artifact",
     busy: false,
+    reading: true,
 };
 
 /** One agent, workspace, or project a reference can name, as the list shows it. */

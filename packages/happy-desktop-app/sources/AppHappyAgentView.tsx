@@ -20,8 +20,10 @@ import type {
     ComposerSnapshot,
     ExperimentsStore,
     GptLiveStore,
+    ConversationMediaItem,
     ConversationToolCall,
     HappyAgentClockStore,
+    HappyAgentToolMediaDocumentStore,
     HappyAgentCloudStore,
     HappyAgentTeamsStore,
     HappyAgentFileLineRange,
@@ -158,6 +160,7 @@ import {
     FileBrowser,
     FileEditor,
     FilePreview,
+    type FilePreviewContent,
     FormRow,
     type FilePreviewKind,
     filePreviewKind,
@@ -1269,6 +1272,33 @@ function previewToolFind(
     return entry?.kind === "agentActivity" && entry.activity.kind === "tool"
         ? entry.activity.tool
         : undefined;
+}
+
+/** One file a previewed tool call presented, with the call it is read through. */
+interface HappyAgentPreviewMedia {
+    readonly agentId: string;
+    readonly toolCallId: string;
+    readonly index: number;
+    readonly item: ConversationMediaItem;
+}
+
+/** The presented file the Preview tab names, when it names one that is still there. */
+function previewMediaFind(
+    conversation: HappyAgentWorkspaceSnapshot["conversation"],
+    tool: ConversationToolCall | undefined,
+    index: number | undefined,
+): HappyAgentPreviewMedia | undefined {
+    if (conversation.type !== "ready" || tool === undefined || index === undefined)
+        return undefined;
+    const item = tool.presentation?.type === "media" ? tool.presentation.items[index] : undefined;
+    return item === undefined
+        ? undefined
+        : {
+              agentId: conversation.value.conversationId,
+              toolCallId: tool.toolCallId,
+              index,
+              item,
+          };
 }
 
 /** One tab per session in the open group, marked while the agent is working. */
@@ -4587,6 +4617,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
     // never reaches it.
     const sweepableTabs = groupTabs.filter((entry) => entry.id !== detachedConversationId);
     const previewTool = previewToolFind(conversation, panel.previewEntryId);
+    const previewMedia = previewMediaFind(conversation, previewTool, panel.previewMediaIndex);
     const desktop = props.platform === "desktop";
 
     // Whether the chat this workspace was made with is what is on screen. That
@@ -5031,6 +5062,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         }}
                         panel={panel}
                         previewTool={previewTool}
+                        {...(previewMedia
+                            ? {
+                                  previewMedia,
+                                  toolMediaDocument: props.workspace.toolMediaDocument(),
+                              }
+                            : {})}
                         {...(terminalHappyAgentAvailability === undefined
                             ? {}
                             : {
@@ -6042,6 +6079,77 @@ function HappyAgentFilePreview(props: {
     );
 }
 
+/**
+ * One file a tool call presented, in the same preview every other file opens
+ * in. Pictures and recordings load from their address; a document is read
+ * whole for the host's viewer, held by this preview for as long as it shows
+ * that document; any other file states its facts and can be saved.
+ */
+function HappyAgentToolMediaPreview(props: {
+    media: HappyAgentPreviewMedia;
+    documents: HappyAgentToolMediaDocumentStore;
+    onClose(): void;
+}) {
+    const { agentId, toolCallId, index, item } = props.media;
+    const documentKey =
+        item.kind === "document" ? `${agentId}/${toolCallId}/${String(index)}` : undefined;
+    useDisposableLease(documentKey, () => {
+        props.documents.documentOpen({ agentId, toolCallId, index, mimeType: item.mimeType });
+        return { [Symbol.dispose]: () => props.documents.documentOpen(undefined) };
+    });
+    const documents = useSyncExternalStore(
+        props.documents.subscribe,
+        props.documents.get,
+        props.documents.get,
+    );
+    const document =
+        documentKey !== undefined &&
+        documents.document?.toolCallId === toolCallId &&
+        documents.document.index === index
+            ? documents.content
+            : undefined;
+    const kind =
+        item.kind === "image"
+            ? "image"
+            : item.kind === "video"
+              ? "video"
+              : item.kind === "document"
+                ? document?.type === "external"
+                    ? "binary"
+                    : "pdf"
+                : "binary";
+    const content: FilePreviewContent =
+        item.kind === "image" || item.kind === "video"
+            ? { type: "url", url: item.url }
+            : item.kind !== "document" || document === undefined || document.type === "idle"
+              ? item.kind === "document"
+                  ? { type: "loading" }
+                  : { type: "unavailable" }
+              : document.type === "ready"
+                ? { type: "url", url: document.url }
+                : document.type === "failed"
+                  ? { type: "error", message: document.error.message }
+                  : document.type === "loading"
+                    ? { type: "loading" }
+                    : { type: "unavailable" };
+    return (
+        <FilePreview
+            closeLabel="Close preview"
+            content={content}
+            {...(item.width !== undefined && item.height !== undefined
+                ? { dimensions: `${String(item.width)} × ${String(item.height)}` }
+                : {})}
+            kind={kind}
+            onClose={props.onClose}
+            onDownload={() =>
+                void fileDownload(item.name, { type: "url", url: item.url }).catch(() => undefined)
+            }
+            path={item.name}
+            size={fileSizeFormat(item.size)}
+        />
+    );
+}
+
 /** A byte count as a person reads it. */
 function fileSizeFormat(size: number): string {
     if (size < 1024) return `${String(size)} B`;
@@ -6664,6 +6772,17 @@ function HappyAgentConversationSurface(props: {
                 if (attachment.openUrl) openExternalLink(attachment.openUrl);
             }}
             onToolSelect={(entryId) => workspace.panel.previewOpen(entryId)}
+            onToolMediaOpen={(entryId, tool, index) => {
+                // A picture opens full size over the conversation, stepping
+                // through every picture it shows; a document or any other file
+                // opens in the preview beside it.
+                const item =
+                    tool.presentation?.type === "media"
+                        ? tool.presentation.items[index]
+                        : undefined;
+                if (item?.kind === "image") workspace.toolImageOpen(entryId, index);
+                else if (item !== undefined) workspace.panel.previewOpen(entryId, index);
+            }}
             onDelegationSelect={(sessionId) =>
                 props.onChatSelect(props.groupId, sessionId as HappyAgentSessionId)
             }
@@ -7496,6 +7615,10 @@ function HappyAgentPanelBody(props: {
     onViewClose: (viewId: string) => void;
     panel: HappyAgentPanelSnapshot;
     previewTool?: ConversationToolCall;
+    /** The presented file the Preview tab shows instead of its call, when it names one. */
+    previewMedia?: HappyAgentPreviewMedia;
+    /** Reads a presented document for the preview's viewer. */
+    toolMediaDocument?: HappyAgentToolMediaDocumentStore;
     /** Owning Happy Agent availability applied to every retained terminal tab. */
     happyAgentAvailability?: "reconnecting" | "unavailable";
     happyAgentAvailabilityReason?: string;
@@ -7653,7 +7776,7 @@ function HappyAgentPanelBody(props: {
                   {
                       closable: true,
                       icon:
-                          props.previewTool?.presentation?.type === "fileDiff"
+                          props.previewTool?.presentation?.type === "fileDiff" || props.previewMedia
                               ? ("doc" as const)
                               : props.previewTool?.presentation?.type === "execCommand" ||
                                   props.previewTool?.presentation?.type ===
@@ -7917,7 +8040,13 @@ function HappyAgentPanelBody(props: {
                             />
                         )
                     ) : props.panel.activeViewId === "preview" ? (
-                        props.previewTool ? (
+                        props.previewMedia && props.toolMediaDocument ? (
+                            <HappyAgentToolMediaPreview
+                                documents={props.toolMediaDocument}
+                                media={props.previewMedia}
+                                onClose={() => props.store.previewClose()}
+                            />
+                        ) : props.previewTool ? (
                             <ToolCallPreview tool={props.previewTool} />
                         ) : (
                             <EmptyState
