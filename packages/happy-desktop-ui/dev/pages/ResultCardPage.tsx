@@ -4,7 +4,7 @@ import { ResultCard } from "../../src/ResultCard";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
-export const componentNumber = "C-290";
+export const componentNumber = "C-291";
 
 const column: Record<string, string> = {
     display: "flex",

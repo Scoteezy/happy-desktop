@@ -28,7 +28,7 @@ export type MediaImageTileProps = {
 };
 
 /**
- * C-291 MediaImageTile — one picture whose bytes are still on their way.
+ * C-292 MediaImageTile — one picture whose bytes are still on their way.
  *
  * The tile takes its final box at once and paints the ThumbHash placeholder in
  * it, so nothing moves when the picture arrives: the real image is laid over
@@ -116,7 +116,7 @@ export type MediaVideoTileProps = {
 };
 
 /**
- * C-292 MediaVideoTile — a recording played where it was presented. The box is
+ * C-293 MediaVideoTile — a recording played where it was presented. The box is
  * reserved up front, the browser reads only what it needs to start, and the
  * native controls carry play, scrub, volume, and full screen.
  */
@@ -165,7 +165,7 @@ function mediaTypeLabel(item: ConversationMediaItem): string {
 }
 
 /**
- * C-293 ConversationMedia — the files one tool call put in front of the reader,
+ * C-294 ConversationMedia — the files one tool call put in front of the reader,
  * beneath its line in the transcript.
  *
  * Every picture comes first, together: one at its own box, several as a

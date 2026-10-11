@@ -6,7 +6,7 @@ import { mediaWideThumbhash } from "./conversationMediaFixtures";
 import { videoClipPortrait, videoClipWide } from "./videoClips";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
-export const componentNumber = "C-292";
+export const componentNumber = "C-293";
 
 export function MediaVideoTilePage() {
     const fallback = conversationMediaVideoBox({});

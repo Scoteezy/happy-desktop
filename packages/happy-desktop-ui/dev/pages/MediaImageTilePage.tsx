@@ -12,7 +12,7 @@ import {
 } from "./conversationMediaFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
-export const componentNumber = "C-291";
+export const componentNumber = "C-292";
 
 const row: Record<string, string> = {
     display: "flex",

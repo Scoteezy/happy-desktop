@@ -17,7 +17,7 @@ export type ResultCardProps = {
 };
 
 /**
- * C-290 ResultCard — one thing an agent produced, as a full-width card the
+ * C-291 ResultCard — one thing an agent produced, as a full-width card the
  * reader opens: a published artifact, a presented document, any other file.
  *
  * It says what the thing is and nothing of what is inside it, so it is the same

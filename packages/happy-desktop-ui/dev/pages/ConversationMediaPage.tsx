@@ -11,7 +11,7 @@ import {
 } from "./conversationMediaFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
-export const componentNumber = "C-293";
+export const componentNumber = "C-294";
 
 const MEASURE = 560;
 
