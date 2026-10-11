@@ -6,6 +6,7 @@ import {
     Menu,
     nativeTheme,
     powerSaveBlocker,
+    protocol,
     screen,
     session as electronSession,
     shell,
@@ -40,6 +41,7 @@ import {
     buildIdentityArgument,
     debugMetricsArgument,
     desktopIpc,
+    happyArtifactPartition,
     happyHtmlPreviewPartition,
     mediaPreviewArgument,
     liveWindowArgument,
@@ -76,6 +78,15 @@ import {
     desktopBrowserProxyTargetValidate,
 } from "./happyAgentIpcValidation";
 import { htmlPreviewProxyCreate, type HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
+import { artifactSiteScheme, artifactSitesCreate, type ArtifactSiteHandle } from "./artifactSite";
+import { artifactNetworkProxyCreate, type ArtifactNetworkProxyHandle } from "./artifactNetwork";
+import {
+    ArtifactGuests,
+    artifactGuestAttach,
+    artifactSessionConfigure,
+    artifactWebPreferencesEnforce,
+    artifactWebviewAdmitted,
+} from "./artifactBrowser";
 import { happyAgentRendererOrigin } from "./happyAgentRendererProxy";
 import {
     happyAgentRendererSessionCreate,
@@ -280,6 +291,15 @@ app.commandLine.appendSwitch(
 // Never resolve this private origin through DNS, including if proxy setup fails.
 app.commandLine.appendSwitch("host-resolver-rules", "MAP happy-agent ~NOTFOUND");
 app.commandLine.appendSwitch("disable-quic");
+// An artifact version is served as a site of its own, so its page's relative
+// references resolve and its storage is its own origin's. Only the artifact
+// partition's session answers the scheme; everywhere else it is unknown.
+protocol.registerSchemesAsPrivileged([
+    {
+        scheme: artifactSiteScheme,
+        privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
+    },
+]);
 app.commandLine.appendSwitch("force-webrtc-ip-handling-policy", "disable_non_proxied_udp");
 if (desktopDebugEnabled) {
     // This branch is unavailable in packaged builds. Chromium's raw CDP server
@@ -313,6 +333,9 @@ let desktopUpdater: DesktopUpdater | undefined;
 /** Each workspace keeps its own network profile, including while its tabs are hidden. */
 const browserProxies = new Map<string, HappyAgentServiceBrowser>();
 let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
+let artifactSites: ArtifactSiteHandle | undefined;
+let artifactGuests: ArtifactGuests | undefined;
+let artifactNetworkProxy: ArtifactNetworkProxyHandle | undefined;
 let browserProxyConnectionId: number | undefined;
 let browserProxyOperation = Promise.resolve();
 // Automation needs a real laid-out window without taking focus from the work
@@ -696,8 +719,43 @@ function htmlPreviewUrl(candidate: string): string | undefined {
     }
 }
 
+function artifactSessionGet() {
+    return electronSession.fromPartition(happyArtifactPartition, { cache: false });
+}
+
+/**
+ * Starts serving HTML artifacts. Without its network proxy the partition still
+ * serves the artifact's own files and simply has no route to the web.
+ */
+async function artifactSessionStart(): Promise<void> {
+    const sites = artifactSitesCreate();
+    artifactNetworkProxy = await artifactNetworkProxyCreate().catch(() => undefined);
+    artifactGuests = new ArtifactGuests(sites);
+    await artifactSessionConfigure(
+        artifactSessionGet(),
+        sites,
+        artifactGuests,
+        artifactNetworkProxy?.port,
+    );
+    artifactSites = sites;
+}
+
+app.on("select-client-certificate", (event, webContents, _url, _list, callback) => {
+    // An artifact page never presents one of this machine's certificates.
+    if (webContents.session !== artifactSessionGet()) return;
+    event.preventDefault();
+    callback();
+});
+
 app.on("login", (event, _webContents, _details, authInfo, callback) => {
     if (!authInfo.isProxy || authInfo.host !== "127.0.0.1") return;
+    if (authInfo.port === artifactNetworkProxy?.port) {
+        event.preventDefault();
+        if (_webContents?.session === artifactSessionGet())
+            callback(artifactNetworkProxy.username, artifactNetworkProxy.password);
+        else callback();
+        return;
+    }
     // Chromium's ws:// CONNECT uses proxy login before its inner Upgrade can
     // carry request-bound admission. Only the exact owning guest may obtain it.
     for (const browser of browserProxies.values()) {
@@ -716,6 +774,14 @@ app.on("login", (event, _webContents, _details, authInfo, callback) => {
 
 function browserGuestAttach(window: BrowserWindow): void {
     window.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+        if (params.partition === happyArtifactPartition) {
+            if (!artifactSites || !artifactWebviewAdmitted(params, artifactSites)) {
+                event.preventDefault();
+                return;
+            }
+            artifactWebPreferencesEnforce(webPreferences);
+            return;
+        }
         const previewGuest = params.partition === happyHtmlPreviewPartition;
         const allowed = previewGuest
             ? htmlPreviewUrl(params.src) !== undefined
@@ -759,6 +825,15 @@ function browserGuestAttach(window: BrowserWindow): void {
                 type,
             } satisfies DesktopGuestKeyEvent);
         });
+        if (guest.session === artifactSessionGet()) {
+            if (!artifactGuests) {
+                guest.close();
+                return;
+            }
+            artifactGuestAttach(guest, artifactGuests, (url) => void shell.openExternal(url));
+            htmlPreviewLifecyclePublish(window, guest);
+            return;
+        }
         if (guest.session === htmlPreviewSessionGet()) {
             // A preview is one page of one file. Following a link out of it, or
             // opening a window from it, is browsing, and browsing is the browser
@@ -1427,6 +1502,11 @@ void app
         );
         htmlPreviewProxy = await htmlPreviewProxyCreate();
         await htmlPreviewSessionConfigure();
+        // An artifact the host cannot serve is still shown as a static preview,
+        // so this can never be what keeps the window from opening.
+        await artifactSessionStart().catch((error: unknown) =>
+            desktopDebugError("HTML artifacts will be shown as static previews", error),
+        );
         const desktopRoot = join(app.getPath("userData"), "desktop");
         desktopWindowStateStore = await DesktopWindowStateStore.create(
             join(desktopRoot, "window-state.json"),
@@ -1478,6 +1558,7 @@ void app
                 // build-owned origin receives CORS access.
                 ...(rendererOrigin ? { rendererOrigin } : {}),
                 ...(htmlPreviewProxy ? { htmlPreview: htmlPreviewProxy } : {}),
+                ...(artifactSites ? { artifactSite: artifactSites } : {}),
                 ...(desktopDebugEnabled ? { debug: desktopDebugLog } : {}),
             },
         );
@@ -1918,6 +1999,9 @@ app.on("before-quit", (event) => {
         browserProxies.clear();
         htmlPreviewProxy?.close();
         htmlPreviewProxy = undefined;
+        artifactNetworkProxy?.close();
+        artifactNetworkProxy = undefined;
+        artifactSites?.close();
         happyAgentRendererSession?.close();
         happyAgentRendererSession = undefined;
         onboarding?.[Symbol.dispose]();

@@ -26,6 +26,7 @@ const LOCAL_ROUTES = new Set([
     "/workspace-file-bytes",
     "/workspace-file-media",
     "/html-preview",
+    "/artifact-site",
 ]);
 
 /** Local-only desktop operations and terminal upgrades stay on the capability bridge. */

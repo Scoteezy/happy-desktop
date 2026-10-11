@@ -32,6 +32,13 @@ export interface HappyAgentHostServices {
     ): Promise<HappyAgentWorkspaceFileBytes>;
     htmlPreviewOpen(groupId: HappyAgentGroupId, path: string): Promise<string>;
     /**
+     * Serves one numbered version of an HTML artifact as a site of its own and
+     * names the address of its entry. Absent where the host has no isolated
+     * guest to show such a site in; a host that refuses is shown the static
+     * preview instead.
+     */
+    artifactSiteOpen?(artifactId: string, version: number): Promise<string>;
+    /**
      * Where a file the reader chose lives on this machine, when it lives
      * anywhere. A pasted screenshot exists only in the browser and answers
      * undefined, as does a host that cannot tell.

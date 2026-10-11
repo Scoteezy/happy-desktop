@@ -10,6 +10,7 @@ import {
     HappyAgentClient,
     WORKSPACE_SERVICE_AUTHORIZATION_HEADER,
     type AgentResponse,
+    type ArtifactVersionResponse,
     type Cuid2,
     type CreateLiveSessionRequest,
     type CreateLiveSessionResponse,
@@ -223,6 +224,40 @@ export class HappyAgentDaemonClient {
             request,
             signal ? { signal } : undefined,
         );
+    }
+
+    /** One numbered artifact version and its whole manifest. */
+    getArtifactVersion(
+        artifactId: string,
+        version: number,
+        signal?: AbortSignal,
+    ): Promise<ArtifactVersionResponse> {
+        return this.#client.getArtifactVersion(
+            artifactId as Cuid2,
+            version,
+            signal ? { signal } : undefined,
+        );
+    }
+
+    /**
+     * Opens one file of a numbered artifact version as a stream, so a page's
+     * video can seek by the byte range it asks for instead of waiting for the
+     * whole file. The route carries this client's connection prefix.
+     */
+    openArtifactFile(
+        artifactId: string,
+        version: number,
+        filePath: string,
+        range?: string,
+        signal?: AbortSignal,
+    ): Promise<HappyAgentDaemonRawResponse> {
+        const url = new URL(this.#client.artifactFileUrl(artifactId as Cuid2, version, filePath));
+        return this.rawRequest({
+            method: "GET",
+            path: `${url.pathname}${url.search}`,
+            headers: { accept: "*/*", ...(range === undefined ? {} : { range }) },
+            ...(signal ? { signal } : {}),
+        });
     }
 
     /**

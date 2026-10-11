@@ -13,6 +13,7 @@ import { happyAgentDaemonHealthProject } from "./happyAgentHttpProxy";
 import type { HappyAgentRequestMilestone } from "./happyAgentRequestTiming";
 import type { HappyAgentDaemonClientOptions } from "./happyAgentDaemonClient";
 import { HAPPY_AGENT_LIVE_WINDOW_HEADER, happyAgentLivePath } from "./happyAgentLiveRoute";
+import { ArtifactSiteError } from "./artifactSite";
 
 /** The minimal Happy Agent surface used by the loopback bridge. */
 export type HappyAgentProxyClient = Pick<
@@ -38,6 +39,12 @@ export interface HappyAgentProxyHandleOptions {
         filePath: string,
         connectionId?: string,
     ) => string;
+    /** Serves one numbered artifact version as an isolated site and names its entry. */
+    readonly artifactSiteUrl?: (
+        artifactId: string,
+        version: number,
+        connectionId?: string,
+    ) => Promise<string>;
 }
 
 /**
@@ -52,6 +59,7 @@ export interface HappyAgentProxyHandleOptions {
 function daemonErrorStatus(error: unknown): number | undefined {
     if (error instanceof HappyAgentDaemonHttpError) return error.statusCode;
     if (error instanceof HappyAgentApiError) return error.status;
+    if (error instanceof ArtifactSiteError) return error.status;
     return undefined;
 }
 
@@ -172,6 +180,20 @@ export async function happyAgentProxyHandle(
             const filePath = requiredQuery(query, "path");
             writeJson(response, 200, {
                 url: options.htmlPreviewUrl(workspaceId, filePath, connectionId),
+            });
+            return true;
+        }
+        if (method === "GET" && path === "/artifact-site") {
+            if (!options.artifactSiteUrl) {
+                writeJson(response, 501, {
+                    error: "This desktop cannot serve an artifact as a page.",
+                });
+                return true;
+            }
+            const artifactId = requiredQuery(query, "artifactId");
+            const version = Number(requiredQuery(query, "version"));
+            writeJson(response, 200, {
+                url: await options.artifactSiteUrl(artifactId, version, connectionId),
             });
             return true;
         }

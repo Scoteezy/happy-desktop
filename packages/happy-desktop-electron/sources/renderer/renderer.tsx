@@ -67,6 +67,8 @@ import {
     type MediaWindowOpener,
 } from "happy-desktop-ui";
 import {
+    happyArtifactPartition,
+    happyHtmlPreviewPartition,
     mediaPreviewView,
     type DesktopConfig,
     type DesktopGuestKeyEvent,
@@ -171,7 +173,11 @@ const desktopBrowserContentRender: BrowserContentRenderer = (props) => (
 );
 
 const desktopHtmlPreviewRender: HtmlPreviewRenderer = (props) => (
-    <DesktopHtmlPreviewView {...props} />
+    <DesktopHtmlPreviewView {...props} partition={happyHtmlPreviewPartition} popups={false} />
+);
+
+const desktopArtifactPageRender: HtmlPreviewRenderer = (props) => (
+    <DesktopHtmlPreviewView {...props} partition={happyArtifactPartition} popups />
 );
 
 function desktopAction(operation: Promise<void>): void {
@@ -294,6 +300,7 @@ function HappyAgentBoundary(props: {
     bridge: HappyDesktopBridge;
     browserContent?: BrowserContentRenderer;
     htmlPreview?: HtmlPreviewRenderer;
+    artifactPage?: HtmlPreviewRenderer;
     mediaWindow?: MediaWindowOpener;
     experiments: ExperimentsStore;
     projectsVisibility: ProjectsVisibilityStore;
@@ -329,6 +336,7 @@ function HappyAgentBoundary(props: {
                 ...(props.performance ? { performance: props.performance } : {}),
                 profiler: props.profiler,
                 htmlPreview: props.htmlPreview,
+                artifactPage: props.artifactPage,
                 mediaWindow: props.mediaWindow,
                 // Only the packaged shell has a door to the machine's browser;
                 // a browser tab opens a link the way it opens any link.
@@ -464,6 +472,7 @@ interface DesktopRendererProps {
     onboarding: LocalOnboardingStore;
     browserContent?: BrowserContentRenderer;
     htmlPreview?: HtmlPreviewRenderer;
+    artifactPage?: HtmlPreviewRenderer;
     mediaWindow?: MediaWindowOpener;
     bridge: HappyDesktopBridge;
     experiments: ExperimentsStore;
@@ -647,6 +656,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 usageAnalytics={props.usageAnalytics}
                                 keepAwake={props.keepAwake}
                                 htmlPreview={props.htmlPreview}
+                                artifactPage={props.artifactPage}
                                 mediaWindow={props.mediaWindow}
                                 navigationOrder={ui.navigationOrder}
                                 sidebarCollapse={ui.sidebarCollapse}
@@ -859,6 +869,7 @@ function DesktopRuntimeContent(
             profiler={props.profiler}
             browserContent={props.browserContent}
             htmlPreview={props.htmlPreview}
+            artifactPage={props.artifactPage}
             mediaWindow={props.mediaWindow}
             experiments={props.experiments}
             projectsVisibility={props.projectsVisibility}
@@ -1303,6 +1314,7 @@ if (mediaPreviewBridge) {
                         onboarding={analytics.onboardingObserve(onboardingStore, welcome)}
                         browserContent={browserLocal ? undefined : desktopBrowserContentRender}
                         htmlPreview={browserLocal ? undefined : desktopHtmlPreviewRender}
+                        artifactPage={browserLocal ? undefined : desktopArtifactPageRender}
                         bridge={desktopBridge}
                         mediaWindow={
                             browserLocal ? undefined : desktopMediaWindowOpen(desktopBridge)

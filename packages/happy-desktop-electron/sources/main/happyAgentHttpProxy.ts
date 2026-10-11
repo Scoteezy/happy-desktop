@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import type { happyAgentProtocol, HappyAgentDaemonHealth } from "happy-desktop-state";
 import type { HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
+import type { ArtifactSiteClient, ArtifactSiteHandle } from "./artifactSite";
 import type { HappyAgentRendererProxy } from "./happyAgentRendererProxy";
 import type { HappyAgentRendererTarget } from "./happyAgentRendererProxy";
 import { happyAgentProxyHandle, type HappyAgentProxyClient } from "./happyAgentProxyHandle";
@@ -32,7 +33,10 @@ export interface HappyAgentHttpProxyHandle {
 
 export interface HappyAgentHttpProxyBacking {
     /** The daemon client whose `/v0` surface this proxy exposes. */
-    readonly client: HappyAgentProxyClient & HappyAgentTerminalClient & HappyAgentLiveClient;
+    readonly client: HappyAgentProxyClient &
+        HappyAgentTerminalClient &
+        HappyAgentLiveClient &
+        ArtifactSiteClient;
 }
 
 export interface HappyAgentHttpProxyOptions extends HappyAgentHttpProxyBacking {
@@ -57,6 +61,12 @@ export interface HappyAgentHttpProxyOptions extends HappyAgentHttpProxyBacking {
      * site; without one this proxy reports that it cannot render a document.
      */
     readonly htmlPreview?: HtmlPreviewProxyHandle;
+    /**
+     * The artifact partition's sites. Registering this Happy Agent's client
+     * with them is what lets an HTML artifact be served as a page; without
+     * them this proxy reports that it cannot serve one.
+     */
+    readonly artifactSite?: ArtifactSiteHandle;
     /** Debug-only slow request timings, without URLs or credentials. */
     readonly debug?: (message: string) => void;
 }
@@ -86,7 +96,7 @@ export function happyAgentDaemonHealthProject(
 export function happyAgentHttpProxyCreate(
     options: HappyAgentHttpProxyOptions,
 ): Promise<HappyAgentHttpProxyHandle> {
-    type Client = HappyAgentProxyClient & HappyAgentTerminalClient & HappyAgentLiveClient;
+    type Client = HappyAgentHttpProxyBacking["client"];
     interface CurrentBacking {
         readonly client: Client;
     }
@@ -108,6 +118,7 @@ export function happyAgentHttpProxyCreate(
         },
     });
     const preview = options.htmlPreview?.register(liveHostClient);
+    const artifactSite = options.artifactSite?.register(liveHostClient);
     const capability = randomBytes(32).toString("base64url");
     const capabilityPrefix = `/${capability}`;
     let expectedHost: string | undefined;
@@ -201,6 +212,7 @@ export function happyAgentHttpProxyCreate(
                             if (backing === requestBacking) options.onConnectionError?.(error);
                         },
                         ...(preview ? { htmlPreviewUrl: preview.workspace } : {}),
+                        ...(artifactSite ? { artifactSiteUrl: artifactSite.open } : {}),
                     }),
             )
             .then(

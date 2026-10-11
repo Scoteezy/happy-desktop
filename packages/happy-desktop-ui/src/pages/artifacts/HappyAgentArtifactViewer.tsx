@@ -14,6 +14,8 @@ import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
 import { EmptyState } from "../../EmptyState";
+import { HtmlPreviewFrame } from "../../HtmlPreviewFrame";
+import type { HtmlPreviewRenderer } from "../../htmlPreview";
 import { ImageViewer } from "../../ImageViewer";
 import { SURFACE_HEADER_HEIGHT } from "../../InfoPanel";
 import { MarkdownDocument, type MarkdownDocumentReferences } from "../../MarkdownDocument";
@@ -50,6 +52,11 @@ export interface HappyAgentArtifactViewerProps {
     onFileDownload: (link: HappyAgentArtifactFileLink) => void;
     /** Leaves the viewer for wherever it was opened from. */
     onBack?: () => void;
+    /**
+     * The host's isolated guest for an HTML version served as a site. Absent
+     * where the host has none, in which case the viewer never holds a site.
+     */
+    renderPage?: HtmlPreviewRenderer;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -158,6 +165,7 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                                     files={viewer.files}
                                     key={viewer.version?.number ?? 0}
                                     onFileDownload={props.onFileDownload}
+                                    {...(props.renderPage ? { renderPage: props.renderPage } : {})}
                                     title={artifact.title}
                                 />
                             )}
@@ -315,6 +323,7 @@ function ArtifactContent(props: {
     content: HappyAgentArtifactContent;
     files: readonly HappyAgentArtifactFileLink[];
     onFileDownload: (link: HappyAgentArtifactFileLink) => void;
+    renderPage?: HtmlPreviewRenderer;
     title: string;
 }): ReactNode {
     const content = props.content;
@@ -363,12 +372,18 @@ function ArtifactContent(props: {
             );
         }
         case "html":
-            return (
+            return content.page.kind === "site" ? (
+                <HtmlPreviewFrame
+                    data-testid="happy-agent-artifact-page"
+                    {...(props.renderPage ? { renderContent: props.renderPage } : {})}
+                    source={content.page.url}
+                />
+            ) : (
                 <HappyAgentArtifactHtmlFrame
-                    assets={content.assets}
+                    assets={content.page.assets}
                     entryPath={content.entryPath}
-                    omitted={content.omitted}
-                    text={content.text}
+                    omitted={content.page.omitted}
+                    text={content.page.text}
                     title={props.title || "Web page"}
                 />
             );

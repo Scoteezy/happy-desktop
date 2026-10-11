@@ -1,5 +1,6 @@
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import type { HappyAgentArtifactId } from "./artifactTypes.js";
 import {
     happyAgentArtifactCatalogStoreCreate,
     type HappyAgentArtifactCatalogStore,
@@ -46,6 +47,8 @@ export interface HappyAgentArtifactsDeps {
     readonly sync: HappyAgentSync;
     /** Whether this host renders a document of this media type inline. */
     readonly documentInline?: (mimeType: string) => boolean;
+    /** Serves an HTML version as a live site, where the host has a guest to show it in. */
+    readonly siteOpen?: (artifactId: HappyAgentArtifactId, version: number) => Promise<string>;
 }
 
 export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyAgentArtifacts {
@@ -94,6 +97,7 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
                     client: deps.client,
                     sync: deps.sync,
                     ...(deps.documentInline ? { documentInline: deps.documentInline } : {}),
+                    ...(deps.siteOpen ? { siteOpen: deps.siteOpen } : {}),
                     authorsSeen: (authors) => peopleOf().request(authors),
                 }),
             ));

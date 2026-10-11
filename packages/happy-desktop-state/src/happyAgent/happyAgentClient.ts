@@ -642,6 +642,11 @@ export function happyAgentWorkspaceClientCreate(
                 ...(deps.artifactDocumentInline
                     ? { documentInline: deps.artifactDocumentInline }
                     : {}),
+                ...(deps.hostServices.artifactSiteOpen
+                    ? {
+                          siteOpen: deps.hostServices.artifactSiteOpen.bind(deps.hostServices),
+                      }
+                    : {}),
             });
             return artifacts;
         },

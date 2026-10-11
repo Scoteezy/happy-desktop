@@ -37,6 +37,20 @@ export interface HappyAgentArtifactFileLink {
     readonly url: string;
 }
 
+/** How an HTML version's page is shown. */
+export type HappyAgentArtifactPage =
+    /** Served by the host as a site of its own, where its scripts run. */
+    | { readonly kind: "site"; readonly url: string }
+    /** Drawn from its own files with every asset inlined, and no script. */
+    | {
+          readonly kind: "static";
+          readonly text: string;
+          /** The version's other files by path, as `data:` URLs the page can load. */
+          readonly assets: ReadonlyMap<string, string>;
+          /** Files too large to inline, which the page will find missing. */
+          readonly omitted: readonly string[];
+      };
+
 /** What the viewer shows for the version on screen, by the artifact's type. */
 export type HappyAgentArtifactContent =
     | { readonly type: "loading" }
@@ -48,15 +62,7 @@ export type HappyAgentArtifactContent =
           /** Every file of the version by path, so the entry's references resolve to it. */
           readonly files: ReadonlyMap<string, string>;
       }
-    | {
-          readonly type: "html";
-          readonly entryPath: string;
-          readonly text: string;
-          /** The version's other files by path, as `data:` URLs the page can load. */
-          readonly assets: ReadonlyMap<string, string>;
-          /** Files too large to inline, which the page will find missing. */
-          readonly omitted: readonly string[];
-      }
+    | { readonly type: "html"; readonly entryPath: string; readonly page: HappyAgentArtifactPage }
     | { readonly type: "image"; readonly image: HappyAgentArtifactFileLink }
     | { readonly type: "image_series"; readonly images: readonly HappyAgentArtifactFileLink[] }
     | { readonly type: "video"; readonly video: HappyAgentArtifactFileLink }
@@ -135,6 +141,11 @@ export interface HappyAgentArtifactViewerDeps {
     readonly sync: HappyAgentSync;
     /** Whether this host renders a document of this media type inline. */
     readonly documentInline?: (mimeType: string) => boolean;
+    /**
+     * Serves an HTML version as a live site and names its entry's address.
+     * Absent, or refused, the page is shown as a static preview instead.
+     */
+    readonly siteOpen?: (artifactId: HappyAgentArtifactId, version: number) => Promise<string>;
     /** Reports who the artifact and its history credit, so the people among them can be named. */
     readonly authorsSeen?: (authors: readonly (HappyAgentArtifactAuthor | null)[]) => void;
 }
@@ -262,6 +273,17 @@ export function happyAgentArtifactViewerStoreCreate(
                 };
             }
             case "html": {
+                if (deps.siteOpen) {
+                    // A host that cannot serve this version, an older one
+                    // above all, still has the static preview to show.
+                    const url = await deps.siteOpen(id, number).catch(() => undefined);
+                    if (url !== undefined)
+                        return {
+                            type: "html",
+                            entryPath: version.entry.path,
+                            page: { kind: "site", url },
+                        };
+                }
                 const { data } = await fileText(id, number, version.entry.path, signal);
                 const assets = new Map<string, string>();
                 const omitted: string[] = [];
@@ -279,9 +301,12 @@ export function happyAgentArtifactViewerStoreCreate(
                 return {
                     type: "html",
                     entryPath: version.entry.path,
-                    text: new TextDecoder().decode(data),
-                    assets,
-                    omitted,
+                    page: {
+                        kind: "static",
+                        text: new TextDecoder().decode(data),
+                        assets,
+                        omitted,
+                    },
                 };
             }
             case "image":

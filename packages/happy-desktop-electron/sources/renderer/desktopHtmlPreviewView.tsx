@@ -1,9 +1,6 @@
 import { Component, createElement } from "react";
 import type { HtmlPreviewProps } from "happy-desktop-ui";
-import {
-    happyHtmlPreviewPartition,
-    type DesktopPreviewNavigation,
-} from "../shared/desktopContract";
+import type { DesktopPreviewNavigation } from "../shared/desktopContract";
 
 interface HtmlPreviewWebViewElement extends HTMLElement {
     getWebContentsId(): number;
@@ -42,7 +39,23 @@ const PREVIEW_STEP_BUFFER = 64;
  * signals and guessing which reload each belonged to. It writes no copy: the
  * words a reader sees belong to `happy-desktop-ui`.
  */
-export class DesktopHtmlPreviewView extends Component<HtmlPreviewProps> {
+export interface DesktopHtmlPreviewViewProps extends HtmlPreviewProps {
+    /**
+     * The in-memory profile the guest runs in: a workspace document's preview
+     * or an artifact's. Main admits each partition only for the addresses it
+     * serves, and holds every guest in it to that partition's rules.
+     */
+    readonly partition: string;
+    /**
+     * Whether the page's `window.open` and `target="_blank"` links reach the
+     * main process at all. Main never opens a window from a guest; for an
+     * artifact it may hand a clicked web link to the default browser instead,
+     * which it can only do for a popup it is asked about.
+     */
+    readonly popups: boolean;
+}
+
+export class DesktopHtmlPreviewView extends Component<DesktopHtmlPreviewViewProps> {
     private element?: HtmlPreviewWebViewElement;
     private unsubscribe?: () => void;
     /** This view's guest, once it has attached and can be identified. */
@@ -66,7 +79,7 @@ export class DesktopHtmlPreviewView extends Component<HtmlPreviewProps> {
         this.unsubscribe = window.happyDesktop?.previewNavigationSubscribe(this.receive);
     }
 
-    componentDidUpdate(before: HtmlPreviewProps): void {
+    componentDidUpdate(before: DesktopHtmlPreviewViewProps): void {
         // A new address remounts the guest through its key; only a new revision
         // of the same file is a reload.
         if (before.revision !== this.props.revision && before.source === this.props.source)
@@ -193,7 +206,8 @@ export class DesktopHtmlPreviewView extends Component<HtmlPreviewProps> {
         return createElement("webview", {
             "data-happy-html-preview-guest": "",
             key: this.props.source,
-            partition: happyHtmlPreviewPartition,
+            partition: this.props.partition,
+            ...(this.props.popups ? { allowpopups: true } : {}),
             ref: this.elementApply,
             src: this.props.source,
             webpreferences: "contextIsolation=yes,nodeIntegration=no,sandbox=yes",

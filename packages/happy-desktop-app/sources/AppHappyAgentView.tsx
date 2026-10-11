@@ -577,6 +577,12 @@ export interface AppHappyAgentViewProps {
      */
     htmlPreview?: HtmlPreviewRenderer;
     /**
+     * Shows an HTML artifact served as a site of its own. Supplied only by a host
+     * with an isolated guest for it; without one an HTML artifact is a static
+     * preview.
+     */
+    artifactPage?: HtmlPreviewRenderer;
+    /**
      * Shows one workspace picture or recording in a window of the host's own.
      * Supplied only by a host that has such a window; without one the file stays
      * in place.
@@ -2933,6 +2939,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     {desktop ? <WindowDragRegion /> : null}
                     <HappyAgentArtifactsSurface
                         artifacts={artifacts}
+                        {...(props.artifactPage ? { artifactPage: props.artifactPage } : {})}
                         {...(props.artifactId === undefined
                             ? {}
                             : { artifactId: props.artifactId as HappyAgentArtifactId })}
@@ -3860,6 +3867,7 @@ function artifactSourceChoices(
  */
 function HappyAgentArtifactsSurface(props: {
     artifacts: HappyAgentArtifacts;
+    artifactPage?: HtmlPreviewRenderer;
     artifactId?: HappyAgentArtifactId;
     places: HappyAgentArtifactPlaces;
     onArtifactOpen(artifactId: string): void;
@@ -3872,6 +3880,7 @@ function HappyAgentArtifactsSurface(props: {
         return (
             <HappyAgentArtifactViewerSurface
                 artifactId={props.artifactId}
+                {...(props.artifactPage ? { artifactPage: props.artifactPage } : {})}
                 artifacts={props.artifacts}
                 labels={labels}
                 onClose={props.onArtifactClose}
@@ -3920,6 +3929,7 @@ function HappyAgentArtifactCatalogSurface(props: {
 
 function HappyAgentArtifactViewerSurface(props: {
     artifacts: HappyAgentArtifacts;
+    artifactPage?: HtmlPreviewRenderer;
     artifactId: HappyAgentArtifactId;
     labels: HappyAgentArtifactLabels;
     onClose(): void;
@@ -3947,6 +3957,7 @@ function HappyAgentArtifactViewerSurface(props: {
             }}
             onVersionSelect={store.versionSelect}
             onVersionsLoadMore={store.versionsNextLoad}
+            {...(props.artifactPage ? { renderPage: props.artifactPage } : {})}
             viewer={viewer.artifactId === props.artifactId ? viewer : VIEWER_OPENING}
         />
     );

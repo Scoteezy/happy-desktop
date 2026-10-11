@@ -154,6 +154,19 @@ export function happyAgentHostServicesCreate(
                     path,
                 })
             ).url,
+        // Only the desktop window has a guest to show an artifact's site in;
+        // a browser tab keeps the static preview.
+        ...(globalThis.window?.happyDesktop
+            ? {
+                  artifactSiteOpen: async (artifactId: string, version: number) =>
+                      (
+                          await getJson<{ readonly url: string }>(baseUrl, "/artifact-site", {
+                              artifactId,
+                              version: String(version),
+                          })
+                      ).url,
+              }
+            : {}),
         attachmentSourcePath: (file) => window.happyDesktop?.attachmentSourcePath(file),
         attachmentSourceReachable: async (workspaceId, sourcePath) =>
             (

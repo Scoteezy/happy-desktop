@@ -295,18 +295,21 @@ const landingViewer = viewerOf(
     {
         type: "html",
         entryPath: "index.html",
-        text: `<!doctype html><html><head><link rel="stylesheet" href="style.css"><script>document.body.textContent = "scripts ran"</script></head><body><main><img src="./assets/mark.svg" alt="Mark"><h1>Ship work, not screenshots</h1><p>Every version kept, every change attributed. <a href="https://example.com">Learn more</a>.</p></main></body></html>`,
-        assets: new Map([
-            [
-                "style.css",
-                dataUrl(
-                    "text/css",
-                    "body{margin:0;font-family:sans-serif;background:linear-gradient(160deg,lavender,white)}main{display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px}img{width:160px;height:auto;border-radius:16px}h1{margin:0}",
-                ),
-            ],
-            ["assets/mark.svg", svg("slateblue", "mark")],
-        ]),
-        omitted: [],
+        page: {
+            kind: "static",
+            text: `<!doctype html><html><head><link rel="stylesheet" href="style.css"><script>document.body.textContent = "scripts ran"</script></head><body><main><img src="./assets/mark.svg" alt="Mark"><h1>Ship work, not screenshots</h1><p>Every version kept, every change attributed. <a href="https://example.com">Learn more</a>.</p></main></body></html>`,
+            assets: new Map([
+                [
+                    "style.css",
+                    dataUrl(
+                        "text/css",
+                        "body{margin:0;font-family:sans-serif;background:linear-gradient(160deg,lavender,white)}main{display:flex;flex-direction:column;align-items:center;gap:12px;padding:48px}img{width:160px;height:auto;border-radius:16px}h1{margin:0}",
+                    ),
+                ],
+                ["assets/mark.svg", svg("slateblue", "mark")],
+            ]),
+            omitted: [],
+        },
     },
     landingFiles.map((entry) => link("landing", 1, entry)),
 );
@@ -510,8 +513,8 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="A web page as a static, scriptless preview built from its own files; its stylesheet and picture are inlined."
-                label="Viewer · web page"
+                detail="Where the host has no isolated guest: a static, scriptless preview built from its own files, with its stylesheet and picture inlined."
+                label="Viewer · web page, static"
                 screen="08-html-1100x760"
                 window={{ width: 1100, height: 760 }}
                 number="08"
@@ -618,6 +621,55 @@ export function HappyAgentArtifactsBlueprintPage() {
                     viewer={{ ...removedViewer, artifact: { type: "missing" } }}
                 />
             </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Where the host serves the version as a site of its own: its page runs in the host's isolated guest, drawn here by an inert stand-in."
+                label="Viewer · web page, live"
+                screen="15-html-live-1100x760"
+                window={{ width: 1100, height: 760 }}
+                number="15"
+            >
+                <HappyAgentArtifactViewer
+                    {...viewerHandlers}
+                    labels={labels}
+                    renderPage={() => <LivePageStandIn />}
+                    viewer={{
+                        ...landingViewer,
+                        content: {
+                            type: "html",
+                            entryPath: "index.html",
+                            page: { kind: "site", url: "happy-artifact://landing-v1/index.html" },
+                        },
+                    }}
+                />
+            </FullScreenSpecimen>
         </ComponentPage>
+    );
+}
+
+/** What the host's guest would draw for the landing page; Blueprint has no engine to run it in. */
+function LivePageStandIn() {
+    return (
+        <div
+            style={{
+                display: "flex",
+                flex: "1 1 0%",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "12px",
+                background: "linear-gradient(160deg, lavender, white)",
+                color: "#18171c",
+                fontFamily: "sans-serif",
+            }}
+        >
+            <img
+                alt="Mark"
+                src={svg("slateblue", "mark")}
+                style={{ width: "160px", borderRadius: "16px" }}
+            />
+            <h1 style={{ margin: 0 }}>Ship work, not screenshots</h1>
+            <p style={{ margin: 0 }}>scripts ran</p>
+        </div>
     );
 }

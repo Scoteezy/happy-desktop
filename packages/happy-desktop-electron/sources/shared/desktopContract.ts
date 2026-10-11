@@ -1011,6 +1011,14 @@ export const desktopIpc = {
 export const happyHtmlPreviewPartition = "happy-html-preview";
 
 /**
+ * In-memory Chromium profile used only by HTML artifacts. Each numbered version
+ * is served from its own origin inside it, so a page keeps its storage for as
+ * long as the app runs and shares it with no other artifact or version; nothing
+ * outlives a restart.
+ */
+export const happyArtifactPartition = "happy-artifact";
+
+/**
  * Query the preview window is loaded with, so the renderer entry mounts only the
  * file instead of the whole application. It is a property of the window's own
  * address rather than something asked for over the bridge, so the first frame is

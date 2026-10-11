@@ -34,6 +34,7 @@ import {
     type HappyAgentDaemonInspectorStopResponse,
 } from "./happyAgentDaemonClient";
 import type { HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
+import type { ArtifactSiteHandle } from "./artifactSite";
 import { happyAgentRendererOrigin, type HappyAgentRendererProxy } from "./happyAgentRendererProxy";
 import { happyAgentHttpProxyCreate, type HappyAgentHttpProxyHandle } from "./happyAgentHttpProxy";
 import type { Duplex } from "node:stream";
@@ -72,6 +73,8 @@ export interface DesktopRuntimeOptions {
     readonly rendererOrigin?: string;
     /** The window's HTML preview proxy, so a Happy Agent's documents can be published. */
     readonly htmlPreview?: HtmlPreviewProxyHandle;
+    /** The artifact partition's sites, so a Happy Agent's HTML artifacts can be served. */
+    readonly artifactSite?: ArtifactSiteHandle;
     readonly debug?: (message: string) => void;
 }
 
@@ -116,6 +119,7 @@ export class DesktopRuntime implements AsyncDisposable {
                     ...(options.rendererProxy ? { rendererProxy: options.rendererProxy } : {}),
                     ...(options.rendererOrigin ? { allowedOrigin: options.rendererOrigin } : {}),
                     ...(options.htmlPreview ? { htmlPreview: options.htmlPreview } : {}),
+                    ...(options.artifactSite ? { artifactSite: options.artifactSite } : {}),
                     ...(options.debug ? { debug: options.debug } : {}),
                 }));
         const configuredActive = settings?.topologies.find(

@@ -73,6 +73,8 @@ export interface HappyAgentRouterContext {
     readonly browserContent?: BrowserContentRenderer;
     /** Renders one HTML workspace file as a page, in a host that has an engine. */
     readonly htmlPreview?: HtmlPreviewRenderer;
+    /** The host's isolated guest for an HTML artifact served as a site. */
+    readonly artifactPage?: HtmlPreviewRenderer;
     /**
      * Shows one workspace picture or recording in a window outside this one.
      * Present only in a shell that has separate windows to open, which is
@@ -535,6 +537,7 @@ function HappyAgentWorkspaceLayout(
             buildIdentity={context.buildIdentity}
             performance={context.performance}
             htmlPreview={context.htmlPreview}
+            {...(context.artifactPage ? { artifactPage: context.artifactPage } : {})}
             mediaWindow={context.mediaWindow}
             {...(context.externalLinkOpen ? { onExternalLinkOpen: context.externalLinkOpen } : {})}
             chatId={params.chatId}
