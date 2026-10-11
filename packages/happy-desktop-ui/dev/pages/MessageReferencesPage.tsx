@@ -25,9 +25,12 @@ const VIEWS: ReadonlyMap<string, MessageReferenceView> = new Map([
         },
     ],
     ["artifact:gone", { type: "text", label: "Old onboarding deck" }],
+    ["agent:reviewer", { type: "link", label: "Review the release notes", busy: false }],
     ["agent:builder", { type: "link", label: "Release build", busy: true }],
-    ["service:preview", { type: "link", label: "Blueprint preview", busy: true }],
     ["workspace:quiet", { type: "link", label: "happy-references", busy: false }],
+    ["workspace:cloning", { type: "link", label: "happy-onboarding", busy: true }],
+    ["project:desktop", { type: "link", label: "happy-desktop", busy: false }],
+    ["project:importing", { type: "link", label: "happy-agent", busy: true }],
 ]);
 
 const references: MessageReferences = {
@@ -35,10 +38,11 @@ const references: MessageReferences = {
         return (
             VIEWS.get(`${reference.kind}:${reference.id}`) ?? {
                 type: "text",
-                label:
-                    reference.kind === "artifact" || reference.kind === "agent"
-                        ? `an unavailable ${reference.kind}`
-                        : "an unavailable reference",
+                label: ["artifact", "agent", "workspace", "project", "service"].includes(
+                    reference.kind,
+                )
+                    ? `an unavailable ${reference.kind}`
+                    : "an unavailable reference",
             }
         );
     },
@@ -87,7 +91,7 @@ export function MessageReferencesPage() {
             title="Message references"
         >
             <Specimen
-                detail="The same underline and colour as every Markdown link · inline, alone on a line, and pinned to a version (still the current title; the pin only decides what opens)"
+                detail="Artifact, agent, workspace, and project · the same underline and colour as every Markdown link · a pinned version still reads as the current title"
                 label="Idle references"
                 number="01"
                 stage="app"
@@ -100,7 +104,9 @@ export function MessageReferencesPage() {
                                 "",
                                 '<happy-artifact id="q3report" version="2"/>',
                                 "",
-                                'The longer one wraps like prose: <happy-artifact id="longtitle"/>, and the checkout is <happy-workspace id="quiet"/>.',
+                                'The longer one wraps like prose: <happy-artifact id="longtitle"/>.',
+                                "",
+                                '<happy-agent id="reviewer"/> checked it in <happy-workspace id="quiet"/> of <happy-project id="desktop"/>.',
                             ].join("\n"),
                         ),
                     )}
@@ -108,26 +114,30 @@ export function MessageReferencesPage() {
                 </div>
             </Specimen>
             <Specimen
-                detail="An agent working and a service running · ShimmerText sheen, inherit tone, inline"
+                detail="An agent working, a workspace and a project being prepared · ShimmerText sheen, inherit tone, inline"
                 label="Busy references"
                 number="02"
                 stage="app"
             >
                 {channelFrame(
                     agentReply(
-                        'Handed the packaging to <happy-agent id="builder"/>; you can watch it in <happy-service id="preview"/> meanwhile.',
+                        [
+                            'Handed the packaging to <happy-agent id="builder"/>, which is still working.',
+                            "",
+                            'The new checkout <happy-workspace id="cloning"/> is being prepared, and <happy-project id="importing"/> is still cloning.',
+                        ].join("\n"),
                     ),
                 )}
             </Specimen>
             <Specimen
-                detail="Deleted, missing, not visible, and unknown kinds read as plain text and never as the raw tag"
+                detail="Deleted, missing, not visible, services, and unknown kinds read as plain text and never as the raw tag"
                 label="Unavailable references"
                 number="03"
                 stage="app"
             >
                 {channelFrame(
                     agentReply(
-                        '<happy-artifact id="gone"/> was deleted, <happy-artifact id="missing"/> never existed, and <happy-gizmo id="x1"/> is a kind this build does not know.',
+                        '<happy-artifact id="gone"/> was deleted, <happy-agent id="hidden"/> is not visible here, <happy-service id="preview"/> does not open yet, and <happy-gizmo id="x1"/> is a kind this build does not know.',
                     ),
                 )}
             </Specimen>

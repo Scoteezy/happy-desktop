@@ -555,7 +555,7 @@ export function conversationRowHeight(
                 : entry.activity.kind === "reasoning" && expanded
                   ? REASONING_ACTIVITY_CHROME +
                     markdownBodyHeight(
-                        messageReferencesResolve(entry.activity.text, undefined, false),
+                        messageReferencesResolve(entry.activity.text, context.references, false),
                         width - activityInset - 16,
                         cache?.text,
                         0,
@@ -565,7 +565,7 @@ export function conversationRowHeight(
                   : entry.activity.kind === "agentMessage" && expanded
                     ? AGENT_MESSAGE_ACTIVITY_CHROME +
                       markdownBodyHeight(
-                          messageReferencesResolve(entry.activity.text, undefined, false),
+                          messageReferencesResolve(entry.activity.text, context.references, false),
                           width - activityInset - 16,
                           cache?.text,
                       )
@@ -573,7 +573,11 @@ export function conversationRowHeight(
         return rowHeightCached(
             cache,
             entry,
-            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}`,
+            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${
+                entry.activity.kind === "reasoning" || entry.activity.kind === "agentMessage"
+                    ? messageReferencesSignature(entry.activity.text, context.references)
+                    : ""
+            }`,
             () =>
                 activityHeight === undefined
                     ? undefined

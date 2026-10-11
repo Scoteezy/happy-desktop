@@ -4,7 +4,9 @@ import { AppGptLivePhone } from "./gptLive/AppGptLivePhone";
 import {
     ARTIFACT_READING,
     artifactTitlesStoreNoop,
+    messageReferenceEntities,
     messageReferencesCreate,
+    type MessageReferenceEntities,
 } from "./messageReferences";
 import type {
     AppearanceStore,
@@ -4800,6 +4802,19 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             <HappyAgentConversationBody
                 modelUsageWatch={modelUsageWatch}
                 {...(props.artifacts ? { artifacts: props.artifacts } : {})}
+                referenceEntities={messageReferenceEntities(workspace.list)}
+                onReferenceGroupOpen={(groupId, agentId) => {
+                    // A workspace or project a reference names opens where the
+                    // reader left it, the way its sidebar row does; an agent
+                    // opens on its own conversation.
+                    props.onChatSelect(
+                        groupId,
+                        agentId ??
+                            workspace.groupResume.get(groupId) ??
+                            openGroupFind(rows, workspace.list.bots, workspace.list.tasks, groupId)
+                                ?.conversations[0]?.id,
+                    );
+                }}
                 activitySelected={panel.open && panel.activeViewId === "activity"}
                 conversation={conversation}
                 {...(workspace.fileOpenFailure === undefined
@@ -6152,6 +6167,10 @@ function HappyAgentConversationBody(props: {
     activitySelected: boolean;
     /** The machine's artifacts, which the transcript's references name. */
     artifacts?: HappyAgentArtifacts;
+    /** The agents, workspaces, and projects the transcript's references can name. */
+    referenceEntities: MessageReferenceEntities;
+    /** Opens a group a reference names, on one of its conversations or where it was left. */
+    onReferenceGroupOpen: (groupId: HappyAgentGroupId, agentId?: string) => void;
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentWorkspaceSnapshot["conversation"];
     emptyContent?: ReactNode;
@@ -6201,6 +6220,8 @@ function HappyAgentConversationBody(props: {
             <HappyAgentConversationSurface
                 activitySelected={props.activitySelected}
                 {...(props.artifacts ? { artifacts: props.artifacts } : {})}
+                referenceEntities={props.referenceEntities}
+                onReferenceGroupOpen={props.onReferenceGroupOpen}
                 modelUsageWatch={props.modelUsageWatch}
                 conversation={conversation.value}
                 emptyContent={props.emptyContent}
@@ -6347,6 +6368,10 @@ function HappyAgentConversationSurface(props: {
     activitySelected: boolean;
     /** The machine's artifacts, which the transcript's references name. */
     artifacts?: HappyAgentArtifacts;
+    /** The agents, workspaces, and projects the transcript's references can name. */
+    referenceEntities: MessageReferenceEntities;
+    /** Opens a group a reference names, on one of its conversations or where it was left. */
+    onReferenceGroupOpen: (groupId: HappyAgentGroupId, agentId?: string) => void;
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentConversationSnapshot;
     emptyContent?: ReactNode;
@@ -6441,6 +6466,10 @@ function HappyAgentConversationSurface(props: {
     const references = messageReferencesCreate({
         titles,
         titlesStore,
+        entities: props.referenceEntities,
+        onGroupOpen: (groupId, agentId) => {
+            if (props.happyAgentOnline()) props.onReferenceGroupOpen(groupId, agentId);
+        },
         ...(props.artifacts
             ? {
                   // A reference opens beside the conversation, the way a file
@@ -7563,6 +7592,7 @@ function HappyAgentPanelBody(props: {
             : messageReferencesCreate({
                   titles,
                   titlesStore,
+                  entities: messageReferenceEntities(undefined),
                   onArtifactOpen: () => undefined,
               }).view({ kind: "artifact", id: artifactView.artifactId });
     const artifactTabLabel =

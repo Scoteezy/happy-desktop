@@ -76,8 +76,20 @@ export type {
     HappyAgentArtifactTitlesSnapshot,
     HappyAgentArtifactTitlesStore,
 } from "./artifacts/artifactTitlesStore.js";
-// Vendored until the client release that exports the grammar is published.
-export * from "./references/happyReferences.js";
+// The Happy reference grammar is the daemon client's; the app reads it from here.
+export {
+    HAPPY_REFERENCE_KINDS,
+    formatHappyReferenceTag,
+    happyReferencePartialTagLength,
+    happyReferencePlaceholder,
+    isKnownHappyReferenceKind,
+    parseHappyReferenceTag,
+    parseHappyReferences,
+    replaceHappyReferences,
+    type HappyReference,
+    type HappyReferenceKind,
+    type HappyReferenceSegment,
+} from "@slopus/happy-agent-client";
 export * from "./happyAgent/happyAgentInstructionsStore.js";
 export * from "./happyAgent/happyAgentMenusStore.js";
 export * from "./happyAgent/happyAgentModelStore.js";

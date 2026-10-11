@@ -18,6 +18,7 @@ import { filePreviewKind } from "./FilePreview";
 import { Icon, type IconName } from "./Icon";
 import { useMessageListDisclosureAnchor } from "./messageListDisclosureAnchor";
 import { renderMessageMarkdown } from "./MessageMarkdown";
+import { messageReferencesPlainText, type MessageReferences } from "./messageReferences";
 import { ScrollingText } from "./ScrollingText";
 import { Spinner } from "./Spinner";
 import { TypedText } from "./TypedText";
@@ -64,6 +65,8 @@ export type AgentActivityRowProps = {
     singleLine?: boolean;
     /** Durable event time, revealed with the row's trailing hover metadata. */
     time?: string;
+    /** What the Happy references in a reasoning or agent-message body read as. */
+    references?: MessageReferences;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -999,6 +1002,7 @@ function AgentToolActivity(props: {
 
 /** Model reasoning: one compact line that expands into the full thinking text. */
 function AgentReasoningActivity(props: {
+    references?: MessageReferences;
     text: string;
     streaming: boolean;
     defaultExpanded?: boolean;
@@ -1011,7 +1015,10 @@ function AgentReasoningActivity(props: {
         props.expanded,
         props.onExpandedChange,
     );
-    const summary = props.text.split("\n").find((line) => line.trim().length > 0) ?? "";
+    const summary = messageReferencesPlainText(
+        props.text.split("\n").find((line) => line.trim().length > 0) ?? "",
+        props.references,
+    );
     return (
         <div
             className="happy-agent-activity"
@@ -1055,7 +1062,15 @@ function AgentReasoningActivity(props: {
                     className="happy-agent-activity__body happy-agent-activity__reasoning happy-message__body--markdown"
                     data-happy-desktop-ui="agent-activity-reasoning-body"
                 >
-                    {renderMessageMarkdown(props.text)}
+                    {renderMessageMarkdown(
+                        props.text,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        props.references,
+                    )}
                 </div>
             ) : null}
         </div>
@@ -1071,6 +1086,7 @@ function AgentMessageActivity(props: {
     agentId: string;
     agentName?: string;
     agentFace?: ConversationAgentFace;
+    references?: MessageReferences;
     text: string;
     defaultExpanded?: boolean;
     expanded?: boolean;
@@ -1140,7 +1156,15 @@ function AgentMessageActivity(props: {
                     className="happy-agent-activity__body happy-agent-activity__message happy-message__body--markdown"
                     data-happy-desktop-ui="agent-activity-message-body"
                 >
-                    {renderMessageMarkdown(props.text)}
+                    {renderMessageMarkdown(
+                        props.text,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        undefined,
+                        props.references,
+                    )}
                 </div>
             ) : null}
         </div>
@@ -1379,6 +1403,7 @@ export function AgentActivityRow(props: AgentActivityRowProps) {
                     defaultExpanded={props.defaultExpanded}
                     expanded={props.expanded}
                     onExpandedChange={props.onExpandedChange}
+                    {...(props.references ? { references: props.references } : {})}
                     text={activity.text}
                     time={props.time}
                 />
@@ -1387,6 +1412,7 @@ export function AgentActivityRow(props: AgentActivityRowProps) {
                     defaultExpanded={props.defaultExpanded}
                     expanded={props.expanded}
                     onExpandedChange={props.onExpandedChange}
+                    {...(props.references ? { references: props.references } : {})}
                     streaming={activity.streaming}
                     text={activity.text}
                     time={props.time}

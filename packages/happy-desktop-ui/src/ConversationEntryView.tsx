@@ -227,6 +227,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                         : undefined
                 }
                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+                {...(props.references ? { references: props.references } : {})}
                 singleLine={entry.activity.kind === "tool"}
                 time={
                     (entry.activity.kind === "tool" || entry.activity.kind === "agentMessage") &&

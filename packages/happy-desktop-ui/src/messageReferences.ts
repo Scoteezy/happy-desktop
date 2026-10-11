@@ -122,6 +122,18 @@ export function messageReferencesResolve(
 }
 
 /**
+ * One line of a body as plain words, for a one-line summary that is not
+ * rendered as Markdown: every reference reads as its label.
+ */
+export function messageReferencesPlainText(
+    text: string,
+    references: MessageReferences | undefined,
+): string {
+    if (!text.includes("<happy-")) return text;
+    return replaceHappyReferences(text, (reference) => referenceView(reference, references).label);
+}
+
+/**
  * What the references in one body read as, for caches keyed by an entry rather
  * than by its text: two bodies with the same signature lay out identically.
  * Empty when the body names nothing. Busy is left out because it only paints.

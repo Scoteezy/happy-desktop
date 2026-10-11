@@ -7,6 +7,7 @@ import type {
 } from "happy-desktop-state";
 import { expect, it } from "vitest";
 import "./styles.css";
+import { AgentActivityRow } from "./AgentActivityRow";
 import { ConversationEntryView } from "./ConversationEntryView";
 import { conversationRowHeight, conversationRowHeightCacheCreate } from "./conversationRowHeight";
 import { Message } from "./Message";
@@ -89,6 +90,138 @@ it("renders a reference as an underlined link titled with its live label, openin
         { kind: "artifact", id: "q3" },
         { kind: "artifact", id: "q3", version: 2 },
     ]);
+});
+
+it("links agents, workspaces, and projects, shimmering each while busy", async () => {
+    const opened: HappyReference[] = [];
+    const views: Record<string, MessageReferenceView> = {};
+    for (const kind of ["agent", "workspace", "project"]) {
+        views[`${kind}:idle`] = { type: "link", label: `Idle ${kind}`, busy: false };
+        views[`${kind}:busy`] = { type: "link", label: `Busy ${kind}`, busy: true };
+    }
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div data-testid="kinds">
+                <Message
+                    agent
+                    author="Happy"
+                    body={["agent", "workspace", "project"]
+                        .map(
+                            (kind) => `<happy-${kind} id="idle"/> and <happy-${kind} id="busy"/>; `,
+                        )
+                        .join("")
+                        .concat('<happy-service id="s1"/> stays text.')}
+                    references={referencesOf(views, opened)}
+                />
+            </div>
+        ),
+        { width: 640, height: 200 },
+    );
+    await view.ready();
+    const root = view.$('[data-testid="kinds"]').element;
+    const links = [
+        ...root.querySelectorAll<HTMLElement>('[data-happy-desktop-ui="message-md-reference"]'),
+    ];
+    expect(links.map((link) => [link.dataset.referenceKind, link.textContent])).toEqual([
+        ["agent", "Idle agent"],
+        ["agent", "Busy agent"],
+        ["workspace", "Idle workspace"],
+        ["workspace", "Busy workspace"],
+        ["project", "Idle project"],
+        ["project", "Busy project"],
+    ]);
+    expect(links.map((link) => link.querySelector(".happy-shimmer-text") !== null)).toEqual([
+        false,
+        true,
+        false,
+        true,
+        false,
+        true,
+    ]);
+    expect(root.textContent).toContain("an unavailable service stays text.");
+    for (const link of links) link.click();
+    expect(opened.map((reference) => `${reference.kind}:${reference.id}`)).toEqual(
+        Object.keys(views),
+    );
+});
+
+it("opens a reference in the app on modified and middle clicks, never in the browser", async () => {
+    const opened: HappyReference[] = [];
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div data-testid="clicks">
+                <Message
+                    agent
+                    author="Happy"
+                    body={'Open <happy-agent id="a1"/>.'}
+                    references={referencesOf(
+                        { "agent:a1": { type: "link", label: "Release", busy: false } },
+                        opened,
+                    )}
+                />
+            </div>
+        ),
+        { width: 640, height: 120 },
+    );
+    await view.ready();
+    const link = view.$('[data-testid="clicks"] [data-happy-desktop-ui="message-md-reference"]')
+        .element as HTMLAnchorElement;
+    expect(link.target).toBe("");
+    const clicks = [
+        new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true }),
+        new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }),
+        new MouseEvent("click", { bubbles: true, cancelable: true, shiftKey: true }),
+        new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }),
+        new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }),
+    ];
+    for (const event of clicks) {
+        link.dispatchEvent(event);
+        expect(event.defaultPrevented, `${event.type} keeps the private link in the app`).toBe(
+            true,
+        );
+    }
+    /* Every primary click and the middle click open it here; a right click does not. */
+    expect(opened).toHaveLength(4);
+});
+
+it("resolves references in expanded reasoning and agent-message activity", async () => {
+    const references = referencesOf({ "artifact:q3": REPORT });
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div data-testid="activity">
+                <AgentActivityRow
+                    activity={{
+                        kind: "reasoning",
+                        text: 'Checking <happy-artifact id="q3"/> first.',
+                        streaming: false,
+                    }}
+                    defaultExpanded
+                    references={references}
+                />
+                <AgentActivityRow
+                    activity={{
+                        kind: "agentMessage",
+                        agentId: "child",
+                        text: 'Updated <happy-artifact id="q3"/>.',
+                    }}
+                    defaultExpanded
+                    references={references}
+                />
+            </div>
+        ),
+        { width: 640, height: 300 },
+    );
+    await view.ready();
+    const root = view.$('[data-testid="activity"]').element;
+    expect(
+        [...root.querySelectorAll('[data-happy-desktop-ui="message-md-reference"]')].map(
+            (link) => link.textContent,
+        ),
+    ).toEqual(["Q3 revenue report", "Q3 revenue report"]);
+    expect(root.textContent).not.toContain("<happy-");
 });
 
 it("shimmers a busy reference inline without moving its words", async () => {

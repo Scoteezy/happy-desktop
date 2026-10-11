@@ -137,10 +137,19 @@ const MarkdownReferenceLink = ({
             data-happy-desktop-ui="message-md-reference"
             data-reference-kind={reference.kind}
             href={href}
+            // The href exists only so this is a real, focusable link. Its
+            // private scheme means nothing outside this window, so no click —
+            // plain, modified, or middle — may hand it to the browser or the
+            // OS: every one opens the reference here instead.
             onClick={(event) => {
                 event.preventDefault();
                 references.open(reference);
             }}
+            onAuxClick={(event) => {
+                event.preventDefault();
+                if (event.button === 1) references.open(reference);
+            }}
+            onDragStart={(event) => event.preventDefault()}
         >
             {busy ? (
                 <ShimmerText inline sweep="sheen" tone="inherit">
