@@ -266,6 +266,19 @@ Pierre's horizontal code scrollport is the sole implementation exception: its
 markup lives inside third-party shadow DOM, so its native thumb is styled to the
 same visual contract without mutating vendor structure.
 
+## Text that does not fit
+
+Never truncate menu or popover headings, headers, buttons, or settings labels.
+Keep them short enough to fit, or let them wrap. Truncation is only for
+unbounded user content (titles, paths, branch names), with the full text
+reachable elsewhere.
+
+## Sentence case
+
+Write headings, labels, and buttons in sentence case. Do not use all caps,
+typed or via `text-transform: uppercase`. Existing uppercase styles are legacy;
+convert them when you touch them.
+
 ## Setup page layout
 
 Every first-run setup screen is the same four bands, in this order, and

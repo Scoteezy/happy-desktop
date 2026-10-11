@@ -203,8 +203,6 @@ export function AgentUpdateCardPage() {
                                                     />
                                                 )
                                             }
-                                            appearance="dark"
-                                            onAppearanceToggle={noop}
                                             onSettingsOpen={noop}
                                         />
                                     }
@@ -252,8 +250,6 @@ export function AgentUpdateCardPage() {
                                             }}
                                         />
                                     }
-                                    appearance="dark"
-                                    onAppearanceToggle={noop}
                                     onSettingsOpen={noop}
                                 />
                             }

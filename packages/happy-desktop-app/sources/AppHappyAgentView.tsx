@@ -86,6 +86,7 @@ import type {
     HappyAgentSettingsStore,
     KeepAwakeMode,
     KeepAwakeStore,
+    StatusBarStore,
 } from "happy-desktop-state";
 import {
     HAPPY_AGENT_PANEL_FILE_VIEW_ID,
@@ -113,6 +114,7 @@ import {
     happyAgentWindowStoreNoop,
     happyAgentSettingsStoreCreate,
     keepAwakeStoreCreate,
+    statusBarStoreNoop,
     titleShimmerStoreNoop,
     type HappyAgentConversationSource,
 } from "happy-desktop-state";
@@ -479,8 +481,10 @@ export interface AppHappyAgentViewProps {
     performance?: LivePerformanceStore;
     /** Which Happy Agent the URL addresses; its projects and sessions fill the window. */
     happyAgentId: string;
-    /** Theme selection behind the sidebar footer's appearance toggle. */
+    /** Theme selection behind the status bar's theme menu. */
     appearance: AppearanceStore;
+    /** Which optional controls the status bar shows; the defaults when absent. */
+    statusBar?: StatusBarStore;
     /**
      * The window's own preferences, read here for where a clicked link goes
      * and for the palette's settings rows. A host that keeps none supplies
@@ -2204,6 +2208,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         keepAwakeStore.get,
         keepAwakeStore.get,
     );
+    const statusBarStore = props.statusBar ?? statusBarStoreNoop;
+    const statusBar = useSyncExternalStore(
+        statusBarStore.subscribe,
+        statusBarStore.get,
+        statusBarStore.get,
+    );
     const titleShimmerStore = props.titleShimmer ?? titleShimmerStoreNoop;
     const titleShimmerEnabled = useSyncExternalStore(
         titleShimmerStore.subscribe,
@@ -2452,7 +2462,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         ) : undefined
                     }
                     actions={sidebarUpdate}
-                    appearance={appearance.appearance}
                     devMenu={
                         props.buildIdentity ? (
                             <DevBuildMenu
@@ -2469,8 +2478,17 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             />
                         ) : undefined
                     }
-                    onAppearanceToggle={() => props.appearance.appearanceToggle()}
-                    {...(props.keepAwake
+                    {...(statusBar.themeShown
+                        ? {
+                              theme: {
+                                  appearance: appearance.appearance,
+                                  mode: appearance.mode,
+                                  onModeSelect: (mode: ThemeMode) =>
+                                      props.appearance.appearanceSelect(mode),
+                              },
+                          }
+                        : {})}
+                    {...(props.keepAwake && statusBar.keepAwakeShown
                         ? {
                               keepAwake: {
                                   active: keepAwake.active,
@@ -3038,6 +3056,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     ? {
                           sidebarCollapsed: sidebarVisibility.hidden,
                           onSidebarCollapsedChange: sidebarVisibilityStore.sidebarHiddenUpdate,
+                          sidebarDefaultWidth: sidebarVisibility.width,
+                          onSidebarWidthChange: sidebarVisibilityStore.sidebarWidthUpdate,
                       }
                     : {})}
                 shortcutHints="interactive"

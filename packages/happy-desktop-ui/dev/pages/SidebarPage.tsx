@@ -658,7 +658,6 @@ function PinnedReorderDemo() {
                     activeItemId=""
                     footer={
                         <SidebarFooter
-                            appearance="light"
                             devMenu={
                                 <DevBuildMenu
                                     branch="feature/sidebar-reorder"
@@ -668,7 +667,6 @@ function PinnedReorderDemo() {
                                     path="/Users/kirilldubovitskiy/Happy/Workspaces/happy-desktop"
                                 />
                             }
-                            onAppearanceToggle={() => {}}
                             onSettingsOpen={() => {}}
                         />
                     }
@@ -1136,8 +1134,6 @@ export function SidebarPage() {
                                     footer={
                                         <SidebarFooter
                                             actions={<SidebarUpdateAction {...update} />}
-                                            appearance="light"
-                                            onAppearanceToggle={() => {}}
                                             onSettingsOpen={() => {}}
                                         />
                                     }
@@ -1172,8 +1168,6 @@ export function SidebarPage() {
                                             actions={
                                                 <SidebarUpdateAction {...update} defaultOpen />
                                             }
-                                            appearance="light"
-                                            onAppearanceToggle={() => {}}
                                             onSettingsOpen={() => {}}
                                         />
                                     }
@@ -1219,9 +1213,7 @@ export function SidebarPage() {
                                     activeItemId=""
                                     footer={
                                         <SidebarFooter
-                                            appearance="light"
                                             connection={connection}
-                                            onAppearanceToggle={() => {}}
                                             onSettingsOpen={() => {}}
                                         />
                                     }

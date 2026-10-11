@@ -5,7 +5,7 @@
  * radius and a short, faint drop — it floats over arbitrary content, so it
  * keeps a shadow, but a close one rather than a deep grey cast. Default 220px
  * wide. Inside, a 4px-padded list of 28px
- * item rows (8px side padding), optional 24px mono section labels, and 1px
+ * item rows (8px side padding), optional 24px sentence-case section labels, and 1px
  * separators with 4px vertical breathing room. Every row corner is 5px — the
  * card's 10px radius minus the uniform 5px border-box inset (1px border + 4px
  * padding) — so each row is the true parallel curve of the card and no edge
@@ -149,22 +149,20 @@
 
 /* ---- Section label --------------------------------------------------- */
 
+/* Sentence case, and wraps rather than truncates (DESIGN.md). A 22px line
+   plus 2px below centres mixed-case ink in the 24px box. */
 .happy-menu__header,
 .happy-menu__label {
     display: block;
     flex: none;
-    height: 24px;
-    padding: 0 8px;
-    overflow: hidden;
+    min-height: 24px;
+    padding: 0 8px 2px;
     color: var(--text-secondary);
-    font-family: var(--happy-font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    line-height: 24px;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-    white-space: nowrap;
+    font-family: var(--happy-font-ui);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 22px;
+    overflow-wrap: anywhere;
 }
 
 .happy-menu__header {

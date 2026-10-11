@@ -5,6 +5,8 @@ import { FormRow } from "../../FormRow";
 import { SegmentedControl } from "../../SegmentedControl";
 import { Select, type SelectOption } from "../../Select";
 import { Spinner } from "../../Spinner";
+import { SIDEBAR_THEME_OPTIONS } from "../../SidebarFooter";
+import { SIDEBAR_KEEP_AWAKE_OPTIONS, type SidebarKeepAwakeMode } from "../../SidebarKeepAwakeMenu";
 import { Switch } from "../../Switch";
 import { HappyAgentProductAnalyticsSettings } from "./HappyAgentProductAnalyticsSettings";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
@@ -42,6 +44,16 @@ export type HappyAgentGeneralSettingsProps = {
      */
     projectsHidden?: boolean;
     onProjectsHiddenChange?: (hidden: boolean) => void;
+    /** "Show in status bar" switches; absent where the host keeps no such choice. */
+    statusBar?: {
+        themeShown: boolean;
+        keepAwakeShown: boolean;
+        onThemeShownChange: (shown: boolean) => void;
+        onKeepAwakeShownChange: (shown: boolean) => void;
+    };
+    /** When the computer is kept from sleeping; absent where the host cannot. */
+    keepAwake?: SidebarKeepAwakeMode;
+    onKeepAwakeChange?: (mode: SidebarKeepAwakeMode) => void;
     /** Whether this window sends product analytics events. Absent where the host sends none. */
     usageAnalyticsEnabled?: boolean;
     onUsageAnalyticsChange?: (enabled: boolean) => void;
@@ -87,11 +99,31 @@ export type HappyAgentGeneralSettingsProps = {
     onAgentRestart?: () => void;
 };
 
-const appearanceSegments = [
-    { value: "system", label: "System" },
-    { value: "light", label: "Light" },
-    { value: "dark", label: "Dark" },
-];
+const appearanceSegments = SIDEBAR_THEME_OPTIONS.map(({ mode, label }) => ({ value: mode, label }));
+
+const keepAwakeOptions = SIDEBAR_KEEP_AWAKE_OPTIONS.map(({ mode, label }) => ({
+    value: mode,
+    label,
+}));
+
+function statusBarRow(id: string, shown: boolean, onChange: (shown: boolean) => void) {
+    return (
+        <FormRow
+            control={
+                <Switch
+                    aria-label={`Show ${id} in status bar`}
+                    checked={shown}
+                    id={`happy-agent-settings-status-bar-${id}`}
+                    onChange={onChange}
+                    size="small"
+                />
+            }
+            description="Adds this control to the bar under the sidebar"
+            htmlFor={`happy-agent-settings-status-bar-${id}`}
+            label="Show in status bar"
+        />
+    );
+}
 
 const scrollbarSegments = [
     { value: "automatic", label: "Automatic" },
@@ -140,6 +172,13 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     description="Applies to this window immediately"
                     label="Theme"
                 />
+                {props.statusBar
+                    ? statusBarRow(
+                          "theme",
+                          props.statusBar.themeShown,
+                          props.statusBar.onThemeShownChange,
+                      )
+                    : null}
                 <FormRow
                     control={
                         <SegmentedControl
@@ -187,6 +226,40 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     />
                 ) : null}
             </HappyAgentSettingsSection>
+            {props.keepAwake && props.onKeepAwakeChange ? (
+                <HappyAgentSettingsSection
+                    description="Stops this computer from sleeping so agents keep working. The display can still turn off."
+                    title="Keep awake"
+                >
+                    <FormRow
+                        control={
+                            <Box width={280}>
+                                <Select
+                                    aria-label="Keep computer awake"
+                                    fullWidth
+                                    id="happy-agent-settings-keep-awake"
+                                    onValueChange={(value) =>
+                                        props.onKeepAwakeChange?.(value as SidebarKeepAwakeMode)
+                                    }
+                                    options={keepAwakeOptions}
+                                    size="small"
+                                    value={props.keepAwake}
+                                />
+                            </Box>
+                        }
+                        description="Only agents on this computer count"
+                        htmlFor="happy-agent-settings-keep-awake"
+                        label="Keep computer awake"
+                    />
+                    {props.statusBar
+                        ? statusBarRow(
+                              "keep-awake",
+                              props.statusBar.keepAwakeShown,
+                              props.statusBar.onKeepAwakeShownChange,
+                          )
+                        : null}
+                </HappyAgentSettingsSection>
+            ) : null}
             <HappyAgentSettingsSection
                 description="Where a web link goes when it is clicked. A link's own menu can always choose the other."
                 title="Links"

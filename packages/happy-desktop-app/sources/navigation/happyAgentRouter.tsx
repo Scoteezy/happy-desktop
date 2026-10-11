@@ -22,6 +22,7 @@ import type {
     HappyAgentGroupId,
     UsageAnalyticsStore,
     KeepAwakeStore,
+    StatusBarStore,
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
@@ -130,6 +131,8 @@ export interface HappyAgentRouterContext {
      * footer without the control rather than with one wired to nothing.
      */
     readonly keepAwake?: KeepAwakeStore;
+    /** Which optional controls the sidebar's status bar shows. */
+    readonly statusBar?: StatusBarStore;
     /** Window-local preference for animated activity titles. */
     readonly titleShimmer?: TitleShimmerStore;
     /**
@@ -544,6 +547,7 @@ function HappyAgentWorkspaceLayout(
                 : {})}
             {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             {...(context.keepAwake ? { keepAwake: context.keepAwake } : {})}
+            {...(context.statusBar ? { statusBar: context.statusBar } : {})}
             {...(context.titleShimmer ? { titleShimmer: context.titleShimmer } : {})}
             {...(context.commandPalette ? { commandPalette: context.commandPalette } : {})}
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
@@ -702,6 +706,7 @@ function HappyAgentSettingsRoute() {
             {...(context.usageAnalytics ? { usageAnalytics: context.usageAnalytics } : {})}
             {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             {...(context.keepAwake ? { keepAwake: context.keepAwake } : {})}
+            {...(context.statusBar ? { statusBar: context.statusBar } : {})}
             onCategorySelect={(section) =>
                 void navigate({ params: { section }, to: "/settings/$section" })
             }
@@ -711,6 +716,7 @@ function HappyAgentSettingsRoute() {
             section={params.section ?? HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY}
             settings={context.settings}
             {...(context.titleShimmer ? { titleShimmer: context.titleShimmer } : {})}
+            {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
             windowState={context.windowState}
         />
     );

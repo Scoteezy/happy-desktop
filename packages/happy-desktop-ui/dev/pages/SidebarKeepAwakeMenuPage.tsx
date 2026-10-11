@@ -26,11 +26,11 @@ export function SidebarKeepAwakeMenuPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The sidebar footer's keep-awake control. A coffee cup after the appearance toggle opens the house menu above the footer: keep the computer awake always, only while an agent is working, or never. The heading carries the live state, and the card is drawn in the window's overlay lane so a narrow sidebar cannot clip it."
+            summary="The sidebar footer's keep-awake control. A coffee cup between the theme menu and Settings, hidden unless turned on in Settings, opens the house menu above the footer: keep the computer awake always, only while an agent is working, or never. The heading carries the live state, and the card is drawn in the window's overlay lane so a narrow sidebar cannot clip it."
             title="Sidebar keep-awake menu"
         >
             <Specimen
-                detail="28px ghost trigger after the appearance toggle · full ink while the machine is held awake · click the cup to open the menu, which hangs in the overlay lane and is pushed back inside the window when the sidebar is narrow"
+                detail="28px ghost trigger between the theme menu and Settings · full ink while the machine is held awake · click the cup to open the menu, which hangs in the overlay lane and is pushed back inside the window when the sidebar is narrow"
                 label="Sidebar footer"
                 number="01"
                 stage="app"
@@ -52,16 +52,20 @@ export function SidebarKeepAwakeMenuPage() {
                             >
                                 <Sidebar
                                     activeItemId=""
+                                    style={{ width: "100%" }}
                                     footer={
                                         <SidebarFooter
-                                            appearance="light"
                                             keepAwake={{
                                                 active: state.active,
                                                 mode: "agent",
                                                 onModeSelect: () => {},
                                             }}
-                                            onAppearanceToggle={() => {}}
                                             onSettingsOpen={() => {}}
+                                            theme={{
+                                                appearance: "light",
+                                                mode: "system",
+                                                onModeSelect: () => {},
+                                            }}
                                         />
                                     }
                                     onItemSelect={() => {}}
@@ -76,7 +80,7 @@ export function SidebarKeepAwakeMenuPage() {
             </Specimen>
 
             <Specimen
-                detail="the house menu, 260 px wide · heading with the live state · three 28px rows · check in the chosen row's 16px gutter"
+                detail="the house menu, 240 px wide · heading with the live state · three 28px rows · check in the chosen row's 16px gutter"
                 label="Menu states"
                 number="02"
                 stage="surface"
@@ -90,9 +94,9 @@ export function SidebarKeepAwakeMenuPage() {
                             <Menu
                                 items={sidebarKeepAwakeItems(state.mode)}
                                 label={sidebarKeepAwakeLabel(state.mode, state.active)}
-                                width={260}
+                                width={240}
                             />
-                            <DimensionRule label={`${state.label} · menu 260 px wide`} />
+                            <DimensionRule label={`${state.label} · menu 240 px wide`} />
                         </div>
                     ))}
                 </div>

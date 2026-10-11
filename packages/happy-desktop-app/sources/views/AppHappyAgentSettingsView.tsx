@@ -15,7 +15,10 @@ import type {
     HappyAgentSettingsSnapshot,
     HappyAgentSettingsStore,
     HappyAgentThinkingLevel,
+    HappyAgentSidebarVisibilityStore,
     HappyAgentWindowStore,
+    KeepAwakeStore,
+    StatusBarStore,
     TitleShimmerStore,
     UsageAnalyticsStore,
 } from "happy-desktop-state";
@@ -39,6 +42,8 @@ import {
     happyAgentProvidersStoreNoop,
     happyAgentSecretsStoreNoop,
     happyAgentWindowStoreNoop,
+    keepAwakeStoreCreate,
+    statusBarStoreNoop,
     titleShimmerStoreNoop,
 } from "happy-desktop-state";
 import {
@@ -285,6 +290,9 @@ const PERMISSION_MODES: readonly HappyAgentPermissionMode[] = [
     "full_access",
 ];
 
+/** Stands in where the host cannot hold the machine awake, keeping hook order fixed. */
+const keepAwakeStoreNone = keepAwakeStoreCreate({ mode: "off" });
+
 /** Stands in where the host sends no usage events, so the view subscribes unconditionally. */
 const usageAnalyticsAbsentSnapshot = { usageAnalyticsEnabled: false } as const;
 const usageAnalyticsAbsent: UsageAnalyticsStore = {
@@ -310,6 +318,11 @@ export interface AppHappyAgentSettingsViewProps {
     /** Whether this window sends product analytics events. Absent where it sends none. */
     usageAnalytics?: UsageAnalyticsStore;
     gptLive?: GptLiveStore;
+    /** Absent where the host cannot hold the machine awake. */
+    keepAwake?: KeepAwakeStore;
+    statusBar?: StatusBarStore;
+    /** The window's sidebar, whose width the category column matches. */
+    sidebarVisibility?: HappyAgentSidebarVisibilityStore;
     /** Every Happy Agent in this window, including the one whose catalog is read. */
     debug?: AppHappyAgentDebugStore;
     profiler?: AppHappyAgentProfilerStore;
@@ -376,6 +389,18 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         titleShimmerStore.subscribe,
         titleShimmerStore.get,
         titleShimmerStore.get,
+    );
+    const keepAwakeStore = props.keepAwake ?? keepAwakeStoreNone;
+    const keepAwake = useSyncExternalStore(
+        keepAwakeStore.subscribe,
+        keepAwakeStore.get,
+        keepAwakeStore.get,
+    );
+    const statusBarStore = props.statusBar ?? statusBarStoreNoop;
+    const statusBar = useSyncExternalStore(
+        statusBarStore.subscribe,
+        statusBarStore.get,
+        statusBarStore.get,
     );
     const directory = useSyncExternalStore(
         props.happyAgents.subscribe,
@@ -560,6 +585,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             windowControls={props.platform === "desktop"}
             windowFullScreen={windowState.fullScreen}
             connectionRail={windowState.connectionRail}
+            sidebarWidth={props.sidebarVisibility?.get().width}
         >
             {section === "experimental" ? (
                 props.gptLive ? (
@@ -853,6 +879,21 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     loading={models.type !== "ready" && models.type !== "error"}
                     modelOptions={modelOptions(catalog, settings, selection)}
                     onAppearanceChange={(mode) => props.appearance.appearanceSelect(mode)}
+                    {...(props.statusBar
+                        ? {
+                              statusBar: {
+                                  ...statusBar,
+                                  onThemeShownChange: statusBarStore.themeShownUpdate,
+                                  onKeepAwakeShownChange: statusBarStore.keepAwakeShownUpdate,
+                              },
+                          }
+                        : {})}
+                    {...(props.keepAwake
+                        ? {
+                              keepAwake: keepAwake.mode,
+                              onKeepAwakeChange: keepAwakeStore.modeSelect,
+                          }
+                        : {})}
                     onScrollbarVisibilityChange={(visibility) =>
                         props.appearance.scrollbarVisibilitySelect(visibility)
                     }

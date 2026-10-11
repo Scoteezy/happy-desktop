@@ -57,8 +57,6 @@ export function GptLiveSettingsPage() {
                 >
                     <Box width={300} data-voice-state={status}>
                         <SidebarFooter
-                            appearance="light"
-                            onAppearanceToggle={() => {}}
                             onSettingsOpen={() => {}}
                             voice={
                                 <GptLivePhone

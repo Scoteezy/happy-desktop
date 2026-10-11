@@ -38,7 +38,7 @@ export type MenuProps = {
 /**
  * C-027 Menu — dropdown / context-menu popover on the raised surface. Renders
  * as a static card (no open/close animation): a 4px-padded list of 28px item
- * rows, optional mono section labels, and 1px separators. When any item carries
+ * rows, optional sentence-case section labels, and 1px separators. When any item carries
  * an icon the whole menu reserves a 16px leading gutter so every label aligns.
  * Shortcuts reuse the tuned KeyCap primitive; danger items use Happy's direct
  * destructive role.

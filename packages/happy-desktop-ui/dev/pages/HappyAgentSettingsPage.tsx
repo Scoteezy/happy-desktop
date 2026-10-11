@@ -473,6 +473,14 @@ export function HappyAgentSettingsBlueprintPage() {
                         experimentalFeaturesEnabled
                         modelOptions={modelOptions}
                         onAppearanceChange={noop}
+                        statusBar={{
+                            themeShown: true,
+                            keepAwakeShown: false,
+                            onThemeShownChange: noop,
+                            onKeepAwakeShownChange: noop,
+                        }}
+                        keepAwake="agent"
+                        onKeepAwakeChange={noop}
                         onAgentCheck={noop}
                         onAgentRestart={noop}
                         onAgentUpgrade={noop}

@@ -8,16 +8,20 @@
  * while its menu is open.
  */
 
-.happy-sidebar-keep-awake {
+/* The theme menu beside it shares the trigger treatment. */
+.happy-sidebar-keep-awake,
+.happy-sidebar-theme {
     display: flex;
     flex: none;
 }
 
 .happy-sidebar-keep-awake[data-active] > .happy-menu-button > .happy-button,
-.happy-sidebar-keep-awake > .happy-menu-button[data-open] > .happy-button {
+.happy-sidebar-keep-awake > .happy-menu-button[data-open] > .happy-button,
+.happy-sidebar-theme > .happy-menu-button[data-open] > .happy-button {
     color: var(--text);
 }
 
-.happy-sidebar-keep-awake > .happy-menu-button[data-open] > .happy-button {
+.happy-sidebar-keep-awake > .happy-menu-button[data-open] > .happy-button,
+.happy-sidebar-theme > .happy-menu-button[data-open] > .happy-button {
     background: var(--surface-ripple);
 }

@@ -190,10 +190,8 @@ export function SidebarSpacesPage() {
                                 }}
                             >
                                 <SidebarFooter
-                                    appearance="light"
                                     initials="SK"
                                     name="Steve"
-                                    onAppearanceToggle={() => {}}
                                     onSettingsOpen={() => {}}
                                     online
                                 />

@@ -25,6 +25,7 @@ import {
     commandPaletteStoreCreate,
     experimentsStoreCreate,
     projectsVisibilityStoreCreate,
+    statusBarStoreCreate,
     gptLiveStoreCreate,
     gptLiveExperimentsConnect,
     titleShimmerStoreCreate,
@@ -37,6 +38,7 @@ import {
     type CommandPaletteStore,
     type ExperimentsStore,
     type ProjectsVisibilityStore,
+    type StatusBarStore,
     type UsageAnalyticsStore,
     type GptLiveStore,
     type WelcomeStore,
@@ -109,6 +111,7 @@ import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
 import { desktopDaemonStoreCreate } from "./desktopDaemonStore";
 import { desktopExperimentsPersistence } from "./desktopExperiments";
 import { desktopProjectsVisibilityPersistence } from "./desktopProjectsVisibility";
+import { desktopStatusBarPersistence } from "./desktopStatusBar";
 import { desktopGptLivePersistence } from "./desktopGptLive";
 import { desktopGptLiveRuntimeCreate } from "./desktopGptLiveRuntime";
 import { desktopWelcomePersistence } from "./desktopWelcome";
@@ -294,6 +297,7 @@ function HappyAgentBoundary(props: {
     mediaWindow?: MediaWindowOpener;
     experiments: ExperimentsStore;
     projectsVisibility: ProjectsVisibilityStore;
+    statusBar: StatusBarStore;
     keepAwake: KeepAwakeStore;
     platform: "desktop" | "web";
     gptLive: GptLiveStore;
@@ -343,6 +347,7 @@ function HappyAgentBoundary(props: {
                     : {}),
                 experiments: props.experiments,
                 projectsVisibility: props.projectsVisibility,
+                statusBar: props.statusBar,
                 gptLive: props.gptLive,
                 usageAnalytics: props.usageAnalytics,
                 keepAwake: props.keepAwake,
@@ -463,6 +468,7 @@ interface DesktopRendererProps {
     bridge: HappyDesktopBridge;
     experiments: ExperimentsStore;
     projectsVisibility: ProjectsVisibilityStore;
+    statusBar: StatusBarStore;
     gptLive: GptLiveStore;
     usageAnalytics: UsageAnalyticsStore;
     keepAwake: KeepAwakeStore;
@@ -636,6 +642,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 connectionOnboarding
                                 experiments={props.experiments}
                                 projectsVisibility={props.projectsVisibility}
+                                statusBar={props.statusBar}
                                 gptLive={props.gptLive}
                                 usageAnalytics={props.usageAnalytics}
                                 keepAwake={props.keepAwake}
@@ -855,6 +862,7 @@ function DesktopRuntimeContent(
             mediaWindow={props.mediaWindow}
             experiments={props.experiments}
             projectsVisibility={props.projectsVisibility}
+            statusBar={props.statusBar}
             keepAwake={props.keepAwake}
             gptLive={props.gptLive}
             usageAnalytics={props.usageAnalytics}
@@ -1037,6 +1045,8 @@ if (mediaPreviewBridge) {
         const projectsVisibility = projectsVisibilityStoreCreate(
             desktopProjectsVisibilityPersistence(),
         );
+        // Which optional controls the status bar shows: the window's own choice.
+        const statusBar = statusBarStoreCreate(desktopStatusBarPersistence());
         // Active-title motion is also this window's own choice. The store keeps
         // the product default in memory and writes only after the reader changes
         // the switch, so untouched installations follow future defaults.
@@ -1299,6 +1309,7 @@ if (mediaPreviewBridge) {
                         }
                         experiments={experiments}
                         projectsVisibility={projectsVisibility}
+                        statusBar={statusBar}
                         gptLive={gptLive}
                         usageAnalytics={analytics.preference}
                         keepAwake={keepAwake}

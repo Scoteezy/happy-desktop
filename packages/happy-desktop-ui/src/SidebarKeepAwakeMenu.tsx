@@ -17,14 +17,15 @@ interface KeepAwakeOption {
     readonly label: string;
 }
 
-const OPTIONS: readonly KeepAwakeOption[] = [
+/** Shared with the Keep awake row in Settings. */
+export const SIDEBAR_KEEP_AWAKE_OPTIONS: readonly KeepAwakeOption[] = [
     { mode: "on", label: "Always" },
     { mode: "agent", label: "While an agent is working" },
     { mode: "off", label: "Never" },
 ];
 
 function isMode(value: string): value is SidebarKeepAwakeMode {
-    return OPTIONS.some((option) => option.mode === value);
+    return SIDEBAR_KEEP_AWAKE_OPTIONS.some((option) => option.mode === value);
 }
 
 /**
@@ -37,9 +38,9 @@ export function sidebarKeepAwakeState(mode: SidebarKeepAwakeMode, active: boolea
     return `${mode === "on" ? "On" : "Agent"} · ${active ? "Active" : "Idle"}`;
 }
 
-/** The menu's heading: what it is for, and what it is doing now. */
+/** The menu's heading: short enough to fit, since the checked row already names the mode. */
 export function sidebarKeepAwakeLabel(mode: SidebarKeepAwakeMode, active: boolean): string {
-    return `Keep computer awake — ${sidebarKeepAwakeState(mode, active)}`;
+    return `Keep awake · ${active ? "Active" : mode === "off" ? "Off" : "Idle"}`;
 }
 
 /**
@@ -48,7 +49,7 @@ export function sidebarKeepAwakeLabel(mode: SidebarKeepAwakeMode, active: boolea
  * every row, so the labels stay aligned whichever is chosen.
  */
 export function sidebarKeepAwakeItems(mode: SidebarKeepAwakeMode): MenuItem[] {
-    return OPTIONS.map((option) => ({
+    return SIDEBAR_KEEP_AWAKE_OPTIONS.map((option) => ({
         kind: "item",
         id: option.mode,
         label: option.label,
@@ -88,7 +89,7 @@ export function SidebarKeepAwakeMenu(props: SidebarKeepAwakeMenuProps) {
                 items={sidebarKeepAwakeItems(props.mode)}
                 label={`Keep computer awake: ${state}`}
                 menuLabel={sidebarKeepAwakeLabel(props.mode, props.active)}
-                menuWidth={260}
+                menuWidth={240}
                 onSelect={(id) => {
                     if (isMode(id)) props.onModeSelect(id);
                 }}

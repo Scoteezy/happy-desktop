@@ -8,7 +8,6 @@ import { Menu, type MenuItem } from "./Menu";
 import { createRenderer } from "./testing";
 
 const FIGTREE = "happy Figtree, system-ui, sans-serif";
-const MONO = "happy Mono, ui-monospace, monospace";
 
 /*
  * The leading glyph fills its 16px slot. The icon font paints the glyph
@@ -293,21 +292,23 @@ it("holds Menu section labels, disabled items, and text-only alignment", async (
     const sortBy = view.$('[data-testid="grouped"] [data-happy-desktop-ui="menu-label"]');
     expect(sortBy.bounds().height).toBe(24);
     expect(sortBy.textMetrics().font).toMatchObject({
-        family: MONO,
-        size: 11,
-        weight: "700",
-        lineHeight: 24,
+        family: FIGTREE,
+        size: 12,
+        weight: "600",
+        lineHeight: 22,
     });
     expect(sortBy.computedStyles(["color", "text-transform"])).toEqual({
         color: "rgb(73, 69, 79)",
-        "text-transform": "uppercase",
+        "text-transform": "none",
     });
-    /* Mono uppercase caps sit optically centered in the 24px label box.
-     * Left-aligned word, so the vertical axis only (measured <=0.3px, the same
-     * treatment as the sidebar section label; contract ceiling 0.75). */
+    /* Mixed case with a descender: centre the full-height ink box, not the
+     * alpha centroid. Vertical axis only (contract ceiling 0.75). */
     const sortInk = await sortBy.visibleMetrics();
     expect(sortInk.pixelCount).toBeGreaterThan(0);
-    expect(Math.abs(sortInk.center.y - 12), "section label optical y").toBeLessThanOrEqual(0.75);
+    expect(
+        Math.abs(sortInk.bounds.y + sortInk.bounds.height / 2 - 12),
+        "section label ink-box y",
+    ).toBeLessThanOrEqual(0.75);
 
     /* ---- Disabled row ---------------------------------------------------- */
 

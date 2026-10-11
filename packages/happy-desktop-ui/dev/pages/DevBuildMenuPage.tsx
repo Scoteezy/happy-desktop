@@ -42,7 +42,6 @@ export function DevBuildMenuPage() {
                             activeItemId=""
                             footer={
                                 <SidebarFooter
-                                    appearance="light"
                                     devMenu={
                                         <DevBuildMenu
                                             branch="feature/connection-indicator-styling"
@@ -52,7 +51,6 @@ export function DevBuildMenuPage() {
                                             path={PATH}
                                         />
                                     }
-                                    onAppearanceToggle={() => {}}
                                     onSettingsOpen={() => {}}
                                 />
                             }

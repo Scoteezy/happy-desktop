@@ -51,8 +51,13 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      * renders no interaction chrome, so existing callers are unaffected.
      */
     sidebarCollapsible?: boolean;
-    /** Initial sidebar width (clamped) once `sidebarCollapsible` is set. */
+    /**
+     * Initial sidebar width (clamped). A fixed sidebar given one keeps that
+     * width instead of the standalone clamp.
+     */
     sidebarDefaultWidth?: number;
+    /** Reports each resize of a collapsible sidebar. */
+    onSidebarWidthChange?: (width: number) => void;
     sidebarMinWidth?: number;
     sidebarMaxWidth?: number;
     /** Start collapsed. The sidebar DOM stays mounted; only its box is hidden. */
@@ -129,6 +134,7 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
 };
 export type AppShellFocusedPane = "workspace" | "panel";
 const SIDEBAR_DEFAULT_WIDTH = 288;
+export const APP_SHELL_SIDEBAR_DEFAULT_WIDTH = SIDEBAR_DEFAULT_WIDTH;
 const SIDEBAR_MIN_WIDTH = 220;
 const SIDEBAR_MAX_WIDTH = 480;
 const PANEL_DEFAULT_WIDTH = 340;
@@ -338,6 +344,7 @@ export function AppShell(props: AppShellProps) {
         "connectionRail",
         "sidebarCollapsible",
         "sidebarDefaultWidth",
+        "onSidebarWidthChange",
         "sidebarMinWidth",
         "sidebarMaxWidth",
         "sidebarDefaultCollapsed",
@@ -419,6 +426,7 @@ export function AppShell(props: AppShellProps) {
         local.panelMaxWidth ?? laneMaxWidthOf(panelCap, panelMin, railFootprint + sidebarOccupied);
     const [shortcutHintsHeld, setShortcutHintsHeld] = useState(false);
     const sidebarInteractive = local.sidebarCollapsible === true;
+    const sidebarSized = sidebarInteractive || local.sidebarDefaultWidth !== undefined;
     const shortcutHintsEnabled = local.shortcutHints !== undefined;
     const shortcutHintsInteractive = local.shortcutHints === "interactive";
     const shortcutHintsVisible = shortcutHintsInteractive && shortcutHintsHeld;
@@ -545,7 +553,7 @@ export function AppShell(props: AppShellProps) {
         setPanelDragWidth(undefined);
     }
     const showSidebarHandle = sidebarInteractive && !sidebarCollapsed;
-    const sidebarStyle: CSSProperties | undefined = sidebarInteractive
+    const sidebarStyle: CSSProperties | undefined = sidebarSized
         ? {
               width: `${sidebarWidth}px`,
               minWidth: `${sidebarMin}px`,
@@ -583,7 +591,7 @@ export function AppShell(props: AppShellProps) {
           ? 0
           : sidebarHidden
             ? REVEAL_WIDTH
-            : sidebarInteractive
+            : sidebarSized
               ? sidebarMin
               : FIXED_SIDEBAR_MIN_WIDTH;
     const revealButton = sidebarHidden ? (
@@ -749,7 +757,10 @@ export function AppShell(props: AppShellProps) {
                                             label={local.sidebarResizeLabel ?? "Resize sidebar"}
                                             max={sidebarMax}
                                             min={sidebarMin}
-                                            onResize={setSidebarWidth}
+                                            onResize={(width) => {
+                                                setSidebarWidth(width);
+                                                local.onSidebarWidthChange?.(width);
+                                            }}
                                             value={sidebarWidth}
                                         />
                                     ) : null}

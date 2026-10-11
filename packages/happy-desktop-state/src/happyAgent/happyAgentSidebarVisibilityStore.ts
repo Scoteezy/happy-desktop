@@ -11,6 +11,8 @@
 export interface HappyAgentSidebarVisibilitySnapshot {
     /** The sidebar, and the rail beside it, are folded away. */
     readonly hidden: boolean;
+    /** The width the reader dragged the sidebar to; Settings takes it too. */
+    readonly width?: number;
 }
 
 export interface HappyAgentSidebarVisibilityStore {
@@ -18,10 +20,10 @@ export interface HappyAgentSidebarVisibilityStore {
     subscribe(listener: () => void): () => void;
     /** Folds the left side away, or brings it back. */
     sidebarHiddenUpdate(hidden: boolean): void;
+    sidebarWidthUpdate(width: number): void;
 }
 
 const SHOWN: HappyAgentSidebarVisibilitySnapshot = { hidden: false };
-const HIDDEN: HappyAgentSidebarVisibilitySnapshot = { hidden: true };
 
 export function happyAgentSidebarVisibilityStoreCreate(): HappyAgentSidebarVisibilityStore {
     let snapshot = SHOWN;
@@ -33,9 +35,13 @@ export function happyAgentSidebarVisibilityStoreCreate(): HappyAgentSidebarVisib
             return () => listeners.delete(listener);
         },
         sidebarHiddenUpdate(hidden) {
-            const next = hidden ? HIDDEN : SHOWN;
-            if (next === snapshot) return;
-            snapshot = next;
+            if (snapshot.hidden === hidden) return;
+            snapshot = { ...snapshot, hidden };
+            for (const listener of listeners) listener();
+        },
+        sidebarWidthUpdate(width) {
+            if (snapshot.width === width) return;
+            snapshot = { ...snapshot, width };
             for (const listener of listeners) listener();
         },
     };
@@ -46,4 +52,5 @@ export const happyAgentSidebarVisibilityStoreNoop: HappyAgentSidebarVisibilitySt
     get: () => SHOWN,
     subscribe: () => () => undefined,
     sidebarHiddenUpdate: () => undefined,
+    sidebarWidthUpdate: () => undefined,
 };

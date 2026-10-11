@@ -50,8 +50,6 @@ it("starts only on trusted click and keeps the existing composer without a draft
             >
                 <input aria-label="Existing composer" defaultValue="Keep my text" ref={mounted} />
                 <SidebarFooter
-                    appearance="light"
-                    onAppearanceToggle={() => {}}
                     onSettingsOpen={() => {}}
                     voice={
                         state.gptLiveEnabled ? (
@@ -108,6 +106,7 @@ it("starts only on trusted click and keeps the existing composer without a draft
         expect(icon.bounds().width).toBe(14);
         expect(icon.bounds().height).toBe(14);
         expect((await icon.visibleMetrics()).pixelCount).toBeGreaterThan(0);
+        // No theme or keep-awake menu in this footer, so the call sits 4px from Settings.
         expect(
             view.$('[aria-label="Settings"]').bounds().x -
                 view.$('[aria-label="End voice call"]').bounds().x -
