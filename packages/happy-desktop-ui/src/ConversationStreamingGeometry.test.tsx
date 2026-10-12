@@ -7,7 +7,6 @@ import type {
     ConversationMessageEntry,
 } from "happy-desktop-state";
 import { expect, it } from "vitest";
-import { server } from "vitest/browser";
 import "./styles.css";
 import { ConversationView } from "./ConversationView";
 import { Message } from "./Message";
@@ -270,72 +269,71 @@ it("keeps the transcript fixed when the live status becomes the completed summar
 });
 
 for (const width of [800, 560, 360]) {
-    // Pretext 0.0.8 also undercounts SETTLED narrow Firefox URL text: Gecko
-    // prefers breaks after path slashes where Pretext keeps the token together.
-    // Keep the real failing replay executable, without weakening the geometry
-    // assertion or hiding the wider Firefox / all Chromium and WebKit results.
-    (server.browser === "firefox" && width === 360 ? it.fails : it)(
-        `keeps the reported rich-table stream adjacent at ${String(width)}px`,
-        async () => {
-            const view = createRenderer();
-            let update!: (text: string, streaming: boolean, width: number) => void;
-            function Harness() {
-                const [state, setState] = useState({ text: "", streaming: true, width });
-                update = (text, streaming, width) => setState({ text, streaming, width });
-                return (
-                    <div className="happy-theme-dark" style={{ width: state.width, height: 700 }}>
-                        <ConversationView
-                            agentAuthor={agent}
-                            composer={composer}
-                            conversationId="reported-rich-table"
-                            entries={[message(state.text, state.streaming), tool]}
-                            motion="calm"
-                            onComposerSend={() => {}}
-                            onComposerValueChange={() => {}}
-                            running
-                        />
-                    </div>
-                );
-            }
-            view.render(Harness, { width: 900, height: 700 });
-            await view.ready();
+    // Table cells wrap at their column measure, which puts this payload's URLs
+    // and paths at a line edge at every width. Gecko breaks after a slash
+    // there, where Blink and WebKit keep the token whole; the model marks that
+    // opportunity in Gecko, so all three engines must match exactly.
+    it(`keeps the reported rich-table stream adjacent at ${String(width)}px`, async () => {
+        const view = createRenderer();
+        let update!: (text: string, streaming: boolean, width: number) => void;
+        function Harness() {
+            const [state, setState] = useState({ text: "", streaming: true, width });
+            update = (text, streaming, width) => setState({ text, streaming, width });
+            return (
+                <div className="happy-theme-dark" style={{ width: state.width, height: 700 }}>
+                    <ConversationView
+                        agentAuthor={agent}
+                        composer={composer}
+                        conversationId="reported-rich-table"
+                        entries={[message(state.text, state.streaming), tool]}
+                        motion="calm"
+                        onComposerSend={() => {}}
+                        onComposerValueChange={() => {}}
+                        running
+                    />
+                </div>
+            );
+        }
+        view.render(Harness, { width: 900, height: 700 });
+        await view.ready();
+        await nextFrame();
+        await nextFrame();
+        const row = view.container.querySelector(".happy-message-list__virtual-row")!;
+        const input = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+        input.focus();
+        const ends = new Set([richTablePayload.length]);
+        for (let end = 1; end < richTablePayload.length; end += 32) ends.add(end);
+        // Exercise each structural delimiter as well as ordinary growing chunks:
+        // the header is prose until its GFM separator arrives, and unfinished
+        // links/code/formatting must have accurate geometry before they close.
+        for (let index = 0; index < richTablePayload.length; index += 1) {
+            if (!"\n|`]*".includes(richTablePayload[index]!)) continue;
+            ends.add(index);
+            ends.add(index + 1);
+        }
+        for (const end of [...ends].sort((a, b) => a - b)) {
+            flushSync(() => update(richTablePayload.slice(0, end), true, width));
             await nextFrame();
-            await nextFrame();
-            const row = view.container.querySelector(".happy-message-list__virtual-row")!;
-            const input = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
-            input.focus();
-            const ends = new Set([richTablePayload.length]);
-            for (let end = 1; end < richTablePayload.length; end += 32) ends.add(end);
-            // Exercise each structural delimiter as well as ordinary growing chunks:
-            // the header is prose until its GFM separator arrives, and unfinished
-            // links/code/formatting must have accurate geometry before they close.
-            for (let index = 0; index < richTablePayload.length; index += 1) {
-                if (!"\n|`]*".includes(richTablePayload[index]!)) continue;
-                ends.add(index);
-                ends.add(index + 1);
-            }
-            for (const end of [...ends].sort((a, b) => a - b)) {
-                flushSync(() => update(richTablePayload.slice(0, end), true, width));
-                await nextFrame();
-                expectRowGeometry(
-                    view.container,
-                    `reported payload prefix ${String(end)} at ${String(width)}px`,
-                );
-                expect(view.container.querySelector(".happy-message-list__virtual-row")).toBe(row);
-                expect(document.activeElement).toBe(input);
-            }
-            const liveHeight = row.getBoundingClientRect().height;
-            flushSync(() => update(richTablePayload, false, width));
-            expectRowGeometry(view.container, `reported payload settled at ${String(width)}px`);
-            expect(row.getBoundingClientRect().height).toBe(liveHeight);
-            expect(row.querySelectorAll("table")).toHaveLength(1);
-            expect(row.querySelectorAll("tr")).toHaveLength(7);
-            const tableViewport = row.querySelector<HTMLElement>(
-                ".happy-message__table-scroll-viewport",
-            )!;
-            expect(tableViewport.scrollWidth).toBeGreaterThan(tableViewport.clientWidth);
-        },
-    );
+            expectRowGeometry(
+                view.container,
+                `reported payload prefix ${String(end)} at ${String(width)}px`,
+            );
+            expect(view.container.querySelector(".happy-message-list__virtual-row")).toBe(row);
+            expect(document.activeElement).toBe(input);
+        }
+        const liveHeight = row.getBoundingClientRect().height;
+        flushSync(() => update(richTablePayload, false, width));
+        expectRowGeometry(view.container, `reported payload settled at ${String(width)}px`);
+        expect(row.getBoundingClientRect().height).toBe(liveHeight);
+        expect(row.querySelectorAll("table")).toHaveLength(1);
+        expect(row.querySelectorAll("tr")).toHaveLength(7);
+        const tableViewport = row.querySelector<HTMLElement>(
+            ".happy-message__table-scroll-viewport",
+        )!;
+        // Wide enough, the prose columns wrap to fit; narrower, the widest
+        // words no longer fit side by side and the table scrolls.
+        expect(tableViewport.scrollWidth > tableViewport.clientWidth).toBe(width < 800);
+    });
 }
 
 it("matches empty streamed heading, list and table boxes", async () => {
@@ -378,25 +376,22 @@ it("matches empty streamed heading, list and table boxes", async () => {
     }
 });
 
-(server.browser === "firefox" ? it.fails : it)(
-    "documents the pre-existing settled narrow-URL line-break mismatch in Gecko",
-    async () => {
-        const text = richTablePayload.slice(0, 417);
-        const view = createRenderer();
-        view.render(() => <Message agent author="Happy" body={text} />, {
-            width: 360,
-            height: 700,
-        });
-        await view.ready();
-        await document.fonts.load('16px "happy Figtree"');
-        await document.fonts.load('700 16px "happy Figtree"');
-        await nextFrame();
-        const body = view.container.querySelector<HTMLElement>(".happy-message__body")!;
-        const bounds = body.getBoundingClientRect();
-        const settled = markdownBodyHeight(text, bounds.width, messageTextLayoutCacheCreate());
-        expect(Math.abs(settled - bounds.height)).toBeLessThanOrEqual(2.1);
-    },
-);
+it("keeps settled narrow URL text exact, including Gecko's breaks after slashes", async () => {
+    const text = richTablePayload.slice(0, 417);
+    const view = createRenderer();
+    view.render(() => <Message agent author="Happy" body={text} />, {
+        width: 360,
+        height: 700,
+    });
+    await view.ready();
+    await document.fonts.load('16px "happy Figtree"');
+    await document.fonts.load('700 16px "happy Figtree"');
+    await nextFrame();
+    const body = view.container.querySelector<HTMLElement>(".happy-message__body")!;
+    const bounds = body.getBoundingClientRect();
+    const settled = markdownBodyHeight(text, bounds.width, messageTextLayoutCacheCreate());
+    expect(Math.abs(settled - bounds.height)).toBeLessThanOrEqual(2.1);
+});
 
 it("keeps expanded shell output adjacent to the live status while output grows", async () => {
     const view = createRenderer();

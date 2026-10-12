@@ -40,6 +40,7 @@ export * from "./happyAgent/happyAgentDeviceBridgesStore.js";
 export * from "./happyAgent/happyAgentDeviceBridgeSupportStore.js";
 export * from "./happyAgent/happyAgentConversationAuthors.js";
 export * from "./happyAgent/happyAgentConversationProject.js";
+export * from "./happyAgent/happyAgentStreamingMarkdown.js";
 export * from "./happyAgent/happyAgentGroupAccess.js";
 export * from "./happyAgent/happyAgentHost.js";
 export * from "./happyAgent/happyAgentIntegrationStore.js";

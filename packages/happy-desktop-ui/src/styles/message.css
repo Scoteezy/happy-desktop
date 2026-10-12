@@ -445,6 +445,12 @@
     border-radius: var(--happy-radius-md);
 }
 
+/* A table's columns are solved against the bubble's measure, so a bubble that
+   holds one takes its full cap instead of shrinking to the table it sizes. */
+.happy-message:not([data-agent]) .happy-message__body:has(.happy-message__table-scroll) {
+    width: 100%;
+}
+
 /* Own (outgoing): accent bubble, no avatar, right-aligned content column. */
 .happy-message[data-own] .happy-message__gutter {
     display: none;
@@ -652,6 +658,19 @@
     text-align: left;
     vertical-align: top;
     white-space: nowrap;
+}
+
+/* `markdownTableLayout` solves whole-pixel column widths from the same text
+   model that sizes the row, and the table renders exactly those `<col>`
+   widths: a fixed layout, no stretching to the measure, and cells that wrap
+   the way body paragraphs do (`overflow-wrap: break-word` is inherited). */
+.happy-message__body--markdown table[data-layout="solved"] {
+    min-width: 0;
+    table-layout: fixed;
+}
+
+.happy-message__body--markdown table[data-layout="solved"] :is(th, td) {
+    white-space: normal;
 }
 
 .happy-message__body--markdown th {

@@ -572,8 +572,16 @@ it.skipIf(server.browser === "firefox")(
             expect(tableScrollport, `${specimen.name} table scrollport`).not.toBeNull();
             expect(
                 tableScrollport!.scrollWidth,
-                `${specimen.name} wide table horizontally overflows`,
-            ).toBeGreaterThan(tableScrollport!.clientWidth);
+                `${specimen.name} wide table wraps its prose column instead of scrolling`,
+            ).toBe(tableScrollport!.clientWidth);
+            expect(
+                Math.max(
+                    ...[...target.querySelectorAll("tr")].map(
+                        (row) => row.getBoundingClientRect().height,
+                    ),
+                ),
+                `${specimen.name} wide table row wraps`,
+            ).toBeGreaterThan(40);
             expect(
                 codeScrollports.some(
                     (scrollport) => scrollport.scrollWidth > scrollport.clientWidth,

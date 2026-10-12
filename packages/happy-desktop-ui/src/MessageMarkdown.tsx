@@ -25,6 +25,10 @@ import {
     messageReferencesResolve,
     type MessageReferences,
 } from "./messageReferences";
+import {
+    markdownTableLayoutAt,
+    messageTextLayoutFontGenerationSubscribe,
+} from "./messageTextLayout";
 import { ScrollArea } from "./Scrollbar";
 import { ShimmerText } from "./ShimmerText";
 
@@ -175,6 +179,8 @@ const MarkdownTrailingContext = createContext<{
 const MarkdownGenerationStatusContext = createContext<MessageGenerationStatus | undefined>(
     undefined,
 );
+/** The Markdown being rendered; a table re-reads its own AST from it by offset. */
+const MarkdownSourceContext = createContext("");
 type MarkdownImageProps = ComponentPropsWithoutRef<"img"> & ExtraProps;
 /**
  * A Markdown image is rendered as a safe labelled link, never an `<img>`: an
@@ -414,20 +420,85 @@ const MarkdownPre = ({
         </ScrollArea>
     );
 };
+/** Cells in the header row, which is how many columns the table renders. */
+function markdownTableColumnCount(node: ExtraProps["node"]): number {
+    const head = node?.children.find(
+        (child) => child.type === "element" && child.tagName === "thead",
+    );
+    const row =
+        head?.type === "element"
+            ? head.children.find((child) => child.type === "element" && child.tagName === "tr")
+            : undefined;
+    return row?.type === "element"
+        ? row.children.filter((child) => child.type === "element").length
+        : 0;
+}
+/**
+ * A table wraps its cells at column widths solved by `markdownTableLayoutAt`,
+ * the same solve the virtual list sized this row with. The solve needs the
+ * scrollport's real measure, which only exists once it is laid out, so the ref
+ * writes the widths during commit — before the first paint — and again
+ * whenever that measure or the installed font changes.
+ */
 const MarkdownTable = ({
     children,
-    node: _node,
+    node,
     ...props
-}: ComponentPropsWithoutRef<"table"> & ExtraProps) => (
-    <ScrollArea
-        axes="horizontal"
-        className="happy-message__table-scroll"
-        data-happy-desktop-ui="message-table-scroll"
-        viewportClassName="happy-message__table-scroll-viewport"
-    >
-        <table {...props}>{children}</table>
-    </ScrollArea>
-);
+}: ComponentPropsWithoutRef<"table"> & ExtraProps) => {
+    const source = useContext(MarkdownSourceContext);
+    const offset = node?.position?.start.offset;
+    const columns = markdownTableColumnCount(node);
+    const tableRef = (table: HTMLTableElement | null) => {
+        // ScrollArea renders its children directly in the scroll viewport.
+        const viewport = table?.parentElement;
+        if (!table || !viewport || offset === undefined) return;
+        let applied = "";
+        const apply = () => {
+            const measure = Number.parseFloat(getComputedStyle(viewport).width);
+            if (!(measure > 0)) return;
+            const layout = markdownTableLayoutAt(source, offset, measure);
+            if (!layout) return;
+            const key = layout.columnWidths.join(",");
+            if (key === applied) return;
+            applied = key;
+            table.style.width = `${String(layout.width)}px`;
+            for (const [index, col] of table
+                .querySelectorAll<HTMLTableColElement>(":scope > colgroup > col")
+                .entries())
+                col.style.width = `${String(layout.columnWidths[index] ?? 0)}px`;
+            table.dataset.layout = "solved";
+        };
+        apply();
+        const observer = new ResizeObserver(apply);
+        observer.observe(viewport);
+        const unsubscribe = messageTextLayoutFontGenerationSubscribe(() => {
+            applied = "";
+            apply();
+        });
+        return () => {
+            observer.disconnect();
+            unsubscribe();
+        };
+    };
+    return (
+        <ScrollArea
+            axes="horizontal"
+            className="happy-message__table-scroll"
+            data-happy-desktop-ui="message-table-scroll"
+            viewportClassName="happy-message__table-scroll-viewport"
+        >
+            <table {...props} ref={tableRef}>
+                <colgroup>
+                    {Array.from({ length: columns }, (_, index) => (
+                        // Columns are positions, not entities: the nth `<col>` is the nth column.
+                        <col key={index} />
+                    ))}
+                </colgroup>
+                {children}
+            </table>
+        </ScrollArea>
+    );
+};
 /** Footnote references stay in normal inline flow so their AST label uses the
  * same line box and font metrics as the surrounding paragraph. */
 const MarkdownSup = ({
@@ -493,33 +564,35 @@ export function renderMessageMarkdown(
 ): ReactNode {
     const text = messageReferencesResolve(source, references, generationStatus === "streaming");
     return (
-        <MarkdownGenerationStatusContext.Provider value={generationStatus}>
-            <MarkdownTrailingContext.Provider
-                value={
-                    trailing === undefined
-                        ? null
-                        : { endOffset: text.trimEnd().length, node: trailing }
-                }
-            >
-                <MarkdownReferencesContext.Provider value={references}>
-                    <MarkdownFileOpenContext.Provider value={onFileOpen}>
-                        <MarkdownFileLinkOpenContext.Provider value={onFileLinkOpen}>
-                            <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
-                                <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
-                                    <MemoMarkdown
-                                        components={markdownComponents}
-                                        urlTransform={messageUrlTransform}
-                                        remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
-                                        skipHtml
-                                    >
-                                        {text}
-                                    </MemoMarkdown>
-                                </MarkdownLinkDefaultContext.Provider>
-                            </MarkdownLinkOpenContext.Provider>
-                        </MarkdownFileLinkOpenContext.Provider>
-                    </MarkdownFileOpenContext.Provider>
-                </MarkdownReferencesContext.Provider>
-            </MarkdownTrailingContext.Provider>
-        </MarkdownGenerationStatusContext.Provider>
+        <MarkdownSourceContext.Provider value={text}>
+            <MarkdownGenerationStatusContext.Provider value={generationStatus}>
+                <MarkdownTrailingContext.Provider
+                    value={
+                        trailing === undefined
+                            ? null
+                            : { endOffset: text.trimEnd().length, node: trailing }
+                    }
+                >
+                    <MarkdownReferencesContext.Provider value={references}>
+                        <MarkdownFileOpenContext.Provider value={onFileOpen}>
+                            <MarkdownFileLinkOpenContext.Provider value={onFileLinkOpen}>
+                                <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
+                                    <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
+                                        <MemoMarkdown
+                                            components={markdownComponents}
+                                            urlTransform={messageUrlTransform}
+                                            remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
+                                            skipHtml
+                                        >
+                                            {text}
+                                        </MemoMarkdown>
+                                    </MarkdownLinkDefaultContext.Provider>
+                                </MarkdownLinkOpenContext.Provider>
+                            </MarkdownFileLinkOpenContext.Provider>
+                        </MarkdownFileOpenContext.Provider>
+                    </MarkdownReferencesContext.Provider>
+                </MarkdownTrailingContext.Provider>
+            </MarkdownGenerationStatusContext.Provider>
+        </MarkdownSourceContext.Provider>
     );
 }
