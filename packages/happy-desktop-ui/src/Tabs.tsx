@@ -135,7 +135,7 @@ function tabActivityMark(tab: TabItem) {
         return (
             <span
                 aria-label={`${tab.label} is waiting for your answer`}
-                className="happy-tabs__tab-waiting"
+                className="happy-tabs__tab-question"
                 data-happy-desktop-ui="tab-awaiting-input"
                 role="img"
             >

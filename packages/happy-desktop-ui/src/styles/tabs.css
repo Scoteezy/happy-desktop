@@ -106,15 +106,20 @@
 }
 
 /*
- * A scheduled wait's clock, or an open question's mark. Highlighted with the
- * link/accent color so a tab deliberately doing nothing still stands apart from
- * an idle one, without borrowing the spinner's claim that work is happening.
+ * A scheduled wait's clock, in the muted ink the working spinner uses: the same
+ * quiet report without the motion. An open question's mark is red, because it
+ * is the one state in the lane that is waiting on the reader.
  */
-.happy-tabs__tab-waiting {
+.happy-tabs__tab-waiting,
+.happy-tabs__tab-question {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-link);
+    color: var(--text-secondary);
+}
+
+.happy-tabs__tab-question {
+    color: var(--status-error);
 }
 
 .happy-tabs__tab-dirty {

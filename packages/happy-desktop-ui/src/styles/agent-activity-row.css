@@ -139,6 +139,12 @@
     color: var(--text-secondary);
 }
 
+/* A question for the reader is the one still glyph that needs them, so it is
+   red where every other glyph — the wait's clock included — stays grey. */
+.happy-agent-activity__glyph[data-still="question"] {
+    color: var(--status-error);
+}
+
 /* The name of what the agent did. It is a label, not a link, and it is the
    first word of the row: weight carries it, so it reads at full contrast
    instead of in the interactive colour it never responded to. */

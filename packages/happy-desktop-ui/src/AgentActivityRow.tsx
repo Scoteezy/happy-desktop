@@ -810,6 +810,7 @@ function AgentToolActivity(props: {
                 aria-hidden="true"
                 className="happy-agent-activity__glyph"
                 data-happy-desktop-ui="agent-activity-glyph"
+                data-still={stillGlyph}
             >
                 {spinning ? (
                     <Spinner

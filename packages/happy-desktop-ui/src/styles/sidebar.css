@@ -706,12 +706,15 @@
     pointer-events: none;
 }
 
-/* Accent-tinted, so a row whose agent is deliberately doing nothing — waiting
-   out a schedule or on the reader's answer — still stands apart from an idle
-   one without the spinner's claim that work is happening. */
-.happy-sidebar__item-activity[data-activity="waiting"],
+/* A wait is the same quiet report as the working spinner, in the spinner's own
+   muted ink; only the motion is gone. A question is the one thing here that
+   needs the reader, so it is the one mark in red. */
+.happy-sidebar__item-activity[data-activity="waiting"] {
+    color: var(--text-secondary);
+}
+
 .happy-sidebar__item-activity[data-activity="awaitingInput"] {
-    color: var(--text-link);
+    color: var(--status-error);
 }
 
 .happy-sidebar__item-activity[data-activity="failed"] {

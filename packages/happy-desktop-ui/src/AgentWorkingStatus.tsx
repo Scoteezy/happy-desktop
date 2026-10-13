@@ -121,7 +121,7 @@ export function AgentWorkingStatus(props: AgentWorkingStatusProps) {
                 {local.awaitingInput ? (
                     <>
                         <Icon
-                            className="happy-agent-working-status__icon"
+                            className="happy-agent-working-status__icon happy-agent-working-status__icon--question"
                             name="question"
                             size={14}
                         />
