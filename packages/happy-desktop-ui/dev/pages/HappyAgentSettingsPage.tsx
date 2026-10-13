@@ -400,18 +400,12 @@ const secrets: readonly HappyAgentSecretRow[] = [
 const noop = () => undefined;
 
 const fileTiersDescription =
-    "Which changed files each project lists apart, below the rest of a change";
-
-const fileTierProjects = [
-    { id: "happy-desktop", name: "happy-desktop" },
-    { id: "happy-agent", name: "happy-agent" },
-    { id: "website", name: "website" },
-];
+    "Which changed files every project lists apart, below the rest of a change";
 
 const fileTierRows: readonly HappyAgentFileTierRow[] = [
-    { id: "tests", name: "Tests", patterns: ["*.test.ts", "*.test.tsx"], count: 3 },
-    { id: "text", name: "Text fixtures", patterns: ["*.text.ts"], count: 1 },
-    { id: "docs", name: "Docs", patterns: ["docs/", "*.md"], count: 0 },
+    { id: "tests", name: "Tests", patterns: ["*.test.ts", "*.test.tsx"] },
+    { id: "text", name: "Text fixtures", patterns: ["*.text.ts"] },
+    { id: "docs", name: "Docs", patterns: ["docs/", "*.md"] },
 ];
 
 /** The File tiers category wired to its own state, so every control answers. */
@@ -421,7 +415,6 @@ function FileTierSettingsSpecimen(props: {
     number: string;
     tiers: readonly HappyAgentFileTierRow[];
 }) {
-    const [projectId, projectIdSet] = useState("happy-desktop");
     const [tiers, tiersSet] = useState(props.tiers);
     const [added, addedSet] = useState(0);
     return (
@@ -435,7 +428,6 @@ function FileTierSettingsSpecimen(props: {
                 title="File tiers"
             >
                 <HappyAgentFileTierSettings
-                    onProjectSelect={projectIdSet}
                     onTierAdd={() => {
                         addedSet(added + 1);
                         tiersSet([
@@ -465,8 +457,6 @@ function FileTierSettingsSpecimen(props: {
                         )
                     }
                     onTierRemove={(tierId) => tiersSet(tiers.filter((tier) => tier.id !== tierId))}
-                    projectId={projectId}
-                    projects={fileTierProjects}
                     tiers={tiers}
                 />
             </HappyAgentSettingsShell>
@@ -1001,13 +991,13 @@ export function HappyAgentSettingsBlueprintPage() {
                 }}
             />
             <FileTierSettingsSpecimen
-                detail="File tiers: pick a project, then one card per tier in match order — name, patterns, reorder, remove, and what it claims of the current change"
+                detail="File tiers: one global list, a card per tier in match order — name, patterns, reorder, remove"
                 label="Happy Agent settings — file tiers"
                 number="02f"
                 tiers={fileTierRows}
             />
             <FileTierSettingsSpecimen
-                detail="File tiers for a project with none yet: every changed file is listed together"
+                detail="File tiers with none yet: every changed file is listed together"
                 label="Happy Agent settings — file tiers empty"
                 number="02f-empty"
                 tiers={[]}

@@ -4,6 +4,16 @@ import {
     type HappyAgentChangeTier,
     type HappyAgentChangeTierId,
 } from "./happyAgentChangeTiers.js";
+import {
+    happyAgentChangeTiersStoreCreate,
+    type HappyAgentChangeTiersOutput,
+} from "./happyAgentChangeTiersStore.js";
+import {
+    happyAgentViewPreferencesParse,
+    happyAgentViewPreferencesTiersUpdate,
+    happyAgentViewPreferencesUpdate,
+} from "./happyAgentViewPreferences.js";
+import type { HappyAgentGroupId } from "./happyAgentTypes.js";
 
 function tier(id: string, patterns: readonly string[]): HappyAgentChangeTier {
     return { id: id as HappyAgentChangeTierId, name: id, patterns, collapsed: false };
@@ -112,5 +122,91 @@ describe("happyAgentChangeTiersAssign", () => {
             primary: ["src/keep.test.ts"],
             tiers: [["tests", ["src/a.test.ts", ".github/ci.test.ts"]]],
         });
+    });
+});
+
+describe("change tiers in view preferences", () => {
+    it("reads the global list back as written", () => {
+        const tiers = [tier("tests", ["*.test.ts"]), tier("docs", ["docs/"])];
+        const document = happyAgentViewPreferencesParse(
+            JSON.parse(JSON.stringify({ groups: {}, changeTiers: tiers })),
+        );
+        expect(document?.changeTiers).toEqual(tiers);
+    });
+
+    it("merges per-project tiers into an empty global list once, dropping exact duplicates", () => {
+        const document = happyAgentViewPreferencesParse({
+            groups: {},
+            projects: {
+                one: { changeTiers: [tier("a", ["*.test.ts"]), tier("b", ["docs/"])] },
+                two: {
+                    changeTiers: [
+                        { ...tier("c", ["*.test.ts"]), name: "a" },
+                        { ...tier("d", ["*.test.ts", "*.spec.ts"]), name: "a" },
+                    ],
+                },
+            },
+        });
+        expect(document?.changeTiers.map((entry) => entry.id)).toEqual(["a", "b", "d"]);
+        // The per-project field is not carried forward, so the next write drops it.
+        const written = happyAgentViewPreferencesUpdate(document!, "g" as HappyAgentGroupId, {
+            panelWidth: 400,
+        });
+        expect(Object.keys(written)).toEqual(["groups", "changeTiers"]);
+        expect(written.changeTiers).toBe(document?.changeTiers);
+    });
+
+    it("ignores per-project tiers once a global list exists", () => {
+        const document = happyAgentViewPreferencesParse({
+            groups: {},
+            changeTiers: [tier("global", ["*.md"])],
+            projects: { one: { changeTiers: [tier("legacy", ["*.test.ts"])] } },
+        });
+        expect(document?.changeTiers.map((entry) => entry.id)).toEqual(["global"]);
+    });
+
+    it("bounds the stored list and drops what is not a tier", () => {
+        const document = happyAgentViewPreferencesParse({
+            groups: {},
+            changeTiers: [
+                { id: "", name: "x", patterns: [] },
+                { name: "no id", patterns: [] },
+                tier("kept", ["*.ts"]),
+                tier("kept", ["*.md"]),
+                ...Array.from({ length: 40 }, (_, index) => tier(`t${index}`, [])),
+            ],
+        });
+        expect(document?.changeTiers[0]?.patterns).toEqual(["*.ts"]);
+        expect(document?.changeTiers).toHaveLength(16);
+        expect(happyAgentViewPreferencesTiersUpdate(document!, []).changeTiers).toEqual([]);
+    });
+});
+
+describe("happyAgentChangeTiersStoreCreate", () => {
+    it("edits one global list and hands every change to its owner", () => {
+        const events: HappyAgentChangeTiersOutput[] = [];
+        const store = happyAgentChangeTiersStoreCreate({
+            initial: [tier("tests", ["*.test.ts"])],
+            output: (event) => events.push(event),
+        });
+        store.tierAdd();
+        const added = store.get().tiers[1]!;
+        store.tierNameUpdate(added.id, "Docs");
+        store.tierPatternsUpdate(added.id, ["docs/"]);
+        store.tierMove(added.id, "earlier");
+        store.tierCollapsedUpdate(added.id, true);
+        expect(store.get().tiers.map((entry) => [entry.name, entry.collapsed])).toEqual([
+            ["Docs", true],
+            ["tests", false],
+        ]);
+        expect(events.at(-1)?.tiers).toBe(store.get().tiers);
+
+        const count = events.length;
+        store.tierNameUpdate(added.id, "Docs");
+        store.tierMove(added.id, "earlier");
+        expect(events).toHaveLength(count);
+
+        store.tierRemove(added.id);
+        expect(store.get().tiers.map((entry) => entry.id)).toEqual(["tests"]);
     });
 });

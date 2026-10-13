@@ -3,7 +3,6 @@ import type {
     AppearanceStore,
     HappyAgentChangeTiersSnapshot,
     HappyAgentChangeTiersStore,
-    HappyAgentProjectGroup,
     ExperimentsStore,
     ProjectsVisibilityStore,
     GptLiveStore,
@@ -28,7 +27,6 @@ import type {
 import {
     HAPPY_AGENT_CHANGE_TIERS_MAX,
     HAPPY_AGENT_INSTRUCTIONS_MAX_BYTES,
-    happyAgentChangeTiersAssign,
     HAPPY_AGENT_SECURITY_POLICY_MAX_BYTES,
     happyAgentModelKey,
     happyAgentPermissionLabel,
@@ -285,7 +283,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     general: "How this window looks and what a new session starts with",
     "mobile-access": "This Happy Agent's connection to Happy Mobile",
     account: "Local author identity and Happy account connection",
-    "file-tiers": "Which changed files each project lists apart, below the rest of a change",
+    "file-tiers": "Which changed files every project lists apart, below the rest of a change",
     instructions: "Machine-wide agent guidance and permission-review policy",
     secrets: "Write-only environment bundles this Happy Agent can provide to agents",
     providers: "Every model provider this Happy Agent daemon knows about",
@@ -527,8 +525,8 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         clockStore?.get ?? clockStopped,
         clockStore?.get ?? clockStopped,
     );
-    // Tiers are per project and remembered by the host's workspace, so the
-    // projects offered are the host's: the same ones its sidebar lists.
+    // Tiers are one list for the window, remembered by the host's workspace;
+    // every machine's Changes is split by these.
     const changeTiersStore = host?.session?.workspace.changeTiers;
     const changeTiers = useSyncExternalStore(
         changeTiersStore?.subscribe ?? noSubscribe,
@@ -789,7 +787,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     />
                 </>
             ) : section === "file-tiers" ? (
-                fileTierSettings(host?.projects ?? [], changeTiers, changeTiersStore, unavailable)
+                fileTierSettings(changeTiers, changeTiersStore, unavailable)
             ) : section === "instructions" ? (
                 <HappyAgentInstructionsSettings
                     documents={[
@@ -1126,64 +1124,33 @@ const INSTRUCTIONS_PATH = "~/Happy/Config/AGENTS.md";
 const SECURITY_POLICY_PATH = "~/Happy/Config/SECURITY.md";
 
 const noSubscribe = () => () => undefined;
-const changeTiersEmpty: HappyAgentChangeTiersSnapshot = { projects: new Map() };
+const changeTiersEmpty: HappyAgentChangeTiersSnapshot = { tiers: [] };
 const changeTiersNone = (): HappyAgentChangeTiersSnapshot => changeTiersEmpty;
 
 /**
- * The File tiers category: a project picked from the host's projects, then that
- * project's tiers as cards. The project shown is the one last picked, or the
- * first listed. Each tier states how many of the project checkout's current
- * changes it claims, so a pattern can be seen doing what it was written to do.
+ * The File tiers category: the window's one list of tiers, as cards. The tiers
+ * are kept on this machine, so they stay editable while the host reconnects;
+ * only a host with no workspace yet leaves nothing to edit.
  */
 function fileTierSettings(
-    allProjects: readonly HappyAgentProjectGroup[],
     snapshot: HappyAgentChangeTiersSnapshot,
     store: HappyAgentChangeTiersStore | undefined,
     unavailable: string | undefined,
 ) {
-    // The catch-all home project is not a repository, so it has no change to split.
-    const projects = allProjects.filter((project) => project.kind !== "home");
-    const project =
-        projects.find((candidate) => candidate.id === snapshot.selectedProjectId) ?? projects[0];
-    const tiers = project === undefined ? [] : (snapshot.projects.get(project.id) ?? []);
-    const counts =
-        project?.changes === undefined
-            ? undefined
-            : new Map(
-                  happyAgentChangeTiersAssign(project.changes, tiers).tiers.map((entry) => [
-                      entry.tier.id,
-                      entry.files.length,
-                  ]),
-              );
-    const projectId = project?.id;
     return (
         <HappyAgentFileTierSettings
-            canAdd={store !== undefined && tiers.length < HAPPY_AGENT_CHANGE_TIERS_MAX}
-            onProjectSelect={(id) => store?.projectSelect(id)}
-            onTierAdd={() => {
-                if (projectId !== undefined) store?.tierAdd(projectId);
-            }}
-            onTierMove={(tierId, direction) => {
-                if (projectId !== undefined) store?.tierMove(projectId, tierId, direction);
-            }}
-            onTierNameChange={(tierId, name) => {
-                if (projectId !== undefined) store?.tierNameUpdate(projectId, tierId, name);
-            }}
-            onTierPatternsChange={(tierId, patterns) => {
-                if (projectId !== undefined) store?.tierPatternsUpdate(projectId, tierId, patterns);
-            }}
-            onTierRemove={(tierId) => {
-                if (projectId !== undefined) store?.tierRemove(projectId, tierId);
-            }}
-            projects={projects.map((candidate) => ({ id: candidate.id, name: candidate.name }))}
-            {...(projectId === undefined ? {} : { projectId })}
-            tiers={tiers.map((tier) => ({
+            canAdd={store !== undefined && snapshot.tiers.length < HAPPY_AGENT_CHANGE_TIERS_MAX}
+            onTierAdd={() => store?.tierAdd()}
+            onTierMove={(tierId, direction) => store?.tierMove(tierId, direction)}
+            onTierNameChange={(tierId, name) => store?.tierNameUpdate(tierId, name)}
+            onTierPatternsChange={(tierId, patterns) => store?.tierPatternsUpdate(tierId, patterns)}
+            onTierRemove={(tierId) => store?.tierRemove(tierId)}
+            tiers={snapshot.tiers.map((tier) => ({
                 id: tier.id,
                 name: tier.name,
                 patterns: tier.patterns,
-                ...(counts === undefined ? {} : { count: counts.get(tier.id) ?? 0 }),
             }))}
-            {...(unavailable === undefined ? {} : { unavailable })}
+            {...(store === undefined && unavailable !== undefined ? { unavailable } : {})}
         />
     );
 }

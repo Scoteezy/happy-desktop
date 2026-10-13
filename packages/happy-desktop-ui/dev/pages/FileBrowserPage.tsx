@@ -179,12 +179,12 @@ const tiers: readonly HappyAgentChangeTier[] = [
 /** The listing the product draws for a tiered change; see `changeTierNodes` in the app. */
 function tieredNodes(
     entries: readonly FileTreeBuildEntry[],
-    projectTiers: readonly HappyAgentChangeTier[],
+    changeTiers: readonly HappyAgentChangeTier[],
     layout: FileBrowserLayout,
 ): FileTreeNode[] {
     const arrange = (files: readonly FileTreeBuildEntry[]) =>
         layout === "tree" ? fileTreeBuild(files, untouchedAll) : fileTreeFlatten(files);
-    const assignment = happyAgentChangeTiersAssign(entries, projectTiers);
+    const assignment = happyAgentChangeTiersAssign(entries, changeTiers);
     return [
         ...arrange(assignment.primary),
         ...assignment.tiers.map(
@@ -288,7 +288,7 @@ function LiveBrowser(props: { entries: FileTreeBuildEntry[]; height?: number; wi
 /** A tiered listing whose headings fold, the way the product's do. */
 function LiveTieredBrowser() {
     const [layout, layoutSet] = useState<FileBrowserLayout>("flat");
-    const [projectTiers, projectTiersSet] = useState(tiers);
+    const [changeTiers, changeTiersSet] = useState(tiers);
     const [query, querySet] = useState("");
     // A query narrows the files before they are split, so a tier whose files
     // all fail to match leaves with them.
@@ -298,12 +298,12 @@ function LiveTieredBrowser() {
             count={matched.length}
             emptyLabel={query === "" ? undefined : `Nothing matches “${query}”.`}
             layout={layout}
-            nodes={tieredNodes(matched, projectTiers, layout)}
+            nodes={tieredNodes(matched, changeTiers, layout)}
             searchQuery={query}
             onLayoutChange={layoutSet}
             onSearchQueryChange={querySet}
             onToggle={(id, expanded) =>
-                projectTiersSet((current) =>
+                changeTiersSet((current) =>
                     current.map((entry) =>
                         `tier:${entry.id}` === id ? { ...entry, collapsed: !expanded } : entry,
                     ),

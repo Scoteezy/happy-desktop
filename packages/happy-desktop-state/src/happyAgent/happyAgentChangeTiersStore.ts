@@ -3,74 +3,46 @@ import {
     type HappyAgentChangeTier,
     type HappyAgentChangeTierId,
 } from "./happyAgentChangeTiers.js";
-import type { HappyAgentProjectId } from "./happyAgentTypes.js";
 
 /**
- * Every project's change tiers, and the project Settings is showing them for.
+ * The change tiers every Changes listing is split by.
  *
- * Tiers belong to a project rather than to one checkout: which files count as
- * secondary is a fact about how the repository is laid out — its tests are
- * named the same way in every worktree — so every worktree of a project lists
- * its changes with the same tiers.
+ * One list for every project, node, and folder rather than one per project:
+ * which files count as secondary is a habit of the reader's — snapshots and
+ * fixtures are named the same way wherever they work — and a tier whose
+ * patterns match nothing in a listing is simply not shown there.
  */
 export interface HappyAgentChangeTiersSnapshot {
-    /** Each project's tiers in match order. A project absent here has none. */
-    readonly projects: ReadonlyMap<HappyAgentProjectId, readonly HappyAgentChangeTier[]>;
-    /**
-     * The project the File tiers settings were last pointed at. Absent until
-     * someone picks one, when Settings shows the first project it lists.
-     */
-    readonly selectedProjectId?: HappyAgentProjectId;
+    /** The tiers in match order: a changed file goes to the first one that matches it. */
+    readonly tiers: readonly HappyAgentChangeTier[];
 }
 
 /** Which way a tier moves in the match order. */
 export type HappyAgentChangeTierMoveDirection = "earlier" | "later";
 
-/**
- * What the store tells its owner. Only a project's tiers changing is reported:
- * that is what is worth keeping, while which project Settings shows is not.
- */
+/** What the store tells its owner: the tiers as they now stand, to be kept. */
 export type HappyAgentChangeTiersOutput = {
     readonly type: "tiersUpdated";
-    readonly projectId: HappyAgentProjectId;
     readonly tiers: readonly HappyAgentChangeTier[];
 };
 
 export interface HappyAgentChangeTiersStore {
     get(): HappyAgentChangeTiersSnapshot;
     subscribe(listener: () => void): () => void;
-    /** Points the File tiers settings at one project. */
-    projectSelect(projectId: HappyAgentProjectId): void;
     /** Appends a new, unnamed tier with no patterns, which therefore claims nothing yet. */
-    tierAdd(projectId: HappyAgentProjectId): void;
-    tierRemove(projectId: HappyAgentProjectId, tierId: HappyAgentChangeTierId): void;
-    tierNameUpdate(
-        projectId: HappyAgentProjectId,
-        tierId: HappyAgentChangeTierId,
-        name: string,
-    ): void;
-    tierPatternsUpdate(
-        projectId: HappyAgentProjectId,
-        tierId: HappyAgentChangeTierId,
-        patterns: readonly string[],
-    ): void;
+    tierAdd(): void;
+    tierRemove(tierId: HappyAgentChangeTierId): void;
+    tierNameUpdate(tierId: HappyAgentChangeTierId, name: string): void;
+    tierPatternsUpdate(tierId: HappyAgentChangeTierId, patterns: readonly string[]): void;
     /** Moves a tier one place in the match order; the first tier that matches a file wins. */
-    tierMove(
-        projectId: HappyAgentProjectId,
-        tierId: HappyAgentChangeTierId,
-        direction: HappyAgentChangeTierMoveDirection,
-    ): void;
-    /** Folds a tier's section shut in the listing, or opens it. */
-    tierCollapsedUpdate(
-        projectId: HappyAgentProjectId,
-        tierId: HappyAgentChangeTierId,
-        collapsed: boolean,
-    ): void;
+    tierMove(tierId: HappyAgentChangeTierId, direction: HappyAgentChangeTierMoveDirection): void;
+    /** Folds a tier's section shut in every listing, or opens it. */
+    tierCollapsedUpdate(tierId: HappyAgentChangeTierId, collapsed: boolean): void;
 }
 
 export interface HappyAgentChangeTiersStoreInput {
     /** What the owner remembered from an earlier run. */
-    readonly initial?: ReadonlyMap<HappyAgentProjectId, readonly HappyAgentChangeTier[]>;
+    readonly initial?: readonly HappyAgentChangeTier[];
     readonly output?: (event: HappyAgentChangeTiersOutput) => void;
 }
 
@@ -79,54 +51,35 @@ function tierIdCreate(): HappyAgentChangeTierId {
     return `tier_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}` as HappyAgentChangeTierId;
 }
 
-const TIERS_NONE: readonly HappyAgentChangeTier[] = [];
-
 /**
  * Creates the change tiers store. It opens nothing: what was remembered is
- * handed in, and every change to a project's tiers is handed back out through
- * `output` for the owner to keep.
+ * handed in, and every change to the tiers is handed back out through `output`
+ * for the owner to keep.
  */
 export function happyAgentChangeTiersStoreCreate(
     input: HappyAgentChangeTiersStoreInput = {},
 ): HappyAgentChangeTiersStore {
     const listeners = new Set<() => void>();
     const output = input.output ?? (() => undefined);
-    let snapshot: HappyAgentChangeTiersSnapshot = { projects: input.initial ?? new Map() };
+    let snapshot: HappyAgentChangeTiersSnapshot = { tiers: input.initial ?? [] };
 
-    const publish = (next: HappyAgentChangeTiersSnapshot): void => {
-        snapshot = next;
+    const tiersWrite = (tiers: readonly HappyAgentChangeTier[]): void => {
+        snapshot = { tiers };
         for (const listener of listeners) listener();
-    };
-
-    const tiersOf = (projectId: HappyAgentProjectId): readonly HappyAgentChangeTier[] =>
-        snapshot.projects.get(projectId) ?? TIERS_NONE;
-
-    const tiersWrite = (
-        projectId: HappyAgentProjectId,
-        tiers: readonly HappyAgentChangeTier[],
-    ): void => {
-        const projects = new Map(snapshot.projects);
-        if (tiers.length === 0) projects.delete(projectId);
-        else projects.set(projectId, tiers);
-        publish({ ...snapshot, projects });
-        output({ type: "tiersUpdated", projectId, tiers });
+        output({ type: "tiersUpdated", tiers });
     };
 
     /** Replaces one tier, publishing nothing when the change changes nothing. */
     const tierChange = (
-        projectId: HappyAgentProjectId,
         tierId: HappyAgentChangeTierId,
         change: (tier: HappyAgentChangeTier) => HappyAgentChangeTier,
     ): void => {
-        const tiers = tiersOf(projectId);
+        const tiers = snapshot.tiers;
         const index = tiers.findIndex((tier) => tier.id === tierId);
         if (index === -1) return;
         const next = change(tiers[index]!);
         if (next === tiers[index]) return;
-        tiersWrite(
-            projectId,
-            tiers.map((tier, position) => (position === index ? next : tier)),
-        );
+        tiersWrite(tiers.map((tier, position) => (position === index ? next : tier)));
     };
 
     return {
@@ -135,49 +88,43 @@ export function happyAgentChangeTiersStoreCreate(
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
-        projectSelect(projectId) {
-            if (snapshot.selectedProjectId === projectId) return;
-            publish({ ...snapshot, selectedProjectId: projectId });
-        },
-        tierAdd(projectId) {
-            const tiers = tiersOf(projectId);
+        tierAdd() {
+            const tiers = snapshot.tiers;
             if (tiers.length >= HAPPY_AGENT_CHANGE_TIERS_MAX) return;
-            tiersWrite(projectId, [
+            tiersWrite([
                 ...tiers,
                 { id: tierIdCreate(), name: "", patterns: [], collapsed: false },
             ]);
         },
-        tierRemove(projectId, tierId) {
-            const tiers = tiersOf(projectId);
+        tierRemove(tierId) {
+            const tiers = snapshot.tiers;
             const remaining = tiers.filter((tier) => tier.id !== tierId);
             if (remaining.length === tiers.length) return;
-            tiersWrite(projectId, remaining);
+            tiersWrite(remaining);
         },
-        tierNameUpdate(projectId, tierId, name) {
-            tierChange(projectId, tierId, (tier) =>
-                tier.name === name ? tier : { ...tier, name },
-            );
+        tierNameUpdate(tierId, name) {
+            tierChange(tierId, (tier) => (tier.name === name ? tier : { ...tier, name }));
         },
-        tierPatternsUpdate(projectId, tierId, patterns) {
-            tierChange(projectId, tierId, (tier) =>
+        tierPatternsUpdate(tierId, patterns) {
+            tierChange(tierId, (tier) =>
                 tier.patterns.length === patterns.length &&
                 tier.patterns.every((pattern, index) => pattern === patterns[index])
                     ? tier
                     : { ...tier, patterns: [...patterns] },
             );
         },
-        tierMove(projectId, tierId, direction) {
-            const tiers = tiersOf(projectId);
+        tierMove(tierId, direction) {
+            const tiers = snapshot.tiers;
             const index = tiers.findIndex((tier) => tier.id === tierId);
             const target = direction === "earlier" ? index - 1 : index + 1;
             if (index === -1 || target < 0 || target >= tiers.length) return;
             const next = [...tiers];
             next[index] = tiers[target]!;
             next[target] = tiers[index]!;
-            tiersWrite(projectId, next);
+            tiersWrite(next);
         },
-        tierCollapsedUpdate(projectId, tierId, collapsed) {
-            tierChange(projectId, tierId, (tier) =>
+        tierCollapsedUpdate(tierId, collapsed) {
+            tierChange(tierId, (tier) =>
                 tier.collapsed === collapsed ? tier : { ...tier, collapsed },
             );
         },

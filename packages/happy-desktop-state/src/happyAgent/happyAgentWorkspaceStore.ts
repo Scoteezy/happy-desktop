@@ -36,7 +36,7 @@ import type { HappyAgentRecentTabMemory } from "./happyAgentWorkspaceMemory.js";
 import {
     HAPPY_AGENT_VIEW_PREFERENCES_EMPTY,
     happyAgentViewPreferencesParse,
-    happyAgentViewPreferencesProjectTiersUpdate,
+    happyAgentViewPreferencesTiersUpdate,
     happyAgentViewPreferencesUpdate,
     type HappyAgentGroupViewPreferences,
     type HappyAgentViewPreferencesDocument,
@@ -62,7 +62,6 @@ import {
     happyAgentChangeTiersStoreCreate,
     type HappyAgentChangeTiersStore,
 } from "./happyAgentChangeTiersStore.js";
-import type { HappyAgentChangeTier } from "./happyAgentChangeTiers.js";
 import {
     happyAgentPanelStoreCreate,
     type HappyAgentPanelStore,
@@ -1397,10 +1396,11 @@ export interface HappyAgentWorkspaceStore {
      */
     readonly panel: HappyAgentPanelStore;
     /**
-     * The sections Changes splits secondary files into, per project. A store of
-     * its own because editing a tier's patterns is typed a keystroke at a time
-     * and has nothing to do with the rest of the workspace; it is remembered
-     * with the window's other view preferences.
+     * The sections Changes splits secondary files into, one list for every
+     * listing. A store of its own because editing a tier's patterns is typed a
+     * keystroke at a time and has nothing to do with the rest of the workspace;
+     * it is remembered with this connection's other view preferences. The
+     * window reads the host's: every node's Changes is split by those.
      */
     readonly changeTiers: HappyAgentChangeTiersStore;
     /**
@@ -2325,20 +2325,9 @@ export function happyAgentWorkspaceStoreCreate(
         }
     };
     const changeTiers: HappyAgentChangeTiersStore = happyAgentChangeTiersStoreCreate({
-        initial: new Map(
-            Object.entries(viewPreferences.projects).flatMap(
-                ([projectId, project]): [HappyAgentProjectId, readonly HappyAgentChangeTier[]][] =>
-                    project.changeTiers === undefined
-                        ? []
-                        : [[projectId as HappyAgentProjectId, project.changeTiers]],
-            ),
-        ),
+        initial: viewPreferences.changeTiers,
         output(event) {
-            viewPreferences = happyAgentViewPreferencesProjectTiersUpdate(
-                viewPreferences,
-                event.projectId,
-                event.tiers,
-            );
+            viewPreferences = happyAgentViewPreferencesTiersUpdate(viewPreferences, event.tiers);
             try {
                 deps.viewPreferences?.write(viewPreferences);
             } catch {

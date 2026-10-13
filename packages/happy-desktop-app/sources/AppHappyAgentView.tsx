@@ -77,6 +77,7 @@ import type {
     HappyAgentGroupLifecycle,
     HappyAgentChangeTier,
     HappyAgentChangeTierId,
+    HappyAgentChangeTiersSnapshot,
     HappyAgentChangeTiersStore,
     HappyAgentProjectGroup,
     HappyAgentProjectId,
@@ -692,12 +693,6 @@ export interface AppHappyAgentViewProps {
  */
 interface OpenGroup {
     readonly id: HappyAgentGroupId;
-    /**
-     * The project this checkout belongs to — itself, or the project a worktree
-     * was made from. Absent for a bot's or a task's own folder, which belongs
-     * to no project and so has no tiers to list its changes by.
-     */
-    readonly projectId?: HappyAgentProjectId;
     /** Bots and subtasks expose one pinned chat, regardless of their shared checkout. */
     readonly singleConversationId?: string;
     readonly name: string;
@@ -1578,13 +1573,11 @@ function openGroupFind(
             ? tasks[0]
             : undefined);
     if (task) {
-        const owner = projects.find((project) =>
-            project.worktrees.some((entry) => entry.id === groupId),
-        );
-        const worktree = owner?.worktrees.find((entry) => entry.id === groupId);
+        const worktree = projects
+            .flatMap((project) => project.worktrees)
+            .find((entry) => entry.id === groupId);
         return {
             id: task.workspaceId,
-            ...(owner === undefined ? {} : { projectId: owner.id }),
             singleConversationId: task.conversation.id,
             name: task.conversation.title,
             home: false,
@@ -1629,7 +1622,6 @@ function openGroupFind(
         if (project.id === groupId)
             return {
                 id: project.id,
-                projectId: project.id,
                 name: project.name,
                 home: project.kind === "home",
                 conversations: project.conversations,
@@ -1645,7 +1637,6 @@ function openGroupFind(
             if (worktree.id === groupId)
                 return {
                     id: worktree.id,
-                    projectId: project.id,
                     name: worktree.name,
                     home: false,
                     conversations: worktree.conversations,
@@ -2399,6 +2390,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         updateStore.get,
     );
     const updateHost = hostHappyAgent(directory);
+    // Tiers are one list for the window, remembered by the host: every
+    // machine's Changes is split by the same tiers Settings shows.
+    const changeTiersStore = updateHost?.session?.workspace.changeTiers;
     // An update under way owns the slot: the window keeps working beside it,
     // and the offer comes back only once it has finished and been cleared.
     const sidebarUpdate = updateProgress ? (
@@ -3068,6 +3062,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     titleShimmerEnabled={titleShimmerEnabled}
                     viewerId={viewerId}
                     workspace={active.session.workspace}
+                    {...(changeTiersStore === undefined ? {} : { changeTiers: changeTiersStore })}
                     {...(artifactsAvailable && active.session.artifacts
                         ? {
                               artifacts: active.session.artifacts,
@@ -4132,6 +4127,12 @@ interface HappyAgentWorkspaceSurfaceProps {
     /** Joined conversation-list + active-conversation product store. */
     workspace: HappyAgentWorkspaceStore;
     /**
+     * The tiers every Changes listing is split by. The host's, whichever
+     * machine this workspace is on: tiers are one list for the whole window,
+     * and Settings edits the host's.
+     */
+    changeTiers?: HappyAgentChangeTiersStore;
+    /**
      * The Happy Agent's projects, for the surfaces that address a project the window is
      * not currently open on — the settings dialog reached from any row.
      */
@@ -4979,10 +4980,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         {...(openGroup?.changesStatus === undefined
                             ? {}
                             : { changesStatus: openGroup.changesStatus })}
-                        changeTiers={props.workspace.changeTiers}
-                        {...(openGroup?.projectId === undefined
+                        {...(props.changeTiers === undefined
                             ? {}
-                            : { projectId: openGroup.projectId })}
+                            : { changeTiers: props.changeTiers })}
                         expanded={workspace.fileTreeExpanded}
                         collapsed={workspace.fileTreeCollapsed}
                         layout={workspace.fileLayout}
@@ -7565,7 +7565,9 @@ function workspaceFileTreeNodes(
     });
 }
 
-const CHANGE_TIERS_NONE: readonly HappyAgentChangeTier[] = [];
+const changeTiersEmpty: HappyAgentChangeTiersSnapshot = { tiers: [] };
+const changeTiersNone = (): HappyAgentChangeTiersSnapshot => changeTiersEmpty;
+const changeTiersNoSubscribe = (): (() => void) => () => undefined;
 
 /**
  * The Changes listing with its tiers: the files no tier claims, laid out as the
@@ -7626,11 +7628,10 @@ function HappyAgentPanelBody(props: {
     /**
      * The tiers Changes lists secondary files under. Read here rather than by
      * the workspace surface, so editing a tier's patterns redraws the listing
-     * it regroups and nothing around it.
+     * it regroups and nothing around it. Absent while the host has no
+     * workspace to remember them in, when every change is listed together.
      */
-    changeTiers: HappyAgentChangeTiersStore;
-    /** The project the open checkout belongs to, whose tiers apply; absent, none do. */
-    projectId?: HappyAgentProjectId;
+    changeTiers?: HappyAgentChangeTiersStore;
     closeShortcut?: KeyboardShortcut;
     expanded: ReadonlySet<string>;
     collapsed: ReadonlySet<string>;
@@ -7716,16 +7717,12 @@ function HappyAgentPanelBody(props: {
         () => new Map(props.changes.map((change) => [change.path, change])),
         [props.changes],
     );
-    const changeTiersSnapshot = useSyncExternalStore(
-        props.changeTiers.subscribe,
-        props.changeTiers.get,
-        props.changeTiers.get,
+    const changeTiersStore = props.changeTiers;
+    const { tiers } = useSyncExternalStore(
+        changeTiersStore?.subscribe ?? changeTiersNoSubscribe,
+        changeTiersStore?.get ?? changeTiersNone,
+        changeTiersStore?.get ?? changeTiersNone,
     );
-    const projectId = props.projectId;
-    const tiers =
-        projectId === undefined
-            ? CHANGE_TIERS_NONE
-            : (changeTiersSnapshot.projects.get(projectId) ?? CHANGE_TIERS_NONE);
     // The changed files split into the reader's tiers: the ones no tier claims
     // first, then one section per tier that claimed anything. A query narrows
     // the entries before they are split, so a section whose files all fail to
@@ -8031,12 +8028,8 @@ function HappyAgentPanelBody(props: {
                                 // remembered with the tier rather than with the
                                 // directories of this checkout.
                                 const tierId = all ? undefined : changeListing.sections.get(id);
-                                if (tierId !== undefined && projectId !== undefined)
-                                    props.changeTiers.tierCollapsedUpdate(
-                                        projectId,
-                                        tierId,
-                                        !expanded,
-                                    );
+                                if (tierId !== undefined && changeTiersStore !== undefined)
+                                    changeTiersStore.tierCollapsedUpdate(tierId, !expanded);
                                 else props.onToggle(id, expanded);
                             }}
                             scope={props.scope}

@@ -3,7 +3,7 @@ import {
     type HappyAgentChangeTier,
     type HappyAgentChangeTierId,
 } from "./happyAgentChangeTiers.js";
-import type { HappyAgentGroupId, HappyAgentProjectId } from "./happyAgentTypes.js";
+import type { HappyAgentGroupId } from "./happyAgentTypes.js";
 import type { HappyAgentFileLayout, HappyAgentFileScope } from "./happyAgentWorkspaceStore.js";
 
 /**
@@ -40,20 +40,8 @@ export interface HappyAgentGroupViewPreferences {
 }
 
 /**
- * How a whole project is looked at, whichever of its checkouts is open.
- *
- * Kept apart from the per-checkout record because these describe the
- * repository rather than one working tree of it: the files a reader counts as
- * secondary are named the same way in every worktree.
- */
-export interface HappyAgentProjectViewPreferences {
-    /** Sections the Changes listing splits secondary files into, in match order. */
-    readonly changeTiers?: readonly HappyAgentChangeTier[];
-}
-
-/**
- * Every checkout this window remembers the arrangement of, by group id, and
- * every project, by project id.
+ * Every checkout this window remembers the arrangement of, by group id, and the
+ * change tiers every Changes listing is split by.
  *
  * Keyed per group because that is the thing being arranged: a wide panel suits
  * the checkout whose diffs are wide, and forcing that width onto every other
@@ -61,7 +49,13 @@ export interface HappyAgentProjectViewPreferences {
  */
 export interface HappyAgentViewPreferencesDocument {
     readonly groups: Readonly<Record<string, HappyAgentGroupViewPreferences>>;
-    readonly projects: Readonly<Record<string, HappyAgentProjectViewPreferences>>;
+    /**
+     * Sections the Changes listing splits secondary files into, in match order.
+     * One list for every project rather than one per project: which files
+     * someone counts as secondary is a habit of the reader's, and a pattern that
+     * matches nothing in a project simply leaves its tier hidden there.
+     */
+    readonly changeTiers: readonly HappyAgentChangeTier[];
 }
 
 /**
@@ -92,9 +86,6 @@ const GROUP_MAX = 256;
  * they are the arrangement the reader is actually looking at.
  */
 const FILE_TREE_PATH_MAX = 512;
-
-/** How many projects one window keeps tiers for; see `GROUP_MAX`. */
-const PROJECT_MAX = 256;
 
 /** Bounds on one stored tier, so a record read back stays a record. */
 const TIER_PATTERNS_MAX = 128;
@@ -193,20 +184,41 @@ function tierParse(value: unknown): HappyAgentChangeTier | undefined {
     };
 }
 
-function projectParse(value: unknown): HappyAgentProjectViewPreferences | undefined {
-    if (typeof value !== "object" || value === null) return undefined;
-    const raw = value as Record<string, unknown>;
-    if (!Array.isArray(raw.changeTiers)) return undefined;
-    const seen = new Set<string>();
-    const changeTiers = raw.changeTiers.flatMap((entry) => {
+/** Stored tiers, in order, keeping the first of any two that share an id. */
+function tiersParse(value: unknown, into: HappyAgentChangeTier[]): void {
+    if (!Array.isArray(value)) return;
+    for (const entry of value) {
         const tier = tierParse(entry);
-        if (tier === undefined || seen.has(tier.id)) return [];
-        seen.add(tier.id);
-        return [tier];
-    });
-    return changeTiers.length === 0
-        ? undefined
-        : { changeTiers: changeTiers.slice(0, HAPPY_AGENT_CHANGE_TIERS_MAX) };
+        if (tier !== undefined && !into.some((kept) => kept.id === tier.id)) into.push(tier);
+    }
+}
+
+/** Whether two tiers would sort files identically under the same heading. */
+function tierSame(left: HappyAgentChangeTier, right: HappyAgentChangeTier): boolean {
+    return (
+        left.name === right.name &&
+        left.patterns.length === right.patterns.length &&
+        left.patterns.every((pattern, index) => pattern === right.patterns[index])
+    );
+}
+
+/**
+ * The tiers a record written while tiers were kept per project held, merged
+ * into one list in the order the record holds them. A tier repeated across
+ * projects — the same name over the same patterns — is kept once.
+ */
+function legacyTiersParse(projects: unknown): readonly HappyAgentChangeTier[] {
+    if (typeof projects !== "object" || projects === null) return [];
+    const merged: HappyAgentChangeTier[] = [];
+    for (const project of Object.values(projects as Record<string, unknown>)) {
+        if (typeof project !== "object" || project === null) continue;
+        const tiers: HappyAgentChangeTier[] = [];
+        tiersParse((project as { changeTiers?: unknown }).changeTiers, tiers);
+        for (const tier of tiers)
+            if (!merged.some((kept) => kept.id === tier.id || tierSame(kept, tier)))
+                merged.push(tier);
+    }
+    return merged;
 }
 
 export function happyAgentViewPreferencesParse(
@@ -220,16 +232,14 @@ export function happyAgentViewPreferencesParse(
         const group = groupParse(entry);
         if (group) parsed[id] = group;
     }
-    // Absent in a record written before projects were remembered at all, which
-    // is the same as no project having said anything.
-    const projects = (value as { projects?: unknown }).projects;
-    const parsedProjects: Record<string, HappyAgentProjectViewPreferences> = {};
-    if (typeof projects === "object" && projects !== null)
-        for (const [id, entry] of Object.entries(projects as Record<string, unknown>)) {
-            const project = projectParse(entry);
-            if (project) parsedProjects[id] = project;
-        }
-    return { groups: parsed, projects: parsedProjects };
+    const changeTiers: HappyAgentChangeTier[] = [];
+    tiersParse((value as { changeTiers?: unknown }).changeTiers, changeTiers);
+    // A record from before tiers were global kept them per project. Their
+    // tiers become the global list once, while it is still empty; the next
+    // write leaves the per-project field out, so it is never read again.
+    if (changeTiers.length === 0)
+        changeTiers.push(...legacyTiersParse((value as { projects?: unknown }).projects));
+    return { groups: parsed, changeTiers: changeTiers.slice(0, HAPPY_AGENT_CHANGE_TIERS_MAX) };
 }
 
 /**
@@ -265,30 +275,18 @@ export function happyAgentViewPreferencesUpdate(
     const ids = Object.keys(groups);
     if (ids.length > GROUP_MAX)
         for (const id of ids.slice(0, ids.length - GROUP_MAX)) delete groups[id];
-    return { groups, projects: document.projects };
+    return { groups, changeTiers: document.changeTiers };
 }
 
-/**
- * The remembered arrangements with one project's tiers replaced. A project left
- * with no tiers is dropped, and the cap lets go of the least recently written
- * project first, exactly as it does for checkouts.
- */
-export function happyAgentViewPreferencesProjectTiersUpdate(
+/** The remembered arrangements with the change tiers replaced. */
+export function happyAgentViewPreferencesTiersUpdate(
     document: HappyAgentViewPreferencesDocument,
-    projectId: HappyAgentProjectId,
     changeTiers: readonly HappyAgentChangeTier[],
 ): HappyAgentViewPreferencesDocument {
-    const projects: Record<string, HappyAgentProjectViewPreferences> = { ...document.projects };
-    // Deleted first so a rewritten project moves to the newest end of the record.
-    delete projects[projectId];
-    if (changeTiers.length > 0) projects[projectId] = { changeTiers };
-    const ids = Object.keys(projects);
-    if (ids.length > PROJECT_MAX)
-        for (const id of ids.slice(0, ids.length - PROJECT_MAX)) delete projects[id];
-    return { groups: document.groups, projects };
+    return { groups: document.groups, changeTiers };
 }
 
 export const HAPPY_AGENT_VIEW_PREFERENCES_EMPTY: HappyAgentViewPreferencesDocument = {
     groups: {},
-    projects: {},
+    changeTiers: [],
 };

@@ -765,7 +765,6 @@ export {
 export {
     HappyAgentFileTierSettings,
     type HappyAgentFileTierMoveDirection,
-    type HappyAgentFileTierProject,
     type HappyAgentFileTierRow,
     type HappyAgentFileTierSettingsProps,
 } from "./pages/settings/HappyAgentFileTierSettings";
