@@ -5802,6 +5802,8 @@ export function happyAgentWorkspaceStoreCreate(
                     workspaceFilesDirectoryLoadSchedule(request.groupId, request.path, {
                         refresh: true,
                     });
+                // What was just listed may hold folders already standing open.
+                if (!failed) workspaceFilesOpenedEnsure(request.groupId);
             }
             workspaceFilesDirectoryLoadPump();
         };
@@ -5887,6 +5889,42 @@ export function happyAgentWorkspaceStoreCreate(
     };
 
     /**
+     * Reads every folder the reader can see standing open that has no listing
+     * yet. Which folders are open is remembered per checkout, so a reload, a
+     * return from another checkout, a decision made while the panel showed only
+     * the changes, or a folder that has only just appeared on disk can all show
+     * one open with nothing read behind it; a hover would be the only thing to
+     * read it then. A folder whose read failed is listed already, as failed, so
+     * this never retries it: that stays the reader's call. Nor does it promote a
+     * read already waiting in the queue over whatever the reader asked for last.
+     */
+    function workspaceFilesOpenedEnsure(groupId: HappyAgentGroupId): void {
+        // The open set belongs to the addressed checkout, and only the listing
+        // of that same checkout, shown in All Files, is drawn with it.
+        if (
+            addressedGroupId !== groupId ||
+            workspaceFilesGroupId !== groupId ||
+            fileScopeOf(groupId) !== "all"
+        )
+            return;
+        const visit = (path: string): void => {
+            for (const entry of workspaceFiles?.directories.get(path)?.entries ?? []) {
+                if (entry.kind !== "directory" || !fileTreeExpanded.has(entry.path)) continue;
+                if (workspaceFiles?.directories.has(entry.path)) visit(entry.path);
+                else if (
+                    !workspaceFileTreeLoadQueue.some(
+                        (request) =>
+                            request.generation === workspaceFilesGeneration &&
+                            request.path === entry.path,
+                    )
+                )
+                    workspaceFilesDirectoryEnsure(groupId, entry.path);
+            }
+        };
+        visit("");
+    }
+
+    /**
      * Re-reads every listed directory a disk change touched. The daemon names a
      * changed entry by its own path, and that entry is a row of its parent's
      * listing, so the parent is what reads again; a change without paths
@@ -5915,11 +5953,16 @@ export function happyAgentWorkspaceStoreCreate(
     /**
      * Opens the all-files tree at its root once per group. Switching sessions in
      * one checkout reuses every branch already materialized; switching checkouts
-     * retires in-flight pages and starts with one root read.
+     * retires in-flight pages and starts with one root read. A root already
+     * listed is still walked for open folders, because which ones stand open can
+     * change while the panel shows only the changes.
      */
     const workspaceFilesEnsure = (groupId: HappyAgentGroupId): void => {
         const root = workspaceFiles?.directories.get("");
-        if (workspaceFilesGroupId === groupId && root !== undefined && root.error !== true) return;
+        if (workspaceFilesGroupId === groupId && root !== undefined && root.error !== true) {
+            workspaceFilesOpenedEnsure(groupId);
+            return;
+        }
         if (workspaceFilesGroupId !== groupId) {
             workspaceFilesGroupId = groupId;
             workspaceFiles = { directories: new Map() };
@@ -6578,8 +6621,6 @@ export function happyAgentWorkspaceStoreCreate(
                 fileCommentsSwitch(addressedGroupId, groupId);
             }
             releaseGroup();
-            if (groupId !== undefined && fileScopeOf(groupId) === "all")
-                workspaceFilesEnsure(groupId);
             if (groupId !== undefined) {
                 client.memory.recentTabRemember({
                     type: "session",
@@ -6588,6 +6629,9 @@ export function happyAgentWorkspaceStoreCreate(
                 });
                 addressedGroupId = groupId;
                 addressedGroupSeenUpdate();
+                // After the address, so the folders this checkout left open
+                // are the ones its listing is read for.
+                if (fileScopeOf(groupId) === "all") workspaceFilesEnsure(groupId);
                 groupRestore(groupId);
                 // Restoration reopens the group's tabs, but this address names
                 // the session. A file address applies this action first and
@@ -7507,8 +7551,12 @@ export function happyAgentWorkspaceStoreCreate(
                     fileTreeOpened: [...opened],
                     fileTreeClosed: [...closed],
                 });
-            if (expanded && groupId !== undefined && fileScopeOf(groupId) === "all")
+            if (expanded && groupId !== undefined && fileScopeOf(groupId) === "all") {
                 workspaceFilesDirectoryEnsure(groupId, path);
+                // Folders inside it that were left open show at once, so they
+                // are read now too, not only when this one's listing changes.
+                workspaceFilesOpenedEnsure(groupId);
+            }
             recompute();
         },
         fileTreeDirectoryPrefetch(path) {

@@ -5,12 +5,18 @@ import type {
 } from "./happyAgentClient.js";
 import type {
     HappyAgentGroupId,
+    HappyAgentSessionId,
     HappyAgentWorkspaceFileTreeEntry,
     HappyAgentWorkspaceFileTreePage,
 } from "./happyAgentTypes.js";
+import type {
+    HappyAgentViewPreferencesDocument,
+    HappyAgentViewPreferencesPersistence,
+} from "./happyAgentViewPreferences.js";
 import { happyAgentWorkspaceStoreCreate } from "./happyAgentWorkspaceStore.js";
 
 const GROUP = "prj_hackathon" as HappyAgentGroupId;
+const OTHER = "prj_elsewhere" as HappyAgentGroupId;
 
 /**
  * A checkout on disk that the test edits, read through the one transport call
@@ -20,6 +26,7 @@ const GROUP = "prj_hackathon" as HappyAgentGroupId;
 function checkout() {
     const directories = new Map<string, HappyAgentWorkspaceFileTreeEntry[]>([["", []]]);
     const reads: string[] = [];
+    const failing = new Set<string>();
     let held: Array<() => void> | undefined;
     let changed: ((change: HappyAgentWorkspaceFilesChanged) => void) | undefined;
     const entry = (path: string, kind: "file" | "directory"): HappyAgentWorkspaceFileTreeEntry => ({
@@ -29,6 +36,7 @@ function checkout() {
     });
     return {
         reads,
+        failing,
         add(path: string, kind: "file" | "directory" = "file"): void {
             const slash = path.lastIndexOf("/");
             const parent = slash < 0 ? "" : path.slice(0, slash);
@@ -51,6 +59,7 @@ function checkout() {
             // What the folder held when the read reached it, not when it returned.
             const entries = [...(directories.get(path) ?? [])];
             if (held) await new Promise<void>((resume) => held!.push(resume));
+            if (failing.has(path)) throw new Error(`cannot read ${path}`);
             return { entries };
         },
         subscribe(listener: (change: HappyAgentWorkspaceFilesChanged) => void): () => void {
@@ -79,15 +88,33 @@ function inert(): unknown {
     });
 }
 
-function store(disk: ReturnType<typeof checkout>) {
-    const loading = { type: "loading" } as const;
-    const list = {
-        projects: loading,
-        bots: [],
-        botsCreating: [],
-        archivedSessions: [],
-        revision: 0,
+/** The window's storage, which outlives every store that reads and writes it. */
+function storage(): HappyAgentViewPreferencesPersistence {
+    let document: HappyAgentViewPreferencesDocument | undefined;
+    return {
+        read: () => document,
+        write: (next) => {
+            document = next;
+        },
     };
+}
+
+function store(
+    disk: ReturnType<typeof checkout>,
+    viewPreferences: HappyAgentViewPreferencesPersistence = storage(),
+) {
+    const loading = { type: "loading" } as const;
+    const list = new Proxy(
+        {
+            projects: loading,
+            bots: [],
+            tasks: [],
+            botsCreating: [],
+            archivedSessions: [],
+            revision: 0,
+        } as Record<PropertyKey, unknown>,
+        { get: (target, property) => (property in target ? target[property] : inert()) },
+    );
     const client = new Proxy(
         {
             models: {
@@ -103,6 +130,7 @@ function store(disk: ReturnType<typeof checkout>) {
                             property in target ? target[property as keyof typeof target] : inert(),
                     },
                 ),
+            chat: () => new Promise(() => undefined),
             openInTargetsRead: () => new Promise(() => undefined),
             workspaceFileTreeRead: (_group: HappyAgentGroupId, path: string) => disk.read(path),
             workspaceFilesSubscribe: (
@@ -111,7 +139,7 @@ function store(disk: ReturnType<typeof checkout>) {
         } as Record<PropertyKey, unknown>,
         { get: (target, property) => (property in target ? target[property] : inert()) },
     ) as unknown as HappyAgentWorkspaceClient;
-    const workspace = happyAgentWorkspaceStoreCreate(client);
+    const workspace = happyAgentWorkspaceStoreCreate(client, { viewPreferences });
     const unsubscribe = workspace.subscribe(() => undefined);
     return {
         workspace,
@@ -213,6 +241,125 @@ describe("All files follows the checkout on disk", () => {
 
         expect(names()).toEqual(["src", "top.md"]);
         expect(names("src")).toEqual(["src/deep.ts"]);
+        unsubscribe();
+    });
+});
+
+describe("All files reads the folders it shows open", () => {
+    function nested() {
+        const disk = checkout();
+        disk.add("src", "directory");
+        disk.add("src/lib", "directory");
+        disk.add("src/lib/index.ts");
+        return disk;
+    }
+
+    async function leaveOpen(workspace: ReturnType<typeof store>["workspace"]): Promise<void> {
+        workspace.groupOpen(GROUP);
+        workspace.fileScopeUpdate(GROUP, "all");
+        await settle();
+        workspace.fileTreeExpandedUpdate("src", true);
+        await settle();
+        workspace.fileTreeExpandedUpdate("src/lib", true);
+        await settle();
+    }
+
+    it("lists the folders a reload left open without waiting for a hover", async () => {
+        const disk = nested();
+        const preferences = storage();
+        const before = store(disk, preferences);
+        await leaveOpen(before.workspace);
+        before.unsubscribe();
+
+        const { workspace, names, unsubscribe } = store(disk, preferences);
+        workspace.groupOpen(GROUP);
+        await settle();
+
+        expect(names("src")).toEqual(["src/lib"]);
+        expect(names("src/lib")).toEqual(["src/lib/index.ts"]);
+        unsubscribe();
+    });
+
+    it("lists them again after the reader visits another checkout and comes back", async () => {
+        const disk = nested();
+        const { workspace, names, unsubscribe } = store(disk);
+        await leaveOpen(workspace);
+
+        workspace.groupOpen(OTHER);
+        workspace.fileScopeUpdate(OTHER, "all");
+        await settle();
+        expect(names("src")).toBeUndefined();
+        workspace.groupOpen(GROUP);
+        await settle();
+
+        expect(names("src")).toEqual(["src/lib"]);
+        expect(names("src/lib")).toEqual(["src/lib/index.ts"]);
+        unsubscribe();
+    });
+
+    it("lists a folder that appeared while the reader was in another checkout", async () => {
+        const disk = checkout();
+        const { workspace, names, unsubscribe } = store(disk);
+        workspace.groupOpen(GROUP);
+        // Opened while the panel showed only the changes, so nothing read it.
+        workspace.fileTreeExpandedUpdate("gen", true);
+        workspace.fileScopeUpdate(GROUP, "all");
+        await settle();
+
+        // Away on a checkout showing its changes, this listing still follows
+        // the disk, but its open folders are not the ones on screen.
+        workspace.groupOpen(OTHER);
+        disk.add("gen", "directory");
+        disk.add("gen/out.js");
+        disk.emit(["gen"]);
+        await settle();
+        expect(names()).toEqual(["gen"]);
+        expect(names("gen")).toBeUndefined();
+
+        workspace.conversationOpen("ses_back" as HappyAgentSessionId, GROUP);
+        await settle();
+
+        expect(names("gen")).toEqual(["gen/out.js"]);
+        unsubscribe();
+    });
+
+    it("lists a folder left open once it appears on disk", async () => {
+        const disk = checkout();
+        const { workspace, names, unsubscribe } = store(disk);
+        workspace.groupOpen(GROUP);
+        // Opened while the panel showed only the changes, so nothing read it.
+        workspace.fileTreeExpandedUpdate("gen", true);
+        workspace.fileScopeUpdate(GROUP, "all");
+        await settle();
+        expect(names("gen")).toBeUndefined();
+
+        disk.add("gen", "directory");
+        disk.add("gen/out.js");
+        disk.emit(["gen"]);
+        await settle();
+
+        expect(names("gen")).toEqual(["gen/out.js"]);
+        unsubscribe();
+    });
+
+    it("leaves a folder that failed to read for the reader to retry", async () => {
+        const disk = nested();
+        const preferences = storage();
+        const before = store(disk, preferences);
+        await leaveOpen(before.workspace);
+        before.unsubscribe();
+        disk.failing.add("src");
+        disk.reads.length = 0;
+
+        const { workspace, unsubscribe } = store(disk, preferences);
+        workspace.groupOpen(GROUP);
+        await settle();
+        disk.add("top.md");
+        disk.emit(["top.md"]);
+        await settle();
+
+        expect(workspace.get().workspaceFiles?.directories.get("src")?.error).toBe(true);
+        expect(disk.reads).toEqual(["", "src", ""]);
         unsubscribe();
     });
 });
