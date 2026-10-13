@@ -292,6 +292,14 @@ const SETTINGS_JUMPS: readonly {
         keywords: "profile name email photo happy account connect disconnect workos",
     },
     {
+        id: "settings:file-tiers",
+        title: "Settings › File tiers",
+        section: "file-tiers",
+        sectionLabel: "File tiers",
+        icon: "file-diff",
+        keywords: "changes tiers tests glob patterns secondary files groups",
+    },
+    {
         id: "settings:instructions",
         title: "Settings › Instructions",
         section: "instructions",

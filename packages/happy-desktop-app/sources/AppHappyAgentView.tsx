@@ -102,7 +102,6 @@ import type {
     StatusBarStore,
 } from "happy-desktop-state";
 import {
-    HAPPY_AGENT_CHANGE_TIERS_MAX,
     HAPPY_AGENT_PANEL_FILE_VIEW_ID,
     agentAuthor,
     happyAgentChangeTiersAssign,
@@ -163,7 +162,6 @@ import {
     DeferredPane,
     EmptyState,
     FileBrowser,
-    FileTiersDialog,
     FileEditor,
     FilePreview,
     type FilePreviewContent,
@@ -6956,13 +6954,6 @@ function HappyAgentWindowDialogs(props: {
                 props.happyAgentOnline,
                 props.unavailable,
             )}
-            <HappyAgentFileTiersDialogHost
-                {...(workspace.address.groupId === undefined
-                    ? {}
-                    : { groupId: workspace.address.groupId })}
-                projects={props.projects}
-                store={props.workspace.changeTiers}
-            />
             {workspace.projectClone ? (
                 <HappyAgentProjectCloneDialog
                     repository={workspace.projectClone.repository}
@@ -7581,63 +7572,6 @@ function workspaceFileTreeNodes(
 const CHANGE_TIERS_NONE: readonly HappyAgentChangeTier[] = [];
 
 /**
- * The editor for a project's Changes tiers, while one is open. It reads the
- * tiers store on its own, so a pattern typed a keystroke at a time redraws the
- * dialog and the listing it regroups rather than the window's other dialogs.
- *
- * Each tier says how many changes it claims in the checkout being looked at,
- * when that checkout belongs to the project being edited — the quickest way to
- * see a pattern doing what it was written to do.
- */
-function HappyAgentFileTiersDialogHost(props: {
-    groupId?: HappyAgentGroupId;
-    projects: readonly HappyAgentProjectGroup[];
-    store: HappyAgentChangeTiersStore;
-}) {
-    const snapshot = useSyncExternalStore(props.store.subscribe, props.store.get, props.store.get);
-    const projectId = snapshot.editingProjectId;
-    if (projectId === undefined) return null;
-    const project = props.projects.find((candidate) => candidate.id === projectId);
-    const tiers = snapshot.projects.get(projectId) ?? CHANGE_TIERS_NONE;
-    const changes =
-        project === undefined || props.groupId === undefined
-            ? undefined
-            : props.groupId === project.id
-              ? project.changes
-              : project.worktrees.find((worktree) => worktree.id === props.groupId)?.changes;
-    const counts =
-        changes === undefined
-            ? undefined
-            : new Map(
-                  happyAgentChangeTiersAssign(changes, tiers).tiers.map((entry) => [
-                      entry.tier.id,
-                      entry.files.length,
-                  ]),
-              );
-    const store = props.store;
-    return (
-        <FileTiersDialog
-            canAdd={tiers.length < HAPPY_AGENT_CHANGE_TIERS_MAX}
-            onClose={() => store.editorClose()}
-            onTierAdd={() => store.tierAdd(projectId)}
-            onTierMove={(tierId, direction) => store.tierMove(projectId, tierId, direction)}
-            onTierNameChange={(tierId, name) => store.tierNameUpdate(projectId, tierId, name)}
-            onTierPatternsChange={(tierId, patterns) =>
-                store.tierPatternsUpdate(projectId, tierId, patterns)
-            }
-            onTierRemove={(tierId) => store.tierRemove(projectId, tierId)}
-            {...(project === undefined ? {} : { projectName: project.name })}
-            tiers={tiers.map((tier) => ({
-                id: tier.id,
-                name: tier.name,
-                patterns: tier.patterns,
-                ...(counts === undefined ? {} : { count: counts.get(tier.id) ?? 0 }),
-            }))}
-        />
-    );
-}
-
-/**
  * The Changes listing with its tiers: the files no tier claims, laid out as the
  * reader chose, then a section for each tier that claimed any, laid out the same
  * way beneath its heading. `sections` names the tier behind each heading, so a
@@ -8079,11 +8013,6 @@ function HappyAgentPanelBody(props: {
                                 props.onLayoutChange(layout)
                             }
                             onReviewOpen={props.onReviewOpen}
-                            {...(projectId === undefined
-                                ? {}
-                                : {
-                                      onTiersEdit: () => props.changeTiers.editorOpen(projectId),
-                                  })}
                             onDirectoryPrefetch={props.onDirectoryPrefetch}
                             onFilePrefetch={props.onFilePreprocess}
                             onLoadMore={props.onLoadMore}

@@ -3,7 +3,6 @@ import { type CSSProperties } from "react";
 import { FileTree, type FileTreeNode, type FileTreeProps } from "./FileTree";
 import { compactCount, changeCountLabel } from "./countText";
 import { Icon } from "./Icon";
-import { Ionicon } from "./vectorIcons/VectorIcon";
 import { SearchField } from "./TitleBar";
 import { SegmentedControl } from "./SegmentedControl";
 /** Which files the listing is about: only what changed, or the whole checkout. */
@@ -25,11 +24,6 @@ export type FileBrowserProps = {
      * control, because there would be nobody to open it.
      */
     onReviewOpen?: () => void;
-    /**
-     * Opens the editor for the tiers Changes splits secondary files into.
-     * Without it the listing offers no such control.
-     */
-    onTiersEdit?: () => void;
     /** Rows to list. Passed straight through to FileTree. */
     nodes: readonly FileTreeNode[];
     selectedId?: FileTreeProps["selectedId"];
@@ -93,7 +87,6 @@ export function FileBrowser(props: FileBrowserProps) {
         "layout",
         "onLayoutChange",
         "onReviewOpen",
-        "onTiersEdit",
         "nodes",
         "selectedId",
         "onSelect",
@@ -116,7 +109,6 @@ export function FileBrowser(props: FileBrowserProps) {
         "searching",
     ]);
     const added = local.addedLines !== undefined && local.addedLines > 0;
-    const tiersEditable = local.scope === "changed" && local.onTiersEdit !== undefined;
     const deleted = local.deletedLines !== undefined && local.deletedLines > 0;
     return (
         <section
@@ -228,41 +220,21 @@ export function FileBrowser(props: FileBrowserProps) {
                 into and the thing changing under it read as one. The scope
                 choice stays at the top, because it says what this listing is
                 rather than which part of it is showing. */}
-            {local.onSearchQueryChange || tiersEditable ? (
+            {local.onSearchQueryChange ? (
                 <div
                     className="happy-file-browser__search"
                     data-busy={local.searching ? "" : undefined}
                     data-happy-desktop-ui="file-browser-search"
                 >
-                    {local.onSearchQueryChange ? (
-                        <SearchField
-                            onChange={(query) => local.onSearchQueryChange?.(query)}
-                            placeholder={
-                                local.searchPlaceholder ??
-                                (local.scope === "all" ? "Search all files" : "Search changes")
-                            }
-                            shortcutHint={false}
-                            value={local.searchQuery ?? ""}
-                        />
-                    ) : null}
-                    {/* Which changed files are listed apart, as tiers under the
-                        rest. It narrows how the listing reads, so it stands with
-                        the field that narrows what it holds, and it is offered
-                        whether or not anything has changed: tiers are set up
-                        before they are needed. */}
-                    {tiersEditable ? (
-                        <button
-                            aria-label="File tiers"
-                            className="happy-file-browser__tiers"
-                            data-happy-desktop-ui="file-browser-tiers"
-                            data-testid="file-browser-tiers"
-                            onClick={() => local.onTiersEdit?.()}
-                            title="File tiers"
-                            type="button"
-                        >
-                            <Ionicon name="layers-outline" size={14} />
-                        </button>
-                    ) : null}
+                    <SearchField
+                        onChange={(query) => local.onSearchQueryChange?.(query)}
+                        placeholder={
+                            local.searchPlaceholder ??
+                            (local.scope === "all" ? "Search all files" : "Search changes")
+                        }
+                        shortcutHint={false}
+                        value={local.searchQuery ?? ""}
+                    />
                 </div>
             ) : null}
             {local.note ? (

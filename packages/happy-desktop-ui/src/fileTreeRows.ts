@@ -27,6 +27,11 @@ export interface FileTreeRow {
      * they sit inside, so its files line up with the files above it.
      */
     readonly indent: number;
+    /**
+     * A section heading with rows above it. It stands a gap below them, so
+     * each section reads as a block of its own rather than more of the list.
+     */
+    readonly separated: boolean;
     /** The directory holding this row, absent at the top level. */
     readonly parentId?: string;
     /** How many entries share this row's parent, for `aria-setsize`. */
@@ -103,6 +108,7 @@ function rowsBuild(nodes: readonly FileTreeNode[]): FileTreeRowModel {
                 node,
                 depth,
                 indent,
+                separated: node.kind === "section" && rows.length > 0,
                 ...(parentId === undefined ? {} : { parentId }),
                 setSize,
                 posInSet: position + 1,
@@ -120,6 +126,7 @@ function rowsBuild(nodes: readonly FileTreeNode[]): FileTreeRowModel {
                     node,
                     depth: depth + 1,
                     indent: indent + 1,
+                    separated: false,
                     parentId: id,
                     setSize: 1,
                     posInSet: 1,
@@ -136,6 +143,7 @@ function rowsBuild(nodes: readonly FileTreeNode[]): FileTreeRowModel {
                     node,
                     depth: depth + 1,
                     indent: indent + 1,
+                    separated: false,
                     parentId: id,
                     setSize: children + 1,
                     posInSet: children + 1,

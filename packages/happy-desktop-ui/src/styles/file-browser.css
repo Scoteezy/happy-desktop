@@ -153,33 +153,7 @@
 .happy-file-browser__search {
     display: flex;
     flex: none;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 4px;
     padding: 0 var(--happy-panel-inset) 6px;
-}
-
-/* Editing the tiers the change is split into. It wears the review control's
-   quiet shape at the field's full height, so the two read as one row. */
-.happy-file-browser__tiers {
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    margin: 0;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--happy-radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    cursor: pointer;
-}
-
-.happy-file-browser__tiers:hover {
-    background: var(--surface-ripple);
-    color: var(--text);
 }
 
 /* A search still waiting on the checkout says so by going quiet rather than by

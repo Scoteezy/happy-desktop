@@ -1,9 +1,11 @@
+import { useState } from "react";
 import type { HappyAgentProviderUsageEntry } from "happy-desktop-state";
 import {
     DesktopMobileSetup,
     HappyAgentAccountSettings,
     HappyAgentDebugLogPanel,
     HappyAgentDebugSettings,
+    HappyAgentFileTierSettings,
     HappyAgentGeneralSettings,
     HappyAgentInstructionsSettings,
     HappyAgentMobileSettings,
@@ -14,6 +16,7 @@ import {
     HappyAgentSettingsShell,
     GptLiveSettings,
     HappyAgentUsageSettings,
+    type HappyAgentFileTierRow,
     type HappyAgentProfileSettingsProps,
     type HappyAgentProviderRow,
     type HappyAgentSecretRow,
@@ -27,6 +30,7 @@ export const componentNumber = "P-012";
 const categories: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
     { icon: "users", id: "account", label: "Account" },
+    { icon: "file-diff", id: "file-tiers", label: "File tiers" },
     { icon: "doc", id: "instructions", label: "Instructions" },
     { icon: "lock", id: "secrets", label: "Secrets" },
     { icon: "globe", id: "providers", label: "Providers" },
@@ -394,6 +398,81 @@ const secrets: readonly HappyAgentSecretRow[] = [
 ];
 
 const noop = () => undefined;
+
+const fileTiersDescription =
+    "Which changed files each project lists apart, below the rest of a change";
+
+const fileTierProjects = [
+    { id: "happy-desktop", name: "happy-desktop" },
+    { id: "happy-agent", name: "happy-agent" },
+    { id: "website", name: "website" },
+];
+
+const fileTierRows: readonly HappyAgentFileTierRow[] = [
+    { id: "tests", name: "Tests", patterns: ["*.test.ts", "*.test.tsx"], count: 3 },
+    { id: "text", name: "Text fixtures", patterns: ["*.text.ts"], count: 1 },
+    { id: "docs", name: "Docs", patterns: ["docs/", "*.md"], count: 0 },
+];
+
+/** The File tiers category wired to its own state, so every control answers. */
+function FileTierSettingsSpecimen(props: {
+    detail: string;
+    label: string;
+    number: string;
+    tiers: readonly HappyAgentFileTierRow[];
+}) {
+    const [projectId, projectIdSet] = useState("happy-desktop");
+    const [tiers, tiersSet] = useState(props.tiers);
+    const [added, addedSet] = useState(0);
+    return (
+        <FullScreenSpecimen detail={props.detail} label={props.label} number={props.number}>
+            <HappyAgentSettingsShell
+                activeCategoryId="file-tiers"
+                categories={categories}
+                description={fileTiersDescription}
+                onCategorySelect={noop}
+                onClose={noop}
+                title="File tiers"
+            >
+                <HappyAgentFileTierSettings
+                    onProjectSelect={projectIdSet}
+                    onTierAdd={() => {
+                        addedSet(added + 1);
+                        tiersSet([
+                            ...tiers,
+                            { id: `new-${String(added)}`, name: "", patterns: [] },
+                        ]);
+                    }}
+                    onTierMove={(tierId, direction) => {
+                        const index = tiers.findIndex((tier) => tier.id === tierId);
+                        const target = direction === "earlier" ? index - 1 : index + 1;
+                        if (index === -1 || target < 0 || target >= tiers.length) return;
+                        const next = [...tiers];
+                        next[index] = tiers[target]!;
+                        next[target] = tiers[index]!;
+                        tiersSet(next);
+                    }}
+                    onTierNameChange={(tierId, name) =>
+                        tiersSet(
+                            tiers.map((tier) => (tier.id === tierId ? { ...tier, name } : tier)),
+                        )
+                    }
+                    onTierPatternsChange={(tierId, patterns) =>
+                        tiersSet(
+                            tiers.map((tier) =>
+                                tier.id === tierId ? { ...tier, patterns } : tier,
+                            ),
+                        )
+                    }
+                    onTierRemove={(tierId) => tiersSet(tiers.filter((tier) => tier.id !== tierId))}
+                    projectId={projectId}
+                    projects={fileTierProjects}
+                    tiers={tiers}
+                />
+            </HappyAgentSettingsShell>
+        </FullScreenSpecimen>
+    );
+}
 
 /** A generated, fictional portrait standing in for an uploaded profile photo. */
 const profilePhoto = {
@@ -920,6 +999,18 @@ export function HappyAgentSettingsBlueprintPage() {
                     name: "Steve",
                     photoUnavailable: "Save your name first, then add a photo",
                 }}
+            />
+            <FileTierSettingsSpecimen
+                detail="File tiers: pick a project, then one card per tier in match order — name, patterns, reorder, remove, and what it claims of the current change"
+                label="Happy Agent settings — file tiers"
+                number="02f"
+                tiers={fileTierRows}
+            />
+            <FileTierSettingsSpecimen
+                detail="File tiers for a project with none yet: every changed file is listed together"
+                label="Happy Agent settings — file tiers empty"
+                number="02f-empty"
+                tiers={[]}
             />
             <FullScreenSpecimen
                 detail="Secrets category: safe metadata lists write-only environment bundles without exposing values"

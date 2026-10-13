@@ -6,7 +6,7 @@ import {
 import type { HappyAgentProjectId } from "./happyAgentTypes.js";
 
 /**
- * Every project's change tiers, and the project whose tiers are being edited.
+ * Every project's change tiers, and the project Settings is showing them for.
  *
  * Tiers belong to a project rather than to one checkout: which files count as
  * secondary is a fact about how the repository is laid out — its tests are
@@ -16,8 +16,11 @@ import type { HappyAgentProjectId } from "./happyAgentTypes.js";
 export interface HappyAgentChangeTiersSnapshot {
     /** Each project's tiers in match order. A project absent here has none. */
     readonly projects: ReadonlyMap<HappyAgentProjectId, readonly HappyAgentChangeTier[]>;
-    /** The project whose tiers the editor is open on, if it is open. */
-    readonly editingProjectId?: HappyAgentProjectId;
+    /**
+     * The project the File tiers settings were last pointed at. Absent until
+     * someone picks one, when Settings shows the first project it lists.
+     */
+    readonly selectedProjectId?: HappyAgentProjectId;
 }
 
 /** Which way a tier moves in the match order. */
@@ -25,7 +28,7 @@ export type HappyAgentChangeTierMoveDirection = "earlier" | "later";
 
 /**
  * What the store tells its owner. Only a project's tiers changing is reported:
- * that is what is worth keeping, while opening and closing the editor is not.
+ * that is what is worth keeping, while which project Settings shows is not.
  */
 export type HappyAgentChangeTiersOutput = {
     readonly type: "tiersUpdated";
@@ -36,9 +39,8 @@ export type HappyAgentChangeTiersOutput = {
 export interface HappyAgentChangeTiersStore {
     get(): HappyAgentChangeTiersSnapshot;
     subscribe(listener: () => void): () => void;
-    /** Opens the tier editor on one project, replacing any other it was open on. */
-    editorOpen(projectId: HappyAgentProjectId): void;
-    editorClose(): void;
+    /** Points the File tiers settings at one project. */
+    projectSelect(projectId: HappyAgentProjectId): void;
     /** Appends a new, unnamed tier with no patterns, which therefore claims nothing yet. */
     tierAdd(projectId: HappyAgentProjectId): void;
     tierRemove(projectId: HappyAgentProjectId, tierId: HappyAgentChangeTierId): void;
@@ -133,13 +135,9 @@ export function happyAgentChangeTiersStoreCreate(
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
-        editorOpen(projectId) {
-            if (snapshot.editingProjectId === projectId) return;
-            publish({ ...snapshot, editingProjectId: projectId });
-        },
-        editorClose() {
-            if (snapshot.editingProjectId === undefined) return;
-            publish({ projects: snapshot.projects });
+        projectSelect(projectId) {
+            if (snapshot.selectedProjectId === projectId) return;
+            publish({ ...snapshot, selectedProjectId: projectId });
         },
         tierAdd(projectId) {
             const tiers = tiersOf(projectId);

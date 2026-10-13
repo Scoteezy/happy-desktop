@@ -1,0 +1,59 @@
+/*
+ * File tiers settings — one card per tier, in match order.
+ *
+ * Each card is its own block on the settings column: its position in the match
+ * order, its name and the controls that reorder or remove it on one row, and
+ * its patterns beneath. The cards are separated by the section's card gap.
+ */
+
+.happy-agent-file-tier {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+    background: var(--surface-high);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+}
+
+.happy-agent-file-tier__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+/* The tier's place in the match order, in the tile the secret cards use for
+   their glyph. The tile sits beyond the card's corner field and is independent
+   of its radius. */
+.happy-agent-file-tier__order {
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--surface);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    font-feature-settings: "tnum" 1;
+}
+
+.happy-agent-file-tier__name {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.happy-agent-file-tier__actions {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+}

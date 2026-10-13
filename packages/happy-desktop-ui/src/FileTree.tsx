@@ -135,6 +135,12 @@ const BASE_PADDING = 8;
 const DEFAULT_INDENT = 16;
 /** Every drawn row is this tall, which is also what the virtualizer measures. */
 const ROW_HEIGHT = 28;
+/** The space a section heading keeps above it, so each section is a block of its own. */
+const SECTION_GAP = 16;
+/** How much of the listing a row takes: its own height, and a separated heading's gap. */
+function rowExtent(row: FileTreeRow | undefined): number {
+    return row?.separated ? ROW_HEIGHT + SECTION_GAP : ROW_HEIGHT;
+}
 /**
  * The kind of thing a file is, which is what its row's icon and icon colour say.
  * A column of identically grey documents makes the reader parse every name to
@@ -778,7 +784,7 @@ export function FileTree(props: FileTreeProps) {
     // eslint-disable-next-line react-hooks/incompatible-library
     const virtualizer = useVirtualizer({
         count: virtualized ? model.rows.length : 0,
-        estimateSize: () => ROW_HEIGHT,
+        estimateSize: (index) => rowExtent(model.rows[index]),
         getItemKey: (index) => model.rows[index]?.id ?? index,
         getScrollElement: () => scrollElement.current,
         initialRect: { width: 0, height: 480 },
@@ -986,8 +992,12 @@ export function FileTree(props: FileTreeProps) {
                             return row ? (
                                 <div
                                     className="happy-file-tree__virtual-row"
+                                    data-separated={row.separated ? "" : undefined}
                                     key={item.key}
-                                    style={{ transform: `translateY(${String(item.start)}px)` }}
+                                    style={{
+                                        height: `${String(item.size)}px`,
+                                        transform: `translateY(${String(item.start)}px)`,
+                                    }}
                                 >
                                     {rowView(row)}
                                 </div>
@@ -996,7 +1006,21 @@ export function FileTree(props: FileTreeProps) {
                     </div>
                 </div>
             ) : (
-                model.rows.map(rowView)
+                model.rows.map((row) =>
+                    row.separated ? (
+                        // The gap belongs to this frame, which is the heading's
+                        // own slot in the column, as it is to the virtual row.
+                        <div
+                            className="happy-file-tree__section-frame"
+                            data-happy-desktop-ui="file-tree-section-frame"
+                            key={row.id}
+                        >
+                            {rowView(row)}
+                        </div>
+                    ) : (
+                        rowView(row)
+                    ),
+                )
             )}
         </ScrollArea>
     );

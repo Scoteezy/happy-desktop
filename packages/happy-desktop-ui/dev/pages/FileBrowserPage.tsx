@@ -302,7 +302,6 @@ function LiveTieredBrowser() {
             searchQuery={query}
             onLayoutChange={layoutSet}
             onSearchQueryChange={querySet}
-            onTiersEdit={() => undefined}
             onToggle={(id, expanded) =>
                 projectTiersSet((current) =>
                     current.map((entry) =>
@@ -477,7 +476,6 @@ export function FileBrowserPage() {
                             nodes={tieredNodes(tiered, tiers, "flat")}
                             onReviewOpen={() => undefined}
                             onSearchQueryChange={() => undefined}
-                            onTiersEdit={() => undefined}
                             scope="changed"
                             searchQuery=""
                             selectedId="packages/happy-desktop-ui/src/FileTree.test.tsx"
@@ -491,7 +489,6 @@ export function FileBrowserPage() {
                             nodes={tieredNodes(tiered, tiers, "tree")}
                             onReviewOpen={() => undefined}
                             onSearchQueryChange={() => undefined}
-                            onTiersEdit={() => undefined}
                             scope="changed"
                             searchQuery=""
                         />,

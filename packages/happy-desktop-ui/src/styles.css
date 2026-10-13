@@ -85,7 +85,6 @@
 @import "./styles/file-tree.css";
 @import "./styles/file-panel.css";
 @import "./styles/file-browser.css";
-@import "./styles/file-tiers-dialog.css";
 @import "./styles/diff-surface.css";
 @import "./styles/file-family.css";
 @import "./styles/diff-file-title.css";
@@ -146,6 +145,7 @@
 @import "./styles/happy-agent-settings.css";
 @import "./styles/mobile-access-confirmation.css";
 @import "./styles/happy-agent-secret-settings.css";
+@import "./styles/happy-agent-file-tier-settings.css";
 @import "./styles/happy-agent-debug-log.css";
 @import "./styles/happy-agent-raw-state.css";
 @import "./styles/happy-agent-usage-settings.css";
