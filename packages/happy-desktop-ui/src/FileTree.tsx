@@ -16,8 +16,10 @@ export type FileTreeGitStatus =
     | "untracked";
 /**
  * One entry in the tree. Directories carry `children` (materialized on expand)
- * and disclosure/paging flags; files are leaves. The caller owns the shape —
- * FileTree renders exactly what it is given and never fetches or mutates.
+ * and disclosure/paging flags; files are leaves. A section is a top-level
+ * heading that folds a run of entries away under a name — the tiers Changes
+ * splits secondary files into — and indents nothing. The caller owns the shape
+ * — FileTree renders exactly what it is given and never fetches or mutates.
  */
 export type FileTreeNode = {
     /** Stable identity, typically the full path. */
@@ -31,13 +33,15 @@ export type FileTreeNode = {
      * loses its tail to an ellipsis.
      */
     readonly directory?: string;
-    readonly kind: "file" | "directory";
+    readonly kind: "file" | "directory" | "section";
     readonly gitStatus?: FileTreeGitStatus;
     /** Lines the file gained and lost, shown beside its status. */
     readonly addedLines?: number;
     readonly deletedLines?: number;
-    /** Directory only: whether its children row-group is shown. */
+    /** Directory or section: whether its children row-group is shown. */
     readonly expanded?: boolean;
+    /** Section only: how many files it holds, stated on its heading. */
+    readonly count?: number;
     /** Directory only: a page request is in flight. */
     readonly loading?: boolean;
     /** Directory only: more children exist beyond those loaded. */
@@ -498,7 +502,7 @@ function FileTreeRowView(props: FileTreeRowViewProps) {
     const directory = node.kind === "directory";
     const status = node.gitStatus ? GIT_STATUS[node.gitStatus] : undefined;
     const family = fileTreeFamily(node);
-    const paddingLeft = `${String(BASE_PADDING + row.depth * props.indent)}px`;
+    const paddingLeft = `${String(BASE_PADDING + row.indent * props.indent)}px`;
     const activate = (modifiers: FileTreeSelectModifiers) => {
         if (row.kind === "more") {
             onLoadMore?.(node.id);
@@ -511,6 +515,59 @@ function FileTreeRowView(props: FileTreeRowViewProps) {
         if (directory) onToggle?.(node.id, !node.expanded);
         else if (props.filesUnavailable === undefined) onSelect?.(node.id, modifiers);
     };
+    if (row.kind === "entry" && node.kind === "section") {
+        const count = node.count ?? 0;
+        // A heading the reader folds, not a folder: it wears no icon and no
+        // status, only its name and how much is under it, so it reads as where
+        // one run of files ends and the next begins.
+        return (
+            <div
+                aria-expanded={node.expanded === true}
+                aria-label={`${node.name}, ${String(count)} ${count === 1 ? "file" : "files"}`}
+                aria-level={row.depth + 1}
+                aria-posinset={row.posInSet}
+                // A heading is never picked, which is what an absent
+                // `aria-selected` says, exactly as it does for a directory.
+                aria-selected={undefined}
+                aria-setsize={row.setSize}
+                className="happy-file-tree__section"
+                data-expanded={node.expanded ? "" : undefined}
+                data-happy-desktop-ui="file-tree-section"
+                data-row={row.id}
+                onClick={() => onToggle?.(node.id, !node.expanded)}
+                title={node.name}
+                onFocus={() => onFocusRow(row.id)}
+                onKeyDown={onKeyDown}
+                ref={onElement}
+                role="treeitem"
+                style={{ paddingLeft }}
+                tabIndex={props.active ? 0 : -1}
+            >
+                <span className="happy-file-tree__disc" data-happy-desktop-ui="file-tree-disc">
+                    <span
+                        aria-hidden="true"
+                        className="happy-file-tree__chevron"
+                        data-happy-desktop-ui="file-tree-chevron"
+                    >
+                        <Icon name={node.expanded ? "chevron-down" : "chevron-right"} size={12} />
+                    </span>
+                </span>
+                <span
+                    className="happy-file-tree__section-name"
+                    data-happy-desktop-ui="file-tree-section-name"
+                >
+                    {node.name}
+                </span>
+                <span
+                    aria-hidden="true"
+                    className="happy-file-tree__section-count"
+                    data-happy-desktop-ui="file-tree-section-count"
+                >
+                    {compactCount(count)}
+                </span>
+            </div>
+        );
+    }
     if (row.kind === "loading")
         return (
             <div
@@ -708,12 +765,12 @@ export function FileTree(props: FileTreeProps) {
      * somewhere useful. Derived on every render rather than stored, so a row
      * disappearing cannot leave the tree with no way in.
      */
+    const selectedRow =
+        local.selectedId === undefined ? undefined : model.rowIdByNodeId.get(local.selectedId);
     const activeRow =
         focusedRow !== undefined && model.indexById.has(focusedRow)
             ? focusedRow
-            : local.selectedId !== undefined && model.indexById.has(local.selectedId)
-              ? local.selectedId
-              : model.rows.find(rowStops)?.id;
+            : (selectedRow ?? model.rows.find(rowStops)?.id);
     const activeIndex = activeRow === undefined ? undefined : model.indexById.get(activeRow);
     // TanStack Virtual deliberately owns mutable measurement functions. Keep
     // this leaf outside compiler memoization while the row components remain
@@ -792,7 +849,9 @@ export function FileTree(props: FileTreeProps) {
         if (index === undefined) return;
         const row = model.rows[index]!;
         const node = row.node;
-        const directory = row.kind === "entry" && node.kind === "directory";
+        // A section folds and unfolds exactly as a directory does.
+        const directory =
+            row.kind === "entry" && (node.kind === "directory" || node.kind === "section");
         /**
          * The key is spent whether or not there is anywhere to go: at the top
          * and the bottom of the listing an unconsumed arrow key falls through

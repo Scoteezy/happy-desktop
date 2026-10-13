@@ -1,4 +1,9 @@
 import { useState, type ReactNode } from "react";
+import {
+    happyAgentChangeTiersAssign,
+    type HappyAgentChangeTier,
+    type HappyAgentChangeTierId,
+} from "happy-desktop-state";
 import { FileBrowser, type FileBrowserLayout, type FileBrowserScope } from "../../src/FileBrowser";
 import {
     fileTreeBuild,
@@ -7,6 +12,7 @@ import {
     type FileTreeBuildEntry,
     type FileTreeExpansion,
 } from "../../src/fileTreeBuild";
+import type { FileTreeNode } from "../../src/FileTree";
 import { filePathMatches } from "../../src/fileTreeSearch";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
@@ -118,11 +124,92 @@ const totals = changed.reduce(
     }),
     { added: 0, deleted: 0 },
 );
+/** A change with tests, text fixtures, and snapshots beside the work itself. */
+const tiered: FileTreeBuildEntry[] = [
+    ...changed.slice(0, 4),
+    {
+        path: "packages/happy-desktop-ui/src/FileTree.test.tsx",
+        gitStatus: "modified",
+        addedLines: 212,
+        deletedLines: 18,
+    },
+    {
+        path: "packages/happy-desktop-ui/src/FileBrowser.test.tsx",
+        gitStatus: "added",
+        addedLines: 96,
+        deletedLines: 0,
+    },
+    {
+        path: "packages/happy-desktop-state/src/changeTiers.test.ts",
+        gitStatus: "added",
+        addedLines: 120,
+        deletedLines: 0,
+    },
+    {
+        path: "packages/happy-desktop-ui/src/copy/empty.text.ts",
+        gitStatus: "modified",
+        addedLines: 4,
+        deletedLines: 4,
+    },
+    {
+        path: "packages/happy-desktop-ui/src/__snapshots__/FileTree.test.tsx.snap",
+        gitStatus: "modified",
+        addedLines: 40,
+        deletedLines: 22,
+    },
+];
+function tier(
+    id: string,
+    name: string,
+    patterns: readonly string[],
+    collapsed = false,
+): HappyAgentChangeTier {
+    return { id: id as HappyAgentChangeTierId, name, patterns, collapsed };
+}
+/**
+ * The tiers the specimens list by. Docs claims nothing in this change, so it
+ * draws no section at all, and Snapshots starts folded shut.
+ */
+const tiers: readonly HappyAgentChangeTier[] = [
+    tier("snapshots", "Snapshots", ["__snapshots__/"], true),
+    tier("tests", "Tests", ["*.test.ts", "*.test.tsx"]),
+    tier("text", "Text fixtures", ["*.text.ts"]),
+    tier("docs", "Docs", ["*.md"]),
+];
+/** The listing the product draws for a tiered change; see `changeTierNodes` in the app. */
+function tieredNodes(
+    entries: readonly FileTreeBuildEntry[],
+    projectTiers: readonly HappyAgentChangeTier[],
+    layout: FileBrowserLayout,
+): FileTreeNode[] {
+    const arrange = (files: readonly FileTreeBuildEntry[]) =>
+        layout === "tree" ? fileTreeBuild(files, untouchedAll) : fileTreeFlatten(files);
+    const assignment = happyAgentChangeTiersAssign(entries, projectTiers);
+    return [
+        ...arrange(assignment.primary),
+        ...assignment.tiers.map(
+            ({ tier: entry, files }): FileTreeNode => ({
+                id: `tier:${entry.id}`,
+                kind: "section",
+                name: entry.name,
+                count: files.length,
+                expanded: !entry.collapsed,
+                ...(entry.collapsed ? {} : { children: arrange(files) }),
+            }),
+        ),
+    ];
+}
 /** The tree as it stands before the reader has opened or closed anything. */
 const untouched: FileTreeExpansion = {
     opened: new Set(),
     closed: new Set(),
     defaultDepth: 1,
+};
+/** Changes as the product opens it: every changed file showing. */
+const untouchedAll: FileTreeExpansion = {
+    opened: new Set(),
+    closed: new Set(),
+    defaultDepth: Number.POSITIVE_INFINITY,
 };
 function panelFrame(children: ReactNode, height = 480, width = 320) {
     return (
@@ -196,6 +283,36 @@ function LiveBrowser(props: { entries: FileTreeBuildEntry[]; height?: number; wi
         />,
         props.height ?? 480,
         props.width ?? 320,
+    );
+}
+/** A tiered listing whose headings fold, the way the product's do. */
+function LiveTieredBrowser() {
+    const [layout, layoutSet] = useState<FileBrowserLayout>("flat");
+    const [projectTiers, projectTiersSet] = useState(tiers);
+    const [query, querySet] = useState("");
+    // A query narrows the files before they are split, so a tier whose files
+    // all fail to match leaves with them.
+    const matched = tiered.filter((entry) => filePathMatches(entry.path, query));
+    return panelFrame(
+        <FileBrowser
+            count={matched.length}
+            emptyLabel={query === "" ? undefined : `Nothing matches “${query}”.`}
+            layout={layout}
+            nodes={tieredNodes(matched, projectTiers, layout)}
+            searchQuery={query}
+            onLayoutChange={layoutSet}
+            onSearchQueryChange={querySet}
+            onTiersEdit={() => undefined}
+            onToggle={(id, expanded) =>
+                projectTiersSet((current) =>
+                    current.map((entry) =>
+                        `tier:${entry.id}` === id ? { ...entry, collapsed: !expanded } : entry,
+                    ),
+                )
+            }
+            scope="changed"
+        />,
+        520,
     );
 }
 export function FileBrowserPage() {
@@ -344,6 +461,52 @@ export function FileBrowserPage() {
                 stage="surface"
             >
                 <LiveBrowser entries={bulk} height={480} width={360} />
+            </Specimen>
+
+            <Specimen
+                detail="Secondary files listed under tier headings below the rest · first match wins · a tier that claims nothing draws no section · the count covers every tier"
+                label="Tiers"
+                number="11"
+                stage="surface"
+            >
+                <div style={{ display: "flex", gap: "12px" }}>
+                    {panelFrame(
+                        <FileBrowser
+                            count={tiered.length}
+                            layout="flat"
+                            nodes={tieredNodes(tiered, tiers, "flat")}
+                            onReviewOpen={() => undefined}
+                            onSearchQueryChange={() => undefined}
+                            onTiersEdit={() => undefined}
+                            scope="changed"
+                            searchQuery=""
+                            selectedId="packages/happy-desktop-ui/src/FileTree.test.tsx"
+                        />,
+                        520,
+                    )}
+                    {panelFrame(
+                        <FileBrowser
+                            count={tiered.length}
+                            layout="tree"
+                            nodes={tieredNodes(tiered, tiers, "tree")}
+                            onReviewOpen={() => undefined}
+                            onSearchQueryChange={() => undefined}
+                            onTiersEdit={() => undefined}
+                            scope="changed"
+                            searchQuery=""
+                        />,
+                        520,
+                    )}
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="Click or press Enter on a heading to fold its tier; Left from a file in a tier steps to its heading; a search drops the tiers it empties"
+                label="Tiers, live"
+                number="12"
+                stage="surface"
+            >
+                <LiveTieredBrowser />
             </Specimen>
 
             <Specimen

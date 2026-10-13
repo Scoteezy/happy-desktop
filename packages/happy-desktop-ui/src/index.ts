@@ -201,6 +201,12 @@ export {
     type FileBrowserProps,
     type FileBrowserScope,
 } from "./FileBrowser";
+export {
+    FileTiersDialog,
+    type FileTiersDialogMoveDirection,
+    type FileTiersDialogProps,
+    type FileTiersDialogTier,
+} from "./FileTiersDialog";
 export { FilePathLabel, type FilePathLabelProps } from "./FilePathLabel";
 export {
     FilePreview,

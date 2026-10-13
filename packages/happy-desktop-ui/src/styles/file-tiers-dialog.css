@@ -1,0 +1,60 @@
+/*
+ * C-295 FileTiersDialog — a project's Changes tiers in the medium form card.
+ *
+ * One column on a 16px rhythm: the explanation, then each tier as its name row
+ * over its pattern field. Tiers are separated by the column's gap alone; no
+ * card or rule is drawn around them. Add tier lives in the modal's footer.
+ */
+
+.happy-file-tiers-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-file-tiers-dialog__intro,
+.happy-file-tiers-dialog__empty {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 20px;
+}
+
+.happy-file-tiers-dialog__intro code {
+    font-family: var(--happy-font-mono);
+    font-size: 12px;
+}
+
+.happy-file-tiers-dialog__tiers {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-file-tiers-dialog__tier {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-file-tiers-dialog__tier-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.happy-file-tiers-dialog__name {
+    flex: 1 1 auto;
+    min-width: 0;
+}

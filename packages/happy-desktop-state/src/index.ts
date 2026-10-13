@@ -100,6 +100,8 @@ export * from "./happyAgent/happyAgentInstructionsStore.js";
 export * from "./happyAgent/happyAgentMenusStore.js";
 export * from "./happyAgent/happyAgentModelStore.js";
 export * from "./happyAgent/happyAgentNavigationOrderStore.js";
+export * from "./happyAgent/happyAgentChangeTiers.js";
+export * from "./happyAgent/happyAgentChangeTiersStore.js";
 export * from "./happyAgent/happyAgentPanelStore.js";
 export * from "./happyAgent/happyAgentProjectGroupProject.js";
 export * from "./happyAgent/happyAgentProjectRegistration.js";

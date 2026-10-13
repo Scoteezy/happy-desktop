@@ -6,9 +6,11 @@ const root = new URL("../src/", import.meta.url).pathname;
 const files = walk(root).filter((path) => path.endsWith(".ts"));
 const failures: string[] = [];
 // Happy Agent Client declares the transport contract; Yjs is the
-// framework-independent value type used by Notes.
+// framework-independent value type used by Notes; picomatch's POSIX entry is
+// the dependency-free glob matcher behind the Changes tiers.
 const allowedExternalSpecifiers = new Set([
     "@slopus/happy-agent-client",
+    "picomatch/posix",
     "vitest",
     "zustand/vanilla",
     "yjs",

@@ -10,13 +10,23 @@ import type { FileTreeNode } from "./FileTree";
 export type FileTreeRowKind = "entry" | "loading" | "more";
 
 export interface FileTreeRow {
-    /** Unique among drawn rows, so it can key a virtual item. */
+    /**
+     * Unique among drawn rows, so it can key a virtual item. It is the node's
+     * own id, except inside a section: the same directory can stand in two
+     * sections at once, so a section's rows are prefixed with the section's id.
+     */
     readonly id: string;
     readonly kind: FileTreeRowKind;
     /** The entry, or for a loading/more row the directory it belongs to. */
     readonly node: FileTreeNode;
-    /** Levels from the top of the listing, which is the row's indentation. */
+    /** Levels from the top of the listing, which is the row's `aria-level`. */
     readonly depth: number;
+    /**
+     * Levels of indentation drawn. The same as `depth`, less one for each
+     * section the row is in: a section is a heading over files, not a folder
+     * they sit inside, so its files line up with the files above it.
+     */
+    readonly indent: number;
     /** The directory holding this row, absent at the top level. */
     readonly parentId?: string;
     /** How many entries share this row's parent, for `aria-setsize`. */
@@ -35,6 +45,11 @@ export interface FileTreeRowModel {
      * find is a row it can leave the focus stranded on.
      */
     readonly indexById: ReadonlyMap<string, number>;
+    /**
+     * The drawn row of each entry, by the entry's own id. A caller names an
+     * entry by its node id; inside a section that is not the row's id.
+     */
+    readonly rowIdByNodeId: ReadonlyMap<string, string>;
 }
 
 /**
@@ -54,8 +69,11 @@ export interface FileTreeRowModel {
 function rowsBuild(nodes: readonly FileTreeNode[]): FileTreeRowModel {
     const rows: FileTreeRow[] = [];
     const indexById = new Map<string, number>();
+    const rowIdByNodeId = new Map<string, string>();
     const push = (row: FileTreeRow): void => {
         indexById.set(row.id, rows.length);
+        if (row.kind === "entry" && !rowIdByNodeId.has(row.node.id))
+            rowIdByNodeId.set(row.node.id, row.id);
         rows.push(row);
     };
     /**
@@ -64,53 +82,68 @@ function rowsBuild(nodes: readonly FileTreeNode[]): FileTreeRowModel {
      * far as `aria-setsize` is concerned and the children have to be counted
      * knowing it is coming.
      */
+    /**
+     * `prefix` namespaces the rows of a section, and `indent` is the depth less
+     * the sections passed through on the way down.
+     */
     const walk = (
         level: readonly FileTreeNode[],
         depth: number,
+        indent: number,
+        prefix: string,
         parentId?: string,
         extra = 0,
     ): void => {
         const setSize = level.length + extra;
         level.forEach((node, position) => {
+            const id = `${prefix}${node.id}`;
             push({
-                id: node.id,
+                id,
                 kind: "entry",
                 node,
                 depth,
+                indent,
                 ...(parentId === undefined ? {} : { parentId }),
                 setSize,
                 posInSet: position + 1,
             });
-            if (node.kind !== "directory" || !node.expanded) return;
+            if (node.kind === "file" || !node.expanded) return;
+            if (node.kind === "section") {
+                if (node.children) walk(node.children, depth + 1, indent, `${id}\u0000`, id);
+                return;
+            }
             if (node.loading) {
                 // The children's own depth: the note stands where they will.
                 push({
-                    id: `${node.id}\u0000loading`,
+                    id: `${id}\u0000loading`,
                     kind: "loading",
                     node,
                     depth: depth + 1,
-                    parentId: node.id,
+                    indent: indent + 1,
+                    parentId: id,
                     setSize: 1,
                     posInSet: 1,
                 });
                 return;
             }
             const children = node.children?.length ?? 0;
-            if (node.children) walk(node.children, depth + 1, node.id, node.hasMore ? 1 : 0);
+            if (node.children)
+                walk(node.children, depth + 1, indent + 1, prefix, id, node.hasMore ? 1 : 0);
             if (node.hasMore)
                 push({
-                    id: `${node.id}\u0000more`,
+                    id: `${id}\u0000more`,
                     kind: "more",
                     node,
                     depth: depth + 1,
-                    parentId: node.id,
+                    indent: indent + 1,
+                    parentId: id,
                     setSize: children + 1,
                     posInSet: children + 1,
                 });
         });
     };
-    walk(nodes, 0);
-    return { rows, indexById };
+    walk(nodes, 0, 0, "");
+    return { rows, indexById, rowIdByNodeId };
 }
 
 /**

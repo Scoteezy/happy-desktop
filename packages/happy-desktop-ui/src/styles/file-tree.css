@@ -385,6 +385,61 @@
     color: var(--text-secondary);
 }
 
+/* ---- Section headings ------------------------------------------------ */
+
+/* A tier of the change: a heading over the files it holds rather than a folder
+   they sit in. It keeps the 28px row grid the virtualizer counts in, and sets
+   itself apart by type alone — secondary ink, a smaller weighted label, and its
+   file count at the trailing edge where a row's stat would be — so no rule has
+   to be drawn across the column to say where one run of files ends. */
+.happy-file-tree__section {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    height: 28px;
+    padding-right: var(--happy-panel-row-padding);
+    border-radius: var(--happy-radius-sm);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.happy-file-tree__section:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-file-tree__section:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: -2px;
+}
+
+.happy-file-tree__section .happy-file-tree__chevron {
+    color: inherit;
+}
+
+.happy-file-tree__section-name {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-file-tree__section-count {
+    display: block;
+    flex: none;
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    font-feature-settings: "tnum" 1;
+}
+
 /* ---- Paging, loading, and empty affordances -------------------------- */
 
 /* On the same 28px grid as every other row, because it is one: the virtualizer

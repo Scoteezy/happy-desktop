@@ -287,6 +287,9 @@ importers:
       '@slopus/happy-agent-client':
         specifier: 0.0.80
         version: 0.0.80
+      picomatch:
+        specifier: 4.0.5
+        version: 4.0.5
       yjs:
         specifier: ^13.6.31
         version: 13.6.31

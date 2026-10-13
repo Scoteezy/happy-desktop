@@ -36,6 +36,7 @@ import type { HappyAgentRecentTabMemory } from "./happyAgentWorkspaceMemory.js";
 import {
     HAPPY_AGENT_VIEW_PREFERENCES_EMPTY,
     happyAgentViewPreferencesParse,
+    happyAgentViewPreferencesProjectTiersUpdate,
     happyAgentViewPreferencesUpdate,
     type HappyAgentGroupViewPreferences,
     type HappyAgentViewPreferencesDocument,
@@ -57,6 +58,11 @@ import {
     happyAgentImageInputsOf,
     happyAgentWorkspaceAttachmentData,
 } from "./happyAgentComposerAttachment.js";
+import {
+    happyAgentChangeTiersStoreCreate,
+    type HappyAgentChangeTiersStore,
+} from "./happyAgentChangeTiersStore.js";
+import type { HappyAgentChangeTier } from "./happyAgentChangeTiers.js";
 import {
     happyAgentPanelStoreCreate,
     type HappyAgentPanelStore,
@@ -1391,6 +1397,13 @@ export interface HappyAgentWorkspaceStore {
      */
     readonly panel: HappyAgentPanelStore;
     /**
+     * The sections Changes splits secondary files into, per project. A store of
+     * its own because editing a tier's patterns is typed a keystroke at a time
+     * and has nothing to do with the rest of the workspace; it is remembered
+     * with the window's other view preferences.
+     */
+    readonly changeTiers: HappyAgentChangeTiersStore;
+    /**
      * The document a presented-file preview shows, read for the host's viewer.
      * Materialized on first access; the preview leases which document it holds.
      */
@@ -2311,6 +2324,28 @@ export function happyAgentWorkspaceStoreCreate(
             // as long as it stays open.
         }
     };
+    const changeTiers: HappyAgentChangeTiersStore = happyAgentChangeTiersStoreCreate({
+        initial: new Map(
+            Object.entries(viewPreferences.projects).flatMap(
+                ([projectId, project]): [HappyAgentProjectId, readonly HappyAgentChangeTier[]][] =>
+                    project.changeTiers === undefined
+                        ? []
+                        : [[projectId as HappyAgentProjectId, project.changeTiers]],
+            ),
+        ),
+        output(event) {
+            viewPreferences = happyAgentViewPreferencesProjectTiersUpdate(
+                viewPreferences,
+                event.projectId,
+                event.tiers,
+            );
+            try {
+                deps.viewPreferences?.write(viewPreferences);
+            } catch {
+                // Kept on screen for as long as the window stays open.
+            }
+        },
+    });
     let fileTreeExpanded: ReadonlySet<string> = new Set();
     let fileTreeCollapsed: ReadonlySet<string> = new Set();
     /** Counts the asks to show a region, so each one is its own event. */
@@ -6381,6 +6416,7 @@ export function happyAgentWorkspaceStoreCreate(
     return {
         get: () => snapshotStore.getState(),
         panel,
+        changeTiers,
         toolMediaDocument: () => client.toolMediaDocument(),
         subscribe(listener) {
             listeners.add(listener);
