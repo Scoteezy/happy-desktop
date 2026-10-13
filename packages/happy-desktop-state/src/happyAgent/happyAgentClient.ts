@@ -5,6 +5,10 @@ import type {
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import { happyAgentProjectAddError } from "./happyAgentProjectRegistration.js";
 import {
+    happyAgentFileLinkWorkspaceResolve,
+    type HappyAgentFileLinkTarget,
+} from "./happyAgentFileLink.js";
+import {
     happyAgentAgentIdentitySourceCreate,
     type HappyAgentAgentIdentitySource,
 } from "./happyAgentAgentIdentities.js";
@@ -243,6 +247,12 @@ export interface HappyAgentWorkspaceClient {
         path: string,
         signal?: AbortSignal,
     ): Promise<HappyAgentWorkspaceFileBytes>;
+    /**
+     * The workspace a `happy-file:` link reads from, after the host has said
+     * the agent or workspace it names is there and ready to be read. Rejects
+     * with a `UserError` naming the reason when it is not.
+     */
+    fileLinkWorkspaceResolve(target: HappyAgentFileLinkTarget): Promise<HappyAgentGroupId>;
     /**
      * Where one HTML document of a checkout is served as a page, for a viewer
      * that renders the document rather than its source.
@@ -629,6 +639,8 @@ export function happyAgentWorkspaceClientCreate(
         },
         workspaceFileBytesRead: (groupId, path, signal) =>
             deps.hostServices.workspaceFileBytesRead(groupId, path, signal),
+        fileLinkWorkspaceResolve: (target) =>
+            happyAgentFileLinkWorkspaceResolve(deps.client, target),
         htmlPreviewOpen: (groupId, path) => deps.hostServices.htmlPreviewOpen(groupId, path),
         workspaceFileWrite: async (groupId, path, content, expectedHash) => {
             const written = await deps.client.writeFile(groupId, {

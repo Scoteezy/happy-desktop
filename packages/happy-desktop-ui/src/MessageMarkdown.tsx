@@ -8,12 +8,13 @@ import {
     type ComponentPropsWithoutRef,
     type ReactNode,
 } from "react";
+import { happyAgentFileLinkParse } from "happy-desktop-state";
 import Markdown, { type Components, type ExtraProps, type UrlTransform } from "react-markdown";
 import { ContextMenu } from "./ContextMenu";
 import { filePreviewKind } from "./FilePreview";
 import { type MenuItem } from "./Menu";
 import { markdownFence, markdownFenceIsMermaid } from "./markdownFence";
-import { type FileOpenHandler } from "./fileReference";
+import { type FileLinkOpenHandler, type FileOpenHandler } from "./fileReference";
 import { markdownDocumentLinkTarget, markdownFileUrlTransform } from "./MarkdownDocument";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { FILE_REFERENCE_LINK_ATTRIBUTE } from "./messageFileReferences";
@@ -66,6 +67,12 @@ const MarkdownLinkContext = createContext(false);
  * the app cannot honour.
  */
 const MarkdownFileOpenContext = createContext<FileOpenHandler | undefined>(undefined);
+/**
+ * Opens a file a `happy-file:` link names in another agent's or workspace's
+ * folder. Absent, such a link stays inert like any other target this surface
+ * cannot open.
+ */
+const MarkdownFileLinkOpenContext = createContext<FileLinkOpenHandler | undefined>(undefined);
 /** Where the reader asked a web link to open from its context menu. */
 export type LinkOpenPlacement = "browser" | "panel";
 /**
@@ -218,6 +225,7 @@ const MarkdownLink = ({
     const reference = references === undefined ? undefined : messageReferenceFromHref(href);
     const safe = safeHref(href);
     const onFileOpen = useContext(MarkdownFileOpenContext);
+    const onFileLinkOpen = useContext(MarkdownFileLinkOpenContext);
     const onLinkOpen = useContext(MarkdownLinkOpenContext);
     const linkOpenDefault = useContext(MarkdownLinkDefaultContext);
     // The link's own context menu, while it is up: where the pointer asked
@@ -228,6 +236,35 @@ const MarkdownLink = ({
             <MarkdownReferenceLink href={href!} reference={reference} references={references}>
                 {children}
             </MarkdownReferenceLink>
+        );
+    // A link into another workspace's folder carries that folder, so it opens
+    // the same file wherever the message is read. Its scheme means nothing to
+    // the browser or the OS, so no click may hand it to either.
+    const fileLink =
+        safe === undefined && typeof href === "string" ? happyAgentFileLinkParse(href) : undefined;
+    if (
+        fileLink !== undefined &&
+        onFileLinkOpen !== undefined &&
+        filePreviewKind(fileLink.path) !== "binary"
+    )
+        return (
+            <a
+                className="happy-message__md-link happy-message__md-file"
+                data-happy-desktop-ui="message-md-file"
+                data-path={fileLink.path}
+                href={href}
+                onClick={(event) => {
+                    event.preventDefault();
+                    onFileLinkOpen(fileLink);
+                }}
+                onAuxClick={(event) => {
+                    event.preventDefault();
+                    if (event.button === 1) onFileLinkOpen(fileLink);
+                }}
+                onDragStart={(event) => event.preventDefault()}
+            >
+                <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>
+            </a>
         );
     const target = safe === undefined ? markdownDocumentLinkTarget(href) : undefined;
     // Only a file this product can actually show is offered as a click. An
@@ -438,7 +475,8 @@ const messageUrlTransform: UrlTransform = (url, key, node) =>
  * content is injected into the final paragraph's inline flow so it cannot wrap
  * independently at the paragraph boundary. `onFileOpen` turns a link that names
  * a workspace file into a click that opens Happy's own viewer instead of an
- * inert anchor. `onLinkOpen` gives a web link a context menu offering the
+ * inert anchor, and `onFileLinkOpen` does the same for a `happy-file:` link
+ * into another agent's or workspace's folder. `onLinkOpen` gives a web link a context menu offering the
  * machine's browser or the side panel. `references` resolves the Happy
  * reference tags an agent wrote to their live titles; without it each reads as
  * inert placeholder text, and a tag never shows raw.
@@ -451,6 +489,7 @@ export function renderMessageMarkdown(
     onLinkOpen?: LinkOpenHandler,
     linkOpenDefault?: LinkOpenPlacement,
     references?: MessageReferences,
+    onFileLinkOpen?: FileLinkOpenHandler,
 ): ReactNode {
     const text = messageReferencesResolve(source, references, generationStatus === "streaming");
     return (
@@ -464,18 +503,20 @@ export function renderMessageMarkdown(
             >
                 <MarkdownReferencesContext.Provider value={references}>
                     <MarkdownFileOpenContext.Provider value={onFileOpen}>
-                        <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
-                            <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
-                                <MemoMarkdown
-                                    components={markdownComponents}
-                                    urlTransform={messageUrlTransform}
-                                    remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
-                                    skipHtml
-                                >
-                                    {text}
-                                </MemoMarkdown>
-                            </MarkdownLinkDefaultContext.Provider>
-                        </MarkdownLinkOpenContext.Provider>
+                        <MarkdownFileLinkOpenContext.Provider value={onFileLinkOpen}>
+                            <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
+                                <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
+                                    <MemoMarkdown
+                                        components={markdownComponents}
+                                        urlTransform={messageUrlTransform}
+                                        remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
+                                        skipHtml
+                                    >
+                                        {text}
+                                    </MemoMarkdown>
+                                </MarkdownLinkDefaultContext.Provider>
+                            </MarkdownLinkOpenContext.Provider>
+                        </MarkdownFileLinkOpenContext.Provider>
                     </MarkdownFileOpenContext.Provider>
                 </MarkdownReferencesContext.Provider>
             </MarkdownTrailingContext.Provider>

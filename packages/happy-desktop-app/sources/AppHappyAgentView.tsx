@@ -105,6 +105,7 @@ import type {
     StatusBarStore,
 } from "happy-desktop-state";
 import {
+    HAPPY_AGENT_FILE_LINK_READ_ONLY_REFUSAL,
     HAPPY_AGENT_PANEL_FILE_VIEW_ID,
     agentAuthor,
     happyAgentChangeTiersAssign,
@@ -187,6 +188,7 @@ import {
     fileTreeRanked,
     filePathMatches,
     fileNameCompare,
+    type FileLinkOpenHandler,
     type FileOpenHandler,
     type LinkOpenHandler,
     type LinkOpenPlacement,
@@ -4672,7 +4674,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 props.onFileSelect(file.groupId, props.chatId, path, kind);
             }}
             wrap={workspace.fileViewWrap}
-            {...(access.writeRefusal === undefined ? {} : { writeRefusal: access.writeRefusal })}
+            {...(file.linked
+                ? { writeRefusal: HAPPY_AGENT_FILE_LINK_READ_ONLY_REFUSAL }
+                : access.writeRefusal === undefined
+                  ? {}
+                  : { writeRefusal: access.writeRefusal })}
             {...(connectionRefusal === undefined ? {} : { saveRefusal: connectionRefusal })}
             workspace={props.workspace}
         />
@@ -4915,6 +4921,13 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         selection,
                     );
                 }}
+                // A link into another agent's or workspace's folder opens a
+                // read-only preview beside this conversation. It is not gated
+                // on the connection here: an unreachable Happy Agent is one of
+                // the reasons the notice gives, rather than a silent no-op.
+                onFileLinkOpen={(link) =>
+                    props.workspace.fileLinkOpen(link, fileTabKind(link.path))
+                }
                 onLinkOpen={(url, placement) => {
                     // The side panel's browser tab is this workspace's own; the
                     // machine's browser is the host's door, and only the host
@@ -5701,10 +5714,24 @@ function HappyAgentFileBody(props: {
     const linkedFileOpen: FileOpenHandler = (target, selection): void => {
         if (!props.happyAgentOnline()) return;
         const kind = fileTabKind(target);
-        if (file.placement === "panel")
+        // A file read through a link into another workspace names its
+        // neighbours in that workspace, so they are followed there too.
+        if (file.linked)
+            workspace.fileLinkOpen(
+                {
+                    target: { type: "workspace", workspaceId: file.groupId },
+                    path: target,
+                    ...(selection === undefined ? {} : { selection }),
+                },
+                kind,
+            );
+        else if (file.placement === "panel")
             workspace.fileReferenceOpen(file.groupId, target, kind, selection);
         else props.onMainFileOpen(target, kind, selection);
     };
+    /** Follows a `happy-file:` link the document carries, into the panel. */
+    const fileLinkOpen: FileLinkOpenHandler = (link): void =>
+        workspace.fileLinkOpen(link, fileTabKind(link.path));
     // Typing into a document that could never be written back is worse than not
     // offering the editor at all: the reader loses what they typed and learns
     // why only when they try to save it.
@@ -5778,6 +5805,7 @@ function HappyAgentFileBody(props: {
                                           selection,
                                       )
                                   }
+                                  onFileLinkOpen={fileLinkOpen}
                                   {...(markdownCacheKey === undefined
                                       ? {}
                                       : { cacheKey: markdownCacheKey })}
@@ -5905,6 +5933,7 @@ function HappyAgentFileBody(props: {
                                   <HappyAgentChangedFilePreview
                                       file={file}
                                       onFileOpen={linkedFileOpen}
+                                      onFileLinkOpen={fileLinkOpen}
                                       openDisabled={props.saveRefusal !== undefined}
                                       text={current}
                                       // The file's characters, where they can be
@@ -6011,6 +6040,8 @@ function HappyAgentChangedFilePreview(props: {
     openDisabled: boolean;
     /** Opens a linked file on the side this one is being read on. */
     onFileOpen: FileOpenHandler;
+    /** Opens a `happy-file:` link the document carries, into the panel. */
+    onFileLinkOpen: FileLinkOpenHandler;
     text: string;
     /** The file's characters, editable, where this checkout can be written. */
     editor?: ReactNode;
@@ -6052,6 +6083,7 @@ function HappyAgentChangedFilePreview(props: {
                 if (props.openDisabled) return;
                 props.onFileOpen(documentLinkResolve(file.path, href), selection);
             }}
+            onFileLinkOpen={props.onFileLinkOpen}
             path={file.path}
         />
     );
@@ -6333,6 +6365,8 @@ function HappyAgentConversationBody(props: {
     onCreate?: () => void;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
     onFileOpen: FileOpenHandler;
+    /** Opens a file a `happy-file:` link names in another workspace, beside this one. */
+    onFileLinkOpen: FileLinkOpenHandler;
     /** Opens a web link a message carries where its context menu asked for it. */
     onLinkOpen: LinkOpenHandler;
     /** Which of the two places a plain click on a link goes, marked in its menu. */
@@ -6375,6 +6409,7 @@ function HappyAgentConversationBody(props: {
                 now={props.now}
                 onChatSelect={props.onChatSelect}
                 onFileOpen={props.onFileOpen}
+                onFileLinkOpen={props.onFileLinkOpen}
                 onLinkOpen={props.onLinkOpen}
                 linkOpenDefault={props.linkOpenDefault}
                 canAbort={props.canAbort}
@@ -6527,6 +6562,8 @@ function HappyAgentConversationSurface(props: {
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
     /** Opens a file the transcript names, in the panel beside it, at the lines it named. */
     onFileOpen: FileOpenHandler;
+    /** Opens a file a `happy-file:` link names in another workspace, beside this one. */
+    onFileLinkOpen: FileLinkOpenHandler;
     /** Opens a web link a message carries where its context menu asked for it. */
     onLinkOpen: LinkOpenHandler;
     /** Which of the two places a plain click on a link goes, marked in its menu. */
@@ -6784,6 +6821,7 @@ function HappyAgentConversationSurface(props: {
             onFileOpen={(path, selection) => {
                 if (props.happyAgentOnline()) props.onFileOpen(path, selection);
             }}
+            onFileLinkOpen={props.onFileLinkOpen}
             onLinkOpen={props.onLinkOpen}
             linkOpenDefault={props.linkOpenDefault}
             onImageOpen={(messageId, attachmentId) => {
@@ -8009,6 +8047,9 @@ function HappyAgentPanelBody(props: {
                     // The listing opens content rather than being content, and a
                     // tool-call preview is bound to an entry of the conversation
                     // the main content is showing; neither has a form over there.
+                    // A file read through a link into another workspace is a
+                    // preview beside this conversation, not one of this
+                    // checkout's tabs.
                     transferable={(tab) =>
                         tab.id !== "files" &&
                         tab.id !== "artifacts" &&
@@ -8016,7 +8057,8 @@ function HappyAgentPanelBody(props: {
                         tab.id !== "usage" &&
                         tab.id !== "devices" &&
                         tab.id !== "preview" &&
-                        tab.id !== "artifact"
+                        tab.id !== "artifact" &&
+                        !(tab.id === HAPPY_AGENT_PANEL_FILE_VIEW_ID && panelFile?.linked)
                     }
                     transferTargets={PANEL_TRANSFER_TARGETS}
                 >

@@ -15,10 +15,12 @@ import Markdown, {
     type UrlTransform,
 } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { happyAgentFileLinkParse } from "happy-desktop-state";
 import { CodeBlock } from "./CodeBlock";
 import {
     fileReferenceFragment,
     fileReferenceSplit,
+    type FileLinkOpenHandler,
     type FileOpenHandler,
     type FileReference,
 } from "./fileReference";
@@ -50,6 +52,11 @@ export type MarkdownDocumentProps = {
      * neighbours should say so by not offering the click.
      */
     onFileOpen?: FileOpenHandler;
+    /**
+     * Opens a `happy-file:` link — a file in another agent's or workspace's
+     * folder. Without it such links render inert.
+     */
+    onFileLinkOpen?: FileLinkOpenHandler;
     /**
      * Resolves the document's own relative references, for a document that is
      * one file of a bundle whose other files it can show — an artifact's entry
@@ -167,15 +174,19 @@ export function markdownDocumentLinkPath(value: unknown): string | undefined {
 }
 
 // Preserve file targets for our explicit viewer callback. react-markdown's
-// default filter otherwise removes file: URLs, Windows drives and file:line
-// references before the link component can handle them. All other URLs keep
-// its default filter, and images never gain filesystem navigation.
+// default filter otherwise removes file: URLs, Windows drives, file:line
+// references and well-formed happy-file: links before the link component can
+// handle them. All other URLs keep its default filter, and images never gain
+// filesystem navigation.
 export const markdownFileUrlTransform: UrlTransform = (url, key, node) =>
-    key === "href" && node.tagName === "a" && markdownDocumentLinkPath(url) !== undefined
+    key === "href" &&
+    node.tagName === "a" &&
+    (markdownDocumentLinkPath(url) !== undefined || happyAgentFileLinkParse(url) !== undefined)
         ? url
         : defaultUrlTransform(url);
 
 const FileOpenContext = createContext<FileOpenHandler | undefined>(undefined);
+const FileLinkOpenContext = createContext<FileLinkOpenHandler | undefined>(undefined);
 const MarkdownCacheKeyContext = createContext<string | undefined>(undefined);
 const MarkdownReferencesContext = createContext<MarkdownDocumentReferences | undefined>(undefined);
 
@@ -186,6 +197,7 @@ const MarkdownReferencesContext = createContext<MarkdownDocumentReferences | und
  */
 const DocumentLink = ({ children, href }: ComponentPropsWithoutRef<"a"> & ExtraProps) => {
     const onFileOpen = useContext(FileOpenContext);
+    const onFileLinkOpen = useContext(FileLinkOpenContext);
     const references = useContext(MarkdownReferencesContext);
     const web = webHref(href);
     if (web !== undefined)
@@ -199,6 +211,28 @@ const DocumentLink = ({ children, href }: ComponentPropsWithoutRef<"a"> & ExtraP
             >
                 {children}
             </a>
+        );
+    // A link into another workspace's folder names that folder itself, so it
+    // means the same thing whichever document carries it.
+    const fileLink = typeof href === "string" ? happyAgentFileLinkParse(href) : undefined;
+    if (fileLink !== undefined)
+        return onFileLinkOpen === undefined ? (
+            <span
+                className="happy-markdown-document__link"
+                data-happy-desktop-ui="markdown-document-link"
+            >
+                {children}
+            </span>
+        ) : (
+            <button
+                className="happy-markdown-document__link happy-markdown-document__link--file"
+                data-happy-desktop-ui="markdown-document-file-link"
+                data-path={fileLink.path}
+                onClick={() => onFileLinkOpen(fileLink)}
+                type="button"
+            >
+                {children}
+            </button>
         );
     // A document that is one file of a bundle names its neighbours relative to
     // itself, so the bundle decides what a link means; nothing it does not
@@ -384,6 +418,7 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
         "text",
         "cacheKey",
         "onFileOpen",
+        "onFileLinkOpen",
         "references",
     ]);
     return (
@@ -402,13 +437,15 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
                 <MarkdownCacheKeyContext.Provider value={local.cacheKey}>
                     <MarkdownReferencesContext.Provider value={local.references}>
                         <FileOpenContext.Provider value={local.onFileOpen}>
-                            <MemoMarkdown
-                                components={documentComponents}
-                                urlTransform={markdownFileUrlTransform}
-                                remarkPlugins={MARKDOWN_REMARK_PLUGINS}
-                            >
-                                {local.text}
-                            </MemoMarkdown>
+                            <FileLinkOpenContext.Provider value={local.onFileLinkOpen}>
+                                <MemoMarkdown
+                                    components={documentComponents}
+                                    urlTransform={markdownFileUrlTransform}
+                                    remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+                                >
+                                    {local.text}
+                                </MemoMarkdown>
+                            </FileLinkOpenContext.Provider>
                         </FileOpenContext.Provider>
                     </MarkdownReferencesContext.Provider>
                 </MarkdownCacheKeyContext.Provider>

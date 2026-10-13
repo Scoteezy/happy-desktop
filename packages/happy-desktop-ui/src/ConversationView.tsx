@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
-import type { FileOpenHandler } from "./fileReference";
+import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
 import type { LinkOpenHandler, LinkOpenPlacement } from "./MessageMarkdown";
 import type { MessageReferences } from "./messageReferences";
 import {
@@ -207,6 +207,12 @@ export type ConversationViewProps = {
      * workspace behind it has nothing to open.
      */
     onFileOpen?: FileOpenHandler;
+    /**
+     * Opens a file a `happy-file:` link in a message names in another agent's
+     * or workspace's folder, beside this transcript. Absent leaves such links
+     * inert.
+     */
+    onFileLinkOpen?: FileLinkOpenHandler;
     /**
      * Opens a web link a message carries where the reader chose from the
      * link's context menu: the machine's browser or the side panel. Absent
@@ -792,6 +798,9 @@ export function ConversationView(props: ConversationViewProps) {
                                 onDelegationSelect={props.onDelegationSelect}
                                 now={props.now}
                                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+                                {...(props.onFileLinkOpen
+                                    ? { onFileLinkOpen: props.onFileLinkOpen }
+                                    : {})}
                                 {...(props.onLinkOpen ? { onLinkOpen: props.onLinkOpen } : {})}
                                 {...(props.references ? { references: props.references } : {})}
                                 {...(props.linkOpenDefault

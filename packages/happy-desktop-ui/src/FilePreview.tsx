@@ -1,5 +1,5 @@
 import { partitionComponentProps } from "./componentProps";
-import type { FileOpenHandler } from "./fileReference";
+import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Button } from "./Button";
 import { CodeBlock } from "./CodeBlock";
@@ -82,6 +82,8 @@ export type FilePreviewProps = {
      * behind it.
      */
     onFileOpen?: FileOpenHandler;
+    /** Opens a `happy-file:` link a rendered Markdown document carries. Absent leaves it inert. */
+    onFileLinkOpen?: FileLinkOpenHandler;
     /**
      * The file as a page rather than as characters, supplied by the host: an
      * HTML document has a rendered face this surface cannot draw itself, since
@@ -238,6 +240,7 @@ export function FilePreview(props: FilePreviewProps) {
         "actions",
         "onDownload",
         "onFileOpen",
+        "onFileLinkOpen",
         "onMediaWindowOpen",
         "rendered",
         "editor",
@@ -342,6 +345,7 @@ export function FilePreview(props: FilePreviewProps) {
                     kind={kind}
                     name={name}
                     onFileOpen={local.onFileOpen}
+                    onFileLinkOpen={local.onFileLinkOpen}
                     onMediaMeasure={(size) =>
                         setMeasured({
                             source,
@@ -368,6 +372,7 @@ function FilePreviewBody(props: {
     kind: FilePreviewKind;
     name: string;
     onFileOpen?: FileOpenHandler;
+    onFileLinkOpen?: FileLinkOpenHandler;
     onMediaMeasure: (size: { readonly width: number; readonly height: number }) => void;
     onMediaWindowOpen?: () => void;
     rendered?: ReactNode;
@@ -480,6 +485,7 @@ function FilePreviewBody(props: {
         return (
             <MarkdownDocument
                 {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+                {...(props.onFileLinkOpen ? { onFileLinkOpen: props.onFileLinkOpen } : {})}
                 {...(props.cacheKey ? { cacheKey: props.cacheKey } : {})}
                 text={props.content.text}
             />

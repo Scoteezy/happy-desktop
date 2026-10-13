@@ -1,4 +1,4 @@
-import type { HappyAgentFileLineRange } from "happy-desktop-state";
+import type { HappyAgentFileLineRange, HappyAgentFileLink } from "happy-desktop-state";
 
 /**
  * A file, and the run of lines in it somebody was talking about.
@@ -19,6 +19,14 @@ export interface FileReference {
  * every caller that only has a file to open stays exactly as it was.
  */
 export type FileOpenHandler = (path: string, selection?: HappyAgentFileLineRange) => void;
+
+/**
+ * Opens a file a `happy-file:` link names in another agent's or workspace's
+ * folder. A separate handler from `FileOpenHandler` because the path means
+ * nothing in the surface's own checkout: a surface that cannot reach other
+ * folders leaves such links inert rather than opening the wrong file.
+ */
+export type FileLinkOpenHandler = (link: HappyAgentFileLink) => void;
 
 /** Lines are counted from 1, and a file nobody would write about is this long. */
 const LINE_MAX = 10_000_000;

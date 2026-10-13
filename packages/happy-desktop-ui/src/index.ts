@@ -234,6 +234,7 @@ export {
 export {
     fileReferenceFragment,
     fileReferenceSplit,
+    type FileLinkOpenHandler,
     type FileOpenHandler,
     type FileReference,
 } from "./fileReference";

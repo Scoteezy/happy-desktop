@@ -99,6 +99,12 @@ export {
     type HappyReferenceKind,
     type HappyReferenceSegment,
 } from "@slopus/happy-agent-client";
+export {
+    HAPPY_AGENT_FILE_LINK_READ_ONLY_REFUSAL,
+    happyAgentFileLinkParse,
+    type HappyAgentFileLink,
+    type HappyAgentFileLinkTarget,
+} from "./happyAgent/happyAgentFileLink.js";
 export * from "./happyAgent/happyAgentInstructionsStore.js";
 export * from "./happyAgent/happyAgentMenusStore.js";
 export * from "./happyAgent/happyAgentModelStore.js";

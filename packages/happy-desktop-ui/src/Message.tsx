@@ -1,5 +1,5 @@
 import { partitionComponentProps } from "./componentProps";
-import type { FileOpenHandler } from "./fileReference";
+import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
 import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
 import {
     Children,
@@ -208,6 +208,11 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      */
     onFileOpen?: FileOpenHandler;
     /**
+     * Opens a file a `happy-file:` link in this message names in another
+     * agent's or workspace's folder. Absent leaves such links inert.
+     */
+    onFileLinkOpen?: FileLinkOpenHandler;
+    /**
      * Opens a web link this message carries where the reader asked for it —
      * the machine's browser or the side panel — from the link's context menu.
      * Absent leaves a link as it is: a plain click that goes where the host
@@ -318,6 +323,7 @@ export function Message(props: MessageProps) {
         "images",
         "onImageOpen",
         "onFileOpen",
+        "onFileLinkOpen",
         "onLinkOpen",
         "linkOpenDefault",
         "references",
@@ -483,6 +489,7 @@ export function Message(props: MessageProps) {
                           local.onLinkOpen,
                           local.linkOpenDefault,
                           local.references,
+                          local.onFileLinkOpen,
                       )
                     : null}
                 {/* An empty generated reply keeps a non-breaking-space line box

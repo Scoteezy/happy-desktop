@@ -1,5 +1,5 @@
 import { type CSSProperties, type ReactNode } from "react";
-import type { FileOpenHandler } from "./fileReference";
+import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
 import type { LinkOpenHandler, LinkOpenPlacement } from "./MessageMarkdown";
 import type { MessageReferences } from "./messageReferences";
 import { thumbhashDataUrl } from "./thumbhashDataUrl";
@@ -74,6 +74,8 @@ export type ConversationEntryViewProps = {
     now?: number;
     /** Opens a workspace file named by a tool call or linked from a message. */
     onFileOpen?: FileOpenHandler;
+    /** Opens a file a `happy-file:` link in a message names in another workspace. */
+    onFileLinkOpen?: FileLinkOpenHandler;
     /** Opens a web link from a message where its context menu asked for it. */
     onLinkOpen?: LinkOpenHandler;
     /** Which of the two places a plain click on a link goes, marked in its menu. */
@@ -454,6 +456,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                     : undefined
             }
             {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+            {...(props.onFileLinkOpen ? { onFileLinkOpen: props.onFileLinkOpen } : {})}
             {...(props.onLinkOpen ? { onLinkOpen: props.onLinkOpen } : {})}
             {...(props.linkOpenDefault ? { linkOpenDefault: props.linkOpenDefault } : {})}
             {...(props.references ? { references: props.references } : {})}
