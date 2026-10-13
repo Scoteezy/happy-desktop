@@ -70,6 +70,12 @@ export interface HappyAgentPanelSnapshot {
     /** Whether the transient Usage tab is open for this conversation. */
     readonly usageViewOpen: boolean;
     /**
+     * Whether the Devices tab is open. It belongs to the workspace rather than
+     * to one conversation, because what it bridges reaches the workspace's
+     * machine, so moving between that workspace's sessions keeps it.
+     */
+    readonly devicesViewOpen: boolean;
+    /**
      * The permanent files view, the permanent list of the chat's artifacts, the
      * transient tool preview, the transient file viewer, or one live tool tab.
      */
@@ -78,6 +84,7 @@ export interface HappyAgentPanelSnapshot {
         | "artifacts"
         | "activity"
         | "usage"
+        | "devices"
         | "preview"
         | "file"
         | "artifact"
@@ -143,6 +150,10 @@ export interface HappyAgentPanelStore {
     usageSelect(): void;
     /** Closes the transient Usage tab. */
     usageClose(): void;
+    /** Opens or selects the workspace's Devices tab. */
+    devicesSelect(): void;
+    /** Closes the Devices tab. Nothing it opened is closed with it. */
+    devicesClose(): void;
     /**
      * Opens or replaces the transient Preview tab with one conversation tool
      * entry, or with one file it presented when `mediaIndex` names it.
@@ -298,6 +309,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
     let activityViewShown = false;
     let activityViewDismissed = false;
     let usageViewShown = false;
+    let devicesViewShown = false;
     let previewEntryId: string | undefined;
     let previewMediaIndex: number | undefined;
     let previewConversationId: HappyAgentSessionId | undefined;
@@ -310,6 +322,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         activityViewDismissed: false,
         activityViewOpen: false,
         usageViewOpen: false,
+        devicesViewOpen: false,
         fileViewOpen: false,
         open: false,
         tabs: NO_TABS,
@@ -322,6 +335,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             activityViewDismissed,
             activityViewOpen: activityViewShown,
             usageViewOpen: usageViewShown,
+            devicesViewOpen: devicesViewShown,
             fileViewOpen: fileViewShown,
             ...(artifactView === undefined ? {} : { artifactView }),
             open,
@@ -365,6 +379,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             next.activityViewDismissed === snapshot.activityViewDismissed &&
             next.activityViewOpen === snapshot.activityViewOpen &&
             next.usageViewOpen === snapshot.usageViewOpen &&
+            next.devicesViewOpen === snapshot.devicesViewOpen &&
             next.previewEntryId === snapshot.previewEntryId &&
             next.previewMediaIndex === snapshot.previewMediaIndex &&
             next.fileViewOpen === snapshot.fileViewOpen &&
@@ -386,6 +401,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             activityViewDismissed: next.activityViewDismissed,
             activityViewOpen: next.activityViewOpen,
             usageViewOpen: next.usageViewOpen,
+            devicesViewOpen: next.devicesViewOpen,
             fileViewOpen: next.fileViewOpen,
             ...(next.artifactView === undefined ? {} : { artifactView: next.artifactView }),
             open: next.open,
@@ -570,6 +586,21 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             remember();
             recompute();
         },
+        devicesSelect() {
+            if (disposed || !groupId) return;
+            devicesViewShown = true;
+            activeViewId = "devices";
+            open = true;
+            remember();
+            recompute();
+        },
+        devicesClose() {
+            if (disposed || !devicesViewShown) return;
+            devicesViewShown = false;
+            if (activeViewId === "devices") activeViewId = "files";
+            remember();
+            recompute();
+        },
         previewOpen(entryId, mediaIndex) {
             if (disposed || !conversationId) return;
             previewEntryId = entryId;
@@ -724,6 +755,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             activityViewShown = false;
             activityViewDismissed = false;
             usageViewShown = false;
+            devicesViewShown = false;
             fileViewShown = false;
             artifactView = undefined;
             if (nextGroupId) groupRestore(nextGroupId);

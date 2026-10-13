@@ -322,6 +322,8 @@ export function happyAgentConnectionOpen(input: {
     readonly happyAgentHttpUrl: string;
     readonly client?: HappyAgentClient;
     readonly hostServicesUrl?: string;
+    /** Whether this computer's USB devices and ports can be bridged to this Happy Agent. */
+    readonly deviceBridges?: boolean;
     /**
      * The window's appearance right now, read again for every terminal this
      * connection opens. A terminal is started in it and keeps it afterwards.
@@ -378,6 +380,7 @@ export function happyAgentConnectionOpen(input: {
     const hostServices = happyAgentHostServicesCreate(
         input.hostServicesUrl ?? input.happyAgentHttpUrl,
         input.happyAgentHttpUrl,
+        { deviceBridges: input.deviceBridges ?? false },
     );
     const welcome = welcomeStoreCreate(desktopWelcomePersistence(input.happyAgentId));
     const onboarding = happyAgentOnboardingStoreCreate(directClient, agentConnection.sync, {

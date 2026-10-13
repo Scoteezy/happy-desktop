@@ -29,6 +29,8 @@ export default defineConfig({
                 "electron",
                 "electron-updater",
                 "ws",
+                // node-usb is native: loaded from node_modules at first use.
+                "usb",
                 // Kept out of the bundle and shipped as a runtime dependency.
                 // Nothing in the main process imports it since the notes
                 // collection was removed, so this entry is inert; it is left in

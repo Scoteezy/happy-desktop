@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { happyAgentHostServicesCreate } from "./happyAgentHostServices";
 
 // Host services import the app package for its terminal connection only, which
@@ -65,4 +65,62 @@ it("offers no artifact sites outside the desktop window", () => {
     expect(happyAgentHostServicesCreate("http://127.0.0.1:9/capability").artifactSiteOpen).toBe(
         undefined,
     );
+});
+
+describe("device bridges", () => {
+    const state = {
+        usb: { available: false, reason: "USB could not be started on this computer." },
+        bridges: [],
+    };
+
+    function follow(response: Response) {
+        vi.stubGlobal("window", { happyDesktop: {} });
+        vi.stubGlobal(
+            "fetch",
+            vi.fn(async () => response),
+        );
+        const services = happyAgentHostServicesCreate(
+            "http://127.0.0.1:9/capability/connections/peer1",
+            "http://127.0.0.1:9/capability",
+            { deviceBridges: true },
+        );
+        const events: unknown[] = [];
+        const stop = services.deviceBridges!.stateFollow({
+            stateReceived: (value) => events.push(value),
+            appOutdated: () => events.push("app-outdated"),
+            failed: (message) => events.push(`failed: ${message}`),
+        });
+        return { events, stop };
+    }
+
+    it("offers bridges only to a Happy Agent on another machine", () => {
+        vi.stubGlobal("window", { happyDesktop: {} });
+        expect(happyAgentHostServicesCreate("http://127.0.0.1:9/capability").deviceBridges).toBe(
+            undefined,
+        );
+    });
+
+    it("reads each whole state from the stream, however it is split", async () => {
+        const text = `data: ${JSON.stringify(state)}\n\n: keepalive\n\n`;
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) {
+                const bytes = new TextEncoder().encode(text);
+                controller.enqueue(bytes.subarray(0, 17));
+                controller.enqueue(bytes.subarray(17));
+            },
+        });
+        const { events, stop } = follow(
+            new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }),
+        );
+        await vi.waitFor(() => expect(events).toEqual([state]));
+        stop();
+    });
+
+    it("says the app is too old when its bridge has no bridge routes at all", async () => {
+        const { events, stop } = follow(
+            new Response(null, { status: 404, headers: { "cache-control": "no-store" } }),
+        );
+        await vi.waitFor(() => expect(events).toEqual(["app-outdated"]));
+        stop();
+    });
 });

@@ -32,6 +32,8 @@ import type {
     HappyAgentConnectionStore,
     HappyAgentDebugLogStore,
     HappyAgentConversationSnapshot,
+    HappyAgentDeviceBridgesStore,
+    HappyAgentDeviceBridgeSupportStore,
     HappyAgentFileLayout,
     HappyAgentWorkspaceFiles,
     HappyAgentCommentDraft,
@@ -111,6 +113,7 @@ import {
     happyAgentArtifactChatContext,
     happyAgentArtifactNames,
     happyAgentArtifactSourceLabel,
+    happyAgentDeviceBridgeSupportStoreNone,
     commandPaletteStoreNoop,
     experimentsStoreNoop,
     projectsVisibilityStoreNoop,
@@ -197,6 +200,7 @@ import {
     HappyAgentSessionControls,
     type HappyAgentUserInputAnswerMap,
     HappyAgentUsagePanel,
+    HappyAgentDevicesPanel,
     PanelHeader,
     QuickActionsCard,
     type QuickActionsCardItem,
@@ -1196,6 +1200,7 @@ function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefine
         return undefined;
     if (panel.activeViewId === "activity") return "activity";
     if (panel.activeViewId === "usage") return "usage";
+    if (panel.activeViewId === "devices") return "devices";
     if (panel.activeViewId === "preview") return panel.previewEntryId ? "preview" : undefined;
     if (panel.activeViewId === "file") return panel.fileViewOpen ? "file" : undefined;
     if (panel.activeViewId === "artifact") return panel.artifactView ? "artifact" : undefined;
@@ -4591,6 +4596,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
     const panelViewClose = (viewId: string) => {
         if (viewId === "activity") props.workspace.activityPanelClose();
         else if (viewId === "usage") props.workspace.usagePanelClose();
+        else if (viewId === "devices") props.workspace.panel.devicesClose();
         else if (viewId === "preview") props.workspace.panel.previewClose();
         else if (viewId === "file") props.workspace.filePanelClose();
         else if (viewId === "artifact") props.workspace.panel.artifactViewClose();
@@ -4932,6 +4938,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             />
         );
 
+    // Devices reach a workspace on another machine, so only a connection the
+    // host can bridge offers them, and only for the workspace that is open.
+    const deviceBridgeSupport = props.workspace.deviceBridgeSupport();
+    const deviceBridges =
+        deviceBridgeSupport && openGroup ? props.workspace.deviceBridges(openGroup.id) : undefined;
+
     return (
         <AppShell
             embedded
@@ -4972,6 +4984,15 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         activity={conversation.type === "ready" ? conversation.value : undefined}
                         canStartBrowser={availability.online && openGroup !== undefined}
                         canStartTerminal={availability.online && props.chatId !== undefined}
+                        {...(deviceBridgeSupport && deviceBridges && openGroup
+                            ? {
+                                  devices: {
+                                      groupId: openGroup.id,
+                                      support: deviceBridgeSupport,
+                                      bridges: deviceBridges,
+                                  },
+                              }
+                            : {})}
                         browserContent={props.browserContent}
                         browserConnectionId={props.browserConnectionId}
                         htmlPreview={props.htmlPreview}
@@ -7602,6 +7623,25 @@ function changeTierNodes(
     return { nodes: [...arrange(assignment.primary), ...tierNodes], sections };
 }
 
+/** The Devices tab: one subscription to the open workspace's bridges. */
+function HappyAgentDevicesSurface(props: { store: HappyAgentDeviceBridgesStore }) {
+    const store = props.store;
+    const devices = useSyncExternalStore(store.subscribe, store.get, store.get);
+    return (
+        <HappyAgentDevicesPanel
+            devices={devices}
+            onBridgeClose={(id) => store.bridgeClose(id)}
+            onLocalToWorkspaceOpen={(workspacePort, localPort) =>
+                store.localToWorkspaceOpen(workspacePort, localPort)
+            }
+            onUsbAttach={(busId) => store.usbAttach(busId)}
+            onWorkspaceToLocalOpen={(localPort, workspacePort) =>
+                store.workspaceToLocalOpen(localPort, workspacePort)
+            }
+        />
+    );
+}
+
 function HappyAgentPanelBody(props: {
     activity?: HappyAgentConversationSnapshot;
     /**
@@ -7623,6 +7663,15 @@ function HappyAgentPanelBody(props: {
     mediaWindow?: MediaWindowOpener;
     canStartBrowser: boolean;
     canStartTerminal: boolean;
+    /**
+     * The open workspace's local bridges, where the host can bridge to its
+     * machine. Its Happy Agent says whether Devices is offered at all.
+     */
+    devices?: {
+        readonly groupId: HappyAgentGroupId;
+        readonly support: HappyAgentDeviceBridgeSupportStore;
+        readonly bridges: HappyAgentDeviceBridgesStore;
+    };
     changes: OpenGroup["changes"];
     changesStatus?: OpenGroup["changesStatus"];
     /**
@@ -7769,6 +7818,13 @@ function HappyAgentPanelBody(props: {
     // reference itself reads as.
     const titlesStore = props.artifacts?.artifacts.titles() ?? artifactTitlesStoreNoop;
     const titles = useSyncExternalStore(titlesStore.subscribe, titlesStore.get, titlesStore.get);
+    const deviceSupportStore = props.devices?.support ?? happyAgentDeviceBridgeSupportStoreNone;
+    const deviceSupport = useSyncExternalStore(
+        deviceSupportStore.subscribe,
+        deviceSupportStore.get,
+        deviceSupportStore.get,
+    );
+    const devicesOffered = props.devices !== undefined && deviceSupport.status === "supported";
     const artifactView = props.panel.artifactView;
     const artifactTabView =
         artifactView === undefined
@@ -7806,6 +7862,9 @@ function HappyAgentPanelBody(props: {
             : []),
         ...(props.panel.usageViewOpen
             ? [{ closable: true, icon: "clock" as const, id: "usage", label: "Usage" }]
+            : []),
+        ...(props.panel.devicesViewOpen && props.devices
+            ? [{ closable: true, icon: "link" as const, id: "devices", label: "Devices" }]
             : []),
         ...(props.panel.fileViewOpen && panelFile
             ? [
@@ -7879,6 +7938,7 @@ function HappyAgentPanelBody(props: {
                 <TabbedPane
                     actions={
                         props.canStartTerminal ||
+                        devicesOffered ||
                         (props.browserContent && props.canStartBrowser) ? (
                             <>
                                 {props.browserContent && props.canStartBrowser ? (
@@ -7906,6 +7966,20 @@ function HappyAgentPanelBody(props: {
                                         variant="ghost"
                                     />
                                 ) : null}
+                                {/* Offered only where the workspace's Happy
+                                Agent says it can take this Mac's devices and
+                                ports. */}
+                                {devicesOffered ? (
+                                    <Button
+                                        aria-label="Devices"
+                                        icon="link"
+                                        iconOnly
+                                        onClick={() => props.store.devicesSelect()}
+                                        size="small"
+                                        title="Devices and ports"
+                                        variant="ghost"
+                                    />
+                                ) : null}
                             </>
                         ) : undefined
                     }
@@ -7918,6 +7992,7 @@ function HappyAgentPanelBody(props: {
                         else if (tabId === "artifacts") props.store.artifactsSelect();
                         else if (tabId === "activity") props.onActivityOpen();
                         else if (tabId === "usage") props.onUsageOpen();
+                        else if (tabId === "devices") props.store.devicesSelect();
                         else if (tabId === "preview" && props.panel.previewEntryId)
                             props.store.previewOpen(props.panel.previewEntryId);
                         else if (tabId === HAPPY_AGENT_PANEL_FILE_VIEW_ID)
@@ -7939,6 +8014,7 @@ function HappyAgentPanelBody(props: {
                         tab.id !== "artifacts" &&
                         tab.id !== "activity" &&
                         tab.id !== "usage" &&
+                        tab.id !== "devices" &&
                         tab.id !== "preview" &&
                         tab.id !== "artifact"
                     }
@@ -8106,6 +8182,22 @@ function HappyAgentPanelBody(props: {
                                 icon="clock"
                                 size="panel"
                                 title="No session usage"
+                            />
+                        )
+                    ) : props.panel.activeViewId === "devices" ? (
+                        props.devices ? (
+                            <HappyAgentDevicesSurface
+                                // Another workspace is another store: what was
+                                // typed for one does not carry to the next.
+                                key={props.devices.groupId}
+                                store={props.devices.bridges}
+                            />
+                        ) : (
+                            <EmptyState
+                                description="Devices and ports reach a workspace on another machine."
+                                icon="link"
+                                size="panel"
+                                title="No devices here"
                             />
                         )
                     ) : props.panel.activeViewId === "preview" ? (

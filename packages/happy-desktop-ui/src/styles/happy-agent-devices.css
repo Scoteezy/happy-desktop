@@ -1,0 +1,185 @@
+/*
+ * A workspace's Devices tab: what the workspace's machine can take, the USB
+ * devices and Bluetooth adapters of this Mac, the two port forms, and the open
+ * bridges. Unframed side-panel content: sections of plain rows on one surface,
+ * like the Activity tab, rather than cards inside the panel's own frame.
+ */
+
+.happy-agent-devices-scroll {
+    container-type: inline-size;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+}
+
+.happy-agent-devices-scroll__viewport {
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.happy-agent-devices-scroll__content {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: 100%;
+    padding: 12px 8px;
+    box-sizing: border-box;
+}
+
+.happy-agent-devices {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    box-sizing: border-box;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-devices__section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-agent-devices__heading {
+    display: flex;
+    align-items: center;
+    height: 20px;
+    margin: 0;
+    padding: 0 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 16px;
+}
+
+.happy-agent-devices__list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-agent-devices__row,
+.happy-agent-devices__capability {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 4px 8px;
+}
+
+.happy-agent-devices__row {
+    align-items: center;
+    min-height: 40px;
+    box-sizing: border-box;
+}
+
+.happy-agent-devices__row-icon,
+.happy-agent-devices__capability-mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    color: var(--text-secondary);
+}
+
+.happy-agent-devices__capability-mark {
+    height: 20px;
+}
+
+.happy-agent-devices__capability[data-available] .happy-agent-devices__capability-mark {
+    color: var(--success);
+}
+
+.happy-agent-devices__row[data-tone="failed"] .happy-agent-devices__row-icon {
+    color: var(--status-error);
+}
+
+.happy-agent-devices__text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.happy-agent-devices__title {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-devices__capability .happy-agent-devices__title {
+    white-space: normal;
+}
+
+.happy-agent-devices__detail {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    overflow-wrap: anywhere;
+}
+
+.happy-agent-devices__row-action {
+    display: flex;
+    flex: none;
+    align-items: center;
+}
+
+.happy-agent-devices__note,
+.happy-agent-devices__error,
+.happy-agent-devices__banner {
+    margin: 0;
+    padding: 0 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-agent-devices__error {
+    color: var(--status-error);
+}
+
+.happy-agent-devices__row .happy-agent-devices__error {
+    padding: 0;
+}
+
+.happy-agent-devices__banner {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+}
+
+.happy-agent-devices__form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.happy-agent-devices__fields {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 0 8px;
+}
+
+.happy-agent-devices__fields > [data-happy-desktop-ui="text-field"] {
+    flex: 1 1 96px;
+    min-width: 96px;
+}

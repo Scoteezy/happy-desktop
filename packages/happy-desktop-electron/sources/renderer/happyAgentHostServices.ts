@@ -1,6 +1,8 @@
 import { BrowserTerminalConnection, TERMINAL_PROTOCOL, terminalSocketUrl } from "happy-desktop-app";
 import type {
     HappyAgentArtifactSiteOpening,
+    HappyAgentDeviceBridgeHost,
+    HappyAgentDeviceBridgeHostState,
     HappyAgentHostServices,
     HappyAgentOpenInTarget,
     HappyAgentOpenInTargets,
@@ -121,6 +123,103 @@ async function artifactSiteOpen(
     return { type: "opened", url: (await jsonRead<{ readonly url: string }>(response)).url };
 }
 
+/** A follow that failed waits this long before asking again. */
+const BRIDGE_EVENTS_RETRY_MS = 2_000;
+
+function responseOutdated(response: Response): boolean {
+    return (
+        response.status === 404 &&
+        !response.headers.get("content-type")?.startsWith("application/json")
+    );
+}
+
+/**
+ * Follows the app's bridge state as a stream of whole states. Like artifact
+ * sites, an app from before local bridges answers the route with a bare 404,
+ * which says so once and stops; any other failure is retried.
+ */
+function deviceBridgeStateFollow(
+    baseUrl: string,
+    handlers: Parameters<HappyAgentDeviceBridgeHost["stateFollow"]>[0],
+): () => void {
+    const controller = new AbortController();
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const failure = (error: unknown): void => {
+        if (controller.signal.aborted) return;
+        handlers.failed(
+            error instanceof Error && error.message.length > 0
+                ? error.message
+                : "The desktop app did not report its bridges.",
+        );
+        retry = setTimeout(() => void follow(), BRIDGE_EVENTS_RETRY_MS);
+    };
+    const follow = async (): Promise<void> => {
+        try {
+            const response = await fetch(serviceUrl(baseUrl, "/bridge-events"), {
+                headers: { accept: "text/event-stream" },
+                signal: controller.signal,
+            });
+            if (responseOutdated(response)) {
+                handlers.appOutdated();
+                return;
+            }
+            if (!response.ok || !response.body) {
+                await jsonRead<unknown>(response);
+                throw new Error("The desktop app did not report its bridges.");
+            }
+            const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+            let pending = "";
+            for (;;) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                pending += value;
+                for (let end = pending.indexOf("\n\n"); end >= 0; end = pending.indexOf("\n\n")) {
+                    const data = pending
+                        .slice(0, end)
+                        .split("\n")
+                        .filter((line) => line.startsWith("data: "))
+                        .map((line) => line.slice("data: ".length))
+                        .join("\n");
+                    pending = pending.slice(end + 2);
+                    // The app's own projection, written by its bridge host.
+                    if (data.length > 0)
+                        handlers.stateReceived(JSON.parse(data) as HappyAgentDeviceBridgeHostState);
+                }
+            }
+            throw new Error("The desktop app stopped reporting its bridges.");
+        } catch (error) {
+            failure(error);
+        }
+    };
+    void follow();
+    return () => {
+        controller.abort();
+        if (retry) clearTimeout(retry);
+    };
+}
+
+function deviceBridgeHostCreate(baseUrl: string): HappyAgentDeviceBridgeHost {
+    const post = async (path: string, body: unknown): Promise<void> => {
+        await postJson<Record<string, never>>(baseUrl, path, body);
+    };
+    return {
+        stateFollow: (handlers) => deviceBridgeStateFollow(baseUrl, handlers),
+        usbAttach: (request) => post("/bridge-usb-attach", request),
+        workspaceToLocalOpen: (request) => post("/bridge-port-open", request),
+        localToWorkspaceOpen: (request) => post("/bridge-forward-open", request),
+        bridgeClose: (id) => post("/bridge-close", { id }),
+    };
+}
+
+export interface HappyAgentHostServicesOptions {
+    /**
+     * Whether this computer offers its USB devices and ports to this Happy
+     * Agent. Only one on another machine: bridging this computer to itself
+     * would change nothing.
+     */
+    readonly deviceBridges?: boolean;
+}
+
 /**
  * Renderer access to the small set of services that truly belong to the
  * desktop host. Agent resources use `HappyAgentClient` directly.
@@ -128,6 +227,7 @@ async function artifactSiteOpen(
 export function happyAgentHostServicesCreate(
     baseUrl: string,
     agentUrl = baseUrl,
+    options: HappyAgentHostServicesOptions = {},
 ): HappyAgentHostServices {
     const capability = capabilityOf(baseUrl);
     return {
@@ -186,6 +286,7 @@ export function happyAgentHostServicesCreate(
                       artifactSiteOpen(baseUrl, artifactId, version),
               }
             : {}),
+        ...(options.deviceBridges ? { deviceBridges: deviceBridgeHostCreate(baseUrl) } : {}),
         attachmentSourcePath: (file) => window.happyDesktop?.attachmentSourcePath(file),
         attachmentSourceReachable: async (workspaceId, sourcePath) =>
             (

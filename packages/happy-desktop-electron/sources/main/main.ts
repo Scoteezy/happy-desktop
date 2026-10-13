@@ -80,6 +80,7 @@ import {
 import { htmlPreviewProxyCreate, type HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
 import { artifactSiteScheme, artifactSitesCreate, type ArtifactSiteHandle } from "./artifactSite";
 import { artifactNetworkProxyCreate, type ArtifactNetworkProxyHandle } from "./artifactNetwork";
+import { deviceBridgeHostCreate } from "./deviceBridgeHost";
 import {
     ArtifactGuests,
     artifactGuestAttach,
@@ -336,6 +337,12 @@ let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
 let artifactSites: ArtifactSiteHandle | undefined;
 let artifactGuests: ArtifactGuests | undefined;
 let artifactNetworkProxy: ArtifactNetworkProxyHandle | undefined;
+/**
+ * Every USB device, port bridge, and forward this app holds. It belongs to the
+ * app rather than a window, so a reload or renderer update keeps them all and
+ * quitting closes them. Creating it loads nothing until it is first used.
+ */
+const deviceBridges = deviceBridgeHostCreate();
 let browserProxyConnectionId: number | undefined;
 let browserProxyOperation = Promise.resolve();
 // Automation needs a real laid-out window without taking focus from the work
@@ -1559,6 +1566,7 @@ void app
                 ...(rendererOrigin ? { rendererOrigin } : {}),
                 ...(htmlPreviewProxy ? { htmlPreview: htmlPreviewProxy } : {}),
                 ...(artifactSites ? { artifactSite: artifactSites } : {}),
+                deviceBridges,
                 ...(desktopDebugEnabled ? { debug: desktopDebugLog } : {}),
             },
         );
@@ -1994,6 +2002,8 @@ app.on("before-quit", (event) => {
         runtime.close(),
         desktopWindowStateStore?.flush(),
         desktopProfilerController?.close(),
+        // Closing a bridge's WebSocket is what detaches its device and stops its listener.
+        deviceBridges.close(),
     ]).finally(() => {
         for (const proxy of browserProxies.values()) proxy.close();
         browserProxies.clear();

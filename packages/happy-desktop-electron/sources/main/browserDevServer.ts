@@ -6,6 +6,7 @@ import { localHappyAgentConnectorCreate } from "./localHappyAgent";
 import { happyAgentDaemonConnectionUnavailable } from "./happyAgentDaemonClient";
 import { happyAgentProxyHandle } from "./happyAgentProxyHandle";
 import { happyAgentTerminalBridgeCreate } from "./happyAgentTerminalBridge";
+import { deviceBridgeHostCreate } from "./deviceBridgeHost";
 
 const endpoint = "/__happy_local_happy_agent";
 const maximumBridgeBodyBytes = 3 * 1024 * 1024;
@@ -105,6 +106,9 @@ export function browserLocalHappyAgentPlugin(options: BrowserLocalHappyAgentOpti
             server.httpServer?.on("upgrade", (request, socket, head) => {
                 terminals.upgrade(request, socket, head);
             });
+            // The same app-wide bridge host the packaged app has, held by this
+            // development server instead.
+            const deviceBridges = deviceBridgeHostCreate();
             server.middlewares.use(async (request, response, next) => {
                 const url = new URL(request.url ?? "/", "http://127.0.0.1");
                 const path = url.pathname;
@@ -120,9 +124,11 @@ export function browserLocalHappyAgentPlugin(options: BrowserLocalHappyAgentOpti
                     try {
                         pending = runtime();
                         const active = await pending;
+                        deviceBridges.clientSet(active.connection.client);
                         const bridgePath = path.slice(endpoint.length) || "/";
                         const handled = await happyAgentProxyHandle({
                             client: active.connection.client,
+                            deviceBridges,
                             method: request.method ?? "GET",
                             path: bridgePath,
                             query: url.searchParams,
@@ -141,6 +147,7 @@ export function browserLocalHappyAgentPlugin(options: BrowserLocalHappyAgentOpti
             });
             server.httpServer?.once("close", () => {
                 terminals.close();
+                void deviceBridges.close();
                 void runtimeTask?.then(({ connection }) => connection.close());
             });
         },

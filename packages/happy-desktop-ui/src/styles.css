@@ -141,6 +141,7 @@
 @import "./styles/conversation.css";
 @import "./styles/chat-conversation.css";
 @import "./styles/happy-agent-usage.css";
+@import "./styles/happy-agent-devices.css";
 @import "./styles/happy-agent-activity.css";
 @import "./styles/happy-agent-settings.css";
 @import "./styles/mobile-access-confirmation.css";

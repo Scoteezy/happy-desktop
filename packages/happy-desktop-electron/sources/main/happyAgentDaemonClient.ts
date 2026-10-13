@@ -8,6 +8,7 @@ import type { Duplex } from "node:stream";
 import {
     HappyAgentApiError,
     HappyAgentClient,
+    WORKSPACE_BRIDGE_MAX_BINARY_MESSAGE_BYTES,
     WORKSPACE_SERVICE_AUTHORIZATION_HEADER,
     type AgentResponse,
     type ArtifactVersionResponse,
@@ -466,6 +467,97 @@ export class HappyAgentDaemonClient {
         });
     }
 
+    /** Attaches one USB device of this computer to the workspace's machine. */
+    openUsbBridge(
+        workspaceId: string,
+        query: { readonly busId: string; readonly id: string; readonly name: string },
+    ): Promise<WebSocket> {
+        return this.#openBridgeSocket(
+            this.#client.workspaceUsbBridgeUrl(workspaceId as Cuid2, {
+                ...query,
+                id: query.id as Cuid2,
+            }),
+        );
+    }
+
+    /** Opens a port bridge's control channel: a loopback listener on the workspace's machine. */
+    openPortBridge(
+        workspaceId: string,
+        query: { readonly port: number; readonly name: string },
+    ): Promise<WebSocket> {
+        return this.#openBridgeSocket(
+            this.#client.workspacePortBridgeUrl(workspaceId as Cuid2, query),
+        );
+    }
+
+    /** Accepts one connection waiting on a port bridge, as binary messages both ways. */
+    acceptBridgeConnection(
+        workspaceId: string,
+        bridgeId: string,
+        connectionId: string,
+    ): Promise<WebSocket> {
+        return this.#openBridgeSocket(
+            this.#client.workspaceBridgeConnectionUrl(
+                workspaceId as Cuid2,
+                bridgeId as Cuid2,
+                connectionId as Cuid2,
+            ),
+        );
+    }
+
+    /**
+     * Opens one bridge WebSocket under this client's connection prefix.
+     *
+     * It resolves paused: a bridge's first message can follow the upgrade at
+     * once, and must wait until its owner is listening.
+     */
+    #openBridgeSocket(endpointUrl: string): Promise<WebSocket> {
+        const url = new URL(endpointUrl);
+        url.protocol = "ws:";
+        return new Promise((resolvePromise, reject) => {
+            const socket = new WebSocket(url, {
+                createConnection: () => connectLocalSocket(this.socketPath),
+                handshakeTimeout: 10_000,
+                headers: { authorization: `Bearer ${this.#token}` },
+                maxPayload: WORKSPACE_BRIDGE_MAX_BINARY_MESSAGE_BYTES,
+                perMessageDeflate: false,
+            });
+            let settled = false;
+            const fail = (error: Error): void => {
+                if (settled) return;
+                settled = true;
+                socket.terminate();
+                reject(error);
+            };
+            socket.once("error", fail);
+            socket.once("unexpected-response", (_request, response) => {
+                const chunks: Buffer[] = [];
+                let bytes = 0;
+                response.on("data", (chunk: Buffer) => {
+                    bytes += chunk.length;
+                    if (bytes <= BRIDGE_REFUSAL_MAX_BYTES) chunks.push(chunk);
+                });
+                const refused = () =>
+                    fail(
+                        happyAgentBridgeRefusal(
+                            response.statusCode ?? 502,
+                            Buffer.concat(chunks).toString("utf8"),
+                        ),
+                    );
+                response.once("error", refused);
+                response.once("end", refused);
+                response.once("close", refused);
+            });
+            socket.once("open", () => {
+                if (settled) return;
+                settled = true;
+                socket.off("error", fail);
+                socket.pause();
+                resolvePromise(socket);
+            });
+        });
+    }
+
     /**
      * Opens the binary Happy Agent terminal attachment as a byte stream.
      *
@@ -564,6 +656,43 @@ export class HappyAgentDaemonHttpError extends Error {
         super(message);
         this.name = "HappyAgentDaemonHttpError";
     }
+}
+
+/** The most of a refused bridge upgrade's JSON body that is read. */
+const BRIDGE_REFUSAL_MAX_BYTES = 16 * 1024;
+
+/**
+ * Happy Agent refused to open a bridge, before its WebSocket upgrade. `code` is
+ * the daemon's error code; `reason` explains an unavailable capability.
+ */
+export class HappyAgentBridgeRefusedError extends HappyAgentDaemonHttpError {
+    constructor(
+        statusCode: number,
+        readonly code: string | undefined,
+        message: string,
+    ) {
+        super(statusCode, message);
+        this.name = "HappyAgentBridgeRefusedError";
+    }
+}
+
+function happyAgentBridgeRefusal(statusCode: number, body: string): HappyAgentBridgeRefusedError {
+    let code: string | undefined;
+    let message = `Happy Agent refused the bridge (${String(statusCode)}).`;
+    try {
+        const value = JSON.parse(body) as {
+            readonly code?: unknown;
+            readonly error?: unknown;
+            readonly reason?: { readonly message?: unknown } | null;
+        };
+        if (typeof value.code === "string") code = value.code;
+        // An unavailable capability's own explanation says more than the refusal.
+        if (typeof value.reason?.message === "string") message = value.reason.message;
+        else if (typeof value.error === "string" && value.error.length > 0) message = value.error;
+    } catch {
+        // Not every refusal on the way to the daemon is Happy Agent's own JSON.
+    }
+    return new HappyAgentBridgeRefusedError(statusCode, code, message);
 }
 
 /**

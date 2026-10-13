@@ -1,3 +1,5 @@
+import type { HappyAgentDeviceBridgesStore } from "./happyAgentDeviceBridgesStore.js";
+import type { HappyAgentDeviceBridgeSupportStore } from "./happyAgentDeviceBridgeSupportStore.js";
 import type { HappyAgentToolMediaDocumentStore } from "./happyAgentToolMediaDocumentStore.js";
 import { createStore } from "zustand/vanilla";
 import {
@@ -1408,6 +1410,13 @@ export interface HappyAgentWorkspaceStore {
      * Materialized on first access; the preview leases which document it holds.
      */
     toolMediaDocument(): HappyAgentToolMediaDocumentStore;
+    /**
+     * One workspace's local bridges, for the panel's Devices tab and the control
+     * that opens it. Absent where this Happy Agent runs on this computer.
+     */
+    deviceBridges(groupId: HappyAgentGroupId): HappyAgentDeviceBridgesStore | undefined;
+    /** Whether this Happy Agent serves local bridges; absent exactly where `deviceBridges` is. */
+    deviceBridgeSupport(): HappyAgentDeviceBridgeSupportStore | undefined;
 
     // Navigation-applied conversation lifetime. These are not user selection:
     // the router applies them from the addressed URL.
@@ -6407,6 +6416,8 @@ export function happyAgentWorkspaceStoreCreate(
         panel,
         changeTiers,
         toolMediaDocument: () => client.toolMediaDocument(),
+        deviceBridges: (groupId) => client.deviceBridges(groupId),
+        deviceBridgeSupport: () => client.deviceBridgeSupport(),
         subscribe(listener) {
             listeners.add(listener);
             if (listeners.size === 1 && !disposed) start();

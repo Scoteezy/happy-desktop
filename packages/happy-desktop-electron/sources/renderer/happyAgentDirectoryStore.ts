@@ -349,6 +349,9 @@ export function happyAgentDirectoryStoreCreate(
             happyAgentId: happyAgent.entry.id,
             client,
             hostServicesUrl,
+            // A Happy Agent on another machine is what this computer's devices
+            // and ports can reach; the local one already has them.
+            deviceBridges: happyAgent.entry.remoteId !== undefined,
             happyAgentHttpUrl,
             modelPreferencePersistence: deps.modelPreferencePersistence(happyAgent.entry.id),
             terminalColorScheme: deps.terminalColorScheme,

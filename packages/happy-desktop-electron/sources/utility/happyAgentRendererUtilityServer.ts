@@ -27,6 +27,11 @@ const LOCAL_ROUTES = new Set([
     "/workspace-file-media",
     "/html-preview",
     "/artifact-site",
+    "/bridge-events",
+    "/bridge-usb-attach",
+    "/bridge-port-open",
+    "/bridge-forward-open",
+    "/bridge-close",
 ]);
 
 /** Local-only desktop operations and terminal upgrades stay on the capability bridge. */

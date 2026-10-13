@@ -1,0 +1,177 @@
+import { createServer, request as httpRequest, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { HappyAgentDeviceBridgeHostState } from "happy-desktop-state";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DeviceBridgeHost } from "./deviceBridgeHost";
+import { happyAgentProxyHandle, type HappyAgentProxyClient } from "./happyAgentProxyHandle";
+
+const servers: Server[] = [];
+
+afterEach(async () => {
+    await Promise.all(
+        servers.splice(0).map(
+            (server) =>
+                new Promise<void>((resolve) => {
+                    server.closeAllConnections();
+                    server.close(() => resolve());
+                }),
+        ),
+    );
+});
+
+const state: HappyAgentDeviceBridgeHostState = {
+    usb: {
+        available: true,
+        devices: [
+            {
+                busId: "1-4",
+                vendorId: "0a12",
+                productId: "0001",
+                name: "Bluetooth adapter",
+                manufacturer: null,
+                bluetooth: true,
+            },
+        ],
+    },
+    bridges: [],
+};
+
+function hostFake() {
+    const stops = vi.fn();
+    const host = {
+        clientSet: vi.fn(),
+        stateFollow: vi.fn(
+            (_connectionId: string | undefined, listener: (value: typeof state) => void) => {
+                listener(state);
+                return stops;
+            },
+        ),
+        usbAttach: vi.fn(async () => undefined),
+        workspaceToLocalOpen: vi.fn(async () => undefined),
+        localToWorkspaceOpen: vi.fn(async () => {
+            throw new Error("Port 8080 on this computer is already in use.");
+        }),
+        bridgeClose: vi.fn(async () => undefined),
+        close: vi.fn(async () => undefined),
+    } satisfies DeviceBridgeHost;
+    return { host, stops };
+}
+
+async function serverCreate(deviceBridges?: DeviceBridgeHost): Promise<string> {
+    const client: HappyAgentProxyClient = {
+        connection: () => client,
+    } as unknown as HappyAgentProxyClient;
+    const server = createServer((request, response) => {
+        const url = new URL(request.url ?? "/", "http://127.0.0.1");
+        void happyAgentProxyHandle({
+            client,
+            method: request.method ?? "GET",
+            path: url.pathname,
+            query: url.searchParams,
+            request,
+            response,
+            ...(deviceBridges ? { deviceBridges } : {}),
+        }).then((handled) => {
+            if (!handled) response.writeHead(404).end();
+        });
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    return `http://127.0.0.1:${String((server.address() as AddressInfo).port)}`;
+}
+
+async function post(url: string, body: unknown) {
+    const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+}
+
+describe("happyAgentProxyHandle bridge routes", () => {
+    it("streams the host's state for the connection the route names until the reader leaves", async () => {
+        const { host, stops } = hostFake();
+        const base = await serverCreate(host);
+        const first = await new Promise<string>((resolve, reject) => {
+            const request = httpRequest(`${base}/connections/peer1/bridge-events`, (response) => {
+                expect(response.statusCode).toBe(200);
+                expect(response.headers["content-type"]).toBe("text/event-stream");
+                response.setEncoding("utf8");
+                response.once("data", (chunk: string) => {
+                    resolve(chunk);
+                    request.destroy();
+                });
+            });
+            request.once("error", reject);
+            request.end();
+        });
+        expect(first).toBe(`data: ${JSON.stringify(state)}\n\n`);
+        expect(host.stateFollow).toHaveBeenCalledWith("peer1", expect.any(Function));
+        await vi.waitFor(() => expect(stops).toHaveBeenCalledTimes(1));
+    });
+
+    it("opens bridges with validated requests and answers once they hold", async () => {
+        const { host } = hostFake();
+        const base = await serverCreate(host);
+        expect(
+            await post(`${base}/bridge-usb-attach`, {
+                workspaceId: "w1",
+                busId: "1-4",
+                name: "Bluetooth\u0007 adapter",
+            }),
+        ).toEqual({ status: 200, body: {} });
+        expect(host.usbAttach).toHaveBeenCalledWith(undefined, {
+            workspaceId: "w1",
+            busId: "1-4",
+            name: "Bluetooth adapter",
+        });
+        expect(
+            await post(`${base}/connections/peer1/bridge-port-open`, {
+                workspaceId: "w1",
+                workspacePort: 0,
+                localPort: 3000,
+            }),
+        ).toEqual({ status: 200, body: {} });
+        expect(host.workspaceToLocalOpen).toHaveBeenCalledWith("peer1", {
+            workspaceId: "w1",
+            workspacePort: 0,
+            localPort: 3000,
+        });
+        expect(await post(`${base}/bridge-close`, { id: "b1" })).toEqual({ status: 200, body: {} });
+        expect(host.bridgeClose).toHaveBeenCalledWith(undefined, "b1");
+    });
+
+    it("refuses a malformed request before it reaches the host, and says why a bridge failed", async () => {
+        const { host } = hostFake();
+        const base = await serverCreate(host);
+        const invalid = await post(`${base}/bridge-port-open`, {
+            workspaceId: "w1",
+            workspacePort: 0,
+            localPort: 0,
+        });
+        expect(invalid.status).toBeGreaterThanOrEqual(400);
+        expect(invalid.body).toEqual({ error: "localPort must be a port number." });
+        expect(host.workspaceToLocalOpen).not.toHaveBeenCalled();
+        const busId = await post(`${base}/bridge-usb-attach`, {
+            workspaceId: "w1",
+            busId: "../1",
+            name: "x",
+        });
+        expect(busId.body).toEqual({ error: "busId is invalid." });
+        const failed = await post(`${base}/bridge-forward-open`, {
+            workspaceId: "w1",
+            localPort: 8080,
+            workspacePort: 8080,
+        });
+        expect(failed.status).toBeGreaterThanOrEqual(400);
+        expect(failed.body).toEqual({ error: "Port 8080 on this computer is already in use." });
+    });
+
+    it("says, as JSON, that a desktop without a bridge host cannot bridge", async () => {
+        const base = await serverCreate();
+        const response = await fetch(`${base}/bridge-events`);
+        expect(response.status).toBe(501);
+        expect(response.headers.get("content-type")).toBe("application/json");
+    });
+});

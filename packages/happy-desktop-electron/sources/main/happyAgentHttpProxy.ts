@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import type { happyAgentProtocol, HappyAgentDaemonHealth } from "happy-desktop-state";
 import type { HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
 import type { ArtifactSiteClient, ArtifactSiteHandle } from "./artifactSite";
+import type { DeviceBridgeClient, DeviceBridgeHost } from "./deviceBridgeHost";
 import type { HappyAgentRendererProxy } from "./happyAgentRendererProxy";
 import type { HappyAgentRendererTarget } from "./happyAgentRendererProxy";
 import { happyAgentProxyHandle, type HappyAgentProxyClient } from "./happyAgentProxyHandle";
@@ -36,7 +37,8 @@ export interface HappyAgentHttpProxyBacking {
     readonly client: HappyAgentProxyClient &
         HappyAgentTerminalClient &
         HappyAgentLiveClient &
-        ArtifactSiteClient;
+        ArtifactSiteClient &
+        DeviceBridgeClient;
 }
 
 export interface HappyAgentHttpProxyOptions extends HappyAgentHttpProxyBacking {
@@ -67,6 +69,11 @@ export interface HappyAgentHttpProxyOptions extends HappyAgentHttpProxyBacking {
      * them this proxy reports that it cannot serve one.
      */
     readonly artifactSite?: ArtifactSiteHandle;
+    /**
+     * The app's bridges. They outlive this proxy's daemon connection, so they
+     * reach Happy Agent through whichever connection is current.
+     */
+    readonly deviceBridges?: DeviceBridgeHost;
     /** Debug-only slow request timings, without URLs or credentials. */
     readonly debug?: (message: string) => void;
 }
@@ -119,6 +126,7 @@ export function happyAgentHttpProxyCreate(
     });
     const preview = options.htmlPreview?.register(liveHostClient);
     const artifactSite = options.artifactSite?.register(liveHostClient);
+    options.deviceBridges?.clientSet(liveHostClient);
     const capability = randomBytes(32).toString("base64url");
     const capabilityPrefix = `/${capability}`;
     let expectedHost: string | undefined;
@@ -213,6 +221,7 @@ export function happyAgentHttpProxyCreate(
                         },
                         ...(preview ? { htmlPreviewUrl: preview.workspace } : {}),
                         ...(artifactSite ? { artifactSiteUrl: artifactSite.open } : {}),
+                        ...(options.deviceBridges ? { deviceBridges: options.deviceBridges } : {}),
                     }),
             )
             .then(

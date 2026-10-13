@@ -35,6 +35,7 @@ import {
 } from "./happyAgentDaemonClient";
 import type { HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
 import type { ArtifactSiteHandle } from "./artifactSite";
+import type { DeviceBridgeHost } from "./deviceBridgeHost";
 import { happyAgentRendererOrigin, type HappyAgentRendererProxy } from "./happyAgentRendererProxy";
 import { happyAgentHttpProxyCreate, type HappyAgentHttpProxyHandle } from "./happyAgentHttpProxy";
 import type { Duplex } from "node:stream";
@@ -75,6 +76,8 @@ export interface DesktopRuntimeOptions {
     readonly htmlPreview?: HtmlPreviewProxyHandle;
     /** The artifact partition's sites, so a Happy Agent's HTML artifacts can be served. */
     readonly artifactSite?: ArtifactSiteHandle;
+    /** The app's bridges, which every daemon connection this runtime makes serves. */
+    readonly deviceBridges?: DeviceBridgeHost;
     readonly debug?: (message: string) => void;
 }
 
@@ -120,6 +123,7 @@ export class DesktopRuntime implements AsyncDisposable {
                     ...(options.rendererOrigin ? { allowedOrigin: options.rendererOrigin } : {}),
                     ...(options.htmlPreview ? { htmlPreview: options.htmlPreview } : {}),
                     ...(options.artifactSite ? { artifactSite: options.artifactSite } : {}),
+                    ...(options.deviceBridges ? { deviceBridges: options.deviceBridges } : {}),
                     ...(options.debug ? { debug: options.debug } : {}),
                 }));
         const configuredActive = settings?.topologies.find(

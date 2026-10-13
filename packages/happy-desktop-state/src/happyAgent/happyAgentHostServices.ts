@@ -1,4 +1,5 @@
 import type { TerminalConnection } from "../transport.js";
+import type { HappyAgentDeviceBridgeHost } from "./happyAgentDeviceBridgeHost.js";
 import type {
     HappyAgentGroupId,
     HappyAgentOpenInTarget,
@@ -72,4 +73,10 @@ export interface HappyAgentHostServices {
         workspaceId: HappyAgentGroupId,
         terminalId: HappyAgentTerminalId,
     ): TerminalConnection;
+    /**
+     * USB devices, Bluetooth adapters, and ports of this computer, bridged to
+     * a workspace of this Happy Agent. Absent where there is nothing to bridge
+     * to: the machine's own Happy Agent is this computer.
+     */
+    readonly deviceBridges?: HappyAgentDeviceBridgeHost;
 }

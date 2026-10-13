@@ -372,6 +372,7 @@ export {
     type CommandPickerProps,
 } from "./CommandPicker";
 export { HappyAgentUsagePanel, type HappyAgentUsagePanelProps } from "./HappyAgentUsagePanel";
+export { HappyAgentDevicesPanel, type HappyAgentDevicesPanelProps } from "./HappyAgentDevicesPanel";
 export {
     HappyAgentProjectSettingsDialog,
     type HappyAgentProjectComputeChoice,

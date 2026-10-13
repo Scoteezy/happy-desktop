@@ -14,6 +14,7 @@ import type { HappyAgentRequestMilestone } from "./happyAgentRequestTiming";
 import type { HappyAgentDaemonClientOptions } from "./happyAgentDaemonClient";
 import { HAPPY_AGENT_LIVE_WINDOW_HEADER, happyAgentLivePath } from "./happyAgentLiveRoute";
 import { ArtifactSiteError } from "./artifactSite";
+import type { DeviceBridgeHost } from "./deviceBridgeHost";
 
 /** The minimal Happy Agent surface used by the loopback bridge. */
 export type HappyAgentProxyClient = Pick<
@@ -45,6 +46,8 @@ export interface HappyAgentProxyHandleOptions {
         version: number,
         connectionId?: string,
     ) => Promise<string>;
+    /** The app's USB devices, port bridges, and forwards, held apart from any window. */
+    readonly deviceBridges?: DeviceBridgeHost;
 }
 
 /**
@@ -197,6 +200,13 @@ export async function happyAgentProxyHandle(
             });
             return true;
         }
+        if (path.startsWith("/bridge-"))
+            return await deviceBridgeHandle(options.deviceBridges, connectionId, {
+                method,
+                path,
+                request,
+                response,
+            });
         if ((method === "GET" || method === "HEAD") && path === "/workspace-file-media") {
             await requestWithAbort(request, (signal) =>
                 workspaceFileMediaServe(
@@ -223,6 +233,115 @@ export async function happyAgentProxyHandle(
         }
         return true;
     }
+}
+
+/** How often an idle bridge event stream says it is still there. */
+const BRIDGE_EVENTS_KEEPALIVE_MS = 20_000;
+
+/**
+ * The desktop-local bridge routes: the host's own state as an event stream,
+ * and the openings and closings the renderer asks for. Each opening answers
+ * once its bridge holds, or with the reason it could not.
+ */
+async function deviceBridgeHandle(
+    host: DeviceBridgeHost | undefined,
+    connectionId: string | undefined,
+    route: {
+        readonly method: string;
+        readonly path: string;
+        readonly request: IncomingMessage;
+        readonly response: ServerResponse;
+    },
+): Promise<boolean> {
+    const { method, path, request, response } = route;
+    const known =
+        (method === "GET" && path === "/bridge-events") ||
+        (method === "POST" &&
+            (path === "/bridge-usb-attach" ||
+                path === "/bridge-port-open" ||
+                path === "/bridge-forward-open" ||
+                path === "/bridge-close"));
+    if (!known) return false;
+    if (!host) {
+        writeJson(response, 501, { error: "This desktop cannot bridge devices or ports." });
+        return true;
+    }
+    if (path === "/bridge-events") {
+        response.writeHead(200, {
+            "cache-control": "no-store",
+            "content-type": "text/event-stream",
+            "x-content-type-options": "nosniff",
+        });
+        const stop = host.stateFollow(connectionId, (state) => {
+            response.write(`data: ${JSON.stringify(state)}\n\n`);
+        });
+        const keepalive = setInterval(
+            () => response.write(": keepalive\n\n"),
+            BRIDGE_EVENTS_KEEPALIVE_MS,
+        );
+        response.once("close", () => {
+            clearInterval(keepalive);
+            stop();
+        });
+        return true;
+    }
+    const body = await bodyReadJson(request);
+    if (path === "/bridge-close") {
+        await host.bridgeClose(connectionId, requiredString(body.id, "id"));
+    } else {
+        const workspaceId = requiredString(body.workspaceId, "workspaceId");
+        if (path === "/bridge-usb-attach")
+            await host.usbAttach(connectionId, {
+                workspaceId,
+                busId: busIdValue(body.busId),
+                name: bridgeNameValue(body.name),
+            });
+        else if (path === "/bridge-port-open")
+            await host.workspaceToLocalOpen(connectionId, {
+                workspaceId,
+                workspacePort: portValue(body.workspacePort, "workspacePort", true),
+                localPort: portValue(body.localPort, "localPort", false),
+            });
+        else
+            await host.localToWorkspaceOpen(connectionId, {
+                workspaceId,
+                localPort: portValue(body.localPort, "localPort", true),
+                workspacePort: portValue(body.workspacePort, "workspacePort", false),
+            });
+    }
+    writeJson(response, 200, {});
+    return true;
+}
+
+function portValue(value: unknown, name: string, zeroAllowed: boolean): number {
+    if (
+        typeof value !== "number" ||
+        !Number.isInteger(value) ||
+        value < (zeroAllowed ? 0 : 1) ||
+        value > 65_535
+    )
+        throw new Error(`${name} must be a port number.`);
+    return value;
+}
+
+function busIdValue(value: unknown): string {
+    if (typeof value !== "string" || !/^[0-9A-Za-z._:-]{1,31}$/u.test(value))
+        throw new Error("busId is invalid.");
+    return value;
+}
+
+/** Happy Agent takes a display name of 1–128 characters with no control characters. */
+function bridgeNameValue(value: unknown): string {
+    const name =
+        typeof value === "string"
+            ? // eslint-disable-next-line no-control-regex
+              value
+                  .replace(/[\u0000-\u001f\u007f-\u009f]/gu, "")
+                  .trim()
+                  .slice(0, 128)
+            : "";
+    if (name.length === 0) throw new Error("name is required.");
+    return name;
 }
 
 /**
