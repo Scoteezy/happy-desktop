@@ -55,17 +55,28 @@ function summaryTitle(session: HappyAgentConversationSummaryInput): string {
  *
  * An open question outranks all of it: the run is stopped until the person
  * answers, so the row asks rather than claiming work is happening. A scheduled
- * wait is the low-priority modifier it has always been, and it only describes
- * the session's own turn — a session sitting in a wait while its children work
- * is working, not waiting.
+ * wait is a low-priority modifier: a session sitting in a wait while its
+ * children work is working. Interactive subtasks also keep an otherwise idle
+ * ancestor live, including when all its visible work is waiting.
  */
-function summaryActivity(
-    session: HappyAgentConversationSummaryInput,
+export function happyAgentConversationActivityProject(
+    session: Pick<
+        HappyAgentConversationSummaryInput,
+        "pendingQuestion" | "activeSubagentCount" | "status" | "wait" | "subtaskActivity"
+    >,
 ): ConversationSummary["activity"] {
-    if (session.pendingQuestion) return "awaitingInput";
-    if (session.activeSubagentCount > 0) return "running";
-    if (session.status !== "running" && session.status !== "queued") return "idle";
-    return session.wait === undefined ? "running" : "waiting";
+    const descendants = session.subtaskActivity;
+    if (session.pendingQuestion || descendants?.activity === "awaitingInput")
+        return "awaitingInput";
+    // The host's count includes interactive subtasks. Their activity is known
+    // below; only hidden children need the count's generic working marker.
+    if (session.activeSubagentCount > (descendants?.running ?? 0)) return "running";
+    const running = session.status === "running" || session.status === "queued";
+    if ((running && session.wait === undefined) || descendants?.activity === "running")
+        return "running";
+    if ((running && session.wait !== undefined) || descendants?.activity === "waiting")
+        return "waiting";
+    return "idle";
 }
 
 /** Projects one Happy Agent session into the shared conversation-list row. */
@@ -76,7 +87,7 @@ export function happyAgentConversationSummaryProject(
 ): ConversationSummary {
     const cached = summaryCache.get(session);
     if (cached) return cached;
-    const activity = summaryActivity(session);
+    const activity = happyAgentConversationActivityProject(session);
     const value: ConversationSummary = {
         id: session.id,
         title: summaryTitle(session),

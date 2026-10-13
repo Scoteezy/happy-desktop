@@ -229,6 +229,13 @@ export interface HappyAgentSessionWait {
     readonly dueAt: number;
 }
 
+/** Activity of direct interactive children, already rolled up through their own trees. */
+export interface HappyAgentSubtaskActivity {
+    readonly activity: ConversationSummary["activity"];
+    /** Direct running subtasks included in the host's total running-subagent count. */
+    readonly running: number;
+}
+
 export type HappyAgentTaskStatus = "pending" | "in_progress" | "completed";
 
 export type HappyAgentGoalStatus = "active" | "blocked" | "complete" | "paused";
@@ -743,6 +750,8 @@ export interface HappyAgentSessionSummary {
      * counts it as live even after the session's own turn has ended.
      */
     readonly activeSubagentCount: number;
+    /** Present when the catalog carries interactive child conversations. */
+    readonly subtaskActivity?: HappyAgentSubtaskActivity;
     /** Present while the agent is inside a scheduled `wait`/`wait_until`. */
     readonly wait?: HappyAgentSessionWait;
     /** Whether the agent's run is stopped on a question only the person can answer. */

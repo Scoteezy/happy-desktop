@@ -11,7 +11,10 @@ import type {
     Task,
 } from "@slopus/happy-agent-client";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
-import type { HappyAgentAvatarImage } from "../happyAgent/happyAgentTypes.js";
+import type {
+    HappyAgentAvatarImage,
+    HappyAgentSubtaskActivity,
+} from "../happyAgent/happyAgentTypes.js";
 import type { HappyAgentServiceTier } from "../happyAgentServiceTier.js";
 import type { HappyAgentSync } from "./happyAgentSync.js";
 import type { UserProfile } from "./userProfiles.js";
@@ -541,6 +544,8 @@ export interface GroupSession {
      * what says so without reading another resource.
      */
     activeSubagents: number;
+    /** Direct interactive child work; hidden subagents remain covered by the total count. */
+    subtaskActivity?: HappyAgentSubtaskActivity;
     archived: boolean;
     /** When the host archived it, for recovery-history order. */
     archivedAt?: number;

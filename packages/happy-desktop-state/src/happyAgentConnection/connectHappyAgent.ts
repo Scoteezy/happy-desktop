@@ -694,12 +694,16 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             if (agent !== undefined) return agent;
         }
         for (const workspace of workspaces) {
-            const agent = workspace.agents.find((candidate) => candidate.id === agentId);
-            if (agent !== undefined) return agent;
+            for (const root of workspace.agents) {
+                const agent = agentTreeFind(root, agentId);
+                if (agent !== undefined) return agent;
+            }
         }
         for (const project of projects) {
-            const agent = project.agents.find((candidate) => candidate.id === agentId);
-            if (agent !== undefined) return agent;
+            for (const root of project.agents) {
+                const agent = agentTreeFind(root, agentId);
+                if (agent !== undefined) return agent;
+            }
         }
         const materialized = sessions.get(agentId)?.agent;
         if (materialized !== undefined) return materialized;
@@ -718,20 +722,27 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         current.version === current.id ||
         current.version.localeCompare(updated.version) <= 0;
 
+    const ownerAgentReplace = <Owner extends { readonly id: string; readonly agents: Agent[] }>(
+        owner: Owner,
+        agent: Agent,
+    ): Owner => {
+        // A child may work in another workspace. Its event must still replace
+        // the embedded ancestry used by the original workspace's live marker.
+        const updated = owner.agents.map((root) => agentTreeUpdate(root, agent));
+        const agents =
+            owner.id === agent.workspaceId || updated.some((root) => root.id === agent.id)
+                ? (replaceResource(updated, agent) as Agent[])
+                : updated;
+        return agents.length === owner.agents.length &&
+            agents.every((root, index) => root === owner.agents[index])
+            ? owner
+            : { ...owner, agents };
+    };
+
     const replaceAgent = (agent: Agent): void => {
         groupsStore.setState((current) => ({
-            workspaces: current.workspaces.map((workspace) =>
-                workspace.id === agent.workspaceId ||
-                workspace.agents.some((candidate) => candidate.id === agent.id)
-                    ? { ...workspace, agents: replaceResource(workspace.agents, agent) as Agent[] }
-                    : workspace,
-            ),
-            projects: current.projects.map((project) =>
-                project.id === agent.workspaceId ||
-                project.agents.some((candidate) => candidate.id === agent.id)
-                    ? { ...project, agents: replaceResource(project.agents, agent) as Agent[] }
-                    : project,
-            ),
+            workspaces: current.workspaces.map((workspace) => ownerAgentReplace(workspace, agent)),
+            projects: current.projects.map((project) => ownerAgentReplace(project, agent)),
             // A bot's row is drawn from the agent embedded in the bot, so the
             // same versioned agent event has to reach that copy too — otherwise
             // the bot keeps reporting the status it was created with.
