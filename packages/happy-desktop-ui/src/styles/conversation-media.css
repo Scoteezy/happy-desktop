@@ -13,22 +13,22 @@
     min-width: 0;
 }
 
-/* Several pictures tile two to a row as squares, at most as wide as a
-   message's photo grid; one picture keeps its own box. */
+/* The pictures as one mosaic: `mediaMosaicStyle` sizes this box and
+   `mediaMosaicTileStyle` places each tile in it. Outer corners keep the
+   tile's radius; corners between tiles close to a small one. */
 .happy-conversation-media__images {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 4px;
+    --happy-media-mosaic-radius: var(--happy-radius-window);
+    --happy-media-mosaic-inner-radius: 4px;
+
+    position: relative;
+    flex: none;
 }
 
-.happy-conversation-media__images:not([data-count="1"]) {
-    width: min(100%, 420px);
-}
-
-.happy-conversation-media__images:not([data-count="1"]) > .happy-media-image-tile {
-    width: calc((100% - 4px) / 2);
-    aspect-ratio: 1 / 1;
+.happy-conversation-media__images > .happy-media-image-tile {
+    /* Absolute: a mosaic tile's frame is computed from every picture's aspect
+       ratio, spanning rows in one place and columns in another, which neither
+       one flex axis nor a track grid can express. */
+    position: absolute;
 }
 
 .happy-conversation-media > .happy-result-card {

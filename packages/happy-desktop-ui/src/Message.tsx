@@ -19,7 +19,15 @@ import { happyLogoBlackUrl } from "./assets";
 import { AutomatedTag } from "./AutomatedTag";
 import { ReactionChip } from "./Badge";
 import { Icon, type IconName } from "./Icon";
-import { messageMediaSingleBox } from "./conversationRowHeight";
+import {
+    MEDIA_MOSAIC_MAX_WIDTH,
+    MESSAGE_MEDIA_MAX,
+    mediaMosaicLayout,
+    mediaMosaicStyle,
+    mediaMosaicTileStyle,
+    type MediaMosaicLayout,
+    type MediaMosaicTile,
+} from "./mediaMosaic";
 import type { MessageReferences } from "./messageReferences";
 import {
     MessageListDisclosureAnchorProvider,
@@ -63,24 +71,21 @@ export type MessageImage = {
     /** Intrinsic pixel dimensions — reserve a stable box before the image loads. */
     width?: number;
     height?: number;
+    /** The attachment's ThumbHash, whose header gives the shape when the dimensions are absent. */
+    thumbhash?: string;
 };
-/**
- * Inline box for a lone photo: the exact pixel box `messageMediaSingleBox`
- * computes from the image's own dimensions, so the layout is reserved up front and
- * nothing reflows when the bytes arrive — and the transcript's virtualizer, which
- * reserves the row from the same function, agrees with it. Multi-image tiles are
- * square via CSS and need none.
- */
-function mediaItemStyle(image: MessageImage, count: number): CSSProperties | undefined {
-    if (count !== 1) return undefined;
-    const box = messageMediaSingleBox(image);
-    return { width: `${box.width}px`, height: `${box.height}px` };
-}
 
-/** One image tile; without an open action it remains media, not a fake button. */
+/**
+ * One image tile at its frame in the message's photo mosaic: the box
+ * `mediaMosaicLayout` computes from every photo's own shape, so the layout is
+ * reserved up front and nothing reflows when the bytes arrive — and the
+ * transcript's virtualizer, which reserves the row from the same function,
+ * agrees with it. Without an open action it remains media, not a fake button.
+ */
 function MessageMediaItem(props: {
-    count: number;
     image: MessageImage;
+    layout: MediaMosaicLayout;
+    tile: MediaMosaicTile;
     onOpen?: (id: string) => void;
 }) {
     const content = props.image.url ? (
@@ -112,7 +117,7 @@ function MessageMediaItem(props: {
         "data-fixed": "",
         "data-media-id": props.image.id,
         "data-happy-desktop-ui": "message-media-item",
-        style: mediaItemStyle(props.image, props.count),
+        style: mediaMosaicTileStyle(props.layout, props.tile),
     } as const;
     return props.onOpen ? (
         <button
@@ -527,6 +532,10 @@ export function Message(props: MessageProps) {
         local.own &&
         (bodyNode !== null ||
             (local.automated && (Boolean(local.images?.length) || hasAttachments())));
+    const shownImages = local.images?.slice(0, MESSAGE_MEDIA_MAX) ?? [];
+    /* Laid out at full size; a narrower column scales the frame, and the tiles
+       with it, exactly as the row model scales this layout to its measure. */
+    const mosaic = mediaMosaicLayout(shownImages, MEDIA_MOSAIC_MAX_WIDTH);
     const groupedIncomingLine =
         !local.own && grouped() && bodyNode !== null ? (
             <div
@@ -643,18 +652,20 @@ export function Message(props: MessageProps) {
                 ) : (
                     (groupedIncomingLine ?? bodyNode)
                 )}
-                {local.images && local.images.length > 0 ? (
+                {shownImages.length > 0 ? (
                     <div
                         className="happy-message__media"
-                        data-count={Math.min(local.images!.length, 4)}
+                        data-count={shownImages.length}
                         data-happy-desktop-ui="message-media"
+                        style={mediaMosaicStyle(mosaic)}
                     >
-                        {local.images!.slice(0, 4).map((image) => (
+                        {shownImages.map((image, position) => (
                             <MessageMediaItem
-                                count={Math.min(local.images!.length, 4)}
                                 image={image}
                                 key={image.id}
+                                layout={mosaic}
                                 onOpen={local.onImageOpen}
+                                tile={mosaic.tiles[position]!}
                             />
                         ))}
                     </div>

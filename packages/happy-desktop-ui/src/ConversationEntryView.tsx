@@ -513,7 +513,10 @@ function imagesOf(attachments: readonly ConversationAttachment[]): readonly Mess
                 url: attachment.openUrl,
                 alt: attachment.name,
                 ...(attachment.thumbhash
-                    ? { placeholderUrl: thumbhashDataUrl(attachment.thumbhash) }
+                    ? {
+                          placeholderUrl: thumbhashDataUrl(attachment.thumbhash),
+                          thumbhash: attachment.thumbhash,
+                      }
                     : {}),
                 ...(attachment.width !== undefined ? { width: attachment.width } : {}),
                 ...(attachment.height !== undefined ? { height: attachment.height } : {}),

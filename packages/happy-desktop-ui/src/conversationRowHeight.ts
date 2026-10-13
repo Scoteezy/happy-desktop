@@ -37,6 +37,13 @@ import { SYSTEM_NOTIFICATION_HEIGHT } from "./systemNotification";
 import { agentTraceMetaStats, agentTraceMetaTitle } from "./agentTraceMeta";
 import { conversationErrorTitle } from "./conversationErrorTitle";
 import { conversationErrorAssistanceText } from "./conversationErrorAssistanceText";
+import {
+    MEDIA_SINGLE_MAX_W,
+    MESSAGE_MEDIA_MAX,
+    mediaMosaicLayout,
+    messageMediaSingleBox,
+    type MediaMosaicImage,
+} from "./mediaMosaic";
 
 /**
  * Height of one conversation row, computed from the entry and the list's measure
@@ -166,23 +173,9 @@ const GROUPED_TRAILING_META_SEPARATOR = 2;
 /** Gaps around the optional two-pixel separator inside trace metadata. */
 const TRACE_META_GAPS = 12;
 const TRACE_META_SEPARATOR = 2;
-/** `.happy-message__media` — top margin, inter-tile gap, and its own cap. */
-const MEDIA_GAP = 4;
+/** `.happy-message__media` — its top margin under a body, and without one. */
 const MEDIA_MARGIN = 8;
 const MEDIA_MARGIN_BARE = 4;
-const MEDIA_MAX_WIDTH = 420;
-const MEDIA_SINGLE_MAX_W = 380;
-const MEDIA_SINGLE_MAX_H = 320;
-/**
- * The narrowest a lone photo is drawn once its height is capped. A page-tall
- * screenshot scaled whole would arrive as an unreadable 90px sliver, so past this
- * ratio the box keeps a usable width and the image crops — the click that opens
- * it full size is right there.
- */
-const MEDIA_SINGLE_MIN_W = 240;
-/** Box for a lone image whose format hid its dimensions: 240 × 4:3. */
-const MEDIA_FALLBACK_W = 240;
-const MEDIA_FALLBACK_H = 180;
 /** Linked attachment cards: 64px cards, 4px gaps, and the message slot's top inset. */
 const ATTACHMENT_CARD_HEIGHT = 64;
 const ATTACHMENT_CARD_GAP = 4;
@@ -246,51 +239,17 @@ export function contentWidth(width: number): number {
     return Math.min(width, CHAT_MEASURE);
 }
 /**
- * The box a lone photo is drawn in, from its intrinsic pixel size alone.
- *
- * Scaling down is the only transform: an image smaller than the cap keeps its own
- * size rather than being blown up past its detail. Larger, it scales to
- * `MEDIA_SINGLE_MAX_W`, and if that leaves it taller than `MEDIA_SINGLE_MAX_H` the
- * height is capped — by scaling further down, or, once that would take the width
- * below `MEDIA_SINGLE_MIN_W`, by holding that width and letting the painted image
- * crop into it. This is the single source of that arithmetic: `Message` styles the
- * element with it and this module reserves the row for it, and the two disagreeing
- * is a visible jump the moment the image loads.
- */
-export function messageMediaSingleBox(image: {
-    readonly width?: number;
-    readonly height?: number;
-}): { readonly width: number; readonly height: number } {
-    if (!image.width || !image.height) return { width: MEDIA_FALLBACK_W, height: MEDIA_FALLBACK_H };
-    const ratio = image.width / image.height;
-    const width = Math.min(image.width, MEDIA_SINGLE_MAX_W);
-    const height = width / ratio;
-    if (height <= MEDIA_SINGLE_MAX_H)
-        return { width: Math.round(width), height: Math.round(height) };
-    return {
-        width: Math.round(
-            Math.min(Math.max(MEDIA_SINGLE_MAX_H * ratio, MEDIA_SINGLE_MIN_W), width),
-        ),
-        height: MEDIA_SINGLE_MAX_H,
-    };
-}
-/**
- * Painted height of a message's image grid. A lone photo reserves the exact box
- * `messageMediaSingleBox` computes; a 2–4 tile grid is two square columns. An own
- * message's grid uses the same capped content measure, so this arithmetic is
- * also the height the virtual row reserves.
+ * Painted height of a message's photos: at most four, laid out by
+ * `mediaMosaicLayout` at the width the message's content column gives them,
+ * which is also what `Message` paints.
  */
 function mediaHeight(
-    images: readonly { readonly width?: number; readonly height?: number }[],
+    images: readonly MediaMosaicImage[],
     measure: number,
     hasBody: boolean,
 ): number {
     const margin = hasBody ? MEDIA_MARGIN : MEDIA_MARGIN_BARE;
-    const count = Math.min(images.length, 4);
-    if (count === 1) return margin + messageMediaSingleBox(images[0]!).height;
-    const column = (Math.min(measure, MEDIA_MAX_WIDTH) - MEDIA_GAP) / 2;
-    const rows = Math.ceil(count / 2);
-    return margin + rows * column + (rows - 1) * MEDIA_GAP;
+    return margin + mediaMosaicLayout(images.slice(0, MESSAGE_MEDIA_MAX), measure).height;
 }
 /**
  * `.happy-conversation-media`: the blocks a tool call's presented files stack
@@ -298,8 +257,6 @@ function mediaHeight(
  * call's own line.
  */
 const TOOL_MEDIA_GAP = 8;
-/** `.happy-conversation-media__images` caps a 2+ image grid at the message grid's width. */
-const TOOL_MEDIA_GRID_MAX_WIDTH = MEDIA_MAX_WIDTH;
 /** A file or document presented by a tool is one 64px `ResultCard`. */
 const RESULT_CARD_HEIGHT = 64;
 /** A recording whose producer stated no frame size takes a 16:9 box at the photo cap. */
@@ -317,19 +274,10 @@ export function conversationMediaVideoBox(item: {
 }
 
 /**
- * The side of one square tile in a grid of two or more presented images, at
- * the measure the row gives the grid. `ConversationMedia` draws its tiles with
- * this, and the row model reserves the same, so the two cannot disagree.
- */
-export function conversationMediaGridTile(measure: number): number {
-    return (Math.min(measure, TOOL_MEDIA_GRID_MAX_WIDTH) - MEDIA_GAP) / 2;
-}
-
-/**
  * Painted height of the files one tool call presented, laid out the way
- * `ConversationMedia` lays them out: every image together first — one at its
- * own box, several as a two-column square grid — then each recording at its
- * frame, then one card per document or file.
+ * `ConversationMedia` lays them out: every image together first, as one
+ * `mediaMosaicLayout`, then each recording at its frame, then one card per
+ * document or file.
  */
 export function conversationMediaHeight(
     items: readonly ConversationMediaItem[],
@@ -337,11 +285,7 @@ export function conversationMediaHeight(
 ): number {
     const images = items.filter((item) => item.kind === "image");
     const blocks: number[] = [];
-    if (images.length === 1) blocks.push(messageMediaSingleBox(images[0]!).height);
-    else if (images.length > 1) {
-        const rows = Math.ceil(images.length / 2);
-        blocks.push(rows * conversationMediaGridTile(measure) + (rows - 1) * MEDIA_GAP);
-    }
+    if (images.length > 0) blocks.push(mediaMosaicLayout(images, measure).height);
     for (const item of items)
         if (item.kind === "video") blocks.push(conversationMediaVideoBox(item).height);
         else if (item.kind !== "image") blocks.push(RESULT_CARD_HEIGHT);
@@ -417,14 +361,23 @@ export function steeringNoticeRowHeight(
         STEERING_QUOTE_MARGIN
     );
 }
-/** Height of a message's image grid at the measure its treatment leaves it. */
+/**
+ * The width a message's content column has, which its photos are laid out in:
+ * the row padding alone, before any bubble cap. An agent's body has no bubble,
+ * so its column is its body measure.
+ */
+function messageContentMeasure(width: number, treatment: MessageTreatment): number {
+    if (treatment === "agent") return width - AGENT_INSET;
+    return width - (treatment === "incoming" ? INCOMING_INSET : OWN_INSET);
+}
+/** Height of a message's photos at the measure its treatment leaves them. */
 export function messageMediaHeight(
-    images: readonly { readonly width?: number; readonly height?: number }[],
+    images: readonly MediaMosaicImage[],
     width: number,
     treatment: MessageTreatment,
     hasBody: boolean,
 ): number {
-    return mediaHeight(images, messageBodyMeasure(width, treatment, ""), hasBody);
+    return mediaHeight(images, messageContentMeasure(width, treatment), hasBody);
 }
 /**
  * Height of a message row: its chrome for the author treatment and grouping,
@@ -821,14 +774,17 @@ export function conversationRowHeight(
                 (grouped
                     ? CONVERSATION_AGENT_PADDING_BOTTOM.grouped
                     : CONVERSATION_AGENT_PADDING_BOTTOM.leading);
-        const images: { readonly width?: number; readonly height?: number }[] = [];
+        const images: MediaMosaicImage[] = [];
         let cards = 0;
         for (const attachment of message.attachments) {
-            if (
-                attachment.kind === "inlineImage" ||
-                (attachment.attachmentKind === "image" && attachment.openUrl !== undefined)
-            ) {
+            if (attachment.kind === "inlineImage") {
                 images.push({ width: attachment.width, height: attachment.height });
+            } else if (attachment.attachmentKind === "image" && attachment.openUrl !== undefined) {
+                images.push({
+                    width: attachment.width,
+                    height: attachment.height,
+                    ...(attachment.thumbhash ? { thumbhash: attachment.thumbhash } : {}),
+                });
             } else {
                 cards += 1;
             }

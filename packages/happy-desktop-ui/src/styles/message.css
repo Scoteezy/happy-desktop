@@ -913,26 +913,25 @@
 
 /* ---- Inline photo attachments ----------------------------------------- */
 
+/* The photos as one mosaic: `mediaMosaicStyle` sizes this box and
+   `mediaMosaicTileStyle` places each tile in it. Outer corners keep the
+   tile's radius; corners between tiles close to a small one. */
 .happy-message__media {
-    /* eslint-disable-next-line happy-layout/use-flex-layout -- true 2-D photo grid: 2–4 attachments tile into a 2-column, multi-row mosaic flexbox cannot lay out */
-    display: grid;
-    gap: 4px;
+    --happy-media-mosaic-radius: 8px;
+    --happy-media-mosaic-inner-radius: 4px;
+
+    position: relative;
+    flex: none;
     margin-top: 8px;
-    max-width: 420px;
     min-width: 0;
 }
 
-.happy-message__media[data-count="1"] {
-    grid-template-columns: minmax(0, max-content);
-}
-
-.happy-message__media[data-count="2"],
-.happy-message__media[data-count="3"],
-.happy-message__media[data-count="4"] {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
 .happy-message__media-item {
+    /* Absolute: a mosaic tile's frame is computed from every photo's aspect
+       ratio, spanning rows in one place and columns in another, which neither
+       one flex axis nor a track grid can express. */
+    position: absolute;
+    box-sizing: border-box;
     display: block;
     overflow: hidden;
     margin: 0;
@@ -948,12 +947,6 @@
     cursor: zoom-in;
 }
 
-.happy-message__media[data-count="2"] .happy-message__media-item,
-.happy-message__media[data-count="3"] .happy-message__media-item,
-.happy-message__media[data-count="4"] .happy-message__media-item {
-    aspect-ratio: 1 / 1;
-}
-
 .happy-message__media-item[data-interactive]:hover {
     border-color: var(--surface-selected);
 }
@@ -963,8 +956,8 @@
     outline-offset: 2px;
 }
 
-/* A fixed box (grid squares, or a lone photo with known dimensions) fills its
-   reserved space so the layout never reflows when the image loads. */
+/* Every tile is a fixed box from the mosaic; the picture fills its reserved
+   space so the layout never reflows when the image loads. */
 .happy-message__media-image {
     display: block;
     width: 100%;

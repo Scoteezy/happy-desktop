@@ -1,4 +1,4 @@
-import { messageMediaSingleBox } from "../../src/conversationRowHeight";
+import { messageMediaSingleBox } from "../../src/mediaMosaic";
 import { MediaImageTile } from "../../src/ConversationMedia";
 import { thumbhashDataUrl } from "../../src/thumbhashDataUrl";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";

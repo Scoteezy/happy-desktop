@@ -1,7 +1,13 @@
 import { useState, type CSSProperties } from "react";
 import type { ConversationMediaItem } from "happy-desktop-state";
 import { artifactSizeText } from "./pages/artifacts/artifactPresentation";
-import { conversationMediaVideoBox, messageMediaSingleBox } from "./conversationRowHeight";
+import { conversationMediaVideoBox } from "./conversationRowHeight";
+import {
+    MEDIA_MOSAIC_MAX_WIDTH,
+    mediaMosaicLayout,
+    mediaMosaicStyle,
+    mediaMosaicTileStyle,
+} from "./mediaMosaic";
 import { FileTreeFamilyIcon, fileTreeFamily } from "./FileTree";
 import { Icon } from "./Icon";
 import { ResultCard } from "./ResultCard";
@@ -19,7 +25,7 @@ export type MediaImageTileProps = {
     alt: string;
     /**
      * The box the tile reserves; the picture covers it once it loads. Absent,
-     * the tile fills the box its container gives it, as a grid square does.
+     * the tile fills the box its container gives it, as a mosaic tile does.
      */
     width?: number;
     height?: number;
@@ -168,17 +174,22 @@ function mediaTypeLabel(item: ConversationMediaItem): string {
  * C-294 ConversationMedia — the files one tool call put in front of the reader,
  * beneath its line in the transcript.
  *
- * Every picture comes first, together: one at its own box, several as a
- * two-column square grid. Each recording follows at its frame, then one full
- * width card per document or file. Every box is known before a byte arrives —
- * from the producer's dimensions, the grid's share of the row, and
- * `conversationRowHeight`'s arithmetic — so the transcript reserves exactly the
- * height this paints.
+ * Every picture comes first, together: one at its own box, several as one
+ * `mediaMosaicLayout` mosaic shaped by their own aspect ratios. Each recording
+ * follows at its frame, then one full width card per document or file. Every
+ * box is known before a byte arrives — from the producer's dimensions and the
+ * mosaic's arithmetic, which `conversationRowHeight` shares — so the
+ * transcript reserves exactly the height this paints.
  */
 export function ConversationMedia(props: ConversationMediaProps) {
     const indexed = props.items.map((item, index) => ({ item, index }));
     const images = indexed.filter(({ item }) => item.kind === "image");
-    const grid = images.length > 1;
+    /* Laid out at full size; a narrower column scales the frame, and the tiles
+       with it, exactly as the row model scales this layout to its measure. */
+    const mosaic = mediaMosaicLayout(
+        images.map(({ item }) => item),
+        MEDIA_MOSAIC_MAX_WIDTH,
+    );
     const open = props.onItemOpen;
     return (
         <div
@@ -192,19 +203,19 @@ export function ConversationMedia(props: ConversationMediaProps) {
                     className="happy-conversation-media__images"
                     data-count={images.length}
                     data-happy-desktop-ui="conversation-media-images"
+                    style={mediaMosaicStyle(mosaic)}
                 >
-                    {images.map(({ item, index }) => {
-                        const box = grid ? undefined : messageMediaSingleBox(item);
+                    {images.map(({ item, index }, position) => {
                         const placeholderUrl = item.thumbhash
                             ? thumbhashDataUrl(item.thumbhash)
                             : undefined;
                         return (
                             <MediaImageTile
                                 alt={item.name}
-                                {...(box ? { height: box.height, width: box.width } : {})}
                                 key={index}
                                 {...(placeholderUrl ? { placeholderUrl } : {})}
                                 {...(open ? { onOpen: () => open(index) } : {})}
+                                style={mediaMosaicTileStyle(mosaic, mosaic.tiles[position]!)}
                                 url={item.url}
                             />
                         );

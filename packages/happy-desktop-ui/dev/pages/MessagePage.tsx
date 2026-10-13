@@ -5,6 +5,15 @@ import { DiffSnippet } from "../../src/DiffSnippet";
 import { FileAttachment } from "../../src/FileAttachment";
 import { DayDivider, Message, MessageList, SteeringNotice, SystemNotice } from "../../src/Message";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import {
+    mediaImagePanorama,
+    mediaImagePortrait,
+    mediaImageSquare,
+    mediaImageTall,
+    mediaImageWide,
+    mediaScreenshots,
+    mediaTallThumbhash,
+} from "./conversationMediaFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-012";
@@ -210,7 +219,7 @@ export function MessagePage() {
             </Specimen>
 
             <Specimen
-                detail="Inline photos render below the body as a clickable grid; click opens a web-modal lightbox"
+                detail="Inline photos render below the body as a clickable aspect-aware mosaic; click opens a web-modal lightbox"
                 label="Message — photo attachments"
                 number="04"
                 stage="app"
@@ -291,14 +300,86 @@ export function MessagePage() {
                     {channelFrame(
                         <Message
                             author="Nora Kim"
-                            body="And the before/after grid for the settings redesign:"
+                            body="And the before/after for the settings redesign:"
                             images={[
-                                { id: "g1", url: demoImage(400, 400, "#60a5fa", "#34d399") },
-                                { id: "g2", url: demoImage(400, 400, "#fbbf24", "#f87171") },
-                                { id: "g3", url: demoImage(400, 400, "#a89bff", "#8b7cf7") },
+                                {
+                                    id: "g1",
+                                    height: 900,
+                                    url: demoImage(1600, 900, "#60a5fa", "#34d399"),
+                                    width: 1600,
+                                },
+                                {
+                                    id: "g2",
+                                    height: 1600,
+                                    url: demoImage(900, 1600, "#fbbf24", "#f87171"),
+                                    width: 900,
+                                },
                             ]}
                             onImageOpen={() => {}}
                             time="11:15"
+                            tone="rose"
+                        />,
+                    )}
+                    {channelFrame(
+                        <Message
+                            author="Nora Kim"
+                            body=""
+                            grouped
+                            images={[
+                                { id: "g3", url: demoImage(400, 400, "#a89bff", "#8b7cf7") },
+                                {
+                                    id: "g4",
+                                    height: 1000,
+                                    url: demoImage(1000, 1000, "#60a5fa", "#a89bff"),
+                                    width: 1000,
+                                },
+                                {
+                                    id: "g5",
+                                    thumbhash: mediaTallThumbhash,
+                                    url: demoImage(900, 1600, "#34d399", "#fbbf24"),
+                                },
+                            ]}
+                            onImageOpen={() => {}}
+                            time="11:15"
+                        />,
+                    )}
+                    {channelFrame(
+                        <Message
+                            author="Steve"
+                            body="All four settings screens:"
+                            images={mediaScreenshots.map((item, index) => ({
+                                id: `s${String(index)}`,
+                                alt: item.name,
+                                height: item.height,
+                                url: item.url,
+                                width: item.width,
+                            }))}
+                            onImageOpen={() => {}}
+                            own
+                            time="11:16"
+                            tone="ocean"
+                        />,
+                    )}
+                    {channelFrame(
+                        <Message
+                            author="Nora Kim"
+                            body="Six exports; a message shows the first four:"
+                            images={[
+                                mediaImagePanorama,
+                                mediaImageSquare,
+                                mediaImageWide,
+                                mediaImageTall,
+                                mediaImagePortrait,
+                                mediaImageSquare,
+                            ].map((item, index) => ({
+                                id: `x${String(index)}`,
+                                alt: item.name,
+                                height: item.height,
+                                url: item.url,
+                                width: item.width,
+                            }))}
+                            onImageOpen={() => {}}
+                            time="11:17"
                             tone="rose"
                         />,
                     )}
@@ -317,7 +398,7 @@ export function MessagePage() {
                             />
                         </Message>,
                     )}
-                    <DimensionRule label="single ≤ 380 × 320 (aspect from metadata) · grid squares · media-only sits flush" />
+                    <DimensionRule label="single ≤ 380 × 320 (aspect from metadata) · 2–4 as an aspect-aware mosaic ≤ 560 wide · media-only sits flush" />
                 </div>
             </Specimen>
 
