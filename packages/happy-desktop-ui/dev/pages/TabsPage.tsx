@@ -16,12 +16,20 @@ const inboxTabs: TabItem[] = [
  * Session-shaped tabs: no glyph of their own, but they report `busy` and
  * `unread`, so they hold the leading lane open in every state.
  */
-const laneTabs = (state: { avatar?: boolean; busy?: boolean; unread?: boolean }): TabItem[] =>
+const laneTabs = (state: {
+    avatar?: boolean;
+    busy?: boolean;
+    unread?: boolean;
+    waiting?: boolean;
+    awaitingInput?: boolean;
+}): TabItem[] =>
     ["one", "two", "three"].map((id, index) => ({
         id,
         label: ["Migrate the table", "Rewrite the header", "Connect a Happy Agent"][index]!,
         avatarId: state.avatar === true ? `ses_${id}` : undefined,
         busy: state.busy === true,
+        waiting: state.waiting === true,
+        awaitingInput: state.awaitingInput === true,
         unread: state.unread === true,
     }));
 const adminTabs: TabItem[] = [
@@ -247,6 +255,37 @@ export function TabsPage() {
                             width={440}
                         />
                         <DimensionRule label="mark 16 · the same lane the glyph and spinner use" />
+                    </div>
+                </Specimen>
+                <Specimen
+                    detail="working spins and shimmers its title · a scheduled wait and a question for the reader are still marks in the same trailing lane, and the title stays still"
+                    label="Working, waiting, asking"
+                    number="T-12"
+                    stage="app"
+                >
+                    <div
+                        style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: "20px",
+                            padding: "24px",
+                        }}
+                    >
+                        <Bar
+                            active="one"
+                            tabs={laneTabs({ avatar: true, busy: true })}
+                            width={440}
+                        />
+                        <Bar
+                            active="one"
+                            tabs={laneTabs({ avatar: true, waiting: true })}
+                            width={440}
+                        />
+                        <Bar
+                            active="one"
+                            tabs={laneTabs({ avatar: true, awaitingInput: true })}
+                            width={440}
+                        />
                     </div>
                 </Specimen>
             </div>

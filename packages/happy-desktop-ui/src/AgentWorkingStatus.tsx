@@ -1,6 +1,7 @@
 import { type CSSProperties } from "react";
 import { partitionComponentProps } from "./componentProps";
 import { elapsedTimeFormat } from "./elapsedTimeFormat";
+import { Icon } from "./Icon";
 import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
 import { TypedText } from "./TypedText";
@@ -19,7 +20,10 @@ export type AgentWorkingPhase =
 export interface AgentWorkingStatusProps {
     /** Paints the status without changing its stable layout slot or DOM identity. */
     readonly active?: boolean;
-    /** The turn is blocked on a structured answer, so no work animation is shown. */
+    /**
+     * The turn is blocked on a structured answer, so a still question mark
+     * stands where the loader would and no work animation is shown.
+     */
     readonly awaitingInput?: boolean;
     readonly className?: string;
     readonly "data-testid"?: string;
@@ -44,6 +48,13 @@ export interface AgentWorkingStatusProps {
      * watching a wait wants how much longer, not three numbers to subtract.
      */
     readonly wait?: AgentWaitStatus;
+    /**
+     * The turn is sitting inside a scheduled wait whose end this surface was
+     * not told. It is deliberately doing nothing, so a still clock takes the
+     * loader's box and the phase reads "Waiting" without shimmer or retyping.
+     * A known `wait` outranks it with the ring and the countdown.
+     */
+    readonly waiting?: boolean;
     readonly style?: CSSProperties;
 }
 
@@ -89,6 +100,7 @@ export function AgentWorkingStatus(props: AgentWorkingStatusProps) {
         "phase",
         "style",
         "wait",
+        "waiting",
     ]);
     const label = local.label ?? PHASE_LABELS[local.phase ?? "working"];
     return (
@@ -107,12 +119,19 @@ export function AgentWorkingStatus(props: AgentWorkingStatusProps) {
                 data-happy-desktop-ui="agent-working-status-state"
             >
                 {local.awaitingInput ? (
-                    <span
-                        className="happy-agent-working-status__phase"
-                        data-happy-desktop-ui="agent-working-status-phase"
-                    >
-                        Waiting for answer
-                    </span>
+                    <>
+                        <Icon
+                            className="happy-agent-working-status__icon"
+                            name="question"
+                            size={14}
+                        />
+                        <span
+                            className="happy-agent-working-status__phase"
+                            data-happy-desktop-ui="agent-working-status-phase"
+                        >
+                            Waiting for answer
+                        </span>
+                    </>
                 ) : (
                     <>
                         {/* A wait takes the loader's box, because the share of a
@@ -125,6 +144,12 @@ export function AgentWorkingStatus(props: AgentWorkingStatusProps) {
                                 now={local.wait.now}
                                 size={14}
                                 startedAt={local.wait.startedAt}
+                            />
+                        ) : local.waiting ? (
+                            <Icon
+                                className="happy-agent-working-status__icon"
+                                name="clock"
+                                size={14}
                             />
                         ) : (
                             <Spinner
@@ -158,6 +183,13 @@ export function AgentWorkingStatus(props: AgentWorkingStatusProps) {
                                 title={`Until ${waitFinishDateLabel(local.wait.dueAt)}`}
                             >
                                 {waitLabel(local.wait)}
+                            </span>
+                        ) : local.waiting ? (
+                            <span
+                                className="happy-agent-working-status__phase"
+                                data-happy-desktop-ui="agent-working-status-phase"
+                            >
+                                Waiting
                             </span>
                         ) : (
                             <span

@@ -107,6 +107,19 @@ export function WaitRingPage() {
             </Specimen>
 
             <Specimen
+                detail="nothing is working, so nothing moves · a wait whose end was not supplied wears a still clock · a question for the reader wears a still question mark · both take the ring's 14px column"
+                label="Still marks"
+                number="03b"
+                stage="surface"
+            >
+                <div style={column}>
+                    <AgentWorkingStatus elapsedMs={32_000} phase="thinking" />
+                    <AgentWorkingStatus elapsedMs={228_000} phase="callingTools" waiting />
+                    <AgentWorkingStatus awaitingInput elapsedMs={228_000} />
+                </div>
+            </Specimen>
+
+            <Specimen
                 detail="seconds · minutes and seconds · hours and minutes · days and hours — the two largest units that still say something"
                 label="Countdown units"
                 number="04"

@@ -782,11 +782,7 @@ function botSidebarItem(bot: HappyAgentBot, titleShimmerEnabled: boolean): Sideb
         // actually has still outranks it.
         avatarId: bot.id,
         ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
-        ...(bot.conversation.activity === "running"
-            ? { status: "working" as const }
-            : bot.conversation.activity === "waiting"
-              ? { status: "waiting" as const }
-              : {}),
+        ...sidebarActivity(bot.conversation.activity),
         ...(bot.conversation.unread ? { unread: true } : {}),
     };
 }
@@ -866,11 +862,7 @@ function taskSidebarItem(task: HappyAgentTask, titleShimmerEnabled: boolean): Si
             label: `Leave ${task.name}`,
             reveal: "hover" as const,
         },
-        ...(task.conversation.activity === "running"
-            ? { status: "working" as const }
-            : task.conversation.activity === "waiting"
-              ? { status: "waiting" as const }
-              : {}),
+        ...sidebarActivity(task.conversation.activity),
         ...(task.conversation.unread ? { unread: true } : {}),
     };
 }
@@ -911,11 +903,7 @@ function botSubtaskSidebarItems(
                       }
                     : {}),
                 ...(worktree ? sidebarLifecycle(worktree.lifecycle) : {}),
-                ...(task.conversation.activity === "running"
-                    ? { status: "working" as const }
-                    : task.conversation.activity === "waiting"
-                      ? { status: "waiting" as const }
-                      : {}),
+                ...sidebarActivity(task.conversation.activity),
                 ...(task.conversation.unread ? { unread: true } : {}),
                 ...((worktree?.addedLines ?? 0) > 0 || (worktree?.deletedLines ?? 0) > 0
                     ? {
@@ -981,11 +969,7 @@ function sidebarItems(
             // A row only carries a status while one of its sessions is live.
             // Waiting is the low-priority modifier: any session doing real work
             // makes the row spin, and only an all-waiting row wears the clock.
-            ...(project.activity === "running"
-                ? { status: "working" as const }
-                : project.activity === "waiting"
-                  ? { status: "waiting" as const }
-                  : {}),
+            ...sidebarActivity(project.activity),
             ...(project.conversations.some((conversation) => conversation.unread)
                 ? { unread: true }
                 : {}),
@@ -1015,11 +999,7 @@ function sidebarItems(
             // or is no longer there says so on the row: the reader is looking at
             // a place they may be about to send work into.
             ...sidebarLifecycle(worktree.lifecycle),
-            ...(worktree.activity === "running"
-                ? { status: "working" as const }
-                : worktree.activity === "waiting"
-                  ? { status: "waiting" as const }
-                  : {}),
+            ...sidebarActivity(worktree.activity),
             ...(worktree.conversations.some((conversation) => conversation.unread)
                 ? { unread: true }
                 : {}),
@@ -1033,6 +1013,21 @@ function sidebarItems(
                 : {}),
         })),
     ];
+}
+
+/**
+ * The status a row wears for what its sessions are doing. An open question
+ * outranks everything and a scheduled wait is the low-priority modifier, both
+ * already decided by the activity rollup; each maps to its own static mark so
+ * neither claims, with a spinner, that work is happening.
+ */
+function sidebarActivity(
+    activity: "running" | "awaitingInput" | "waiting" | "idle",
+): Pick<SidebarItem, "status"> {
+    if (activity === "awaitingInput") return { status: "awaitingInput" };
+    if (activity === "running") return { status: "working" };
+    if (activity === "waiting") return { status: "waiting" };
+    return {};
 }
 
 /**
@@ -1328,6 +1323,7 @@ function sessionTabs(
         // without sliding the title sideways under the reader.
         busy: summary.activity === "running",
         waiting: summary.activity === "waiting",
+        awaitingInput: summary.activity === "awaitingInput",
         unread: summary.unread === true,
     }));
 }

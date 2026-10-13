@@ -14,6 +14,7 @@ export type IconName =
     | "settings"
     | "call"
     | "clock"
+    | "question"
     | "history"
     | "plus"
     | "send"
@@ -133,6 +134,9 @@ const glyphs: Record<IconName, IconGlyph> = {
     settings: { set: "ionicons", name: "settings-outline" },
     call: { set: "ionicons", name: "call-outline" },
     clock: { set: "ionicons", name: "time-outline" },
+    // An agent stopped to ask the reader something: the turn is waiting on an
+    // answer, not working. The circled outline sits beside `clock` as its pair.
+    question: { set: "ionicons", name: "help-circle-outline" },
     history: { set: "octicons", name: "history" },
     plus: { set: "ionicons", name: "add-outline" },
     send: { set: "ionicons", name: "paper-plane-outline" },

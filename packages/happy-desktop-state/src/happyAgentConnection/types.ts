@@ -556,6 +556,8 @@ export interface GroupSession {
     orderKey?: string;
     /** The session that spawned this one, for a subagent. Absent for a top-level session. */
     parentSessionId?: string;
+    /** Whether the agent's run is stopped on a question only the person can answer. */
+    pendingQuestion: boolean;
     permissionMode: string;
     scope:
         | { kind: "project"; projectId: string }

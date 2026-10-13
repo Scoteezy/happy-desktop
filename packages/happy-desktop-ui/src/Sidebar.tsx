@@ -122,9 +122,11 @@ export type SidebarItem = {
      * `working` spins in the leading slot; `waiting` shows a highlighted clock
      * there instead — the row's agent is inside a scheduled wait, deliberately
      * doing nothing. Waiting is the lower-priority state: a row whose sessions
-     * do real work reports `working`.
+     * do real work reports `working`. `awaitingInput` shows a highlighted
+     * question mark: the row's agent stopped to ask the reader something, and
+     * nothing moves until they answer, so it outranks both.
      */
-    status?: "ready" | "working" | "waiting";
+    status?: "ready" | "working" | "waiting" | "awaitingInput";
     /**
      * Where the thing behind this row is in its own life, as distinct from what
      * is happening inside it: `creating` while it is still being made,
@@ -1055,6 +1057,13 @@ function SidebarRow({
                 icon: "clock",
                 label: `${item().label} is waiting`,
                 lifecycle: "waiting",
+            };
+        if (item().status === "awaitingInput")
+            return {
+                kind: "glyph",
+                icon: "question",
+                label: `${item().label} is waiting for your answer`,
+                lifecycle: "awaitingInput",
             };
         return undefined;
     };

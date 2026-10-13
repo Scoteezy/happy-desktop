@@ -25,6 +25,7 @@ import { ArtifactTypeGlyph } from "./pages/artifacts/artifactPresentation";
 import { ResultCard } from "./ResultCard";
 import { ScrollingText } from "./ScrollingText";
 import { Spinner } from "./Spinner";
+import { toolCallStillGlyph } from "./toolCallStillGlyph";
 import { TypedText } from "./TypedText";
 import { Ionicon, Octicon } from "./vectorIcons/VectorIcon";
 
@@ -201,7 +202,9 @@ function toolVerb(
         return active ? "Typing" : "Typed";
     // Waiting ends when a child sends input. That expected wake-up is projected
     // as success; the verb describes the wait rather than a generic tool use.
-    if (lower === "wait_agent") return active ? "Waiting" : "Waited";
+    const still = toolCallStillGlyph(name);
+    if (lower === "wait_agent" || still === "clock") return active ? "Waiting" : "Waited";
+    if (still === "question") return active ? "Asking" : "Asked";
     if (presentation?.type === "execCommand" || /(bash|exec|shell|command|run)/.test(lower))
         return lower === "powershell" ? "PowerShell" : lower === "bash" ? "Bash" : "Shell";
     if (/(grep|find|glob|^ls$|list|search)/.test(lower)) return active ? "Exploring" : "Explored";
@@ -227,6 +230,9 @@ function toolVerbFocused(verb: string): string {
         case "Waiting":
         case "Waited":
             return "Wait";
+        case "Asking":
+        case "Asked":
+            return "Ask";
         case "Used":
             return "Tool";
         case "Created":
@@ -254,6 +260,8 @@ function toolGlyph(
     failed: boolean,
 ): ToolGlyph {
     if (failed) return { set: "octicons", name: "alert" };
+    const still = toolCallStillGlyph(name);
+    if (still !== undefined) return { set: "house", name: still };
     if (presentation?.type === "agentSpawn") return { set: "house", name: "agents" };
     if (presentation?.type === "compaction") return { set: "house", name: "filter" };
     if (presentation?.type === "search") return { set: "house", name: "globe" };
@@ -444,6 +452,29 @@ function toolFilePath(tool: ConversationToolCall): string | undefined {
     return filePreviewKind(candidate) === "binary" ? undefined : candidate;
 }
 
+/**
+ * What a scheduled wait is waiting for, in the words its own arguments use:
+ * `wait_until`'s date, or `wait`'s duration as text or as one count per unit.
+ */
+function waitSubject(tool: ConversationToolCall): string | undefined {
+    const args = tool.arguments;
+    if (typeof args !== "object" || args === null || Array.isArray(args)) return undefined;
+    const fields = args as Record<string, ConversationJson>;
+    if (tool.toolName === "wait_until") {
+        const at = fields.at;
+        return typeof at === "string" || typeof at === "number" ? `until ${at}` : undefined;
+    }
+    if (typeof fields.duration === "string" && fields.duration.trim().length > 0)
+        return `for ${fields.duration.trim()}`;
+    const parts = (["days", "hours", "minutes", "seconds"] as const).flatMap((unit) => {
+        const count = fields[unit];
+        return typeof count === "number" && count > 0
+            ? [`${count} ${count === 1 ? unit.slice(0, -1) : unit}`]
+            : [];
+    });
+    return parts.length > 0 ? `for ${parts.join(" ")}` : undefined;
+}
+
 function argumentFilePath(argumentsValue: ConversationToolCall["arguments"]): string | undefined {
     if (typeof argumentsValue !== "object" || argumentsValue === null) return undefined;
     if (Array.isArray(argumentsValue)) return undefined;
@@ -609,6 +640,10 @@ function AgentToolActivity(props: {
     );
     const singleLine = props.singleLine ?? false;
     const running = tool.status === "running";
+    /* A call that holds the turn open without working — a scheduled wait, a
+       question for the reader — keeps its still glyph while it runs. */
+    const stillGlyph = toolCallStillGlyph(tool.toolName);
+    const spinning = running && stillGlyph === undefined;
     const motion = props.motion ?? "typewriter";
     const focused = props.treatment === "focused";
     const verbTyped = motion === "typewriter" || motion === "verb-typed";
@@ -675,7 +710,10 @@ function AgentToolActivity(props: {
         primaryText =
             tool.toolName.toLowerCase() === "wait_agent"
                 ? "for subagents"
-                : humanizeToolName(tool.toolName);
+                : stillGlyph === "question"
+                  ? "a question"
+                  : ((stillGlyph === "clock" ? waitSubject(tool) : undefined) ??
+                    humanizeToolName(tool.toolName));
     }
     if (focused && presentation?.type !== "fileDiff") verb = toolVerbFocused(verb);
     /* Ran outside the sandbox. Said in colour alone — the whole line turns
@@ -773,7 +811,7 @@ function AgentToolActivity(props: {
                 className="happy-agent-activity__glyph"
                 data-happy-desktop-ui="agent-activity-glyph"
             >
-                {running ? (
+                {spinning ? (
                     <Spinner
                         label={`${humanizeToolName(tool.toolName)} is running`}
                         size={12}

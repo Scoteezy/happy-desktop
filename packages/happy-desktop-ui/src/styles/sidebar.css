@@ -706,9 +706,11 @@
     pointer-events: none;
 }
 
-/* Accent-tinted, so a row whose agent is deliberately doing nothing still stands
-   apart from an idle one without the spinner's claim that work is happening. */
-.happy-sidebar__item-activity[data-activity="waiting"] {
+/* Accent-tinted, so a row whose agent is deliberately doing nothing — waiting
+   out a schedule or on the reader's answer — still stands apart from an idle
+   one without the spinner's claim that work is happening. */
+.happy-sidebar__item-activity[data-activity="waiting"],
+.happy-sidebar__item-activity[data-activity="awaitingInput"] {
     color: var(--text-link);
 }
 

@@ -166,6 +166,27 @@ export function AgentActivityRowPage() {
             </Specimen>
 
             <Specimen
+                detail="a scheduled wait and a question hold the turn open without working · while they run the glyph stays still instead of spinning · a settled wait keeps the clock"
+                label="Waiting without working"
+                number="02b"
+                stage="surface"
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                        width: "720px",
+                    }}
+                >
+                    <AgentActivityRow activity={{ kind: "tool", tool: happyAgentRunningTool }} />
+                    {waitTools.map((tool) => (
+                        <AgentActivityRow activity={{ kind: "tool", tool }} key={tool.toolCallId} />
+                    ))}
+                </div>
+            </Specimen>
+
+            <Specimen
                 detail="MCP result rows and an interrupted MCP call"
                 label="MCP calls"
                 number="03"
@@ -357,6 +378,37 @@ const AGENT_MESSAGE_TEXT = [
 ].join("\n");
 
 /** A command far wider than a 420px row, so the scroll and its fade are visible. */
+const waitTools: readonly ConversationToolCall[] = [
+    {
+        toolCallId: "tool-wait",
+        toolName: "wait",
+        arguments: { duration: "1h 30m" },
+        status: "running",
+        failed: false,
+    },
+    {
+        toolCallId: "tool-wait-until",
+        toolName: "wait_until",
+        arguments: { at: "18:30" },
+        status: "running",
+        failed: false,
+    },
+    {
+        toolCallId: "tool-request-user-input",
+        toolName: "request_user_input",
+        arguments: { questions: [] },
+        status: "running",
+        failed: false,
+    },
+    {
+        toolCallId: "tool-wait-done",
+        toolName: "wait",
+        arguments: { minutes: 5 },
+        status: "success",
+        failed: false,
+    },
+];
+
 const longExecTool: ConversationToolCall = {
     ...happyAgentExecTool,
     toolCallId: "tool-exec-long",

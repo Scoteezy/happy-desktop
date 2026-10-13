@@ -332,6 +332,22 @@ const treatmentSections: SidebarSection[] = [
                 tone: "ember",
             },
             {
+                id: "kind-project-waiting",
+                initials: "W",
+                kind: "project",
+                label: "Project — waiting",
+                status: "waiting",
+                tone: "ocean",
+            },
+            {
+                id: "kind-project-asking",
+                initials: "Q",
+                kind: "project",
+                label: "Project — asking a question",
+                status: "awaitingInput",
+                tone: "violet",
+            },
+            {
                 action: { icon: "plus", label: "New workspace", reveal: "hover" },
                 changeStats: { added: 1, deleted: 0 },
                 id: "kind-project-narrow",

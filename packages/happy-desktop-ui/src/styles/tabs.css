@@ -106,9 +106,9 @@
 }
 
 /*
- * A scheduled wait's clock. Highlighted with the link/accent color so a tab
- * deliberately doing nothing still stands apart from an idle one, without
- * borrowing the spinner's claim that work is happening.
+ * A scheduled wait's clock, or an open question's mark. Highlighted with the
+ * link/accent color so a tab deliberately doing nothing still stands apart from
+ * an idle one, without borrowing the spinner's claim that work is happening.
  */
 .happy-tabs__tab-waiting {
     display: flex;

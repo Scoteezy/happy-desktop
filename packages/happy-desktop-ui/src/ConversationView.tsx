@@ -48,6 +48,7 @@ import {
 import type { HappyAgentUserInputAnswerMap } from "./HappyAgentUserInputPrompt";
 import { ScrollArea } from "./Scrollbar";
 import { Spinner } from "./Spinner";
+import { toolCallStillGlyph } from "./toolCallStillGlyph";
 import { WindowOverlay } from "./WindowOverlay";
 
 export type ConversationViewProps = {
@@ -330,6 +331,29 @@ function conversationPendingSteering(entries: readonly ConversationEntry[]): {
         : { transcript: entries.slice(0, start), queued: entries.slice(start) };
 }
 
+/**
+ * Whether the running turn is only sitting out a scheduled wait: at least one
+ * wait call is in flight and nothing else in the transcript is still running.
+ */
+function conversationScheduledWait(transcript: readonly ConversationEntry[]): boolean {
+    let waiting = false;
+    for (const entry of transcript) {
+        if (entry.kind !== "agentActivity") continue;
+        const activity = entry.activity;
+        if (activity.kind === "tool") {
+            if (activity.tool.status !== "running") continue;
+            if (toolCallStillGlyph(activity.tool.toolName) !== "clock") return false;
+            waiting = true;
+        } else if (
+            (activity.kind === "shell" && activity.running) ||
+            (activity.kind === "labeled" && activity.status === "running") ||
+            (activity.kind === "reasoning" && activity.streaming)
+        )
+            return false;
+    }
+    return waiting;
+}
+
 function elapsedFormat(ms: number): string {
     const seconds = Math.floor(ms / 1000);
     if (seconds < 60) return `${seconds}s`;
@@ -430,6 +454,13 @@ export function ConversationView(props: ConversationViewProps) {
      * work it reports was set going by the turn above it.
      */
     const delegating = props.running !== true && !awaitingInput && (props.delegatedAgents ?? 0) > 0;
+    /* A wait whose end the owner did not supply still is not work: the footer
+       takes a still clock rather than the loader. */
+    const scheduledWait =
+        props.running === true &&
+        !awaitingInput &&
+        props.workingWait === undefined &&
+        conversationScheduledWait(transcript);
     /*
      * An unanswered question keeps the footer after the run that asked it
      * stops. The turn is not over — it is waiting on the reader — and the one
@@ -470,6 +501,7 @@ export function ConversationView(props: ConversationViewProps) {
             }
             phase={delegating ? "delegating" : props.workingPhase}
             wait={delegating ? undefined : props.workingWait}
+            waiting={scheduledWait}
         />
     );
     /**

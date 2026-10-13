@@ -745,6 +745,8 @@ export interface HappyAgentSessionSummary {
     readonly activeSubagentCount: number;
     /** Present while the agent is inside a scheduled `wait`/`wait_until`. */
     readonly wait?: HappyAgentSessionWait;
+    /** Whether the agent's run is stopped on a question only the person can answer. */
+    readonly pendingQuestion: boolean;
     /** Why this chat is waiting for the person, as durably tracked by Happy Agent. */
     readonly unreadReason?: "attention_needed" | "turn_finished";
     readonly title?: string;

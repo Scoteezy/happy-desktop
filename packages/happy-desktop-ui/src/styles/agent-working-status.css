@@ -64,12 +64,6 @@
     font-family: inherit;
 }
 
-/* A question pauses work on the human side. The static label starts where the
-   loader normally starts; no empty glyph column suggests that work continues. */
-.happy-agent-working-status[data-awaiting-input] .happy-agent-working-status__state {
-    padding-left: 0;
-}
-
 .happy-agent-working-status__spinner {
     flex: none;
     align-self: center;
@@ -86,6 +80,17 @@
 .happy-agent-working-status__ring {
     flex: none;
     margin-left: -3px;
+}
+
+/* A turn that is deliberately doing nothing — sitting out a wait, or stopped on
+   a question for the reader — wears a still glyph in the same 14px column the
+   ring fills, tinted like the clock and question marks in the sidebar and tabs
+   so it never reads as the loader. */
+.happy-agent-working-status__icon {
+    flex: none;
+    align-self: center;
+    margin-left: -3px;
+    color: var(--text-link);
 }
 
 .happy-agent-working-status__timer {

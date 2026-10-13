@@ -53,14 +53,16 @@ function summaryTitle(session: HappyAgentConversationSummaryInput): string {
  * work handed to a child is work this session set in motion, so the row keeps
  * its marker until nothing of the session's is running anywhere.
  *
- * A scheduled wait is the low-priority modifier it has always been, and it only
- * describes the session's own turn — a session sitting in a wait while its
- * children work is working, not waiting.
+ * An open question outranks all of it: the run is stopped until the person
+ * answers, so the row asks rather than claiming work is happening. A scheduled
+ * wait is the low-priority modifier it has always been, and it only describes
+ * the session's own turn — a session sitting in a wait while its children work
+ * is working, not waiting.
  */
 function summaryActivity(
     session: HappyAgentConversationSummaryInput,
 ): ConversationSummary["activity"] {
-    if (session.unreadReason === "attention_needed") return "awaitingInput";
+    if (session.pendingQuestion) return "awaitingInput";
     if (session.activeSubagentCount > 0) return "running";
     if (session.status !== "running" && session.status !== "queued") return "idle";
     return session.wait === undefined ? "running" : "waiting";

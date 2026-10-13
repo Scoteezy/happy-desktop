@@ -53,6 +53,13 @@ export type TabItem = {
      * outranks it — real work is the thing worth showing.
      */
     waiting?: boolean;
+    /**
+     * Whether the work behind this tab stopped to ask the reader something. It
+     * takes the same trailing lane with a highlighted question mark and outranks
+     * both `busy` and `waiting`: nothing moves until the reader answers, so the
+     * tab neither spins nor shimmers its title.
+     */
+    awaitingInput?: boolean;
     /** Unsaved file content. Drawn as the classic dot in the tab's trailing lane. */
     dirty?: boolean;
     /** Marks the tab as carrying unread activity with a dot on its leading mark. */
@@ -119,11 +126,22 @@ function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
 }
 
 /**
- * What the tab is doing, for the trailing lane. Running work outranks a
- * scheduled wait: a tab doing both is doing real work, and that is the thing
- * worth showing.
+ * What the tab is doing, for the trailing lane. A question waiting on the
+ * reader outranks everything, and running work outranks a scheduled wait: a tab
+ * doing both is doing real work, and that is the thing worth showing.
  */
 function tabActivityMark(tab: TabItem) {
+    if (tab.awaitingInput)
+        return (
+            <span
+                aria-label={`${tab.label} is waiting for your answer`}
+                className="happy-tabs__tab-waiting"
+                data-happy-desktop-ui="tab-awaiting-input"
+                role="img"
+            >
+                <Icon name="question" size={12} />
+            </span>
+        );
     if (tab.busy) return <Spinner label={`${tab.label} is working`} size={12} tone="muted" />;
     if (tab.waiting)
         return (
@@ -666,7 +684,7 @@ export function Tabs(props: TabsProps) {
                                 title again here would stack a second emphasis
                                 on top of one the tab had already earned. Only
                                 the travelling band is new. */}
-                            {tab.busy && tab.labelShimmer !== false ? (
+                            {tab.busy && !tab.awaitingInput && tab.labelShimmer !== false ? (
                                 <ShimmerText sweep="sheen" tone="inherit">
                                     {tab.label}
                                 </ShimmerText>
