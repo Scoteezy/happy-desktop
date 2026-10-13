@@ -144,20 +144,30 @@ export function messageReferencesPlainText(
 }
 
 /**
- * What the references in one body read as, for caches keyed by an entry rather
+ * The references one body names, in order. A body is immutable, so a caller
+ * holding the same body can keep this and skip the parse next time.
+ */
+export function messageReferencesNamed(text: string): readonly HappyReference[] {
+    if (!text.includes("<happy-")) return [];
+    return parseHappyReferences(text).flatMap((segment) =>
+        segment.type === "text" ? [] : [segment.reference],
+    );
+}
+
+/**
+ * What the references a body names read as, for caches keyed by an entry rather
  * than by its text: two bodies with the same signature lay out identically.
  * Empty when the body names nothing. Busy is left out because it only paints.
  */
 export function messageReferencesSignature(
-    text: string,
+    named: readonly HappyReference[],
     references: MessageReferences | undefined,
 ): string {
-    if (!text.includes("<happy-")) return "";
-    return parseHappyReferences(text)
-        .flatMap((segment) => {
-            if (segment.type === "text") return [];
-            const view = referenceView(segment.reference, references);
-            return [`${view.type}:${view.label}`];
+    if (named.length === 0) return "";
+    return named
+        .map((reference) => {
+            const view = referenceView(reference, references);
+            return `${view.type}:${view.label}`;
         })
         .join("\u0000");
 }

@@ -5,6 +5,7 @@ import {
     type ConversationErrorAssistance,
     type ConversationMediaItem,
     type ConversationRequest,
+    type HappyReference,
 } from "happy-desktop-state";
 import {
     conversationAgentRowStartsGroup,
@@ -29,6 +30,7 @@ import {
     type MessageTextLayoutCache,
 } from "./messageTextLayout";
 import {
+    messageReferencesNamed,
     messageReferencesResolve,
     messageReferencesSignature,
     type MessageReferences,
@@ -126,6 +128,48 @@ function rowHeightCached(
     const value = calculate();
     cachedEntry.variants[key] = { value };
     return value;
+}
+const NO_REFERENCES: readonly HappyReference[] = [];
+/* The references each entry's laid-out body names. An entry is immutable, so
+   its parse lives exactly as long as the entry does. */
+const entryReferences = new WeakMap<ConversationEntry, readonly HappyReference[]>();
+function conversationEntryReferences(entry: ConversationEntry): readonly HappyReference[] {
+    const text =
+        entry.kind === "message"
+            ? entry.message.text
+            : entry.kind === "agentActivity" &&
+                (entry.activity.kind === "reasoning" || entry.activity.kind === "agentMessage")
+              ? entry.activity.text
+              : undefined;
+    if (text === undefined) return NO_REFERENCES;
+    let named = entryReferences.get(entry);
+    if (!named) {
+        named = messageReferencesNamed(text);
+        entryReferences.set(entry, named);
+    }
+    return named;
+}
+/**
+ * What every reference the rows of `entries` are laid out with reads as now,
+ * once per distinct reference. Row heights read nothing else from
+ * `MessageReferences`, so this changes when one of those titles does, or a
+ * reference is named for the first time — not on every new `references`
+ * object an owner happens to be handed.
+ */
+export function conversationReferencesSignature(
+    entries: readonly ConversationEntry[],
+    references: MessageReferences | undefined,
+): string {
+    const seen = new Set<string>();
+    let signature = "";
+    for (const entry of entries)
+        for (const reference of conversationEntryReferences(entry)) {
+            const key = `${reference.kind}/${reference.id}/${String(reference.version)}/${reference.workspaceId ?? ""}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            signature += `${key}\u0000${messageReferencesSignature([reference], references)}\u0000`;
+        }
+    return signature;
 }
 /**
  * `--happy-chat-measure`. Both surfaces centre their scrolling column at this
@@ -567,51 +611,61 @@ export function conversationRowHeight(
         const activityInset = startsGroup
             ? AGENT_INSET
             : ACTIVITY_ROW_INSET[context.activityTreatment ?? "detailed"];
-        const activityHeight =
-            entry.activity.kind === "shell"
-                ? expanded && entry.activity.output.trim().length > 0
-                    ? SHELL_ACTIVITY_CHROME +
-                      monoOutputTextHeight(
-                          entry.activity.output,
-                          width - activityInset - SHELL_ACTIVITY_OUTPUT_INSET,
-                          cache?.text,
-                          entry.activity.running,
-                      )
-                    : ACTIVITY_HEIGHT.reasoning
-                : entry.activity.kind === "reasoning" && expanded
-                  ? REASONING_ACTIVITY_CHROME +
-                    markdownBodyHeight(
-                        messageReferencesResolve(entry.activity.text, context.references, false),
-                        width - activityInset - 16,
-                        cache?.text,
-                        0,
-                        true,
-                        entry.activity.streaming,
-                    )
-                  : entry.activity.kind === "agentMessage" && expanded
-                    ? AGENT_MESSAGE_ACTIVITY_CHROME +
-                      markdownBodyHeight(
-                          messageReferencesResolve(entry.activity.text, context.references, false),
-                          width - activityInset - 16,
-                          cache?.text,
-                      )
-                    : entry.activity.kind === "tool"
-                      ? ACTIVITY_HEIGHT.tool + toolResultHeight(entry, width - activityInset)
-                      : conversationActivityHeight(entry.activity.kind);
+        /* The output and body are laid out only on a miss: on a hit, the entry
+           and everything its height reads are already in the key. */
         return rowHeightCached(
             cache,
             entry,
-            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${
-                entry.activity.kind === "reasoning" || entry.activity.kind === "agentMessage"
-                    ? messageReferencesSignature(entry.activity.text, context.references)
-                    : ""
-            }`,
-            () =>
-                activityHeight === undefined
-                    ? undefined
-                    : startsGroup
-                      ? ACTIVITY_LEAD_CHROME + ACTIVITY_LEAD_RUN_SEPARATION + activityHeight
-                      : activityHeight,
+            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${messageReferencesSignature(
+                conversationEntryReferences(entry),
+                context.references,
+            )}`,
+            () => {
+                const activityHeight =
+                    entry.activity.kind === "shell"
+                        ? expanded && entry.activity.output.trim().length > 0
+                            ? SHELL_ACTIVITY_CHROME +
+                              monoOutputTextHeight(
+                                  entry.activity.output,
+                                  width - activityInset - SHELL_ACTIVITY_OUTPUT_INSET,
+                                  cache?.text,
+                                  entry.activity.running,
+                              )
+                            : ACTIVITY_HEIGHT.reasoning
+                        : entry.activity.kind === "reasoning" && expanded
+                          ? REASONING_ACTIVITY_CHROME +
+                            markdownBodyHeight(
+                                messageReferencesResolve(
+                                    entry.activity.text,
+                                    context.references,
+                                    false,
+                                ),
+                                width - activityInset - 16,
+                                cache?.text,
+                                0,
+                                true,
+                                entry.activity.streaming,
+                            )
+                          : entry.activity.kind === "agentMessage" && expanded
+                            ? AGENT_MESSAGE_ACTIVITY_CHROME +
+                              markdownBodyHeight(
+                                  messageReferencesResolve(
+                                      entry.activity.text,
+                                      context.references,
+                                      false,
+                                  ),
+                                  width - activityInset - 16,
+                                  cache?.text,
+                              )
+                            : entry.activity.kind === "tool"
+                              ? ACTIVITY_HEIGHT.tool +
+                                toolResultHeight(entry, width - activityInset)
+                              : conversationActivityHeight(entry.activity.kind);
+                if (activityHeight === undefined) return undefined;
+                return startsGroup
+                    ? ACTIVITY_LEAD_CHROME + ACTIVITY_LEAD_RUN_SEPARATION + activityHeight
+                    : activityHeight;
+            },
         );
     }
     /* A settled footer owns the clearance above it when prior activity exists. */
@@ -737,7 +791,7 @@ export function conversationRowHeight(
         resumesAfterActivity ? "resumed" : "continuous",
         precedesActivity ? "continues" : closedByStatus ? "closing" : "open",
         // What the body's references read as: a title changing re-sizes the row.
-        messageReferencesSignature(message.text, context.references),
+        messageReferencesSignature(conversationEntryReferences(entry), context.references),
     ].join(":");
     return rowHeightCached(cache, entry, cacheKey, () => {
         const time = messageTimeSample(message.createdAt);

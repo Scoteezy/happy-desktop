@@ -35,6 +35,7 @@ import {
 } from "./conversationMessageGrouped";
 import {
     contentWidth,
+    conversationReferencesSignature,
     conversationRowHeight,
     conversationRowHeightCacheCreate,
     type ConversationRowHeightCache,
@@ -636,16 +637,16 @@ export function ConversationView(props: ConversationViewProps) {
                 </ScrollArea>
             ) : (
                 <MessageList
+                    /* Inputs every row's estimate may read. The live status is
+                       not one: only the final row reads it, as its successor,
+                       and the list asks that row again with the footer. */
                     estimateDependencies={[
                         props.errorAssistance,
                         props.errorAssistanceUnavailable,
                         props.viewerId,
                         props.activityTreatment,
-                        statusVisible,
-                        workingStatusStartsGroup,
-                        props.activityControl !== undefined,
                         rowExpansion,
-                        props.references,
+                        conversationReferencesSignature(transcript, props.references),
                     ]}
                     estimateRowSize={(index, width) =>
                         conversationRowHeight(

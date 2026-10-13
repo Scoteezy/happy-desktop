@@ -104,6 +104,8 @@ export interface MessageTextLayoutCache {
     naturalWidths: Dictionary<Dictionary<number>>;
     preparedOrder: PreparedCacheEntry[];
     preparedSourceSize: number;
+    /** Where this cache's streaming text is measured; see `streamingCache`. */
+    streaming?: MessageTextLayoutCache;
 }
 /**
  * One conversation's text-layout cache. Settled transcript text is retained so
@@ -177,6 +179,26 @@ export function messageTextLayoutCacheRefresh(cache: MessageTextLayoutCache): bo
 }
 
 /**
+ * The cache one streaming prefix is measured in. A prefix keeps no tree and no
+ * final height: those start empty for every prefix, so a long stream retains
+ * nothing per delta. Width-independent preparation is kept, bounded, in this
+ * cache's own set, so the blocks that have finished arriving are not prepared
+ * again on every delta, and a stream never displaces the settled transcript's.
+ */
+function streamingCache(cache: MessageTextLayoutCache): MessageTextLayoutCache {
+    const scratch = cache.streaming ?? messageTextLayoutCacheCreate();
+    cache.streaming = scratch;
+    messageTextLayoutCacheRefresh(scratch);
+    scratch.markdownHeights = dictionaryCreate();
+    scratch.mermaidDimensions = dictionaryCreate();
+    scratch.markdownTrees = dictionaryCreate();
+    scratch.markdownFootnotes = dictionaryCreate();
+    scratch.runHeights = dictionaryCreate();
+    scratch.naturalWidths = dictionaryCreate();
+    return scratch;
+}
+
+/**
  * Height of pre-wrapped monospace output. Newlines remain hard boundaries and
  * each physical line wraps at the same measure as the browser's `pre-wrap`
  * block; a trailing newline does not create another painted line box.
@@ -187,12 +209,21 @@ export function monoOutputTextHeight(
     cache: MessageTextLayoutCache = sharedCache,
     streaming = false,
 ): number {
-    const measurementCache = streaming ? messageTextLayoutCacheCreate() : cache;
     const lines = text.split("\n");
     if (lines.length > 1 && lines.at(-1) === "") lines.pop();
+    /* A line a newline has closed never changes again, even while the output
+       is still running, so it is settled text. Only the line still arriving
+       is measured apart from the settled cache. */
+    const open = streaming && !text.endsWith("\n") ? lines.length - 1 : lines.length;
     let height = 0;
-    for (const line of lines)
-        height += runHeight(line, `12px ${MONO_FAMILY}`, 18, measure, measurementCache);
+    for (const [index, line] of lines.entries())
+        height += runHeight(
+            line,
+            `12px ${MONO_FAMILY}`,
+            18,
+            measure,
+            index < open ? cache : streamingCache(cache),
+        );
     return Math.max(18, height);
 }
 function cacheReady(cache: MessageTextLayoutCache): MessageTextLayoutCache {
@@ -1172,7 +1203,7 @@ export function markdownBodyHeight(
        lifetime of prefix layout, not its accuracy: use the same Markdown/font
        model in a scratch cache that cannot accumulate in settled history. The
        row-height cache still reuses the result for an unchanged entry/width. */
-    const ready = cacheReady(streaming ? messageTextLayoutCacheCreate() : cache);
+    const ready = cacheReady(streaming ? streamingCache(cache) : cache);
     let byMeasure = ready.markdownHeights[text];
     if (!byMeasure) {
         byMeasure = dictionaryCreate();

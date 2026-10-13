@@ -715,7 +715,11 @@ export type MessageListProps = {
      * transcript row.
      */
     footer?: ReactNode;
-    /** Height model supplied to the virtualizer for the stable footer row. */
+    /**
+     * Height model supplied to the virtualizer for the stable footer row. It
+     * reads state outside the rows, so it is asked on every commit, and so is
+     * the last row, which may read that same state as its successor.
+     */
     footerHeight?: number | ((width: number) => number);
     /** Bottom clearance represented inside the virtualizer's coordinate space. */
     paddingEnd?: number;
@@ -744,7 +748,8 @@ export type MessageListProps = {
     /**
      * The value each row is estimated from, one per child in order, compared
      * by identity. A row's estimate may read every row before it, the row after
-     * it, and whether it is the last row — nothing further ahead. When only
+     * it, and whether it is the last row — nothing further ahead. The last row
+     * may also read whatever `footerHeight` reads. When only
      * these values change, the model keeps every row before the one preceding
      * the first changed value and re-asks the rest, so appending to a long
      * transcript costs the rows that changed rather than the whole history.
@@ -1527,7 +1532,19 @@ export function MessageList(props: MessageListProps) {
                 from,
                 Math.max(0, Math.min(items.length, rowSizeModel.keys.length) - 1),
             );
-        /* The footer reads state outside the rows, so it is asked on every commit. */
+        /* The footer reads state outside the rows, so it is asked on every
+           commit, and so is the row above it, which reads the footer's state as
+           its successor: a live turn starting or ending changes those two rows,
+           not the history above them. */
+        const lastRow = footerIndex === undefined ? undefined : footerIndex - 1;
+        if (
+            lastRow !== undefined &&
+            lastRow >= 0 &&
+            from > lastRow &&
+            (rowSizeModel.keys[lastRow] !== itemKeyAt(lastRow) ||
+                rowSizeModel.sizes[lastRow] !== estimateItemSize(lastRow, rowWidth))
+        )
+            from = lastRow;
         if (
             footerIndex !== undefined &&
             from > footerIndex &&
