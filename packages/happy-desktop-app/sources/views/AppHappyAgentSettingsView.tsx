@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type {
     AppearanceStore,
+    HappyAgentAttentionStore,
+    HappyAgentCompletionSound,
     HappyAgentChangeTiersSnapshot,
     HappyAgentChangeTiersStore,
     ExperimentsStore,
@@ -45,6 +47,8 @@ import {
     happyAgentProvidersStoreNoop,
     happyAgentSecretsStoreNoop,
     happyAgentWindowStoreNoop,
+    happyAgentAttentionConnection,
+    happyAgentAttentionStoreNoop,
     keepAwakeStoreCreate,
     statusBarStoreNoop,
     titleShimmerStoreNoop,
@@ -327,6 +331,8 @@ export interface AppHappyAgentSettingsViewProps {
     gptLive?: GptLiveStore;
     /** Absent where the host cannot hold the machine awake. */
     keepAwake?: KeepAwakeStore;
+    /** When each connection chimes. Absent where the host plays no sound. */
+    attention?: HappyAgentAttentionStore;
     statusBar?: StatusBarStore;
     /** The window's sidebar, whose width the category column matches. */
     sidebarVisibility?: HappyAgentSidebarVisibilityStore;
@@ -402,6 +408,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         keepAwakeStore.subscribe,
         keepAwakeStore.get,
         keepAwakeStore.get,
+    );
+    const attentionStore = props.attention ?? happyAgentAttentionStoreNoop;
+    const attention = useSyncExternalStore(
+        attentionStore.subscribe,
+        attentionStore.get,
+        attentionStore.get,
     );
     const statusBarStore = props.statusBar ?? statusBarStoreNoop;
     const statusBar = useSyncExternalStore(
@@ -933,6 +945,14 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         ? {
                               keepAwake: keepAwake.mode,
                               onKeepAwakeChange: keepAwakeStore.modeSelect,
+                          }
+                        : {})}
+                    {...(props.attention && host
+                        ? {
+                              completionSound: happyAgentAttentionConnection(attention, host.id)
+                                  .completionSound,
+                              onCompletionSoundChange: (sound: HappyAgentCompletionSound) =>
+                                  attentionStore.completionSoundUpdate(host.id, sound),
                           }
                         : {})}
                     onScrollbarVisibilityChange={(visibility) =>

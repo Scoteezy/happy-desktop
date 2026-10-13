@@ -652,6 +652,102 @@ function FoldDemo() {
     );
 }
 
+const QUIET_BOTS: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly unread: boolean;
+}[] = [
+    { id: "chief-of-staff", label: "Chief of Staff", unread: true },
+    { id: "growth", label: "Growth", unread: true },
+    { id: "release-notes", label: "Release notes", unread: false },
+    { id: "scraper", label: "Scraper", unread: true },
+];
+
+/**
+ * Muted and hidden bots, held here the way the window's attention store holds
+ * them. A muted unread row keeps its 700 weight and loses only its dot; a
+ * hidden row leaves the list, and the Bots heading's eye-off control lists it
+ * to bring it back. Right-click a row to mute or hide it.
+ */
+function QuietBotsDemo() {
+    const [muted, setMuted] = useState<ReadonlySet<string>>(new Set(["growth", "release-notes"]));
+    const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set(["scraper"]));
+    const toggle = (set: ReadonlySet<string>, id: string): ReadonlySet<string> => {
+        const next = new Set(set);
+        if (!next.delete(id)) next.add(id);
+        return next;
+    };
+    const hiddenBots = QUIET_BOTS.filter((bot) => hidden.has(bot.id));
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <Frame height={300}>
+                <Sidebar
+                    activeItemId=""
+                    itemMenuItems={(item) => [
+                        {
+                            kind: "item",
+                            id: "mute",
+                            label: muted.has(item.id) ? "Unmute bot" : "Mute bot",
+                            icon: "bell",
+                        },
+                        { kind: "item", id: "hide", label: "Hide from sidebar", icon: "eye-off" },
+                    ]}
+                    onItemMenuSelect={(item, actionId) => {
+                        if (actionId === "mute") setMuted((current) => toggle(current, item.id));
+                        if (actionId === "hide") setHidden((current) => toggle(current, item.id));
+                    }}
+                    onItemSelect={() => {}}
+                    onSectionAction={() => {}}
+                    onSectionMenuSelect={(_section, _source, actionId) => {
+                        setHidden((current) =>
+                            actionId === "show-all"
+                                ? new Set()
+                                : toggle(current, actionId.slice("show:".length)),
+                        );
+                    }}
+                    sections={[
+                        {
+                            action: { icon: "plus", label: "New bot", reveal: "always" },
+                            id: "bots",
+                            items: QUIET_BOTS.filter((bot) => !hidden.has(bot.id)).map(
+                                (bot): SidebarItem => ({
+                                    avatarId: bot.id,
+                                    id: bot.id,
+                                    kind: "project",
+                                    label: bot.label,
+                                    ...(bot.unread ? { unread: true } : {}),
+                                    ...(muted.has(bot.id) ? { muted: true } : {}),
+                                }),
+                            ),
+                            label: "Bots",
+                            ...(hiddenBots.length > 0
+                                ? {
+                                      secondaryAction: {
+                                          icon: "eye-off" as const,
+                                          label: "Hidden bots",
+                                          reveal: "always" as const,
+                                          menuItems: [
+                                              { kind: "label" as const, label: "Hidden bots" },
+                                              ...hiddenBots.map((bot) => ({
+                                                  kind: "item" as const,
+                                                  id: `show:${bot.id}`,
+                                                  label: `Show ${bot.label}`,
+                                                  icon: "eye" as const,
+                                              })),
+                                          ],
+                                      },
+                                  }
+                                : {}),
+                        },
+                    ]}
+                    title="Quiet bots"
+                />
+            </Frame>
+            <DimensionRule label="muted unread = 700, no dot · hidden = absent · heading eye-off opens the hidden list" />
+        </div>
+    );
+}
+
 const PINNED_ROWS: SidebarItem[] = [
     { icon: "doc", id: "notes", kind: "action", label: "Notes" },
     { badge: 3, icon: "bell", id: "inbox", kind: "action", label: "Inbox" },
@@ -1416,6 +1512,15 @@ export function SidebarPage() {
                     </Frame>
                     <DimensionRule label="task row = bot row · 32 px · owner face 16 px · leave on hover" />
                 </div>
+            </Specimen>
+
+            <Specimen
+                detail="A muted bot's unread keeps the heavier name without the dot. A hidden bot leaves the list; the Bots heading's eye-off control opens a menu that brings it back."
+                label="Muted and hidden bots"
+                number="02g"
+                stage="app"
+            >
+                <QuietBotsDemo />
             </Specimen>
 
             <Specimen

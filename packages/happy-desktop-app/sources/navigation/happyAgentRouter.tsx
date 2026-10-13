@@ -28,6 +28,7 @@ import type {
     HappyAgentSidebarCollapseStore,
     HappyAgentSidebarSearchStore,
     HappyAgentSidebarVisibilityStore,
+    HappyAgentAttentionStore,
     HappyAgentSessionId,
     HappyAgentSessionLocation,
     HappyAgentSettingsStore,
@@ -117,6 +118,12 @@ export interface HappyAgentRouterContext {
      * which leaves the sidebar without a search field.
      */
     readonly sidebarSearch?: HappyAgentSidebarSearchStore;
+    /**
+     * Which bots the reader muted or hid, and when each connection chimes.
+     * Window-owned and shared by every connection; absent in a host that keeps
+     * no such record, which offers none of those controls.
+     */
+    readonly attention?: HappyAgentAttentionStore;
     /** Whether this window's left side is folded away; shared by every connection. */
     readonly sidebarVisibility?: HappyAgentSidebarVisibilityStore;
     /**
@@ -580,6 +587,7 @@ function HappyAgentWorkspaceLayout(
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
             {...(context.sidebarCollapse ? { sidebarCollapse: context.sidebarCollapse } : {})}
             {...(context.sidebarSearch ? { sidebarSearch: context.sidebarSearch } : {})}
+            {...(context.attention ? { attention: context.attention } : {})}
             {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
             settings={context.settings}
             botCreateOpen={props.botCreate}
@@ -732,6 +740,7 @@ function HappyAgentSettingsRoute() {
             {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             {...(context.keepAwake ? { keepAwake: context.keepAwake } : {})}
             {...(context.statusBar ? { statusBar: context.statusBar } : {})}
+            {...(context.attention ? { attention: context.attention } : {})}
             onCategorySelect={(section) =>
                 void navigate({ params: { section }, to: "/settings/$section" })
             }

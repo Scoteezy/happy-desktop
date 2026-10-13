@@ -1,6 +1,8 @@
-import { Fragment, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
 import { AvatarBrutalist } from "./AvatarBrutalist";
+import { ContextMenu } from "./ContextMenu";
 import { Icon } from "./Icon";
+import type { MenuItem } from "./Menu";
 import { ScrollArea } from "./Scrollbar";
 import { thumbhashDataUrl } from "./thumbhashDataUrl";
 import { useConnectionReorder } from "./useConnectionReorder";
@@ -66,7 +68,19 @@ export function ConnectionShell(props: {
      */
     readonly collapsed?: boolean;
     readonly error?: string;
+    /** The context menu one entry offers. Empty, or absent, means no menu. */
+    readonly itemMenuItems?: (item: ConnectionShellItem) => MenuItem[];
+    /** A row was chosen from an entry's context menu. */
+    readonly onItemMenuSelect?: (id: string, actionId: string) => void;
 }) {
+    // Which entry's menu is open and where the pointer asked for it. The menu
+    // is this rail's own passing state; what it offers belongs to the caller.
+    const [menu, setMenu] = useState<{
+        readonly id: string;
+        readonly items: readonly MenuItem[];
+        readonly x: number;
+        readonly y: number;
+    }>();
     const local = props.items.filter((item) => item.local);
     const remotes = props.items.filter((item) => !item.local);
     const items = [...local, ...remotes];
@@ -125,6 +139,18 @@ export function ConnectionShell(props: {
                                         }
                                         onClick={() => {
                                             if (clickAllowed()) props.onSelect(item.id);
+                                        }}
+                                        onContextMenu={(event) => {
+                                            const entries = props.itemMenuItems?.(item) ?? [];
+                                            if (!entries.some((entry) => entry.kind === "item"))
+                                                return;
+                                            event.preventDefault();
+                                            setMenu({
+                                                id: item.id,
+                                                items: entries,
+                                                x: event.clientX,
+                                                y: event.clientY,
+                                            });
                                         }}
                                         draggable={false}
                                         onDragStart={(event) => event.preventDefault()}
@@ -199,6 +225,20 @@ export function ConnectionShell(props: {
                 ) : null}
                 {props.children}
             </div>
+            {menu ? (
+                <ContextMenu
+                    data-testid="connection-menu"
+                    items={menu.items}
+                    onClose={() => setMenu(undefined)}
+                    onSelect={(actionId) => {
+                        setMenu(undefined);
+                        props.onItemMenuSelect?.(menu.id, actionId);
+                    }}
+                    width={216}
+                    x={menu.x}
+                    y={menu.y}
+                />
+            ) : null}
         </div>
     );
 }

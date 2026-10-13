@@ -150,6 +150,13 @@ export type SidebarItem = {
     lifecycleLabel?: string;
     tone?: ToneName;
     unread?: boolean;
+    /**
+     * The reader silenced this row's news. An unread row keeps its heavier,
+     * darker name, so it still reads as unread where it stands, but draws no
+     * dot: the dot is what calls from across the window, and a muted row has
+     * asked not to.
+     */
+    muted?: boolean;
 };
 /**
  * Left inset of the row content at depth 0. It is the shared row padding —
@@ -197,6 +204,8 @@ export const SIDEBAR_CONTROL_GAP = 4;
  * they cover.
  */
 export const SIDEBAR_TRAILING_GAP = 6;
+/** The width of every menu the sidebar opens, from a row or from a heading control. */
+const SIDEBAR_MENU_WIDTH = 216;
 /** The one control a section heading offers, beside the section's own label. */
 export type SidebarSectionAction = {
     icon: IconName;
@@ -218,6 +227,12 @@ export type SidebarSectionAction = {
     reveal?: "hover" | "always";
     /** The window chord that does the same thing, shown under the control on hover. */
     shortcut?: KeyboardShortcut;
+    /**
+     * Rows the control opens as a menu under itself instead of reporting
+     * `onSectionAction`, for a heading whose act is a choice among several
+     * things. A chosen row is reported through `onSectionMenuSelect`.
+     */
+    menuItems?: MenuItem[];
 };
 
 /** The one control in the sidebar's own heading, beside the window's collapse control. */
@@ -405,6 +420,12 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
      * offers instead — and a caller that conflated them would run the wrong one.
      */
     onSectionAction?: (sectionId: string, source: SidebarSectionActionSource) => void;
+    /** A row was chosen from a heading control's `menuItems`. */
+    onSectionMenuSelect?: (
+        sectionId: string,
+        source: SidebarSectionActionSource,
+        actionId: string,
+    ) => void;
     /**
      * Gives up to nine visible section destinations Command-1…9 caps.
      * `navigate` also binds the chords; `display` is the deterministic fixture
@@ -992,8 +1013,10 @@ function SidebarRow({
 }) {
     const item = () => props.item;
     const unread = () => item().unread === true;
+    // A muted row keeps the unread weight on its name and gives up only the dot.
+    const unreadDot = () => unread() && item().muted !== true;
     const unreadOnLeading = () =>
-        unread() && (item().kind === "project" || item().kind === "workspace");
+        unreadDot() && (item().kind === "project" || item().kind === "workspace");
     const mentioned = () => (item().badge ?? 0) > 0;
     const hasChangeStats = () =>
         (item().changeStats?.added ?? 0) > 0 || (item().changeStats?.deleted ?? 0) > 0;
@@ -1237,6 +1260,7 @@ function SidebarRow({
             data-status={item().status}
             data-shortcut-row={props.shortcut ? "" : undefined}
             data-unread={unread() ? "" : undefined}
+            data-muted={item().muted ? "" : undefined}
             data-dragging={props.dragging ? "" : undefined}
             data-grabbed={props.grabbed ? "" : undefined}
             onClick={() => props.onSelect(item().id)}
@@ -1380,7 +1404,7 @@ function SidebarRow({
                     keys={props.shortcut.caps}
                 />
             ) : null}
-            {unread() && !unreadOnLeading() && !mentioned() ? (
+            {unreadDot() && !unreadOnLeading() && !mentioned() ? (
                 <span
                     aria-label="Unread"
                     className="happy-sidebar__item-unread"
@@ -1528,14 +1552,22 @@ export function Sidebar(props: SidebarProps) {
         "numberShortcutTargets",
         "onSectionAction",
         "search",
+        "onSectionMenuSelect",
         "sections",
         "style",
         "subtitle",
         "title",
     ]);
     const menuRoot = useRef<HTMLDivElement>(null);
+    // One menu at a time, opened either from a row or from a heading control.
     const [itemMenu, setItemMenu] = useState<{
-        item: SidebarItem;
+        target:
+            | { readonly kind: "item"; readonly item: SidebarItem }
+            | {
+                  readonly kind: "section";
+                  readonly sectionId: string;
+                  readonly source: SidebarSectionActionSource;
+              };
         items: MenuItem[];
         x: number;
         y: number;
@@ -2064,7 +2096,7 @@ export function Sidebar(props: SidebarProps) {
         }
         event.preventDefault();
         setItemMenu({
-            item,
+            target: { kind: "item", item },
             items,
             x: event.clientX,
             y: event.clientY,
@@ -2367,13 +2399,38 @@ export function Sidebar(props: SidebarProps) {
                                                             disabled={
                                                                 action.busy || action.disabled
                                                             }
-                                                            key={source}
-                                                            onClick={() =>
-                                                                local.onSectionAction?.(
-                                                                    section.id,
-                                                                    source,
-                                                                )
+                                                            aria-haspopup={
+                                                                action.menuItems
+                                                                    ? "menu"
+                                                                    : undefined
                                                             }
+                                                            key={source}
+                                                            onClick={(event) => {
+                                                                if (!action.menuItems) {
+                                                                    local.onSectionAction?.(
+                                                                        section.id,
+                                                                        source,
+                                                                    );
+                                                                    return;
+                                                                }
+                                                                // Opened under the control and
+                                                                // hung from its trailing edge,
+                                                                // so it stays over the column.
+                                                                const bounds =
+                                                                    event.currentTarget.getBoundingClientRect();
+                                                                setItemMenu({
+                                                                    target: {
+                                                                        kind: "section",
+                                                                        sectionId: section.id,
+                                                                        source,
+                                                                    },
+                                                                    items: action.menuItems,
+                                                                    x:
+                                                                        bounds.right -
+                                                                        SIDEBAR_MENU_WIDTH,
+                                                                    y: bounds.bottom + 4,
+                                                                });
+                                                            }}
                                                             type="button"
                                                         >
                                                             {action.busy ? (
@@ -2609,11 +2666,18 @@ export function Sidebar(props: SidebarProps) {
                     <Menu
                         items={itemMenu.items}
                         onSelect={(actionId) => {
-                            const item = itemMenu.item;
+                            const target = itemMenu.target;
                             setItemMenu(undefined);
-                            local.onItemMenuSelect?.(item, actionId);
+                            if (target.kind === "item")
+                                local.onItemMenuSelect?.(target.item, actionId);
+                            else
+                                local.onSectionMenuSelect?.(
+                                    target.sectionId,
+                                    target.source,
+                                    actionId,
+                                );
                         }}
-                        width={216}
+                        width={SIDEBAR_MENU_WIDTH}
                     />
                 </div>
             ) : null}

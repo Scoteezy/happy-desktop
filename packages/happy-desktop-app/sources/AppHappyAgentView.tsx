@@ -53,6 +53,9 @@ import type {
     HappyAgentSidebarCollapseStore,
     HappyAgentSidebarSearchStore,
     HappyAgentSidebarVisibilityStore,
+    HappyAgentAttentionSnapshot,
+    HappyAgentAttentionStore,
+    HappyAgentBotAttention,
     HappyAgentPanelArtifactView,
     HappyAgentPanelSnapshot,
     HappyAgentProjectAddSnapshot,
@@ -130,6 +133,8 @@ import {
     happyAgentSidebarCollapseStoreNoop,
     happyAgentSidebarSearchStoreNoop,
     happyAgentSidebarVisibilityStoreNoop,
+    happyAgentAttentionStoreNoop,
+    happyAgentBotAttention,
     happyAgentHumanMessageAuthor,
     happyAgentSessionGroupIdOf,
     happyAgentOwnerAuthor,
@@ -573,6 +578,11 @@ export interface AppHappyAgentViewProps {
      */
     sidebarSearch?: HappyAgentSidebarSearchStore;
     /**
+     * Which bots the reader muted or hid, per connection. A host that keeps no
+     * such record supplies none, and the bot rows offer neither.
+     */
+    attention?: HappyAgentAttentionStore;
+    /**
      * Whether this window's left side — the sidebar and the connection rail
      * beside it — is folded away. It belongs to the window, so every
      * connection reads and writes the same fold. A host that supplies none
@@ -797,7 +807,11 @@ const HISTORY_SESSION_PREFIX = "session:";
  * in words instead, which left a bot saying "working" beside a column of
  * projects that spin.
  */
-function botSidebarItem(bot: HappyAgentBot, titleShimmerEnabled: boolean): SidebarItem {
+function botSidebarItem(
+    bot: HappyAgentBot,
+    titleShimmerEnabled: boolean,
+    muted: boolean,
+): SidebarItem {
     return {
         id: bot.workspaceId,
         kind: "project",
@@ -814,6 +828,7 @@ function botSidebarItem(bot: HappyAgentBot, titleShimmerEnabled: boolean): Sideb
         ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
         ...sidebarActivity(bot.conversation.activity),
         ...(bot.conversation.unread ? { unread: true } : {}),
+        ...(muted ? { muted: true } : {}),
     };
 }
 
@@ -1103,6 +1118,30 @@ const ROW_MENU_ARCHIVE = "archive";
 const ROW_MENU_RENAME = "rename";
 /** Takes a task off the reader's own list; it carries on for everyone else. */
 const ROW_MENU_LEAVE = "leave";
+/** Mutes or unmutes a bot: its unread stops counting anywhere but its own row. */
+const ROW_MENU_MUTE = "mute";
+/** Takes a bot out of the sidebar; the Bots heading lists it to bring it back. */
+const ROW_MENU_HIDE = "hide";
+/** The Bots heading's menu of hidden bots: one row per bot, and one for all of them. */
+const BOTS_MENU_SHOW_PREFIX = "show:";
+const BOTS_MENU_SHOW_ALL = "show-all";
+
+/**
+ * What a bot row offers about its own news. Both acts are this window's own
+ * record rather than anything asked of the machine, so they are offered
+ * whether or not the machine is answering.
+ */
+function botAttentionMenuItems(attention: HappyAgentBotAttention): MenuItem[] {
+    return [
+        {
+            kind: "item",
+            id: ROW_MENU_MUTE,
+            label: attention === "muted" ? "Unmute bot" : "Mute bot",
+            icon: "bell",
+        },
+        { kind: "item", id: ROW_MENU_HIDE, label: "Hide from sidebar", icon: "eye-off" },
+    ];
+}
 
 /**
  * The context menu one sidebar row offers. Archiving is a menu action rather
@@ -1119,7 +1158,12 @@ function rowMenuItems(
     tasks: readonly HappyAgentTask[],
     item: SidebarItem,
     /** Whether the Happy Agent renames tasks; one from before that cannot. */
-    taskRenamable = false,
+    taskRenamable: boolean,
+    /**
+     * What a bot's news does, for the bot row being asked about. Absent where
+     * the window keeps no such record, and the row offers neither act.
+     */
+    botAttention: ((bot: HappyAgentBot) => HappyAgentBotAttention) | undefined,
 ): MenuItem[] {
     // A subtask's title is the daemon's to write, so archiving is all its row
     // offers. The task stops and leaves its bot; its history and its worktree
@@ -1159,10 +1203,14 @@ function rowMenuItems(
                   ] as const)
                 : []),
         ];
-    if (bots.some((bot) => bot.workspaceId === item.id))
+    const bot = bots.find((candidate) => candidate.workspaceId === item.id);
+    if (bot)
         return [
             { kind: "item", id: ROW_MENU_RENAME, label: "Rename bot", icon: "edit" },
             { kind: "separator" },
+            ...(botAttention
+                ? [...botAttentionMenuItems(botAttention(bot)), { kind: "separator" } as const]
+                : []),
             {
                 kind: "item",
                 id: ROW_MENU_ARCHIVE,
@@ -1860,10 +1908,50 @@ function sectionsCollapsed(
     }));
 }
 
+/**
+ * The Bots heading's way back to the bots the reader hid: a control beside the
+ * +, there only while something is hidden, opening a menu that names each one.
+ * Hiding is this window's own record, so the control works offline too.
+ */
+function hiddenBotsAction(
+    happyAgent: AppHappyAgentEntry,
+    attention: HappyAgentAttentionSnapshot,
+): Pick<SidebarSection, "secondaryAction"> {
+    const hidden = happyAgent.bots.filter(
+        (bot) => happyAgentBotAttention(attention, happyAgent.id, bot.id) === "hidden",
+    );
+    if (hidden.length === 0) return {};
+    return {
+        secondaryAction: {
+            icon: "eye-off",
+            label: "Hidden bots",
+            reveal: "hover",
+            menuItems: [
+                { kind: "label", label: "Hidden bots" },
+                ...hidden.map(
+                    (bot): MenuItem => ({
+                        kind: "item",
+                        id: `${BOTS_MENU_SHOW_PREFIX}${bot.id}`,
+                        label: `Show ${bot.name}`,
+                        icon: "eye",
+                    }),
+                ),
+                ...(hidden.length > 1
+                    ? ([
+                          { kind: "separator" },
+                          { kind: "item", id: BOTS_MENU_SHOW_ALL, label: "Show all" },
+                      ] as const)
+                    : []),
+            ],
+        },
+    };
+}
+
 function happyAgentSections(
     directory: AppHappyAgentDirectorySnapshot,
     titleShimmerEnabled: boolean,
     projectsHidden: boolean,
+    attention: HappyAgentAttentionSnapshot,
     shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
     folded?: ReadonlySet<string>,
     /** The machine Cmd-N makes a task on, whose Tasks heading wears the chord. */
@@ -1876,14 +1964,21 @@ function happyAgentSections(
             id: happyAgentBotsSectionId(happyAgent.id),
             label: "Bots",
             items: [
-                ...happyAgent.bots.flatMap((bot) => [
-                    botSidebarItem(bot, titleShimmerEnabled),
-                    ...botSubtaskSidebarItems(
-                        bot.subtasks,
-                        happyAgent.projects,
-                        titleShimmerEnabled,
-                    ),
-                ]),
+                ...happyAgent.bots.flatMap((bot) => {
+                    // A hidden bot leaves the list with everything nested
+                    // under it; a muted one stays, with its whole tree quiet.
+                    const botAttention = happyAgentBotAttention(attention, happyAgent.id, bot.id);
+                    if (botAttention === "hidden") return [];
+                    const muted = botAttention === "muted";
+                    return [
+                        botSidebarItem(bot, titleShimmerEnabled, muted),
+                        ...botSubtaskSidebarItems(
+                            bot.subtasks,
+                            happyAgent.projects,
+                            titleShimmerEnabled,
+                        ).map((item) => (muted ? { ...item, muted: true } : item)),
+                    ];
+                }),
                 // The host lists a new bot last, so a bot still being made
                 // stands where it will arrive.
                 ...(happyAgent.botsCreating ?? []).map((bot) =>
@@ -1907,6 +2002,7 @@ function happyAgentSections(
                       },
                   }
                 : {}),
+            ...hiddenBotsAction(happyAgent, attention),
             ...subtaskFailureError(happyAgent, happyAgent.bots),
             // With the Projects list left out, what the Happy Agent said when it
             // failed still needs a heading to stand under.
@@ -2214,6 +2310,7 @@ function happyAgentSearchSections(
     activeTodoCounts: ReadonlyMap<HappyAgentSurfaceId, number>,
     titleShimmerEnabled: boolean,
     projectsHidden: boolean,
+    attention: HappyAgentAttentionSnapshot,
 ): SidebarSection[] {
     const needle = query.trim().toLocaleLowerCase();
     const matches = (text: string): boolean => text.toLocaleLowerCase().includes(needle);
@@ -2256,8 +2353,8 @@ function happyAgentSearchSections(
             }
         }
         const bots = happyAgent.bots
-            .filter((bot) => matches(bot.name))
-            .map((bot) => rowOf(botSidebarItem(bot, titleShimmerEnabled)));
+            .filter((bot) => matches(bot.name) && happyAgentBotAttention(attention, happyAgent.id, bot.id) !== "hidden")
+            .map((bot) => rowOf(botSidebarItem(bot, titleShimmerEnabled, happyAgentBotAttention(attention, happyAgent.id, bot.id) === "muted")));
         const tasks = (happyAgent.tasks ?? [])
             .filter((task) => matches(task.name))
             .map((task) => rowOf(taskSidebarItem(task, titleShimmerEnabled)));
@@ -2668,6 +2765,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         sidebarSearchStore.get,
     );
     const searching = sidebarSearch.query.trim().length > 0;
+    // Which bots the reader muted or hid. Like the folding above it belongs to
+    // the window, so a machine dropping off neither unmutes nor reveals one.
+    const attentionStore = props.attention ?? happyAgentAttentionStoreNoop;
+    const attention = useSyncExternalStore(
+        attentionStore.subscribe,
+        attentionStore.get,
+        attentionStore.get,
+    );
     const sidebarVisibilityStore = props.sidebarVisibility ?? happyAgentSidebarVisibilityStoreNoop;
     const sidebarVisibility = useSyncExternalStore(
         sidebarVisibilityStore.subscribe,
@@ -2991,7 +3096,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             itemMenuItems={(item) => {
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
-                if (happyAgent?.status !== "connected") return [];
+                if (!happyAgent) return [];
                 // A chat a search found is only opened from here.
                 if (chatRowParse(row.id) !== undefined) return [];
                 // A joined Surface is left from its menu, as a task is; there
@@ -3001,12 +3106,25 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     return surfaceCatalog.joined.some((surface) => surface.id === surfaceId)
                         ? [{ kind: "item", id: ROW_MENU_LEAVE, label: "Leave", icon: "close" }]
                         : [];
+                if (happyAgent.status !== "connected") {
+                    // Muting and hiding are this window's own record, so a
+                    // bot keeps offering them while its machine is away.
+                    const bot = happyAgent.bots.find((entry) => entry.workspaceId === row.id);
+                    return bot && props.attention
+                        ? botAttentionMenuItems(
+                              happyAgentBotAttention(attention, happyAgent.id, bot.id),
+                          )
+                        : [];
+                }
                 return rowMenuItems(
                     happyAgent.projects,
                     happyAgent.bots,
                     happyAgent.tasks ?? [],
                     { ...item, id: row.id },
                     happyAgentTaskCreateSupported(happyAgent),
+                    props.attention
+                        ? (bot) => happyAgentBotAttention(attention, happyAgent.id, bot.id)
+                        : undefined,
                 );
             }}
             // Each heading makes its own kind of thing on the Happy Agent it
@@ -3040,6 +3158,24 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (!happyAgent) return;
+                const attentionBot = happyAgent.bots.find(
+                    (candidate) => candidate.workspaceId === row.id,
+                );
+                if (attentionBot && actionId === ROW_MENU_MUTE) {
+                    attentionStore.botMutedUpdate(
+                        happyAgent.id,
+                        attentionBot.id,
+                        happyAgentBotAttention(attention, happyAgent.id, attentionBot.id) !==
+                            "muted",
+                    );
+                    return;
+                }
+                // The open conversation stays open: a hidden bot only leaves
+                // the list, so hiding the one being read moves nobody.
+                if (attentionBot && actionId === ROW_MENU_HIDE) {
+                    attentionStore.botHiddenUpdate(happyAgent.id, attentionBot.id, true);
+                    return;
+                }
                 if (happyAgent.status !== "connected") return;
                 const surfaceId = surfaceRowParse(row.id);
                 if (surfaceId !== undefined) {
@@ -3098,6 +3234,19 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         ? workspace.worktreeArchive(owner.project.id, owner.worktreeId)
                         : workspace.projectArchive(owner.project.id)
                 ).catch(() => undefined);
+            }}
+            // The Bots heading's menu of hidden bots puts one, or all, back.
+            onSectionMenuSelect={(sectionId, _source, actionId) => {
+                const section = happyAgentSectionParse(sectionId);
+                if (section?.kind !== "bots") return;
+                const happyAgent = happyAgentOf(section.happyAgentId);
+                if (!happyAgent) return;
+                for (const bot of happyAgent.bots)
+                    if (
+                        actionId === BOTS_MENU_SHOW_ALL ||
+                        actionId === `${BOTS_MENU_SHOW_PREFIX}${bot.id}`
+                    )
+                        attentionStore.botHiddenUpdate(happyAgent.id, bot.id, false);
             }}
             // Addressing a group opens the tab it was left on, so a list row
             // lands back where the reader was rather than on an empty screen.
@@ -3325,6 +3474,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           activeTodoCounts,
                           titleShimmerEnabled,
                           projectsHidden,
+                          attention,
                       )
                     : [
                           happyAgentTopSection(
@@ -3338,6 +3488,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                                   directory,
                                   titleShimmerEnabled,
                                   projectsHidden,
+                                  attention,
                                   workspaceCreateTarget,
                                   props.sidebarCollapse ? sidebarCollapse.collapsed : undefined,
                                   taskCreateTarget,

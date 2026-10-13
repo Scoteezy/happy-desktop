@@ -1,3 +1,4 @@
+import type { HappyAgentCompletionSound } from "happy-desktop-state";
 import { Banner } from "../../Banner";
 import { Box } from "../../Box";
 import { Button } from "../../Button";
@@ -54,6 +55,12 @@ export type HappyAgentGeneralSettingsProps = {
     /** When the computer is kept from sleeping; absent where the host cannot. */
     keepAwake?: SidebarKeepAwakeMode;
     onKeepAwakeChange?: (mode: SidebarKeepAwakeMode) => void;
+    /**
+     * When this connection chimes for a finished conversation. Absent where the
+     * host plays no sound, which offers no control.
+     */
+    completionSound?: HappyAgentCompletionSound;
+    onCompletionSoundChange?: (sound: HappyAgentCompletionSound) => void;
     /** Whether this window sends product analytics events. Absent where the host sends none. */
     usageAnalyticsEnabled?: boolean;
     onUsageAnalyticsChange?: (enabled: boolean) => void;
@@ -128,6 +135,12 @@ function statusBarRow(id: string, shown: boolean, onChange: (shown: boolean) => 
 const scrollbarSegments = [
     { value: "automatic", label: "Automatic" },
     { value: "always", label: "Always visible" },
+];
+
+const completionSoundSegments = [
+    { value: "always", label: "Always" },
+    { value: "focused", label: "When focused" },
+    { value: "never", label: "Never" },
 ];
 
 const linkOpenSegments = [
@@ -258,6 +271,30 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                               props.statusBar.onKeepAwakeShownChange,
                           )
                         : null}
+                </HappyAgentSettingsSection>
+            ) : null}
+            {props.completionSound && props.onCompletionSoundChange ? (
+                <HappyAgentSettingsSection
+                    description="How this connection tells you a conversation finished. Each connection keeps its own choice."
+                    title="Sound"
+                >
+                    <FormRow
+                        control={
+                            <SegmentedControl
+                                aria-label="Completion sound"
+                                onChange={(value) =>
+                                    props.onCompletionSoundChange?.(
+                                        value as HappyAgentCompletionSound,
+                                    )
+                                }
+                                segments={completionSoundSegments}
+                                size="small"
+                                value={props.completionSound}
+                            />
+                        }
+                        description="When focused plays only while this connection is on screen and the window is active"
+                        label="Completion sound"
+                    />
                 </HappyAgentSettingsSection>
             ) : null}
             <HappyAgentSettingsSection

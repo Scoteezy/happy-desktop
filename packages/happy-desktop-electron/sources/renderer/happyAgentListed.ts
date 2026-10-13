@@ -1,4 +1,4 @@
-import type { ConversationSummary, ProjectsVisibilitySnapshot } from "happy-desktop-state";
+import { happyAgentBotAttention, type HappyAgentAttentionSnapshot, type ConversationSummary, type ProjectsVisibilitySnapshot } from "happy-desktop-state";
 import type {
     HappyAgentDirectoryEntry,
     HappyAgentDirectorySnapshot,
@@ -20,9 +20,11 @@ import type {
 export function happyAgentListedConversations(
     entry: HappyAgentDirectoryEntry,
     visibility: ProjectsVisibilitySnapshot,
+    attention: HappyAgentAttentionSnapshot,
 ): readonly ConversationSummary[] {
     const listed: ConversationSummary[] = [];
-    for (const bot of entry.bots) listed.push(bot.conversation);
+    for (const bot of entry.bots)
+        if (happyAgentBotAttention(attention, entry.id, bot.id) !== "hidden") listed.push(bot.conversation);
     for (const task of entry.tasks) listed.push(task.conversation);
     if (visibility.projectsHidden) return listed;
     for (const project of entry.projects) {
@@ -32,16 +34,27 @@ export function happyAgentListedConversations(
     return listed;
 }
 
-/** Whether one Happy Agent's session is listed in this window's sidebar right now. */
-export function happyAgentDirectoryListed(
+/** The one notification eligibility path used by the Dock, rail, and completion chime. */
+export function happyAgentNotifyingConversations(
+    entry: HappyAgentDirectoryEntry,
+    visibility: ProjectsVisibilitySnapshot,
+    attention: HappyAgentAttentionSnapshot,
+): readonly ConversationSummary[] {
+    const quiet = new Set(entry.bots.filter((bot) => happyAgentBotAttention(attention, entry.id, bot.id) !== "normal").map((bot) => bot.conversation.id));
+    return happyAgentListedConversations(entry, visibility, attention).filter((conversation) => !quiet.has(conversation.id));
+}
+
+/** Whether one session belongs to this window's notification set right now. */
+export function happyAgentDirectoryNotifies(
     snapshot: HappyAgentDirectorySnapshot,
     visibility: ProjectsVisibilitySnapshot,
+    attention: HappyAgentAttentionSnapshot,
     happyAgentId: string,
     sessionId: string,
 ): boolean {
     const entry = snapshot.happyAgents.find((candidate) => candidate.id === happyAgentId);
     if (!entry) return false;
-    return happyAgentListedConversations(entry, visibility).some(
+    return happyAgentNotifyingConversations(entry, visibility, attention).some(
         (conversation) => conversation.id === sessionId,
     );
 }

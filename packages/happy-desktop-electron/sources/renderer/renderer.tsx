@@ -35,7 +35,11 @@ import {
     happyAgentSidebarSearchStoreCreate,
     happyAgentSidebarVisibilityStoreCreate,
     happyAgentSettingsStoreCreate,
+    happyAgentAttentionConnection,
+    happyAgentAttentionStoreCreate,
     type AppearanceStore,
+    type HappyAgentAttentionStore,
+    type HappyAgentCompletionSound,
     type CommandPaletteStore,
     type ExperimentsStore,
     type ProjectsVisibilityStore,
@@ -68,6 +72,7 @@ import {
     type HtmlPreviewRenderer,
     type LivePerformanceStore,
     type MediaWindowOpener,
+    type MenuItem,
 } from "happy-desktop-ui";
 import {
     happyArtifactPartition,
@@ -80,9 +85,10 @@ import {
     type HappyDesktopBridge,
 } from "../shared/desktopContract";
 import { desktopStartRequestFromValues, desktopStartupValues } from "./desktopStartupModel";
-import { dockUnreadPublish } from "./dockUnread";
-import { completionChimePlay } from "./completionChime";
-import { happyAgentDirectoryListed, happyAgentListedConversations } from "./happyAgentListed";
+import { dockUnreadPublish, happyAgentEntryUnreadCount } from "./dockUnread";
+import { happyAgentListedConversations } from "./happyAgentListed";
+import { completionChimePlay, completionChimeWanted } from "./completionChime";
+import { desktopAttentionPersistence } from "./desktopAttention";
 import { happyAgentDirectoryAgentWorking, keepAwakePublish } from "./keepAwake";
 import { desktopRuntimeStoreCreate, type DesktopRuntimeStore } from "./runtimeStore";
 import {
@@ -187,6 +193,37 @@ const desktopArtifactPageRender: HtmlPreviewRenderer = (props) => (
 
 function desktopAction(operation: Promise<void>): void {
     void operation.catch(() => undefined);
+}
+
+const COMPLETION_SOUND_MENU_PREFIX = "completion-sound:";
+const COMPLETION_SOUND_CHOICES: readonly {
+    readonly sound: HappyAgentCompletionSound;
+    readonly label: string;
+}[] = [
+    { sound: "always", label: "Always" },
+    { sound: "focused", label: "When focused" },
+    { sound: "never", label: "Never" },
+];
+
+/** A connection tile's menu: when that connection chimes, with the current choice checked. */
+function completionSoundMenuItems(current: HappyAgentCompletionSound): MenuItem[] {
+    return [
+        { kind: "label", label: "Completion sound" },
+        ...COMPLETION_SOUND_CHOICES.map(
+            ({ sound, label }): MenuItem => ({
+                kind: "item",
+                id: `${COMPLETION_SOUND_MENU_PREFIX}${sound}`,
+                label,
+                ...(sound === current ? { icon: "check" as const } : {}),
+            }),
+        ),
+    ];
+}
+
+function completionSoundOf(actionId: string): HappyAgentCompletionSound | undefined {
+    return COMPLETION_SOUND_CHOICES.find(
+        ({ sound }) => actionId === `${COMPLETION_SOUND_MENU_PREFIX}${sound}`,
+    )?.sound;
 }
 
 /**
@@ -319,6 +356,7 @@ function HappyAgentBoundary(props: {
     sidebarCollapse: HappyAgentSidebarCollapseStore;
     sidebarSearch: HappyAgentSidebarSearchStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
+    attention: HappyAgentAttentionStore;
     happyAgents: HappyAgentDirectoryStore;
     settings: HappyAgentSettingsStore;
     titleShimmer: TitleShimmerStore;
@@ -369,6 +407,7 @@ function HappyAgentBoundary(props: {
                 sidebarCollapse: props.sidebarCollapse,
                 sidebarSearch: props.sidebarSearch,
                 sidebarVisibility: props.sidebarVisibility,
+                attention: props.attention,
                 platform: props.platform,
                 happyAgents: props.happyAgents,
                 settings: props.settings,
@@ -492,6 +531,7 @@ interface DesktopRendererProps {
     sidebarCollapse: HappyAgentSidebarCollapseStore;
     sidebarSearch: HappyAgentSidebarSearchStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
+    attention: HappyAgentAttentionStore;
     platform: "desktop" | "web";
     happyAgentRouter: HappyAgentRouter;
     happyAgents: HappyAgentDirectoryStore;
@@ -576,6 +616,11 @@ function DesktopScreens(props: DesktopRendererProps) {
         props.projectsVisibility.get,
         props.projectsVisibility.get,
     );
+    const attention = useSyncExternalStore(
+        props.attention.subscribe,
+        props.attention.get,
+        props.attention.get,
+    );
     const main = props.connectionUis.get(LOCAL_HAPPY_AGENT_ID);
     const surfaceWindowState = props.surfaceWindowState;
     // An update of the local daemon does not take the window: the shell stays
@@ -583,10 +628,8 @@ function DesktopScreens(props: DesktopRendererProps) {
     return (
         <ConnectionShell
             items={directory.happyAgents.map((entry) => {
-                // Only what this window's sidebar lists can spin the tile or
-                // light its dot, the same set the Dock counts and the chime
-                // speaks for.
-                const listed = happyAgentListedConversations(entry, projectsVisibility);
+                // Muted bots remain listed and working; hidden bots leave this set.
+                const listed = happyAgentListedConversations(entry, projectsVisibility, attention);
                 return {
                     id: entry.id,
                     // The rail names a machine the way its own daemon does. The
@@ -595,12 +638,21 @@ function DesktopScreens(props: DesktopRendererProps) {
                     local: entry.id === LOCAL_HAPPY_AGENT_ID,
                     status: entry.status,
                     working: listed.some((conversation) => conversation.activity === "running"),
-                    unread: listed.some((conversation) => conversation.unread),
+                    unread: happyAgentEntryUnreadCount(entry, projectsVisibility, attention) > 0,
                     ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
                 };
             })}
             selectedId={directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID}
             onSelect={props.happyAgents.happyAgentActivate}
+            itemMenuItems={(item) =>
+                completionSoundMenuItems(
+                    happyAgentAttentionConnection(attention, item.id).completionSound,
+                )
+            }
+            onItemMenuSelect={(id, actionId) => {
+                const sound = completionSoundOf(actionId);
+                if (sound) props.attention.completionSoundUpdate(id, sound);
+            }}
             onReorder={
                 directory.happyAgents.some(
                     (entry) => entry.id === LOCAL_HAPPY_AGENT_ID && entry.status === "connected",
@@ -656,6 +708,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 sidebarCollapse={ui.sidebarCollapse}
                                 sidebarSearch={ui.sidebarSearch}
                                 sidebarVisibility={ui.sidebarVisibility}
+                                attention={props.attention}
                                 platform={props.platform}
                                 router={ui.router}
                                 happyAgents={ui.directory}
@@ -876,6 +929,7 @@ function DesktopRuntimeContent(
             sidebarCollapse={props.sidebarCollapse}
             sidebarSearch={props.sidebarSearch}
             sidebarVisibility={props.sidebarVisibility}
+            attention={props.attention}
             platform={props.platform}
             router={props.happyAgentRouter}
             happyAgents={props.happyAgents}
@@ -1049,6 +1103,10 @@ if (mediaPreviewBridge) {
         // palette below: a search is a question in progress, not a place to
         // come back to, so nothing is persisted.
         const sidebarSearch = happyAgentSidebarSearchStoreCreate();
+        // Which bots the person muted or hid and when each connection chimes.
+        // The window's own record, kept per connection, so a machine going
+        // offline and coming back finds every choice where it was left.
+        const attention = happyAgentAttentionStoreCreate(desktopAttentionPersistence());
         // Whether this window offers the features that are not finished yet. It
         // is kept beside the arrangement above and for the same reason: it says
         // what this installation shows, so no machine has a say in it.
@@ -1116,20 +1174,6 @@ if (mediaPreviewBridge) {
                     groupId,
                 ),
             activity: (happyAgentId, activity) => analytics.activity(happyAgentId, activity),
-            // A finished turn is announced only for a conversation the sidebar
-            // lists: an unjoined task or a session in hidden projects is out of
-            // sight, and out of earshot with it.
-            sessionFinished: (happyAgentId, sessionId) => {
-                if (
-                    happyAgentDirectoryListed(
-                        happyAgents.get(),
-                        projectsVisibility.get(),
-                        happyAgentId,
-                        sessionId,
-                    )
-                )
-                    completionChimePlay();
-            },
             subtasksForget: (happyAgentId, removed, open) =>
                 happyAgentRouterSubtasksForget(
                     connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,
@@ -1147,6 +1191,19 @@ if (mediaPreviewBridge) {
             // never hears about it again, so every terminal takes the appearance
             // showing at the moment it is opened and keeps it.
             terminalColorScheme: () => appearance.get().appearance,
+            sessionFinished: (happyAgentId, sessionId) => {
+                if (
+                    completionChimeWanted({
+                        attention: attention.get(),
+                        projectsVisibility: projectsVisibility.get(),
+                        directory: happyAgents.get(),
+                        happyAgentId,
+                        sessionId,
+                        windowFocused: document.hasFocus(),
+                    })
+                )
+                    completionChimePlay();
+            },
         });
         // What this window reports about how it is used, read from the same
         // directory the sidebar reads. Development windows send nothing.
@@ -1293,7 +1350,7 @@ if (mediaPreviewBridge) {
         // about the screen that happens to be open, so the Dock is marked from
         // the same directory the sidebar reads rather than from any one Happy Agent.
         appDisposers.push(
-            dockUnreadPublish(happyAgents, projectsVisibility, (count) =>
+            dockUnreadPublish(happyAgents, projectsVisibility, attention, (count) =>
                 desktopBridge.dockUnreadSet(count),
             ),
         );
@@ -1349,6 +1406,7 @@ if (mediaPreviewBridge) {
                         sidebarCollapse={sidebarCollapse}
                         sidebarSearch={sidebarSearch}
                         sidebarVisibility={sidebarVisibility}
+                        attention={attention}
                         // Only the Electron window hides its title bar; the browser
                         // development server renders the same tree with web chrome.
                         platform={browserLocal ? "web" : "desktop"}

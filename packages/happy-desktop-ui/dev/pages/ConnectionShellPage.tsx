@@ -80,6 +80,47 @@ function WindowedBesideSidebar() {
         </ConnectionShell>
     );
 }
+type CompletionSound = "always" | "focused" | "never";
+const COMPLETION_SOUNDS: readonly { readonly sound: CompletionSound; readonly label: string }[] = [
+    { sound: "always", label: "Always" },
+    { sound: "focused", label: "When focused" },
+    { sound: "never", label: "Never" },
+];
+
+/** Right-click a tile: its menu says when that connection chimes, with the choice checked. */
+function CompletionSoundMenuDemo() {
+    const [sounds, setSounds] = useState<ReadonlyMap<string, CompletionSound>>(
+        new Map([["work", "focused"]]),
+    );
+    return (
+        <ConnectionShell
+            items={items}
+            selectedId="local"
+            onSelect={() => undefined}
+            itemMenuItems={(item) => [
+                { kind: "label", label: "Completion sound" },
+                ...COMPLETION_SOUNDS.map(({ sound, label }) => ({
+                    kind: "item" as const,
+                    id: sound,
+                    label,
+                    ...((sounds.get(item.id) ?? "always") === sound
+                        ? { icon: "check" as const }
+                        : {}),
+                })),
+            ]}
+            onItemMenuSelect={(id, actionId) =>
+                setSounds((current) => new Map(current).set(id, actionId as CompletionSound))
+            }
+        >
+            <p>
+                {items
+                    .map((item) => `${item.label}: ${sounds.get(item.id) ?? "always"}`)
+                    .join(" · ")}
+            </p>
+        </ConnectionShell>
+    );
+}
+
 export function ConnectionShellPage() {
     const [selected, select] = useState("local");
     const [connectingSelected, connectingSelect] = useState("starting");
@@ -196,6 +237,16 @@ export function ConnectionShellPage() {
                             ]}
                         />
                     </ConnectionShell>
+                </div>
+            </Specimen>
+            <Specimen
+                number="12"
+                label="Completion sound menu"
+                detail="Right-click a tile for its context menu: when that connection chimes, with the current choice checked."
+                stage="surface"
+            >
+                <div style={{ display: "flex", width: 600, height: 300 }}>
+                    <CompletionSoundMenuDemo />
                 </div>
             </Specimen>
             <Specimen
