@@ -10,6 +10,11 @@ const TEXT_LIMIT = 10_000;
 
 export interface HappyAgentTodoRowProps {
     text: string;
+    /**
+     * The label when the todo heads a section of the list rather than being
+     * something to do. A heading has no checkbox, so it is never ticked off.
+     */
+    heading?: string;
     completed: boolean;
     /** Who wrote it, once they are known; absent when the todo credits nobody. */
     author?: HappyAgentSurfacePersonView;
@@ -26,7 +31,9 @@ export interface HappyAgentTodoRowProps {
 /**
  * One todo in a fixed 40px row: its checkbox, its text, the face of who wrote
  * it when that is known, and a delete control that shows while the row is
- * hovered or focused.
+ * hovered or focused. A heading is the same row with its label in place of
+ * the checkbox and text, set apart from the cards around it, and is dragged,
+ * edited, and deleted the same way.
  *
  * In a reorderable list the row's body is what is dragged. Its controls — the
  * checkbox, the delete button, and the field while the text is edited — are
@@ -35,24 +42,28 @@ export interface HappyAgentTodoRowProps {
  * saves, Escape puts it back.
  */
 export function HappyAgentTodoRow(props: HappyAgentTodoRowProps) {
+    const heading = props.heading;
     return (
         <div
             className="happy-agent-todo-row"
             data-completed={props.completed ? "" : undefined}
             data-editing={props.editing !== undefined ? "" : undefined}
             data-happy-desktop-ui="happy-agent-todo-row"
+            data-kind={heading === undefined ? "todo" : "heading"}
         >
-            <span className="happy-agent-todo-row__check" {...REORDERING_LIST_STATIC}>
-                <Checkbox
-                    aria-label={
-                        props.completed
-                            ? `Mark “${props.text}” not done`
-                            : `Mark “${props.text}” done`
-                    }
-                    checked={props.completed}
-                    onChange={props.onCompletedChange}
-                />
-            </span>
+            {heading === undefined ? (
+                <span className="happy-agent-todo-row__check" {...REORDERING_LIST_STATIC}>
+                    <Checkbox
+                        aria-label={
+                            props.completed
+                                ? `Mark “${props.text}” not done`
+                                : `Mark “${props.text}” done`
+                        }
+                        checked={props.completed}
+                        onChange={props.onCompletedChange}
+                    />
+                </span>
+            ) : null}
             {props.editing !== undefined ? (
                 <input
                     {...REORDERING_LIST_STATIC}
@@ -76,7 +87,7 @@ export function HappyAgentTodoRow(props: HappyAgentTodoRowProps) {
                     type="text"
                     value={props.editing}
                 />
-            ) : (
+            ) : heading === undefined ? (
                 <button
                     className="happy-agent-todo-row__text"
                     onClick={props.onEditStart}
@@ -85,8 +96,19 @@ export function HappyAgentTodoRow(props: HappyAgentTodoRowProps) {
                 >
                     {props.text}
                 </button>
+            ) : (
+                <h2 className="happy-agent-todo-row__heading">
+                    <button
+                        className="happy-agent-todo-row__heading-label"
+                        onClick={props.onEditStart}
+                        title={heading}
+                        type="button"
+                    >
+                        {heading}
+                    </button>
+                </h2>
             )}
-            {props.author ? (
+            {props.author && heading === undefined ? (
                 // Part of the body, so a press on the face drags the row like
                 // a press anywhere else on it.
                 <Tooltip
@@ -104,7 +126,9 @@ export function HappyAgentTodoRow(props: HappyAgentTodoRowProps) {
             ) : null}
             <Button
                 {...REORDERING_LIST_STATIC}
-                aria-label={`Delete “${props.text}”`}
+                aria-label={
+                    heading === undefined ? `Delete “${props.text}”` : `Delete heading “${heading}”`
+                }
                 className="happy-agent-todo-row__delete"
                 icon="trash"
                 iconOnly

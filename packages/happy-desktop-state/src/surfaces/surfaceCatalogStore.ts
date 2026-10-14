@@ -19,12 +19,13 @@ import {
     type HappyAgentSurfaceEvent,
 } from "./surfaceProject.js";
 import { happyAgentSurfacePeopleReaderCreate, happyAgentSurfacePersonOf } from "./surfacePeople.js";
-import type {
-    HappyAgentSurface,
-    HappyAgentSurfaceId,
-    HappyAgentSurfaceMember,
-    HappyAgentSurfacePerson,
-    HappyAgentSurfacesAvailability,
+import {
+    happyAgentTodoHeading,
+    type HappyAgentSurface,
+    type HappyAgentSurfaceId,
+    type HappyAgentSurfaceMember,
+    type HappyAgentSurfacePerson,
+    type HappyAgentSurfacesAvailability,
 } from "./surfaceTypes.js";
 
 /** The daemon's bound on a Surface name. */
@@ -460,7 +461,11 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 (response) => {
                     if (countReads.get(surfaceId) !== entry) return;
                     if (!countable(snapshot.joined).has(surfaceId)) return;
-                    const count = response.todos.filter((todo) => todo.status === "active").length;
+                    const count = response.todos.filter(
+                        (todo) =>
+                            todo.status === "active" &&
+                            happyAgentTodoHeading(todo.text) === undefined,
+                    ).length;
                     if (snapshot.activeTodoCounts.get(surfaceId) === count) return;
                     publish({
                         activeTodoCounts: new Map(snapshot.activeTodoCounts).set(surfaceId, count),
@@ -488,11 +493,13 @@ export function happyAgentSurfaceCatalogStoreCreate(
         const event = happyAgentTodoEventProject(raw);
         if (event === undefined) return false;
         const surfaceId = event.type === "created" ? event.todo.surfaceId : event.surfaceId;
-        // A rename or a move leaves the count where it was.
+        // A move leaves the count where it was; a rename can turn a todo into
+        // a heading or back.
         const counts =
             event.type === "created" ||
             event.changes.status !== undefined ||
-            event.changes.deletedAt !== undefined;
+            event.changes.deletedAt !== undefined ||
+            event.changes.text !== undefined;
         if (counts && countable(snapshot.joined).has(surfaceId)) countRead(surfaceId);
         return true;
     };

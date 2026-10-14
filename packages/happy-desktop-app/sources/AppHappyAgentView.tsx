@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { happyAgentBotSubtasks } from "happy-desktop-state";
+import { happyAgentBotSubtasks, happyAgentTodoHeading } from "happy-desktop-state";
 import { AppGptLivePhone } from "./gptLive/AppGptLivePhone";
 import {
     ARTIFACT_READING,
@@ -2672,10 +2672,12 @@ const ARTIFACTS_ITEM = "artifacts";
 /** A subscription to nothing, for a hook whose store is absent. */
 const SUBSCRIBE_NONE = (): (() => void) => () => undefined;
 
-/** How many todos a list holds open, once it has been read. */
+/** How many todos a list holds open, headings aside, once it has been read. */
 function todoListActiveCount(store: HappyAgentTodoListStore | undefined): number | undefined {
     const list = store?.get();
-    return list?.status === "ready" ? list.active.length : undefined;
+    return list?.status === "ready"
+        ? list.active.filter((todo) => happyAgentTodoHeading(todo.text) === undefined).length
+        : undefined;
 }
 
 const ARTIFACTS_SIDEBAR_ITEM: SidebarItem = {

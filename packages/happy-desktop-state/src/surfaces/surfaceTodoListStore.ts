@@ -14,13 +14,14 @@ import {
     type HappyAgentTodoEvent,
 } from "./surfaceProject.js";
 import { happyAgentSurfacePeopleReaderCreate } from "./surfacePeople.js";
-import type {
-    HappyAgentSurfaceActiveTodo,
-    HappyAgentSurfaceCompletedTodo,
-    HappyAgentSurfaceId,
-    HappyAgentSurfacePerson,
-    HappyAgentSurfaceTodo,
-    HappyAgentSurfaceTodoId,
+import {
+    happyAgentTodoHeading,
+    type HappyAgentSurfaceActiveTodo,
+    type HappyAgentSurfaceCompletedTodo,
+    type HappyAgentSurfaceId,
+    type HappyAgentSurfacePerson,
+    type HappyAgentSurfaceTodo,
+    type HappyAgentSurfaceTodoId,
 } from "./surfaceTypes.js";
 
 const NO_AUTHORS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map();
@@ -689,11 +690,16 @@ export function happyAgentTodoListStoreCreate(
 
     /** The text a todo may hold: trimmed, within the daemon's bound, and not blank. */
     const textClean = (text: string): string | undefined => {
-        const clean = text
-            .replace(TODO_TEXT_FORBIDDEN, " ")
-            .trim()
-            .slice(0, HAPPY_AGENT_TODO_TEXT_LIMIT);
-        return clean.length === 0 ? undefined : clean;
+        // Cleaning never makes a todo a heading or a heading a todo: a
+        // heading's label is cleaned behind its "# ", and a todo that would
+        // come to start with "# " keeps a space before it.
+        const label = happyAgentTodoHeading(text);
+        const clean = (label ?? text).replace(TODO_TEXT_FORBIDDEN, " ").trim();
+        if (clean.length === 0) return undefined;
+        let kept = clean;
+        if (label !== undefined) kept = `# ${clean}`;
+        else if (happyAgentTodoHeading(clean) !== undefined) kept = ` ${clean}`;
+        return kept.slice(0, HAPPY_AGENT_TODO_TEXT_LIMIT);
     };
 
     const todoOf = (todoId: HappyAgentSurfaceTodoId): HappyAgentSurfaceTodo | undefined =>
@@ -745,8 +751,9 @@ export function happyAgentTodoListStoreCreate(
         },
         todoTextUpdate(todoId, text) {
             const todo = todoOf(todoId);
+            if (todo === undefined || text === todo.text) return;
             const clean = textClean(text);
-            if (todo === undefined || clean === undefined || clean === todo.text) return;
+            if (clean === undefined || clean === todo.text) return;
             enqueue({ kind: "text", todoId, text: clean });
         },
         todoDelete(todoId) {
@@ -785,7 +792,8 @@ export function happyAgentTodoListStoreCreate(
             const { editing: _editing, ...rest } = snapshot;
             snapshot = rest;
             const todo = todoOf(editing.todoId);
-            const text = textClean(editing.text);
+            // Committing what was there sends nothing, however it would be cleaned.
+            const text = editing.text === todo?.text ? undefined : textClean(editing.text);
             if (todo === undefined || text === undefined || text === todo.text) {
                 publish({});
                 return;

@@ -1,9 +1,10 @@
 import type { CSSProperties } from "react";
-import type {
-    HappyAgentSurfaceActiveTodo,
-    HappyAgentSurfaceCompletedTodo,
-    HappyAgentSurfaceTodoId,
-    HappyAgentTodoListSnapshot,
+import {
+    happyAgentTodoHeading,
+    type HappyAgentSurfaceActiveTodo,
+    type HappyAgentSurfaceCompletedTodo,
+    type HappyAgentSurfaceTodoId,
+    type HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
 import { Icon } from "../../Icon";
 import { ReorderingList } from "../../ReorderingList";
@@ -30,6 +31,11 @@ function authorOf(
             ...(person.photo ? { photo: person.photo } : {}),
         },
     };
+}
+
+function headingOf(text: string): { heading?: string } {
+    const heading = happyAgentTodoHeading(text);
+    return heading === undefined ? {} : { heading };
 }
 
 /** Every todo row is this tall, which is what lets a drag place rows by slot. */
@@ -84,6 +90,7 @@ export function HappyAgentTodoSurfacePage(props: HappyAgentTodoSurfacePageProps)
     const row = (todo: HappyAgentSurfaceActiveTodo | HappyAgentSurfaceCompletedTodo) => (
         <HappyAgentTodoRow
             {...authorOf(list, todo)}
+            {...headingOf(todo.text)}
             completed={todo.status === "completed"}
             editing={editing?.todoId === todo.id ? editing.text : undefined}
             onCompletedChange={(completed) => props.onTodoCompletedChange(todo.id, completed)}

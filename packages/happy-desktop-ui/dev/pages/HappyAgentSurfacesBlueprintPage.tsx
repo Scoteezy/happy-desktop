@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import {
+    happyAgentTodoHeading,
     type HappyAgentSurfaceActiveTodo,
     type HappyAgentSurfaceCompletedTodo,
     type HappyAgentSurfaceId,
@@ -85,19 +86,29 @@ function completed(todo: HappyAgentSurfaceActiveTodo, at: number): HappyAgentSur
 }
 
 // Written by three people, by nobody credited (an agent's, say), and by
-// someone whose name has not been read yet — the last two show no face.
+// someone whose name has not been read yet — the last two show no face. The
+// "# " todos head sections of the list.
 const ACTIVE: readonly HappyAgentSurfaceActiveTodo[] = [
-    active("t1", "Oat milk", 0, "u1"),
-    active("t2", "Sourdough loaf", 1, "u2"),
-    active("t3", "Two lemons and a bunch of coriander for Thursday", 2, "u3"),
-    active("t4", "Coffee beans", 3, null),
-    active("t5", "Dish soap", 4, "u9"),
+    active("h1", "# Breakfast", 0, "u1"),
+    active("t1", "Oat milk", 1, "u1"),
+    active("t2", "Sourdough loaf", 2, "u2"),
+    active("t3", "Two lemons and a bunch of coriander for Thursday", 3, "u3"),
+    active("t4", "Coffee beans", 4, null),
+    active("h2", "# Household", 5, null),
+    active("t5", "Dish soap", 6, "u9"),
 ];
 
+// A heading an agent ticked off is history: muted, and still no checkbox.
 const DONE: readonly HappyAgentSurfaceCompletedTodo[] = [
-    completed(active("t6", "Eggs", 5, "u2"), 1_760_000_100_000),
-    completed(active("t7", "Butter", 6, null), 1_760_000_050_000),
+    completed(active("t6", "Eggs", 7, "u2"), 1_760_000_100_000),
+    completed(active("h3", "# Last week", 8, null), 1_760_000_075_000),
+    completed(active("t7", "Butter", 9, null), 1_760_000_050_000),
 ];
+
+/** Open todos, as the sidebar counts them: headings are not something to do. */
+function openCount(todos: readonly HappyAgentSurfaceActiveTodo[]): number {
+    return todos.filter((todo) => happyAgentTodoHeading(todo.text) === undefined).length;
+}
 
 const LIST: HappyAgentTodoListSnapshot = {
     surfaceId: SURFACE_ID,
@@ -152,7 +163,7 @@ function LiveTodoPage(props: {
     const set = (patch: Partial<HappyAgentTodoListSnapshot>) => {
         const next = { ...list, ...patch };
         setList(next);
-        props.onActiveCount?.(next.active.length);
+        props.onActiveCount?.(openCount(next.active));
     };
     const textSet = (id: HappyAgentSurfaceTodoId, text: string) =>
         set({
@@ -265,7 +276,7 @@ interface MockSurface {
 }
 
 const SURFACES: readonly MockSurface[] = [
-    { id: "groceries", joined: true, view: GROCERIES, count: ACTIVE.length },
+    { id: "groceries", joined: true, view: GROCERIES, count: openCount(ACTIVE) },
     { id: "launch", joined: true, view: KANBAN },
     {
         id: "reading",
@@ -616,7 +627,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Completed shown and one todo being edited."
+                detail="Completed shown, with a heading an agent ticked off among them, and one todo being edited."
                 label="Completed and editing"
                 number="02"
                 screen="02-completed-1100x760"
@@ -627,8 +638,22 @@ export function HappyAgentSurfacesBlueprintPage() {
                     list={{
                         ...LIST,
                         completedShown: true,
-                        editing: { todoId: ACTIVE[1]!.id, text: "Sourdough loaf, sliced" },
+                        editing: { todoId: ACTIVE[2]!.id, text: "Sourdough loaf, sliced" },
                     }}
+                    surface={GROCERIES}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="A heading being edited: the field holds its full text, “# ” included, so removing the prefix makes it a todo again."
+                label="Editing a heading"
+                number="02b"
+                screen="02b-heading-edit-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <HappyAgentTodoSurfacePage
+                    {...handlers}
+                    list={{ ...LIST, editing: { todoId: ACTIVE[5]!.id, text: "# Household" } }}
                     surface={GROCERIES}
                 />
             </FullScreenSpecimen>

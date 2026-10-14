@@ -120,6 +120,17 @@ export type HappyAgentSurfaceTodo =
 
 export type HappyAgentSurfaceTodoStatus = HappyAgentSurfaceTodo["status"];
 
+/**
+ * The section heading a todo's text makes, or `undefined` for an ordinary
+ * todo. Text that starts with exactly "# " heads a section of its list, and
+ * the rest of the text is its label. The daemon stores a heading as an
+ * ordinary todo, so this is the one place the rule is read: a heading is never
+ * ticked off and never counted among the todos left to do.
+ */
+export function happyAgentTodoHeading(text: string): string | undefined {
+    return text.startsWith("# ") ? text.slice(2) : undefined;
+}
+
 /** An active todo: the ones that have a place in the list and can be moved. */
 export type HappyAgentSurfaceActiveTodo = Extract<
     HappyAgentSurfaceTodo,

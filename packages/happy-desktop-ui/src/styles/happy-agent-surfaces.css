@@ -307,6 +307,61 @@
     flex: none;
 }
 
+/*
+ * A heading heads the cards below it rather than being one of them: the row is
+ * bare over the list's picture, with its label set on the row's floor so it
+ * sits with the section it names. It keeps the row's 40px slot, so a drag
+ * places it like any todo. While it is edited it is a card again, so the field
+ * reads against the surface it is typed on.
+ */
+.happy-agent-todo-row[data-kind="heading"]:not([data-editing]) {
+    align-items: flex-end;
+    padding-bottom: 6px;
+    padding-left: 4px;
+    background: transparent;
+    box-shadow: none;
+}
+
+.happy-agent-todo-row__heading {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    font: inherit;
+}
+
+.happy-agent-todo-row__heading-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: inherit;
+}
+
+.happy-agent-todo-row__heading-label:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: 2px;
+}
+
+/* A heading in the completed section is history, not a section of the list. */
+.happy-agent-todo-row[data-completed] .happy-agent-todo-row__heading-label {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
 /* The delete control keeps its lane and appears with the row's hover or focus. */
 .happy-agent-todo-row__delete {
     flex: none;
