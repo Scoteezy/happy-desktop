@@ -73,8 +73,8 @@ const INLINE_MEASURE_EPSILON = 1 / 64;
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /** Browser inline layout is the external boundary Pretext cannot describe.
  * Blink decides whether a slice-decorated inline word must fragment from its
- * glyphs plus start/end padding. WebKit first tests the glyph run alone, then
- * accounts for the padding after that run is already fragmenting. */
+ * glyphs plus start/end padding. WebKit first reserves the closing padding,
+ * then accounts for both edges after that run is already fragmenting. */
 const WEBKIT_INLINE_SLICE =
     typeof navigator !== "undefined" &&
     /AppleWebKit\//u.test(navigator.userAgent) &&
@@ -586,7 +586,7 @@ function markdownInlineItemsAppend(
             return;
         }
         const decoratedFlow =
-            openingWidth + textWidth + (WEBKIT_INLINE_SLICE ? 0 : 10) >
+            openingWidth + textWidth + (WEBKIT_INLINE_SLICE ? 5 : 10) >
             measure + INLINE_MEASURE_EPSILON;
         const segments = prepareWithSegments(text, font, { whiteSpace: "normal" }).segments;
         for (const [index, segment] of segments.entries()) {

@@ -447,19 +447,22 @@ it("keeps expanded shell output adjacent to the live status while output grows",
     }
 });
 
-it("lays out each live prefix exactly without retaining it in the settled text cache", async () => {
+it("lays out each live prefix exactly without retaining Markdown prefixes in the settled cache", async () => {
     const view = createRenderer();
     view.render(() => <div>Font readiness</div>, { width: 800, height: 40 });
     await view.ready();
     await document.fonts.load('16px "happy Figtree"');
     await document.fonts.load('12px "happy Mono"');
     const cache = messageTextLayoutCacheCreate();
+    // Completed shell lines are deliberately retained; Markdown prefixes are not.
+    const shellCache = messageTextLayoutCacheCreate();
     markdownBodyHeight("Existing settled history", 640, cache);
     // Let the layout module's font-generation notification settle before
     // taking the retained-cache baseline.
     await nextFrame();
     markdownBodyHeight("Existing settled history", 640, cache);
-    const retained = JSON.stringify(cache);
+    // The bounded streaming scratch cache is separate from settled history.
+    const retained = JSON.stringify({ ...cache, streaming: undefined });
     const cases = [
         screenshotProse,
         markdown,
@@ -476,13 +479,14 @@ it("lays out each live prefix exactly without retaining it in the settled text c
                     `live Markdown prefix ${String(end)} at ${String(width)}px`,
                 ).toBe(markdownBodyHeight(prefix, width, messageTextLayoutCacheCreate(), 0, false));
                 expect(
-                    monoOutputTextHeight(prefix, width, cache, true),
+                    monoOutputTextHeight(prefix, width, shellCache, true),
                     `live shell prefix ${String(end)} at ${String(width)}px`,
                 ).toBe(monoOutputTextHeight(prefix, width, messageTextLayoutCacheCreate()));
             }
         }
     }
-    expect(JSON.stringify(cache), "live prefixes must not enter the retained history cache").toBe(
-        retained,
-    );
+    expect(
+        JSON.stringify({ ...cache, streaming: undefined }),
+        "live prefixes must not enter the retained history cache",
+    ).toBe(retained);
 });
