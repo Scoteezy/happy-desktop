@@ -143,7 +143,7 @@ it.each([false, true])(
             });
         const outcome = refused
             ? expect(creation).rejects.toThrow(
-                  /“New” was created.*model settings weren't confirmed.*Check the task before trying again/,
+                  /“New” was created.*setup was not confirmed.*Check the task before trying again/,
               )
             : expect(creation).resolves.toMatchObject({ taskId: "new" });
         await vi.waitFor(() =>

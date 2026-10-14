@@ -163,7 +163,7 @@ describe("GPT-Live controller navigation", () => {
         vi.useFakeTimers();
         const taskCreate = vi.fn(async () => {
             throw new Error(
-                "“New task” was created, but its model settings weren't confirmed. Check the task before trying again.",
+                "“New task” was created, but its setup was not confirmed. Check the task before trying again.",
             );
         });
         const f = fixture({ taskCreate });

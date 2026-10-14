@@ -2635,7 +2635,7 @@ export function happyAgentSessionListStoreCreate(
             } catch (error) {
                 const failure = created
                     ? new UserError(
-                          `${name ? `“${name}”` : "The new task"} was created, but its model settings weren't confirmed: ${happyAgentUserError(error).message} Check the task before trying again.`,
+                          `${name ? `“${name}”` : "The new task"} was created, but its setup was not confirmed: ${happyAgentUserError(error).message} Check the task before trying again.`,
                       )
                     : new UserError(
                           `${name ? `“${name}”` : "The new task"} may not have been created: ${happyAgentUserError(error).message} Check the task list before trying again.`,
