@@ -4711,6 +4711,7 @@ function HappyAgentTodoSurface(props: {
     const list = useSyncExternalStore(store.subscribe, store.get, store.get);
     return (
         <HappyAgentTodoSurfacePage
+            focusOnType
             list={list}
             onCompletedShownChange={store.completedShownUpdate}
             onDraftChange={store.draftUpdate}

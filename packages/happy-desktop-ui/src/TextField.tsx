@@ -1,7 +1,8 @@
 import { partitionComponentProps } from "./componentProps";
-import { useCallback, useId, type CSSProperties } from "react";
+import { useCallback, useId, useRef, type CSSProperties } from "react";
 import { Icon, type IconName } from "./Icon";
 import { ScrollbarTracks, useScrollbarController } from "./Scrollbar";
+import { useFocusOnType } from "./useFocusOnType";
 export type TextFieldType = "text" | "email" | "password" | "search";
 export type TextFieldSize = "small" | "medium" | "large";
 export type TextFieldProps = {
@@ -15,6 +16,14 @@ export type TextFieldProps = {
     autoFocus?: boolean;
     className?: string;
     "data-testid"?: string;
+    /**
+     * Makes this field the surface's last resort for typing, as the chat's
+     * composer is: a character typed while no control that wants it has focus
+     * lands here. Turn it on for at most one field on screen.
+     */
+    focusOnType?: boolean;
+    /** Puts the caret here whenever it changes; see `useFocusOnType`. */
+    focusKey?: string;
     style?: CSSProperties;
     value?: string;
     onValueChange?: (value: string) => void;
@@ -61,8 +70,12 @@ export function TextField(props: TextFieldProps) {
         (element: HTMLDivElement | null) => scrollbarController.hostSet(element),
         [scrollbarController],
     );
+    const controlEl = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
     const textareaAttach = useCallback(
-        (element: HTMLTextAreaElement | null) => scrollbarController.viewportSet(element),
+        (element: HTMLTextAreaElement | null) => {
+            controlEl.current = element;
+            scrollbarController.viewportSet(element);
+        },
         [scrollbarController],
     );
     const [local] = partitionComponentProps(props, [
@@ -73,6 +86,8 @@ export function TextField(props: TextFieldProps) {
         "data-testid",
         "disabled",
         "error",
+        "focusKey",
+        "focusOnType",
         "fullWidth",
         "hint",
         "id",
@@ -100,6 +115,11 @@ export function TextField(props: TextFieldProps) {
     const fieldId = () => local.id ?? fallbackId;
     const messageId = () => `${fieldId()}-message`;
     const describedBy = () => (message() ? messageId() : undefined);
+    useFocusOnType(
+        controlEl,
+        local.focusOnType === true && !local.disabled,
+        local.disabled ? undefined : local.focusKey,
+    );
     return (
         <div
             className={["happy-text-field", local.className].filter(Boolean).join(" ")}
@@ -196,6 +216,9 @@ export function TextField(props: TextFieldProps) {
                             if (event.key === "Enter") local.onSubmit?.();
                         }}
                         placeholder={local.placeholder}
+                        ref={(element) => {
+                            controlEl.current = element;
+                        }}
                         required={local.required}
                         type={local.type ?? "text"}
                         value={local.value ?? ""}

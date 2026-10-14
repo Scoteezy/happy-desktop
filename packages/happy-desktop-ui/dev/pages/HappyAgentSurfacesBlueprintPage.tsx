@@ -143,6 +143,7 @@ const handlers = {
  */
 function LiveTodoPage(props: {
     readonly initial?: HappyAgentTodoListSnapshot;
+    readonly focusOnType?: boolean;
     /** Told how many todos are open after each change, as the sidebar's count is. */
     readonly onActiveCount?: (count: number) => void;
 }) {
@@ -162,6 +163,7 @@ function LiveTodoPage(props: {
     return (
         <HappyAgentTodoSurfacePage
             {...handlers}
+            {...(props.focusOnType ? { focusOnType: true } : {})}
             list={list}
             onCompletedShownChange={(shown) => set({ completedShown: shown })}
             onDraftChange={(draft) => set({ draft })}
@@ -379,6 +381,7 @@ const CHATS: readonly SidebarItem[] = [
  * Surfaces joined or not, bots, tasks, projects, and chats — under headings.
  */
 function MockWindow(props: {
+    readonly focusOnType?: boolean;
     readonly initialSearch?: string;
     readonly initialList?: HappyAgentTodoListSnapshot;
 }) {
@@ -497,6 +500,7 @@ function MockWindow(props: {
             >
                 {open?.view.type.kind === "todo" && open.id === "groceries" ? (
                     <LiveTodoPage
+                        {...(props.focusOnType ? { focusOnType: true } : {})}
                         {...(props.initialList ? { initial: props.initialList } : {})}
                         onActiveCount={(count) =>
                             setSurfaces(
@@ -572,13 +576,13 @@ export function HappyAgentSurfacesBlueprintPage() {
             title="HappyAgentSurfaces"
         >
             <FullScreenSpecimen
-                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others. + beside the collapse control makes a todo list; the search above everything replaces the sidebar with what matches."
+                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others. + beside the collapse control makes a todo list; the search above everything replaces the sidebar with what matches. The list's add field has the caret, and typing anywhere no other control wants lands in it, as in a chat."
                 label="Window"
                 number="00"
                 screen="00-window-1100x760"
                 window={{ width: 1100, height: 760 }}
             >
-                <MockWindow />
+                <MockWindow focusOnType />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen

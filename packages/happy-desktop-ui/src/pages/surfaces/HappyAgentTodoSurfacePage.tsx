@@ -51,6 +51,12 @@ export interface HappyAgentTodoSurfacePageProps {
     onTodoEditCommit: () => void;
     onTodoEditCancel: () => void;
     onCompletedShownChange: (shown: boolean) => void;
+    /**
+     * Makes the add field the window's place to type, as a chat's composer is:
+     * the caret is in it when the list opens, and a character typed while no
+     * other control wants it lands in it. Give it to the one list on screen.
+     */
+    focusOnType?: boolean;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -137,6 +143,9 @@ export function HappyAgentTodoSurfacePage(props: HappyAgentTodoSurfacePageProps)
                         aria-label="Add a todo"
                         className="happy-agent-todo-surface__add"
                         data-testid="happy-agent-todo-add"
+                        {...(props.focusOnType
+                            ? { focusKey: list.surfaceId, focusOnType: true }
+                            : {})}
                         fullWidth
                         leadingIcon="plus"
                         onSubmit={props.onDraftSubmit}

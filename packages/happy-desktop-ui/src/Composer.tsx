@@ -24,6 +24,7 @@ import {
 import { EmojiPicker, type EmojiItem } from "./EmojiPicker";
 import { Icon, type IconName } from "./Icon";
 import { ScrollbarTracks, useScrollbarController } from "./Scrollbar";
+import { focusUnlessWritingElsewhere, useFocusOnType } from "./useFocusOnType";
 /* ---- ContextChips ----------------------------------------------------- */
 export type ContextKind = "file" | "run";
 export type ContextItem = {
@@ -383,34 +384,6 @@ const FOOTER_TARGETS =
     '[data-happy-desktop-ui="composer-audience"], [data-happy-desktop-ui="composer-footer"]';
 
 /**
- * Controls that make words out of characters: text entry, and the list and menu
- * roles whose typeahead selects by what is typed. Focus here is the reader
- * writing somewhere else, so the composer never takes a character from them.
- */
-const TEXT_TARGETS =
-    'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="menuitem"], [role="option"], [role="searchbox"], [role="textbox"]';
-
-/**
- * Controls that are pressed rather than typed into. They keep only the keys they
- * actually answer to — Enter, which is not a character, and Space — because a
- * button holding focus is usually just where the last click landed. Clicking
- * "+" for a new tab must not mean the next word is swallowed by the button.
- */
-const ACTIVATION_TARGETS =
-    'button, a[href], [role="button"], [role="checkbox"], [role="switch"], [role="tab"], [role="radio"]';
-
-/**
- * Cmd/Ctrl+V alone. Paste is the one command shortcut the composer claims,
- * because it carries content rather than performing an action: pasting with
- * nothing focused means putting that text or image somewhere, and the draft is
- * the only place on the surface that can hold it.
- */
-function isPasteShortcut(event: KeyboardEvent): boolean {
-    if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return false;
-    return event.key === "v" || event.key === "V";
-}
-
-/**
  * Whether a drag in flight is carrying files. `types` is the only thing a drag
  * lets anyone read before it is dropped — the items themselves stay sealed until
  * then — so it is what decides whether the composer offers itself as the
@@ -421,41 +394,6 @@ function dragCarriesFiles(transfer: DataTransfer | null): boolean {
     return transfer !== null && Array.from(transfer.types).includes("Files");
 }
 
-/**
- * Whether this keystroke is ordinary typing that nothing on screen has claimed,
- * which is what makes redirecting it into `textarea` a last resort rather than a
- * hijack. It is typing when a single character was produced without a command
- * modifier and no composition is in flight; it is unclaimed when nothing has
- * already handled the event, no text control has focus, no focused button is
- * being pressed with Space, and no modal is up — while a dialog owns the screen
- * the composer behind it is not where the reader is writing. A composer that is
- * not rendered cannot be typed into either.
- *
- * The button rule is the point of the split: `:focus-visible` cannot tell a
- * clicked button from a tabbed-to one (Chromium reports it for both once a key
- * arrives, and WebKit does not focus buttons on click at all), so this asks what
- * the control does with the key instead of how it came to be focused.
- */
-function typingIsUnclaimed(event: KeyboardEvent, textarea: HTMLTextAreaElement): boolean {
-    if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return false;
-    const paste = isPasteShortcut(event);
-    if (!paste) {
-        if (event.metaKey || event.ctrlKey || event.altKey) return false;
-        // Length 1 is what separates a produced character from Escape, Enter,
-        // Tab, the arrows, and a dead key waiting for the one it will combine
-        // with.
-        if (event.key.length !== 1) return false;
-    }
-    const target = event.target;
-    if (target instanceof Element) {
-        if (target.closest(TEXT_TARGETS)) return false;
-        // A button answers to Space, but never to paste.
-        if (!paste && event.key === " " && target.closest(ACTIVATION_TARGETS)) return false;
-    }
-    if (document.querySelector('[data-happy-desktop-ui="modal-overlay"], [role="dialog"]'))
-        return false;
-    return textarea.isConnected && textarea.checkVisibility();
-}
 /**
  * Message composer: focus-within surface card with a one-line resting textarea
  * that grows through eight lines, context chips, capability-driven file/mention/emoji actions,
@@ -601,19 +539,17 @@ export function Composer(props: ComposerProps) {
     // eslint-disable-next-line happy-react/no-layout-effect -- a completed send returns real keyboard focus to the committed textarea only when this composer initiated the focus handoff
     useLayoutEffect(() => {
         if (wasBusy.current && !busy && restoreFocusAfterSend.current) {
-            textareaEl.current?.focus();
+            if (textareaEl.current) focusUnlessWritingElsewhere(textareaEl.current);
             restoreFocusAfterSend.current = false;
         }
         wasBusy.current = busy;
     }, [busy]);
-    // eslint-disable-next-line happy-react/no-layout-effect -- moving real keyboard focus to a destination the reader has just arrived at is imperative browser work with no declarative or event-driven boundary: the composer stays mounted across the move, so no ref callback or handler observes it
-    useLayoutEffect(() => {
-        // A composer nobody can type into is not somewhere to put the caret, and
-        // taking focus from whatever does have it would be worse than leaving it
-        // where it is.
-        if (props.focusKey === undefined || busy) return;
-        textareaEl.current?.focus();
-    }, [busy, props.focusKey]);
+    // A composer nobody can type into neither claims typing nor takes the caret.
+    useFocusOnType(
+        textareaEl,
+        props.focusOnType === true && !busy,
+        busy ? undefined : props.focusKey,
+    );
     // eslint-disable-next-line happy-react/no-layout-effect -- composer popovers require one document-level outside-pointer listener whose lifetime follows the mounted composer and is completely cleaned up
     useLayoutEffect(() => {
         const onPointerDown = (event: PointerEvent) => {
@@ -622,22 +558,6 @@ export function Composer(props: ComposerProps) {
         document.addEventListener("pointerdown", onPointerDown);
         return () => document.removeEventListener("pointerdown", onPointerDown);
     });
-    // eslint-disable-next-line happy-react/no-layout-effect -- claiming typing that no focused control wants requires one window-level keydown listener, which no handler on a rendered element can express
-    useLayoutEffect(() => {
-        if (!props.focusOnType || busy) return;
-        const onKeyDown = (event: KeyboardEvent) => {
-            const textarea = textareaEl.current;
-            if (!textarea || !typingIsUnclaimed(event, textarea)) return;
-            // Deliberately not prevented: focusing the textarea inside keydown
-            // makes the browser deliver this very keystroke to it, so the letter
-            // that summoned the composer is the first one typed into it, and a
-            // redirected Cmd+V pastes into the draft through the composer's own
-            // paste handler — images and files included.
-            textarea.focus();
-        };
-        window.addEventListener("keydown", onKeyDown);
-        return () => window.removeEventListener("keydown", onKeyDown);
-    }, [busy, props.focusOnType]);
     const rememberSelection = () => {
         const el = textareaEl.current;
         if (!el) return;
