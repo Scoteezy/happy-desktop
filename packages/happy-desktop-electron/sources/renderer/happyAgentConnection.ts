@@ -47,7 +47,6 @@ import {
     type TerminalColorScheme,
 } from "happy-desktop-state";
 import { imageCropOpen } from "happy-desktop-ui";
-import { completionChimePlay } from "./completionChime";
 import { desktopViewPreferencesPersistence } from "./desktopViewPreferences";
 import { desktopWelcomePersistence } from "./desktopWelcome";
 import {
@@ -140,6 +139,12 @@ export interface HappyAgentSessionDeps {
     ) => void;
     /** A reader-initiated act this connection's workspace finished. */
     readonly activity?: (activity: HappyAgentActivity) => void;
+    /**
+     * A top-level session on this connection finished a turn. Delegated
+     * subagent runs never arrive here; whether the window says anything about
+     * it is the owner's to decide.
+     */
+    readonly sessionFinished?: (sessionId: string) => void;
     /** Announces that this connection's session is ready or has been replaced. */
     readonly changed: () => void;
     readonly unavailable?: (error: unknown) => void;
@@ -374,7 +379,9 @@ export function happyAgentConnectionOpen(input: {
             input.deps.compatibility?.(mismatch);
             input.deps.changed();
         },
-        onTopLevelSessionFinished: () => completionChimePlay(),
+        onTopLevelSessionFinished: (sessionId) => {
+            if (!disposed) input.deps.sessionFinished?.(sessionId);
+        },
     });
     const profile = happyAgentProfileSourceCreate(directClient, agentConnection.sync, () => {
         if (!session) agentConnection.retry();

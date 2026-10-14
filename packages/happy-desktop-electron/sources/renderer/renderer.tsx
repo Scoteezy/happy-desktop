@@ -81,6 +81,8 @@ import {
 } from "../shared/desktopContract";
 import { desktopStartRequestFromValues, desktopStartupValues } from "./desktopStartupModel";
 import { dockUnreadPublish } from "./dockUnread";
+import { completionChimePlay } from "./completionChime";
+import { happyAgentDirectoryListed, happyAgentListedConversations } from "./happyAgentListed";
 import { happyAgentDirectoryAgentWorking, keepAwakePublish } from "./keepAwake";
 import { desktopRuntimeStoreCreate, type DesktopRuntimeStore } from "./runtimeStore";
 import {
@@ -569,6 +571,11 @@ function DesktopScreens(props: DesktopRendererProps) {
         props.sidebarVisibility.get,
         props.sidebarVisibility.get,
     );
+    const projectsVisibility = useSyncExternalStore(
+        props.projectsVisibility.subscribe,
+        props.projectsVisibility.get,
+        props.projectsVisibility.get,
+    );
     const main = props.connectionUis.get(LOCAL_HAPPY_AGENT_ID);
     const surfaceWindowState = props.surfaceWindowState;
     // An update of the local daemon does not take the window: the shell stays
@@ -595,15 +602,11 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 ),
                             ),
                     ),
-                unread:
-                    entry.bots.some((bot) => bot.conversation.unread) ||
-                    entry.projects.some(
-                        (project) =>
-                            project.conversations.some((conversation) => conversation.unread) ||
-                            project.worktrees.some((worktree) =>
-                                worktree.conversations.some((conversation) => conversation.unread),
-                            ),
-                    ),
+                // Only what this window's sidebar lists can light the dot, the
+                // same set the Dock counts and the chime speaks for.
+                unread: happyAgentListedConversations(entry, projectsVisibility).some(
+                    (conversation) => conversation.unread,
+                ),
                 ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
             }))}
             selectedId={directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID}
@@ -1123,6 +1126,20 @@ if (mediaPreviewBridge) {
                     groupId,
                 ),
             activity: (happyAgentId, activity) => analytics.activity(happyAgentId, activity),
+            // A finished turn is announced only for a conversation the sidebar
+            // lists: an unjoined task or a session in hidden projects is out of
+            // sight, and out of earshot with it.
+            sessionFinished: (happyAgentId, sessionId) => {
+                if (
+                    happyAgentDirectoryListed(
+                        happyAgents.get(),
+                        projectsVisibility.get(),
+                        happyAgentId,
+                        sessionId,
+                    )
+                )
+                    completionChimePlay();
+            },
             subtasksForget: (happyAgentId, removed, open) =>
                 happyAgentRouterSubtasksForget(
                     connectionUis.get(happyAgentId)?.router ?? happyAgentRouter,
@@ -1286,7 +1303,9 @@ if (mediaPreviewBridge) {
         // about the screen that happens to be open, so the Dock is marked from
         // the same directory the sidebar reads rather than from any one Happy Agent.
         appDisposers.push(
-            dockUnreadPublish(happyAgents, (count) => desktopBridge.dockUnreadSet(count)),
+            dockUnreadPublish(happyAgents, projectsVisibility, (count) =>
+                desktopBridge.dockUnreadSet(count),
+            ),
         );
         // Whether this computer is held out of sleep is likewise a fact about
         // the whole window: the choice is the window's, and what the agents are

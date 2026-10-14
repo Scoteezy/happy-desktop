@@ -1,7 +1,9 @@
+import type { ProjectsVisibilityStore, ProjectsVisibilitySnapshot } from "happy-desktop-state";
 import type {
     HappyAgentDirectorySnapshot,
     HappyAgentDirectoryStore,
 } from "./happyAgentDirectoryStore";
+import { happyAgentListedConversations } from "./happyAgentListed";
 
 /**
  * How many conversations are waiting for the person across every Happy Agent in this
@@ -14,22 +16,19 @@ import type {
  * what is waiting, and opening a conversation clears both at once because
  * `sessionRead` is what changes the underlying summary.
  *
- * Sessions in a project's worktrees are counted with the project's own, and a
- * bot's one conversation is counted beside them, because the Dock speaks for
- * the whole window: a reader told nothing is waiting has been told about their
- * bots too, and a worktree is not a place they would think to look separately.
+ * Only what the sidebar lists counts: bots, joined tasks, and the projects'
+ * sessions while the Projects section is shown. A conversation the reader has
+ * put out of sight is not waiting for them here, though it stays unread on the
+ * host and counts again the moment it is listed.
  */
-export function happyAgentDirectoryUnreadCount(snapshot: HappyAgentDirectorySnapshot): number {
+export function happyAgentDirectoryUnreadCount(
+    snapshot: HappyAgentDirectorySnapshot,
+    visibility: ProjectsVisibilitySnapshot,
+): number {
     let count = 0;
-    for (const happyAgent of snapshot.happyAgents) {
-        for (const bot of happyAgent.bots) if (bot.conversation.unread) count += 1;
-        for (const project of happyAgent.projects) {
-            for (const conversation of project.conversations) if (conversation.unread) count += 1;
-            for (const worktree of project.worktrees)
-                for (const conversation of worktree.conversations)
-                    if (conversation.unread) count += 1;
-        }
-    }
+    for (const happyAgent of snapshot.happyAgents)
+        for (const conversation of happyAgentListedConversations(happyAgent, visibility))
+            if (conversation.unread) count += 1;
     return count;
 }
 
@@ -49,18 +48,25 @@ export function happyAgentDirectoryUnreadCount(snapshot: HappyAgentDirectorySnap
  */
 export function dockUnreadPublish(
     directory: HappyAgentDirectoryStore,
+    projectsVisibility: ProjectsVisibilityStore,
     report: (count: number) => void,
 ): () => void {
     let published: number | undefined;
     const publish = () => {
-        const count = happyAgentDirectoryUnreadCount(directory.get());
+        const count = happyAgentDirectoryUnreadCount(directory.get(), projectsVisibility.get());
         // Reconciles arrive constantly while an agent is working and almost none
         // of them change this number; only a change is worth an IPC message.
         if (count === published) return;
         published = count;
         report(count);
     };
-    const unsubscribe = directory.subscribe(publish);
+    const directoryUnsubscribe = directory.subscribe(publish);
+    // Hiding or showing the Projects section changes what is listed, and so
+    // what is waiting, without any Happy Agent saying a word.
+    const visibilityUnsubscribe = projectsVisibility.subscribe(publish);
     publish();
-    return unsubscribe;
+    return () => {
+        directoryUnsubscribe();
+        visibilityUnsubscribe();
+    };
 }

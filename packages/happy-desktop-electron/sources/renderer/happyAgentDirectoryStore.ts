@@ -104,6 +104,8 @@ export interface HappyAgentDirectoryDeps {
     ) => void;
     /** A reader-initiated act one Happy Agent's workspace finished. */
     readonly activity?: (happyAgentId: string, activity: HappyAgentActivity) => void;
+    /** A top-level session on one Happy Agent finished a turn. */
+    readonly sessionFinished?: (happyAgentId: string, sessionId: string) => void;
     /** Desktop-wide model memory for this window's Happy Agent connection. */
     readonly modelPreferencePersistence: (id: string) => HappyAgentModelPreferencePersistence;
     /**
@@ -363,6 +365,8 @@ export function happyAgentDirectoryStoreCreate(
                 subtasksForget: (removed, open) =>
                     deps.subtasksForget(happyAgent.entry.id, removed, open),
                 activity: (activity) => deps.activity?.(happyAgent.entry.id, activity),
+                sessionFinished: (sessionId) =>
+                    deps.sessionFinished?.(happyAgent.entry.id, sessionId),
                 compatibility: (mismatch) => {
                     if (happyAgent.protocolMismatch?.message === mismatch?.message) return;
                     happyAgent.protocolMismatch = mismatch;
