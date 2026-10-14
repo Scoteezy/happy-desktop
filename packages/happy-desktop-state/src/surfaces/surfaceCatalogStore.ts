@@ -1,5 +1,6 @@
 import {
     HappyAgentApiError,
+    type CreateSurfaceRequest,
     type HappyAgentClient,
     type Profile,
 } from "@slopus/happy-agent-client";
@@ -40,13 +41,16 @@ const NAME_FORBIDDEN = /[\u0000-\u001f\u007f]/gu;
 /** A membership act on one Surface, as the sidebar reports it back when it fails. */
 export type HappyAgentSurfaceMembershipAction = "join" | "leave" | "reorder";
 
+/** The kinds of Surface the reader can make here. */
+export type HappyAgentSurfaceCreateKind = "todo" | "separator";
+
 /**
- * Whether the form that makes a new list is open. Making one never waits on
- * the daemon, so the form has nothing else to say.
+ * Whether the form that makes a new Surface is open, and for which kind.
+ * Making one never waits on the daemon, so the form has nothing else to say.
  */
 export type HappyAgentSurfaceCreateState =
     | { readonly phase: "closed" }
-    | { readonly phase: "open" };
+    | { readonly phase: "open"; readonly kind: HappyAgentSurfaceCreateKind };
 
 export interface HappyAgentSurfaceCatalogSnapshot {
     /** Whether this Happy Agent has Surfaces at all; an older one never will. */
@@ -89,15 +93,19 @@ export interface HappyAgentSurfaceCatalogSnapshot {
     readonly error?: UserError;
 }
 
-/** What a new todo list is made from. */
-export interface HappyAgentSurfaceCreateInput {
-    readonly name: string;
-    /**
-     * A PNG, JPEG, or WebP picture, at most 8 MiB; the daemon normalizes it.
-     * The list shows it once the daemon has it.
-     */
-    readonly image?: Blob;
-}
+/** What a new Surface is made from, by kind. */
+export type HappyAgentSurfaceCreateInput =
+    | {
+          readonly kind: "todo";
+          readonly name: string;
+          /**
+           * A PNG, JPEG, or WebP picture, at most 8 MiB; the daemon normalizes
+           * it. The list shows it once the daemon has it.
+           */
+          readonly image?: Blob;
+      }
+    /** A separator is only its name. */
+    | { readonly kind: "separator"; readonly name: string };
 
 export interface HappyAgentSurfaceCatalogStore {
     get(): HappyAgentSurfaceCatalogSnapshot;
@@ -108,13 +116,13 @@ export interface HappyAgentSurfaceCatalogStore {
     surfaceLeave(surfaceId: HappyAgentSurfaceId): void;
     /** Moves a joined Surface to just after `afterId` in the reader's sidebar, or first. */
     surfaceReorder(surfaceId: HappyAgentSurfaceId, afterId: HappyAgentSurfaceId | null): void;
-    createOpen(): void;
+    createOpen(kind: HappyAgentSurfaceCreateKind): void;
     createClose(): void;
     /**
-     * Makes a todo list, joined by the reader at the end of their sidebar,
-     * and closes the form. The list is in the catalog at once and answers with
-     * its ID; the daemon is told in the background, again until it hears. A
-     * blank name makes nothing and answers `undefined`.
+     * Makes a Surface, joined by the reader at the end of their sidebar, and
+     * closes the form. It is in the catalog at once and answers with its ID;
+     * the daemon is told in the background, again until it hears. A blank
+     * name makes nothing and answers `undefined`.
      */
     surfaceCreate(input: HappyAgentSurfaceCreateInput): HappyAgentSurfaceId | undefined;
     [Symbol.dispose](): void;
@@ -147,7 +155,6 @@ const NO_USERS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map();
 const NO_PENDING: ReadonlySet<HappyAgentSurfaceId> = new Set();
 const NO_COUNTS: ReadonlyMap<HappyAgentSurfaceId, number> = new Map();
 const CREATE_CLOSED: HappyAgentSurfaceCreateState = { phase: "closed" };
-const CREATE_OPEN: HappyAgentSurfaceCreateState = { phase: "open" };
 
 const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     availability: "unsupported",
@@ -187,8 +194,8 @@ interface PendingCreate {
     readonly surfaceId: HappyAgentSurfaceId;
     /** One idempotency key for every attempt; the ID alone already makes it once. */
     readonly mutationId: string;
+    readonly kind: HappyAgentSurfaceCreateKind;
     readonly name: string;
-    readonly image?: Blob;
     /** Where it goes in the reader's sidebar until the daemon says. */
     readonly orderKey: string;
     readonly at: number;
@@ -362,7 +369,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
                       ...made.map(
                           (create): HappyAgentSurface => ({
                               id: create.surfaceId,
-                              type: { kind: "todo" },
+                              type: { kind: create.kind },
                               name: create.name,
                               image: null,
                               // Who made it is the daemon's to say, once it
@@ -853,9 +860,9 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 orderKey: orderKeyDecimalBetween(before, after),
             });
         },
-        createOpen() {
+        createOpen(kind) {
             if (disposed || snapshot.create.phase === "open") return;
-            publish({ create: CREATE_OPEN });
+            publish({ create: { phase: "open", kind } });
         },
         createClose() {
             if (disposed || snapshot.create.phase === "closed") return;
@@ -877,8 +884,8 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 {
                     surfaceId,
                     mutationId,
+                    kind: input.kind,
                     name,
-                    ...(input.image === undefined ? {} : { image: input.image }),
                     orderKey: keyAppended(),
                     at: now(),
                     created,
@@ -889,25 +896,28 @@ export function happyAgentSurfaceCatalogStoreCreate(
             void (async () => {
                 let image: { data: string } | undefined;
                 // A picture that cannot be read leaves the list without one.
-                if (input.image !== undefined)
+                if (input.kind === "todo" && input.image !== undefined)
                     image = await base64Of(input.image).then(
                         (data) => ({ data }),
                         () => undefined,
                     );
+                const request: CreateSurfaceRequest =
+                    input.kind === "separator"
+                        ? { id: surfaceId, type: "separator", name, mutationId }
+                        : {
+                              id: surfaceId,
+                              type: "todo",
+                              name,
+                              mutationId,
+                              ...(image === undefined ? {} : { image }),
+                          };
                 let delay = 1_000;
                 for (;;) {
                     if (disposed || life.signal.aborted) return;
                     try {
-                        const response = await deps.client.createSurface(
-                            {
-                                id: surfaceId,
-                                type: "todo",
-                                name,
-                                mutationId,
-                                ...(image === undefined ? {} : { image }),
-                            },
-                            { signal: life.signal },
-                        );
+                        const response = await deps.client.createSurface(request, {
+                            signal: life.signal,
+                        });
                         if (disposed) return;
                         surfaceAdopt(happyAgentSurfaceProject(endpoint, response.surface));
                         creates = creates.filter((create) => create.surfaceId !== surfaceId);

@@ -21,9 +21,11 @@ export const HAPPY_AGENT_TODO_EVENT_TYPES = [
     "todo.updated",
 ] as const satisfies readonly HappyAgentEvent["type"][];
 
-/** The daemon's type name, as the one view this build has for it, or as unsupported. */
+/** The daemon's type name, as the kind this build shows, or as unsupported. */
 export function happyAgentSurfaceTypeProject(type: string): HappyAgentSurfaceType {
-    return type === "todo" ? { kind: "todo" } : { kind: "unsupported", type };
+    if (type === "todo") return { kind: "todo" };
+    if (type === "separator") return { kind: "separator" };
+    return { kind: "unsupported", type };
 }
 
 function memberProject(member: SurfaceMember): HappyAgentSurfaceMember {

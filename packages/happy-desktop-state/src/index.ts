@@ -87,6 +87,7 @@ export {
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
     type HappyAgentSurfaceCreateInput,
+    type HappyAgentSurfaceCreateKind,
     type HappyAgentSurfaceCreateState,
     type HappyAgentSurfaceMembershipAction,
 } from "./surfaces/surfaceCatalogStore.js";

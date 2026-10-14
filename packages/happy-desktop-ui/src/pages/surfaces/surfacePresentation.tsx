@@ -36,12 +36,26 @@ export interface HappyAgentSurfaceView {
 
 /** The glyph a Surface wears when it has no picture of its own. */
 export function surfaceTypeIcon(type: HappyAgentSurfaceType): IconName {
-    return type.kind === "todo" ? "tasks" : "package";
+    switch (type.kind) {
+        case "todo":
+            return "tasks";
+        case "separator":
+            return "hash";
+        case "unsupported":
+            return "package";
+    }
 }
 
 /** What a Surface is, in words: the kind this build shows, or the daemon's own name for one it cannot. */
 export function surfaceTypeLabel(type: HappyAgentSurfaceType): string {
-    return type.kind === "todo" ? "Todo list" : `Unsupported type “${type.type}”`;
+    switch (type.kind) {
+        case "todo":
+            return "Todo list";
+        case "separator":
+            return "Separator";
+        case "unsupported":
+            return `Unsupported type “${type.type}”`;
+    }
 }
 
 /** Who is in a Surface, in words: up to two names, then how many more. */

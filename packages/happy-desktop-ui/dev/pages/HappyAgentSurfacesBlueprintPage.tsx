@@ -9,12 +9,17 @@ import {
     type HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
 import { AppShell } from "../../src/AppShell";
+import type { MenuItem } from "../../src/Menu";
 import { Sidebar, type SidebarItem, type SidebarReorder } from "../../src/Sidebar";
 import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import { HappyAgentSurfaceHeader } from "../../src/pages/surfaces/HappyAgentSurfaceHeader";
 import { HappyAgentSurfaceUnsupportedPage } from "../../src/pages/surfaces/HappyAgentSurfaceUnsupportedPage";
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
-import type { HappyAgentSurfaceView } from "../../src/pages/surfaces/surfacePresentation";
+import {
+    surfaceTypeIcon,
+    type HappyAgentSurfaceView,
+} from "../../src/pages/surfaces/surfacePresentation";
+import type { HappyAgentSurfaceCreateKind } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import { ComponentPage, FullScreenSpecimen, Specimen } from "../kit";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
@@ -276,15 +281,21 @@ interface MockSurface {
     readonly count?: number;
 }
 
+function separator(id: string, name: string): MockSurface {
+    return { id, joined: true, view: { name, type: { kind: "separator" }, members: MEMBERS } };
+}
+
 const SURFACES: readonly MockSurface[] = [
+    separator("home", "Home"),
     { id: "groceries", joined: true, view: GROCERIES, count: openCount(ACTIVE) },
-    { id: "launch", joined: true, view: KANBAN },
     {
         id: "reading",
         joined: true,
         count: 3,
         view: { name: "Reading list", type: { kind: "todo" }, members: MEMBERS.slice(0, 1) },
     },
+    separator("work", "Work"),
+    { id: "launch", joined: true, view: KANBAN },
     {
         id: "release",
         joined: true,
@@ -309,17 +320,18 @@ const SURFACES: readonly MockSurface[] = [
     },
 ];
 
+/** A Surface's row, as the app lists it: a joined separator heads the rows after it. */
 function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
+    const heading = !fixed && surface.view.type.kind === "separator";
     return {
         id: surface.id,
-        kind: "project",
+        kind: heading ? "heading" : "project",
         label: surface.view.name,
-        ...(surface.view.image
-            ? { imageUrl: surface.view.image.url }
-            : {
-                  icon:
-                      surface.view.type.kind === "todo" ? ("tasks" as const) : ("package" as const),
-              }),
+        ...(heading
+            ? {}
+            : surface.view.image
+              ? { imageUrl: surface.view.image.url }
+              : { icon: surfaceTypeIcon(surface.view.type) }),
         ...(surface.joined && surface.count ? { count: surface.count } : {}),
         ...(fixed ? { reorderable: false } : {}),
         action: surface.joined
@@ -331,6 +343,16 @@ function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
             : { icon: "plus" as const, label: `Join ${surface.view.name}` },
     };
 }
+
+const CREATE_OFFERS = [
+    "todo",
+    "separator",
+] as const satisfies readonly HappyAgentSurfaceCreateKind[];
+
+const CREATE_MENU: MenuItem[] = [
+    { kind: "item", id: "todo", icon: "tasks", label: "New todo list" },
+    { kind: "item", id: "separator", icon: "hash", label: "New separator" },
+];
 
 const ARTIFACTS: SidebarItem = {
     icon: "package",
@@ -400,6 +422,7 @@ function MockWindow(props: {
     const [surfaces, setSurfaces] = useState(SURFACES);
     const [search, setSearch] = useState(props.initialSearch ?? "");
     const [selected, setSelected] = useState("groceries");
+    const [creating, setCreating] = useState<HappyAgentSurfaceCreateKind>();
     const query = search.trim().toLocaleLowerCase();
     const searching = query.length > 0;
     const found = (items: readonly SidebarItem[]): SidebarItem[] =>
@@ -443,11 +466,18 @@ function MockWindow(props: {
                 sidebar={
                     <Sidebar
                         activeItemId={selected}
-                        headerAction={{ icon: "plus", label: "New todo list" }}
-                        onHeaderAction={noop}
+                        headerAction={{ icon: "plus", label: "New Surface", menu: CREATE_MENU }}
+                        onHeaderMenuSelect={(id) => {
+                            const offer = CREATE_OFFERS.find((entry) => entry === id);
+                            if (offer) setCreating(offer);
+                        }}
                         onItemAction={noop}
                         onItemReorder={reorder}
-                        onItemSelect={setSelected}
+                        onItemSelect={(id) => {
+                            // A separator has nothing to open.
+                            const surface = surfaces.find((entry) => entry.id === id);
+                            if (surface?.view.type.kind !== "separator") setSelected(id);
+                        }}
                         onSectionAction={noop}
                         search={{ onValueChange: setSearch, placeholder: "Search", value: search }}
                         sections={
@@ -535,6 +565,31 @@ function MockWindow(props: {
                 ) : null}
             </AppShell>
             <TrafficLights />
+            {creating ? (
+                <HappyAgentSurfaceCreateDialog
+                    kind={creating}
+                    onClose={() => setCreating(undefined)}
+                    onSubmit={(input) => {
+                        const id = `made-${String(surfaces.length)}`;
+                        setSurfaces([
+                            ...surfaces,
+                            input.kind === "separator"
+                                ? separator(id, input.name)
+                                : {
+                                      id,
+                                      joined: true,
+                                      view: {
+                                          name: input.name,
+                                          type: { kind: "todo" },
+                                          members: MEMBERS.slice(0, 1),
+                                      },
+                                  },
+                        ]);
+                        setCreating(undefined);
+                        if (input.kind === "todo") setSelected(id);
+                    }}
+                />
+            ) : null}
         </div>
     );
 }
@@ -588,7 +643,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             title="HappyAgentSurfaces"
         >
             <FullScreenSpecimen
-                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others. + beside the collapse control makes a todo list; the search above everything replaces the sidebar with what matches. The list's add field has the caret, and typing anywhere no other control wants lands in it, as in a chat."
+                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others, separators included — Home and Work are separators, which head the Surfaces after them and open nothing. + beside the collapse control offers a todo list or a separator; the search above everything replaces the sidebar with what matches. The list's add field has the caret, and typing anywhere no other control wants lands in it, as in a chat."
                 label="Window"
                 number="00"
                 screen="00-window-1100x760"
@@ -742,7 +797,24 @@ export function HappyAgentSurfacesBlueprintPage() {
                 number="07"
                 stage="app"
             >
-                {frame(<HappyAgentSurfaceCreateDialog onClose={noop} onSubmit={noop} />)}
+                {frame(
+                    <HappyAgentSurfaceCreateDialog kind="todo" onClose={noop} onSubmit={noop} />,
+                )}
+            </Specimen>
+
+            <Specimen
+                detail="480px · a separator is only a name"
+                label="Create separator"
+                number="07b"
+                stage="app"
+            >
+                {frame(
+                    <HappyAgentSurfaceCreateDialog
+                        kind="separator"
+                        onClose={noop}
+                        onSubmit={noop}
+                    />,
+                )}
             </Specimen>
         </ComponentPage>
     );

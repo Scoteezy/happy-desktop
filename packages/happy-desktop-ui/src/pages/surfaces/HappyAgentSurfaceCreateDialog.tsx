@@ -1,6 +1,6 @@
 import { useRef, useState, type CSSProperties } from "react";
 import { Button } from "../../Button";
-import { Icon } from "../../Icon";
+import { Icon, type IconName } from "../../Icon";
 import { Modal } from "../../Modal";
 import { ModalOverlay } from "../../ModalOverlay";
 import { TextField } from "../../TextField";
@@ -23,12 +23,25 @@ function imageSignatureAccepted(bytes: Uint8Array): boolean {
     );
 }
 
-export interface HappyAgentSurfaceCreateInput {
-    readonly name: string;
-    readonly image?: File;
-}
+/** The kinds of Surface this dialog makes. */
+export type HappyAgentSurfaceCreateKind = "todo" | "separator";
+
+/** What the dialog asks for, by kind: a todo list may have a picture, a separator is only a name. */
+export type HappyAgentSurfaceCreateInput =
+    | { readonly kind: "todo"; readonly name: string; readonly image?: File }
+    | { readonly kind: "separator"; readonly name: string };
+
+/** Each kind's title, glyph, and the example its name field suggests. */
+const KINDS = {
+    todo: { title: "New todo list", icon: "tasks", placeholder: "Groceries" },
+    separator: { title: "New separator", icon: "hash", placeholder: "Home" },
+} as const satisfies Record<
+    HappyAgentSurfaceCreateKind,
+    { title: string; icon: IconName; placeholder: string }
+>;
 
 export type HappyAgentSurfaceCreateDialogProps = {
+    kind: HappyAgentSurfaceCreateKind;
     onSubmit: (input: HappyAgentSurfaceCreateInput) => void;
     onClose: () => void;
     className?: string;
@@ -44,7 +57,8 @@ interface Picture {
 
 /**
  * C-298 HappyAgentSurfaceCreateDialog — names a new todo list and, if the
- * reader wants, gives it a picture.
+ * reader wants, gives it a picture; or names a new separator, which is only
+ * a name.
  *
  * The form is the dialog's own until it is submitted: the name typed, the
  * picture chosen and its preview. The owner hears only the finished request;
@@ -62,7 +76,11 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
     const ready = name.trim().length > 0;
     const submit = () => {
         if (!ready) return;
-        props.onSubmit({ name: name.trim(), ...(picture ? { image: picture.file } : {}) });
+        props.onSubmit(
+            props.kind === "separator"
+                ? { kind: "separator", name: name.trim() }
+                : { kind: "todo", name: name.trim(), ...(picture ? { image: picture.file } : {}) },
+        );
     };
     const choose = (file: File | undefined) => {
         if (!file) return;
@@ -127,11 +145,11 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
                         </Button>
                     </>
                 }
-                icon="tasks"
+                icon={KINDS[props.kind].icon}
                 onClose={props.onClose}
                 size="medium"
                 style={props.style}
-                title="New todo list"
+                title={KINDS[props.kind].title}
             >
                 <div
                     className="happy-agent-surface-create-dialog"
@@ -144,60 +162,62 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
                         label="Name"
                         onSubmit={submit}
                         onValueChange={setName}
-                        placeholder="Groceries"
+                        placeholder={KINDS[props.kind].placeholder}
                         value={name}
                     />
-                    <div className="happy-agent-surface-create-dialog__picture">
-                        <span
-                            className="happy-agent-surface-create-dialog__preview"
-                            data-happy-desktop-ui="happy-agent-surface-create-dialog-preview"
-                        >
-                            {picture ? (
-                                <img alt="" draggable={false} src={picture.preview} />
-                            ) : (
-                                <Icon name="image" size={20} />
-                            )}
-                        </span>
-                        <span className="happy-agent-surface-create-dialog__picture-text">
-                            <span className="happy-agent-surface-create-dialog__picture-label">
-                                Picture
-                            </span>
+                    {props.kind === "separator" ? null : (
+                        <div className="happy-agent-surface-create-dialog__picture">
                             <span
-                                className="happy-agent-surface-create-dialog__picture-hint"
-                                data-invalid={pictureError ? "" : undefined}
+                                className="happy-agent-surface-create-dialog__preview"
+                                data-happy-desktop-ui="happy-agent-surface-create-dialog-preview"
                             >
-                                {pictureError ?? "Optional, up to 8 MB."}
+                                {picture ? (
+                                    <img alt="" draggable={false} src={picture.preview} />
+                                ) : (
+                                    <Icon name="image" size={20} />
+                                )}
                             </span>
-                        </span>
-                        {picture ? (
+                            <span className="happy-agent-surface-create-dialog__picture-text">
+                                <span className="happy-agent-surface-create-dialog__picture-label">
+                                    Picture
+                                </span>
+                                <span
+                                    className="happy-agent-surface-create-dialog__picture-hint"
+                                    data-invalid={pictureError ? "" : undefined}
+                                >
+                                    {pictureError ?? "Optional, up to 8 MB."}
+                                </span>
+                            </span>
+                            {picture ? (
+                                <Button
+                                    onClick={() => setPicture(undefined)}
+                                    size="small"
+                                    variant="ghost"
+                                >
+                                    Remove
+                                </Button>
+                            ) : null}
                             <Button
-                                onClick={() => setPicture(undefined)}
+                                onClick={() => fileInput.current?.click()}
                                 size="small"
-                                variant="ghost"
+                                variant="secondary"
                             >
-                                Remove
+                                {picture ? "Change…" : "Choose…"}
                             </Button>
-                        ) : null}
-                        <Button
-                            onClick={() => fileInput.current?.click()}
-                            size="small"
-                            variant="secondary"
-                        >
-                            {picture ? "Change…" : "Choose…"}
-                        </Button>
-                        <input
-                            accept={IMAGE_TYPES.join(",")}
-                            className="happy-agent-surface-create-dialog__file"
-                            data-testid="happy-agent-surface-create-file"
-                            hidden
-                            onChange={(event) => {
-                                choose(event.currentTarget.files?.[0]);
-                                event.currentTarget.value = "";
-                            }}
-                            ref={fileInput}
-                            type="file"
-                        />
-                    </div>
+                            <input
+                                accept={IMAGE_TYPES.join(",")}
+                                className="happy-agent-surface-create-dialog__file"
+                                data-testid="happy-agent-surface-create-file"
+                                hidden
+                                onChange={(event) => {
+                                    choose(event.currentTarget.files?.[0]);
+                                    event.currentTarget.value = "";
+                                }}
+                                ref={fileInput}
+                                type="file"
+                            />
+                        </div>
+                    )}
                 </div>
             </Modal>
         </ModalOverlay>

@@ -27,6 +27,7 @@ import {
     type KeyboardShortcut,
 } from "./keyboardShortcut";
 import { Menu, type MenuItem } from "./Menu";
+import { MenuButton } from "./MenuButton";
 import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
 import { ScrollArea } from "./Scrollbar";
@@ -98,7 +99,21 @@ export type SidebarItem = {
     id: string;
     imageUrl?: string;
     initials?: string;
-    kind: "view" | "channel" | "workspace" | "project" | "person" | "agent" | "folder" | "action";
+    /**
+     * What the row is drawn as. A `heading` is a row that names the rows after
+     * it: only its label, quieter than a row and with no mark, yet placed,
+     * dragged, and acted on like any other row in its section.
+     */
+    kind:
+        | "view"
+        | "channel"
+        | "workspace"
+        | "project"
+        | "person"
+        | "agent"
+        | "folder"
+        | "action"
+        | "heading";
     label: string;
     /** Whether a busy or creating row shimmers its label. Defaults to true. */
     labelShimmer?: boolean;
@@ -241,6 +256,12 @@ export type SidebarHeaderAction = {
     label: string;
     /** Keeps the control in its place while the act is unavailable. */
     disabled?: boolean;
+    /**
+     * Turns the control into a menu of these acts, reported through
+     * `onHeaderMenuSelect` with the chosen item's ID, for a heading that offers
+     * more than one thing to make.
+     */
+    menu?: readonly MenuItem[];
 };
 
 /**
@@ -371,6 +392,7 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
      */
     headerAction?: SidebarHeaderAction;
     onHeaderAction?: () => void;
+    onHeaderMenuSelect?: (id: string) => void;
     /** A search field under the heading, above everything the sidebar lists. */
     search?: SidebarSearch;
     /**
@@ -458,6 +480,7 @@ function leadingIcon(item: SidebarItem): IconName {
  * carries it.
  */
 function showsLeadingSlot(item: SidebarItem): boolean {
+    if (item.kind === "heading") return false;
     if (item.contextAvatars?.length) return true;
     if ((item.depth ?? 0) === 0) return true;
     if (item.kind === "person" || item.kind === "agent" || item.kind === "project") return true;
@@ -1536,6 +1559,7 @@ export function Sidebar(props: SidebarProps) {
         "footer",
         "headerAccessory",
         "headerAction",
+        "onHeaderMenuSelect",
         "headerTrailing",
         "itemMenuItems",
         "onActionReorder",
@@ -2172,7 +2196,19 @@ export function Sidebar(props: SidebarProps) {
                         {local.headerTrailing}
                     </div>
                 ) : null}
-                {local.headerAction ? (
+                {local.headerAction?.menu ? (
+                    <MenuButton
+                        align="start"
+                        className="happy-sidebar__header-menu"
+                        data-testid="sidebar-header-menu"
+                        disabled={local.headerAction.disabled}
+                        icon={local.headerAction.icon}
+                        items={local.headerAction.menu}
+                        label={local.headerAction.label}
+                        onSelect={(id) => local.onHeaderMenuSelect?.(id)}
+                        overlay
+                    />
+                ) : local.headerAction ? (
                     <button
                         aria-label={local.headerAction.label}
                         className="happy-sidebar__header-action"

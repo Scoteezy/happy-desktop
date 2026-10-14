@@ -150,7 +150,9 @@ import {
     type HappyAgentSurface,
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
+    type HappyAgentSurfaceCreateKind,
     type HappyAgentSurfaceId,
+    type HappyAgentSurfaceType,
     type HappyAgentSurfaces,
     type HappyAgentTodoListStore,
 } from "happy-desktop-state";
@@ -250,6 +252,7 @@ import {
     happyAgentComposerModelControlProps,
     happyAgentComposerModelUsageWatch,
     sidebarReorderMove,
+    type IconName,
     type MenuItem,
     type FileTreeNode,
     type KeyboardShortcut,
@@ -2188,6 +2191,35 @@ function surfaceRowId(surfaceId: string): string {
     return `${SURFACE_ROW_PREFIX}${surfaceId}`;
 }
 
+/** The glyph a Surface's row wears when it has no picture of its own. */
+function surfaceGlyph(type: HappyAgentSurfaceType): IconName {
+    switch (type.kind) {
+        case "todo":
+            return "tasks";
+        case "separator":
+            return "hash";
+        case "unsupported":
+            return "package";
+    }
+}
+
+/** What the sidebar heading's + offers to make, in the order it lists them. */
+const SURFACE_CREATE_OFFERS: readonly {
+    readonly kind: HappyAgentSurfaceCreateKind;
+    readonly icon: IconName;
+    readonly label: string;
+}[] = [
+    { kind: "todo", icon: "tasks", label: "New todo list" },
+    { kind: "separator", icon: "hash", label: "New separator" },
+];
+
+const SURFACE_CREATE_MENU: MenuItem[] = SURFACE_CREATE_OFFERS.map((offer) => ({
+    kind: "item",
+    id: offer.kind,
+    icon: offer.icon,
+    label: offer.label,
+}));
+
 /** The Surface a row id names, or nothing for any other row. */
 function surfaceRowParse(rowId: string): HappyAgentSurfaceId | undefined {
     return rowId.startsWith(SURFACE_ROW_PREFIX)
@@ -2242,23 +2274,29 @@ function surfaceViewOf(
 /**
  * A Surface's row: its own name and picture whatever its type, with Leave on
  * one the reader joined and Join on one a search found. A joined todo list
- * also says how many of its todos are still open.
+ * also says how many of its todos are still open. A separator joined to the
+ * sidebar is a heading over the Surfaces after it; found by a search, where
+ * nothing comes after it, it is a row like the others.
  */
 function surfaceSidebarItem(
     happyAgentId: string,
     surface: HappyAgentSurface,
+    listing: "sidebar" | "search",
     joined: boolean,
     offline: boolean,
     activeTodoCounts?: ReadonlyMap<HappyAgentSurfaceId, number>,
 ): SidebarItem {
     const count = joined ? activeTodoCounts?.get(surface.id) : undefined;
+    const heading = listing === "sidebar" && surface.type.kind === "separator";
     return {
         id: happyAgentItemId(happyAgentId, surfaceRowId(surface.id)),
-        kind: "project",
+        kind: heading ? "heading" : "project",
         label: surface.name,
-        ...(surface.image
-            ? { imageUrl: surface.image.url }
-            : { icon: surface.type.kind === "todo" ? ("tasks" as const) : ("package" as const) }),
+        ...(heading
+            ? {}
+            : surface.image
+              ? { imageUrl: surface.image.url }
+              : { icon: surfaceGlyph(surface.type) }),
         ...(count !== undefined && count > 0 ? { count } : {}),
         ...(joined ? {} : { reorderable: false }),
         action: joined
@@ -2298,7 +2336,14 @@ function happyAgentTopSection(
             ARTIFACTS_SIDEBAR_ITEM,
             ...(catalog.availability === "available"
                 ? catalog.joined.map((surface) =>
-                      surfaceSidebarItem(happyAgentId, surface, true, offline, activeTodoCounts),
+                      surfaceSidebarItem(
+                          happyAgentId,
+                          surface,
+                          "sidebar",
+                          true,
+                          offline,
+                          activeTodoCounts,
+                      ),
                   )
                 : []),
         ],
@@ -2386,6 +2431,7 @@ function happyAgentSearchSections(
                                 surfaceSidebarItem(
                                     happyAgent.id,
                                     surface,
+                                    "search",
                                     true,
                                     offline,
                                     activeTodoCounts,
@@ -2396,7 +2442,9 @@ function happyAgentSearchSections(
                     left.name.localeCompare(right.name),
                 ))
                     if (!joined.has(surface.id) && matches(surface.name))
-                        surfaces.push(surfaceSidebarItem(happyAgent.id, surface, false, offline));
+                        surfaces.push(
+                            surfaceSidebarItem(happyAgent.id, surface, "search", false, offline),
+                        );
             }
         }
         const bots = happyAgent.bots
@@ -3035,9 +3083,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       headerAction: {
                           disabled: active?.status !== "connected",
                           icon: "plus" as const,
-                          label: "New todo list",
+                          label: "New Surface",
+                          menu: SURFACE_CREATE_MENU,
                       },
-                      onHeaderAction: surfaceCatalogStore.createOpen,
+                      onHeaderMenuSelect: (id: string) => {
+                          const offer = SURFACE_CREATE_OFFERS.find((entry) => entry.kind === id);
+                          if (offer !== undefined) surfaceCatalogStore.createOpen(offer.kind);
+                      },
                   }
                 : {})}
             {...(props.sidebarSearch
@@ -3328,7 +3380,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 if (!happyAgent) return;
                 const surfaceId = surfaceRowParse(row.id);
                 if (surfaceId !== undefined) {
-                    props.onSurfaceOpen?.(happyAgent.id, surfaceId);
+                    // A separator has nothing to open; it only heads a group.
+                    const surface = surfaceCatalog.surfaces.find((entry) => entry.id === surfaceId);
+                    if (surface?.type.kind !== "separator")
+                        props.onSurfaceOpen?.(happyAgent.id, surfaceId);
                     return;
                 }
                 const chatId = chatRowParse(row.id);
@@ -3889,12 +3944,15 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 like the dialogs above, on whatever route is showing. */}
             {active && surfaceCatalog.create.phase === "open" ? (
                 <HappyAgentSurfaceCreateDialog
+                    kind={surfaceCatalog.create.kind}
                     onClose={surfaceCatalogStore.createClose}
                     onSubmit={(input) => {
                         // The list exists the moment it is asked for, so it is
                         // opened at once; the Happy Agent hears in the background.
+                        // A separator has no page, so the open one stays.
                         const surfaceId = surfaceCatalogStore.surfaceCreate(input);
-                        if (surfaceId !== undefined) props.onSurfaceOpen?.(active.id, surfaceId);
+                        if (surfaceId !== undefined && input.kind !== "separator")
+                            props.onSurfaceOpen?.(active.id, surfaceId);
                     }}
                 />
             ) : null}
@@ -4744,7 +4802,8 @@ function HappyAgentSurfaceContent(props: {
     // Until the catalog names it the page is simply empty: a list made here is
     // in the catalog the moment it is asked for, and one opened on launch
     // appears as the catalog arrives, so there is no loader or error to show.
-    if (surface === undefined) return <WindowDragRegion />;
+    // A separator has no page; a route that names one shows nothing.
+    if (surface === undefined || surface.type.kind === "separator") return <WindowDragRegion />;
     const view = surfaceViewOf(catalog, surface);
     if (surface.type.kind === "todo")
         return <HappyAgentTodoSurface store={props.surfaces.todoList(surface.id)} surface={view} />;

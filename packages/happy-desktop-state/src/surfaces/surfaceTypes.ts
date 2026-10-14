@@ -24,6 +24,8 @@ export type HappyAgentSurfaceTodoId = string & { readonly [happyAgentSurfaceTodo
  */
 export type HappyAgentSurfaceType =
     | { readonly kind: "todo" }
+    /** A name and nothing else, that heads the Surfaces after it in a sidebar. */
+    | { readonly kind: "separator" }
     | { readonly kind: "unsupported"; readonly type: string };
 
 /** A Surface's picture: the daemon's bytes, and the ThumbHash that stands in until they load. */
