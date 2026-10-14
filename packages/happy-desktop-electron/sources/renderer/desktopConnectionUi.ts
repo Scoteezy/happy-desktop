@@ -8,7 +8,7 @@ import {
     happyAgentNavigationOrderStoreCreate,
     happyAgentSidebarCollapseStoreCreate,
     happyAgentSidebarSearchStoreCreate,
-    happyAgentSettingsStoreCreate,
+    happyAgentSettingsStoreOwnedCreate,
     type CommandPaletteStore,
     type HappyAgentNavigationOrderStore,
     type HappyAgentSidebarCollapseStore,
@@ -16,6 +16,7 @@ import {
     type HappyAgentSidebarVisibilityStore,
     type HappyAgentSettingsStore,
     type HappyAgentModelPreferencePersistence,
+    type HappyAgentModelPreferenceDocument,
 } from "happy-desktop-state";
 import type {
     HappyAgentDirectoryStore,
@@ -41,7 +42,9 @@ export function desktopConnectionUiCreate(input: {
     readonly preferences: HappyAgentModelPreferencePersistence;
     /** The window's own fold of its left side, shared by every connection. */
     readonly sidebarVisibility: HappyAgentSidebarVisibilityStore;
-    readonly main?: Omit<DesktopConnectionUi, "directory" | "dispose" | "sidebarVisibility">;
+    readonly main?: Omit<DesktopConnectionUi, "directory" | "dispose" | "sidebarVisibility"> & {
+        readonly modelPreferencesChanged: (document: HappyAgentModelPreferenceDocument) => void;
+    };
 }): DesktopConnectionUi {
     const { id } = input;
     const key = `happy.connection-history.v1:${id}`;
@@ -84,40 +87,69 @@ export function desktopConnectionUiCreate(input: {
         if (materialized) void router.invalidate();
     });
     const stored = input.preferences.read();
-    const settings =
-        input.main?.settings ??
-        happyAgentSettingsStoreCreate({
-            ...(stored?.defaultSelection
-                ? {
-                      defaultProviderId: stored.defaultSelection.providerId,
-                      defaultModelId: stored.defaultSelection.modelId,
-                  }
-                : {}),
-            ...(stored?.defaultEffort ? { defaultEffort: stored.defaultEffort } : {}),
-            ...(stored?.defaultPermissionMode
-                ? { defaultPermissionMode: stored.defaultPermissionMode }
-                : {}),
-        });
-    const unsubscribeSettings = input.main
-        ? undefined
-        : settings.subscribe(() => {
-              const value = settings.get();
-              const current = input.preferences.read();
-              input.preferences.write({
-                  ...current,
-                  preferences: current?.preferences ?? {},
-                  defaultEffort: value.defaultEffort,
-                  defaultPermissionMode: value.defaultPermissionMode,
-                  ...(value.defaultProviderId && value.defaultModelId
-                      ? {
-                            defaultSelection: {
-                                providerId: value.defaultProviderId,
-                                modelId: value.defaultModelId,
-                            },
-                        }
-                      : {}),
-              });
+    const ownedSettings = input.main
+        ? {
+              store: input.main.settings,
+              modelPreferencesChanged: input.main.modelPreferencesChanged,
+          }
+        : happyAgentSettingsStoreOwnedCreate({
+              ...(stored?.defaultSelection
+                  ? {
+                        defaultProviderId: stored.defaultSelection.providerId,
+                        defaultModelId: stored.defaultSelection.modelId,
+                    }
+                  : {}),
+              ...(stored?.defaultEffort ? { defaultEffort: stored.defaultEffort } : {}),
+              ...(stored?.defaultPermissionMode
+                  ? { defaultPermissionMode: stored.defaultPermissionMode }
+                  : {}),
           });
+    const { store: settings, modelPreferencesChanged } = ownedSettings;
+    let reconciling = false;
+    const reconcilePreferences = (): void => {
+        reconciling = true;
+        try {
+            modelPreferencesChanged(input.preferences.read() ?? { preferences: {} });
+        } finally {
+            reconciling = false;
+        }
+    };
+    reconcilePreferences();
+    const unsubscribePreferences = input.preferences.subscribe?.(reconcilePreferences);
+    const unsubscribeSettings = settings.subscribe(() => {
+        if (reconciling) return;
+        const value = settings.get();
+        const current = input.preferences.read();
+        const modelChanged =
+            value.defaultProviderId !== current?.defaultSelection?.providerId ||
+            value.defaultModelId !== current?.defaultSelection?.modelId;
+        const effortChanged = value.defaultEffort !== current?.defaultEffort;
+        const identity =
+            value.defaultProviderId && value.defaultModelId
+                ? { providerId: value.defaultProviderId, modelId: value.defaultModelId }
+                : undefined;
+        let preferences = current?.preferences ?? {};
+        if (identity && (modelChanged || effortChanged)) {
+            preferences = {
+                ...preferences,
+                [identity.providerId]: {
+                    ...preferences[identity.providerId],
+                    [identity.modelId]: {
+                        ...preferences[identity.providerId]?.[identity.modelId],
+                        effort: value.defaultEffort,
+                    },
+                },
+            };
+        }
+        input.preferences.write({
+            ...current,
+            preferences,
+            defaultEffort: value.defaultEffort,
+            defaultPermissionMode: value.defaultPermissionMode,
+            defaultSelection: modelChanged || effortChanged ? identity : current?.defaultSelection,
+            ...(modelChanged && identity ? { lastPickedModel: identity } : {}),
+        });
+    });
     return {
         router,
         settings,
@@ -139,6 +171,7 @@ export function desktopConnectionUiCreate(input: {
         dispose() {
             unsubscribe();
             unsubscribeSettings?.();
+            unsubscribePreferences?.();
             listeners.clear();
             if (!input.main) history.destroy();
         },

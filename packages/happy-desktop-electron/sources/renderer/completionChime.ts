@@ -62,5 +62,11 @@ export function completionChimeWanted(input: {
         const selected = input.directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID;
         if (!input.windowFocused || selected !== input.happyAgentId) return false;
     }
-    return happyAgentDirectoryNotifies(input.directory, input.projectsVisibility, input.attention, input.happyAgentId, input.sessionId);
+    return happyAgentDirectoryNotifies(
+        input.directory,
+        input.projectsVisibility,
+        input.attention,
+        input.happyAgentId,
+        input.sessionId,
+    );
 }

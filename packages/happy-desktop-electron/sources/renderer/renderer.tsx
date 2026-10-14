@@ -34,7 +34,7 @@ import {
     happyAgentSidebarCollapseStoreCreate,
     happyAgentSidebarSearchStoreCreate,
     happyAgentSidebarVisibilityStoreCreate,
-    happyAgentSettingsStoreCreate,
+    happyAgentSettingsStoreOwnedCreate,
     happyAgentAttentionConnection,
     happyAgentAttentionStoreOwnedCreate,
     type AppearanceStore,
@@ -117,6 +117,7 @@ import { desktopPreferencesCreate } from "./desktopPreferences";
 import { desktopHistoryPersistence } from "./desktopHistory";
 import { desktopConnectionUiCreate, type DesktopConnectionUi } from "./desktopConnectionUi";
 import { desktopConnectionPreferencesCreate } from "./desktopConnectionPreferences";
+import { desktopModelPreferencesCreate } from "./desktopModelPreferences";
 import { desktopCloudAuthRouterCreate } from "./desktopCloudAuthRouter";
 import { desktopDebugStoreCreate } from "./desktopDebugStore";
 import { desktopProfilerStoreCreate } from "./desktopProfilerStore";
@@ -1081,7 +1082,9 @@ if (mediaPreviewBridge) {
         const profiler = desktopProfilerStoreCreate(desktopBridge);
         // The main connection keeps the existing desktop defaults. Remote UIs
         // receive their own settings and model preference persistence below.
-        const settings = happyAgentSettingsStoreCreate(preferences.initialSettings);
+        const { store: settings, modelPreferencesChanged } = happyAgentSettingsStoreOwnedCreate(
+            preferences.initialSettings,
+        );
         appDisposers.push(settings.subscribe(() => preferences.settingsChanged(settings.get())));
         // How the reader arranged the sidebar's pinned rows. It is the window's
         // Those rows are window chrome whether or not any machine is reachable,
@@ -1139,16 +1142,22 @@ if (mediaPreviewBridge) {
                 history.replace("/settings/account");
         });
         appDisposers.push(auth.dispose);
-        const connectionPreferences = new Map<string, HappyAgentModelPreferencePersistence>([
-            [LOCAL_HAPPY_AGENT_ID, preferences.preferencePersistence],
-        ]);
+        const modelPreferences = new Map<
+            string,
+            ReturnType<typeof desktopModelPreferencesCreate>
+        >();
         const preferencesFor = (id: string): HappyAgentModelPreferencePersistence => {
-            let value = connectionPreferences.get(id);
+            let value = modelPreferences.get(id);
             if (!value) {
-                value = desktopConnectionPreferencesCreate(id);
-                connectionPreferences.set(id, value);
+                value = desktopModelPreferencesCreate(
+                    id,
+                    id === LOCAL_HAPPY_AGENT_ID
+                        ? preferences.preferencePersistence
+                        : desktopConnectionPreferencesCreate(id),
+                );
+                modelPreferences.set(id, value);
             }
-            return value;
+            return value.preferences;
         };
         // Every Happy Agent in this window, each with its own product stores. The router is
         // told to resolve its address again whenever the set of connected Happy Agents
@@ -1156,7 +1165,15 @@ if (mediaPreviewBridge) {
         // the addressed conversation without the reader navigating twice.
         const happyAgents = happyAgentDirectoryStoreCreate(desktopBridge, runtimeStore, {
             cloudHostFor: auth.hostFor,
-            attentionFollow,
+            attentionFollow(id, source) {
+                preferencesFor(id);
+                const attentionStop = attentionFollow(id, source);
+                const modelStop = modelPreferences.get(id)?.connectionFollow(source);
+                return () => {
+                    attentionStop();
+                    modelStop?.();
+                };
+            },
             readLegacyCli: window.happyDesktop?.legacyCliStatus,
             resetLegacyCli: window.happyDesktop?.legacyCliReset,
             conversationOpen: (happyAgentId, location) =>
@@ -1314,6 +1331,7 @@ if (mediaPreviewBridge) {
                                   main: {
                                       router: happyAgentRouter,
                                       settings,
+                                      modelPreferencesChanged,
                                       commandPalette,
                                       navigationOrder,
                                       sidebarCollapse,

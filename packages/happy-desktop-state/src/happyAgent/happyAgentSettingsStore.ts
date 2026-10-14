@@ -3,6 +3,7 @@ import {
     type HappyAgentPermissionMode,
     type HappyAgentThinkingLevel,
 } from "./happyAgentTypes.js";
+import type { HappyAgentModelPreferenceDocument } from "./happyAgentModelStore.js";
 
 declare const happyAgentModelKeyBrand: unique symbol;
 
@@ -73,6 +74,11 @@ export interface HappyAgentSettingsInitial {
 export function happyAgentSettingsStoreCreate(
     initial: HappyAgentSettingsInitial = {},
 ): HappyAgentSettingsStore {
+    return happyAgentSettingsStoreOwnedCreate(initial).store;
+}
+
+/** The owner alone can deliver authoritative model preferences without expressing local intent. */
+export function happyAgentSettingsStoreOwnedCreate(initial: HappyAgentSettingsInitial = {}) {
     const listeners = new Set<() => void>();
     let snapshot: HappyAgentSettingsSnapshot = {
         ...initial,
@@ -88,7 +94,7 @@ export function happyAgentSettingsStoreCreate(
         for (const listener of listeners) listener();
     };
 
-    return {
+    const store: HappyAgentSettingsStore = {
         get: () => snapshot,
         subscribe(listener) {
             listeners.add(listener);
@@ -121,6 +127,29 @@ export function happyAgentSettingsStoreCreate(
         previewUpdatesUpdate(enabled) {
             if (snapshot.previewUpdatesEnabled === enabled) return;
             publish({ ...snapshot, previewUpdatesEnabled: enabled });
+        },
+    };
+    return {
+        store,
+        modelPreferencesChanged(document: HappyAgentModelPreferenceDocument): void {
+            const defaultProviderId = document.defaultSelection?.providerId;
+            const defaultModelId = document.defaultSelection?.modelId;
+            const defaultEffort = document.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL;
+            const defaultPermissionMode = document.defaultPermissionMode ?? "auto";
+            if (
+                snapshot.defaultProviderId === defaultProviderId &&
+                snapshot.defaultModelId === defaultModelId &&
+                snapshot.defaultEffort === defaultEffort &&
+                snapshot.defaultPermissionMode === defaultPermissionMode
+            )
+                return;
+            publish({
+                ...snapshot,
+                defaultProviderId,
+                defaultModelId,
+                defaultEffort,
+                defaultPermissionMode,
+            });
         },
     };
 }

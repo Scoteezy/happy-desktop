@@ -41,7 +41,7 @@ export interface HappyAgentModelPreferenceDefault extends HappyAgentModelPrefere
     readonly effort?: HappyAgentThinkingLevel;
 }
 
-/** Complete machine-local model choices supplied by the desktop host. */
+/** One person's model choices on this Happy Agent, supplied by its preference authority. */
 export interface HappyAgentModelPreferenceDocument {
     readonly defaultSelection?: HappyAgentModelPreferenceDefault;
     /** Reasoning level configured for new sessions before a model-specific fallback. */
@@ -318,9 +318,13 @@ export function happyAgentModelStoreCreate(
         },
         selectionUsed(selection) {
             if (snapshot.type !== "ready") return;
-            const provider = preferences[selection.providerId] ?? {};
+            const provider = { ...preferences[selection.providerId] };
+            // Reinsert the selected entry so bounded picker memory retains recent choices.
+            delete provider[selection.modelId];
+            const remainingProviders = { ...preferences };
+            delete remainingProviders[selection.providerId];
             preferences = {
-                ...preferences,
+                ...remainingProviders,
                 [selection.providerId]: {
                     ...provider,
                     [selection.modelId]: {
@@ -340,6 +344,8 @@ export function happyAgentModelStoreCreate(
             writingPreferences = true;
             try {
                 options.preferencePersistence?.write(document);
+                document = options.preferencePersistence?.read() ?? document;
+                preferences = document.preferences;
             } finally {
                 writingPreferences = false;
             }
@@ -413,10 +419,7 @@ function selectionsFromDocument(
         catalogDefaultModel?.thinkingLevels.includes(document.defaultEffort)
             ? document.defaultEffort
             : catalogDefault.effort;
-    const defaultPermissionMode =
-        document.defaultPermissionMode ??
-        current?.defaultSelection.permissionMode ??
-        catalogDefault.permissionMode;
+    const defaultPermissionMode = document.defaultPermissionMode ?? catalogDefault.permissionMode;
     const catalogSelection = {
         ...catalogDefault,
         ...(catalogDefaultEffort !== undefined ? { effort: catalogDefaultEffort } : {}),

@@ -2353,8 +2353,20 @@ function happyAgentSearchSections(
             }
         }
         const bots = happyAgent.bots
-            .filter((bot) => matches(bot.name) && happyAgentBotAttention(attention, happyAgent.id, bot.id) !== "hidden")
-            .map((bot) => rowOf(botSidebarItem(bot, titleShimmerEnabled, happyAgentBotAttention(attention, happyAgent.id, bot.id) === "muted")));
+            .filter(
+                (bot) =>
+                    matches(bot.name) &&
+                    happyAgentBotAttention(attention, happyAgent.id, bot.id) !== "hidden",
+            )
+            .map((bot) =>
+                rowOf(
+                    botSidebarItem(
+                        bot,
+                        titleShimmerEnabled,
+                        happyAgentBotAttention(attention, happyAgent.id, bot.id) === "muted",
+                    ),
+                ),
+            );
         const tasks = (happyAgent.tasks ?? [])
             .filter((task) => matches(task.name))
             .map((task) => rowOf(taskSidebarItem(task, titleShimmerEnabled)));

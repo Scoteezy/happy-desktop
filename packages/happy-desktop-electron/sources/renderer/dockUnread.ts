@@ -43,7 +43,11 @@ export function dockUnreadPublish(
 ): () => void {
     let published: number | undefined;
     const publish = (): void => {
-        const count = happyAgentDirectoryUnreadCount(directory.get(), projectsVisibility.get(), attention.get());
+        const count = happyAgentDirectoryUnreadCount(
+            directory.get(),
+            projectsVisibility.get(),
+            attention.get(),
+        );
         if (count === published) return;
         published = count;
         report(count);

@@ -320,7 +320,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                 />
             </HappyAgentSettingsSection>
             <HappyAgentSettingsSection
-                description="What a session started on this machine begins with. Each session can still be changed from its composer."
+                description="What a new session on this connection begins with. Your defaults follow you across devices."
                 title="New sessions"
             >
                 <FormRow

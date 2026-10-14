@@ -139,6 +139,12 @@ export * from "./happyAgent/happyAgentSecurityPolicyStore.js";
 export * from "./happyAgent/happyAgentSecretsStore.js";
 export * from "./happyAgent/happyAgentSessionListStore.js";
 export * from "./happyAgent/happyAgentSettingsStore.js";
+export * from "./happyAgent/happyAgentModelPreferences.js";
+export type {
+    HappyAgentUserSettingsDocument,
+    HappyAgentUserSettingsPersistence,
+    HappyAgentUserSettingsSource,
+} from "./happyAgent/happyAgentUserSettings.js";
 export * from "./happyAgent/happyAgentSidebarCollapseStore.js";
 export * from "./happyAgent/happyAgentSidebarSearchStore.js";
 export * from "./happyAgent/happyAgentAttentionStore.js";

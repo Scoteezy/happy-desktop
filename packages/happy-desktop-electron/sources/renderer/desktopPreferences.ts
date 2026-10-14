@@ -12,7 +12,6 @@ import { HAPPY_AGENT_DEFAULT_THINKING_LEVEL } from "happy-desktop-state";
 import type {
     DesktopAppearanceMode,
     DesktopConfig,
-    DesktopDefaultModel,
     DesktopKeepAwakeMode,
     DesktopModelPreference,
     DesktopScrollbarVisibility,
@@ -111,72 +110,17 @@ export function desktopPreferencesCreate(
             commit({ ...config, keepAwake: mode });
         },
         settingsChanged(snapshot) {
-            const nextEffort = snapshot.defaultEffort;
-            const nextPermissionMode = snapshot.defaultPermissionMode;
-            const nextDefault =
-                snapshot.defaultProviderId && snapshot.defaultModelId
-                    ? {
-                          providerId: snapshot.defaultProviderId,
-                          modelId: snapshot.defaultModelId,
-                          ...(snapshot.defaultEffort ? { effort: snapshot.defaultEffort } : {}),
-                      }
-                    : undefined;
             const nextLinkOpen = snapshot.linkOpenPlacement;
             if (
-                defaultEqual(config.defaultModel, nextDefault) &&
-                config.defaultEffort === nextEffort &&
-                config.defaultPermissionMode === nextPermissionMode &&
                 (config.linkOpen ?? "panel") === nextLinkOpen &&
                 (config.previewUpdatesEnabled === true) === snapshot.previewUpdatesEnabled
             )
                 return;
 
-            let modelPreferences = config.modelPreferences;
-            if (nextDefault?.effort) {
-                const preference = modelPreferences.find(
-                    (candidate) =>
-                        candidate.providerId === nextDefault.providerId &&
-                        candidate.modelId === nextDefault.modelId,
-                );
-                const updated: DesktopModelPreference = {
-                    providerId: nextDefault.providerId,
-                    modelId: nextDefault.modelId,
-                    lastEffort: nextDefault.effort,
-                    lastSpeed: preference?.lastSpeed ?? null,
-                };
-                modelPreferences = [
-                    ...modelPreferences.filter(
-                        (candidate) =>
-                            candidate.providerId !== nextDefault.providerId ||
-                            candidate.modelId !== nextDefault.modelId,
-                    ),
-                    updated,
-                ];
-            }
             commit({
-                appearance: config.appearance,
-                defaultEffort: nextEffort,
-                ...(nextDefault ? { defaultModel: nextDefault } : {}),
-                defaultPermissionMode: nextPermissionMode,
+                ...config,
                 linkOpen: nextLinkOpen,
-                ...(config.keepAwake === undefined ? {} : { keepAwake: config.keepAwake }),
-                ...(nextDefault
-                    ? {
-                          lastPickedModel: {
-                              providerId: nextDefault.providerId,
-                              modelId: nextDefault.modelId,
-                          },
-                      }
-                    : config.lastPickedModel
-                      ? { lastPickedModel: config.lastPickedModel }
-                      : {}),
-                modelPreferences,
                 previewUpdatesEnabled: snapshot.previewUpdatesEnabled,
-                scrollbarVisibility: config.scrollbarVisibility,
-                ...(config.titleShimmerEnabled === undefined
-                    ? {}
-                    : { titleShimmerEnabled: config.titleShimmerEnabled }),
-                version: 1,
             });
         },
     };
@@ -260,7 +204,7 @@ function configFromPreferenceDocument(
     );
     return {
         appearance: current.appearance,
-        defaultEffort: document.defaultEffort ?? current.defaultEffort,
+        defaultEffort: document.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
         ...(document.defaultSelection
             ? {
                   defaultModel: {
@@ -271,11 +215,9 @@ function configFromPreferenceDocument(
                           : {}),
                   },
               }
-            : current.defaultModel
-              ? { defaultModel: current.defaultModel }
-              : {}),
+            : {}),
         ...(document.lastPickedModel ? { lastPickedModel: document.lastPickedModel } : {}),
-        defaultPermissionMode: current.defaultPermissionMode,
+        defaultPermissionMode: document.defaultPermissionMode ?? "auto",
         ...(current.linkOpen === undefined ? {} : { linkOpen: current.linkOpen }),
         ...(current.keepAwake === undefined ? {} : { keepAwake: current.keepAwake }),
         ...(current.previewUpdatesEnabled === undefined
@@ -303,15 +245,4 @@ function permissionMode(value: string | undefined): HappyAgentPermissionMode {
         default:
             return "auto";
     }
-}
-
-function defaultEqual(
-    left: DesktopDefaultModel | undefined,
-    right: DesktopDefaultModel | undefined,
-): boolean {
-    return (
-        left?.providerId === right?.providerId &&
-        left?.modelId === right?.modelId &&
-        left?.effort === right?.effort
-    );
 }

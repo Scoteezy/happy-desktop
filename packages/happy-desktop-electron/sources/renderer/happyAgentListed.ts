@@ -1,4 +1,9 @@
-import { happyAgentBotAttention, type HappyAgentAttentionSnapshot, type ConversationSummary, type ProjectsVisibilitySnapshot } from "happy-desktop-state";
+import {
+    happyAgentBotAttention,
+    type HappyAgentAttentionSnapshot,
+    type ConversationSummary,
+    type ProjectsVisibilitySnapshot,
+} from "happy-desktop-state";
 import type {
     HappyAgentDirectoryEntry,
     HappyAgentDirectorySnapshot,
@@ -24,7 +29,8 @@ export function happyAgentListedConversations(
 ): readonly ConversationSummary[] {
     const listed: ConversationSummary[] = [];
     for (const bot of entry.bots)
-        if (happyAgentBotAttention(attention, entry.id, bot.id) !== "hidden") listed.push(bot.conversation);
+        if (happyAgentBotAttention(attention, entry.id, bot.id) !== "hidden")
+            listed.push(bot.conversation);
     for (const task of entry.tasks) listed.push(task.conversation);
     if (visibility.projectsHidden) return listed;
     for (const project of entry.projects) {
@@ -40,8 +46,14 @@ export function happyAgentNotifyingConversations(
     visibility: ProjectsVisibilitySnapshot,
     attention: HappyAgentAttentionSnapshot,
 ): readonly ConversationSummary[] {
-    const quiet = new Set(entry.bots.filter((bot) => happyAgentBotAttention(attention, entry.id, bot.id) !== "normal").map((bot) => bot.conversation.id));
-    return happyAgentListedConversations(entry, visibility, attention).filter((conversation) => !quiet.has(conversation.id));
+    const quiet = new Set(
+        entry.bots
+            .filter((bot) => happyAgentBotAttention(attention, entry.id, bot.id) !== "normal")
+            .map((bot) => bot.conversation.id),
+    );
+    return happyAgentListedConversations(entry, visibility, attention).filter(
+        (conversation) => !quiet.has(conversation.id),
+    );
 }
 
 /** Whether one session belongs to this window's notification set right now. */
