@@ -93,7 +93,7 @@ it("shows Voice settings while calls are off and preserves the experimental opt-
     expect(view.getByRole("button", { name: "Voice" })).toBeTruthy();
     expect(view.queryByRole("switch", { name: "Enable GPT-Live voice" })).toBeNull();
     expect(gptLive.get().gptLiveEnabled).toBe(false);
-    expect(happyAgentSettingsCategoryExists("voice", false)).toBe(true);
+    expect(happyAgentSettingsCategoryExists("voice")).toBe(true);
     fireEvent.click(view.getByRole("button", { name: "Voice" }));
     await act(async () => {
         await vi.waitFor(() => expect(voiceSettings.get().loading).toBe(false));

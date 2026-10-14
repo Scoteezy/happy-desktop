@@ -46,7 +46,9 @@ const loaded = (conversationId: string) => ({
  * catalog, the address the window is on, and a listener list. Opening a target
  * moves the address the way the router would.
  */
-function fixture(options: { capabilities?: readonly string[] } = {}) {
+function fixture(
+    options: { capabilities?: readonly string[]; taskCreate?: () => Promise<never> } = {},
+) {
     const listeners = new Set<() => void>();
     let snapshot = {
         address: { groupId: "project-1" } as { groupId?: string; conversationId?: string },
@@ -86,6 +88,7 @@ function fixture(options: { capabilities?: readonly string[] } = {}) {
     };
     const workspace = {
         get: () => snapshot,
+        voiceTaskCreate: options.taskCreate,
         subscribe: (listener: () => void) => {
             listeners.add(listener);
             return () => listeners.delete(listener);
@@ -156,6 +159,37 @@ function fixture(options: { capabilities?: readonly string[] } = {}) {
 afterEach(() => vi.useRealTimers());
 
 describe("GPT-Live controller navigation", () => {
+    it("keeps task creation uncertainty and no-replay advice in voice failures without a raw task ID", async () => {
+        vi.useFakeTimers();
+        const taskCreate = vi.fn(async () => {
+            throw new Error(
+                "“New task” was created, but its model settings weren't confirmed. Check the task before trying again.",
+            );
+        });
+        const f = fixture({ taskCreate });
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(
+            f.request("task", {
+                type: "taskCreate",
+                connectionId: "local",
+                name: "New task",
+                text: "Review the changelog.",
+            }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        expect(taskCreate).toHaveBeenCalledTimes(1);
+        expect(f.result("task")).toMatchObject({
+            result: {
+                status: "refused",
+                code: "failed",
+                message: expect.stringContaining(
+                    "Do not repeat creation automatically; inspect the task list.",
+                ),
+            },
+        });
+        f.controller.close();
+    });
+
     it("ignores stale, future and unknown focus frames during a valid navigation hold", async () => {
         vi.useFakeTimers();
         const f = fixture();

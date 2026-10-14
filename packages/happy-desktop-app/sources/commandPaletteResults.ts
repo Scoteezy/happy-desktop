@@ -348,12 +348,12 @@ const SETTINGS_JUMPS: readonly {
         keywords: "inspector profiler debug log",
     },
     {
-        id: "settings:experimental",
-        title: "Settings › Experimental",
-        section: "experimental",
-        sectionLabel: "Experimental",
-        icon: "zap",
-        keywords: "voice gpt-live experimental features",
+        id: "settings:voice",
+        title: "Settings › Voice",
+        section: "voice",
+        sectionLabel: "Voice",
+        icon: "call",
+        keywords: "voice gpt-live call controller model prompt",
     },
     {
         id: "settings:default-model",
@@ -772,7 +772,6 @@ function settingsSectionRows(input: CommandPaletteInput): Ranked[] {
         rows.push({ rank, updatedAt: 0, row });
     }
     for (const jump of SETTINGS_JUMPS) {
-        if (jump.section === "experimental" && !input.experimentalFeaturesEnabled) continue;
         // The section the row leads to is searchable too: "general" has to
         // reach the rows that live under General, not only the page itself.
         const rank = rowRank(query, jump.title, jump.sectionLabel, jump.keywords);

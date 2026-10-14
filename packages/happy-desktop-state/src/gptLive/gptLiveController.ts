@@ -804,9 +804,7 @@ export function gptLiveControllerCreate(options: {
                     .catch((error: unknown) => {
                         throw new Refusal(
                             "failed",
-                            error instanceof Error
-                                ? error.message
-                                : "Task creation or setup was not confirmed. Inspect the task list before trying again.",
+                            `${error instanceof Error ? error.message.slice(0, 768) : "Task creation or setup was not confirmed."} Do not repeat creation automatically; inspect the task list.`,
                         );
                     }),
                 signal,

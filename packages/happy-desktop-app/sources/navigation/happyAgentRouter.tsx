@@ -511,13 +511,8 @@ const settingsSectionRoute = createRoute({
     component: HappyAgentSettingsRoute,
     getParentRoute: () => rootRoute,
     path: "/settings/$section",
-    beforeLoad: ({ params, context }) => {
-        if (
-            !happyAgentSettingsCategoryExists(
-                params.section,
-                context.experiments?.get().experimentalFeaturesEnabled,
-            )
-        )
+    beforeLoad: ({ params }) => {
+        if (!happyAgentSettingsCategoryExists(params.section))
             throw redirect({
                 params: { section: HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY },
                 replace: true,
@@ -792,10 +787,7 @@ function HappyAgentWorkspaceLayout(
             onSettingsSectionOpen={(section) =>
                 void navigate({
                     params: {
-                        section: happyAgentSettingsCategoryExists(
-                            section,
-                            context.experiments?.get().experimentalFeaturesEnabled,
-                        )
+                        section: happyAgentSettingsCategoryExists(section)
                             ? section
                             : HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY,
                     },

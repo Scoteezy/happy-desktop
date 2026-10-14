@@ -143,7 +143,7 @@ it.each([false, true])(
             });
         const outcome = refused
             ? expect(creation).rejects.toThrow(
-                  /was created.*setup was not confirmed.*do not repeat creation/,
+                  /“New” was created.*model settings weren't confirmed.*Check the task before trying again/,
               )
             : expect(creation).resolves.toMatchObject({ taskId: "new" });
         await vi.waitFor(() =>
@@ -312,7 +312,10 @@ it("creates a task, answering with its conversation once the host lists it at th
     expect(harness.list.get().mutationError?.message).toContain(
         "The task's folder could not be created.",
     );
-    expect(harness.list.get().mutationError?.message).toContain("It may already exist.");
+    expect(harness.list.get().mutationError?.message).toContain(
+        "The new task may not have been created:",
+    );
+    expect(harness.list.get().mutationError?.message).not.toContain("other");
 });
 
 it("renames at once, and states the host's refusal under the task", async () => {

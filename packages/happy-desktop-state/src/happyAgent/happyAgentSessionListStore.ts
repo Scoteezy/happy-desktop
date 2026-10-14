@@ -2635,10 +2635,10 @@ export function happyAgentSessionListStoreCreate(
             } catch (error) {
                 const failure = created
                     ? new UserError(
-                          `Task ${taskId} was created, but its setup was not confirmed: ${happyAgentUserError(error).message} Inspect the existing task; do not repeat creation.`,
+                          `${name ? `“${name}”` : "The new task"} was created, but its model settings weren't confirmed: ${happyAgentUserError(error).message} Check the task before trying again.`,
                       )
                     : new UserError(
-                          `Task creation ${taskId} was not confirmed: ${happyAgentUserError(error).message} It may already exist. Inspect the task list; do not repeat creation.`,
+                          `${name ? `“${name}”` : "The new task"} may not have been created: ${happyAgentUserError(error).message} Check the task list before trying again.`,
                       );
                 if (!disposed) store.setState({ ...store.getState(), mutationError: failure });
                 throw failure;

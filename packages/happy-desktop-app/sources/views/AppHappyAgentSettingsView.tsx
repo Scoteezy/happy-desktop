@@ -104,14 +104,8 @@ export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategor
 export const HAPPY_AGENT_SETTINGS_DEFAULT_CATEGORY = "general";
 
 /** True when `section` addresses a category this window actually has. */
-export function happyAgentSettingsCategoryExists(
-    section: string,
-    experimentalFeaturesEnabled = false,
-): boolean {
-    return (
-        (section !== "experimental" || experimentalFeaturesEnabled) &&
-        HAPPY_AGENT_SETTINGS_CATEGORIES.some((category) => category.id === section)
-    );
+export function happyAgentSettingsCategoryExists(section: string): boolean {
+    return HAPPY_AGENT_SETTINGS_CATEGORIES.some((category) => category.id === section);
 }
 
 export interface AppHappyAgentDebugTargetSnapshot {
@@ -286,7 +280,6 @@ export interface AppHappyAgentProfilerStore {
 
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     voice: "Voice calls, controller, and prompt",
-    experimental: "Features that are still being built",
     debug: "Inspect live state, Happy and Happy Agent debugger endpoints, and renderer profiles",
     general: "How this window looks and what a new session starts with",
     "mobile-access": "This Happy Agent's connection to Happy Mobile",
@@ -393,14 +386,9 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         usageAnalyticsStore.get,
         usageAnalyticsStore.get,
     );
-    const section =
-        props.section === "experimental" && !experiments.experimentalFeaturesEnabled
-            ? "general"
-            : props.section;
+    const section = props.section;
     const stateOpen = section === "debug";
-    const categories = HAPPY_AGENT_SETTINGS_CATEGORIES.filter(
-        (category) => category.id !== "experimental" || experiments.experimentalFeaturesEnabled,
-    );
+    const categories = HAPPY_AGENT_SETTINGS_CATEGORIES;
     const titleShimmerStore = props.titleShimmer ?? titleShimmerStoreNoop;
     const titleShimmer = useSyncExternalStore(
         titleShimmerStore.subscribe,
