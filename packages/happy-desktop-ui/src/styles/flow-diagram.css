@@ -1,0 +1,177 @@
+/*
+ * FlowDiagram — the parts a change touches and how they connect.
+ *
+ * A 16px legend row of the marks in use, 8px, then the drawing at its own
+ * size, centred in the column, or shrunk to a narrower column: 36px parts in the mono face, curves between
+ * them with their labels in the interface face. A mark is a dot in the colour
+ * the file list gives the same status. Every colour is a theme role, so the
+ * drawing follows the appearance without redrawing.
+ */
+
+.happy-flow {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-flow__reason {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.happy-flow__legend {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-flow__legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.happy-flow__legend-item::before {
+    content: "";
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+}
+
+.happy-flow__legend-item[data-mark="new"]::before {
+    background: var(--git-status-new);
+}
+
+.happy-flow__legend-item[data-mark="changed"]::before {
+    background: var(--git-status-modified);
+}
+
+.happy-flow__legend-item[data-mark="gone"]::before {
+    background: var(--git-status-deleted);
+}
+
+.happy-flow__scroll-viewport {
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* Centred at its own size while it fits; wider than the column, it shrinks
+   to the column (its width clamp is set inline), and below its least scale
+   the margins fall to zero and it scrolls from its left edge. */
+.happy-flow__canvas {
+    display: block;
+    height: auto;
+    margin: 0 auto;
+}
+
+.happy-flow__edge {
+    fill: none;
+    stroke: color-mix(in srgb, var(--text-secondary) 55%, transparent);
+    stroke-width: 1.25;
+}
+
+.happy-flow__edge[data-back] {
+    stroke-dasharray: 4 3;
+}
+
+.happy-flow__arrowhead {
+    fill: color-mix(in srgb, var(--text-secondary) 75%, transparent);
+}
+
+.happy-flow__edge-label {
+    fill: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 12px;
+    paint-order: stroke;
+    stroke: var(--surface);
+    stroke-width: 6px;
+    stroke-linejoin: round;
+}
+
+.happy-flow__box {
+    fill: var(--surface);
+    stroke: var(--divider);
+    stroke-width: 1;
+}
+
+.happy-flow__name {
+    fill: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 12px;
+    font-variant-ligatures: none;
+}
+
+/* What the change is about reads in full ink on a faint wash of its
+   colour; the rest stays quiet. */
+.happy-flow__node:not([data-mark="none"]) .happy-flow__name {
+    fill: var(--text);
+    font-weight: 600;
+}
+
+.happy-flow__node[data-mark="new"] .happy-flow__box {
+    fill: color-mix(in srgb, var(--git-status-new) 8%, var(--surface));
+    stroke: color-mix(in srgb, var(--git-status-new) 40%, var(--surface));
+}
+
+.happy-flow__node[data-mark="changed"] .happy-flow__box {
+    fill: color-mix(in srgb, var(--git-status-modified) 8%, var(--surface));
+    stroke: color-mix(in srgb, var(--git-status-modified) 40%, var(--surface));
+}
+
+.happy-flow__node[data-mark="gone"] .happy-flow__box {
+    stroke: color-mix(in srgb, var(--git-status-deleted) 40%, var(--surface));
+    stroke-dasharray: 4 3;
+}
+
+.happy-flow__node[data-mark="gone"] .happy-flow__name {
+    fill: var(--text-secondary);
+    text-decoration: line-through;
+}
+
+.happy-flow__node[data-mark="new"] .happy-flow__dot {
+    fill: var(--git-status-new);
+}
+
+.happy-flow__node[data-mark="changed"] .happy-flow__dot {
+    fill: var(--git-status-modified);
+}
+
+.happy-flow__node[data-mark="gone"] .happy-flow__dot {
+    fill: var(--git-status-deleted);
+}
+
+.happy-flow__chip circle {
+    fill: var(--surface-pressed);
+}
+
+.happy-flow__chip[data-openable] {
+    cursor: pointer;
+    outline: none;
+}
+
+.happy-flow__chip[data-openable]:hover circle,
+.happy-flow__chip[data-openable]:focus-visible circle {
+    fill: var(--text);
+}
+
+.happy-flow__chip[data-openable]:hover text,
+.happy-flow__chip[data-openable]:focus-visible text {
+    fill: var(--surface);
+}
+
+.happy-flow__chip text {
+    fill: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 600;
+}
