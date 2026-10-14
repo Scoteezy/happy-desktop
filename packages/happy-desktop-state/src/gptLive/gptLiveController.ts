@@ -15,6 +15,7 @@ import type { HappyAgentModelStore } from "../happyAgent/happyAgentModelStore.js
 import { gptLiveAppStateRead, type GptLiveAppState } from "./gptLiveAppState.js";
 import type { GptLiveDesktopSource } from "./gptLiveDesktopSource.js";
 import type { GptLiveRuntimeEvent, GptLiveVoiceFocus } from "./gptLiveRuntime.js";
+import { GPT_LIVE_VOICE_FOCUS_MS } from "./gptLiveStore.js";
 import {
     gptLiveContextDecisionKey,
     gptLiveDesktopContextRead,
@@ -178,10 +179,15 @@ export function gptLiveControllerCreate(options: {
     let appStateSentKey: string | undefined;
     let appStateSentStructure: string | undefined;
     /**
-     * What voice last pointed at, and when that highlight was first on
-     * screen, so a navigation to a target already showing does not hold again.
+     * What voice last pointed at, when it was last published, and when that
+     * highlight was first on screen, so a navigation to a target already
+     * showing does not hold again. The window takes a highlight down
+     * `GPT_LIVE_VOICE_FOCUS_MS` after it was last published; past that, the
+     * same target is a new highlight that must be painted and seen again.
      */
-    let focus: (GptLiveVoiceFocus & { shownAt?: number }) | undefined;
+    let focus: (GptLiveVoiceFocus & { publishedAt: number; shownAt?: number }) | undefined;
+    const focusShowing = (current: typeof focus): current is NonNullable<typeof focus> =>
+        current !== undefined && Date.now() - current.publishedAt < GPT_LIVE_VOICE_FOCUS_MS;
     const focusListeners = new Set<() => void>();
     type Queued = { request: Request; abort: AbortController };
     /** Actions run one at a time, in arrival order; a second request waits rather than being refused. */
@@ -230,6 +236,29 @@ export function gptLiveControllerCreate(options: {
         // One revision always names the exact same immutable JSON. Public text
         // and activity stream separately and cannot rewrite accepted context.
         return { revision, context: acceptedContext };
+    };
+    const targetListed = (target: LiveDesktopTarget) => {
+        const current = contextRead().context;
+        if (target.kind === "project")
+            return current.projects.some((item) => targetEqual(item.target, target));
+        if (target.kind === "workspace")
+            return current.workspaces.some((item) => targetEqual(item.target, target));
+        if (target.kind === "bot")
+            return current.bots.some((item) => targetEqual(item.target, target));
+        if (target.kind === "task")
+            return (
+                source
+                    .get()
+                    .connections.find((item) => item.id === target.connectionId)
+                    ?.workspace?.get()
+                    .list.tasks.some(
+                        (task) =>
+                            task.id === target.taskId &&
+                            task.workspaceId === target.groupId &&
+                            task.conversation.id === target.sessionId,
+                    ) ?? false
+            );
+        return targetAdvertised(current, target);
     };
     const sessionUpdate = (
         target: LiveSessionRef,
@@ -573,9 +602,13 @@ export function gptLiveControllerCreate(options: {
     };
     /** Publishes what voice points at, and notes when the window first painted it. */
     const focusPublish = (next: GptLiveVoiceFocus | undefined) => {
-        const same = focus && next && targetEqual(focus.target, next.target);
+        const same = focusShowing(focus) && next && targetEqual(focus.target, next.target);
         const shownAt = same ? focus?.shownAt : undefined;
-        focus = next && { ...next, ...(shownAt === undefined ? {} : { shownAt }) };
+        focus = next && {
+            ...next,
+            publishedAt: Date.now(),
+            ...(shownAt === undefined ? {} : { shownAt }),
+        };
         options.receive({ type: "voiceFocusUpdated", focus: next ?? null });
         for (const listener of focusListeners) listener();
         if (!focus || focus.shownAt !== undefined) return;
@@ -590,7 +623,7 @@ export function gptLiveControllerCreate(options: {
      * cancels it before anything moves.
      */
     const navigationHold = async (target: LiveDesktopTarget, id: string, signal: AbortSignal) => {
-        if (!focus || !targetEqual(focus.target, target))
+        if (!focusShowing(focus) || !targetEqual(focus.target, target))
             focusPublish({ id: `navigation-${id}`, target, reason: "navigation" });
         const held = focus!;
         // Already on screen long enough, as when voice named it on arrival.
@@ -714,30 +747,7 @@ export function gptLiveControllerCreate(options: {
         check(request.contextRevision, signal);
         if (action.type === "desktopOpen") {
             const target = action.target;
-            const listed = () => {
-                const current = contextRead().context;
-                if (target.kind === "project")
-                    return current.projects.some((item) => targetEqual(item.target, target));
-                if (target.kind === "workspace")
-                    return current.workspaces.some((item) => targetEqual(item.target, target));
-                if (target.kind === "bot")
-                    return current.bots.some((item) => targetEqual(item.target, target));
-                if (target.kind === "task")
-                    return (
-                        source
-                            .get()
-                            .connections.find((item) => item.id === target.connectionId)
-                            ?.workspace?.get()
-                            .list.tasks.some(
-                                (task) =>
-                                    task.id === target.taskId &&
-                                    task.workspaceId === target.groupId &&
-                                    task.conversation.id === target.sessionId,
-                            ) ?? false
-                    );
-                return current.sessions.some((item) => refKey(item.target) === refKey(target));
-            };
-            if (!listed())
+            if (!targetListed(target))
                 throw new Refusal(
                     "notFound",
                     "The requested target is not in the current Desktop context.",
@@ -747,7 +757,7 @@ export function gptLiveControllerCreate(options: {
             // long enough for the reader or the window to have moved.
             await navigationHold(target, request.actionId, signal);
             check(request.contextRevision, signal);
-            if (!listed())
+            if (!targetListed(target))
                 throw new Refusal(
                     "notFound",
                     "The requested target left the Desktop context before the view moved.",
@@ -784,12 +794,21 @@ export function gptLiveControllerCreate(options: {
             }
             const before = contextRead().context.activeTarget;
             const created = await duringCall(
-                workspace.voiceTaskCreate({
-                    ...(action.name === undefined ? {} : { name: action.name }),
-                    ...(model
-                        ? { model: { providerId: model.providerId, modelId: model.modelId } }
-                        : {}),
-                }),
+                workspace
+                    .voiceTaskCreate({
+                        ...(action.name === undefined ? {} : { name: action.name }),
+                        ...(model
+                            ? { model: { providerId: model.providerId, modelId: model.modelId } }
+                            : {}),
+                    })
+                    .catch((error: unknown) => {
+                        throw new Refusal(
+                            "failed",
+                            error instanceof Error
+                                ? error.message
+                                : "Task creation or setup was not confirmed. Inspect the task list before trying again.",
+                        );
+                    }),
                 signal,
             );
             return creationFinish(
@@ -991,6 +1010,10 @@ export function gptLiveControllerCreate(options: {
         },
         focusReceive(frame) {
             if (closed || !started || !capabilities.has("voiceFocus")) return;
+            // The revision names the same accepted context as an action. Check
+            // before publishing: an ignored frame must not retarget a held open.
+            if (frame.contextRevision !== contextRead().revision) return;
+            if (frame.target !== null && !targetListed(frame.target)) return;
             focusPublish(
                 frame.target
                     ? { id: frame.focusId, target: frame.target, reason: frame.reason }

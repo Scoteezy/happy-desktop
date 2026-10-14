@@ -284,6 +284,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const sessionCreationOutcomes = new Map<string, Promise<void>>();
     const workspaceCreationOutcomes = new Map<string, Promise<void>>();
     const sendAcceptance = new Map<string, Promise<void>>();
+    const modeSaveOutcomes = new Map<string, Promise<void>>();
     const sendAcceptanceCreate = (id: string) => {
         let resolve!: () => void;
         let reject!: (error: Error) => void;
@@ -2537,6 +2538,17 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         const completed = queued.then((value) => {
             if (!closed) applied?.(value);
         });
+        if (
+            action === "switch_model" ||
+            action === "set_effort" ||
+            action === "set_service_tier" ||
+            action === "set_permission_mode"
+        ) {
+            modeSaveOutcomes.set(mutationId, completed);
+            void completed.catch(() => undefined);
+            while (modeSaveOutcomes.size > 256)
+                modeSaveOutcomes.delete(modeSaveOutcomes.keys().next().value!);
+        }
         const creationOutcomes =
             action === "create_session"
                 ? sessionCreationOutcomes
@@ -3379,6 +3391,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 Promise.reject(new Error("This session creation is no longer tracked."))
             );
         },
+        sessionModeSaveWait(mutationId) {
+            const outcome = modeSaveOutcomes.get(mutationId);
+            modeSaveOutcomes.delete(mutationId);
+            return outcome ?? Promise.reject(new Error("This model save is no longer tracked."));
+        },
         workspaceCreationWait(workspaceId) {
             return (
                 workspaceCreationOutcomes.get(workspaceId) ??
@@ -4008,6 +4025,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             sendConfirmations.clear();
             draftRevisions.clear();
             mutationQueues.clear();
+            modeSaveOutcomes.clear();
             sessionCreations.clear();
             sessionMutationCounts.clear();
             processOwners.clear();

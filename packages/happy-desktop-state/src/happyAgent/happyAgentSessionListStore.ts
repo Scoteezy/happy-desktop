@@ -572,6 +572,7 @@ export interface HappyAgentSessionListDeps {
         | "setServiceTier"
         | "setSessionArchived"
         | "switchModel"
+        | "sessionModeSaveWait"
         | "unarchiveTask"
     > & {
         readonly projects: Pick<HappyAgentConnection["projects"], "archive" | "clone">;
@@ -1914,22 +1915,31 @@ export function happyAgentSessionListStoreCreate(
      * an open conversation send them. A refusal is reported the way any refused
      * session mutation is, and leaves the bot on the host's defaults.
      */
-    const botSelectionApply = (sessionId: string, selection: HappyAgentSelection): void => {
-        connectMutationTrack(
-            deps.connectActions.switchModel(sessionId, {
-                modelId: selection.modelId,
-                providerId: selection.providerId,
-            }),
-        );
+    const botSelectionApply = (sessionId: string, selection: HappyAgentSelection): string[] => {
+        const mutations = [
+            connectMutationTrack(
+                deps.connectActions.switchModel(sessionId, {
+                    modelId: selection.modelId,
+                    providerId: selection.providerId,
+                }),
+            ),
+        ];
         if (selection.effort !== undefined)
-            connectMutationTrack(deps.connectActions.setEffort(sessionId, selection.effort));
-        connectMutationTrack(
-            deps.connectActions.setPermissionMode(sessionId, selection.permissionMode),
+            mutations.push(
+                connectMutationTrack(deps.connectActions.setEffort(sessionId, selection.effort)),
+            );
+        mutations.push(
+            connectMutationTrack(
+                deps.connectActions.setPermissionMode(sessionId, selection.permissionMode),
+            ),
         );
         if (selection.serviceTier !== undefined)
-            connectMutationTrack(
-                deps.connectActions.setServiceTier(sessionId, selection.serviceTier),
+            mutations.push(
+                connectMutationTrack(
+                    deps.connectActions.setServiceTier(sessionId, selection.serviceTier),
+                ),
             );
+        return mutations;
     };
 
     /**
@@ -2601,13 +2611,19 @@ export function happyAgentSessionListStoreCreate(
                 name === undefined || name.length === 0 ? undefined : name,
             );
             const taskId = request.taskId as HappyAgentTaskId;
+            let created = false;
             try {
                 const task = await request.task;
+                created = true;
                 // What the composer showed while the first message was written
                 // is what the conversation runs with, applied the way a new
                 // bot's is.
                 if (input.selection !== undefined)
-                    botSelectionApply(task.agent.id, input.selection);
+                    await Promise.all(
+                        botSelectionApply(task.agent.id, input.selection).map((id) =>
+                            deps.connectActions.sessionModeSaveWait(id),
+                        ),
+                    );
                 await taskListed(taskId);
                 return {
                     taskId,
@@ -2617,7 +2633,13 @@ export function happyAgentSessionListStoreCreate(
                     },
                 };
             } catch (error) {
-                const failure = happyAgentUserError(error);
+                const failure = created
+                    ? new UserError(
+                          `Task ${taskId} was created, but its setup was not confirmed: ${happyAgentUserError(error).message} Inspect the existing task; do not repeat creation.`,
+                      )
+                    : new UserError(
+                          `Task creation ${taskId} was not confirmed: ${happyAgentUserError(error).message} It may already exist. Inspect the task list; do not repeat creation.`,
+                      );
                 if (!disposed) store.setState({ ...store.getState(), mutationError: failure });
                 throw failure;
             }

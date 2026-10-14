@@ -96,8 +96,8 @@ export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategor
     // Usage sits after Providers because it is the same accounts read the other
     // way round: which of them exist, then what each has spent.
     { icon: "zap", id: "usage", label: "Usage" },
+    { icon: "call", id: "voice", label: "Voice" },
     { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
-    { icon: "zap", id: "experimental", label: "Experimental" },
     { icon: "code", id: "debug", label: "Dev Tools" },
 ];
 
@@ -285,6 +285,7 @@ export interface AppHappyAgentProfilerStore {
 }
 
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+    voice: "Voice calls, controller, and prompt",
     experimental: "Features that are still being built",
     debug: "Inspect live state, Happy and Happy Agent debugger endpoints, and renderer profiles",
     general: "How this window looks and what a new session starts with",
@@ -524,11 +525,10 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         providersStore.get,
     );
     // The voice controller and prompt are read, and re-read every few seconds,
-    // only while the voice settings beneath the calls switch are on screen.
+    // only while the Voice category is on screen, including while calls are off.
     const voiceSettingsStore =
-        ((section === "experimental" && gptLive.gptLiveEnabled) || stateOpen
-            ? host?.session?.voiceSettings
-            : undefined) ?? happyAgentVoiceSettingsStoreNoop;
+        (section === "voice" || stateOpen ? host?.session?.voiceSettings : undefined) ??
+        happyAgentVoiceSettingsStoreNoop;
     const voiceSettings = useSyncExternalStore(
         voiceSettingsStore.subscribe,
         voiceSettingsStore.get,
@@ -628,7 +628,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             connectionRail={windowState.connectionRail}
             sidebarWidth={props.sidebarVisibility?.get().width}
         >
-            {section === "experimental" ? (
+            {section === "voice" ? (
                 props.gptLive ? (
                     <>
                         <GptLiveSettings
@@ -636,6 +636,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                             accounts={gptLive.availability?.accounts}
                             accountId={gptLive.accountId}
                             checking={gptLive.status === "checking"}
+                            accountsVisible
+                            callsUnavailable={
+                                experiments.experimentalFeaturesEnabled
+                                    ? undefined
+                                    : "Enable experimental features in General to turn on voice calls."
+                            }
                             onAccountSelect={gptLiveStore.accountSelect}
                             onAccountsRead={gptLiveStore.availabilityRead}
                             onEnabledChange={(enabled) => {
@@ -643,7 +649,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                                     gptLiveStore.gptLiveEnabledUpdate(enabled);
                             }}
                         />
-                        {gptLive.gptLiveEnabled ? (
+                        {
                             <GptLiveVoiceSettings
                                 loading={voiceSettings.loading}
                                 unavailable={
@@ -720,7 +726,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                                     ? { saveError: voiceSettings.saveError.message }
                                     : {})}
                             />
-                        ) : null}
+                        }
                     </>
                 ) : null
             ) : section === "mobile-access" ? (

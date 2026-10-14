@@ -20,7 +20,7 @@ type Patch = {
  * prompt equal to the default is no override, `null` restores a default, and
  * every write answers with the whole configuration.
  */
-function machine() {
+function machine(inheritedPrompt: string | null = null) {
     const base = fakeHappyAgentDaemonCreate().configGet();
     const providerId = base.defaults.providerId;
     let controller: HappyAgentVoiceSettings["controller"] = {
@@ -42,8 +42,8 @@ function machine() {
                 notice: null,
             },
             defaultSystemPrompt: DEFAULT_PROMPT,
-            systemPromptOverride: override,
-            effectiveSystemPrompt: override ?? DEFAULT_PROMPT,
+            systemPromptOverride: override ?? inheritedPrompt,
+            effectiveSystemPrompt: override ?? inheritedPrompt ?? DEFAULT_PROMPT,
         },
     });
     const patches: Patch[] = [];
@@ -89,6 +89,28 @@ function machine() {
 afterEach(() => vi.useRealTimers());
 
 describe("Voice settings", () => {
+    it("removes a runtime prompt override and restores the inherited custom machine prompt", async () => {
+        const m = machine("Configured in the machine file.");
+        const store = happyAgentVoiceSettingsStoreCreate({ client: m.client });
+        const stop = store.subscribe(() => {});
+        await vi.waitFor(() => expect(store.get().loading).toBe(false));
+        store.promptDraftUpdate("Runtime prompt.");
+        store.promptSave();
+        await vi.waitFor(() =>
+            expect(store.get().settings?.effectiveSystemPrompt).toBe("Runtime prompt."),
+        );
+        store.promptReset();
+        await vi.waitFor(() =>
+            expect(store.get().settings?.effectiveSystemPrompt).toBe(
+                "Configured in the machine file.",
+            ),
+        );
+        expect(store.get().settings?.systemPromptOverride).toBe("Configured in the machine file.");
+        expect(m.patches.at(-1)).toEqual({ voice: { systemPrompt: null } });
+        stop();
+        store[Symbol.dispose]();
+    });
+
     it("reads nothing until watched, then shows the machine's settings and the picker on the controller in effect", async () => {
         const m = machine();
         const store = happyAgentVoiceSettingsStoreCreate({ client: m.client });

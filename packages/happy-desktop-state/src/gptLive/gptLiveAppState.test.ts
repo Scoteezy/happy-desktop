@@ -5,7 +5,8 @@ import type { ConversationEntry } from "../conversation/conversationEntry.js";
 import type { ConversationSummary } from "../conversation/conversationSummary.js";
 import type { HappyAgentModelStore } from "../happyAgent/happyAgentModelStore.js";
 import type { HappyAgentWorkspaceStore } from "../happyAgent/happyAgentWorkspaceStore.js";
-import { gptLiveAppStateRead } from "./gptLiveAppState.js";
+import { GPT_LIVE_APP_STATE_BYTES, gptLiveAppStateRead } from "./gptLiveAppState.js";
+import { gptLiveSerializedBytes } from "./gptLiveDesktopContext.js";
 import type { GptLiveDesktopConnection, GptLiveDesktopSource } from "./gptLiveDesktopSource.js";
 
 const MINUTE = 60_000;
@@ -105,6 +106,71 @@ const subtask = (workspaceId: string, conversationId: string) => ({
 });
 
 describe("GPT-Live AppState projection", () => {
+    it("bounds model-heavy servers without projects and retains the selected server and picker order", () => {
+        const catalog = models(
+            Array.from({ length: 200 }, (_, i) => ({
+                providerId: "codex",
+                modelId: `model-${i}`,
+                efforts: ["low", "medium", "high"],
+            })),
+        );
+        const connections = Array.from({ length: 16 }, (_, i) => ({
+            id: `server-${i}`,
+            name: `Server ${i}`,
+            kind: "remote" as const,
+            online: true,
+            models: catalog,
+        }));
+        const result = gptLiveAppStateRead(source(connections, "server-15"));
+        expect(gptLiveSerializedBytes(result)).toBeLessThanOrEqual(GPT_LIVE_APP_STATE_BYTES);
+        expect(result.truncated).toBe(true);
+        expect(Value.Check(liveAppStateSchema, result)).toBe(true);
+        expect(result.servers.map((item) => item.connectionId)).toEqual(
+            connections.map((item) => item.id),
+        );
+        expect(result.servers.at(-1)!.models).toHaveLength(200);
+        for (const server of result.servers)
+            expect(server.models.map((item) => item.modelId)).toEqual(
+                Array.from({ length: server.models.length }, (_, i) => `model-${i}`),
+            );
+    });
+
+    it("bounds oversized list metadata, flags shortened text and preserves current focus", () => {
+        const catalog = models(
+            Array.from({ length: 200 }, (_, i) => ({
+                providerId: "codex",
+                modelId: `model-${i}`,
+                efforts: Array(16).fill("x".repeat(1000)),
+            })),
+        );
+        const result = gptLiveAppStateRead(
+            source(
+                Array.from({ length: 40 }, (_, i) => ({
+                    id: `server-${i}`,
+                    name: "界".repeat(1000),
+                    kind: "remote" as const,
+                    online: true,
+                    models: catalog,
+                    workspace: workspace({
+                        projects: [{ id: "p", name: "Project", conversations: [], worktrees: [] }],
+                        address: { groupId: "p" },
+                    }),
+                })),
+                "server-39",
+            ),
+        );
+        expect(gptLiveSerializedBytes(result)).toBeLessThanOrEqual(GPT_LIVE_APP_STATE_BYTES);
+        expect(result.truncated).toBe(true);
+        expect(result.focused?.target).toMatchObject({ connectionId: "server-39", groupId: "p" });
+        expect(result.servers.at(-1)!.connectionId).toBe("server-39");
+        expect(result.servers.at(-1)!.projects[0]!.name).toBe("Project");
+        const small = gptLiveAppStateRead(
+            source([{ id: "s", name: "x".repeat(1000), kind: "local", online: true }]),
+        );
+        expect(small.truncated).toBe(true);
+        expect(small.servers[0]!.name).toHaveLength(256);
+    });
+
     it("lists servers in directory order and each one's bots, then tasks, then projects, as the sidebar does", () => {
         const local = workspace({
             bots: [
@@ -427,11 +493,14 @@ describe("GPT-Live AppState projection", () => {
                             conversations: [],
                             worktrees: [],
                         })),
+                        address: { groupId: "project-119" },
                     }),
                 },
             ]),
         );
         expect(appState.servers[0]!.projects).toHaveLength(100);
+        expect(appState.servers[0]!.projects.at(-1)!.target.projectId).toBe("project-119");
+        expect(appState.focused?.target).toMatchObject({ projectId: "project-119" });
         expect(appState.truncated).toBe(true);
         expect(Value.Check(liveAppStateSchema, appState)).toBe(true);
     });

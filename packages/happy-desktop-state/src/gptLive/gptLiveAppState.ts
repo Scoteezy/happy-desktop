@@ -48,10 +48,11 @@ function sessionOf(
     connectionId: string,
     groupId: string,
     summary: ConversationSummary,
+    text: (value: string) => string,
 ): LiveAppStateSession {
     return {
         target: { connectionId, groupId, sessionId: summary.id },
-        title: summary.title.slice(0, NAME_LIMIT) || null,
+        title: text(summary.title) || null,
         status: summary.activity,
         lastActivityAt: lastActivityAt(summary),
     };
@@ -67,12 +68,13 @@ function sessionsOf(
     groupId: string,
     conversations: readonly ConversationSummary[],
     workspace: HappyAgentWorkspaceSnapshot,
+    text: (value: string) => string,
 ): LiveAppStateSession[] {
     const ordered =
         workspace.address.groupId === groupId
             ? happyAgentTabsOrdered(conversations, workspace.tabOrder)
             : conversations;
-    return ordered.map((summary) => sessionOf(connectionId, groupId, summary));
+    return ordered.map((summary) => sessionOf(connectionId, groupId, summary, text));
 }
 
 /**
@@ -80,19 +82,24 @@ function sessionsOf(
  * named with the service its picker files it under. A model without reasoning
  * levels has no default one.
  */
-function modelsOf(models: HappyAgentModelStore | undefined): LiveAppStateModel[] {
+function modelsOf(
+    models: HappyAgentModelStore | undefined,
+    text: (value: string) => string,
+    bounded: <T>(items: readonly T[], limit?: number) => T[],
+): LiveAppStateModel[] {
     const snapshot = models?.get();
     if (snapshot?.type !== "ready") return [];
-    return snapshot.menus.modelOptions
-        .filter((option) => !option.disabled)
-        .map((option) => ({
-            providerId: option.providerId,
-            providerName: happyAgentServiceName(option.providerType).slice(0, NAME_LIMIT),
-            modelId: option.modelId,
-            name: option.name.slice(0, NAME_LIMIT),
-            efforts: option.efforts.slice(0, EFFORT_LIMIT).map((effort) => effort.level),
-            defaultEffort: option.efforts.length > 0 ? option.defaultEffort : null,
-        }));
+    return bounded(
+        snapshot.menus.modelOptions.filter((option) => !option.disabled),
+        MODEL_LIMIT,
+    ).map((option) => ({
+        providerId: option.providerId,
+        providerName: text(happyAgentServiceName(option.providerType)),
+        modelId: option.modelId,
+        name: text(option.name),
+        efforts: bounded(option.efforts, EFFORT_LIMIT).map((effort) => effort.level),
+        defaultEffort: option.efforts.length > 0 ? option.defaultEffort : null,
+    }));
 }
 
 /**
@@ -107,17 +114,35 @@ export function gptLiveAppStateRead(source: GptLiveDesktopSource): GptLiveAppSta
     let truncated = current.connections.length > SERVER_LIMIT;
     const servers: LiveAppStateServer[] = [];
     let focused: GptLiveAppStateFocus | null = null;
-    const bounded = <Item>(items: readonly Item[], limit = ROW_LIMIT): Item[] => {
+    const bounded = <Item>(
+        items: readonly Item[],
+        limit = ROW_LIMIT,
+        keep: (item: Item) => boolean = () => false,
+    ): Item[] => {
         if (items.length > limit) truncated = true;
-        return items.slice(0, limit);
+        const selected = items.findIndex(keep);
+        const prefix = limit - (selected >= limit ? 1 : 0);
+        return items.filter((_item, index) => index < prefix || index === selected);
     };
-    for (const connection of current.connections.slice(0, SERVER_LIMIT)) {
+    const text = (value: string) => {
+        if (value.length > NAME_LIMIT) truncated = true;
+        return value.slice(0, NAME_LIMIT);
+    };
+    // Retain the selected server even beyond the row limit, in directory order.
+    const activeIndex = current.connections.findIndex(
+        (item) => item.id === current.activeConnectionId,
+    );
+    const prefix = SERVER_LIMIT - (activeIndex >= SERVER_LIMIT ? 1 : 0);
+    const connections = current.connections.filter(
+        (connection, index) => index < prefix || connection.id === current.activeConnectionId,
+    );
+    for (const connection of connections) {
         const workspace = connection.workspace?.get();
         const connectionId = connection.id;
         const catalog = workspace?.list.projects;
         const server: LiveAppStateServer = {
             connectionId,
-            name: connection.name.slice(0, NAME_LIMIT),
+            name: text(connection.name),
             kind: connection.kind,
             online: connection.online,
             catalog:
@@ -129,7 +154,7 @@ export function gptLiveAppStateRead(source: GptLiveDesktopSource): GptLiveAppSta
             bots: [],
             tasks: [],
             projects: [],
-            models: bounded(modelsOf(connection.models), MODEL_LIMIT),
+            models: bounded(modelsOf(connection.models, text, bounded), MODEL_LIMIT),
         };
         servers.push(server);
         if (!workspace || !catalog) continue;
@@ -138,7 +163,16 @@ export function gptLiveAppStateRead(source: GptLiveDesktopSource): GptLiveAppSta
             tasks: workspace.list.tasks,
             projects: catalog.type === "ready" ? catalog.value : [],
         });
-        server.bots = bounded(tree.bots).map((bot) => ({
+        const focusedGroupId =
+            current.activeConnectionId === connectionId ? workspace.address.groupId : undefined;
+        const selectedSession = (item: LiveAppStateSession) =>
+            item.target.groupId === focusedGroupId &&
+            item.target.sessionId === workspace.address.conversationId;
+        server.bots = bounded(
+            tree.bots,
+            ROW_LIMIT,
+            (bot) => bot.workspaceId === focusedGroupId,
+        ).map((bot) => ({
             target: {
                 kind: "bot",
                 connectionId,
@@ -146,11 +180,15 @@ export function gptLiveAppStateRead(source: GptLiveDesktopSource): GptLiveAppSta
                 sessionId: bot.conversation.id,
                 botId: bot.id,
             },
-            name: bot.name.slice(0, NAME_LIMIT),
+            name: text(bot.name),
             status: bot.conversation.activity,
             lastActivityAt: lastActivityAt(bot.conversation),
         }));
-        server.tasks = bounded(tree.tasks).map((task) => ({
+        server.tasks = bounded(
+            tree.tasks,
+            ROW_LIMIT,
+            (task) => task.workspaceId === focusedGroupId,
+        ).map((task) => ({
             target: {
                 kind: "task",
                 connectionId,
@@ -158,30 +196,48 @@ export function gptLiveAppStateRead(source: GptLiveDesktopSource): GptLiveAppSta
                 sessionId: task.conversation.id,
                 taskId: task.id,
             },
-            name: task.name.slice(0, NAME_LIMIT),
+            name: text(task.name),
             status: task.conversation.activity,
             lastActivityAt: lastActivityAt(task.conversation),
         }));
-        server.projects = bounded(tree.projects).map(({ project, worktrees }) => ({
+        server.projects = bounded(
+            tree.projects,
+            ROW_LIMIT,
+            ({ project, worktrees }) =>
+                project.id === focusedGroupId ||
+                worktrees.some((item) => item.id === focusedGroupId),
+        ).map(({ project, worktrees }) => ({
             target: { kind: "project", connectionId, projectId: project.id, groupId: project.id },
-            name: project.name.slice(0, NAME_LIMIT),
+            name: text(project.name),
             sessions: bounded(
-                sessionsOf(connectionId, project.id, project.conversations, workspace),
+                sessionsOf(connectionId, project.id, project.conversations, workspace, text),
+                ROW_LIMIT,
+                selectedSession,
             ),
-            workspaces: bounded(worktrees).map((worktree) => ({
-                target: {
-                    kind: "workspace",
-                    connectionId,
-                    projectId: project.id,
-                    workspaceId: worktree.id,
-                    groupId: worktree.id,
-                },
-                name: worktree.name.slice(0, NAME_LIMIT),
-                status: gptLiveWorkspaceStatus(worktree.lifecycle),
-                sessions: bounded(
-                    sessionsOf(connectionId, worktree.id, worktree.conversations, workspace),
-                ),
-            })),
+            workspaces: bounded(worktrees, ROW_LIMIT, (item) => item.id === focusedGroupId).map(
+                (worktree) => ({
+                    target: {
+                        kind: "workspace",
+                        connectionId,
+                        projectId: project.id,
+                        workspaceId: worktree.id,
+                        groupId: worktree.id,
+                    },
+                    name: text(worktree.name),
+                    status: gptLiveWorkspaceStatus(worktree.lifecycle),
+                    sessions: bounded(
+                        sessionsOf(
+                            connectionId,
+                            worktree.id,
+                            worktree.conversations,
+                            workspace,
+                            text,
+                        ),
+                        ROW_LIMIT,
+                        selectedSession,
+                    ),
+                }),
+            ),
         }));
         if (current.activeConnectionId === connectionId)
             focused = focusOf(connectionId, workspace, server);
@@ -192,55 +248,80 @@ export function gptLiveAppStateRead(source: GptLiveDesktopSource): GptLiveAppSta
         focused,
         truncated,
     };
-    return gptLiveAppStateBound(appState);
+    return gptLiveAppStateBound(appState, current.activeConnectionId);
 }
 
 /**
- * Trims from the far end until the frame fits: the last server's last
- * project's sessions go first, its bots last, and the focused conversation and
- * the model list stay whole, since they are what voice acts on.
+ * Trims catalogs from the far end without reordering the retained rows. Focus
+ * and its server take priority over other catalogs. Account for each removal
+ * once, so model-heavy catalogs do not repeatedly serialize the whole frame.
  */
-function gptLiveAppStateBound(appState: {
-    timeZone: string;
-    servers: LiveAppStateServer[];
-    focused: GptLiveAppStateFocus | null;
-    truncated: boolean;
-}): GptLiveAppState {
-    while (gptLiveSerializedBytes(appState) > GPT_LIVE_APP_STATE_BYTES) {
-        appState.truncated = true;
-        const server = [...appState.servers]
-            .reverse()
-            .find((item) => item.projects.length || item.tasks.length || item.bots.length);
-        if (!server) {
-            if (!appState.focused || appState.focused.latestMessage.state !== "loaded") break;
-            appState.focused = { ...appState.focused, latestMessage: { state: "notLoaded" } };
-            continue;
+function gptLiveAppStateBound(
+    appState: {
+        timeZone: string;
+        servers: LiveAppStateServer[];
+        focused: GptLiveAppStateFocus | null;
+        truncated: boolean;
+    },
+    activeConnectionId: string | null,
+): GptLiveAppState {
+    let bytes = gptLiveSerializedBytes(appState);
+    if (bytes <= GPT_LIVE_APP_STATE_BYTES) return appState;
+    if (!appState.truncated) bytes--; // JSON true is one byte shorter than false.
+    appState.truncated = true;
+    const over = () => bytes > GPT_LIVE_APP_STATE_BYTES;
+    const remove = <T extends object>(items: T[], index: number) => {
+        bytes -= gptLiveSerializedBytes(items[index]!) + (items.length > 1 ? 1 : 0);
+        items.splice(index, 1);
+    };
+    const trim = <T extends object>(items: T[], keep: (item: T) => boolean = () => false) => {
+        for (let index = items.length - 1; index >= 0 && over(); index--)
+            if (!keep(items[index]!)) remove(items, index);
+    };
+    const focus = appState.focused?.target;
+    const focusedGroup = (target: { connectionId: string; groupId: string }) =>
+        focus?.connectionId === target.connectionId && focus.groupId === target.groupId;
+    const focusedSession = (item: LiveAppStateSession) =>
+        focusedGroup(item.target) &&
+        focus !== undefined &&
+        "sessionId" in focus &&
+        focus.sessionId === item.target.sessionId;
+    const servers = [...appState.servers].reverse();
+    // Catalogs on other machines must not evict the current sidebar first.
+    for (const server of servers)
+        if (server.connectionId !== activeConnectionId) trim(server.models);
+    for (const server of servers) {
+        for (let index = server.projects.length - 1; index >= 0 && over(); index--) {
+            const project = server.projects[index]!;
+            const keepProject =
+                focusedGroup(project.target) ||
+                project.workspaces.some((item) => focusedGroup(item.target));
+            trim(project.sessions, focusedSession);
+            for (let wi = project.workspaces.length - 1; wi >= 0 && over(); wi--) {
+                const workspace = project.workspaces[wi]!;
+                trim(workspace.sessions, focusedSession);
+                if (over() && !focusedGroup(workspace.target)) remove(project.workspaces, wi);
+            }
+            if (over() && !keepProject) remove(server.projects, index);
         }
-        const project = server.projects.at(-1);
-        if (project) {
-            const workspace = project.workspaces.at(-1);
-            if (project.sessions.length)
-                server.projects[server.projects.length - 1] = {
-                    ...project,
-                    sessions: project.sessions.slice(0, -1),
-                };
-            else if (workspace?.sessions.length)
-                server.projects[server.projects.length - 1] = {
-                    ...project,
-                    workspaces: [
-                        ...project.workspaces.slice(0, -1),
-                        { ...workspace, sessions: workspace.sessions.slice(0, -1) },
-                    ],
-                };
-            else if (workspace)
-                server.projects[server.projects.length - 1] = {
-                    ...project,
-                    workspaces: project.workspaces.slice(0, -1),
-                };
-            else server.projects.pop();
-        } else if (server.tasks.length) server.tasks.pop();
-        else server.bots.pop();
+        trim(server.tasks, (item) => focusedGroup(item.target));
+        trim(server.bots, (item) => focusedGroup(item.target));
     }
+    for (const server of servers) trim(server.models);
+    if (over() && appState.focused?.latestMessage.state === "loaded") {
+        bytes -=
+            gptLiveSerializedBytes(appState.focused.latestMessage) -
+            gptLiveSerializedBytes({ state: "notLoaded" });
+        appState.focused = { ...appState.focused, latestMessage: { state: "notLoaded" } };
+    }
+    trim(appState.servers, (server) => server.connectionId === activeConnectionId);
+    // Even pathological identity metadata must fit. Ordinary catalogs retain
+    // the complete focused target; an impossible target is explicitly omitted.
+    if (over() && appState.focused) {
+        bytes -= gptLiveSerializedBytes(appState.focused) - 4;
+        appState.focused = null;
+    }
+    trim(appState.servers);
     return appState;
 }
 

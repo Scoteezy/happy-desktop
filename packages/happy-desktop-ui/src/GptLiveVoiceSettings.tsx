@@ -100,7 +100,7 @@ export function GptLiveVoiceSettings(props: GptLiveVoiceSettingsProps) {
                 />
             </HappyAgentSettingsSection>
             <HappyAgentSettingsSection
-                description="What voice is told at the start of every call. Changes apply from the next call."
+                description="What voice is told at the start of every call. Reset removes the saved override and uses the machine's configured prompt, or the built-in default. Changes apply from the next call."
                 rows="cards"
                 title="Voice prompt"
             >
@@ -126,7 +126,7 @@ export function GptLiveVoiceSettings(props: GptLiveVoiceSettingsProps) {
                                 size="small"
                                 variant="ghost"
                             >
-                                Reset to default
+                                Reset saved prompt
                             </Button>
                         </div>
                     </div>

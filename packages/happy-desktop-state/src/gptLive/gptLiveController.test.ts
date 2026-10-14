@@ -156,6 +156,66 @@ function fixture(options: { capabilities?: readonly string[] } = {}) {
 afterEach(() => vi.useRealTimers());
 
 describe("GPT-Live controller navigation", () => {
+    it("ignores stale, future and unknown focus frames during a valid navigation hold", async () => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        const stale = f.focus("old", projectTarget("project-3"));
+        f.update((current) => ({ ...current, address: { groupId: "project-3" } }));
+        f.controller.actionReceive(
+            f.request("open", {
+                type: "desktopOpen",
+                target: projectTarget("project-2"),
+            }),
+        );
+        await vi.advanceTimersByTimeAsync(0);
+        const before = f.events.slice();
+        f.controller.focusReceive(stale);
+        f.controller.focusReceive({ ...stale, target: null });
+        f.controller.focusReceive(f.focus("unknown", projectTarget("missing")));
+        const future = f.focus("future", projectTarget("project-3"));
+        f.controller.focusReceive({ ...future, contextRevision: future.contextRevision + 1 });
+        expect(f.events).toEqual(before);
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS - 1);
+        expect(f.opened).toEqual([]);
+        await vi.advanceTimersByTimeAsync(1);
+        expect(f.opened).toEqual([projectTarget("project-2")]);
+        expect(f.result("open")).toMatchObject({ result: { status: "succeeded" } });
+        f.controller.focusReceive(f.focus("clear", null));
+        expect(f.events.at(-1)).toEqual({ type: "voiceFocusUpdated", focus: null });
+        f.controller.close();
+    });
+
+    it.each([true, false])(
+        "repaints and holds an expired same-target mention (explicit focus: %s)",
+        async (explicit) => {
+            vi.useFakeTimers();
+            const f = fixture();
+            f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+            f.controller.focusReceive(f.focus("mention", projectTarget("project-2")));
+            await vi.advanceTimersByTimeAsync(31_000);
+            if (explicit)
+                f.controller.focusReceive({
+                    ...f.focus("navigation", projectTarget("project-2")),
+                    reason: "navigation",
+                });
+            f.controller.actionReceive(
+                f.request("open", {
+                    type: "desktopOpen",
+                    target: projectTarget("project-2"),
+                }),
+            );
+            await vi.advanceTimersByTimeAsync(0);
+            expect(f.events.filter((event) => event.type === "voiceFocusUpdated")).toHaveLength(2);
+            expect(f.opened).toEqual([]);
+            await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS - 1);
+            expect(f.opened).toEqual([]);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(f.opened).toEqual([projectTarget("project-2")]);
+            f.controller.close();
+        },
+    );
+
     it("highlights a navigation target, holds it on screen, then revalidates and moves", async () => {
         vi.useFakeTimers();
         const f = fixture();

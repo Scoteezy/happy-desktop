@@ -82,7 +82,7 @@ export interface HappyAgentVoiceSettingsStore {
     /** Drops the unsaved prompt, leaving the one in effect. */
     promptDraftCancel(): void;
     promptSave(): void;
-    /** Goes back to the shipped prompt by removing the saved one; the default itself is never stored. */
+    /** Removes the runtime override, inheriting the machine's configured prompt or built-in default. */
     promptReset(): void;
     [Symbol.dispose](): void;
 }

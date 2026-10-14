@@ -11,6 +11,10 @@ export interface GptLiveSettingsProps {
     accounts?: readonly GptLiveAccount[];
     accountId?: string;
     checking?: boolean;
+    /** Show and read the account picker before calls are enabled. */
+    accountsVisible?: boolean;
+    /** The opt-in prerequisite for enabling calls, if one is missing. */
+    callsUnavailable?: string;
     onAccountSelect?(id: string): void;
     onAccountsRead?(): void;
 }
@@ -18,12 +22,12 @@ export interface GptLiveSettingsProps {
 /** Window-level voice preference and the account used by the footer phone. */
 export function GptLiveSettings(props: GptLiveSettingsProps) {
     const switchId = useId();
-    const { enabled, onAccountsRead } = props;
+    const { enabled, accountsVisible, onAccountsRead } = props;
     const accountsMount = useCallback(
         (node: HTMLDivElement | null) => {
-            if (node && enabled) onAccountsRead?.();
+            if (node && (enabled || accountsVisible)) onAccountsRead?.();
         },
-        [enabled, onAccountsRead],
+        [enabled, accountsVisible, onAccountsRead],
     );
     return (
         <div ref={accountsMount} className="happy-gpt-live-settings">
@@ -33,16 +37,17 @@ export function GptLiveSettings(props: GptLiveSettingsProps) {
                         <Switch
                             aria-label="Enable GPT-Live voice"
                             checked={props.enabled}
+                            disabled={props.callsUnavailable !== undefined}
                             id={switchId}
                             onChange={props.onEnabledChange}
                             size="small"
                         />
                     }
-                    description="Adds a phone beside Settings."
+                    description={props.callsUnavailable ?? "Adds a phone beside Settings."}
                     htmlFor={switchId}
                     label="Voice calls"
                 />
-                {props.enabled ? (
+                {props.enabled || props.accountsVisible ? (
                     <FormRow
                         label="Account"
                         description={

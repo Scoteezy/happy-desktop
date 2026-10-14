@@ -1,12 +1,14 @@
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import {
     appearanceStoreCreate,
     experimentsStoreCreate,
     gptLiveStoreCreate,
     happyAgentSettingsStoreCreate,
+    happyAgentVoiceSettingsStoreCreate,
     type GptLiveDocument,
 } from "happy-desktop-state";
+import { fakeHappyAgentDaemonCreate } from "happy-desktop-state/testing";
 import {
     AppHappyAgentSettingsView,
     happyAgentSettingsCategoryExists,
@@ -17,7 +19,7 @@ import type { AppHappyAgentDirectorySnapshot } from "../../sources/AppHappyAgent
 // by its own browser tests; the real GPT-Live settings tree remains mounted.
 vi.mock("../../../happy-desktop-ui/src/Spinner", () => ({ Spinner: () => null }));
 
-it("reveals the entire Experimental category only after opting in and keeps saved voice hidden while off", () => {
+it("shows Voice settings while calls are off and preserves the experimental opt-in", async () => {
     let document: GptLiveDocument | undefined = { gptLiveEnabled: true };
     const persistence = {
         read: () => document,
@@ -27,7 +29,42 @@ it("reveals the entire Experimental category only after opting in and keeps save
     };
     const experiments = experimentsStoreCreate();
     const gptLive = gptLiveStoreCreate(persistence, undefined, experiments);
-    const directory: AppHappyAgentDirectorySnapshot = { happyAgents: [] };
+    const daemon = fakeHappyAgentDaemonCreate();
+    const config = daemon.configGet();
+    daemon.configSet({
+        ...config,
+        voice: {
+            controller: { providerId: null, modelId: null, effort: null, fastMode: false },
+            effectiveController: {
+                providerId: "test-provider",
+                modelId: "test-model",
+                effort: "low",
+                serviceTier: null,
+                notice: null,
+            },
+            defaultSystemPrompt: "Built-in prompt.",
+            systemPromptOverride: null,
+            effectiveSystemPrompt: "Built-in prompt.",
+        },
+    });
+    const voiceSettings = happyAgentVoiceSettingsStoreCreate({ client: daemon.client });
+    const connected = { connection: "connected", daemon: "ready", attempt: 0 };
+    const loading = { type: "loading" };
+    const directory = {
+        happyAgents: [
+            {
+                id: "local",
+                name: "This Mac",
+                status: "connected",
+                session: {
+                    connection: { get: () => connected, subscribe: () => () => {} },
+                    models: { get: () => loading, subscribe: () => () => {} },
+                    workspace: {},
+                    voiceSettings,
+                },
+            },
+        ],
+    } as unknown as AppHappyAgentDirectorySnapshot;
     const appearance = appearanceStoreCreate();
     const settings = happyAgentSettingsStoreCreate();
     const defaults = settings.get();
@@ -53,16 +90,29 @@ it("reveals the entire Experimental category only after opting in and keeps save
         />
     );
     view = render(screen());
-    expect(view.queryByRole("button", { name: "Experimental" })).toBeNull();
+    expect(view.getByRole("button", { name: "Voice" })).toBeTruthy();
     expect(view.queryByRole("switch", { name: "Enable GPT-Live voice" })).toBeNull();
     expect(gptLive.get().gptLiveEnabled).toBe(false);
-    expect(happyAgentSettingsCategoryExists("experimental", false)).toBe(false);
-    section = "experimental";
-    view.rerender(screen());
-    expect(view.queryByRole("switch", { name: "Enable GPT-Live voice" })).toBeNull();
+    expect(happyAgentSettingsCategoryExists("voice", false)).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "Voice" }));
+    await act(async () => {
+        await vi.waitFor(() => expect(voiceSettings.get().loading).toBe(false));
+    });
+    expect(
+        view.getByRole("switch", { name: "Enable GPT-Live voice" }).hasAttribute("disabled"),
+    ).toBe(true);
+    expect(view.getByRole("combobox", { name: "Voice account" })).toBeTruthy();
+    expect(
+        view.getByRole("textbox", { name: "Voice prompt" }).getAttribute("value") ??
+            (view.getByRole("textbox", { name: "Voice prompt" }) as HTMLTextAreaElement).value,
+    ).toBe("Built-in prompt.");
+    expect(view.getByRole("switch", { name: "Fast mode" }).getAttribute("aria-checked")).toBe(
+        "false",
+    );
+    expect(view.getByText("Test Model")).toBeTruthy();
+    fireEvent.click(view.getByRole("button", { name: "General" }));
     fireEvent.click(view.getByRole("switch", { name: "Enable experimental features" }));
-    expect(view.getByRole("button", { name: "Experimental" })).toBeTruthy();
-    fireEvent.click(view.getByRole("button", { name: "Experimental" }));
+    fireEvent.click(view.getByRole("button", { name: "Voice" }));
     const control = view.getByRole("switch", { name: "Enable GPT-Live voice" });
     expect(control.getAttribute("aria-checked")).toBe("false");
     expect(view.getByText("Adds a phone beside Settings.")).toBeTruthy();
@@ -78,7 +128,8 @@ it("reveals the entire Experimental category only after opting in and keeps save
     fireEvent.click(view.getByRole("button", { name: "General" }));
     expect(view.queryByRole("switch", { name: "Enable GPT-Live voice" })).toBeNull();
     fireEvent.click(view.getByRole("switch", { name: "Enable experimental features" }));
-    expect(view.queryByRole("button", { name: "Experimental" })).toBeNull();
+    expect(view.getByRole("button", { name: "Voice" })).toBeTruthy();
     view.unmount();
+    voiceSettings[Symbol.dispose]();
     appearance[Symbol.dispose]();
 });

@@ -57,6 +57,11 @@ function listCreate(initial: readonly HappyAgentTask[]) {
         leaveTask: vi.fn(() => `mut_${String(++mutation)}`),
         reorderTask: vi.fn(() => `mut_${String(++mutation)}`),
         unarchiveTask: vi.fn(() => `mut_${String(++mutation)}`),
+        switchModel: vi.fn(() => `mut_${String(++mutation)}`),
+        setEffort: vi.fn(() => `mut_${String(++mutation)}`),
+        setPermissionMode: vi.fn(() => `mut_${String(++mutation)}`),
+        setServiceTier: vi.fn(() => `mut_${String(++mutation)}`),
+        sessionModeSaveWait: vi.fn((_id: string) => Promise.resolve()),
     };
     const deps = {
         client: {},
@@ -97,6 +102,66 @@ function listCreate(initial: readonly HappyAgentTask[]) {
 }
 
 const ids = (tasks: readonly HappyAgentTask[]) => tasks.map((entry) => entry.id);
+
+it.each([false, true])(
+    "waits for task model setup and preserves partial creation on refusal (%s)",
+    async (refused) => {
+        using harness = listCreate([]);
+        await vi.waitFor(() => expect(harness.list.get().projects.type).toBe("ready"));
+        harness.actions.createTask.mockImplementation(() => ({
+            taskId: "new",
+            workspaceId: "ws_new",
+            agentId: "ses_new",
+            task: Promise.resolve({ id: "new", workspaceId: "ws_new", agent: { id: "ses_new" } }),
+        }));
+        let resolve!: () => void;
+        let reject!: (error: Error) => void;
+        const gate = {
+            promise: new Promise<void>((done, fail) => {
+                resolve = done;
+                reject = fail;
+            }),
+            resolve: () => resolve(),
+            reject: (error: Error) => reject(error),
+        };
+        harness.actions.sessionModeSaveWait.mockImplementation(() => gate.promise);
+        let settled = false;
+        const creation = harness.list
+            .taskCreate({
+                name: "New",
+                selection: {
+                    providerId: "codex",
+                    modelId: "sol",
+                    effort: "low",
+                    serviceTier: "priority",
+                    permissionMode: "read_only",
+                },
+            })
+            .then((value) => {
+                settled = true;
+                return value;
+            });
+        const outcome = refused
+            ? expect(creation).rejects.toThrow(
+                  /was created.*setup was not confirmed.*do not repeat creation/,
+              )
+            : expect(creation).resolves.toMatchObject({ taskId: "new" });
+        await vi.waitFor(() =>
+            expect(harness.actions.sessionModeSaveWait).toHaveBeenCalledTimes(4),
+        );
+        harness.hostAnswers([task("new", { orderKey: "a0" })]);
+        await vi.waitFor(() => expect(harness.list.get().tasks).toHaveLength(1));
+        expect(settled).toBe(false);
+        expect(harness.actions.switchModel).toHaveBeenCalledWith("ses_new", {
+            providerId: "codex",
+            modelId: "sol",
+        });
+        if (refused) gate.reject(new Error("Model save refused."));
+        else gate.resolve();
+        await outcome;
+        expect(harness.actions.createTask).toHaveBeenCalledTimes(1);
+    },
+);
 
 it("lists the joined tasks in the reader's membership order and keeps every active one browsable", async () => {
     using harness = listCreate([
@@ -244,9 +309,10 @@ it("creates a task, answering with its conversation once the host lists it at th
         "The task's folder could not be created.",
     );
     expect(harness.actions.createTask).toHaveBeenLastCalledWith(undefined);
-    expect(harness.list.get().mutationError?.message).toBe(
+    expect(harness.list.get().mutationError?.message).toContain(
         "The task's folder could not be created.",
     );
+    expect(harness.list.get().mutationError?.message).toContain("It may already exist.");
 });
 
 it("renames at once, and states the host's refusal under the task", async () => {

@@ -6944,32 +6944,7 @@ export function happyAgentWorkspaceStoreCreate(
                     if (refusal) throw new Error(refusal);
                     if (acquired.store.get().session.type !== "ready")
                         throw new Error("The conversation is not ready.");
-                    const confirmed = () => {
-                        const menus = acquired.store.get().menus;
-                        return (
-                            menus?.currentProviderId === input.providerId &&
-                            menus.currentModelId === input.modelId
-                        );
-                    };
-                    acquired.store.modelUpdate(input);
-                    if (confirmed()) return;
-                    await new Promise<void>((resolve, reject) => {
-                        const timeout = setTimeout(() => {
-                            stop();
-                            reject(new Error("The session did not confirm the new model."));
-                        }, 10_000);
-                        const stop = acquired.store.subscribe(() => {
-                            if (released || disposed) {
-                                clearTimeout(timeout);
-                                stop();
-                                reject(new Error("This conversation is no longer open."));
-                            } else if (confirmed()) {
-                                clearTimeout(timeout);
-                                stop();
-                                resolve();
-                            }
-                        });
-                    });
+                    await acquired.store.modelChange(input);
                 },
                 [Symbol.dispose]() {
                     if (released) return;

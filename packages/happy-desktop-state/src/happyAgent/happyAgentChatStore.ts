@@ -598,6 +598,8 @@ export interface HappyAgentChatStore {
         answers: Readonly<Record<string, readonly string[]>>,
     ): void;
     modelUpdate(input: HappyAgentModelSelection): void;
+    /** Selects a model and waits for every resulting mode save to be acknowledged. */
+    modelChange(input: HappyAgentModelSelection): Promise<void>;
     effortUpdate(effort?: HappyAgentThinkingLevel): void;
     permissionModeUpdate(permissionMode: HappyAgentPermissionMode): void;
     serviceTierUpdate(serviceTier?: HappyAgentServiceTier): void;
@@ -643,6 +645,7 @@ export interface HappyAgentChatDeps {
         | "stopBackgroundProcess"
         | "stopRun"
         | "switchModel"
+        | "sessionModeSaveWait"
     >;
     readonly connectMutationSubscribe: (
         listener: (rejection: MutationRejectedDelta) => void,
@@ -1165,6 +1168,28 @@ export function happyAgentChatStoreCreate(
         commit();
     };
 
+    const modelUpdateRun = (input: HappyAgentModelSelection): string[] => {
+        const connected = transcriptSession;
+        if (connected === undefined) throw new UserError("The conversation is not ready.");
+        const current = transcriptSelectionOf(connected);
+        const next =
+            deps.modelSelect?.(current, input) ??
+            happyAgentSelectionModelUpdate(catalog, current, input);
+        deps.selectionUsed?.(next);
+        const mutations = [
+            deps.connectActions.switchModel(sessionId, {
+                providerId: next.providerId,
+                modelId: next.modelId,
+            }),
+        ];
+        if (next.effort !== current.effort)
+            mutations.push(deps.connectActions.setEffort(sessionId, next.effort));
+        if (next.serviceTier !== current.serviceTier)
+            mutations.push(deps.connectActions.setServiceTier(sessionId, next.serviceTier));
+        for (const id of mutations) connectMutationTrack(id);
+        return mutations;
+    };
+
     return {
         get: () => store.getState(),
         hasPendingMutations: pendingMutationActive,
@@ -1285,25 +1310,16 @@ export function happyAgentChatStoreCreate(
             commit();
         },
         modelUpdate(input) {
-            const connected = transcriptSession;
-            if (connected === undefined) return;
-            const current = transcriptSelectionOf(connected);
-            const next =
-                deps.modelSelect?.(current, input) ??
-                happyAgentSelectionModelUpdate(catalog, current, input);
-            deps.selectionUsed?.(next);
-            connectMutationTrack(
-                deps.connectActions.switchModel(sessionId, {
-                    providerId: next.providerId,
-                    modelId: next.modelId,
-                }),
-            );
-            if (next.effort !== current.effort)
-                connectMutationTrack(deps.connectActions.setEffort(sessionId, next.effort));
-            if (next.serviceTier !== current.serviceTier)
-                connectMutationTrack(
-                    deps.connectActions.setServiceTier(sessionId, next.serviceTier),
+            if (transcriptSession !== undefined) modelUpdateRun(input);
+        },
+        async modelChange(input) {
+            try {
+                await Promise.all(
+                    modelUpdateRun(input).map((id) => deps.connectActions.sessionModeSaveWait(id)),
                 );
+            } catch (error) {
+                throw happyAgentUserError(error);
+            }
         },
         effortUpdate(effort) {
             if (transcriptSession !== undefined)

@@ -952,6 +952,8 @@ export interface HappyAgentConnection {
      */
     createSession(input: CreateSessionInput, checkoutReady?: Promise<unknown>): MutationId;
     sessionCreationWait(sessionId: string): Promise<void>;
+    /** Waits for the host to acknowledge this mode mutation, including a refusal. */
+    sessionModeSaveWait(mutationId: MutationId): Promise<void>;
     markSessionRead(sessionId: string): MutationId;
     sendMessage(sessionId: string, message: string | SendMessageInput): MutationId;
     /** Same send/idempotency path, resolving only after authoritative acceptance. */

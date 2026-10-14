@@ -31,13 +31,9 @@ export function GptLiveSettingsPage() {
         <ComponentPage
             number={componentNumber}
             title="Voice"
-            summary="A phone beside Settings; the account lives in Experimental settings."
+            summary="A phone beside Settings; the account is chosen in Voice settings."
         >
-            <Specimen
-                label="Experimental settings"
-                number="01"
-                detail="One opt-in and one account."
-            >
+            <Specimen label="Voice settings" number="01" detail="One opt-in and one account.">
                 <Box width={680}>
                     <GptLiveSettings
                         enabled={enabled}
@@ -45,6 +41,23 @@ export function GptLiveSettingsPage() {
                         accounts={accounts}
                         accountId={accountId}
                         onAccountSelect={setAccountId}
+                        accountsVisible
+                    />
+                </Box>
+            </Specimen>
+            <Specimen
+                label="Calls unavailable"
+                number="07"
+                detail="Settings stay visible before experimental opt-in."
+            >
+                <Box width={680}>
+                    <GptLiveSettings
+                        enabled={false}
+                        onEnabledChange={() => {}}
+                        accountsVisible
+                        accounts={accounts}
+                        accountId="subscription"
+                        callsUnavailable="Enable experimental features in General to turn on voice calls."
                     />
                 </Box>
             </Specimen>

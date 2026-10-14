@@ -89,10 +89,14 @@ it("renders the default-off opt-in and preserves switch identity and focus when 
     expect(subscriptions).toBe(0);
 });
 
-it("hides the entire Experimental category until enabled and shows Voice only in that category", async () => {
+it("keeps the Voice category visible before experimental opt-in and calls disabled until opt-in", async () => {
     const experiments = experimentsStoreCreate();
     // A previously enabled voice preference must not expose the gated footer.
-    const voice = gptLiveStoreCreate({ read: () => ({ gptLiveEnabled: true }), write: () => {} });
+    const voice = gptLiveStoreCreate(
+        { read: () => ({ gptLiveEnabled: true }), write: () => {} },
+        undefined,
+        experiments,
+    );
     const appearance = appearanceStoreCreate();
     const settings = happyAgentSettingsStoreCreate();
     const directorySnapshot = { happyAgents: [] };
@@ -145,13 +149,22 @@ it("hides the entire Experimental category until enabled and shows Voice only in
         );
     try {
         await view.ready();
-        expect(category("Experimental")).toBeUndefined();
+        expect(category("Voice")).toBeDefined();
         expect(document.querySelector('[aria-label="Enable GPT-Live voice"]')).toBeNull();
         expect(document.querySelector(".happy-gpt-live__bar")).toBeNull();
         await view.screenshot("GptLiveSettings.experimental-hidden.test");
+        await userEvent.click(category("Voice")!);
+        await expect
+            .poll(() => document.querySelector('[aria-label="Enable GPT-Live voice"]') !== null)
+            .toBe(true);
+        expect(
+            (view.$('[aria-label="Enable GPT-Live voice"]').element as HTMLButtonElement).disabled,
+        ).toBe(true);
+        expect(document.querySelector('[aria-label="Voice account"]')).not.toBeNull();
+        await userEvent.click(category("General")!);
         const control = view.$('[aria-label="Enable experimental features"]').element;
         await userEvent.click(control);
-        await expect.poll(() => category("Experimental") !== undefined).toBe(true);
+        expect(category("Voice")).toBeDefined();
         expect(document.querySelector('[aria-label="Enable GPT-Live voice"]')).toBeNull();
         await expect
             .poll(() => {
@@ -165,18 +178,21 @@ it("hides the entire Experimental category until enabled and shows Voice only in
             })
             .toBe(14);
         await view.screenshot("GptLiveSettings.experimental-revealed.test");
-        await userEvent.click(category("Experimental")!);
+        await userEvent.click(category("Voice")!);
         await expect
             .poll(() => document.querySelector('[aria-label="Enable GPT-Live voice"]') !== null)
             .toBe(true);
         expect(
             view.$('[data-happy-desktop-ui="happy-agent-settings-heading-title"]').element
                 .textContent,
-        ).toBe("Experimental");
+        ).toBe("Voice");
+        expect(
+            (view.$('[aria-label="Enable GPT-Live voice"]').element as HTMLButtonElement).disabled,
+        ).toBe(false);
         await view.screenshot("GptLiveSettings.experimental-voice.test");
         await userEvent.click(category("General")!);
         await userEvent.click(view.$('[aria-label="Enable experimental features"]').element);
-        await expect.poll(() => category("Experimental") === undefined).toBe(true);
+        expect(category("Voice")).toBeDefined();
         expect(document.querySelector(".happy-gpt-live__bar")).toBeNull();
         expect(document.querySelector('[aria-label="Enable GPT-Live voice"]')).toBeNull();
     } finally {
