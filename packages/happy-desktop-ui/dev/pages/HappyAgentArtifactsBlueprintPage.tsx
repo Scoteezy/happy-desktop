@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
     happyAgentArtifactAuthorLabel,
     happyAgentArtifactSourceLabel,
@@ -376,6 +376,19 @@ function windowFrame(children: ReactNode) {
     );
 }
 
+/** The markdown viewer with Add to Surfaces held here, so the toggle can be tried. */
+function LiveSurfaceToggleViewer() {
+    const [added, setAdded] = useState(false);
+    return (
+        <HappyAgentArtifactViewer
+            {...viewerHandlers}
+            labels={labels}
+            surface={{ added, onToggle: () => setAdded(!added) }}
+            viewer={launchViewer}
+        />
+    );
+}
+
 export function HappyAgentArtifactsBlueprintPage() {
     return (
         <ComponentPage
@@ -496,17 +509,13 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Markdown read as a document; its own picture is shown from the same version, and a link to one of its files saves that file. The history stays folded away until History is pressed."
+                detail="Markdown read as a document; its own picture is shown from the same version, and a link to one of its files saves that file. The history stays folded away until History is pressed. Add to Surfaces keeps it among the reader's Surfaces; pressed, it takes it out again."
                 label="Viewer · markdown"
                 screen="06-markdown-1100x760"
                 window={{ width: 1100, height: 760 }}
                 number="06"
             >
-                <HappyAgentArtifactViewer
-                    {...viewerHandlers}
-                    labels={labels}
-                    viewer={launchViewer}
-                />
+                <LiveSurfaceToggleViewer />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen

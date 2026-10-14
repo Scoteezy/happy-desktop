@@ -6,6 +6,9 @@
  * these.
  */
 
+import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
+import type { HappyAgentBotId, HappyAgentTaskId } from "../happyAgent/happyAgentTypes.js";
+
 declare const happyAgentSurfaceIdBrand: unique symbol;
 declare const happyAgentSurfaceTodoIdBrand: unique symbol;
 
@@ -28,7 +31,46 @@ export type HappyAgentSurfaceType =
     | { readonly kind: "document" }
     /** A name and nothing else, that heads the Surfaces after it in a sidebar. */
     | { readonly kind: "separator" }
+    /** One artifact, bot, or task, kept among the Surfaces; opening it opens that. */
+    | { readonly kind: HappyAgentSurfaceReferenceKind }
     | { readonly kind: "unsupported"; readonly type: string };
+
+/** What a reference Surface can point at. */
+export type HappyAgentSurfaceReferenceKind = "artifact" | "bot" | "task";
+
+/**
+ * What a reference Surface points at, as the daemon resolved it for this
+ * reader when the catalog was last read. The name is the target's own,
+ * current one. A target that is gone, archived, or not readable by this
+ * reader is only `unavailable`, with nothing else said about it.
+ */
+export type HappyAgentSurfaceTarget =
+    | {
+          readonly state: "available";
+          readonly kind: "artifact";
+          readonly id: HappyAgentArtifactId;
+          readonly name: string;
+          /** An image or an image series. */
+          readonly hasImage: boolean;
+          readonly version: string;
+      }
+    | {
+          readonly state: "available";
+          readonly kind: "bot";
+          readonly id: HappyAgentBotId;
+          readonly name: string;
+          /** The bot has an avatar. */
+          readonly hasImage: boolean;
+          readonly version: string;
+      }
+    | {
+          readonly state: "available";
+          readonly kind: "task";
+          readonly id: HappyAgentTaskId;
+          readonly name: string;
+          readonly version: string;
+      }
+    | { readonly state: "unavailable"; readonly kind: HappyAgentSurfaceReferenceKind };
 
 /** A Surface's picture: the daemon's bytes, and the ThumbHash that stands in until they load. */
 export interface HappyAgentSurfaceImage {
@@ -61,6 +103,12 @@ export interface HappyAgentSurface {
      * record them, and for a list this window made until the daemon answers.
      */
     readonly creatorUserId: string | null;
+    /**
+     * For an artifact, bot, or task Surface, what it points at, as the daemon
+     * resolved it for this reader. Absent until it has been resolved: for a
+     * Surface this window made or heard of by event, until the catalog is read.
+     */
+    readonly target?: HappyAgentSurfaceTarget;
     /** The resource version, covering the Surface and every member record. */
     readonly version: string;
     readonly updatedAt: number;

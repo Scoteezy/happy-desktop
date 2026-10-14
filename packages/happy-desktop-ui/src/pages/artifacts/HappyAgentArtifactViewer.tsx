@@ -66,6 +66,11 @@ export interface HappyAgentArtifactViewerProps {
      */
     tab?: boolean;
     /**
+     * Keeps the artifact among the reader's Surfaces, or takes it out. Absent
+     * where the Happy Agent has no Surfaces.
+     */
+    surface?: { readonly added: boolean; readonly onToggle: () => void };
+    /**
      * The host's isolated guest for an HTML version served as a site. Absent
      * where the host has none, in which case the viewer never holds a site.
      */
@@ -129,6 +134,21 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                                         variant="ghost"
                                     >
                                         History
+                                    </Button>
+                                ) : null}
+                                {artifact.status === "active" && props.surface ? (
+                                    <Button
+                                        aria-pressed={props.surface.added}
+                                        data-testid="happy-agent-artifact-surface"
+                                        icon={props.surface.added ? "check" : "plus"}
+                                        onClick={props.surface.onToggle}
+                                        size="small"
+                                        title={
+                                            props.surface.added ? "Remove from Surfaces" : undefined
+                                        }
+                                        variant="ghost"
+                                    >
+                                        {props.surface.added ? "In Surfaces" : "Add to Surfaces"}
                                     </Button>
                                 ) : null}
                                 {artifact.status === "active" ? (

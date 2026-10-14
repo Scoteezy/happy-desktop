@@ -19,6 +19,10 @@ export interface HappyAgentSurfaceHeaderProps {
  */
 export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
     const creator = props.surface.creator;
+    // An artifact, bot, or task was made elsewhere; who kept it here only added it.
+    const kind = props.surface.type.kind;
+    const credit =
+        kind === "artifact" || kind === "bot" || kind === "task" ? "Added by" : "Created by";
     return (
         <PanelHeader className="happy-agent-surface-header">
             <div className="happy-agent-surface-header__lead">
@@ -27,7 +31,7 @@ export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
                     <>
                         <span aria-hidden="true" className="happy-agent-surface-header__dot" />
                         <span className="happy-agent-surface-header__creator">
-                            Created by {creator.name}
+                            {credit} {creator.name}
                         </span>
                     </>
                 ) : null}

@@ -10,11 +10,16 @@ import {
     type HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
 import { AppShell } from "../../src/AppShell";
+import { EmptyState } from "../../src/EmptyState";
 import type { MenuItem } from "../../src/Menu";
 import { Sidebar, type SidebarItem, type SidebarReorder } from "../../src/Sidebar";
 import { HappyAgentDocumentSurfacePage } from "../../src/pages/surfaces/HappyAgentDocumentSurfacePage";
 import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import { HappyAgentSurfaceHeader } from "../../src/pages/surfaces/HappyAgentSurfaceHeader";
+import {
+    HappyAgentSurfaceReferencePage,
+    type HappyAgentSurfaceReferenceView,
+} from "../../src/pages/surfaces/HappyAgentSurfaceReferencePage";
 import { HappyAgentSurfaceUnsupportedPage } from "../../src/pages/surfaces/HappyAgentSurfaceUnsupportedPage";
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
 import {
@@ -68,6 +73,14 @@ const KANBAN: HappyAgentSurfaceView = {
 };
 
 const noop = () => undefined;
+
+/** A task kept among the Surfaces by Ada, as its page's header shows it. */
+const REFERENCE: HappyAgentSurfaceView = {
+    name: "Rewrite onboarding guide",
+    type: { kind: "task" },
+    creator: { name: "Ada Park" },
+    members: MEMBERS.slice(0, 2),
+};
 
 const HOUSE: HappyAgentSurfaceView = {
     name: "House rules",
@@ -369,6 +382,33 @@ interface MockSurface {
     readonly view: HappyAgentSurfaceView;
     /** Open todos, for a todo list. */
     readonly count?: number;
+    /** An artifact, bot, or task kept among the Surfaces: what it points at. */
+    readonly reference?: MockReference;
+}
+
+/**
+ * What an artifact, bot, or task Surface points at here: the row it opens
+ * when it can be opened, and the face that row wears.
+ */
+interface MockReference {
+    readonly view: HappyAgentSurfaceReferenceView;
+    readonly face: Pick<SidebarItem, "archived" | "avatarId" | "icon" | "imageUrl" | "initials">;
+    /** The row in Artifacts, Bots, or Tasks it opens; absent when it cannot be opened. */
+    readonly opens?: string;
+}
+
+function reference(
+    id: string,
+    name: string,
+    kind: "artifact" | "bot" | "task",
+    mock: MockReference,
+): MockSurface {
+    return {
+        id,
+        joined: true,
+        reference: mock,
+        view: { name, type: { kind }, members: MEMBERS.slice(0, 2) },
+    };
 }
 
 function separator(id: string, name: string): MockSurface {
@@ -385,8 +425,33 @@ const SURFACES: readonly MockSurface[] = [
         view: { name: "Reading list", type: { kind: "todo" }, members: MEMBERS.slice(0, 1) },
     },
     { id: "house", joined: true, view: HOUSE },
+    reference("ref-chief", "Chief of Staff", "bot", {
+        face: { avatarId: "chief-of-staff" },
+        opens: "chief",
+        view: { phase: "available", kind: "bot", name: "Chief of Staff", action: "open" },
+    }),
     separator("work", "Work"),
     { id: "launch", joined: true, view: KANBAN },
+    reference("ref-spec", "Launch spec", "artifact", {
+        face: { icon: "package" },
+        opens: "artifacts",
+        view: { phase: "available", kind: "artifact", name: "Launch spec", action: "open" },
+    }),
+    reference("ref-onboarding", "Rewrite onboarding guide", "task", {
+        face: { icon: "tasks" },
+        opens: "task-docs",
+        view: {
+            phase: "available",
+            kind: "task",
+            name: "Rewrite onboarding guide",
+            action: "open",
+        },
+    }),
+    // Deleted since it was kept: its label and the artifact glyph, dimmed, and a quiet page.
+    reference("ref-pricing", "Old pricing page", "artifact", {
+        face: { icon: "package", archived: true },
+        view: { phase: "unavailable", kind: "artifact" },
+    }),
     {
         id: "release",
         joined: true,
@@ -420,9 +485,11 @@ function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
         label: surface.view.name,
         ...(heading
             ? {}
-            : surface.view.image
-              ? { imageUrl: surface.view.image.url }
-              : { icon: surfaceTypeIcon(surface.view.type) }),
+            : surface.reference
+              ? surface.reference.face
+              : surface.view.image
+                ? { imageUrl: surface.view.image.url }
+                : { icon: surfaceTypeIcon(surface.view.type) }),
         ...(surface.joined && surface.count ? { count: surface.count } : {}),
         ...(fixed ? { reorderable: false } : {}),
         action: surface.joined
@@ -500,12 +567,27 @@ const CHATS: readonly SidebarItem[] = [
     },
 ];
 
+/** Where the app would open the artifact viewer or a bot's or task's chat. */
+function MockTarget(props: { readonly item: SidebarItem }) {
+    return (
+        <div style={{ alignItems: "center", display: "flex", flex: "1 1 0%" }}>
+            <EmptyState
+                description="The app opens it here, as from its own row."
+                icon={props.item.id === "artifacts" ? "package" : "chat"}
+                size="panel"
+                title={props.item.label}
+            />
+        </div>
+    );
+}
+
 /**
  * The window as the app composes it: Artifacts heads the sidebar's first,
  * unheaded group and never moves; the reader's Surfaces follow and are
  * dragged among themselves. The + beside the collapse control makes a todo
  * list. Typing in the search replaces the sidebar with what matches —
  * Surfaces joined or not, bots, tasks, projects, and chats — under headings.
+ * An artifact, bot, or task kept among the Surfaces opens what it points at.
  */
 function MockWindow(props: {
     readonly focusOnType?: boolean;
@@ -524,6 +606,7 @@ function MockWindow(props: {
             .map((item) => ({ ...item, depth: 0, reorderable: false }));
     const joined = surfaces.filter((surface) => surface.joined);
     const open = surfaces.find((surface) => surface.id === selected);
+    const target = [ARTIFACTS, ...BOTS, ...TASKS].find((item) => item.id === selected);
     const reorder = (_section: string, move: SidebarReorder) => {
         const moved = surfaces.find((surface) => surface.id === move.id);
         if (!moved) return;
@@ -567,9 +650,11 @@ function MockWindow(props: {
                         onItemAction={noop}
                         onItemReorder={reorder}
                         onItemSelect={(id) => {
-                            // A separator has nothing to open.
+                            // A separator has nothing to open; a kept artifact,
+                            // bot, or task opens what it points at.
                             const surface = surfaces.find((entry) => entry.id === id);
-                            if (surface?.view.type.kind !== "separator") setSelected(id);
+                            if (surface?.view.type.kind === "separator") return;
+                            setSelected(surface?.reference?.opens ?? id);
                         }}
                         onSectionAction={noop}
                         search={{ onValueChange: setSearch, placeholder: "Search", value: search }}
@@ -653,6 +738,12 @@ function MockWindow(props: {
                         key={open.id}
                         surface={open.view}
                     />
+                ) : open?.reference ? (
+                    <HappyAgentSurfaceReferencePage
+                        onOpen={noop}
+                        reference={open.reference.view}
+                        surface={open.view}
+                    />
                 ) : open ? (
                     open.view.type.kind === "todo" ? (
                         <HappyAgentTodoSurfacePage
@@ -663,6 +754,8 @@ function MockWindow(props: {
                     ) : (
                         <HappyAgentSurfaceUnsupportedPage surface={open.view} />
                     )
+                ) : target ? (
+                    <MockTarget item={target} />
                 ) : null}
             </AppShell>
             <TrafficLights />
@@ -740,11 +833,11 @@ export function HappyAgentSurfacesBlueprintPage() {
         <ComponentPage
             contract="Props only"
             number={componentNumber}
-            summary="Shared Surfaces on a Happy Agent: the sidebar group they head with Artifacts, a todo list whose active todos are dragged into a shared order, the state for a type this build cannot show, and the dialog that makes one."
+            summary="Shared Surfaces on a Happy Agent: the sidebar group they head with Artifacts, a todo list whose active todos are dragged into a shared order, a shared document, an artifact, bot, or task kept among them, the state for a type this build cannot show, and the dialog that makes one."
             title="HappyAgentSurfaces"
         >
             <FullScreenSpecimen
-                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others, separators included — Home and Work are separators, which head the Surfaces after them and open nothing. + beside the collapse control offers a todo list or a separator; the search above everything replaces the sidebar with what matches. The list's add field has the caret, and typing anywhere no other control wants lands in it, as in a chat."
+                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others, separators included — Home and Work are separators, which head the Surfaces after them and open nothing. Chief of Staff, Launch spec, and Rewrite onboarding guide are a bot, an artifact, and a task kept among the Surfaces, wearing their own faces and opening where they always open; Old pricing page was deleted since. + beside the collapse control offers a todo list or a separator; the search above everything replaces the sidebar with what matches. The list's add field has the caret, and typing anywhere no other control wants lands in it, as in a chat."
                 label="Window"
                 number="00"
                 screen="00-window-1100x760"
@@ -983,6 +1076,63 @@ export function HappyAgentSurfacesBlueprintPage() {
                     {...documentHandlers}
                     document={{ ...DOCUMENT, status: "missing", text: "" }}
                     surface={HOUSE}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="An artifact kept among the Surfaces that has not been read for this reader yet: its header, and nothing guessed. Once read, its row opens the artifact viewer itself and this page is not seen."
+                label="Reference, resolving"
+                number="09"
+                screen="09-reference-resolving-720x640"
+            >
+                <HappyAgentSurfaceReferencePage
+                    onOpen={noop}
+                    reference={{ phase: "resolving" }}
+                    surface={{ ...REFERENCE, name: "Launch spec", type: { kind: "artifact" } }}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="A task someone kept among the Surfaces that the reader is not in: joining puts it in their Tasks and opens its chat."
+                label="Reference, a task to join"
+                number="09b"
+                screen="09b-reference-join-720x640"
+            >
+                <HappyAgentSurfaceReferencePage
+                    onOpen={noop}
+                    reference={{
+                        phase: "available",
+                        kind: "task",
+                        name: "Rewrite onboarding guide",
+                        action: "join",
+                    }}
+                    surface={{ ...REFERENCE, name: "Rewrite onboarding guide" }}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="What it pointed at was deleted, archived, or is not the reader's to see: said quietly under the label it was kept by. The row keeps its place."
+                label="Reference, not available"
+                number="09c"
+                screen="09c-reference-unavailable-720x640"
+            >
+                <HappyAgentSurfaceReferencePage
+                    onOpen={noop}
+                    reference={{ phase: "unavailable", kind: "artifact" }}
+                    surface={{ ...REFERENCE, name: "Old pricing page", type: { kind: "artifact" } }}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="A bot that was archived."
+                label="Reference, bot not available"
+                number="09d"
+                screen="09d-reference-bot-unavailable-720x640"
+            >
+                <HappyAgentSurfaceReferencePage
+                    onOpen={noop}
+                    reference={{ phase: "unavailable", kind: "bot" }}
+                    surface={{ ...REFERENCE, name: "Release notes", type: { kind: "bot" } }}
                 />
             </FullScreenSpecimen>
 

@@ -3,14 +3,18 @@ import type {
     Surface,
     SurfaceDocument,
     SurfaceMember,
+    SurfaceTarget,
     Todo,
 } from "@slopus/happy-agent-client";
+import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
+import type { HappyAgentBotId, HappyAgentTaskId } from "../happyAgent/happyAgentTypes.js";
 import { stringCompare } from "../utils/orderKeyDecimal.js";
 import type {
     HappyAgentSurface,
     HappyAgentSurfaceDocument,
     HappyAgentSurfaceId,
     HappyAgentSurfaceMember,
+    HappyAgentSurfaceTarget,
     HappyAgentSurfaceType,
     HappyAgentSurfaceTodo,
     HappyAgentSurfaceTodoId,
@@ -39,9 +43,44 @@ export function happyAgentSurfaceTypeProject(type: string): HappyAgentSurfaceTyp
         case "todo":
         case "document":
         case "separator":
+        case "artifact":
+        case "bot":
+        case "task":
             return { kind: type };
         default:
             return { kind: "unsupported", type };
+    }
+}
+
+function targetProject(target: SurfaceTarget): HappyAgentSurfaceTarget {
+    if (target.state === "unavailable") return { state: "unavailable", kind: target.type };
+    switch (target.type) {
+        case "artifact":
+            return {
+                state: "available",
+                kind: "artifact",
+                id: target.artifactId as HappyAgentArtifactId,
+                name: target.name,
+                hasImage: target.hasImage,
+                version: target.version,
+            };
+        case "bot":
+            return {
+                state: "available",
+                kind: "bot",
+                id: target.botId as HappyAgentBotId,
+                name: target.name,
+                hasImage: target.hasImage,
+                version: target.version,
+            };
+        case "task":
+            return {
+                state: "available",
+                kind: "task",
+                id: target.taskId as HappyAgentTaskId,
+                name: target.name,
+                version: target.version,
+            };
     }
 }
 
@@ -65,6 +104,7 @@ export function happyAgentSurfaceProject(endpoint: string, surface: Surface): Ha
         members: surface.members.map(memberProject),
         // A daemon from before creators leaves the field out; that credits nobody.
         creatorUserId: surface.creatorUserId ?? null,
+        ...(surface.target === undefined ? {} : { target: targetProject(surface.target) }),
         version: surface.version,
         updatedAt: surface.updatedAt,
     };

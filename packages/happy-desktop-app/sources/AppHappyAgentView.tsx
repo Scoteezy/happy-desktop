@@ -120,6 +120,8 @@ import {
     happyAgentArtifactCatalogStoreNoop,
     happyAgentArtifactChatContext,
     happyAgentSurfaceCatalogStoreNoop,
+    happyAgentSurfaceReferenceFind,
+    type HappyAgentSurfaceReference,
     happyAgentArtifactNames,
     happyAgentArtifactSourceLabel,
     happyAgentDeviceBridgeSupportStoreNone,
@@ -219,6 +221,8 @@ import {
     HappyAgentTaskBrowseDialog,
     HappyAgentSurfaceCreateDialog,
     HappyAgentSurfaceUnsupportedPage,
+    HappyAgentSurfaceReferencePage,
+    type HappyAgentSurfaceReferenceView,
     HappyAgentTodoSurfacePage,
     HappyAgentDocumentSurfacePage,
     surfaceTypeIcon,
@@ -862,6 +866,26 @@ function botCreatingSidebarItem(
     };
 }
 
+/** A task's face, as its row wears it: the owner's, or a glyph on a standalone machine. */
+function taskFace(
+    task: HappyAgentTask,
+): Pick<SidebarItem, "icon" | "imageUrl" | "initials" | "avatarId"> {
+    const owner = task.owner;
+    if (owner === null) return { icon: "tasks" };
+    const initials =
+        owner.name === undefined || ownerInitials(owner.name) === ""
+            ? undefined
+            : ownerInitials(owner.name);
+    return {
+        ...(owner.avatar ? { imageUrl: owner.avatar.url } : {}),
+        ...(initials !== undefined
+            ? { initials }
+            : owner.avatar === undefined
+              ? { avatarId: task.id }
+              : {}),
+    };
+}
+
 /** Up to two initials from a person's name, for an owner with no photo. */
 function ownerInitials(name: string): string {
     return name
@@ -890,26 +914,12 @@ function ownerInitials(name: string): string {
  * task for everybody, waits in the row's menu for the people allowed to.
  */
 function taskSidebarItem(task: HappyAgentTask, titleShimmerEnabled: boolean): SidebarItem {
-    const owner = task.owner;
-    const initials =
-        owner?.name === undefined || ownerInitials(owner.name) === ""
-            ? undefined
-            : ownerInitials(owner.name);
     return {
         id: task.workspaceId,
         kind: "project",
         label: task.name,
         labelShimmer: titleShimmerEnabled,
-        ...(owner === null
-            ? { icon: "tasks" as const }
-            : {
-                  ...(owner.avatar ? { imageUrl: owner.avatar.url } : {}),
-                  ...(initials !== undefined
-                      ? { initials }
-                      : owner.avatar === undefined
-                        ? { avatarId: task.id }
-                        : {}),
-              }),
+        ...taskFace(task),
         action: {
             icon: "close" as const,
             label: `Leave ${task.name}`,
@@ -1133,6 +1143,8 @@ const ROW_MENU_HIDE = "hide";
 /** The Bots heading's menu of hidden bots: one row per bot, and one for all of them. */
 const BOTS_MENU_SHOW_PREFIX = "show:";
 const BOTS_MENU_SHOW_ALL = "show-all";
+const ROW_MENU_SURFACE_ADD = "surface-add";
+const ROW_MENU_SURFACE_REMOVE = "surface-remove";
 
 /**
  * What a bot row offers about its own news. Both acts are this window's own
@@ -2247,7 +2259,7 @@ function surfaceViewOf(
     const creator =
         surface.creatorUserId === null ? undefined : catalog.users.get(surface.creatorUserId);
     return {
-        name: surface.name,
+        name: surfaceLabel(surface),
         ...(surface.image ? { image: surface.image } : {}),
         type: surface.type,
         ...(creator === undefined
@@ -2272,6 +2284,7 @@ function surfaceViewOf(
 function surfaceSidebarItem(
     happyAgentId: string,
     surface: HappyAgentSurface,
+    places: SurfacePlaces,
     listing: "sidebar" | "search",
     joined: boolean,
     offline: boolean,
@@ -2279,30 +2292,110 @@ function surfaceSidebarItem(
 ): SidebarItem {
     const count = joined ? activeTodoCounts?.get(surface.id) : undefined;
     const heading = listing === "sidebar" && surface.type.kind === "separator";
+    const label = surfaceLabel(surface);
     return {
         id: happyAgentItemId(happyAgentId, surfaceRowId(surface.id)),
         kind: heading ? "heading" : "project",
-        label: surface.name,
-        ...(heading
-            ? {}
-            : surface.image
-              ? { imageUrl: surface.image.url }
-              : { icon: surfaceTypeIcon(surface.type) }),
+        label,
+        ...(heading ? {} : surfaceFace(surface, places)),
         ...(count !== undefined && count > 0 ? { count } : {}),
         ...(joined ? {} : { reorderable: false }),
         action: joined
             ? {
                   disabled: offline,
                   icon: "close" as const,
-                  label: `Leave ${surface.name}`,
+                  label: `Leave ${label}`,
                   reveal: "hover" as const,
               }
             : {
                   disabled: offline,
                   icon: "plus" as const,
-                  label: `Join ${surface.name}`,
+                  label: `Join ${label}`,
               },
     };
+}
+
+/** The bots and tasks a reference Surface's row borrows its face from. */
+interface SurfacePlaces {
+    readonly bots: readonly HappyAgentBot[];
+    readonly tasks: readonly HappyAgentTask[];
+}
+
+function surfacePlacesOf(happyAgent: AppHappyAgentEntry | undefined): SurfacePlaces {
+    return { bots: happyAgent?.bots ?? [], tasks: happyAgent?.tasks ?? [] };
+}
+
+/**
+ * What a Surface is called: an artifact, bot, or task kept among the
+ * Surfaces goes by its own current name while the reader can see it, and by
+ * the label it was kept under otherwise.
+ */
+function surfaceLabel(surface: HappyAgentSurface): string {
+    return surface.target?.state === "available" ? surface.target.name : surface.name;
+}
+
+/**
+ * The face a Surface's row wears, chosen by its type so it reads as the same
+ * thing whatever state its target is in. A task always wears the task glyph.
+ * A bot wears its own face, and an artifact the Surface's picture or a
+ * picture glyph for an image, while the reader can see them; one they cannot
+ * falls back to its type's glyph. An unavailable target's row dims. Any other
+ * Surface wears its picture, or its type's glyph.
+ */
+function surfaceFace(
+    surface: HappyAgentSurface,
+    places: SurfacePlaces,
+): Pick<SidebarItem, "icon" | "imageUrl" | "initials" | "avatarId" | "archived"> {
+    const target = surface.target;
+    const glyph = { icon: surfaceTypeIcon(surface.type) };
+    if (target?.state === "unavailable") return { ...glyph, archived: true };
+    if (surface.type.kind === "task") return glyph;
+    if (target?.kind === "bot") {
+        const bot = places.bots.find((entry) => entry.id === target.id);
+        return { avatarId: target.id, ...(bot?.avatar ? { imageUrl: bot.avatar.url } : {}) };
+    }
+    if (surface.image) return { imageUrl: surface.image.url };
+    if (target?.kind === "artifact" && target.hasImage) return { icon: "image" };
+    return glyph;
+}
+
+/** A bot's or a task's row, as the reference a Surface would keep of it. */
+function rowReferenceOf(
+    happyAgent: AppHappyAgentEntry,
+    rowId: string,
+): { readonly reference: HappyAgentSurfaceReference; readonly name: string } | undefined {
+    const bot = happyAgent.bots.find((entry) => entry.workspaceId === rowId);
+    if (bot) return { reference: { kind: "bot", id: bot.id }, name: bot.name };
+    const task = happyAgent.tasks?.find((entry) => entry.workspaceId === rowId);
+    if (task) return { reference: { kind: "task", id: task.id }, name: task.name };
+    return undefined;
+}
+
+/**
+ * The bot's or task's row menu, with keeping it among the Surfaces first —
+ * or taking it out again — where the Happy Agent has Surfaces.
+ */
+function rowSurfaceMenuItems(
+    happyAgent: AppHappyAgentEntry,
+    rowId: string,
+    items: MenuItem[],
+): MenuItem[] {
+    const found = rowReferenceOf(happyAgent, rowId);
+    const catalog = happyAgent.session?.surfaces?.catalog().get();
+    if (found === undefined || catalog?.availability !== "available") return items;
+    const kept = happyAgentSurfaceReferenceFind(catalog.joined, found.reference) !== undefined;
+    return [
+        kept
+            ? {
+                  kind: "item",
+                  id: ROW_MENU_SURFACE_REMOVE,
+                  label: "Remove from Surfaces",
+                  icon: "close",
+              }
+            : { kind: "item", id: ROW_MENU_SURFACE_ADD, label: "Add to Surfaces", icon: "plus" },
+        ...(items.length > 0 ? ([{ kind: "separator" }] as const) : []),
+        ...items,
+    ];
 }
 
 /**
@@ -2330,6 +2423,7 @@ function happyAgentTopSection(
                       surfaceSidebarItem(
                           happyAgentId,
                           surface,
+                          surfacePlacesOf(happyAgent),
                           "sidebar",
                           true,
                           offline,
@@ -2416,12 +2510,13 @@ function happyAgentSearchSections(
             if (catalog.availability === "available") {
                 const joined = new Set(catalog.joined.map((surface) => surface.id));
                 for (const surface of catalog.joined)
-                    if (matches(surface.name))
+                    if (matches(surfaceLabel(surface)))
                         surfaces.push(
                             found(
                                 surfaceSidebarItem(
                                     happyAgent.id,
                                     surface,
+                                    surfacePlacesOf(happyAgent),
                                     "search",
                                     true,
                                     offline,
@@ -2430,11 +2525,18 @@ function happyAgentSearchSections(
                             ),
                         );
                 for (const surface of [...catalog.surfaces].sort((left, right) =>
-                    left.name.localeCompare(right.name),
+                    surfaceLabel(left).localeCompare(surfaceLabel(right)),
                 ))
-                    if (!joined.has(surface.id) && matches(surface.name))
+                    if (!joined.has(surface.id) && matches(surfaceLabel(surface)))
                         surfaces.push(
-                            surfaceSidebarItem(happyAgent.id, surface, "search", false, offline),
+                            surfaceSidebarItem(
+                                happyAgent.id,
+                                surface,
+                                surfacePlacesOf(happyAgent),
+                                "search",
+                                false,
+                                offline,
+                            ),
                         );
             }
         }
@@ -2959,6 +3061,31 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         surfaceCatalogStore.get,
         surfaceCatalogStore.get,
     );
+    /**
+     * Opens what an artifact, bot, or task Surface points at, where it always
+     * opens: the artifact viewer, or the bot's or task's own chat. Answers
+     * whether it could — not for one the reader cannot see, nor for a task
+     * they are not in.
+     */
+    const surfaceTargetOpen = (
+        happyAgent: AppHappyAgentEntry,
+        surface: HappyAgentSurface,
+    ): boolean => {
+        const target = surface.target;
+        if (target?.state !== "available") return false;
+        if (target.kind === "artifact") {
+            if (props.onArtifactOpen === undefined) return false;
+            props.onArtifactOpen(happyAgent.id, target.id);
+            return true;
+        }
+        const place =
+            target.kind === "bot"
+                ? happyAgent.bots.find((bot) => bot.id === target.id)
+                : happyAgent.tasks?.find((task) => task.id === target.id);
+        if (place === undefined) return false;
+        props.onChatSelect(happyAgent.id, place.workspaceId, place.conversation.id);
+        return true;
+    };
     // The todo list on screen is counted from its own store, which holds the
     // reader's changes the moment they are made, so ticking one off moves its
     // sidebar count at once. Every other list is counted by the catalog.
@@ -3221,15 +3348,19 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           )
                         : [];
                 }
-                return rowMenuItems(
-                    happyAgent.projects,
-                    happyAgent.bots,
-                    happyAgent.tasks ?? [],
-                    { ...item, id: row.id },
-                    happyAgentTaskCreateSupported(happyAgent),
-                    props.attention
-                        ? (bot) => happyAgentBotAttention(attention, happyAgent.id, bot.id)
-                        : undefined,
+                return rowSurfaceMenuItems(
+                    happyAgent,
+                    row.id,
+                    rowMenuItems(
+                        happyAgent.projects,
+                        happyAgent.bots,
+                        happyAgent.tasks ?? [],
+                        { ...item, id: row.id },
+                        happyAgentTaskCreateSupported(happyAgent),
+                        props.attention
+                            ? (bot) => happyAgentBotAttention(attention, happyAgent.id, bot.id)
+                            : undefined,
+                    ),
                 );
             }}
             // Each heading makes its own kind of thing on the Happy Agent it
@@ -3286,6 +3417,21 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 if (surfaceId !== undefined) {
                     if (actionId === ROW_MENU_LEAVE)
                         happyAgent.session?.surfaces?.catalog().surfaceLeave(surfaceId);
+                    return;
+                }
+                if (actionId === ROW_MENU_SURFACE_ADD || actionId === ROW_MENU_SURFACE_REMOVE) {
+                    const found = rowReferenceOf(happyAgent, row.id);
+                    const catalog = happyAgent.session?.surfaces?.catalog();
+                    if (found === undefined || catalog === undefined) return;
+                    if (actionId === ROW_MENU_SURFACE_ADD) {
+                        catalog.referenceAdd(found.reference, found.name);
+                        return;
+                    }
+                    const kept = happyAgentSurfaceReferenceFind(
+                        catalog.get().joined,
+                        found.reference,
+                    );
+                    if (kept) catalog.surfaceLeave(kept.id);
                     return;
                 }
                 const workspace = happyAgent.session?.workspace;
@@ -3371,10 +3517,16 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 if (!happyAgent) return;
                 const surfaceId = surfaceRowParse(row.id);
                 if (surfaceId !== undefined) {
+                    const surface = happyAgent.session?.surfaces
+                        ?.catalog()
+                        .get()
+                        .surfaces.find((entry) => entry.id === surfaceId);
                     // A separator has nothing to open; it only heads a group.
-                    const surface = surfaceCatalog.surfaces.find((entry) => entry.id === surfaceId);
-                    if (surface?.type.kind !== "separator")
-                        props.onSurfaceOpen?.(happyAgent.id, surfaceId);
+                    if (surface?.type.kind === "separator") return;
+                    // An artifact, bot, or task opens where it always does;
+                    // only one that cannot be opened from here shows its page.
+                    if (surface !== undefined && surfaceTargetOpen(happyAgent, surface)) return;
+                    props.onSurfaceOpen?.(happyAgent.id, surfaceId);
                     return;
                 }
                 const chatId = chatRowParse(row.id);
@@ -3719,6 +3871,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 <>
                     <HappyAgentArtifactsSurface
                         artifacts={artifacts}
+                        {...(active.session.surfaces
+                            ? { surfaces: active.session.surfaces.catalog() }
+                            : {})}
                         {...(props.artifactPage ? { artifactPage: props.artifactPage } : {})}
                         {...(props.artifactId === undefined
                             ? {}
@@ -3740,14 +3895,36 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         // A Surface belongs to the addressed machine, like its artifacts. Its
         // header carries Leave or Join, so the header is the window's drag
         // band rather than an overlay on top of it.
-        if (props.surfaceId !== undefined && active?.session?.surfaces)
+        if (props.surfaceId !== undefined && active?.session?.surfaces) {
+            const workspace = active.session.workspace;
             return (
                 <HappyAgentSurfaceContent
                     key={props.surfaceId}
+                    onTargetOpen={(surface) => {
+                        if (surfaceTargetOpen(active, surface)) return;
+                        // A task the reader is not in is joined, and then opened.
+                        const target = surface.target;
+                        if (target?.state !== "available" || target.kind !== "task") return;
+                        if (!activeHappyAgentOnline()) return;
+                        void workspace
+                            .taskJoin(target.id)
+                            .then(() =>
+                                taskJoinedThen(workspace, target.id, (task) =>
+                                    props.onChatSelect(
+                                        active.id,
+                                        task.workspaceId,
+                                        task.conversation.id,
+                                    ),
+                                ),
+                            )
+                            .catch(() => undefined);
+                    }}
+                    places={surfacePlacesOf(active)}
                     surfaceId={props.surfaceId as HappyAgentSurfaceId}
                     surfaces={active.session.surfaces}
                 />
             );
+        }
 
         // The inbox belongs to the addressed machine, so it is shown only while that
         // machine has stores to answer through.
@@ -4682,6 +4859,8 @@ function HappyAgentArtifactsSurface(props: {
     artifacts: HappyAgentArtifacts;
     artifactPage?: HtmlPreviewRenderer;
     artifactId?: HappyAgentArtifactId;
+    /** The Happy Agent's Surfaces, which an open artifact can be kept among. */
+    surfaces?: HappyAgentSurfaceCatalogStore;
     places: HappyAgentArtifactPlaces;
     onArtifactOpen(artifactId: string): void;
     onArtifactClose(): void;
@@ -4697,6 +4876,7 @@ function HappyAgentArtifactsSurface(props: {
                 artifacts={props.artifacts}
                 labels={labels}
                 onClose={props.onArtifactClose}
+                surfaces={props.surfaces ?? happyAgentSurfaceCatalogStoreNoop}
             />
         );
     return (
@@ -4746,8 +4926,16 @@ function HappyAgentArtifactViewerSurface(props: {
     artifactId: HappyAgentArtifactId;
     labels: HappyAgentArtifactLabels;
     onClose(): void;
+    surfaces: HappyAgentSurfaceCatalogStore;
 }) {
     const store = props.artifacts.viewer();
+    const surfaces = useSyncExternalStore(
+        props.surfaces.subscribe,
+        props.surfaces.get,
+        props.surfaces.get,
+    );
+    const reference = { kind: "artifact", id: props.artifactId } as const;
+    const kept = happyAgentSurfaceReferenceFind(surfaces.joined, reference);
     // The address decides which artifact the viewer holds, for exactly as long
     // as this surface shows it; leaving lets the viewer drop it and everything
     // read for it.
@@ -4771,6 +4959,24 @@ function HappyAgentArtifactViewerSurface(props: {
             onVersionSelect={store.versionSelect}
             onVersionsLoadMore={store.versionsNextLoad}
             {...(props.artifactPage ? { renderPage: props.artifactPage } : {})}
+            {...(surfaces.availability === "available"
+                ? {
+                      surface: {
+                          added: kept !== undefined,
+                          onToggle: () => {
+                              if (kept !== undefined) {
+                                  props.surfaces.surfaceLeave(kept.id);
+                                  return;
+                              }
+                              const artifact =
+                                  viewer.artifact.type === "ready"
+                                      ? viewer.artifact.value
+                                      : undefined;
+                              props.surfaces.referenceAdd(reference, artifact?.title || "Untitled");
+                          },
+                      },
+                  }
+                : {})}
             viewer={viewer.artifactId === props.artifactId ? viewer : VIEWER_OPENING}
         />
     );
@@ -4785,6 +4991,9 @@ function HappyAgentArtifactViewerSurface(props: {
 function HappyAgentSurfaceContent(props: {
     surfaces: HappyAgentSurfaces;
     surfaceId: HappyAgentSurfaceId;
+    places: SurfacePlaces;
+    /** Opens what an artifact, bot, or task Surface points at, joining a task first. */
+    onTargetOpen: (surface: HappyAgentSurface) => void;
 }) {
     const catalogStore = props.surfaces.catalog();
     const catalog = useSyncExternalStore(
@@ -4805,7 +5014,58 @@ function HappyAgentSurfaceContent(props: {
         return (
             <HappyAgentDocumentSurface store={props.surfaces.document(surface.id)} surface={view} />
         );
+    if (
+        surface.type.kind === "artifact" ||
+        surface.type.kind === "bot" ||
+        surface.type.kind === "task"
+    )
+        return (
+            <HappyAgentSurfaceReferencePage
+                onOpen={() => props.onTargetOpen(surface)}
+                reference={surfaceReferenceView(surface, props.places)}
+                surface={view}
+            />
+        );
     return <HappyAgentSurfaceUnsupportedPage surface={view} />;
+}
+
+/**
+ * Hands the task to `open` once the reader's join of it has landed, and
+ * never if the host refuses it. Joining answers as soon as it is asked, so
+ * the task is among the reader's Tasks only once the host has answered.
+ */
+function taskJoinedThen(
+    workspace: HappyAgentWorkspaceStore,
+    taskId: HappyAgentTaskId,
+    open: (task: HappyAgentTask) => void,
+): void {
+    const settled = (): boolean => {
+        const list = workspace.get().list;
+        const task = list.tasks.find((entry) => entry.id === taskId);
+        if (task !== undefined) open(task);
+        return task !== undefined || !list.tasksJoining.has(taskId);
+    };
+    if (settled()) return;
+    const unsubscribe = workspace.subscribe(() => {
+        if (settled()) unsubscribe();
+    });
+}
+
+/** What a reference Surface's page says about what it points at. */
+function surfaceReferenceView(
+    surface: HappyAgentSurface,
+    places: SurfacePlaces,
+): HappyAgentSurfaceReferenceView {
+    const target = surface.target;
+    if (target === undefined) return { phase: "resolving" };
+    if (target.state === "unavailable") return { phase: "unavailable", kind: target.kind };
+    const joined = target.kind !== "task" || places.tasks.some((task) => task.id === target.id);
+    return {
+        phase: "available",
+        kind: target.kind,
+        name: target.name,
+        action: joined ? "open" : "join",
+    };
 }
 
 /** A document Surface, read from its own store for as long as it is on screen. */

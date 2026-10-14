@@ -7,6 +7,8 @@ import {
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
+import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
+import type { HappyAgentBotId, HappyAgentTaskId } from "../happyAgent/happyAgentTypes.js";
 import { UserError } from "../types.js";
 import { cuid2Create } from "../utils/cuid2Create.js";
 import { orderKeyDecimalBetween, stringCompare } from "../utils/orderKeyDecimal.js";
@@ -26,8 +28,90 @@ import {
     type HappyAgentSurfaceId,
     type HappyAgentSurfaceMember,
     type HappyAgentSurfacePerson,
+    type HappyAgentSurfaceReferenceKind,
+    type HappyAgentSurfaceTarget,
     type HappyAgentSurfacesAvailability,
 } from "./surfaceTypes.js";
+
+/** The events that can change what a reference Surface resolves to. */
+const TARGET_EVENT_TYPES = [
+    "artifact.updated",
+    "artifact.deleted",
+    "bot.updated",
+    "task.updated",
+] as const;
+
+/** The artifact, bot, or task a reference Surface is made to point at. */
+export type HappyAgentSurfaceReference =
+    | { readonly kind: "artifact"; readonly id: HappyAgentArtifactId }
+    | { readonly kind: "bot"; readonly id: HappyAgentBotId }
+    | { readonly kind: "task"; readonly id: HappyAgentTaskId };
+
+/**
+ * The Surface that points at `reference`, among those whose target this
+ * reader can see, or `undefined`. The first the catalog lists, so every
+ * window agrees.
+ */
+export function happyAgentSurfaceReferenceFind(
+    surfaces: readonly HappyAgentSurface[],
+    reference: HappyAgentSurfaceReference,
+): HappyAgentSurface | undefined {
+    return surfaces.find(
+        (surface) =>
+            surface.target?.state === "available" &&
+            surface.target.kind === reference.kind &&
+            surface.target.id === reference.id,
+    );
+}
+
+/**
+ * What a reference Surface the reader is still making points at, as they
+ * picked it: something they can see, under the name they saw. The daemon's
+ * resolution replaces it once it answers.
+ */
+function pendingTarget(
+    reference: HappyAgentSurfaceReference,
+    name: string,
+): HappyAgentSurfaceTarget {
+    switch (reference.kind) {
+        case "artifact":
+            return {
+                state: "available",
+                kind: "artifact",
+                id: reference.id,
+                name,
+                hasImage: false,
+                version: "",
+            };
+        case "bot":
+            return {
+                state: "available",
+                kind: "bot",
+                id: reference.id,
+                name,
+                hasImage: false,
+                version: "",
+            };
+        case "task":
+            return { state: "available", kind: "task", id: reference.id, name, version: "" };
+    }
+}
+
+/** Whether two resolutions of a target say the same thing. */
+function targetSame(
+    left: HappyAgentSurfaceTarget | undefined,
+    right: HappyAgentSurfaceTarget | undefined,
+): boolean {
+    if (left === undefined || right === undefined) return left === right;
+    if (left.state === "unavailable" || right.state === "unavailable")
+        return left.state === right.state && left.kind === right.kind;
+    return (
+        left.kind === right.kind &&
+        left.id === right.id &&
+        left.name === right.name &&
+        left.version === right.version
+    );
+}
 
 /** The daemon's bound on a Surface name. */
 const NAME_LIMIT = 256;
@@ -106,7 +190,16 @@ export type HappyAgentSurfaceCreateInput =
           readonly image?: Blob;
       }
     /** A separator is only its name. */
-    | { readonly kind: "separator"; readonly name: string };
+    | { readonly kind: "separator"; readonly name: string }
+    /**
+     * An artifact, bot, or task kept among the Surfaces. The name is the
+     * Surface's own label, shown only while the target cannot be.
+     */
+    | {
+          readonly kind: "reference";
+          readonly name: string;
+          readonly reference: HappyAgentSurfaceReference;
+      };
 
 export interface HappyAgentSurfaceCatalogStore {
     get(): HappyAgentSurfaceCatalogSnapshot;
@@ -126,6 +219,12 @@ export interface HappyAgentSurfaceCatalogStore {
      * name makes nothing and answers `undefined`.
      */
     surfaceCreate(input: HappyAgentSurfaceCreateInput): HappyAgentSurfaceId | undefined;
+    /**
+     * Puts an artifact, bot, or task among the reader's Surfaces: joins the
+     * Surface that already points at it, or makes one named `name`. Nothing
+     * happens when the reader already has it.
+     */
+    referenceAdd(reference: HappyAgentSurfaceReference, name: string): void;
     [Symbol.dispose](): void;
 }
 
@@ -181,6 +280,7 @@ export const happyAgentSurfaceCatalogStoreNoop: HappyAgentSurfaceCatalogStore = 
     createOpen: () => undefined,
     createClose: () => undefined,
     surfaceCreate: () => undefined,
+    referenceAdd: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
 
@@ -195,8 +295,10 @@ interface PendingCreate {
     readonly surfaceId: HappyAgentSurfaceId;
     /** One idempotency key for every attempt; the ID alone already makes it once. */
     readonly mutationId: string;
-    readonly kind: HappyAgentSurfaceCreateKind;
+    readonly kind: HappyAgentSurfaceCreateKind | HappyAgentSurfaceReferenceKind;
     readonly name: string;
+    /** What an artifact, bot, or task Surface points at. */
+    readonly reference?: HappyAgentSurfaceReference;
     /** Where it goes in the reader's sidebar until the daemon says. */
     readonly orderKey: string;
     readonly at: number;
@@ -388,6 +490,9 @@ export function happyAgentSurfaceCatalogStoreCreate(
                                         ],
                               version: "",
                               updatedAt: create.at,
+                              ...(create.reference
+                                  ? { target: pendingTarget(create.reference, create.name) }
+                                  : {}),
                           }),
                       ),
                   ].sort((left, right) => stringCompare(left.id, right.id));
@@ -535,19 +640,67 @@ export function happyAgentSurfaceCatalogStoreCreate(
             return true;
         }
         const current = authoritative[index]!;
-        if (!happyAgentVersionNewer(surface.version, current.version)) return false;
         const next = [...authoritative];
-        next[index] = surface;
+        if (!happyAgentVersionNewer(surface.version, current.version)) {
+            // What a reference points at is resolved apart from the Surface's
+            // version, so a fresh resolution stands on the same version.
+            if (surface.target === undefined || targetSame(surface.target, current.target))
+                return false;
+            next[index] = { ...current, target: surface.target };
+            authoritative = next;
+            return true;
+        }
+        // An event carries no resolution; the one held stays until a read.
+        next[index] =
+            surface.target === undefined && current.target !== undefined
+                ? { ...surface, target: current.target }
+                : surface;
         authoritative = next;
         return true;
     };
+
+    /** Whether a Surface points at something this reader has not had resolved yet. */
+    const unresolved = (surface: HappyAgentSurface): boolean =>
+        (surface.type.kind === "artifact" ||
+            surface.type.kind === "bot" ||
+            surface.type.kind === "task") &&
+        surface.target === undefined;
+
+    let targetsTimer: ReturnType<typeof setTimeout> | undefined;
+    /**
+     * Reads the catalog again soon, so references resolve anew. Changes to
+     * tasks and bots arrive in bursts, so the reads they ask for are joined.
+     */
+    const targetsResolve = (): void => {
+        if (targetsTimer !== undefined || disposed) return;
+        targetsTimer = setTimeout(() => {
+            targetsTimer = undefined;
+            reload();
+        }, 300);
+    };
+
+    /**
+     * Whether a change to one artifact, bot, or task can change what a
+     * reference here resolves to: one points at it, or one this reader cannot
+     * see yet may be it.
+     */
+    const targetAffected = (kind: HappyAgentSurfaceReferenceKind, id: string): boolean =>
+        authoritative.some(
+            (surface) =>
+                surface.type.kind === kind &&
+                (surface.target === undefined ||
+                    surface.target.state === "unavailable" ||
+                    surface.target.id === id),
+        );
 
     /** Applies one event; answers whether the catalog must be read again. */
     const eventApply = (event: HappyAgentSurfaceEvent): { changed: boolean; gap: boolean } => {
         if (event.type === "created") {
             const changed = surfaceAdopt(event.surface);
             if (changed) usersRequest([event.surface]);
-            return { changed, gap: false };
+            // The event leaves out what a reference points at, which only a
+            // read resolves for this reader.
+            return { changed, gap: changed && unresolved(event.surface) };
         }
         const index = authoritative.findIndex((entry) => entry.id === event.surfaceId);
         if (index === -1) return { changed: false, gap: true };
@@ -652,6 +805,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 events: [
                     ...HAPPY_AGENT_SURFACE_EVENT_TYPES,
                     ...HAPPY_AGENT_TODO_EVENT_TYPES,
+                    ...TARGET_EVENT_TYPES,
                     "profile.updated",
                 ],
             })) {
@@ -688,6 +842,18 @@ export function happyAgentSurfaceCatalogStoreCreate(
                     continue;
                 }
                 if (todoHint(raw)) continue;
+                if (raw.type === "artifact.updated" || raw.type === "artifact.deleted") {
+                    if (targetAffected("artifact", raw.payload.artifactId)) targetsResolve();
+                    continue;
+                }
+                if (raw.type === "bot.updated") {
+                    if (targetAffected("bot", raw.payload.botId)) targetsResolve();
+                    continue;
+                }
+                if (raw.type === "task.updated") {
+                    if (targetAffected("task", raw.payload.taskId)) targetsResolve();
+                    continue;
+                }
                 const event = happyAgentSurfaceEventProject(endpoint, raw);
                 if (event === undefined) continue;
                 if (readsInFlight > 0) journal.push(event);
@@ -717,6 +883,8 @@ export function happyAgentSurfaceCatalogStoreCreate(
         countReads.clear();
         if (retry) clearTimeout(retry);
         retry = undefined;
+        if (targetsTimer) clearTimeout(targetsTimer);
+        targetsTimer = undefined;
     };
 
     /** Sends the queued acts one at a time, in the order they were asked for. */
@@ -816,7 +984,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
             ? undefined
             : surface?.members.find((member) => member.userId === snapshot.viewer?.userId);
 
-    return {
+    const store: HappyAgentSurfaceCatalogStore = {
         get: () => snapshot,
         subscribe(listener) {
             if (disposed) return () => undefined;
@@ -885,8 +1053,9 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 {
                     surfaceId,
                     mutationId,
-                    kind: input.kind,
+                    kind: input.kind === "reference" ? input.reference.kind : input.kind,
                     name,
+                    ...(input.kind === "reference" ? { reference: input.reference } : {}),
                     orderKey: keyAppended(),
                     at: now(),
                     created,
@@ -897,21 +1066,32 @@ export function happyAgentSurfaceCatalogStoreCreate(
             void (async () => {
                 let image: { data: string } | undefined;
                 // A picture that cannot be read leaves the list without one.
-                if (input.kind !== "separator" && input.image !== undefined)
+                if ((input.kind === "todo" || input.kind === "document") && input.image)
                     image = await base64Of(input.image).then(
                         (data) => ({ data }),
                         () => undefined,
                     );
-                const request: CreateSurfaceRequest =
-                    input.kind === "separator"
-                        ? { id: surfaceId, type: "separator", name, mutationId }
-                        : {
-                              id: surfaceId,
-                              type: input.kind,
-                              name,
-                              mutationId,
-                              ...(image === undefined ? {} : { image }),
-                          };
+                const request = ((): CreateSurfaceRequest => {
+                    const base = { id: surfaceId, name, mutationId };
+                    switch (input.kind) {
+                        case "separator":
+                            return { ...base, type: "separator" };
+                        case "reference": {
+                            const target = input.reference;
+                            if (target.kind === "artifact")
+                                return { ...base, type: "artifact", artifactId: target.id };
+                            if (target.kind === "bot")
+                                return { ...base, type: "bot", botId: target.id };
+                            return { ...base, type: "task", taskId: target.id };
+                        }
+                        default:
+                            return {
+                                ...base,
+                                type: input.kind,
+                                ...(image === undefined ? {} : { image }),
+                            };
+                    }
+                })();
                 let delay = 1_000;
                 for (;;) {
                     if (disposed || life.signal.aborted) return;
@@ -942,6 +1122,16 @@ export function happyAgentSurfaceCatalogStoreCreate(
             })();
             return surfaceId;
         },
+        referenceAdd(reference, name) {
+            if (disposed || snapshot.viewer === undefined) return;
+            const existing = happyAgentSurfaceReferenceFind(snapshot.surfaces, reference);
+            if (existing === undefined) {
+                store.surfaceCreate({ kind: "reference", name, reference });
+                return;
+            }
+            if (!snapshot.joined.some((surface) => surface.id === existing.id))
+                store.surfaceJoin(existing.id);
+        },
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
@@ -952,4 +1142,5 @@ export function happyAgentSurfaceCatalogStoreCreate(
             creates = [];
         },
     };
+    return store;
 }

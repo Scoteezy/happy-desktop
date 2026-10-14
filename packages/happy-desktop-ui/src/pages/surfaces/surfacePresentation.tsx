@@ -43,6 +43,12 @@ export function surfaceTypeIcon(type: HappyAgentSurfaceType): IconName {
             return "doc";
         case "separator":
             return "hash";
+        case "artifact":
+            return "package";
+        case "bot":
+            return "agents";
+        case "task":
+            return "tasks";
         case "unsupported":
             return "package";
     }
@@ -57,6 +63,12 @@ export function surfaceTypeLabel(type: HappyAgentSurfaceType): string {
             return "Document";
         case "separator":
             return "Separator";
+        case "artifact":
+            return "Artifact";
+        case "bot":
+            return "Bot";
+        case "task":
+            return "Task";
         case "unsupported":
             return `Unsupported type “${type.type}”`;
     }

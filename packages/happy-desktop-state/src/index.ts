@@ -84,6 +84,8 @@ export type { HappyAgentArtifacts } from "./artifacts/artifacts.js";
 export * from "./surfaces/surfaceTypes.js";
 export {
     happyAgentSurfaceCatalogStoreNoop,
+    happyAgentSurfaceReferenceFind,
+    type HappyAgentSurfaceReference,
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
     type HappyAgentSurfaceCreateInput,

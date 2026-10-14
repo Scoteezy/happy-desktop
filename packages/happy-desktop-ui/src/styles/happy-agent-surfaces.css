@@ -132,6 +132,7 @@
 
 .happy-agent-todo-surface,
 .happy-agent-document-surface,
+.happy-agent-surface-reference,
 .happy-agent-surface-unsupported {
     display: flex;
     flex: 1 1 0%;
@@ -514,6 +515,7 @@
 
 /* ---- Unsupported type -------------------------------------------------- */
 
+.happy-agent-surface-reference__body,
 .happy-agent-surface-unsupported__body {
     display: flex;
     flex: 1 1 auto;
