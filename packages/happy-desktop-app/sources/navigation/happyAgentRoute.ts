@@ -47,6 +47,8 @@ export type HappyAgentRoute =
     | { readonly kind: "happyAgent"; readonly happyAgentId: string }
     | { readonly kind: "settings" }
     | { readonly kind: "settingsSection"; readonly section: string }
+    /** One shared Surface on one machine, such as a todo list. */
+    | { readonly kind: "surface"; readonly happyAgentId: string; readonly surfaceId: string }
     /** Where a new task is made, on the machine it will live on, as a bot is. */
     | { readonly kind: "taskCreate"; readonly happyAgentId: string };
 
@@ -89,6 +91,8 @@ export function happyAgentRoutePath(route: HappyAgentRoute): string {
             return "/settings";
         case "settingsSection":
             return `/settings/${part(route.section)}`;
+        case "surface":
+            return `/surfaces/${part(route.happyAgentId)}/${part(route.surfaceId)}`;
         case "taskCreate":
             return `/tasks/new/${part(route.happyAgentId)}`;
     }
@@ -176,6 +180,10 @@ export function happyAgentRoutePathParse(pathname: string): HappyAgentRoute | un
         case "settings":
             if (first === undefined) return { kind: "settings" };
             return segments.length === 2 ? { kind: "settingsSection", section: first } : undefined;
+        case "surfaces":
+            return first !== undefined && second !== undefined && segments.length === 3
+                ? { kind: "surface", happyAgentId: first, surfaceId: second }
+                : undefined;
         case "tasks":
             return first === "new" && second !== undefined && segments.length === 3
                 ? { kind: "taskCreate", happyAgentId: second }
@@ -264,6 +272,13 @@ export function happyAgentRouteParse(value: unknown): HappyAgentRoute | undefine
         case "settingsSection": {
             const section = fieldOf(record, "section");
             return section ? { kind: "settingsSection", section } : undefined;
+        }
+        case "surface": {
+            const happyAgentId = fieldOf(record, "happyAgentId");
+            const surfaceId = fieldOf(record, "surfaceId");
+            return happyAgentId && surfaceId
+                ? { kind: "surface", happyAgentId, surfaceId }
+                : undefined;
         }
         case "taskCreate": {
             const happyAgentId = fieldOf(record, "happyAgentId");

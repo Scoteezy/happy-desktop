@@ -231,6 +231,7 @@
     .happy-agent-artifacts__header,
 .happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed]
     .happy-agent-artifact-viewer__header,
+.happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed] .happy-agent-surface-header,
 .happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed]
     .happy-desktop-app-shell__workspace
     > .happy-tabbed-pane:first-child

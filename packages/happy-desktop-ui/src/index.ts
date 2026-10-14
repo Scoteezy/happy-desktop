@@ -701,6 +701,40 @@ export {
     type HappyAgentArtifactViewerProps,
 } from "./pages/artifacts/HappyAgentArtifactViewer";
 export { artifactHtmlDocument } from "./pages/artifacts/artifactHtmlDocument";
+export { REORDERING_LIST_STATIC, ReorderingList, type ReorderingListProps } from "./ReorderingList";
+export {
+    SurfaceAvatar,
+    SurfaceMemberStack,
+    surfaceMembersText,
+    surfaceTypeLabel,
+    type HappyAgentSurfaceMemberView,
+    type HappyAgentSurfacePicture,
+    type HappyAgentSurfaceView,
+    type SurfaceAvatarProps,
+} from "./pages/surfaces/surfacePresentation";
+export {
+    HappyAgentSurfaceHeader,
+    type HappyAgentSurfaceHeaderProps,
+} from "./pages/surfaces/HappyAgentSurfaceHeader";
+export { HappyAgentTodoRow, type HappyAgentTodoRowProps } from "./pages/surfaces/HappyAgentTodoRow";
+export {
+    HappyAgentTodoSurfacePage,
+    type HappyAgentTodoSurfacePageProps,
+} from "./pages/surfaces/HappyAgentTodoSurfacePage";
+export {
+    HappyAgentSurfaceUnsupportedPage,
+    type HappyAgentSurfaceUnsupportedPageProps,
+} from "./pages/surfaces/HappyAgentSurfaceUnsupportedPage";
+export {
+    HappyAgentSurfaceBrowseDialog,
+    type HappyAgentSurfaceBrowseDialogProps,
+    type HappyAgentSurfaceBrowseEntry,
+} from "./pages/surfaces/HappyAgentSurfaceBrowseDialog";
+export {
+    HappyAgentSurfaceCreateDialog,
+    type HappyAgentSurfaceCreateDialogProps,
+    type HappyAgentSurfaceCreateInput,
+} from "./pages/surfaces/HappyAgentSurfaceCreateDialog";
 export {
     HappyAgentSettingsSection,
     HappyAgentSettingsShell,

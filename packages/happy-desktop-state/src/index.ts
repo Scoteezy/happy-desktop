@@ -81,6 +81,22 @@ export type {
     HappyAgentToolMediaDocumentStore,
 } from "./happyAgent/happyAgentToolMediaDocumentStore.js";
 export type { HappyAgentArtifacts } from "./artifacts/artifacts.js";
+export * from "./surfaces/surfaceTypes.js";
+export {
+    happyAgentSurfaceCatalogStoreNoop,
+    type HappyAgentSurfaceCatalogSnapshot,
+    type HappyAgentSurfaceCatalogStore,
+    type HappyAgentSurfaceCreateInput,
+    type HappyAgentSurfaceCreateState,
+    type HappyAgentSurfaceMembershipAction,
+} from "./surfaces/surfaceCatalogStore.js";
+export {
+    HAPPY_AGENT_TODO_TEXT_LIMIT,
+    type HappyAgentTodoEditing,
+    type HappyAgentTodoListSnapshot,
+    type HappyAgentTodoListStore,
+} from "./surfaces/surfaceTodoListStore.js";
+export type { HappyAgentSurfaces } from "./surfaces/surfaces.js";
 export type {
     HappyAgentArtifactTitle,
     HappyAgentArtifactTitlesSnapshot,

@@ -37,6 +37,7 @@ import { CHECKING_SERVER_COMPATIBILITY, serverCompatibility } from "./compatibil
 import { projectRegistrationError } from "./errors.js";
 import { deepEqual } from "../happyAgent/happyAgentSupport.js";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
+import { cuid2Create } from "../utils/cuid2Create.js";
 import {
     applyChanges,
     archivedAgentsMerge,
@@ -192,7 +193,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const wait = options.wait ?? abortableWait;
     const now = options.now ?? Date.now;
     const reportDebug = (entry: HappyAgentDebugLogInput): void => options.onDebugEntry?.(entry);
-    const nextId = createCuid2(now);
+    const nextId = cuid2Create(now);
     const sessions = new Map<string, SessionEntry>();
     const userSessions = new Map<string, Set<SessionEntry>>();
     const users = userProfilesCreate({
@@ -4202,6 +4203,13 @@ function messageBlockSame(previous: MessageBlock, next: MessageBlock): boolean {
                 previous.startedAt === next.startedAt &&
                 previous.trigger === next.trigger
             );
+        case "configuration":
+            return (
+                next.type === "configuration" &&
+                previous.beforeMessageId === next.beforeMessageId &&
+                deepEqual(previous.before, next.before) &&
+                deepEqual(previous.after, next.after)
+            );
     }
 }
 
@@ -4359,22 +4367,6 @@ function agentIdOfEvent(event: HappyAgentEvent): string | undefined {
         default:
             return undefined;
     }
-}
-
-function createCuid2(now: () => number): () => string {
-    const digits = "0123456789abcdefghijklmnopqrstuvwxyz";
-    const letters = "abcdefghijklmnopqrstuvwxyz";
-    let counter = 0;
-    return () => {
-        const random = globalThis.crypto.getRandomValues(new Uint8Array(13));
-        counter = (counter + 1) % 46_656;
-        const time = Math.max(0, Math.floor(now())).toString(36).slice(-8).padStart(8, "0");
-        const count = counter.toString(36).padStart(3, "0");
-        let tail = "";
-        for (let index = 1; index < random.length; index += 1)
-            tail += digits[(random[index] ?? 0) % digits.length];
-        return `${letters[(random[0] ?? 0) % letters.length] ?? "a"}${time}${count}${tail}`;
-    };
 }
 
 function abortableWait(milliseconds: number, signal: AbortSignal): Promise<void> {

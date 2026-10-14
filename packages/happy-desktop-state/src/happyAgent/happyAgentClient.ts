@@ -103,6 +103,7 @@ import {
 } from "./happyAgentCloudStore.js";
 import { happyAgentTeamsStoreCreate, type HappyAgentTeamsStore } from "./happyAgentTeamsStore.js";
 import { happyAgentArtifactsCreate, type HappyAgentArtifacts } from "../artifacts/artifacts.js";
+import { happyAgentSurfacesCreate, type HappyAgentSurfaces } from "../surfaces/surfaces.js";
 import {
     happyAgentDeviceBridgesStoreCreate,
     type HappyAgentDeviceBridgesStore,
@@ -190,6 +191,12 @@ export interface HappyAgentWorkspaceClient {
      * have artifacts says so through each surface's availability.
      */
     artifacts(): HappyAgentArtifacts;
+    /**
+     * This Happy Agent's Surfaces: the catalog, the reader's sidebar of it, and
+     * each todo list. Materialized on first access; a daemon too old to have
+     * Surfaces says so through the catalog's availability.
+     */
+    surfaces(): HappyAgentSurfaces;
     /**
      * The document a presented-file preview shows, read into memory for the
      * host's viewer. Materialized on first access and shared, since one
@@ -508,6 +515,7 @@ export function happyAgentWorkspaceClientCreate(
     let securityPolicyStore: HappyAgentSecurityPolicyStore | undefined;
     let secretsStore: HappyAgentSecretsStore | undefined;
     let artifacts: HappyAgentArtifacts | undefined;
+    let surfaces: HappyAgentSurfaces | undefined;
     let toolMediaDocument: HappyAgentToolMediaDocumentStore | undefined;
     const deviceBridgeStores = new Map<HappyAgentGroupId, HappyAgentDeviceBridgesStore>();
     let deviceBridgeSupport: HappyAgentDeviceBridgeSupportStore | undefined;
@@ -698,6 +706,14 @@ export function happyAgentWorkspaceClientCreate(
                     : {}),
             });
             return artifacts;
+        },
+        surfaces() {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            surfaces ??= happyAgentSurfacesCreate({
+                client: deps.client,
+                sync: deps.connection.sync,
+            });
+            return surfaces;
         },
         toolMediaDocument() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
@@ -953,6 +969,8 @@ export function happyAgentWorkspaceClientCreate(
             deviceBridgeSupport?.[Symbol.dispose]();
             deviceBridgeSupport = undefined;
             artifacts = undefined;
+            surfaces?.[Symbol.dispose]();
+            surfaces = undefined;
             deps.catalogSource[Symbol.dispose]();
             for (const binding of chats.values()) {
                 chatDeactivate(binding);

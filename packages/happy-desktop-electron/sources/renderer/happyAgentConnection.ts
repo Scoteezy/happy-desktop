@@ -38,6 +38,7 @@ import {
     type HappyAgentSecurityPolicyStore,
     type HappyAgentSecretsStore,
     type HappyAgentArtifacts,
+    type HappyAgentSurfaces,
     type HappyAgentSessionLocation,
     type HappyAgentWorkspaceMemoryDocument,
     type HappyAgentWorkspaceMemoryPersistence,
@@ -118,6 +119,8 @@ export interface HappyAgentSession {
     readonly secrets: () => HappyAgentSecretsStore;
     /** This Happy Agent's published artifacts, materialized as their surfaces open. */
     readonly artifacts: HappyAgentArtifacts;
+    /** This Happy Agent's shared Surfaces, such as todo lists, materialized as they open. */
+    readonly surfaces: HappyAgentSurfaces;
     readonly clock: HappyAgentClockStore;
 }
 
@@ -525,6 +528,7 @@ export function happyAgentConnectionOpen(input: {
                     securityPolicy: client.securityPolicy(),
                     secrets: () => client.secrets(),
                     artifacts: client.artifacts(),
+                    surfaces: client.surfaces(),
                     clock: happyAgentClockStoreCreate(),
                 };
                 debugEntry({

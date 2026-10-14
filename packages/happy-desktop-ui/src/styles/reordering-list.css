@@ -1,0 +1,117 @@
+/*
+ * ReorderingList — fixed-height rows placed at `index × (height + gap)`, after
+ * happy-list's own. Each row is translated to its slot rather than laid out in
+ * flow, so a drag changes nothing but translations and stacking: the DOM order
+ * stays the order the rows arrived in, and every other row glides to its new
+ * slot over 260ms while the held one tracks the pointer with no lag.
+ */
+
+.happy-reordering-list {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.happy-reordering-list__rows {
+    /* The rows are absolutely placed at their own slots, so this box is their containing block. */
+    position: relative;
+    flex: none;
+    min-width: 0;
+    transition: height 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.happy-reordering-list__rows:focus-visible {
+    outline: none;
+}
+
+.happy-reordering-list__row {
+    /* A row sits at its slot by translation, so a drag never reorders the DOM; flex flow would move it with every reorder. */
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    z-index: 0;
+    display: flex;
+    min-width: 0;
+    box-sizing: border-box;
+    transition:
+        translate 260ms cubic-bezier(0.2, 0, 0, 1),
+        scale 160ms ease,
+        box-shadow 160ms ease;
+}
+
+.happy-reordering-list__rows[data-reorderable] .happy-reordering-list__row {
+    cursor: grab;
+}
+
+/* Controls and editors inside a row keep their own cursor: a press there is
+   theirs, never a drag. */
+.happy-reordering-list__row [data-reordering-list-static] {
+    cursor: auto;
+}
+
+/* While one row is held, the rest only make way: no hover, no press. */
+.happy-reordering-list__rows[data-dragging] {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.happy-reordering-list__rows[data-dragging] .happy-reordering-list__row:not([data-held]) {
+    pointer-events: none;
+}
+
+.happy-reordering-list__row[data-held] {
+    z-index: 999;
+    border-radius: var(--happy-radius-md);
+    box-shadow: 0 4px 12px var(--shadow-subtle);
+    cursor: grabbing;
+    scale: 1.05;
+    transition:
+        scale 160ms ease,
+        box-shadow 160ms ease;
+}
+
+.happy-reordering-list__row[data-entering] {
+    animation: happy-reordering-list-enter 200ms ease both;
+}
+
+.happy-reordering-list__row[data-exiting] {
+    z-index: 0;
+    pointer-events: none;
+    animation: happy-reordering-list-exit 130ms ease both;
+}
+
+@keyframes happy-reordering-list-enter {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes happy-reordering-list-exit {
+    from {
+        opacity: 1;
+    }
+    to {
+        opacity: 0;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-reordering-list__rows,
+    .happy-reordering-list__row,
+    .happy-reordering-list__row[data-held] {
+        transition: none;
+    }
+
+    .happy-reordering-list__row[data-entering] {
+        animation: none;
+    }
+
+    /* Still an animation, so its end still removes the row. */
+    .happy-reordering-list__row[data-exiting] {
+        animation-duration: 1ms;
+    }
+}

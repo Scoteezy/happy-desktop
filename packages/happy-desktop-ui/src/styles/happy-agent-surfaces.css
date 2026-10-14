@@ -1,0 +1,402 @@
+/*
+ * P-019 Happy Agent Surfaces: the header every Surface shares, the todo list,
+ * the state for a type this build cannot show, and the browse and create
+ * dialogs.
+ *
+ * A Surface page reads down one column under the surface header, at the same
+ * 720px measure as the artifacts and inbox pages. A todo is a fixed 40px row on
+ * 2px gaps, because the reordering list places its rows by slot.
+ *
+ * Layout is flexbox throughout; colors, radii, and type come only from theme
+ * roles.
+ */
+
+/* ---- Picture and faces ------------------------------------------------- */
+
+.happy-surface-avatar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    overflow: hidden;
+    background-color: var(--surface-ripple);
+    background-position: center;
+    background-size: cover;
+    color: var(--text-secondary);
+}
+
+.happy-surface-avatar[data-size="xs"] {
+    width: 20px;
+    height: 20px;
+    border-radius: 6px;
+}
+
+.happy-surface-avatar[data-size="sm"] {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+}
+
+.happy-surface-avatar__image {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.happy-surface-members {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+}
+
+.happy-surface-members__more {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---- Header band --------------------------------------------------------
+   The band itself is the shared PanelHeader, so its height, inset, and drag
+   contract are a chat header's. These rules only lay out what it carries. */
+
+.happy-agent-surface-header__heading {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.happy-agent-surface-header__title,
+.happy-agent-surface-header__subtitle {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-surface-header__title {
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-agent-surface-header__subtitle {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-agent-surface-header__trailing {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 12px;
+}
+
+/* ---- Todo list page ---------------------------------------------------- */
+
+.happy-agent-todo-surface,
+.happy-agent-surface-unsupported {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-todo-surface__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+
+.happy-agent-todo-surface__scroll-viewport {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.happy-agent-todo-surface__content {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    gap: 12px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 720px;
+    padding: 4px 16px 48px;
+}
+
+.happy-agent-todo-surface__empty {
+    margin: 0;
+    padding: 0 12px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 20px;
+}
+
+/* The rows, then the completed section below them. */
+.happy-agent-todo-surface__list {
+    gap: 16px;
+}
+
+.happy-agent-todo-surface__completed {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.happy-agent-todo-surface__completed-toggle {
+    display: flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    margin: 0;
+    padding: 0 10px 0 8px;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    cursor: pointer;
+}
+
+.happy-agent-todo-surface__completed-toggle:hover {
+    background: var(--surface-pressed);
+    color: var(--text);
+}
+
+.happy-agent-todo-surface__completed-toggle:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: -2px;
+}
+
+/* A lifted row is the one thing above the list, so it paints its own surface. */
+.happy-agent-todo-surface .happy-reordering-list__row[data-held] {
+    background: var(--surface);
+}
+
+/* ---- Todo row ---------------------------------------------------------- */
+
+.happy-agent-todo-row {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 0 6px 0 12px;
+    border-radius: var(--happy-radius-md);
+}
+
+.happy-agent-todo-row:hover,
+.happy-agent-todo-row:focus-within {
+    background: var(--surface-pressed);
+}
+
+.happy-agent-todo-row__check {
+    display: flex;
+    flex: none;
+    align-items: center;
+}
+
+.happy-agent-todo-row__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    margin: 0;
+    padding: 0 4px;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    line-height: 28px;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: inherit;
+}
+
+.happy-agent-todo-row__text:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: -2px;
+}
+
+.happy-agent-todo-row[data-completed] .happy-agent-todo-row__text {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+}
+
+.happy-agent-todo-row__field {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 28px;
+    margin: 0;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    outline: 2px solid var(--text-link);
+    outline-offset: -2px;
+    background: var(--input-background);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    line-height: 20px;
+}
+
+/* The delete control keeps its lane and appears with the row's hover or focus. */
+.happy-agent-todo-row__delete {
+    flex: none;
+    opacity: 0;
+}
+
+.happy-agent-todo-row:hover .happy-agent-todo-row__delete,
+.happy-agent-todo-row:focus-within .happy-agent-todo-row__delete {
+    opacity: 1;
+}
+
+/* ---- Unsupported type -------------------------------------------------- */
+
+.happy-agent-surface-unsupported__body {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 24px;
+}
+
+/* ---- Browse dialog ----------------------------------------------------- */
+
+.happy-agent-surface-browse-dialog,
+.happy-agent-surface-create-dialog {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-surface-browse-dialog__empty {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 20px;
+}
+
+.happy-agent-surface-browse-dialog__list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-agent-surface-browse-dialog__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    min-height: 40px;
+}
+
+.happy-agent-surface-browse-dialog__text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.happy-agent-surface-browse-dialog__name,
+.happy-agent-surface-browse-dialog__detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-surface-browse-dialog__name {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+}
+
+.happy-agent-surface-browse-dialog__detail {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/* ---- Create dialog ----------------------------------------------------- */
+
+.happy-agent-surface-create-dialog__picture {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.happy-agent-surface-create-dialog__preview {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    overflow: hidden;
+    border-radius: 10px;
+    background: var(--surface-ripple);
+    color: var(--text-secondary);
+}
+
+.happy-agent-surface-create-dialog__preview img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.happy-agent-surface-create-dialog__picture-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.happy-agent-surface-create-dialog__picture-label {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+}
+
+.happy-agent-surface-create-dialog__picture-hint {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-agent-surface-create-dialog__picture-hint[data-invalid] {
+    color: var(--text-destructive);
+}
