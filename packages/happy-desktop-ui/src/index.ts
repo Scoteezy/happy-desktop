@@ -732,6 +732,7 @@ export {
     type HappyAgentSurfaceCreateDialogProps,
     type HappyAgentSurfaceCreateInput,
 } from "./pages/surfaces/HappyAgentSurfaceCreateDialog";
+export { happyAgentSurfaceBackdropsPreload } from "./pages/surfaces/surfaceBackdropsPreload";
 export {
     HappyAgentSettingsSection,
     HappyAgentSettingsShell,

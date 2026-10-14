@@ -7,3 +7,8 @@ export const happyWordmarkLightUrl = new URL(
     "./assets/brand/happy-engineering-stacked-light.svg",
     import.meta.url,
 ).href;
+export const todoBackdropUrl = new URL("./assets/backdrops/todo-ginkgo.jpg", import.meta.url).href;
+export const todoBackdropDarkUrl = new URL(
+    "./assets/backdrops/todo-ginkgo-dark.jpg",
+    import.meta.url,
+).href;

@@ -63,6 +63,7 @@ import {
     ZoomIndicator,
     ConnectionShell,
     ConnectionSurface,
+    happyAgentSurfaceBackdropsPreload,
     type BrowserContentRenderer,
     type HtmlPreviewRenderer,
     type LivePerformanceStore,
@@ -899,6 +900,9 @@ const browserLocal =
     document.querySelector('meta[name="happy-browser-local"]')?.getAttribute("content") === "1";
 const bridge = window.happyDesktop ?? (browserLocal ? browserDevBridgeCreate() : undefined);
 const root = createRoot(document.getElementById("root")!);
+// A todo list is laid over a picture; fetching and decoding both of them now
+// means opening a list paints its background with it instead of a frame later.
+happyAgentSurfaceBackdropsPreload();
 
 /* The View menu owns zooming, so `bridge` is the only thing that hears of it.
    What is counted is how many times zoom was asked for, not what it came to:
