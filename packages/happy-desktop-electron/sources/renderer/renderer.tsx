@@ -558,11 +558,6 @@ function DesktopScreens(props: DesktopRendererProps) {
         props.happyAgents.get,
         props.happyAgents.get,
     );
-    const windowState = useSyncExternalStore(
-        props.windowState.subscribe,
-        props.windowState.get,
-        props.windowState.get,
-    );
     const sidebarVisibility = useSyncExternalStore(
         props.sidebarVisibility.subscribe,
         props.sidebarVisibility.get,
@@ -616,7 +611,7 @@ function DesktopScreens(props: DesktopRendererProps) {
             }
             reordering={directory.reordering}
             reorderError={directory.reorderError}
-            windowControls={props.platform === "desktop" && !windowState.fullScreen}
+            windowControls={props.platform === "desktop"}
             collapsed={sidebarVisibility.hidden}
             error={directory.error}
         >

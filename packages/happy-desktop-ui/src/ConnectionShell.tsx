@@ -52,6 +52,10 @@ export function ConnectionShell(props: {
     readonly reordering?: boolean;
     readonly reorderError?: string;
     readonly children: ReactNode;
+    /**
+     * The rail heads a desktop window and keeps its 40px title band, in full
+     * screen as well as windowed, so Home never moves to the window's top edge.
+     */
     readonly windowControls?: boolean;
     /** Freeze the working shimmer at a loop fraction for deterministic previews. */
     readonly workingShimmerPhase?: number;

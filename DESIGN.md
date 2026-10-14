@@ -239,6 +239,9 @@ padding, and keeps the painted focus indicator of the first, last, widest, and
 narrowest representative interactive children visible in Chromium, Firefox,
 and WebKit.
 
+A fixed header above a scrollport draws no hairline. Once content scrolls under
+it, a short fade in the surface's own tone marks the edge instead.
+
 ### The scrollbar
 
 Every scrolling surface uses the shared scrollbar. Its pointer track is always
@@ -277,6 +280,16 @@ Never truncate menu or popover headings, headers, buttons, or settings labels.
 Keep them short enough to fit, or let them wrap. Truncation is only for
 unbounded user content (titles, paths, branch names), with the full text
 reachable elsewhere.
+
+## Window controls
+
+The macOS traffic lights sit in the window's top-left corner, inside the 40px
+title band. That corner is a safe area, defined once by
+`--happy-window-controls-width` and `--happy-window-controls-height` in
+`styles/window-chrome.css`. Every header sharing the band takes its leading
+inset from them. A narrow header keeps that inset and drops its secondary text,
+so nothing slides under the lights. Full screen removes the lights but keeps
+the band, so nothing jumps to the window's top edge.
 
 ## Sentence case
 

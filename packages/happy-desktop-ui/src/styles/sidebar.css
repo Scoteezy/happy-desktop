@@ -173,7 +173,12 @@
     outline-offset: -2px;
 }
 
+/* A drill-down title names a place, not user content, so it never truncates:
+   the column's minimum width already holds it past the traffic lights' safe
+   area. */
 .happy-sidebar__title--back {
+    flex: none;
+    overflow: visible;
     font-weight: 700;
 }
 
@@ -223,6 +228,30 @@
 .happy-sidebar__body {
     flex: 1;
     min-height: 0;
+}
+
+/* No line between the header and the list. Once rows scroll under the header,
+   a short fade in the sidebar's own tone takes the edge instead; at the top
+   there is nothing. Masked rather than a gradient to transparent, which would
+   tint grey (see .happy-floating-dock__scrim). */
+.happy-sidebar__body::before {
+    content: "";
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 16px;
+    background: var(--groupped-background);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+    mask-image: linear-gradient(to bottom, black, transparent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+.happy-sidebar[data-scrolled] > .happy-sidebar__body::before {
+    opacity: 1;
 }
 
 .happy-sidebar__body-viewport {

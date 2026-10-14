@@ -3,6 +3,14 @@
    the existing layout. Only the column touching the window's right edge needs
    the reservation; rows below the title bar keep their full width. */
 :root {
+    /* The safe area of the macOS traffic lights: the window's top-left corner
+       that no header content may enter. The Electron host draws the 14px lights
+       at x=14…68, centred in the 40px title band; content starts 16px past them,
+       clear of their hover halo. Windows reports a zero `titlebar-area-x`, its
+       caption buttons being on the right, so nothing is reserved there. Every
+       heading in the band takes its leading inset from these two values. */
+    --happy-window-controls-width: calc(env(titlebar-area-x, 72px) + 12px);
+    --happy-window-controls-height: 40px;
     --happy-window-caption-right: max(
         0px,
         calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))

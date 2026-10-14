@@ -3,30 +3,35 @@
  * and the provider cards inside the Providers category.
  */
 
+/* The band is one 20px line. A header never truncates, so when the column is
+   too narrow for the description it wraps onto a second line that the band
+   clips away whole: the description steps aside and the title stays. */
 .happy-agent-settings__heading {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     flex: 1 1 0%;
-    gap: 8px;
+    gap: 0 8px;
     min-width: 0;
+    height: 20px;
+    overflow: hidden;
     color: var(--text-secondary);
 }
 
 .happy-agent-settings__heading-title {
+    flex: none;
     color: var(--text);
     font-size: 15px;
     font-weight: 600;
     line-height: 20px;
+    white-space: nowrap;
 }
 
 .happy-agent-settings__heading-description {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
+    flex: none;
     color: var(--text-secondary);
     font-size: 13px;
     line-height: 20px;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 

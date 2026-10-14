@@ -39,10 +39,9 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     windowFullScreen?: boolean;
     /**
      * A connection rail stands between the window's left edge and this shell,
-     * holding the traffic lights' lane itself. The chrome inset closes exactly
-     * as in full screen, but the window is still a window: with the lights
-     * beside it rather than gone, an empty sidebar heading folds away and the
-     * toggle shares the first row's line.
+     * holding most of the traffic lights' lane itself. The chrome inset closes
+     * as in full screen, but in a window the lights still reach past the rail,
+     * so the sidebar heading starts where their safe area ends.
      */
     connectionRail?: boolean;
     /**

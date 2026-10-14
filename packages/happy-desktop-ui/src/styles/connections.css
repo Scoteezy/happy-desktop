@@ -1,4 +1,9 @@
 .happy-connections {
+    /* Tiles start on the traffic lights' own x=14 and leave 6px on the trailing
+       side, the sidebar's own panel inset, so the sidebar content sits close
+       beside them: 14 + 36 + 6. A shell beside the rail reads this to know how
+       much of the lights' safe area the rail already holds. */
+    --happy-connections-rail-width: 56px;
     display: flex;
     flex: 1 1 auto;
     width: 100%;
@@ -12,10 +17,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    /* Tiles start on the traffic lights' own x=14 and leave 6px on the trailing
-       side, the sidebar's own panel inset, so the sidebar content sits close
-       beside them: 14 + 36 + 6. */
-    flex: 0 0 56px;
+    flex: 0 0 var(--happy-connections-rail-width);
     min-height: 0;
     box-sizing: border-box;
     /* The sidebar's own tone: rail and sidebar are one column split by a
@@ -23,8 +25,10 @@
     background: var(--groupped-background);
 }
 .happy-connections__rail[data-window-controls] {
-    /* Matches the 40px hidden title bar the macOS traffic lights are centred in. */
-    padding-top: 40px;
+    /* Matches the 40px hidden title bar the macOS traffic lights are centred in.
+       Full screen keeps it: the tiles hold their place as the lights go, and
+       Home stays off the edge macOS slides its menu bar down over. */
+    padding-top: var(--happy-window-controls-height);
 }
 /* The hairline between the rail and the sidebar beside it. In a window it
    starts below the title band, so the band the traffic lights sit in stays one
@@ -41,20 +45,7 @@
     pointer-events: none;
 }
 .happy-connections__rail[data-window-controls]::after {
-    top: 40px;
-}
-/* The title band is fixed while the tiles scroll beneath it, so it closes on
-   the same hairline the sidebar heading beside it does, on the same line. */
-.happy-connections__rail[data-window-controls]::before {
-    content: "";
-    position: absolute;
-    z-index: 1;
-    top: 39px;
-    right: 0;
-    left: 0;
-    height: 1px;
-    background: var(--divider);
-    pointer-events: none;
+    top: var(--happy-window-controls-height);
 }
 .happy-connections__rail > .happy-scroll-area {
     /* The tile list takes the height between the title bar and the footer. */
@@ -74,7 +65,7 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-    /* Full-screen windows have no traffic-light lane; keep clear ground above Home. */
+    /* Outside a desktop window there is no title band; keep clear ground above Home. */
     padding: 12px 6px 8px 14px;
 }
 .happy-connections__rail[data-window-controls] .happy-connections__items {

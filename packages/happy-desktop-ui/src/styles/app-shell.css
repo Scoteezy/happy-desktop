@@ -42,15 +42,15 @@
     z-index: 3;
     top: 0;
     left: 0;
-    width: 78px;
-    height: 56px;
+    width: var(--happy-window-controls-width);
+    height: var(--happy-window-controls-height);
     pointer-events: none;
 }
 
 .happy-desktop-app-shell__traffic-light-reservation {
     display: block;
-    width: 78px;
-    height: 56px;
+    width: var(--happy-window-controls-width);
+    height: var(--happy-window-controls-height);
 }
 
 /* A focused surface without a sidebar or supplied TitleBar still needs a real
@@ -154,29 +154,20 @@
 /* The window chrome row is the native title bar's own 40px, so the traffic
    lights, the sidebar toggle, and the heading beside them read as one band of
    window furniture rather than a 56px product header the lights float inside.
-   The 28px toggle centres on the lights' axis at y=6. */
+   The 28px toggle centres on the lights' axis at y=6. The band stays in full
+   screen too, so the rows below keep their place as the lights come and go and
+   nothing sits on the top edge where macOS slides its menu bar down. */
 .happy-desktop-app-shell[data-window-controls] .happy-sidebar__header,
 .happy-desktop-app-shell[data-window-controls] .happy-channel-header,
 .happy-desktop-app-shell[data-window-controls] .happy-panel-header {
-    height: 40px;
+    height: var(--happy-window-controls-height);
 }
 
-/* The sidebar's band stays put while the list scrolls under it, so it closes on
-   a hairline. Drawn as an inset shadow rather than a border so the band keeps
-   its full 40px and its contents stay on the traffic lights' axis. A connection
-   rail beside it draws the same line across its own band. */
-.happy-desktop-app-shell[data-window-controls]
-    .happy-desktop-app-shell__sidebar
-    > .happy-sidebar
-    > .happy-sidebar__header {
-    box-shadow: inset 0 -1px 0 var(--divider);
-}
-
-/* The native controls occupy x=14…68, so sidebar content begins after their
-   16px trailing clearance. In full screen the controls disappear and content
-   returns to the window's ordinary 12px inset. */
+/* Sidebar content begins past the traffic lights' safe area (window-chrome.css).
+   In full screen the controls disappear and content returns to the window's
+   ordinary 12px inset. */
 .happy-desktop-app-shell[data-window-controls] {
-    --happy-desktop-app-shell-chrome-inset: calc(env(titlebar-area-x, 72px) + 12px);
+    --happy-desktop-app-shell-chrome-inset: var(--happy-window-controls-width);
 }
 
 .happy-desktop-app-shell[data-window-controls]:is(
@@ -184,18 +175,6 @@
     [data-connection-rail]
 ) {
     --happy-desktop-app-shell-chrome-inset: 12px;
-}
-
-/* Beside a rail in a window the lights are still there, 20px of them past
-   the rail's 56px edge with the halo fading out behind them. A heading with
-   something at its start — the settings back control and title — would land
-   under the green light on the closed inset, so it begins 36px in instead:
-   past the green light and the halo's fade, on the lights' own line. */
-.happy-desktop-app-shell[data-window-controls][data-connection-rail]:not([data-window-full-screen])
-    .happy-desktop-app-shell__sidebar
-    > .happy-sidebar[data-back]
-    > .happy-sidebar__header {
-    padding-left: 36px;
 }
 
 /* Keep sidebar headings clear of the native traffic lights. The collapse
@@ -234,40 +213,15 @@
     gap: 8px;
 }
 
-/* Beside a connection rail in full screen, a heading with nothing in it — the
-   product mark stands down there — has no traffic lights to hold a band for
-   either, so it can fold away when the list starts with a Create row. Without
-   that row the band stays, keeping the collapse toggle clear of the first
-   section's actions. In a window the band stays for the lights as well.
-   The collapse toggle then shares the Create row's line: the row is 32px
-   behind the body's 6px inset, so the 28px toggle hangs at 8px to centre on
-   it, and the row leaves the toggle's 40px lane (12px edge plus 28px box,
-   less the body's own 6px) clear. */
-.happy-desktop-app-shell[data-window-controls][data-connection-rail][data-window-full-screen]
+/* Beside a rail in a window the lights are still there, reaching past the
+   rail's edge into this heading. Whatever the heading holds — the settings back
+   control and title — starts where the safe area ends: the same window x as
+   without a rail. */
+.happy-desktop-app-shell[data-window-controls][data-connection-rail]:not([data-window-full-screen])
     .happy-desktop-app-shell__sidebar
-    > .happy-sidebar[data-heading-empty]:has(
-        .happy-sidebar__body-content > .happy-sidebar__compose:first-child
-    )
+    > .happy-sidebar
     > .happy-sidebar__header {
-    display: none;
-}
-
-.happy-desktop-app-shell[data-window-controls][data-connection-rail][data-window-full-screen]
-    .happy-desktop-app-shell__sidebar:has(
-        > .happy-sidebar[data-heading-empty]
-            .happy-sidebar__body-content
-            > .happy-sidebar__compose:first-child
-    )
-    > .happy-desktop-app-shell__sidebar-collapse {
-    top: 8px;
-}
-
-.happy-desktop-app-shell[data-window-controls][data-connection-rail][data-window-full-screen]
-    .happy-desktop-app-shell__sidebar
-    > .happy-sidebar[data-heading-empty]
-    .happy-sidebar__body-content
-    > .happy-sidebar__compose:first-child {
-    margin-right: 34px;
+    padding-left: calc(var(--happy-window-controls-width) - var(--happy-connections-rail-width));
 }
 
 /* Same reservation on whichever strip heads the workspace once the sidebar is
@@ -296,15 +250,14 @@
     padding-bottom: 0;
 }
 
-/* The lane held clear of the lights themselves. In full screen they are gone
-   and the header keeps its own 16px inset, which is why only this half of the
-   reservation is scoped away from it. */
-.happy-desktop-app-shell[data-window-controls]:not(
-        [data-window-full-screen],
-        [data-connection-rail]
-    )
+/* The lane held clear of the lights themselves. The overlay covers the whole
+   window, a connection rail included, so it holds the full safe area rather
+   than the shell's own inset. In full screen the lights are gone and the header
+   keeps its own 16px inset, which is why only this half of the reservation is
+   scoped away from it. */
+.happy-desktop-app-shell[data-window-controls]:not([data-window-full-screen])
     .happy-lightbox__header {
-    padding-left: var(--happy-desktop-app-shell-chrome-inset);
+    padding-left: var(--happy-window-controls-width);
 }
 
 /* The window's overlay lane: a place in the shell's own stacking context for a

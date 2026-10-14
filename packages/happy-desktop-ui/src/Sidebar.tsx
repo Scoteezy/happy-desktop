@@ -1624,6 +1624,8 @@ export function Sidebar(props: SidebarProps) {
     // one left silent.
     const [announcements, setAnnouncements] = useState<readonly [string, string]>(["", ""]);
     const [announceSlot, setAnnounceSlot] = useState(0);
+    // Whether rows sit under the header; the header then fades into the list.
+    const [scrolled, setScrolled] = useState(false);
     const moveAnnounce = (text: string): void => {
         const slot = announceSlot === 0 ? 1 : 0;
         setAnnounceSlot(slot);
@@ -2005,22 +2007,13 @@ export function Sidebar(props: SidebarProps) {
             y: event.clientY,
         });
     };
-    // A heading with nothing to say: no product mark, no title, no drill-down,
-    // nothing trailing. The band still stands where the window needs a drag
-    // lane; the shell decides whether it may fold away.
-    const headingEmpty =
-        !local.onBack &&
-        !local.brand &&
-        local.title === undefined &&
-        !local.subtitle &&
-        !local.headerTrailing;
     return (
         <nav
             {...rest}
             className={["happy-sidebar", local.className].filter(Boolean).join(" ")}
             data-back={local.onBack ? "" : undefined}
-            data-heading-empty={headingEmpty ? "" : undefined}
             data-happy-desktop-ui="sidebar"
+            data-scrolled={scrolled ? "" : undefined}
             style={local.style}
         >
             <header className="happy-sidebar__header" data-happy-desktop-ui="sidebar-header">
@@ -2098,6 +2091,9 @@ export function Sidebar(props: SidebarProps) {
                 data-happy-desktop-ui="sidebar-body"
                 data-scrollbar-rows=""
                 viewportClassName="happy-sidebar__body-viewport"
+                viewportProps={{
+                    onScroll: (event) => setScrolled(event.currentTarget.scrollTop > 0),
+                }}
             >
                 <div
                     className="happy-sidebar__body-content"
