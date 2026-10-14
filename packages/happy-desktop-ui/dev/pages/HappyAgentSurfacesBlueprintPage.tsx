@@ -182,8 +182,9 @@ function LiveTodoPage(props: {
                 const text = list.draft.trim();
                 if (text.length === 0) return;
                 setNext(next + 1);
+                // At the top, as the daemon puts it; not credited until it answers.
                 set({
-                    active: [...list.active, active(`n${String(next)}`, text, next)],
+                    active: [active(`n${String(next)}`, text, next), ...list.active],
                     draft: "",
                 });
             }}
@@ -617,7 +618,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Live. Drag an active todo by its body — its author's face included; the checkbox, the delete control, and the field while editing never start a drag. Completed todos are below, newest first, and never move. Coffee beans credits nobody and Dish soap's author is not read yet, so neither shows a face; the header says who made the list."
+                detail="Live. A todo added here goes to the top of the list. Drag an active todo by its body — its author's face included; the checkbox, the delete control, and the field while editing never start a drag. Completed todos are below, newest first, and never move. Coffee beans credits nobody and Dish soap's author is not read yet, so neither shows a face; the header says who made the list."
                 label="Todo list"
                 number="01"
                 screen="01-todo-1100x760"

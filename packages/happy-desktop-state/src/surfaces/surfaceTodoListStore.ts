@@ -74,7 +74,7 @@ export interface HappyAgentTodoListStore {
     get(): HappyAgentTodoListSnapshot;
     subscribe(listener: () => void): () => void;
     draftUpdate(text: string): void;
-    /** Adds the draft to the end of the active list and empties the field. */
+    /** Adds the draft to the top of the active list and empties the field. */
     draftSubmit(): void;
     /** Checks a todo off, or puts a completed one back at the end of the active list. */
     todoStatusUpdate(todoId: HappyAgentSurfaceTodoId, status: "active" | "completed"): void;
@@ -685,7 +685,10 @@ export function happyAgentTodoListStoreCreate(
         void queueRun();
     };
 
-    /** The key after the last active todo, as the daemon appends one. */
+    /** The key before the first active todo, where the daemon puts a new one. */
+    const keyPrepended = (): string => keyBetween(null, snapshot.active[0]?.orderKey ?? null);
+
+    /** The key after the last active todo, where the daemon puts one ticked back on. */
     const keyAppended = (): string => keyBetween(snapshot.active.at(-1)?.orderKey ?? null, null);
 
     /** The text a todo may hold: trimmed, within the daemon's bound, and not blank. */
@@ -736,7 +739,7 @@ export function happyAgentTodoListStoreCreate(
                 kind: "create",
                 todoId: idCreate() as HappyAgentSurfaceTodoId,
                 text,
-                orderKey: keyAppended(),
+                orderKey: keyPrepended(),
                 at: now(),
             });
         },

@@ -70,7 +70,7 @@ export interface HappyAgentTodoSurfacePageProps {
 
 /**
  * HappyAgentTodoSurfacePage — one shared todo list: its header, a field that
- * adds to the end of the list, the active todos in the order everyone in the
+ * adds to the top of the list, the active todos in the order everyone in the
  * list shares, and the completed ones folded away beneath them. The list is
  * one centred column of cards laid over the list's picture.
  *
