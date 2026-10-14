@@ -39,6 +39,8 @@ export function surfaceTypeIcon(type: HappyAgentSurfaceType): IconName {
     switch (type.kind) {
         case "todo":
             return "tasks";
+        case "document":
+            return "doc";
         case "separator":
             return "hash";
         case "unsupported":
@@ -51,6 +53,8 @@ export function surfaceTypeLabel(type: HappyAgentSurfaceType): string {
     switch (type.kind) {
         case "todo":
             return "Todo list";
+        case "document":
+            return "Document";
         case "separator":
             return "Separator";
         case "unsupported":

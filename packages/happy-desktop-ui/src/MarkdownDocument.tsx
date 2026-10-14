@@ -32,6 +32,72 @@ import { ScrollArea } from "./Scrollbar";
 // Keep the product's fixed GFM configuration stable across streaming/store
 // notifications so unchanged Markdown does not pay a second parse.
 const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+
+type MarkdownElement = NonNullable<ExtraProps["node"]>;
+type MarkdownChild = MarkdownElement["children"][number];
+
+/** Where text is not wrapped: code keeps its own text, and these hold only rows or items. */
+const SOURCE_TEXT_UNWRAPPED = new Set([
+    "pre",
+    "code",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "ul",
+    "ol",
+]);
+
+/**
+ * Marks the rendered Markdown with where it came from in the source, for a
+ * reader that turns a click on the rendered text into a caret in the text it
+ * came from. Every element carries `data-source-offset`, where its Markdown
+ * starts; every run of prose is wrapped in a span carrying
+ * `data-source-text`, where that run's characters start, so a click lands on
+ * the character it was on.
+ */
+function rehypeSourceOffsets() {
+    const mark = (element: MarkdownElement, code: boolean): void => {
+        const offset = element.position?.start.offset;
+        if (offset !== undefined) element.properties["dataSourceOffset"] = offset;
+        const inCode = code || element.tagName === "pre" || element.tagName === "code";
+        element.children = element.children.map((child): MarkdownChild => {
+            if (child.type === "element") {
+                mark(child, inCode);
+                return child;
+            }
+            const start = child.position?.start.offset;
+            if (
+                child.type !== "text" ||
+                inCode ||
+                start === undefined ||
+                SOURCE_TEXT_UNWRAPPED.has(element.tagName) ||
+                !/\S/u.test(child.value)
+            )
+                return child;
+            return {
+                type: "element",
+                tagName: "span",
+                properties: { dataSourceText: start },
+                children: [child],
+            };
+        });
+    };
+    return (tree: { children: MarkdownChild[] }): void => {
+        for (const child of tree.children) if (child.type === "element") mark(child, false);
+    };
+}
+
+const MARKDOWN_REHYPE_PLUGINS_NONE: [] = [];
+const MARKDOWN_REHYPE_PLUGINS_SOURCE_OFFSETS = [rehypeSourceOffsets];
+
+/** The source offset `rehypeSourceOffsets` put on an element, for a component that draws its own. */
+function sourceOffsetOf(props: object): { "data-source-offset"?: number } {
+    const offset = (props as { "data-source-offset"?: unknown })["data-source-offset"];
+    return typeof offset === "number" ? { "data-source-offset": offset } : {};
+}
+
 // react-markdown is an unmemoized third-party function. Its fixed renderer
 // configuration is safe to memoize here, so parent/store notifications with
 // unchanged text do not parse and run the Markdown tree again.
@@ -64,6 +130,12 @@ export type MarkdownDocumentProps = {
      * link is read as a workspace path.
      */
     references?: MarkdownDocumentReferences;
+    /**
+     * Marks each block with `data-source-offset`, where its Markdown starts in
+     * `text`, so a reader that edits the source can put the caret where the
+     * reader clicked.
+     */
+    sourceOffsets?: boolean;
 };
 
 /**
@@ -337,6 +409,7 @@ const DocumentPre = ({
         <div
             className="happy-markdown-document__code"
             data-happy-desktop-ui="markdown-document-code"
+            {...sourceOffsetOf(props)}
         >
             {fence ? (
                 <CodeBlock
@@ -379,8 +452,8 @@ const DocumentTable = ({
 const headingOverride = (
     tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6",
 ): NonNullable<Components[typeof tag]> => {
-    const DocumentHeading = ({ children }: { children?: ReactNode }) =>
-        createElement(tag, undefined, children);
+    const DocumentHeading = ({ children, ...props }: { children?: ReactNode }) =>
+        createElement(tag, sourceOffsetOf(props), children);
     return DocumentHeading as NonNullable<Components[typeof tag]>;
 };
 
@@ -420,6 +493,7 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
         "onFileOpen",
         "onFileLinkOpen",
         "references",
+        "sourceOffsets",
     ]);
     return (
         <ScrollArea
@@ -441,6 +515,11 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
                                 <MemoMarkdown
                                     components={documentComponents}
                                     urlTransform={markdownFileUrlTransform}
+                                    rehypePlugins={
+                                        local.sourceOffsets
+                                            ? MARKDOWN_REHYPE_PLUGINS_SOURCE_OFFSETS
+                                            : MARKDOWN_REHYPE_PLUGINS_NONE
+                                    }
                                     remarkPlugins={MARKDOWN_REMARK_PLUGINS}
                                 >
                                     {local.text}

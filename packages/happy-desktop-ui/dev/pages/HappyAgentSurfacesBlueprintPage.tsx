@@ -1,8 +1,9 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
     happyAgentTodoHeading,
     type HappyAgentSurfaceActiveTodo,
     type HappyAgentSurfaceCompletedTodo,
+    type HappyAgentSurfaceDocumentSnapshot,
     type HappyAgentSurfaceId,
     type HappyAgentSurfacePerson,
     type HappyAgentSurfaceTodoId,
@@ -11,6 +12,7 @@ import {
 import { AppShell } from "../../src/AppShell";
 import type { MenuItem } from "../../src/Menu";
 import { Sidebar, type SidebarItem, type SidebarReorder } from "../../src/Sidebar";
+import { HappyAgentDocumentSurfacePage } from "../../src/pages/surfaces/HappyAgentDocumentSurfacePage";
 import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import { HappyAgentSurfaceHeader } from "../../src/pages/surfaces/HappyAgentSurfaceHeader";
 import { HappyAgentSurfaceUnsupportedPage } from "../../src/pages/surfaces/HappyAgentSurfaceUnsupportedPage";
@@ -64,6 +66,96 @@ const KANBAN: HappyAgentSurfaceView = {
     type: { kind: "unsupported", type: "kanban" },
     members: MEMBERS.slice(0, 2),
 };
+
+const noop = () => undefined;
+
+const HOUSE: HappyAgentSurfaceView = {
+    name: "House rules",
+    type: { kind: "document" },
+    creator: { name: "Ada Park" },
+    members: MEMBERS.slice(0, 3),
+};
+
+const HOUSE_TEXT = `# House rules
+
+Everyone in the flat edits this page. Keep it short; the history keeps the rest.
+
+## Kitchen
+
+- Dishes are washed **the same evening**, not the next morning.
+- The fridge shelf with your name is yours. The top shelf is shared.
+- Bins go out on *Tuesday* and *Friday* nights.
+
+## Guests
+
+1. Say so in the chat the day before.
+2. Overnight guests: at most two nights a week.
+3. Quiet after 22:00 on weeknights.
+
+## Cleaning rota
+
+| Week | Kitchen | Bathroom | Hall |
+| ---- | ------- | -------- | ---- |
+| 1 | Steve | Ada | Grace |
+| 2 | Ada | Grace | Steve |
+| 3 | Grace | Steve | Ada |
+
+## Before you leave for a trip
+
+- [x] Water the plants, or ask someone to
+- [ ] Take your food out of the shared shelf
+- [ ] Tell the others in the chat
+
+> The Wi-Fi password is on the router. Please don't post it here.
+
+Questions go to [the flat's chat](https://example.com/flat-chat).
+`;
+
+const DOCUMENT: HappyAgentSurfaceDocumentSnapshot = {
+    surfaceId: "surface-house" as HappyAgentSurfaceId,
+    status: "ready",
+    text: HOUSE_TEXT,
+    editing: false,
+    saving: false,
+};
+
+const documentHandlers = {
+    onConflictDismiss: noop,
+    onEditEnd: noop,
+    onEditStart: noop,
+    onTextChange: noop,
+};
+
+/**
+ * The page against a document held here, so reading, clicking into the text,
+ * and writing can be tried in the workbench. Typing is "saved" a second
+ * after it rests, as the store saves it.
+ */
+function LiveDocumentPage(props: {
+    readonly surface?: HappyAgentSurfaceView;
+    readonly initial?: HappyAgentSurfaceDocumentSnapshot;
+}) {
+    const [document, setDocument] = useState(props.initial ?? DOCUMENT);
+    const typed = useRef(0);
+    return (
+        <HappyAgentDocumentSurfacePage
+            document={document}
+            onConflictDismiss={() => setDocument({ ...document, conflict: undefined })}
+            onEditEnd={() => setDocument({ ...document, editing: false, saving: false })}
+            onEditStart={() => setDocument({ ...document, editing: true })}
+            onTextChange={(text) => {
+                typed.current += 1;
+                const at = typed.current;
+                setDocument({ ...document, text, saving: true });
+                setTimeout(() => {
+                    if (typed.current === at)
+                        setDocument((current) => ({ ...current, saving: false }));
+                }, 1_000);
+            }}
+            surface={props.surface ?? HOUSE}
+        />
+    );
+}
 
 function active(
     id: string,
@@ -136,8 +228,6 @@ const UNCREDITED: HappyAgentTodoListSnapshot = {
     completed: DONE.map((todo) => ({ ...todo, authorUserId: null })),
     authors: new Map(),
 };
-
-const noop = () => undefined;
 
 const handlers = {
     onDraftChange: noop,
@@ -294,6 +384,7 @@ const SURFACES: readonly MockSurface[] = [
         count: 3,
         view: { name: "Reading list", type: { kind: "todo" }, members: MEMBERS.slice(0, 1) },
     },
+    { id: "house", joined: true, view: HOUSE },
     separator("work", "Work"),
     { id: "launch", joined: true, view: KANBAN },
     {
@@ -346,11 +437,13 @@ function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
 
 const CREATE_OFFERS = [
     "todo",
+    "document",
     "separator",
 ] as const satisfies readonly HappyAgentSurfaceCreateKind[];
 
 const CREATE_MENU: MenuItem[] = [
     { kind: "item", id: "todo", icon: "tasks", label: "New todo list" },
+    { kind: "item", id: "document", icon: "doc", label: "New document" },
     { kind: "item", id: "separator", icon: "hash", label: "New separator" },
 ];
 
@@ -552,6 +645,14 @@ function MockWindow(props: {
                             )
                         }
                     />
+                ) : open?.view.type.kind === "document" ? (
+                    <LiveDocumentPage
+                        {...(open.id === "house"
+                            ? {}
+                            : { initial: { ...DOCUMENT, text: "", editing: true } })}
+                        key={open.id}
+                        surface={open.view}
+                    />
                 ) : open ? (
                     open.view.type.kind === "todo" ? (
                         <HappyAgentTodoSurfacePage
@@ -580,13 +681,13 @@ function MockWindow(props: {
                                       joined: true,
                                       view: {
                                           name: input.name,
-                                          type: { kind: "todo" },
+                                          type: { kind: input.kind },
                                           members: MEMBERS.slice(0, 1),
                                       },
                                   },
                         ]);
                         setCreating(undefined);
-                        if (input.kind === "todo") setSelected(id);
+                        if (input.kind !== "separator") setSelected(id);
                     }}
                 />
             ) : null}
@@ -801,6 +902,89 @@ export function HappyAgentSurfacesBlueprintPage() {
                     <HappyAgentSurfaceCreateDialog kind="todo" onClose={noop} onSubmit={noop} />,
                 )}
             </Specimen>
+
+            <Specimen
+                detail="480px · a document has a name and an optional picture, and starts empty"
+                label="Create document"
+                number="07c"
+                stage="app"
+            >
+                {frame(
+                    <HappyAgentSurfaceCreateDialog
+                        kind="document"
+                        onClose={noop}
+                        onSubmit={noop}
+                    />,
+                )}
+            </Specimen>
+
+            <FullScreenSpecimen
+                detail="Live. The shared Markdown rendered on the reading measure. Click any block to write: the text opens as Markdown in the same place, the caret at the start of that block and its line where the block was. A link or a selection does not open it. Escape, Cmd+Enter, or Done closes it; typing is saved as it rests."
+                label="Document"
+                number="08"
+                screen="08-document-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <LiveDocumentPage />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Written in: the Markdown on the same measure, saving what was just typed."
+                label="Document, writing"
+                number="08b"
+                screen="08b-document-writing-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <HappyAgentDocumentSurfacePage
+                    {...documentHandlers}
+                    document={{ ...DOCUMENT, editing: true, saving: true }}
+                    surface={HOUSE}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Someone changed the same lines while the reader was writing: the reader's text was kept and saved over theirs, which stays among the versions."
+                label="Document, both changed the same lines"
+                number="08c"
+                screen="08c-document-conflict-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <HappyAgentDocumentSurfacePage
+                    {...documentHandlers}
+                    document={{
+                        ...DOCUMENT,
+                        editing: true,
+                        conflict: { lastEditorUserId: "u3", updatedAt: 1_760_000_000_000 },
+                    }}
+                    surface={HOUSE}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Nothing written yet: one quiet line that opens it for writing."
+                label="Document, empty"
+                number="08d"
+                screen="08d-document-empty-720x640"
+            >
+                <HappyAgentDocumentSurfacePage
+                    {...documentHandlers}
+                    document={{ ...DOCUMENT, text: "" }}
+                    surface={{ ...HOUSE, name: "Notes", creator: undefined }}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="The daemon has no such document."
+                label="Document, missing"
+                number="08e"
+                screen="08e-document-missing-720x640"
+            >
+                <HappyAgentDocumentSurfacePage
+                    {...documentHandlers}
+                    document={{ ...DOCUMENT, status: "missing", text: "" }}
+                    surface={HOUSE}
+                />
+            </FullScreenSpecimen>
 
             <Specimen
                 detail="480px · a separator is only a name"

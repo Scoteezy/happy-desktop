@@ -5,6 +5,11 @@ import {
     type HappyAgentSurfaceCatalogStore,
 } from "./surfaceCatalogStore.js";
 import {
+    happyAgentSurfaceDocumentStoreCreate,
+    type HappyAgentSurfaceDocumentDeps,
+    type HappyAgentSurfaceDocumentStore,
+} from "./surfaceDocumentStore.js";
+import {
     happyAgentTodoListStoreCreate,
     type HappyAgentTodoListDeps,
     type HappyAgentTodoListStore,
@@ -26,17 +31,25 @@ export interface HappyAgentSurfaces {
      * while it is read once more.
      */
     todoList(surfaceId: HappyAgentSurfaceId): HappyAgentTodoListStore;
+    /**
+     * One document Surface, kept for the life of the connection like a todo
+     * list, so typing is still saved after the reader has moved on.
+     */
+    document(surfaceId: HappyAgentSurfaceId): HappyAgentSurfaceDocumentStore;
     [Symbol.dispose](): void;
 }
 
 export interface HappyAgentSurfacesDeps {
-    readonly client: HappyAgentSurfaceCatalogDeps["client"] & HappyAgentTodoListDeps["client"];
+    readonly client: HappyAgentSurfaceCatalogDeps["client"] &
+        HappyAgentTodoListDeps["client"] &
+        HappyAgentSurfaceDocumentDeps["client"];
     readonly sync: HappyAgentSync;
 }
 
 export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAgentSurfaces {
     let catalog: HappyAgentSurfaceCatalogStore | undefined;
     const todoLists = new Map<HappyAgentSurfaceId, HappyAgentTodoListStore>();
+    const documents = new Map<HappyAgentSurfaceId, HappyAgentSurfaceDocumentStore>();
     /** Lists this connection is making, until the daemon answers, for their todo stores to wait on. */
     const creating = new Map<HappyAgentSurfaceId, Promise<void>>();
     let disposed = false;
@@ -82,12 +95,30 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             }
             return store;
         },
+        document(surfaceId) {
+            let store = documents.get(surfaceId);
+            if (store === undefined) {
+                const created = creating.get(surfaceId);
+                store = inert(
+                    happyAgentSurfaceDocumentStoreCreate({
+                        client: deps.client,
+                        sync: deps.sync,
+                        surfaceId,
+                        ...(created === undefined ? {} : { surfaceCreated: created }),
+                    }),
+                );
+                if (!disposed) documents.set(surfaceId, store);
+            }
+            return store;
+        },
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
             catalog?.[Symbol.dispose]();
             for (const store of todoLists.values()) store[Symbol.dispose]();
             todoLists.clear();
+            for (const store of documents.values()) store[Symbol.dispose]();
+            documents.clear();
         },
     };
 }

@@ -708,6 +708,7 @@ export {
     SurfaceAvatar,
     SurfaceMemberStack,
     surfaceMembersText,
+    surfaceTypeIcon,
     surfaceTypeLabel,
     type HappyAgentSurfaceMemberView,
     type HappyAgentSurfacePicture,
@@ -723,6 +724,10 @@ export {
     HappyAgentTodoSurfacePage,
     type HappyAgentTodoSurfacePageProps,
 } from "./pages/surfaces/HappyAgentTodoSurfacePage";
+export {
+    HappyAgentDocumentSurfacePage,
+    type HappyAgentDocumentSurfacePageProps,
+} from "./pages/surfaces/HappyAgentDocumentSurfacePage";
 export {
     HappyAgentSurfaceUnsupportedPage,
     type HappyAgentSurfaceUnsupportedPageProps,

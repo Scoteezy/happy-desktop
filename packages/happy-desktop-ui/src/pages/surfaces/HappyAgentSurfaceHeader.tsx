@@ -1,8 +1,11 @@
+import type { ReactNode } from "react";
 import { PanelHeader } from "../../PanelHeader";
 import { SurfaceMemberStack, type HappyAgentSurfaceView } from "./surfacePresentation";
 
 export interface HappyAgentSurfaceHeaderProps {
     surface: HappyAgentSurfaceView;
+    /** What the Surface's own page offers in its header, before the faces. */
+    actions?: ReactNode;
 }
 
 /**
@@ -29,6 +32,9 @@ export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
                     </>
                 ) : null}
             </div>
+            {props.actions === undefined ? null : (
+                <div className="happy-agent-surface-header__actions">{props.actions}</div>
+            )}
             <SurfaceMemberStack members={props.surface.members} />
         </PanelHeader>
     );

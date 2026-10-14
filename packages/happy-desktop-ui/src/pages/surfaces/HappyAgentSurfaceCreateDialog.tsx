@@ -24,16 +24,20 @@ function imageSignatureAccepted(bytes: Uint8Array): boolean {
 }
 
 /** The kinds of Surface this dialog makes. */
-export type HappyAgentSurfaceCreateKind = "todo" | "separator";
+export type HappyAgentSurfaceCreateKind = "todo" | "document" | "separator";
 
-/** What the dialog asks for, by kind: a todo list may have a picture, a separator is only a name. */
+/**
+ * What the dialog asks for, by kind: a todo list or a document may have a
+ * picture, a separator is only a name.
+ */
 export type HappyAgentSurfaceCreateInput =
-    | { readonly kind: "todo"; readonly name: string; readonly image?: File }
+    | { readonly kind: "todo" | "document"; readonly name: string; readonly image?: File }
     | { readonly kind: "separator"; readonly name: string };
 
 /** Each kind's title, glyph, and the example its name field suggests. */
 const KINDS = {
     todo: { title: "New todo list", icon: "tasks", placeholder: "Groceries" },
+    document: { title: "New document", icon: "doc", placeholder: "House rules" },
     separator: { title: "New separator", icon: "hash", placeholder: "Home" },
 } as const satisfies Record<
     HappyAgentSurfaceCreateKind,
@@ -56,9 +60,9 @@ interface Picture {
 }
 
 /**
- * C-298 HappyAgentSurfaceCreateDialog — names a new todo list and, if the
- * reader wants, gives it a picture; or names a new separator, which is only
- * a name.
+ * C-298 HappyAgentSurfaceCreateDialog — names a new todo list or document
+ * and, if the reader wants, gives it a picture; or names a new separator,
+ * which is only a name.
  *
  * The form is the dialog's own until it is submitted: the name typed, the
  * picture chosen and its preview. The owner hears only the finished request;
@@ -79,7 +83,11 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
         props.onSubmit(
             props.kind === "separator"
                 ? { kind: "separator", name: name.trim() }
-                : { kind: "todo", name: name.trim(), ...(picture ? { image: picture.file } : {}) },
+                : {
+                      kind: props.kind,
+                      name: name.trim(),
+                      ...(picture ? { image: picture.file } : {}),
+                  },
         );
     };
     const choose = (file: File | undefined) => {

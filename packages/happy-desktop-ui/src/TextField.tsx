@@ -213,7 +213,12 @@ export function TextField(props: TextFieldProps) {
                         onBlur={() => local.onBlur?.()}
                         onInput={(event) => local.onValueChange?.(event.currentTarget.value)}
                         onKeyDown={(event) => {
-                            if (event.key === "Enter") local.onSubmit?.();
+                            if (event.key !== "Enter" || local.onSubmit === undefined) return;
+                            // The Enter is the submit's. Left to the browser, it
+                            // would also reach whatever the submit puts focus in —
+                            // a new document's text, opened to be written in.
+                            event.preventDefault();
+                            local.onSubmit();
                         }}
                         placeholder={local.placeholder}
                         ref={(element) => {

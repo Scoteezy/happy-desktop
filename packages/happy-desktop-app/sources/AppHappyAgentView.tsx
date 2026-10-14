@@ -152,9 +152,9 @@ import {
     type HappyAgentSurfaceCatalogStore,
     type HappyAgentSurfaceCreateKind,
     type HappyAgentSurfaceId,
-    type HappyAgentSurfaceType,
     type HappyAgentSurfaces,
     type HappyAgentTodoListStore,
+    type HappyAgentSurfaceDocumentStore,
 } from "happy-desktop-state";
 import {
     type AgentWaitStatus,
@@ -220,6 +220,8 @@ import {
     HappyAgentSurfaceCreateDialog,
     HappyAgentSurfaceUnsupportedPage,
     HappyAgentTodoSurfacePage,
+    HappyAgentDocumentSurfacePage,
+    surfaceTypeIcon,
     type HappyAgentSurfaceMemberView,
     type HappyAgentSurfaceView,
     HappyAgentProjectSettingsDialog,
@@ -2191,18 +2193,6 @@ function surfaceRowId(surfaceId: string): string {
     return `${SURFACE_ROW_PREFIX}${surfaceId}`;
 }
 
-/** The glyph a Surface's row wears when it has no picture of its own. */
-function surfaceGlyph(type: HappyAgentSurfaceType): IconName {
-    switch (type.kind) {
-        case "todo":
-            return "tasks";
-        case "separator":
-            return "hash";
-        case "unsupported":
-            return "package";
-    }
-}
-
 /** What the sidebar heading's + offers to make, in the order it lists them. */
 const SURFACE_CREATE_OFFERS: readonly {
     readonly kind: HappyAgentSurfaceCreateKind;
@@ -2210,6 +2200,7 @@ const SURFACE_CREATE_OFFERS: readonly {
     readonly label: string;
 }[] = [
     { kind: "todo", icon: "tasks", label: "New todo list" },
+    { kind: "document", icon: "doc", label: "New document" },
     { kind: "separator", icon: "hash", label: "New separator" },
 ];
 
@@ -2296,7 +2287,7 @@ function surfaceSidebarItem(
             ? {}
             : surface.image
               ? { imageUrl: surface.image.url }
-              : { icon: surfaceGlyph(surface.type) }),
+              : { icon: surfaceTypeIcon(surface.type) }),
         ...(count !== undefined && count > 0 ? { count } : {}),
         ...(joined ? {} : { reorderable: false }),
         action: joined
@@ -3949,10 +3940,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     onSubmit={(input) => {
                         // The list exists the moment it is asked for, so it is
                         // opened at once; the Happy Agent hears in the background.
-                        // A separator has no page, so the open one stays.
+                        // A separator has no page, so the open one stays; a new
+                        // document opens ready to be written in.
                         const surfaceId = surfaceCatalogStore.surfaceCreate(input);
-                        if (surfaceId !== undefined && input.kind !== "separator")
-                            props.onSurfaceOpen?.(active.id, surfaceId);
+                        if (surfaceId === undefined || input.kind === "separator") return;
+                        if (input.kind === "document")
+                            active.session?.surfaces?.document(surfaceId).editStart();
+                        props.onSurfaceOpen?.(active.id, surfaceId);
                     }}
                 />
             ) : null}
@@ -4807,7 +4801,30 @@ function HappyAgentSurfaceContent(props: {
     const view = surfaceViewOf(catalog, surface);
     if (surface.type.kind === "todo")
         return <HappyAgentTodoSurface store={props.surfaces.todoList(surface.id)} surface={view} />;
+    if (surface.type.kind === "document")
+        return (
+            <HappyAgentDocumentSurface store={props.surfaces.document(surface.id)} surface={view} />
+        );
     return <HappyAgentSurfaceUnsupportedPage surface={view} />;
+}
+
+/** A document Surface, read from its own store for as long as it is on screen. */
+function HappyAgentDocumentSurface(props: {
+    store: HappyAgentSurfaceDocumentStore;
+    surface: HappyAgentSurfaceView;
+}) {
+    const store = props.store;
+    const document = useSyncExternalStore(store.subscribe, store.get, store.get);
+    return (
+        <HappyAgentDocumentSurfacePage
+            document={document}
+            onConflictDismiss={store.conflictDismiss}
+            onEditEnd={store.editEnd}
+            onEditStart={store.editStart}
+            onTextChange={store.textUpdate}
+            surface={props.surface}
+        />
+    );
 }
 
 /** A todo list Surface, read from its own store for as long as it is on screen. */

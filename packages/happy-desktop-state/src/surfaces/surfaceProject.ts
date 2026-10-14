@@ -1,7 +1,14 @@
-import type { HappyAgentEvent, Surface, SurfaceMember, Todo } from "@slopus/happy-agent-client";
+import type {
+    HappyAgentEvent,
+    Surface,
+    SurfaceDocument,
+    SurfaceMember,
+    Todo,
+} from "@slopus/happy-agent-client";
 import { stringCompare } from "../utils/orderKeyDecimal.js";
 import type {
     HappyAgentSurface,
+    HappyAgentSurfaceDocument,
     HappyAgentSurfaceId,
     HappyAgentSurfaceMember,
     HappyAgentSurfaceType,
@@ -21,11 +28,21 @@ export const HAPPY_AGENT_TODO_EVENT_TYPES = [
     "todo.updated",
 ] as const satisfies readonly HappyAgentEvent["type"][];
 
+/** The event an open document follows. */
+export const HAPPY_AGENT_SURFACE_DOCUMENT_EVENT_TYPES = [
+    "surface.document.updated",
+] as const satisfies readonly HappyAgentEvent["type"][];
+
 /** The daemon's type name, as the kind this build shows, or as unsupported. */
 export function happyAgentSurfaceTypeProject(type: string): HappyAgentSurfaceType {
-    if (type === "todo") return { kind: "todo" };
-    if (type === "separator") return { kind: "separator" };
-    return { kind: "unsupported", type };
+    switch (type) {
+        case "todo":
+        case "document":
+        case "separator":
+            return { kind: type };
+        default:
+            return { kind: "unsupported", type };
+    }
 }
 
 function memberProject(member: SurfaceMember): HappyAgentSurfaceMember {
@@ -90,6 +107,48 @@ export function happyAgentTodoProject(todo: Todo): HappyAgentSurfaceTodo {
                 deletedAt: todo.deletedAt,
             };
     }
+}
+
+export function happyAgentSurfaceDocumentProject(
+    document: SurfaceDocument,
+): HappyAgentSurfaceDocument {
+    return {
+        surfaceId: document.surfaceId as HappyAgentSurfaceId,
+        text: document.text,
+        authorUserId: document.authorUserId,
+        lastEditorUserId: document.lastEditorUserId,
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
+        version: document.version,
+    };
+}
+
+/** One document change from the event stream: the whole new text, and the version it followed. */
+export interface HappyAgentSurfaceDocumentEvent {
+    readonly surfaceId: HappyAgentSurfaceId;
+    readonly previousVersion: string;
+    readonly version: string;
+    readonly text: string;
+    readonly lastEditorUserId: string | null;
+    readonly updatedAt: number;
+    /** The mutation ID of the save that made this version, when one was given. */
+    readonly mutationId?: string;
+}
+
+export function happyAgentSurfaceDocumentEventProject(
+    event: HappyAgentEvent,
+): HappyAgentSurfaceDocumentEvent | undefined {
+    if (event.type !== "surface.document.updated") return undefined;
+    const { changes } = event.payload;
+    return {
+        surfaceId: event.payload.surfaceId as HappyAgentSurfaceId,
+        previousVersion: event.payload.previousVersion,
+        version: event.payload.version,
+        text: changes.text,
+        lastEditorUserId: changes.lastEditorUserId,
+        updatedAt: changes.updatedAt,
+        ...(event.payload.mutationId === undefined ? {} : { mutationId: event.payload.mutationId }),
+    };
 }
 
 /** One Surface change from the event stream, projected out of its wire envelope. */

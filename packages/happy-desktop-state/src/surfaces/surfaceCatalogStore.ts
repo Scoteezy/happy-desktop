@@ -42,7 +42,7 @@ const NAME_FORBIDDEN = /[\u0000-\u001f\u007f]/gu;
 export type HappyAgentSurfaceMembershipAction = "join" | "leave" | "reorder";
 
 /** The kinds of Surface the reader can make here. */
-export type HappyAgentSurfaceCreateKind = "todo" | "separator";
+export type HappyAgentSurfaceCreateKind = "todo" | "document" | "separator";
 
 /**
  * Whether the form that makes a new Surface is open, and for which kind.
@@ -96,11 +96,12 @@ export interface HappyAgentSurfaceCatalogSnapshot {
 /** What a new Surface is made from, by kind. */
 export type HappyAgentSurfaceCreateInput =
     | {
-          readonly kind: "todo";
+          /** A todo list, or a document, which starts empty. */
+          readonly kind: "todo" | "document";
           readonly name: string;
           /**
            * A PNG, JPEG, or WebP picture, at most 8 MiB; the daemon normalizes
-           * it. The list shows it once the daemon has it.
+           * it. The Surface shows it once the daemon has it.
            */
           readonly image?: Blob;
       }
@@ -896,7 +897,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
             void (async () => {
                 let image: { data: string } | undefined;
                 // A picture that cannot be read leaves the list without one.
-                if (input.kind === "todo" && input.image !== undefined)
+                if (input.kind !== "separator" && input.image !== undefined)
                     image = await base64Of(input.image).then(
                         (data) => ({ data }),
                         () => undefined,
@@ -906,7 +907,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
                         ? { id: surfaceId, type: "separator", name, mutationId }
                         : {
                               id: surfaceId,
-                              type: "todo",
+                              type: input.kind,
                               name,
                               mutationId,
                               ...(image === undefined ? {} : { image }),

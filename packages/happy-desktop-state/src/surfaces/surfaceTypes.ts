@@ -24,6 +24,8 @@ export type HappyAgentSurfaceTodoId = string & { readonly [happyAgentSurfaceTodo
  */
 export type HappyAgentSurfaceType =
     | { readonly kind: "todo" }
+    /** One shared Markdown document, kept with every version it has had. */
+    | { readonly kind: "document" }
     /** A name and nothing else, that heads the Surfaces after it in a sidebar. */
     | { readonly kind: "separator" }
     | { readonly kind: "unsupported"; readonly type: string };
@@ -144,3 +146,21 @@ export type HappyAgentSurfaceCompletedTodo = Extract<
     HappyAgentSurfaceTodo,
     { readonly status: "completed" }
 >;
+
+/**
+ * A document Surface's text as the daemon holds it. Every change replaces the
+ * whole text and is kept by the daemon as a permanent version.
+ */
+export interface HappyAgentSurfaceDocument {
+    readonly surfaceId: HappyAgentSurfaceId;
+    /** Markdown, exactly as written: line endings and whitespace are kept. */
+    readonly text: string;
+    /** Who made the Surface, or `null` when it credits nobody. */
+    readonly authorUserId: string | null;
+    /** Who made the latest version, or `null` when it credits nobody. */
+    readonly lastEditorUserId: string | null;
+    readonly createdAt: number;
+    readonly updatedAt: number;
+    /** The document's own version, which a change must name. */
+    readonly version: string;
+}

@@ -97,6 +97,12 @@ export {
     type HappyAgentTodoListSnapshot,
     type HappyAgentTodoListStore,
 } from "./surfaces/surfaceTodoListStore.js";
+export {
+    HAPPY_AGENT_SURFACE_DOCUMENT_TEXT_LIMIT,
+    type HappyAgentSurfaceDocumentConflict,
+    type HappyAgentSurfaceDocumentSnapshot,
+    type HappyAgentSurfaceDocumentStore,
+} from "./surfaces/surfaceDocumentStore.js";
 export type { HappyAgentSurfaces } from "./surfaces/surfaces.js";
 export type {
     HappyAgentArtifactTitle,
