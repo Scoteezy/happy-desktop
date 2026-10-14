@@ -11,7 +11,26 @@ import { ScrollArea } from "../../Scrollbar";
 import { TextField } from "../../TextField";
 import { HappyAgentSurfaceHeader } from "./HappyAgentSurfaceHeader";
 import { HappyAgentTodoRow } from "./HappyAgentTodoRow";
-import type { HappyAgentSurfaceView } from "./surfacePresentation";
+import type { HappyAgentSurfacePersonView, HappyAgentSurfaceView } from "./surfacePresentation";
+
+/**
+ * Who wrote a todo, as its row shows them. A todo that credits nobody shows no
+ * face, and nor does one whose author has not been read yet, so a face never
+ * changes from a placeholder to the person.
+ */
+function authorOf(
+    list: HappyAgentTodoListSnapshot,
+    todo: HappyAgentSurfaceActiveTodo | HappyAgentSurfaceCompletedTodo,
+): { author?: HappyAgentSurfacePersonView } {
+    const person = todo.authorUserId === null ? undefined : list.authors.get(todo.authorUserId);
+    if (person === undefined) return {};
+    return {
+        author: {
+            name: person.name ?? "Someone",
+            ...(person.photo ? { photo: person.photo } : {}),
+        },
+    };
+}
 
 /** Every todo row is this tall, which is what lets a drag place rows by slot. */
 const ROW_HEIGHT = 40;
@@ -58,6 +77,7 @@ export function HappyAgentTodoSurfacePage(props: HappyAgentTodoSurfacePageProps)
     const editing = list.editing;
     const row = (todo: HappyAgentSurfaceActiveTodo | HappyAgentSurfaceCompletedTodo) => (
         <HappyAgentTodoRow
+            {...authorOf(list, todo)}
             completed={todo.status === "completed"}
             editing={editing?.todoId === todo.id ? editing.text : undefined}
             onCompletedChange={(completed) => props.onTodoCompletedChange(todo.id, completed)}

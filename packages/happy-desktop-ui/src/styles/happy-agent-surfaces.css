@@ -64,8 +64,23 @@
    The band itself is the shared PanelHeader, so its height, inset, and drag
    contract are a chat header's. These rules only lay out what it carries. */
 
-.happy-agent-surface-header__title {
+/* Measured so a narrow band can drop who made the Surface. */
+.happy-agent-surface-header {
+    container-type: inline-size;
+}
+
+/* The name and who made it share one lane, which takes the band's free space
+   and pushes the faces to its far edge. */
+.happy-agent-surface-header__lead {
+    display: flex;
     flex: 1 1 0%;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-agent-surface-header__title {
+    flex: 0 1 auto;
     min-width: 0;
     margin: 0;
     overflow: hidden;
@@ -75,6 +90,34 @@
     line-height: 20px;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.happy-agent-surface-header__dot {
+    flex: none;
+    width: 3px;
+    height: 3px;
+    border-radius: var(--happy-radius-pill);
+    background: var(--text-secondary);
+}
+
+/* Secondary to the name, so it gives up its width first. */
+.happy-agent-surface-header__creator {
+    flex: 0 4 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@container (max-width: 479px) {
+    .happy-agent-surface-header__dot,
+    .happy-agent-surface-header__creator {
+        display: none;
+    }
 }
 
 /* ---- Todo list page ---------------------------------------------------- */
@@ -258,6 +301,10 @@
     font: inherit;
     font-size: 14px;
     line-height: 20px;
+}
+
+.happy-agent-todo-row__author {
+    flex: none;
 }
 
 /* The delete control keeps its lane and appears with the row's hover or focus. */

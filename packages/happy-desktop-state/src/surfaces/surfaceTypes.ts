@@ -50,6 +50,13 @@ export interface HappyAgentSurface {
     readonly image: HappyAgentSurfaceImage | null;
     /** Everyone who joined, by user ID. Empty means nobody has. */
     readonly members: readonly HappyAgentSurfaceMember[];
+    /**
+     * Who made it, by installation-local user ID, set once when it is made.
+     * `null` when nobody is credited: on a standalone installation, for a
+     * Surface made before creators were recorded, from a daemon that does not
+     * record them, and for a list this window made until the daemon answers.
+     */
+    readonly creatorUserId: string | null;
     /** The resource version, covering the Surface and every member record. */
     readonly version: string;
     readonly updatedAt: number;
@@ -73,6 +80,13 @@ interface HappyAgentSurfaceTodoFields {
     readonly id: HappyAgentSurfaceTodoId;
     readonly surfaceId: HappyAgentSurfaceId;
     readonly text: string;
+    /**
+     * Who wrote it, by installation-local user ID, set once when it is made.
+     * `null` when nobody is credited: on a standalone installation, for a
+     * todo made before authors were recorded, from a daemon that does not
+     * record them, and for a todo this window added until the daemon answers.
+     */
+    readonly authorUserId: string | null;
     readonly createdAt: number;
     readonly updatedAt: number;
     /** The resource version an update must name. */

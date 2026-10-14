@@ -18,6 +18,7 @@ import {
     happyAgentVersionNewer,
     type HappyAgentSurfaceEvent,
 } from "./surfaceProject.js";
+import { happyAgentSurfacePeopleReaderCreate, happyAgentSurfacePersonOf } from "./surfacePeople.js";
 import type {
     HappyAgentSurface,
     HappyAgentSurfaceId,
@@ -26,8 +27,6 @@ import type {
     HappyAgentSurfacesAvailability,
 } from "./surfaceTypes.js";
 
-/** The daemon's bound on one user lookup. */
-const USERS_BATCH_LIMIT = 100;
 /** The daemon's bound on a Surface name. */
 const NAME_LIMIT = 256;
 /**
@@ -67,7 +66,7 @@ export interface HappyAgentSurfaceCatalogSnapshot {
     readonly viewer?: { readonly userId: string | null };
     /** The standalone person, who is named by the profile rather than by a user ID. */
     readonly profile?: HappyAgentSurfacePerson;
-    /** The team members Surfaces name, by user ID, as they are learned. */
+    /** The team members and creators Surfaces name, by user ID, as they are learned. */
     readonly users: ReadonlyMap<string, HappyAgentSurfacePerson>;
     /** Surfaces whose join or leave this window asked for and the daemon has not answered. */
     readonly membershipPending: ReadonlySet<HappyAgentSurfaceId>;
@@ -306,66 +305,41 @@ export function happyAgentSurfaceCatalogStoreCreate(
     let disposed = false;
     /** Lives as long as the store: mutations finish whether or not anything is watching. */
     const life = new AbortController();
-    const usersAsked = new Set<string>();
 
     const publish = (next: Partial<HappyAgentSurfaceCatalogSnapshot>): void => {
         snapshot = { ...snapshot, ...next };
         for (const listener of listeners) listener();
     };
 
-    const personOf = (
-        name: string | null,
-        photo: { readonly thumbhash: string } | null,
-        path: string,
-    ): HappyAgentSurfacePerson => ({
-        name,
-        photo:
-            photo === null
-                ? null
-                : { url: `${endpoint.replace(/\/$/u, "")}${path}`, thumbhash: photo.thumbhash },
-    });
-
     const profileAdopt = (profile: Profile): Partial<HappyAgentSurfaceCatalogSnapshot> => ({
         viewer: { userId: profile.userId ?? null },
-        profile: personOf(profile.name, profile.photo, "/v0/profile/photo"),
+        profile: happyAgentSurfacePersonOf(
+            endpoint,
+            profile.name,
+            profile.photo,
+            "/v0/profile/photo",
+        ),
     });
 
-    /** Reads the names and photos of members not known yet. */
-    const usersRequest = (surfaces: readonly HappyAgentSurface[], force?: string): void => {
-        const ids: string[] = [];
-        if (force !== undefined) {
-            usersAsked.add(force);
-            ids.push(force);
-        }
-        for (const surface of surfaces)
-            for (const member of surface.members) {
-                if (member.userId === null || usersAsked.has(member.userId)) continue;
-                usersAsked.add(member.userId);
-                ids.push(member.userId);
-            }
-        for (let start = 0; start < ids.length; start += USERS_BATCH_LIMIT) {
-            const batch = ids.slice(start, start + USERS_BATCH_LIMIT);
-            void deps.client.getUsers(batch, { signal: life.signal }).then(
-                (response) => {
-                    if (disposed || response.users.length === 0) return;
-                    const users = new Map(snapshot.users);
-                    for (const user of response.users)
-                        users.set(
-                            user.id,
-                            personOf(
-                                user.name,
-                                user.photo,
-                                `/v0/users/${encodeURIComponent(user.id)}/photo`,
-                            ),
-                        );
-                    publish({ users });
-                },
-                () => {
-                    // A person who cannot be read stays unnamed; asking again
-                    // on every update would not help.
-                },
-            );
-        }
+    const people = happyAgentSurfacePeopleReaderCreate({
+        client: deps.client,
+        signal: life.signal,
+        read(read) {
+            if (disposed) return;
+            publish({ users: new Map([...snapshot.users, ...read]) });
+        },
+    });
+
+    /** Reads the names and photos of members and creators not known yet. */
+    const usersRequest = (surfaces: readonly HappyAgentSurface[], again?: string): void => {
+        // A creator who left is still named.
+        people.request(
+            surfaces.flatMap((surface) => [
+                surface.creatorUserId,
+                ...surface.members.map((member) => member.userId),
+            ]),
+            again,
+        );
     };
 
     /** The catalog as the reader sees it: the daemon's, with their own pending acts applied. */
@@ -390,6 +364,9 @@ export function happyAgentSurfaceCatalogStoreCreate(
                               type: { kind: "todo" },
                               name: create.name,
                               image: null,
+                              // Who made it is the daemon's to say, once it
+                              // answers; the reader is never credited here.
+                              creatorUserId: null,
                               members:
                                   viewer === undefined
                                       ? []

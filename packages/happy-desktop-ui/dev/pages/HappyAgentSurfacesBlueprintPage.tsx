@@ -3,12 +3,14 @@ import {
     type HappyAgentSurfaceActiveTodo,
     type HappyAgentSurfaceCompletedTodo,
     type HappyAgentSurfaceId,
+    type HappyAgentSurfacePerson,
     type HappyAgentSurfaceTodoId,
     type HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
 import { AppShell } from "../../src/AppShell";
 import { Sidebar, type SidebarItem, type SidebarReorder } from "../../src/Sidebar";
 import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
+import { HappyAgentSurfaceHeader } from "../../src/pages/surfaces/HappyAgentSurfaceHeader";
 import { HappyAgentSurfaceUnsupportedPage } from "../../src/pages/surfaces/HappyAgentSurfaceUnsupportedPage";
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
 import type { HappyAgentSurfaceView } from "../../src/pages/surfaces/surfacePresentation";
@@ -35,10 +37,18 @@ const MEMBERS = [
     { key: "u4", name: "Linus Moe" },
 ] as const;
 
+/** The people the todos name as their authors, as the list's store reads them. */
+const AUTHORS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map([
+    ["u1", { name: "Steve Korshakov", photo: TEAL }],
+    ["u2", { name: "Ada Park", photo: null }],
+    ["u3", { name: "Grace Lin", photo: AMBER }],
+]);
+
 const GROCERIES: HappyAgentSurfaceView = {
     name: "Groceries",
     image: TEAL,
     type: { kind: "todo" },
+    creator: { name: "Steve Korshakov", photo: TEAL },
     members: MEMBERS,
 };
 
@@ -49,11 +59,17 @@ const KANBAN: HappyAgentSurfaceView = {
     members: MEMBERS.slice(0, 2),
 };
 
-function active(id: string, text: string, index: number): HappyAgentSurfaceActiveTodo {
+function active(
+    id: string,
+    text: string,
+    index: number,
+    authorUserId: string | null = null,
+): HappyAgentSurfaceActiveTodo {
     return {
         id: id as HappyAgentSurfaceTodoId,
         surfaceId: SURFACE_ID,
         text,
+        authorUserId,
         createdAt: 1_760_000_000_000 + index,
         updatedAt: 1_760_000_000_000 + index,
         version: `v-${id}`,
@@ -68,17 +84,19 @@ function completed(todo: HappyAgentSurfaceActiveTodo, at: number): HappyAgentSur
     return { ...todo, status: "completed", orderKey: null, completedAt: at };
 }
 
+// Written by three people, by nobody credited (an agent's, say), and by
+// someone whose name has not been read yet — the last two show no face.
 const ACTIVE: readonly HappyAgentSurfaceActiveTodo[] = [
-    active("t1", "Oat milk", 0),
-    active("t2", "Sourdough loaf", 1),
-    active("t3", "Two lemons and a bunch of coriander for Thursday", 2),
-    active("t4", "Coffee beans", 3),
-    active("t5", "Dish soap", 4),
+    active("t1", "Oat milk", 0, "u1"),
+    active("t2", "Sourdough loaf", 1, "u2"),
+    active("t3", "Two lemons and a bunch of coriander for Thursday", 2, "u3"),
+    active("t4", "Coffee beans", 3, null),
+    active("t5", "Dish soap", 4, "u9"),
 ];
 
 const DONE: readonly HappyAgentSurfaceCompletedTodo[] = [
-    completed(active("t6", "Eggs", 5), 1_760_000_100_000),
-    completed(active("t7", "Butter", 6), 1_760_000_050_000),
+    completed(active("t6", "Eggs", 5, "u2"), 1_760_000_100_000),
+    completed(active("t7", "Butter", 6, null), 1_760_000_050_000),
 ];
 
 const LIST: HappyAgentTodoListSnapshot = {
@@ -87,7 +105,20 @@ const LIST: HappyAgentTodoListSnapshot = {
     active: ACTIVE,
     completed: DONE,
     completedShown: false,
+    authors: AUTHORS,
     draft: "",
+};
+
+/**
+ * A list that credits nobody: what a standalone installation shows, and what
+ * a daemon that leaves the fields out shows, since a missing author reads as
+ * none.
+ */
+const UNCREDITED: HappyAgentTodoListSnapshot = {
+    ...LIST,
+    active: ACTIVE.map((todo) => ({ ...todo, authorUserId: null })),
+    completed: DONE.map((todo) => ({ ...todo, authorUserId: null })),
+    authors: new Map(),
 };
 
 const noop = () => undefined;
@@ -156,7 +187,10 @@ function LiveTodoPage(props: {
                     const todo = list.completed.find((entry) => entry.id === id);
                     if (!todo) return;
                     set({
-                        active: [...list.active, active(todo.id, todo.text, next)],
+                        active: [
+                            ...list.active,
+                            active(todo.id, todo.text, next, todo.authorUserId),
+                        ],
                         completed: list.completed.filter((entry) => entry !== todo),
                     });
                     setNext(next + 1);
@@ -489,6 +523,26 @@ function MockWindow(props: {
     );
 }
 
+/** The header with and without a creator, with long names, and too narrow for the creator. */
+const HEADERS: readonly {
+    readonly key: string;
+    readonly width: number;
+    readonly surface: HappyAgentSurfaceView;
+}[] = [
+    { key: "creator", width: 760, surface: GROCERIES },
+    { key: "nobody", width: 760, surface: { ...GROCERIES, creator: undefined } },
+    {
+        key: "long",
+        width: 560,
+        surface: {
+            ...GROCERIES,
+            name: "October release checklist for the desktop app",
+            creator: { name: "Maximilian Alexander Featherstonehaugh" },
+        },
+    },
+    { key: "narrow", width: 440, surface: GROCERIES },
+];
+
 /** Gives each fixed overlay a desktop-sized, clipping-safe specimen window. */
 function frame(children: ReactNode) {
     return (
@@ -548,7 +602,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Live. Drag an active todo by its body; the checkbox, the delete control, and the field while editing never start a drag. Completed todos are below, newest first, and never move."
+                detail="Live. Drag an active todo by its body — its author's face included; the checkbox, the delete control, and the field while editing never start a drag. Completed todos are below, newest first, and never move. Coffee beans credits nobody and Dish soap's author is not read yet, so neither shows a face; the header says who made the list."
                 label="Todo list"
                 number="01"
                 screen="01-todo-1100x760"
@@ -605,6 +659,42 @@ export function HappyAgentSurfacesBlueprintPage() {
                     surface={{ ...GROCERIES, members: MEMBERS.slice(0, 1) }}
                 />
             </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Nobody credited: a standalone installation, a daemon that leaves the author and creator out, or a list from before they were recorded. No faces on the todos and no creator in the header."
+                label="Nobody credited"
+                number="04b"
+                screen="04b-uncredited-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <HappyAgentTodoSurfacePage
+                    {...handlers}
+                    list={UNCREDITED}
+                    surface={{ ...GROCERIES, creator: undefined }}
+                />
+            </FullScreenSpecimen>
+
+            <Specimen
+                detail="56px · one line: the name, who made it, and the faces of who is in it. Who made it is dropped below 480px, and long names truncate, the creator first."
+                label="Header"
+                number="06"
+                stage="surface"
+            >
+                <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                    {HEADERS.map((entry) => (
+                        <div
+                            key={entry.key}
+                            style={{
+                                border: "1px solid var(--surface-pressed-overlay)",
+                                display: "flex",
+                                width: `${String(entry.width)}px`,
+                            }}
+                        >
+                            <HappyAgentSurfaceHeader surface={entry.surface} />
+                        </div>
+                    ))}
+                </div>
+            </Specimen>
 
             <FullScreenSpecimen
                 detail="A “kanban” Surface: its name and members, and no guessed content."

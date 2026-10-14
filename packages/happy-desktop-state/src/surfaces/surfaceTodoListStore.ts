@@ -13,13 +13,17 @@ import {
     happyAgentVersionNewer,
     type HappyAgentTodoEvent,
 } from "./surfaceProject.js";
+import { happyAgentSurfacePeopleReaderCreate } from "./surfacePeople.js";
 import type {
     HappyAgentSurfaceActiveTodo,
     HappyAgentSurfaceCompletedTodo,
     HappyAgentSurfaceId,
+    HappyAgentSurfacePerson,
     HappyAgentSurfaceTodo,
     HappyAgentSurfaceTodoId,
 } from "./surfaceTypes.js";
+
+const NO_AUTHORS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map();
 
 /** The daemon's bound on a todo's text. */
 export const HAPPY_AGENT_TODO_TEXT_LIMIT = 10_000;
@@ -54,6 +58,8 @@ export interface HappyAgentTodoListSnapshot {
     /** Completed todos, newest completion first. They are never moved. */
     readonly completed: readonly HappyAgentSurfaceCompletedTodo[];
     readonly completedShown: boolean;
+    /** The people the todos name as their authors, by user ID, as they are learned. */
+    readonly authors: ReadonlyMap<string, HappyAgentSurfacePerson>;
     /** What is typed into the add field. */
     readonly draft: string;
     readonly editing?: HappyAgentTodoEditing;
@@ -91,7 +97,14 @@ export interface HappyAgentTodoListStore {
 export interface HappyAgentTodoListDeps {
     readonly client: Pick<
         HappyAgentClient,
-        "listTodos" | "getTodo" | "createTodo" | "updateTodo" | "reorderTodo" | "deleteTodo"
+        | "endpoint"
+        | "listTodos"
+        | "getTodo"
+        | "createTodo"
+        | "updateTodo"
+        | "reorderTodo"
+        | "deleteTodo"
+        | "getUsers"
     >;
     readonly sync: HappyAgentSync;
     readonly surfaceId: HappyAgentSurfaceId;
@@ -252,6 +265,7 @@ export function happyAgentTodoListStoreCreate(
         active: [],
         completed: [],
         completedShown: false,
+        authors: NO_AUTHORS,
         draft: "",
     };
     let queue: QueuedOp[] = [];
@@ -271,6 +285,15 @@ export function happyAgentTodoListStoreCreate(
         for (const listener of listeners) listener();
     };
 
+    const authors = happyAgentSurfacePeopleReaderCreate({
+        client: deps.client,
+        signal: life.signal,
+        read(read) {
+            if (disposed) return;
+            publish({ authors: new Map([...snapshot.authors, ...read]) });
+        },
+    });
+
     /** The daemon's todos with every pending change applied, in order. */
     const projected = (): Map<HappyAgentSurfaceTodoId, HappyAgentSurfaceTodo> => {
         if (queue.length === 0) return authoritative;
@@ -282,6 +305,9 @@ export function happyAgentTodoListStoreCreate(
                     id: op.todoId,
                     surfaceId,
                     text: op.text,
+                    // Who wrote it is the daemon's to say, once it answers;
+                    // the reader is never credited here.
+                    authorUserId: null,
                     status: "active",
                     orderKey: op.orderKey,
                     completedAt: null,
@@ -330,6 +356,7 @@ export function happyAgentTodoListStoreCreate(
         if (current !== undefined && !happyAgentVersionNewer(todo.version, current.version))
             return false;
         authoritative = new Map(authoritative).set(todo.id, todo);
+        authors.request([todo.authorUserId]);
         return true;
     };
 
@@ -430,6 +457,7 @@ export function happyAgentTodoListStoreCreate(
                 for (const todo of authoritative.values())
                     if (todo.status === "deleted" && !read.has(todo.id)) read.set(todo.id, todo);
                 authoritative = read;
+                authors.request([...read.values()].map((todo) => todo.authorUserId));
                 for (const event of journal.slice(mark)) eventApply(event);
                 republish({ status: "ready" });
             })
@@ -444,7 +472,7 @@ export function happyAgentTodoListStoreCreate(
         void (async () => {
             for await (const input of deps.sync.follow({
                 signal: active.signal,
-                events: [...HAPPY_AGENT_TODO_EVENT_TYPES],
+                events: [...HAPPY_AGENT_TODO_EVENT_TYPES, "profile.updated"],
             })) {
                 if (input.kind === "error") {
                     failed = true;
@@ -459,7 +487,14 @@ export function happyAgentTodoListStoreCreate(
                     continue;
                 }
                 if (input.kind !== "update" || input.update.kind !== "event") continue;
-                const event = happyAgentTodoEventProject(input.update.event);
+                const raw = input.update.event;
+                if (raw.type === "profile.updated") {
+                    // An author renamed or rephotographed is read again.
+                    const userId = raw.payload.userId ?? raw.payload.profile?.userId;
+                    if (userId != null && snapshot.authors.has(userId)) authors.request([], userId);
+                    continue;
+                }
+                const event = happyAgentTodoEventProject(raw);
                 if (event === undefined) continue;
                 if (event.type === "created" && event.todo.surfaceId !== surfaceId) continue;
                 if (event.type === "updated" && event.surfaceId !== surfaceId) continue;

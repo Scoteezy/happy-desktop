@@ -2076,10 +2076,22 @@ function surfaceViewOf(
     catalog: HappyAgentSurfaceCatalogSnapshot,
     surface: HappyAgentSurface,
 ): HappyAgentSurfaceView {
+    // A Surface that credits nobody names no creator, and nor does one whose
+    // creator the catalog has not read yet: the name appears once, as itself.
+    const creator =
+        surface.creatorUserId === null ? undefined : catalog.users.get(surface.creatorUserId);
     return {
         name: surface.name,
         ...(surface.image ? { image: surface.image } : {}),
         type: surface.type,
+        ...(creator === undefined
+            ? {}
+            : {
+                  creator: {
+                      name: creator.name ?? "Someone",
+                      ...(creator.photo ? { photo: creator.photo } : {}),
+                  },
+              }),
         members: surfaceMembersView(catalog, surface),
     };
 }

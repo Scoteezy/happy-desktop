@@ -1,6 +1,9 @@
+import { Avatar } from "../../Avatar";
 import { Button } from "../../Button";
 import { Checkbox } from "../../Checkbox";
 import { REORDERING_LIST_STATIC } from "../../ReorderingList";
+import { Tooltip } from "../../Tooltip";
+import { initialsOf, type HappyAgentSurfacePersonView } from "./surfacePresentation";
 
 /** The todo's text is bounded by the daemon. */
 const TEXT_LIMIT = 10_000;
@@ -8,6 +11,8 @@ const TEXT_LIMIT = 10_000;
 export interface HappyAgentTodoRowProps {
     text: string;
     completed: boolean;
+    /** Who wrote it, once they are known; absent when the todo credits nobody. */
+    author?: HappyAgentSurfacePersonView;
     /** The text being typed while the todo is edited in place; absent otherwise. */
     editing?: string;
     onCompletedChange: (completed: boolean) => void;
@@ -19,8 +24,9 @@ export interface HappyAgentTodoRowProps {
 }
 
 /**
- * One todo in a fixed 40px row: its checkbox, its text, and a delete control
- * that shows while the row is hovered or focused.
+ * One todo in a fixed 40px row: its checkbox, its text, the face of who wrote
+ * it when that is known, and a delete control that shows while the row is
+ * hovered or focused.
  *
  * In a reorderable list the row's body is what is dragged. Its controls — the
  * checkbox, the delete button, and the field while the text is edited — are
@@ -80,6 +86,22 @@ export function HappyAgentTodoRow(props: HappyAgentTodoRowProps) {
                     {props.text}
                 </button>
             )}
+            {props.author ? (
+                // Part of the body, so a press on the face drags the row like
+                // a press anywhere else on it.
+                <Tooltip
+                    className="happy-agent-todo-row__author"
+                    label={`Added by ${props.author.name}`}
+                    placement="top"
+                >
+                    <Avatar
+                        aria-label={`Added by ${props.author.name}`}
+                        imageUrl={props.author.photo?.url}
+                        initials={initialsOf(props.author.name)}
+                        size="xs"
+                    />
+                </Tooltip>
+            ) : null}
             <Button
                 {...REORDERING_LIST_STATIC}
                 aria-label={`Delete “${props.text}”`}

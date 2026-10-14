@@ -44,6 +44,8 @@ export function happyAgentSurfaceProject(endpoint: string, surface: Surface): Ha
                       thumbhash: surface.image.thumbhash,
                   },
         members: surface.members.map(memberProject),
+        // A daemon from before creators leaves the field out; that credits nobody.
+        creatorUserId: surface.creatorUserId ?? null,
         version: surface.version,
         updatedAt: surface.updatedAt,
     };
@@ -54,6 +56,8 @@ export function happyAgentTodoProject(todo: Todo): HappyAgentSurfaceTodo {
         id: todo.id as HappyAgentSurfaceTodoId,
         surfaceId: todo.surfaceId as HappyAgentSurfaceId,
         text: todo.text,
+        // A daemon from before authors leaves the field out; that credits nobody.
+        authorUserId: todo.authorUserId ?? null,
         createdAt: todo.createdAt,
         updatedAt: todo.updatedAt,
         version: todo.version,
@@ -193,6 +197,7 @@ export function happyAgentTodoChangesApply(
         id: todo.id,
         surfaceId: todo.surfaceId,
         text: changes.text ?? todo.text,
+        authorUserId: todo.authorUserId,
         createdAt: todo.createdAt,
         updatedAt: changes.updatedAt,
         version,

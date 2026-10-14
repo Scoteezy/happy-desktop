@@ -9,22 +9,28 @@ export interface HappyAgentSurfacePicture {
     readonly thumbhash: string;
 }
 
-/** One person who joined a Surface, as the owner could name them. */
-export interface HappyAgentSurfaceMemberView {
-    /** Stable for the person: their user ID, or a fixed key for the standalone one. */
-    readonly key: string;
+/** A person a Surface names, as the owner could name them. */
+export interface HappyAgentSurfacePersonView {
     readonly name: string;
     readonly photo?: HappyAgentSurfacePicture;
 }
 
+/** One person who joined a Surface. */
+export interface HappyAgentSurfaceMemberView extends HappyAgentSurfacePersonView {
+    /** Stable for the person: their user ID, or a fixed key for the standalone one. */
+    readonly key: string;
+}
+
 /**
  * A Surface as every view of it shows it, whatever its type: what it is
- * called, its picture, and who is in it.
+ * called, its picture, who made it, and who is in it.
  */
 export interface HappyAgentSurfaceView {
     readonly name: string;
     readonly image?: HappyAgentSurfacePicture;
     readonly type: HappyAgentSurfaceType;
+    /** Who made it, once they are known; absent when the Surface credits nobody. */
+    readonly creator?: HappyAgentSurfacePersonView;
     readonly members: readonly HappyAgentSurfaceMemberView[];
 }
 
@@ -48,7 +54,7 @@ export function surfaceMembersText(members: readonly HappyAgentSurfaceMemberView
 }
 
 /** Up to two initials from a name, for a face with no photo. */
-function initialsOf(name: string): string {
+export function initialsOf(name: string): string {
     return name
         .trim()
         .split(/\s+/u)
