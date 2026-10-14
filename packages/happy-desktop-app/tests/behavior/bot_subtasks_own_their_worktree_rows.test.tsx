@@ -144,6 +144,7 @@ function workspace(actions: {
     };
     return {
         get: () => snapshot,
+        deviceBridgeSupport: () => undefined,
         panel: {
             get: () => PANEL_CLOSED,
             subscribe: () => () => undefined,

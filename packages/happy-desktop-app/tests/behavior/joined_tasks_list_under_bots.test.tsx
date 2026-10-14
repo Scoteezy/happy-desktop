@@ -164,6 +164,7 @@ function workspace(actions: TaskActions, listing: Listing): HappyAgentWorkspaceS
     };
     return {
         get: () => snapshot,
+        deviceBridgeSupport: () => undefined,
         panel: {
             get: () => PANEL_CLOSED,
             subscribe: () => () => undefined,

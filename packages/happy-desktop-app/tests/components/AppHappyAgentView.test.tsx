@@ -118,6 +118,7 @@ function workspace(): HappyAgentWorkspaceStore {
     };
     return {
         get: () => snapshot,
+        deviceBridgeSupport: () => undefined,
         panel: panel(),
         subscribe: () => () => undefined,
         conversationOpen: () => undefined,
