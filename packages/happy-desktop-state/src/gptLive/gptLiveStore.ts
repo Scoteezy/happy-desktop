@@ -94,14 +94,14 @@ export function gptLiveStoreCreate(
         if (
             typeof document === "object" &&
             document !== null &&
-            (document as { gptLiveEnabled?: unknown }).gptLiveEnabled === true &&
-            allowed()
+            typeof (document as { gptLiveEnabled?: unknown }).gptLiveEnabled === "boolean"
         ) {
+            const enabled = (document as { gptLiveEnabled: boolean }).gptLiveEnabled && allowed();
             const accountId = (document as { accountId?: unknown }).accountId;
             snapshot = {
                 ...DISABLED,
-                gptLiveEnabled: true,
-                status: "idle",
+                gptLiveEnabled: enabled,
+                status: enabled ? "idle" : "disabled",
                 ...(typeof accountId === "string" ? { accountId } : {}),
             };
         }
@@ -214,23 +214,21 @@ export function gptLiveStoreCreate(
                 ...DISABLED,
                 gptLiveEnabled: enabled,
                 status: enabled ? "idle" : "disabled",
+                ...(snapshot.accountId ? { accountId: snapshot.accountId } : {}),
+                ...(snapshot.availability ? { availability: snapshot.availability } : {}),
             };
             try {
-                persistence?.write({ gptLiveEnabled: enabled });
+                persistence?.write({
+                    gptLiveEnabled: enabled,
+                    ...(next.accountId ? { accountId: next.accountId } : {}),
+                });
             } catch {
                 // An unavailable persistence adapter must not prevent disabling.
             }
             publish(next);
         },
         availabilityRead() {
-            if (
-                disposed ||
-                !allowed() ||
-                !snapshot.gptLiveEnabled ||
-                availabilityController ||
-                callController
-            )
-                return;
+            if (disposed || !allowed() || availabilityController || callController) return;
             if (!runtime) {
                 publish({
                     ...snapshot,
@@ -250,7 +248,11 @@ export function gptLiveStoreCreate(
                     publish({
                         ...snapshot,
                         availability,
-                        status: availability.supported ? "idle" : "unavailable",
+                        status: !snapshot.gptLiveEnabled
+                            ? "disabled"
+                            : availability.supported
+                              ? "idle"
+                              : "unavailable",
                         error: availability.reason,
                         accountId: availability.accounts.some(
                             (item) => item.id === snapshot.accountId,
@@ -278,14 +280,13 @@ export function gptLiveStoreCreate(
         accountSelect(id) {
             if (
                 disposed ||
-                !snapshot.gptLiveEnabled ||
                 callController ||
                 !snapshot.availability?.accounts.some((item) => item.id === id)
             )
                 return;
             publish({ ...snapshot, accountId: id });
             try {
-                persistence?.write({ gptLiveEnabled: true, accountId: id });
+                persistence?.write({ gptLiveEnabled: snapshot.gptLiveEnabled, accountId: id });
             } catch {}
         },
         callStart() {
@@ -302,7 +303,7 @@ export function gptLiveStoreCreate(
                 publish({
                     ...snapshot,
                     status: "error",
-                    error: "Choose a voice account in Experimental settings.",
+                    error: "Choose a voice account in Voice settings.",
                 });
                 return;
             }
@@ -319,7 +320,7 @@ export function gptLiveStoreCreate(
                 publish({
                     ...snapshot,
                     status: "error",
-                    error: "Choose a voice account in Experimental settings.",
+                    error: "Choose a voice account in Voice settings.",
                 });
                 return;
             }

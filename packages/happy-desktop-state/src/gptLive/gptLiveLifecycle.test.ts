@@ -114,16 +114,39 @@ describe("GPT-Live call lifetime", () => {
         expect(f.call.close).toHaveBeenCalledTimes(1);
         expect(f.signal()?.aborted).toBe(true);
     });
-    it("is completely inert off, including subscribers and Start attempts", () => {
+    it("can read and choose the account while calls are off without enabling or opening a call", async () => {
         const { store, runtime } = fixture();
         const unsubscribe = store.subscribe(() => {});
         store.availabilityRead();
+        await Promise.resolve();
         store.callStart();
         store.accountSelect("codex");
-        expect(runtime.availabilityRead).not.toHaveBeenCalled();
+        expect(runtime.availabilityRead).toHaveBeenCalledTimes(1);
         expect(runtime.callOpen).not.toHaveBeenCalled();
         expect(store.get().status).toBe("disabled");
+        expect(store.get().accountId).toBe("codex");
+        expect(store.get().gptLiveEnabled).toBe(false);
         unsubscribe();
+    });
+
+    it("persists an account choice while off as an off preference", async () => {
+        const write = vi.fn();
+        const { runtime } = fixture();
+        const store = gptLiveStoreCreate({ read: () => undefined, write }, runtime);
+        store.availabilityRead();
+        await Promise.resolve();
+        store.accountSelect("codex");
+        expect(write).toHaveBeenCalledWith({ gptLiveEnabled: false, accountId: "codex" });
+        const saved = write.mock.calls.at(-1)![0];
+        expect(gptLiveStoreCreate({ read: () => saved, write: () => {} }).get()).toMatchObject({
+            gptLiveEnabled: false,
+            accountId: "codex",
+        });
+        store.callStart();
+        expect(runtime.callOpen).not.toHaveBeenCalled();
+        store.gptLiveEnabledUpdate(true);
+        expect(store.get().accountId).toBe("codex");
+        expect(runtime.callOpen).not.toHaveBeenCalled();
     });
 
     it("restored opt-in never starts recording or opens transport", () => {
