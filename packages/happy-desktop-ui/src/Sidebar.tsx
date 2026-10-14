@@ -104,6 +104,11 @@ export type SidebarItem = {
     labelShimmer?: boolean;
     meta?: string;
     /**
+     * How many open things the row holds — a todo list's unfinished todos —
+     * as a quiet number at its trailing edge. Absent or zero shows nothing.
+     */
+    count?: number;
+    /**
      * A control at the trailing edge of the row, reported through
      * `onItemAction`. `reveal: "hover"` keeps it out of the way until the row is
      * hovered or the control is focused, for something destructive; the default
@@ -1047,6 +1052,8 @@ function SidebarRow({
     const showLifecycle = () => lifecycle() !== undefined && item().lifecycleLabel !== undefined;
     const showMeta = () =>
         item().meta !== undefined && !unread() && !mentioned() && !showStatus() && !showLifecycle();
+    const showCount = () =>
+        (item().count ?? 0) > 0 && !unread() && !mentioned() && !showStatus() && !showLifecycle();
     /*
      * A place that is being made, or has work running inside it, says so in its
      * own name: the name shimmers for as long as that lasts. It is the same
@@ -1419,7 +1426,8 @@ function SidebarRow({
                     {item().meta}
                 </span>
             ) : null}
-            {((state, controls, stats, swaps) =>
+
+            {((state, controls, stats, swaps, count) =>
                 /* One lane at the trailing edge, and everything in it is ranged
                    right. The Git delta is the last thing in flow, so at rest it
                    ends the row on the same column as the marks above and below
@@ -1429,7 +1437,7 @@ function SidebarRow({
                    controls are laid over the lane rather than placed in it, so
                    arriving and leaving costs no reflow: what they cover is
                    hidden where it stands. */
-                state || controls || stats ? (
+                state || controls || stats || count !== undefined ? (
                     <span
                         className="happy-sidebar__item-trailing"
                         data-happy-desktop-ui="sidebar-item-trailing"
@@ -1439,6 +1447,14 @@ function SidebarRow({
                             minWidth: trailingLaneMinWidth(),
                         }}
                     >
+                        {count !== undefined ? (
+                            <span
+                                className="happy-sidebar__item-count"
+                                data-happy-desktop-ui="sidebar-item-count"
+                            >
+                                {String(count)}
+                            </span>
+                        ) : null}
                         {stats ? (
                             /* Abbreviated for the column, exact for the reader
                                who is listening rather than looking. */
@@ -1473,6 +1489,7 @@ function SidebarRow({
                 trailingActions().length > 0,
                 hasChangeStats() ? item().changeStats! : undefined,
                 swapsTrailing(),
+                showCount() ? item().count : undefined,
             )}
         </button>
     );

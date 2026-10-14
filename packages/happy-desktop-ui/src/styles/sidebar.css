@@ -1103,7 +1103,9 @@
     .happy-sidebar__item-change-stats
     > [data-tone],
 .happy-sidebar__item:hover .happy-sidebar__item-trailing[data-swaps] .happy-sidebar__item-activity,
-.happy-sidebar__item-trailing[data-swaps]:focus-within .happy-sidebar__item-activity {
+.happy-sidebar__item-trailing[data-swaps]:focus-within .happy-sidebar__item-activity,
+.happy-sidebar__item:hover .happy-sidebar__item-trailing[data-swaps] .happy-sidebar__item-count,
+.happy-sidebar__item-trailing[data-swaps]:focus-within .happy-sidebar__item-count {
     visibility: hidden;
 }
 
@@ -1134,6 +1136,21 @@
     line-height: 16px;
     text-overflow: ellipsis;
     white-space: nowrap;
+    transform: translateY(var(--happy-sidebar-meta-optical-y, 0px));
+}
+
+/* A count of what is open in the row reads as quietly as its meta, in figures
+   that keep their width as the number changes. It is the first mark in the
+   trailing lane, so at rest it ends the row on the column the other rows' marks
+   end on, and a control laid over the lane covers it. */
+.happy-sidebar__item-count {
+    display: block;
+    flex: none;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    line-height: 16px;
     transform: translateY(var(--happy-sidebar-meta-optical-y, 0px));
 }
 

@@ -2086,14 +2086,17 @@ function surfaceViewOf(
 
 /**
  * A Surface's row: its own name and picture whatever its type, with Leave on
- * one the reader joined and Join on one a search found.
+ * one the reader joined and Join on one a search found. A joined todo list
+ * also says how many of its todos are still open.
  */
 function surfaceSidebarItem(
     happyAgentId: string,
     surface: HappyAgentSurface,
     joined: boolean,
     offline: boolean,
+    activeTodoCounts?: ReadonlyMap<HappyAgentSurfaceId, number>,
 ): SidebarItem {
+    const count = joined ? activeTodoCounts?.get(surface.id) : undefined;
     return {
         id: happyAgentItemId(happyAgentId, surfaceRowId(surface.id)),
         kind: "project",
@@ -2101,6 +2104,7 @@ function surfaceSidebarItem(
         ...(surface.image
             ? { imageUrl: surface.image.url }
             : { icon: surface.type.kind === "todo" ? ("tasks" as const) : ("package" as const) }),
+        ...(count !== undefined && count > 0 ? { count } : {}),
         ...(joined ? {} : { reorderable: false }),
         action: joined
             ? {
@@ -2130,6 +2134,7 @@ function happyAgentTopSection(
     happyAgentId: string,
     happyAgent: AppHappyAgentEntry | undefined,
     catalog: HappyAgentSurfaceCatalogSnapshot,
+    activeTodoCounts: ReadonlyMap<HappyAgentSurfaceId, number>,
 ): SidebarSection {
     const offline = happyAgent?.status !== "connected";
     return {
@@ -2138,7 +2143,7 @@ function happyAgentTopSection(
             ARTIFACTS_SIDEBAR_ITEM,
             ...(catalog.availability === "available"
                 ? catalog.joined.map((surface) =>
-                      surfaceSidebarItem(happyAgentId, surface, true, offline),
+                      surfaceSidebarItem(happyAgentId, surface, true, offline, activeTodoCounts),
                   )
                 : []),
         ],
@@ -2194,6 +2199,7 @@ function happyAgentSearchSections(
     directory: AppHappyAgentDirectorySnapshot,
     activeHappyAgentId: string,
     catalog: HappyAgentSurfaceCatalogSnapshot,
+    activeTodoCounts: ReadonlyMap<HappyAgentSurfaceId, number>,
     titleShimmerEnabled: boolean,
     projectsHidden: boolean,
 ): SidebarSection[] {
@@ -2220,7 +2226,15 @@ function happyAgentSearchSections(
                 for (const surface of catalog.joined)
                     if (matches(surface.name))
                         surfaces.push(
-                            found(surfaceSidebarItem(happyAgent.id, surface, true, offline)),
+                            found(
+                                surfaceSidebarItem(
+                                    happyAgent.id,
+                                    surface,
+                                    true,
+                                    offline,
+                                    activeTodoCounts,
+                                ),
+                            ),
                         );
                 for (const surface of [...catalog.surfaces].sort((left, right) =>
                     left.name.localeCompare(right.name),
@@ -2534,6 +2548,15 @@ const INBOX_ITEM = "inbox";
  */
 const ARTIFACTS_ITEM = "artifacts";
 
+/** A subscription to nothing, for a hook whose store is absent. */
+const SUBSCRIBE_NONE = (): (() => void) => () => undefined;
+
+/** How many todos a list holds open, once it has been read. */
+function todoListActiveCount(store: HappyAgentTodoListStore | undefined): number | undefined {
+    const list = store?.get();
+    return list?.status === "ready" ? list.active.length : undefined;
+}
+
 const ARTIFACTS_SIDEBAR_ITEM: SidebarItem = {
     icon: "package",
     id: ARTIFACTS_ITEM,
@@ -2718,6 +2741,26 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         surfaceCatalogStore.get,
         surfaceCatalogStore.get,
     );
+    // The todo list on screen is counted from its own store, which holds the
+    // reader's changes the moment they are made, so ticking one off moves its
+    // sidebar count at once. Every other list is counted by the catalog.
+    const openSurface =
+        props.surfaceId === undefined
+            ? undefined
+            : surfaceCatalog.surfaces.find((surface) => surface.id === props.surfaceId);
+    const openTodoList =
+        openSurface?.type.kind === "todo"
+            ? active?.session?.surfaces?.todoList(openSurface.id)
+            : undefined;
+    const openTodoCount = useSyncExternalStore(
+        openTodoList?.subscribe ?? SUBSCRIBE_NONE,
+        () => todoListActiveCount(openTodoList),
+        () => todoListActiveCount(openTodoList),
+    );
+    const activeTodoCounts =
+        openSurface === undefined || openTodoCount === undefined
+            ? surfaceCatalog.activeTodoCounts
+            : new Map(surfaceCatalog.activeTodoCounts).set(openSurface.id, openTodoCount);
     const desktop = props.platform === "desktop";
     // Happy's own update wins the row. Restarting the app is the larger event of
     // the two, and it carries the agent with it, so the agent states its case
@@ -3267,6 +3310,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           directory,
                           active?.id ?? props.happyAgentId,
                           surfaceCatalog,
+                          activeTodoCounts,
                           titleShimmerEnabled,
                           projectsHidden,
                       )
@@ -3275,6 +3319,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               active?.id ?? props.happyAgentId,
                               active,
                               surfaceCatalog,
+                              activeTodoCounts,
                           ),
                           ...sectionsCollapsed(
                               happyAgentSections(

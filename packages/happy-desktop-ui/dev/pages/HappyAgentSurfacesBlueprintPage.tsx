@@ -110,10 +110,18 @@ const handlers = {
  * the completed section can be tried in the workbench. The application holds
  * the same snapshot in its store.
  */
-function LiveTodoPage(props: { readonly initial?: HappyAgentTodoListSnapshot }) {
+function LiveTodoPage(props: {
+    readonly initial?: HappyAgentTodoListSnapshot;
+    /** Told how many todos are open after each change, as the sidebar's count is. */
+    readonly onActiveCount?: (count: number) => void;
+}) {
     const [list, setList] = useState(props.initial ?? LIST);
     const [next, setNext] = useState(10);
-    const set = (patch: Partial<HappyAgentTodoListSnapshot>) => setList({ ...list, ...patch });
+    const set = (patch: Partial<HappyAgentTodoListSnapshot>) => {
+        const next = { ...list, ...patch };
+        setList(next);
+        props.onActiveCount?.(next.active.length);
+    };
     const textSet = (id: HappyAgentSurfaceTodoId, text: string) =>
         set({
             active: list.active.map((todo) => (todo.id === id ? { ...todo, text } : todo)),
@@ -216,19 +224,23 @@ interface MockSurface {
     readonly id: string;
     readonly joined: boolean;
     readonly view: HappyAgentSurfaceView;
+    /** Open todos, for a todo list. */
+    readonly count?: number;
 }
 
 const SURFACES: readonly MockSurface[] = [
-    { id: "groceries", joined: true, view: GROCERIES },
+    { id: "groceries", joined: true, view: GROCERIES, count: ACTIVE.length },
     { id: "launch", joined: true, view: KANBAN },
     {
         id: "reading",
         joined: true,
+        count: 3,
         view: { name: "Reading list", type: { kind: "todo" }, members: MEMBERS.slice(0, 1) },
     },
     {
         id: "release",
         joined: true,
+        count: 12,
         view: {
             name: "October release checklist",
             image: AMBER,
@@ -260,6 +272,7 @@ function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
                   icon:
                       surface.view.type.kind === "todo" ? ("tasks" as const) : ("package" as const),
               }),
+        ...(surface.joined && surface.count ? { count: surface.count } : {}),
         ...(fixed ? { reorderable: false } : {}),
         action: surface.joined
             ? {
@@ -383,6 +396,7 @@ function MockWindow(props: {
                         activeItemId={selected}
                         headerAction={{ icon: "plus", label: "New todo list" }}
                         onHeaderAction={noop}
+                        onItemAction={noop}
                         onItemReorder={reorder}
                         onItemSelect={setSelected}
                         onSectionAction={noop}
@@ -448,7 +462,16 @@ function MockWindow(props: {
                 windowControls
             >
                 {open?.view.type.kind === "todo" && open.id === "groceries" ? (
-                    <LiveTodoPage {...(props.initialList ? { initial: props.initialList } : {})} />
+                    <LiveTodoPage
+                        {...(props.initialList ? { initial: props.initialList } : {})}
+                        onActiveCount={(count) =>
+                            setSurfaces(
+                                surfaces.map((surface) =>
+                                    surface.id === "groceries" ? { ...surface, count } : surface,
+                                ),
+                            )
+                        }
+                    />
                 ) : open ? (
                     open.view.type.kind === "todo" ? (
                         <HappyAgentTodoSurfacePage

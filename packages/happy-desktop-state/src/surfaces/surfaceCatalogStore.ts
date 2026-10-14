@@ -11,7 +11,9 @@ import { cuid2Create } from "../utils/cuid2Create.js";
 import { orderKeyDecimalBetween, stringCompare } from "../utils/orderKeyDecimal.js";
 import {
     HAPPY_AGENT_SURFACE_EVENT_TYPES,
+    HAPPY_AGENT_TODO_EVENT_TYPES,
     happyAgentSurfaceEventProject,
+    happyAgentTodoEventProject,
     happyAgentSurfaceProject,
     happyAgentVersionNewer,
     type HappyAgentSurfaceEvent,
@@ -69,6 +71,13 @@ export interface HappyAgentSurfaceCatalogSnapshot {
     readonly users: ReadonlyMap<string, HappyAgentSurfacePerson>;
     /** Surfaces whose join or leave this window asked for and the daemon has not answered. */
     readonly membershipPending: ReadonlySet<HappyAgentSurfaceId>;
+    /**
+     * How many todos are still open in each todo list the reader joined, as
+     * last read from the daemon. A list missing from it has not been counted
+     * yet. Read again whenever one of its todos is added, finished, reopened,
+     * or deleted.
+     */
+    readonly activeTodoCounts: ReadonlyMap<HappyAgentSurfaceId, number>;
     /** The last membership act the daemon refused, until another one is asked for. */
     readonly failure?: {
         readonly surfaceId: HappyAgentSurfaceId;
@@ -116,6 +125,7 @@ export interface HappyAgentSurfaceCatalogDeps {
         HappyAgentClient,
         | "endpoint"
         | "listSurfaces"
+        | "listTodos"
         | "createSurface"
         | "joinSurface"
         | "leaveSurface"
@@ -135,6 +145,7 @@ export interface HappyAgentSurfaceCatalogDeps {
 
 const NO_USERS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map();
 const NO_PENDING: ReadonlySet<HappyAgentSurfaceId> = new Set();
+const NO_COUNTS: ReadonlyMap<HappyAgentSurfaceId, number> = new Map();
 const CREATE_CLOSED: HappyAgentSurfaceCreateState = { phase: "closed" };
 const CREATE_OPEN: HappyAgentSurfaceCreateState = { phase: "open" };
 
@@ -144,6 +155,7 @@ const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     joined: [],
     users: NO_USERS,
     membershipPending: NO_PENDING,
+    activeTodoCounts: NO_COUNTS,
     create: CREATE_CLOSED,
 };
 
@@ -274,6 +286,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
         joined: [],
         users: NO_USERS,
         membershipPending: NO_PENDING,
+        activeTodoCounts: NO_COUNTS,
         create: CREATE_CLOSED,
     };
     let ops: MembershipOp[] = [];
@@ -283,6 +296,8 @@ export function happyAgentSurfaceCatalogStoreCreate(
     let retry: ReturnType<typeof setTimeout> | undefined;
     /** Reads of the catalog; aborted together when following stops. */
     let reads = new AbortController();
+    /** Count reads in flight, each marked when a hint arrives while it runs. */
+    const countReads = new Map<HappyAgentSurfaceId, { again: boolean }>();
     let readsInFlight = 0;
     let readLatest = 0;
     /** Events seen while a read was in flight, replayed onto its answer. */
@@ -436,9 +451,86 @@ export function happyAgentSurfaceCatalogStoreCreate(
         };
     };
 
+    /** The joined todo lists that are counted: every one the daemon already has. */
+    const countable = (joined: readonly HappyAgentSurface[]): Set<HappyAgentSurfaceId> =>
+        new Set(
+            joined
+                .filter(
+                    (surface) =>
+                        surface.type.kind === "todo" &&
+                        !creates.some((create) => create.surfaceId === surface.id),
+                )
+                .map((surface) => surface.id),
+        );
+
+    /**
+     * Reads how many todos are open in one list. A hint arriving while a read
+     * runs asks for one more read after it, so the count settles on the
+     * daemon's latest answer however many changes arrive at once.
+     */
+    const countRead = (surfaceId: HappyAgentSurfaceId): void => {
+        if (following === undefined || disposed) return;
+        const running = countReads.get(surfaceId);
+        if (running !== undefined) {
+            running.again = true;
+            return;
+        }
+        const entry = { again: false };
+        countReads.set(surfaceId, entry);
+        void deps.client
+            .listTodos(surfaceId, { scope: "active", signal: reads.signal })
+            .then(
+                (response) => {
+                    if (countReads.get(surfaceId) !== entry) return;
+                    if (!countable(snapshot.joined).has(surfaceId)) return;
+                    const count = response.todos.filter((todo) => todo.status === "active").length;
+                    if (snapshot.activeTodoCounts.get(surfaceId) === count) return;
+                    publish({
+                        activeTodoCounts: new Map(snapshot.activeTodoCounts).set(surfaceId, count),
+                    });
+                },
+                () => {
+                    // An uncounted list shows no count; the next hint or
+                    // reconciliation reads it again.
+                },
+            )
+            .finally(() => {
+                if (countReads.get(surfaceId) !== entry) return;
+                countReads.delete(surfaceId);
+                if (entry.again) countRead(surfaceId);
+            });
+    };
+
+    /** Reads every joined todo list's count again, as a reconciliation does. */
+    const countsRefresh = (): void => {
+        for (const surfaceId of countable(snapshot.joined)) countRead(surfaceId);
+    };
+
+    /** A todo event is a hint that its list's count may have moved. */
+    const todoHint = (raw: Parameters<typeof happyAgentTodoEventProject>[0]): boolean => {
+        const event = happyAgentTodoEventProject(raw);
+        if (event === undefined) return false;
+        const surfaceId = event.type === "created" ? event.todo.surfaceId : event.surfaceId;
+        // A rename or a move leaves the count where it was.
+        const counts =
+            event.type === "created" ||
+            event.changes.status !== undefined ||
+            event.changes.deletedAt !== undefined;
+        if (counts && countable(snapshot.joined).has(surfaceId)) countRead(surfaceId);
+        return true;
+    };
+
     const republish = (next: Partial<HappyAgentSurfaceCatalogSnapshot> = {}): void => {
         snapshot = { ...snapshot, ...next };
-        publish(project());
+        const projected = project();
+        // Counts follow the reader's sidebar: a list left drops its count, and
+        // one joined or just made is counted.
+        const counted = countable(projected.joined);
+        let counts = snapshot.activeTodoCounts;
+        if ([...counts.keys()].some((surfaceId) => !counted.has(surfaceId)))
+            counts = new Map([...counts].filter(([surfaceId]) => counted.has(surfaceId)));
+        publish({ ...projected, activeTodoCounts: counts });
+        for (const surfaceId of counted) if (!counts.has(surfaceId)) countRead(surfaceId);
     };
 
     /** Replaces one Surface with a later version of it, or adds it. */
@@ -554,6 +646,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
         snapshot = rest;
         usersRequest(authoritative);
         republish({ ...reader, availability: "available" });
+        countsRefresh();
         if (gap) reload();
     };
 
@@ -564,7 +657,11 @@ export function happyAgentSurfaceCatalogStoreCreate(
         void (async () => {
             for await (const input of deps.sync.follow({
                 signal: active.signal,
-                events: [...HAPPY_AGENT_SURFACE_EVENT_TYPES, "profile.updated"],
+                events: [
+                    ...HAPPY_AGENT_SURFACE_EVENT_TYPES,
+                    ...HAPPY_AGENT_TODO_EVENT_TYPES,
+                    "profile.updated",
+                ],
             })) {
                 if (input.kind === "error") {
                     failed = true;
@@ -598,6 +695,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
                     else if (raw.payload.userId !== undefined) usersRequest([], raw.payload.userId);
                     continue;
                 }
+                if (todoHint(raw)) continue;
                 const event = happyAgentSurfaceEventProject(endpoint, raw);
                 if (event === undefined) continue;
                 if (readsInFlight > 0) journal.push(event);
@@ -624,6 +722,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
         reads = new AbortController();
         readsInFlight = 0;
         journal = [];
+        countReads.clear();
         if (retry) clearTimeout(retry);
         retry = undefined;
     };
