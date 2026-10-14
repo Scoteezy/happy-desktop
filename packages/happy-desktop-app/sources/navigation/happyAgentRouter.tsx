@@ -26,6 +26,7 @@ import type {
     HappyAgentFileTabKind,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
+    HappyAgentSidebarSearchStore,
     HappyAgentSidebarVisibilityStore,
     HappyAgentSessionId,
     HappyAgentSessionLocation,
@@ -111,6 +112,11 @@ export interface HappyAgentRouterContext {
      * Absent in a host that keeps no such record, which leaves every row open.
      */
     readonly sidebarCollapse?: HappyAgentSidebarCollapseStore;
+    /**
+     * What the sidebar's search field holds. Absent in a host that keeps none,
+     * which leaves the sidebar without a search field.
+     */
+    readonly sidebarSearch?: HappyAgentSidebarSearchStore;
     /** Whether this window's left side is folded away; shared by every connection. */
     readonly sidebarVisibility?: HappyAgentSidebarVisibilityStore;
     /**
@@ -573,6 +579,7 @@ function HappyAgentWorkspaceLayout(
             {...(context.commandPalette ? { commandPalette: context.commandPalette } : {})}
             {...(context.navigationOrder ? { navigationOrder: context.navigationOrder } : {})}
             {...(context.sidebarCollapse ? { sidebarCollapse: context.sidebarCollapse } : {})}
+            {...(context.sidebarSearch ? { sidebarSearch: context.sidebarSearch } : {})}
             {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
             settings={context.settings}
             botCreateOpen={props.botCreate}

@@ -283,11 +283,13 @@ export { haptic, type HapticSignal } from "./haptics";
 export {
     Sidebar,
     sidebarReorderMove,
+    type SidebarHeaderAction,
     type SidebarItem,
     type SidebarItemAction,
     type SidebarNumberShortcutTarget,
     type SidebarProps,
     type SidebarReorder,
+    type SidebarSearch,
     type SidebarSection,
 } from "./Sidebar";
 export {
@@ -725,11 +727,6 @@ export {
     HappyAgentSurfaceUnsupportedPage,
     type HappyAgentSurfaceUnsupportedPageProps,
 } from "./pages/surfaces/HappyAgentSurfaceUnsupportedPage";
-export {
-    HappyAgentSurfaceBrowseDialog,
-    type HappyAgentSurfaceBrowseDialogProps,
-    type HappyAgentSurfaceBrowseEntry,
-} from "./pages/surfaces/HappyAgentSurfaceBrowseDialog";
 export {
     HappyAgentSurfaceCreateDialog,
     type HappyAgentSurfaceCreateDialogProps,

@@ -19,17 +19,13 @@ export interface HappyAgentSurfaceMemberView {
 
 /**
  * A Surface as every view of it shows it, whatever its type: what it is
- * called, its picture, who is in it, and whether the reader is.
+ * called, its picture, and who is in it.
  */
 export interface HappyAgentSurfaceView {
     readonly name: string;
     readonly image?: HappyAgentSurfacePicture;
     readonly type: HappyAgentSurfaceType;
     readonly members: readonly HappyAgentSurfaceMemberView[];
-    /** Whether the Surface is in the reader's sidebar. */
-    readonly joined: boolean;
-    /** A join or leave the reader asked for is not answered yet. */
-    readonly membershipPending?: boolean;
 }
 
 /** The glyph a Surface wears when it has no picture of its own. */

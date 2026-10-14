@@ -37,6 +37,8 @@ export interface HappyAgentSurfacesDeps {
 export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAgentSurfaces {
     let catalog: HappyAgentSurfaceCatalogStore | undefined;
     const todoLists = new Map<HappyAgentSurfaceId, HappyAgentTodoListStore>();
+    /** Lists this connection is making, until the daemon answers, for their todo stores to wait on. */
+    const creating = new Map<HappyAgentSurfaceId, Promise<void>>();
     let disposed = false;
     /*
      * A window can render one last time from a session whose connection has
@@ -51,17 +53,29 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
     return {
         catalog() {
             return (catalog ??= inert(
-                happyAgentSurfaceCatalogStoreCreate({ client: deps.client, sync: deps.sync }),
+                happyAgentSurfaceCatalogStoreCreate({
+                    client: deps.client,
+                    sync: deps.sync,
+                    surfaceCreating(surfaceId, created) {
+                        creating.set(surfaceId, created);
+                        const done = (): void => {
+                            creating.delete(surfaceId);
+                        };
+                        created.then(done, done);
+                    },
+                }),
             ));
         },
         todoList(surfaceId) {
             let store = todoLists.get(surfaceId);
             if (store === undefined) {
+                const created = creating.get(surfaceId);
                 store = inert(
                     happyAgentTodoListStoreCreate({
                         client: deps.client,
                         sync: deps.sync,
                         surfaceId,
+                        ...(created === undefined ? {} : { surfaceCreated: created }),
                     }),
                 );
                 if (!disposed) todoLists.set(surfaceId, store);

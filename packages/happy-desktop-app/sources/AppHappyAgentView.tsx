@@ -51,6 +51,7 @@ import type {
     HappyAgentModelSelection,
     HappyAgentNavigationOrderStore,
     HappyAgentSidebarCollapseStore,
+    HappyAgentSidebarSearchStore,
     HappyAgentSidebarVisibilityStore,
     HappyAgentPanelArtifactView,
     HappyAgentPanelSnapshot,
@@ -127,6 +128,7 @@ import {
     happyAgentAvailabilityProject,
     happyAgentNavigationOrderStoreNoop,
     happyAgentSidebarCollapseStoreNoop,
+    happyAgentSidebarSearchStoreNoop,
     happyAgentSidebarVisibilityStoreNoop,
     happyAgentHumanMessageAuthor,
     happyAgentSessionGroupIdOf,
@@ -205,7 +207,6 @@ import {
     HappyAgentCreateTaskPage,
     HappyAgentProjectCloneDialog,
     HappyAgentTaskBrowseDialog,
-    HappyAgentSurfaceBrowseDialog,
     HappyAgentSurfaceCreateDialog,
     HappyAgentSurfaceUnsupportedPage,
     HappyAgentTodoSurfacePage,
@@ -565,6 +566,12 @@ export interface AppHappyAgentViewProps {
      * open rather than offering a fold the next launch would forget.
      */
     sidebarCollapse?: HappyAgentSidebarCollapseStore;
+    /**
+     * What the sidebar's search field holds. While it holds anything the
+     * sidebar lists what matches in place of its usual contents; a host that
+     * keeps no search supplies none and the sidebar offers no field.
+     */
+    sidebarSearch?: HappyAgentSidebarSearchStore;
     /**
      * Whether this window's left side — the sidebar and the connection rail
      * beside it — is folded away. It belongs to the window, so every
@@ -1861,11 +1868,6 @@ function happyAgentSections(
     folded?: ReadonlySet<string>,
     /** The machine Cmd-N makes a task on, whose Tasks heading wears the chord. */
     shortcutHappyAgentId?: string,
-    /** The addressed machine's Surfaces, once it has said it keeps them. */
-    surfaces?: {
-        readonly happyAgentId: string;
-        readonly catalog: HappyAgentSurfaceCatalogSnapshot;
-    },
 ): SidebarSection[] {
     return directory.happyAgents.flatMap((happyAgent) => [
         // Keep the heading even with no bots: its action is where the first
@@ -1916,12 +1918,6 @@ function happyAgentSections(
         // offers no heading that could only ever stand empty.
         ...(happyAgentTasksSupported(happyAgent)
             ? [happyAgentTasksSection(happyAgent, titleShimmerEnabled, shortcutHappyAgentId)]
-            : []),
-        // A Happy Agent from before Surfaces answers their catalog with 404,
-        // and offers no heading at all.
-        ...(surfaces?.happyAgentId === happyAgent.id &&
-        surfaces.catalog.availability === "available"
-            ? [happyAgentSurfacesSection(happyAgent, surfaces.catalog)]
             : []),
         // The reader's own choice in settings, for every connection alike: the
         // section goes entirely, heading and all, rather than folding.
@@ -2085,74 +2081,222 @@ function surfaceViewOf(
         ...(surface.image ? { image: surface.image } : {}),
         type: surface.type,
         members: surfaceMembersView(catalog, surface),
-        joined: catalog.joined.some((entry) => entry.id === surface.id),
-        membershipPending: catalog.membershipPending.has(surface.id),
     };
 }
 
 /**
- * The reader's joined Surfaces, under a heading of their own below the tasks
- * and in the reader's own order. Every type is listed by its own name and
- * picture, including a type this build cannot show; only opening one depends
- * on its type. A row is dragged among the other Surfaces and nowhere else, as
- * a task is among tasks. The heading makes a todo list and browses the
- * catalog, so it stays even when nothing is joined.
+ * A Surface's row: its own name and picture whatever its type, with Leave on
+ * one the reader joined and Join on one a search found.
  */
-function happyAgentSurfacesSection(
-    happyAgent: AppHappyAgentEntry,
+function surfaceSidebarItem(
+    happyAgentId: string,
+    surface: HappyAgentSurface,
+    joined: boolean,
+    offline: boolean,
+): SidebarItem {
+    return {
+        id: happyAgentItemId(happyAgentId, surfaceRowId(surface.id)),
+        kind: "project",
+        label: surface.name,
+        ...(surface.image
+            ? { imageUrl: surface.image.url }
+            : { icon: surface.type.kind === "todo" ? ("tasks" as const) : ("package" as const) }),
+        ...(joined ? {} : { reorderable: false }),
+        action: joined
+            ? {
+                  disabled: offline,
+                  icon: "close" as const,
+                  label: `Leave ${surface.name}`,
+                  reveal: "hover" as const,
+              }
+            : {
+                  disabled: offline,
+                  icon: "plus" as const,
+                  label: `Join ${surface.name}`,
+              },
+    };
+}
+
+/**
+ * The first group in the sidebar, under no heading. Artifacts leads it and is
+ * always there; it never moves and nothing is dragged past it. The reader's
+ * Surfaces follow in their own order and are dragged among themselves only.
+ * Every type is listed by its own name and picture, including a type this
+ * build cannot show; only opening one depends on its type. Every act on them
+ * applies at once and reaches the Happy Agent in the background, so the
+ * group never reports a failure.
+ */
+function happyAgentTopSection(
+    happyAgentId: string,
+    happyAgent: AppHappyAgentEntry | undefined,
     catalog: HappyAgentSurfaceCatalogSnapshot,
 ): SidebarSection {
-    const offline = happyAgent.status !== "connected";
-    const failure = catalog.failure;
-    const failed = failure
-        ? catalog.surfaces.find((surface) => surface.id === failure.surfaceId)
-        : undefined;
+    const offline = happyAgent?.status !== "connected";
     return {
-        id: happyAgentSurfacesSectionId(happyAgent.id),
-        label: "Surfaces",
-        items: catalog.joined.map((surface) => ({
-            id: happyAgentItemId(happyAgent.id, surfaceRowId(surface.id)),
-            kind: "project" as const,
-            label: surface.name,
-            ...(surface.image
-                ? { imageUrl: surface.image.url }
-                : {
-                      icon:
-                          surface.type.kind === "todo" ? ("tasks" as const) : ("package" as const),
-                  }),
-            action: {
-                disabled: offline,
-                icon: "close" as const,
-                label: `Leave ${surface.name}`,
-                reveal: "hover" as const,
-            },
-        })),
-        action: {
-            disabled: offline,
-            icon: "plus" as const,
-            label: "New todo list",
-            reveal: "always" as const,
-        },
-        secondaryAction: {
-            disabled: offline,
-            icon: "search" as const,
-            label: "Browse Surfaces",
-            reveal: "always" as const,
-        },
-        empty: {
-            ...(offline ? {} : { actionLabel: "New todo list" }),
-            description: "Make a todo list, or browse to join one.",
-            icon: "tasks" as const,
-            title: "No Surfaces yet",
-        },
-        ...(failure
-            ? {
-                  error: `Couldn’t ${failure.action} ${failed?.name ?? "that Surface"}: ${failure.error.message}`,
-              }
-            : catalog.error
-              ? { error: catalog.error.message }
-              : {}),
+        id: happyAgentSurfacesSectionId(happyAgentId),
+        items: [
+            ARTIFACTS_SIDEBAR_ITEM,
+            ...(catalog.availability === "available"
+                ? catalog.joined.map((surface) =>
+                      surfaceSidebarItem(happyAgentId, surface, true, offline),
+                  )
+                : []),
+        ],
     };
+}
+
+/**
+ * A chat's row is addressed inside its Happy Agent by the chat alone; the
+ * workspace it is filed under is read back from the list that holds it.
+ */
+const CHAT_ROW_PREFIX = "chat:";
+
+function chatRowId(chatId: string): string {
+    return `${CHAT_ROW_PREFIX}${chatId}`;
+}
+
+function chatRowParse(rowId: string): string | undefined {
+    return rowId.startsWith(CHAT_ROW_PREFIX) ? rowId.slice(CHAT_ROW_PREFIX.length) : undefined;
+}
+
+/** The project or worktree a chat is filed under, by its id. */
+function chatGroupFind(
+    projects: readonly HappyAgentProjectGroup[],
+    chatId: string,
+): string | undefined {
+    for (const project of projects) {
+        if (project.conversations.some((chat) => chat.id === chatId)) return project.id;
+        for (const worktree of project.worktrees)
+            if (worktree.conversations.some((chat) => chat.id === chatId)) return worktree.id;
+    }
+    return undefined;
+}
+
+/** The most chats a search lists; the newest matching ones are kept. */
+const SEARCH_CHAT_LIMIT = 30;
+
+const SEARCH_SECTION_PREFIX = "happy-agent-search:";
+
+/**
+ * What the sidebar lists while its search field holds anything, in place of
+ * everything it usually lists: every Surface whose name matches, joined or
+ * not, then the bots, tasks, projects, worktrees, and chats that do, each
+ * under a heading naming what it is. A match is the text appearing anywhere
+ * in a row's name, ignoring case. Rows keep the order the sidebar gives them,
+ * except Surfaces the reader has not joined, which follow theirs by name, and
+ * chats, which are newest first.
+ *
+ * Nothing found is arranged by hand: a narrowed list does not hold the rows a
+ * move would be stated against. Opening a row is opening it from the sidebar.
+ */
+function happyAgentSearchSections(
+    query: string,
+    directory: AppHappyAgentDirectorySnapshot,
+    activeHappyAgentId: string,
+    catalog: HappyAgentSurfaceCatalogSnapshot,
+    titleShimmerEnabled: boolean,
+    projectsHidden: boolean,
+): SidebarSection[] {
+    const needle = query.trim().toLocaleLowerCase();
+    const matches = (text: string): boolean => text.toLocaleLowerCase().includes(needle);
+    const found = (item: SidebarItem): SidebarItem => ({
+        ...item,
+        depth: 0,
+        reorderable: false,
+    });
+    const sections = directory.happyAgents.flatMap((happyAgent): SidebarSection[] => {
+        const offline = happyAgent.status !== "connected";
+        const rowOf = (item: SidebarItem): SidebarItem =>
+            found({
+                ...item,
+                id: happyAgentItemId(happyAgent.id, item.id),
+                ...happyAgentSidebarItemAvailability(item, happyAgent),
+            });
+        const surfaces: SidebarItem[] = [];
+        if (happyAgent.id === activeHappyAgentId) {
+            if (matches(ARTIFACTS_SIDEBAR_ITEM.label)) surfaces.push(ARTIFACTS_SIDEBAR_ITEM);
+            if (catalog.availability === "available") {
+                const joined = new Set(catalog.joined.map((surface) => surface.id));
+                for (const surface of catalog.joined)
+                    if (matches(surface.name))
+                        surfaces.push(
+                            found(surfaceSidebarItem(happyAgent.id, surface, true, offline)),
+                        );
+                for (const surface of [...catalog.surfaces].sort((left, right) =>
+                    left.name.localeCompare(right.name),
+                ))
+                    if (!joined.has(surface.id) && matches(surface.name))
+                        surfaces.push(surfaceSidebarItem(happyAgent.id, surface, false, offline));
+            }
+        }
+        const bots = happyAgent.bots
+            .filter((bot) => matches(bot.name))
+            .map((bot) => rowOf(botSidebarItem(bot, titleShimmerEnabled)));
+        const tasks = (happyAgent.tasks ?? [])
+            .filter((task) => matches(task.name))
+            .map((task) => rowOf(taskSidebarItem(task, titleShimmerEnabled)));
+        const projects = projectsHidden
+            ? []
+            : happyAgent.projects.flatMap((project) =>
+                  sidebarItems(
+                      project,
+                      [...happyAgent.bots, ...(happyAgent.tasks ?? [])],
+                      titleShimmerEnabled,
+                      false,
+                  )
+                      .filter((item) => matches(item.label))
+                      // A worktree found on its own says which project it is in.
+                      .map((item) =>
+                          rowOf(item.depth === 1 ? { ...item, meta: project.name } : item),
+                      ),
+              );
+        const chats = happyAgent.projects
+            .flatMap((project) => [
+                ...project.conversations.map((chat) => ({ chat, where: project.name })),
+                ...project.worktrees.flatMap((worktree) =>
+                    worktree.conversations.map((chat) => ({ chat, where: worktree.name })),
+                ),
+            ])
+            .filter(({ chat }) => matches(chat.title))
+            .sort((left, right) => right.chat.updatedAt - left.chat.updatedAt)
+            .slice(0, SEARCH_CHAT_LIMIT)
+            .map(
+                ({ chat, where }): SidebarItem =>
+                    found({
+                        id: happyAgentItemId(happyAgent.id, chatRowId(chat.id)),
+                        kind: "channel",
+                        icon: "chat",
+                        label: chat.title,
+                        labelShimmer: titleShimmerEnabled,
+                        meta: where,
+                        ...sidebarActivity(chat.activity),
+                        ...(chat.unread ? { unread: true } : {}),
+                    }),
+            );
+        const section = (kind: string, label: string, items: SidebarItem[]): SidebarSection[] =>
+            items.length === 0
+                ? []
+                : [{ id: `${SEARCH_SECTION_PREFIX}${kind}:${happyAgent.id}`, label, items }];
+        return [
+            ...section("surfaces", "Surfaces", surfaces),
+            ...section("bots", "Bots", bots),
+            ...section("tasks", "Tasks", tasks),
+            ...section("projects", "Projects", projects),
+            ...section("chats", "Chats", chats),
+        ];
+    });
+    return sections.length > 0
+        ? sections
+        : [
+              {
+                  id: `${SEARCH_SECTION_PREFIX}none`,
+                  items: [],
+                  empty: {
+                      description: `Nothing matches “${query.trim()}”.`,
+                      icon: "search",
+                  },
+              },
+          ];
 }
 
 /**
@@ -2384,11 +2528,19 @@ function happyAgentStatusLabel(happyAgent: AppHappyAgentEntry): string {
 const INBOX_ITEM = "inbox";
 
 /**
- * The pinned row that opens the addressed Happy Agent's artifacts. Like the
- * inbox it gathers from every chat on the machine at once, so it is pinned
- * rather than filed under any one of them.
+ * The row that opens the addressed Happy Agent's artifacts. It gathers from
+ * every chat on the machine at once, so it heads the sidebar's first group
+ * rather than being filed under any one of them, and it never moves.
  */
 const ARTIFACTS_ITEM = "artifacts";
+
+const ARTIFACTS_SIDEBAR_ITEM: SidebarItem = {
+    icon: "package",
+    id: ARTIFACTS_ITEM,
+    kind: "project",
+    label: "Artifacts",
+    reorderable: false,
+};
 
 /**
  * The workspace window. It owns no product state: it subscribes to the directory
@@ -2472,6 +2624,15 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         sidebarCollapseStore.get,
         sidebarCollapseStore.get,
     );
+    // What the sidebar's search field holds; anything in it replaces the
+    // sidebar's contents with what matches.
+    const sidebarSearchStore = props.sidebarSearch ?? happyAgentSidebarSearchStoreNoop;
+    const sidebarSearch = useSyncExternalStore(
+        sidebarSearchStore.subscribe,
+        sidebarSearchStore.get,
+        sidebarSearchStore.get,
+    );
+    const searching = sidebarSearch.query.trim().length > 0;
     const sidebarVisibilityStore = props.sidebarVisibility ?? happyAgentSidebarVisibilityStoreNoop;
     const sidebarVisibility = useSyncExternalStore(
         sidebarVisibilityStore.subscribe,
@@ -2536,10 +2697,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     const daemon = useSyncExternalStore(daemonStore.subscribe, daemonStore.get, daemonStore.get);
     const inboxPending = inbox.pending.length;
     // Whether the addressed Happy Agent keeps artifacts at all. The catalog is
-    // read whether or not it is on screen, because the row that opens it and
-    // the panel beside every chat exist only once the machine has answered
-    // that it does; one too old to know about them answers 404 and is offered
-    // neither.
+    // read whether or not it is on screen, because the panel beside every chat
+    // exists only once the machine has answered that it does; one too old to
+    // know about them answers 404 and is offered no panel. The sidebar's row
+    // stays either way, and its page says when there is nothing to show.
     const artifactCatalog: HappyAgentArtifactCatalogStore =
         active?.session?.artifacts?.catalog() ?? happyAgentArtifactCatalogStoreNoop;
     const artifactsAvailable = useSyncExternalStore(
@@ -2628,8 +2789,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // The inbox belongs to the addressed machine, so it appears only while that
     // machine is reachable: a queue of questions is meaningless from a Happy Agent that
     // cannot say what it is waiting on.
-    const pinnedOffered: SidebarItem[] = [
-        ...(experimental && active?.session?.inbox
+    const pinnedOffered: SidebarItem[] =
+        experimental && active?.session?.inbox
             ? [
                   {
                       badge: inboxPending,
@@ -2637,24 +2798,35 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       id: INBOX_ITEM,
                       kind: "action",
                       label: "Inbox",
-                  } satisfies SidebarItem,
+                  },
               ]
-            : []),
-        ...(artifactsAvailable
-            ? [
-                  {
-                      icon: "package",
-                      id: ARTIFACTS_ITEM,
-                      kind: "action",
-                      label: "Artifacts",
-                  } satisfies SidebarItem,
-              ]
-            : []),
-    ];
+            : [];
     const pinned = pinnedArrange(pinnedOffered, navigationOrder.order);
     const sidebar = (
         <Sidebar
-            actions={pinned}
+            // A search replaces everything below the field, pinned rows too.
+            actions={searching ? [] : pinned}
+            // A todo list is made from the sidebar's own heading, beside the
+            // control that hides it. A Happy Agent without Surfaces offers none.
+            {...(surfaceCatalog.availability === "available"
+                ? {
+                      headerAction: {
+                          disabled: active?.status !== "connected",
+                          icon: "plus" as const,
+                          label: "New todo list",
+                      },
+                      onHeaderAction: surfaceCatalogStore.createOpen,
+                  }
+                : {})}
+            {...(props.sidebarSearch
+                ? {
+                      search: {
+                          onValueChange: sidebarSearchStore.queryUpdate,
+                          placeholder: "Search",
+                          value: sidebarSearch.query,
+                      },
+                  }
+                : {})}
             numberShortcuts="navigate"
             numberShortcutTargets={projectShortcutTargets(
                 directory,
@@ -2765,10 +2937,15 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (happyAgent?.status !== "connected") return [];
-                // A Surface is left from its menu, as a task is; there is
-                // nothing else to do to one from here.
-                if (surfaceRowParse(row.id) !== undefined)
-                    return [{ kind: "item", id: ROW_MENU_LEAVE, label: "Leave", icon: "close" }];
+                // A chat a search found is only opened from here.
+                if (chatRowParse(row.id) !== undefined) return [];
+                // A joined Surface is left from its menu, as a task is; there
+                // is nothing else to do to one from here.
+                const surfaceId = surfaceRowParse(row.id);
+                if (surfaceId !== undefined)
+                    return surfaceCatalog.joined.some((surface) => surface.id === surfaceId)
+                        ? [{ kind: "item", id: ROW_MENU_LEAVE, label: "Leave", icon: "close" }]
+                        : [];
                 return rowMenuItems(
                     happyAgent.projects,
                     happyAgent.bots,
@@ -2783,16 +2960,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             onSectionAction={(sectionId, source) => {
                 const section = happyAgentSectionParse(sectionId);
                 if (!section) return;
-                // The Surfaces heading makes a todo list, and its second
-                // control browses every Surface on the machine.
-                if (section.kind === "surfaces") {
-                    const catalog = happyAgentOf(
-                        section.happyAgentId,
-                    )?.session?.surfaces?.catalog();
-                    if (source === "secondary") catalog?.browseOpen();
-                    else catalog?.createOpen();
-                    return;
-                }
                 // Folding the list is this window's own record, whatever the
                 // machine behind it is doing. The Tasks heading's second
                 // control browses instead, below.
@@ -2898,6 +3065,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     props.onSurfaceOpen?.(happyAgent.id, surfaceId);
                     return;
                 }
+                const chatId = chatRowParse(row.id);
+                if (chatId !== undefined) {
+                    const groupId = chatGroupFind(happyAgent.projects, chatId);
+                    if (groupId !== undefined) props.onChatSelect(happyAgent.id, groupId, chatId);
+                    return;
+                }
                 const groupId = row.id as HappyAgentGroupId;
                 const subtask = happyAgentBotSubtasks([
                     ...happyAgent.bots,
@@ -2940,10 +3113,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 const happyAgent = happyAgentOf(row.happyAgentId);
                 if (!happyAgent) return;
                 if (happyAgent.status !== "connected") return;
-                // The control on a Surface leaves it, as a task's does.
+                // The control on a joined Surface leaves it, as a task's does;
+                // on one a search found, it joins it.
                 const surfaceId = surfaceRowParse(row.id);
                 if (surfaceId !== undefined) {
-                    happyAgent.session?.surfaces?.catalog().surfaceLeave(surfaceId);
+                    const catalog = happyAgent.session?.surfaces?.catalog();
+                    if (catalog?.get().joined.some((surface) => surface.id === surfaceId))
+                        catalog.surfaceLeave(surfaceId);
+                    else catalog?.surfaceJoin(surfaceId);
                     return;
                 }
                 const workspace = happyAgent.session?.workspace;
@@ -3083,18 +3260,35 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       },
                   }
                 : {})}
-            sections={sectionsCollapsed(
-                happyAgentSections(
-                    directory,
-                    titleShimmerEnabled,
-                    projectsHidden,
-                    workspaceCreateTarget,
-                    props.sidebarCollapse ? sidebarCollapse.collapsed : undefined,
-                    taskCreateTarget,
-                    active ? { happyAgentId: active.id, catalog: surfaceCatalog } : undefined,
-                ),
-                sidebarCollapse.collapsed,
-            )}
+            sections={
+                searching
+                    ? happyAgentSearchSections(
+                          sidebarSearch.query,
+                          directory,
+                          active?.id ?? props.happyAgentId,
+                          surfaceCatalog,
+                          titleShimmerEnabled,
+                          projectsHidden,
+                      )
+                    : [
+                          happyAgentTopSection(
+                              active?.id ?? props.happyAgentId,
+                              active,
+                              surfaceCatalog,
+                          ),
+                          ...sectionsCollapsed(
+                              happyAgentSections(
+                                  directory,
+                                  titleShimmerEnabled,
+                                  projectsHidden,
+                                  workspaceCreateTarget,
+                                  props.sidebarCollapse ? sidebarCollapse.collapsed : undefined,
+                                  taskCreateTarget,
+                              ),
+                              sidebarCollapse.collapsed,
+                          ),
+                      ]
+            }
         />
     );
 
@@ -3421,47 +3615,17 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         : { unavailable: activeAvailability.refusal })}
                 />
             ) : null}
-            {/* Browsing and making Surfaces are the sidebar's, so they belong to
-                the window like the dialogs above, on whatever route is showing. */}
-            {active && surfaceCatalog.browseOpen ? (
-                <HappyAgentSurfaceBrowseDialog
-                    {...(surfaceCatalog.failure?.action === "join"
-                        ? { error: surfaceCatalog.failure.error.message }
-                        : {})}
-                    onClose={surfaceCatalogStore.browseClose}
-                    onCreate={() => {
-                        surfaceCatalogStore.browseClose();
-                        surfaceCatalogStore.createOpen();
-                    }}
-                    onJoin={(surfaceId) =>
-                        surfaceCatalogStore.surfaceJoin(surfaceId as HappyAgentSurfaceId)
-                    }
-                    onOpen={(surfaceId) => {
-                        surfaceCatalogStore.browseClose();
-                        props.onSurfaceOpen?.(active.id, surfaceId);
-                    }}
-                    surfaces={surfaceCatalog.surfaces
-                        .map((surface) => ({
-                            ...surfaceViewOf(surfaceCatalog, surface),
-                            id: surface.id,
-                        }))
-                        .sort((left, right) => left.name.localeCompare(right.name))}
-                />
-            ) : null}
+            {/* Making a Surface is the sidebar's, so it belongs to the window
+                like the dialogs above, on whatever route is showing. */}
             {active && surfaceCatalog.create.phase === "open" ? (
                 <HappyAgentSurfaceCreateDialog
-                    {...(surfaceCatalog.create.error
-                        ? { error: surfaceCatalog.create.error.message }
-                        : {})}
                     onClose={surfaceCatalogStore.createClose}
                     onSubmit={(input) => {
-                        void surfaceCatalogStore
-                            .surfaceCreate(input)
-                            .then((surfaceId) => props.onSurfaceOpen?.(active.id, surfaceId))
-                            // The open form states the refusal.
-                            .catch(() => undefined);
+                        // The list exists the moment it is asked for, so it is
+                        // opened at once; the Happy Agent hears in the background.
+                        const surfaceId = surfaceCatalogStore.surfaceCreate(input);
+                        if (surfaceId !== undefined) props.onSurfaceOpen?.(active.id, surfaceId);
                     }}
-                    pending={surfaceCatalog.create.pending}
                 />
             ) : null}
             {/* The palette is mounted only while it is open, so nothing in the
@@ -4292,9 +4456,9 @@ function HappyAgentArtifactViewerSurface(props: {
 
 /**
  * One Surface in the content area. Everything but its content is the same for
- * every type — its header names it, shows its picture and members, and joins
- * or leaves it — and the content is chosen by the type: a todo list is shown,
- * and a type this build has no view for says so rather than guessing at one.
+ * every type — its header names it and shows who is in it — and the content
+ * is chosen by the type: a todo list is shown, and a type this build has no
+ * view for says so rather than guessing at one.
  */
 function HappyAgentSurfaceContent(props: {
     surfaces: HappyAgentSurfaces;
@@ -4307,52 +4471,20 @@ function HappyAgentSurfaceContent(props: {
         catalogStore.get,
     );
     const surface = catalog.surfaces.find((entry) => entry.id === props.surfaceId);
-    if (surface === undefined)
-        return (
-            <>
-                <WindowDragRegion />
-                {catalog.availability === "checking" ? (
-                    <EmptyState
-                        description="Reading this Happy Agent’s Surfaces."
-                        icon="clock"
-                        size="panel"
-                        title="Loading…"
-                    />
-                ) : (
-                    <EmptyState
-                        description={
-                            catalog.availability === "unsupported"
-                                ? "This Happy Agent does not keep Surfaces. Updating it adds them."
-                                : "This Happy Agent has no such Surface."
-                        }
-                        icon="tasks"
-                        size="panel"
-                        title="Surface not found"
-                    />
-                )}
-            </>
-        );
+    // Until the catalog names it the page is simply empty: a list made here is
+    // in the catalog the moment it is asked for, and one opened on launch
+    // appears as the catalog arrives, so there is no loader or error to show.
+    if (surface === undefined) return <WindowDragRegion />;
     const view = surfaceViewOf(catalog, surface);
-    const onJoin = () => catalogStore.surfaceJoin(surface.id);
-    const onLeave = () => catalogStore.surfaceLeave(surface.id);
     if (surface.type.kind === "todo")
-        return (
-            <HappyAgentTodoSurface
-                onJoin={onJoin}
-                onLeave={onLeave}
-                store={props.surfaces.todoList(surface.id)}
-                surface={view}
-            />
-        );
-    return <HappyAgentSurfaceUnsupportedPage onJoin={onJoin} onLeave={onLeave} surface={view} />;
+        return <HappyAgentTodoSurface store={props.surfaces.todoList(surface.id)} surface={view} />;
+    return <HappyAgentSurfaceUnsupportedPage surface={view} />;
 }
 
 /** A todo list Surface, read from its own store for as long as it is on screen. */
 function HappyAgentTodoSurface(props: {
     store: HappyAgentTodoListStore;
     surface: HappyAgentSurfaceView;
-    onJoin(): void;
-    onLeave(): void;
 }) {
     const store = props.store;
     const list = useSyncExternalStore(store.subscribe, store.get, store.get);
@@ -4362,8 +4494,6 @@ function HappyAgentTodoSurface(props: {
             onCompletedShownChange={store.completedShownUpdate}
             onDraftChange={store.draftUpdate}
             onDraftSubmit={store.draftSubmit}
-            onJoin={props.onJoin}
-            onLeave={props.onLeave}
             onTodoCompletedChange={(todoId, completed) =>
                 store.todoStatusUpdate(todoId, completed ? "completed" : "active")
             }

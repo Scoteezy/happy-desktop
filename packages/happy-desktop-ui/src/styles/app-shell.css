@@ -193,6 +193,15 @@
     padding-right: 56px;
 }
 
+/* A heading control of the sidebar's own pairs with the collapse control: the
+   lane narrows to the control's 28px, its 12px edge inset, and a 4px gap, so
+   the two sit side by side. */
+.happy-desktop-app-shell__sidebar[data-resizable]
+    > .happy-sidebar
+    > .happy-sidebar__header:has(> .happy-sidebar__header-action) {
+    padding-right: 44px;
+}
+
 /* In full screen the traffic lights are gone, so the heading is no longer
    holding a lane clear for them and the product mark simply heads the list. A
    row's glyph box starts at the body's 8px inset plus the row's own 10px

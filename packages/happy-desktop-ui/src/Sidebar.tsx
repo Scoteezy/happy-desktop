@@ -30,6 +30,7 @@ import { Menu, type MenuItem } from "./Menu";
 import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
 import { ScrollArea } from "./Scrollbar";
+import { TextField } from "./TextField";
 /** One control on a row: its glyph, what it does, and when it shows. */
 export type SidebarItemAction = {
     icon: IconName;
@@ -214,6 +215,25 @@ export type SidebarSectionAction = {
     shortcut?: KeyboardShortcut;
 };
 
+/** The one control in the sidebar's own heading, beside the window's collapse control. */
+export type SidebarHeaderAction = {
+    icon: IconName;
+    label: string;
+    /** Keeps the control in its place while the act is unavailable. */
+    disabled?: boolean;
+};
+
+/**
+ * The search field under the sidebar's header, above the list. The sidebar
+ * only draws it: the caller holds what is typed and decides which rows it
+ * leaves.
+ */
+export type SidebarSearch = {
+    value: string;
+    placeholder: string;
+    onValueChange: (value: string) => void;
+};
+
 /**
  * Which control in a section reported an act: its heading, the heading's
  * secondary control, or its empty state.
@@ -324,6 +344,15 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     headerAccessory?: ReactNode;
     /** Compact context anchored at the trailing edge of the 56px top heading. */
     headerTrailing?: ReactNode;
+    /**
+     * A control at the very end of the heading, reported through
+     * `onHeaderAction`. Hosted in a collapsible shell it sits just before the
+     * shell's collapse control, as a pair of the same size.
+     */
+    headerAction?: SidebarHeaderAction;
+    onHeaderAction?: () => void;
+    /** A search field under the heading, above everything the sidebar lists. */
+    search?: SidebarSearch;
     /**
      * Drill-down mode: replaces the brand/title heading with a back button to
      * the left of `title`, and animates the body in. Use for a pushed detail
@@ -629,7 +658,21 @@ function dragUnitsOf(
     index: number,
 ): { units: readonly (readonly number[])[]; parentId?: string } {
     const depth = items[index]?.depth ?? 0;
-    if (depth === 0) return { units: blocksOf(items) };
+    if (depth === 0) {
+        // A row that cannot be moved holds its place, so it is nobody's peer
+        // either: a drag arranges the unbroken run of movable rows around the
+        // one it started on, and never carries a row past a fixed one or
+        // pushes a fixed one aside.
+        const blocks = blocksOf(items);
+        const movable = (block: readonly number[]): boolean =>
+            items[block[0]!]?.reorderable !== false;
+        const at = blocks.findIndex((block) => block.includes(index));
+        let first = at;
+        while (first > 0 && movable(blocks[first - 1]!)) first -= 1;
+        let last = at;
+        while (last < blocks.length - 1 && movable(blocks[last + 1]!)) last += 1;
+        return { units: blocks.slice(first, last + 1) };
+    }
     let parent = index - 1;
     while (parent >= 0 && (items[parent]!.depth ?? 0) >= depth) parent -= 1;
     const siblings: number[] = [];
@@ -1451,10 +1494,12 @@ export function Sidebar(props: SidebarProps) {
         "composeLabel",
         "footer",
         "headerAccessory",
+        "headerAction",
         "headerTrailing",
         "itemMenuItems",
         "onActionReorder",
         "onBack",
+        "onHeaderAction",
         "onCompose",
         "onItemSelect",
         "onItemAction",
@@ -1465,6 +1510,7 @@ export function Sidebar(props: SidebarProps) {
         "numberShortcuts",
         "numberShortcutTargets",
         "onSectionAction",
+        "search",
         "sections",
         "style",
         "subtitle",
@@ -2077,7 +2123,45 @@ export function Sidebar(props: SidebarProps) {
                         {local.headerTrailing}
                     </div>
                 ) : null}
+                {local.headerAction ? (
+                    <button
+                        aria-label={local.headerAction.label}
+                        className="happy-sidebar__header-action"
+                        data-happy-desktop-ui="sidebar-header-action"
+                        disabled={local.headerAction.disabled}
+                        onClick={local.onHeaderAction}
+                        title={local.headerAction.label}
+                        type="button"
+                    >
+                        <Icon name={local.headerAction.icon} size={16} />
+                    </button>
+                ) : null}
             </header>
+            {local.search ? (
+                // Escape empties a search that holds anything, which puts the
+                // sidebar's usual contents back.
+                <div
+                    className="happy-sidebar__search"
+                    data-happy-desktop-ui="sidebar-search"
+                    onKeyDown={(event) => {
+                        if (event.key !== "Escape" || !local.search?.value) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        local.search.onValueChange("");
+                    }}
+                >
+                    <TextField
+                        aria-label={local.search.placeholder}
+                        fullWidth
+                        leadingIcon="search"
+                        onValueChange={local.search.onValueChange}
+                        placeholder={local.search.placeholder}
+                        size="small"
+                        type="search"
+                        value={local.search.value}
+                    />
+                </div>
+            ) : null}
             {local.headerAccessory ? (
                 <div
                     className="happy-sidebar__header-accessory"

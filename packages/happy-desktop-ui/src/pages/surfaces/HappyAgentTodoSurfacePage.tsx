@@ -5,8 +5,6 @@ import type {
     HappyAgentSurfaceTodoId,
     HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
-import { Banner } from "../../Banner";
-import { EmptyState } from "../../EmptyState";
 import { Icon } from "../../Icon";
 import { ReorderingList } from "../../ReorderingList";
 import { ScrollArea } from "../../Scrollbar";
@@ -17,14 +15,12 @@ import type { HappyAgentSurfaceView } from "./surfacePresentation";
 
 /** Every todo row is this tall, which is what lets a drag place rows by slot. */
 const ROW_HEIGHT = 40;
-const ROW_GAP = 2;
+const ROW_GAP = 4;
 
 export interface HappyAgentTodoSurfacePageProps {
     surface: HappyAgentSurfaceView;
     /** The list as its store holds it, with this window's own changes applied. */
     list: HappyAgentTodoListSnapshot;
-    onJoin: () => void;
-    onLeave: () => void;
     onDraftChange: (text: string) => void;
     onDraftSubmit: () => void;
     onTodoCompletedChange: (todoId: HappyAgentSurfaceTodoId, completed: boolean) => void;
@@ -44,7 +40,12 @@ export interface HappyAgentTodoSurfacePageProps {
 /**
  * HappyAgentTodoSurfacePage — one shared todo list: its header, a field that
  * adds to the end of the list, the active todos in the order everyone in the
- * list shares, and the completed ones folded away beneath them.
+ * list shares, and the completed ones folded away beneath them. The list is
+ * one centred column of cards laid over the list's picture.
+ *
+ * It never stands in for the list with a loader or an error: it shows what is
+ * held, every change applies at once, and the store carries changes to the
+ * Happy Agent in the background, again until they arrive.
  *
  * Only an active todo can be dragged, and only among the active todos; a drag
  * is held inside that list, so it can never land among the completed ones or
@@ -105,75 +106,45 @@ export function HappyAgentTodoSurfacePage(props: HappyAgentTodoSurfacePageProps)
             data-testid={props["data-testid"]}
             style={props.style}
         >
-            <HappyAgentSurfaceHeader
-                onJoin={props.onJoin}
-                onLeave={props.onLeave}
-                surface={props.surface}
-            />
+            <HappyAgentSurfaceHeader surface={props.surface} />
             <ScrollArea
                 className="happy-agent-todo-surface__scroll"
                 data-happy-desktop-ui="happy-agent-todo-surface-scroll"
                 viewportClassName="happy-agent-todo-surface__scroll-viewport"
             >
                 <div className="happy-agent-todo-surface__content">
-                    {list.failure ? (
-                        <Banner tone="danger" title="Couldn’t save that change">
-                            {list.failure.message}
-                        </Banner>
+                    <TextField
+                        aria-label="Add a todo"
+                        className="happy-agent-todo-surface__add"
+                        data-testid="happy-agent-todo-add"
+                        fullWidth
+                        leadingIcon="plus"
+                        onSubmit={props.onDraftSubmit}
+                        onValueChange={props.onDraftChange}
+                        placeholder="Add a todo"
+                        size="large"
+                        value={list.draft}
+                    />
+                    {list.status === "ready" && list.active.length === 0 && completedCount === 0 ? (
+                        <p className="happy-agent-todo-surface__empty">
+                            Nothing here yet. What needs doing?
+                        </p>
                     ) : null}
-                    {list.error ? (
-                        <Banner tone="warning" title="This list may be out of date">
-                            {list.error.message}
-                        </Banner>
-                    ) : null}
-                    {list.status === "missing" ? (
-                        <EmptyState
-                            description="This Happy Agent has no such list."
-                            icon="tasks"
-                            size="panel"
-                            title="List not found"
-                        />
-                    ) : list.status === "loading" ? (
-                        <EmptyState
-                            description="Reading the list from this Happy Agent."
-                            icon="clock"
-                            size="panel"
-                            title="Loading list…"
-                        />
-                    ) : (
-                        <>
-                            <TextField
-                                aria-label="Add a todo"
-                                data-testid="happy-agent-todo-add"
-                                fullWidth
-                                leadingIcon="plus"
-                                onSubmit={props.onDraftSubmit}
-                                onValueChange={props.onDraftChange}
-                                placeholder="Add a todo"
-                                value={list.draft}
-                            />
-                            {list.active.length === 0 && completedCount === 0 ? (
-                                <p className="happy-agent-todo-surface__empty">
-                                    Nothing here yet. What needs doing?
-                                </p>
-                            ) : null}
-                            <ReorderingList
-                                aria-label="Todos"
-                                className="happy-agent-todo-surface__list"
-                                data-testid="happy-agent-todo-list"
-                                footer={completed}
-                                gap={ROW_GAP}
-                                itemHeight={ROW_HEIGHT}
-                                itemKey={(todo) => todo.id}
-                                items={list.active}
-                                onMove={(key, toIndex) => {
-                                    const todo = list.active.find((entry) => entry.id === key);
-                                    if (todo) props.onTodoMove(todo.id, toIndex);
-                                }}
-                                renderItem={row}
-                            />
-                        </>
-                    )}
+                    <ReorderingList
+                        aria-label="Todos"
+                        className="happy-agent-todo-surface__list"
+                        data-testid="happy-agent-todo-list"
+                        footer={completed}
+                        gap={ROW_GAP}
+                        itemHeight={ROW_HEIGHT}
+                        itemKey={(todo) => todo.id}
+                        items={list.active}
+                        onMove={(key, toIndex) => {
+                            const todo = list.active.find((entry) => entry.id === key);
+                            if (todo) props.onTodoMove(todo.id, toIndex);
+                        }}
+                        renderItem={row}
+                    />
                 </div>
             </ScrollArea>
         </div>

@@ -1,16 +1,13 @@
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
-    UserError,
     type HappyAgentSurfaceActiveTodo,
     type HappyAgentSurfaceCompletedTodo,
     type HappyAgentSurfaceId,
     type HappyAgentSurfaceTodoId,
     type HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
-import {
-    HappyAgentSurfaceBrowseDialog,
-    type HappyAgentSurfaceBrowseEntry,
-} from "../../src/pages/surfaces/HappyAgentSurfaceBrowseDialog";
+import { AppShell } from "../../src/AppShell";
+import { Sidebar, type SidebarItem, type SidebarReorder } from "../../src/Sidebar";
 import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import { HappyAgentSurfaceUnsupportedPage } from "../../src/pages/surfaces/HappyAgentSurfaceUnsupportedPage";
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
@@ -43,7 +40,6 @@ const GROCERIES: HappyAgentSurfaceView = {
     image: TEAL,
     type: { kind: "todo" },
     members: MEMBERS,
-    joined: true,
 };
 
 const KANBAN: HappyAgentSurfaceView = {
@@ -51,7 +47,6 @@ const KANBAN: HappyAgentSurfaceView = {
     image: AMBER,
     type: { kind: "unsupported", type: "kanban" },
     members: MEMBERS.slice(0, 2),
-    joined: true,
 };
 
 function active(id: string, text: string, index: number): HappyAgentSurfaceActiveTodo {
@@ -98,8 +93,6 @@ const LIST: HappyAgentTodoListSnapshot = {
 const noop = () => undefined;
 
 const handlers = {
-    onJoin: noop,
-    onLeave: noop,
     onDraftChange: noop,
     onDraftSubmit: noop,
     onTodoCompletedChange: noop,
@@ -117,8 +110,8 @@ const handlers = {
  * the completed section can be tried in the workbench. The application holds
  * the same snapshot in its store.
  */
-function LiveTodoPage() {
-    const [list, setList] = useState(LIST);
+function LiveTodoPage(props: { readonly initial?: HappyAgentTodoListSnapshot }) {
+    const [list, setList] = useState(props.initial ?? LIST);
     const [next, setNext] = useState(10);
     const set = (patch: Partial<HappyAgentTodoListSnapshot>) => setList({ ...list, ...patch });
     const textSet = (id: HappyAgentSurfaceTodoId, text: string) =>
@@ -191,6 +184,288 @@ function LiveTodoPage() {
     );
 }
 
+/** Fixture-only stand-in for the native macOS traffic lights: 14px at x 14…68, y 13. */
+function TrafficLights() {
+    const dot = (background: string): CSSProperties => ({
+        background,
+        borderRadius: "50%",
+        height: "14px",
+        width: "14px",
+    });
+    return (
+        <span
+            aria-hidden="true"
+            style={{
+                display: "flex",
+                gap: "6px",
+                left: "14px",
+                pointerEvents: "none",
+                position: "absolute",
+                top: "13px",
+                zIndex: 10,
+            }}
+        >
+            <i style={dot("#ff5f57")} />
+            <i style={dot("#febc2e")} />
+            <i style={dot("#28c840")} />
+        </span>
+    );
+}
+
+interface MockSurface {
+    readonly id: string;
+    readonly joined: boolean;
+    readonly view: HappyAgentSurfaceView;
+}
+
+const SURFACES: readonly MockSurface[] = [
+    { id: "groceries", joined: true, view: GROCERIES },
+    { id: "launch", joined: true, view: KANBAN },
+    {
+        id: "reading",
+        joined: true,
+        view: { name: "Reading list", type: { kind: "todo" }, members: MEMBERS.slice(0, 1) },
+    },
+    {
+        id: "release",
+        joined: true,
+        view: {
+            name: "October release checklist",
+            image: AMBER,
+            type: { kind: "todo" },
+            members: MEMBERS,
+        },
+    },
+    // Not joined, so found only by searching.
+    {
+        id: "errands",
+        joined: false,
+        view: { name: "Errands", type: { kind: "todo" }, members: MEMBERS.slice(1, 3) },
+    },
+    {
+        id: "retro",
+        joined: false,
+        view: { name: "Retro notes", type: { kind: "unsupported", type: "board" }, members: [] },
+    },
+];
+
+function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
+    return {
+        id: surface.id,
+        kind: "project",
+        label: surface.view.name,
+        ...(surface.view.image
+            ? { imageUrl: surface.view.image.url }
+            : {
+                  icon:
+                      surface.view.type.kind === "todo" ? ("tasks" as const) : ("package" as const),
+              }),
+        ...(fixed ? { reorderable: false } : {}),
+        action: surface.joined
+            ? {
+                  icon: "close" as const,
+                  label: `Leave ${surface.view.name}`,
+                  reveal: "hover" as const,
+              }
+            : { icon: "plus" as const, label: `Join ${surface.view.name}` },
+    };
+}
+
+const ARTIFACTS: SidebarItem = {
+    icon: "package",
+    id: "artifacts",
+    kind: "project",
+    label: "Artifacts",
+    reorderable: false,
+};
+
+const BOTS: readonly SidebarItem[] = [
+    { avatarId: "chief-of-staff", id: "chief", kind: "agent", label: "Chief of Staff" },
+    { avatarId: "release-notes", id: "notes", kind: "agent", label: "Release notes" },
+];
+
+const TASKS: readonly SidebarItem[] = [
+    { id: "task-docs", initials: "AP", kind: "project", label: "Rewrite onboarding guide" },
+];
+
+const PROJECTS: readonly SidebarItem[] = [
+    { id: "desktop", initials: "H", kind: "project", label: "happy-desktop" },
+    {
+        depth: 1,
+        id: "desktop-sidebar",
+        kind: "workspace",
+        label: "sidebar-search",
+        meta: "happy-desktop",
+    },
+    { id: "agent", initials: "H", kind: "project", label: "happy-agent" },
+];
+
+const CHATS: readonly SidebarItem[] = [
+    {
+        icon: "chat",
+        id: "chat-1",
+        kind: "channel",
+        label: "Review the release plan",
+        meta: "happy-desktop",
+    },
+    {
+        icon: "chat",
+        id: "chat-2",
+        kind: "channel",
+        label: "Fix flaky sidebar test",
+        meta: "sidebar-search",
+    },
+    {
+        icon: "chat",
+        id: "chat-3",
+        kind: "channel",
+        label: "Refactor surface store",
+        meta: "happy-agent",
+    },
+];
+
+/**
+ * The window as the app composes it: Artifacts heads the sidebar's first,
+ * unheaded group and never moves; the reader's Surfaces follow and are
+ * dragged among themselves. The + beside the collapse control makes a todo
+ * list. Typing in the search replaces the sidebar with what matches —
+ * Surfaces joined or not, bots, tasks, projects, and chats — under headings.
+ */
+function MockWindow(props: {
+    readonly initialSearch?: string;
+    readonly initialList?: HappyAgentTodoListSnapshot;
+}) {
+    const [surfaces, setSurfaces] = useState(SURFACES);
+    const [search, setSearch] = useState(props.initialSearch ?? "");
+    const [selected, setSelected] = useState("groceries");
+    const query = search.trim().toLocaleLowerCase();
+    const searching = query.length > 0;
+    const found = (items: readonly SidebarItem[]): SidebarItem[] =>
+        items
+            .filter((item) => item.label.toLocaleLowerCase().includes(query))
+            .map((item) => ({ ...item, depth: 0, reorderable: false }));
+    const joined = surfaces.filter((surface) => surface.joined);
+    const open = surfaces.find((surface) => surface.id === selected);
+    const reorder = (_section: string, move: SidebarReorder) => {
+        const moved = surfaces.find((surface) => surface.id === move.id);
+        if (!moved) return;
+        const rest = surfaces.filter((surface) => surface !== moved);
+        const at =
+            move.afterId === null
+                ? 0
+                : rest.findIndex((surface) => surface.id === move.afterId) + 1;
+        setSurfaces([...rest.slice(0, at), moved, ...rest.slice(at)]);
+    };
+    const results = [
+        {
+            id: "search-surfaces",
+            label: "Surfaces",
+            items: [
+                ...found([ARTIFACTS]),
+                ...found(joined.map((surface) => surfaceItem(surface, true))),
+                ...found(
+                    surfaces
+                        .filter((surface) => !surface.joined)
+                        .map((surface) => surfaceItem(surface, true)),
+                ),
+            ],
+        },
+        { id: "search-bots", label: "Bots", items: found(BOTS) },
+        { id: "search-tasks", label: "Tasks", items: found(TASKS) },
+        { id: "search-projects", label: "Projects", items: found(PROJECTS) },
+        { id: "search-chats", label: "Chats", items: found(CHATS) },
+    ].filter((section) => section.items.length > 0);
+    return (
+        <div style={{ display: "flex", height: "100%", position: "relative", width: "100%" }}>
+            <AppShell
+                sidebar={
+                    <Sidebar
+                        activeItemId={selected}
+                        headerAction={{ icon: "plus", label: "New todo list" }}
+                        onHeaderAction={noop}
+                        onItemReorder={reorder}
+                        onItemSelect={setSelected}
+                        onSectionAction={noop}
+                        search={{ onValueChange: setSearch, placeholder: "Search", value: search }}
+                        sections={
+                            searching
+                                ? results.length > 0
+                                    ? results
+                                    : [
+                                          {
+                                              empty: {
+                                                  description: `Nothing matches “${search.trim()}”.`,
+                                              },
+                                              id: "search-none",
+                                              items: [],
+                                          },
+                                      ]
+                                : [
+                                      {
+                                          id: "top",
+                                          items: [
+                                              ARTIFACTS,
+                                              ...joined.map((surface) =>
+                                                  surfaceItem(surface, false),
+                                              ),
+                                          ],
+                                      },
+                                      {
+                                          action: {
+                                              icon: "plus",
+                                              label: "New bot",
+                                              reveal: "always",
+                                          },
+                                          id: "bots",
+                                          label: "Bots",
+                                          items: [...BOTS],
+                                      },
+                                      {
+                                          action: {
+                                              icon: "plus",
+                                              label: "New task",
+                                              reveal: "always",
+                                          },
+                                          id: "tasks",
+                                          label: "Tasks",
+                                          items: [...TASKS],
+                                      },
+                                      {
+                                          action: {
+                                              icon: "plus",
+                                              label: "Add project",
+                                              reveal: "always",
+                                          },
+                                          id: "projects",
+                                          label: "Projects",
+                                          items: PROJECTS.map(({ meta: _meta, ...item }) => item),
+                                      },
+                                  ]
+                        }
+                    />
+                }
+                sidebarCollapsible
+                windowControls
+            >
+                {open?.view.type.kind === "todo" && open.id === "groceries" ? (
+                    <LiveTodoPage {...(props.initialList ? { initial: props.initialList } : {})} />
+                ) : open ? (
+                    open.view.type.kind === "todo" ? (
+                        <HappyAgentTodoSurfacePage
+                            {...handlers}
+                            list={{ ...LIST, active: [], completed: [] }}
+                            surface={open.view}
+                        />
+                    ) : (
+                        <HappyAgentSurfaceUnsupportedPage surface={open.view} />
+                    )
+                ) : null}
+            </AppShell>
+            <TrafficLights />
+        </div>
+    );
+}
+
 /** Gives each fixed overlay a desktop-sized, clipping-safe specimen window. */
 function frame(children: ReactNode) {
     return (
@@ -211,28 +486,44 @@ function frame(children: ReactNode) {
     );
 }
 
-const BROWSE: readonly HappyAgentSurfaceBrowseEntry[] = [
-    { ...GROCERIES, id: "s1" },
-    { ...KANBAN, id: "s2", joined: false },
-    {
-        id: "s3",
-        name: "Release checklist for the October build, every platform",
-        type: { kind: "todo" },
-        members: MEMBERS.slice(1, 2),
-        joined: false,
-        membershipPending: true,
-    },
-    { id: "s4", name: "Reading list", type: { kind: "todo" }, members: [], joined: false },
-];
-
 export function HappyAgentSurfacesBlueprintPage() {
     return (
         <ComponentPage
             contract="Props only"
             number={componentNumber}
-            summary="Shared Surfaces on a Happy Agent: a todo list whose active todos are dragged into a shared order, the state for a type this build cannot show, and the dialogs to browse and make them."
+            summary="Shared Surfaces on a Happy Agent: the sidebar group they head with Artifacts, a todo list whose active todos are dragged into a shared order, the state for a type this build cannot show, and the dialog that makes one."
             title="HappyAgentSurfaces"
         >
+            <FullScreenSpecimen
+                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others. + beside the collapse control makes a todo list; the search above everything replaces the sidebar with what matches."
+                label="Window"
+                number="00"
+                screen="00-window-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <MockWindow />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Searching “re”: Surfaces (joined first, then the ones not joined yet, each offering Join), bots, tasks, projects, and chats that match, in place of the usual sidebar. Nothing found is dragged."
+                label="Window, searching"
+                number="00b"
+                screen="00b-search-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <MockWindow initialSearch="re" />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="The list with its completed todos shown, in the window."
+                label="Window, completed shown"
+                number="00c"
+                screen="00c-completed-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <MockWindow initialList={{ ...LIST, completedShown: true }} />
+            </FullScreenSpecimen>
+
             <FullScreenSpecimen
                 detail="Live. Drag an active todo by its body; the checkbox, the delete control, and the field while editing never start a drag. Completed todos are below, newest first, and never move."
                 label="Todo list"
@@ -244,7 +535,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Completed shown, one todo being edited, and a refused change."
+                detail="Completed shown and one todo being edited."
                 label="Completed and editing"
                 number="02"
                 screen="02-completed-1100x760"
@@ -256,27 +547,31 @@ export function HappyAgentSurfacesBlueprintPage() {
                         ...LIST,
                         completedShown: true,
                         editing: { todoId: ACTIVE[1]!.id, text: "Sourdough loaf, sliced" },
-                        failure: new UserError("That todo was deleted by someone else."),
                     }}
                     surface={GROCERIES}
                 />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Not yet read, then an empty list the reader has not joined."
-                label="Loading"
+                detail="Not read yet, as a list just made here is: the page is already usable, with a todo added before the first read."
+                label="Not read yet"
                 number="03"
                 screen="03-loading-720x640"
             >
                 <HappyAgentTodoSurfacePage
                     {...handlers}
-                    list={{ ...LIST, status: "loading", active: [], completed: [] }}
-                    surface={{ ...GROCERIES, image: undefined, members: [] }}
+                    list={{
+                        ...LIST,
+                        status: "loading",
+                        active: [active("n1", "Paint the hallway", 0)],
+                        completed: [],
+                    }}
+                    surface={{ ...GROCERIES, image: undefined, members: MEMBERS.slice(0, 1) }}
                 />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Empty and not joined: the header offers Join."
+                detail="Empty, with one member."
                 label="Empty"
                 number="04"
                 screen="04-empty-720x640"
@@ -284,73 +579,27 @@ export function HappyAgentSurfacesBlueprintPage() {
                 <HappyAgentTodoSurfacePage
                     {...handlers}
                     list={{ ...LIST, active: [], completed: [] }}
-                    surface={{ ...GROCERIES, joined: false, members: MEMBERS.slice(0, 1) }}
+                    surface={{ ...GROCERIES, members: MEMBERS.slice(0, 1) }}
                 />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="A “kanban” Surface: its name, picture, and members, with Leave, and no guessed content."
+                detail="A “kanban” Surface: its name and members, and no guessed content."
                 label="Unsupported type"
                 number="05"
                 screen="05-unsupported-1100x760"
                 window={{ width: 1100, height: 760 }}
             >
-                <HappyAgentSurfaceUnsupportedPage onJoin={noop} onLeave={noop} surface={KANBAN} />
+                <HappyAgentSurfaceUnsupportedPage surface={KANBAN} />
             </FullScreenSpecimen>
-
-            <Specimen
-                detail="480px · every type · joined row offers Open · one join in flight"
-                label="Browse"
-                number="06"
-                stage="app"
-            >
-                {frame(
-                    <HappyAgentSurfaceBrowseDialog
-                        onClose={noop}
-                        onCreate={noop}
-                        onJoin={noop}
-                        onOpen={noop}
-                        surfaces={BROWSE}
-                    />,
-                )}
-            </Specimen>
-
-            <Specimen detail="480px · nothing yet" label="Browse, empty" number="07" stage="app">
-                {frame(
-                    <HappyAgentSurfaceBrowseDialog
-                        onClose={noop}
-                        onCreate={noop}
-                        onJoin={noop}
-                        onOpen={noop}
-                        surfaces={[]}
-                    />,
-                )}
-            </Specimen>
 
             <Specimen
                 detail="480px · name and an optional picture"
                 label="Create"
-                number="08"
+                number="07"
                 stage="app"
             >
-                {frame(
-                    <HappyAgentSurfaceCreateDialog
-                        onClose={noop}
-                        onSubmit={noop}
-                        pending={false}
-                    />,
-                )}
-            </Specimen>
-
-            <Specimen detail="480px · refused" label="Create, refused" number="09" stage="app">
-                {frame(
-                    <HappyAgentSurfaceCreateDialog
-                        error="The name is longer than 200 characters."
-                        onClose={noop}
-                        onSubmit={noop}
-                        pending={false}
-                    />,
-                )}
+                {frame(<HappyAgentSurfaceCreateDialog onClose={noop} onSubmit={noop} />)}
             </Specimen>
         </ComponentPage>
     );

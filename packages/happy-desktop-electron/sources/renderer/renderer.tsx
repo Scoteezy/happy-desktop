@@ -32,6 +32,7 @@ import {
     welcomeStoreCreate,
     happyAgentNavigationOrderStoreCreate,
     happyAgentSidebarCollapseStoreCreate,
+    happyAgentSidebarSearchStoreCreate,
     happyAgentSidebarVisibilityStoreCreate,
     happyAgentSettingsStoreCreate,
     type AppearanceStore,
@@ -44,6 +45,7 @@ import {
     type WelcomeStore,
     type HappyAgentNavigationOrderStore,
     type HappyAgentSidebarCollapseStore,
+    type HappyAgentSidebarSearchStore,
     type HappyAgentSidebarVisibilityStore,
     type HappyAgentSettingsStore,
     type TitleShimmerStore,
@@ -312,6 +314,7 @@ function HappyAgentBoundary(props: {
     router: HappyAgentRouter;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
+    sidebarSearch: HappyAgentSidebarSearchStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
     happyAgents: HappyAgentDirectoryStore;
     settings: HappyAgentSettingsStore;
@@ -361,6 +364,7 @@ function HappyAgentBoundary(props: {
                 keepAwake: props.keepAwake,
                 navigationOrder: props.navigationOrder,
                 sidebarCollapse: props.sidebarCollapse,
+                sidebarSearch: props.sidebarSearch,
                 sidebarVisibility: props.sidebarVisibility,
                 platform: props.platform,
                 happyAgents: props.happyAgents,
@@ -483,6 +487,7 @@ interface DesktopRendererProps {
     keepAwake: KeepAwakeStore;
     navigationOrder: HappyAgentNavigationOrderStore;
     sidebarCollapse: HappyAgentSidebarCollapseStore;
+    sidebarSearch: HappyAgentSidebarSearchStore;
     sidebarVisibility: HappyAgentSidebarVisibilityStore;
     platform: "desktop" | "web";
     happyAgentRouter: HappyAgentRouter;
@@ -655,6 +660,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                 mediaWindow={props.mediaWindow}
                                 navigationOrder={ui.navigationOrder}
                                 sidebarCollapse={ui.sidebarCollapse}
+                                sidebarSearch={ui.sidebarSearch}
                                 sidebarVisibility={ui.sidebarVisibility}
                                 platform={props.platform}
                                 router={ui.router}
@@ -874,6 +880,7 @@ function DesktopRuntimeContent(
             usageAnalytics={props.usageAnalytics}
             navigationOrder={props.navigationOrder}
             sidebarCollapse={props.sidebarCollapse}
+            sidebarSearch={props.sidebarSearch}
             sidebarVisibility={props.sidebarVisibility}
             platform={props.platform}
             router={props.happyAgentRouter}
@@ -1041,6 +1048,10 @@ if (mediaPreviewBridge) {
         // folded away. Also the window's own: switching machines does not
         // bring the sidebar back, and the rail beside it goes with it.
         const sidebarVisibility = happyAgentSidebarVisibilityStoreCreate();
+        // What the sidebar's search field holds. Transient like the command
+        // palette below: a search is a question in progress, not a place to
+        // come back to, so nothing is persisted.
+        const sidebarSearch = happyAgentSidebarSearchStoreCreate();
         // Whether this window offers the features that are not finished yet. It
         // is kept beside the arrangement above and for the same reason: it says
         // what this installation shows, so no machine has a say in it.
@@ -1234,6 +1245,7 @@ if (mediaPreviewBridge) {
                                       commandPalette,
                                       navigationOrder,
                                       sidebarCollapse,
+                                      sidebarSearch,
                                   },
                               }
                             : {}),
@@ -1322,6 +1334,7 @@ if (mediaPreviewBridge) {
                         keepAwake={keepAwake}
                         navigationOrder={navigationOrder}
                         sidebarCollapse={sidebarCollapse}
+                        sidebarSearch={sidebarSearch}
                         sidebarVisibility={sidebarVisibility}
                         // Only the Electron window hides its title bar; the browser
                         // development server renders the same tree with web chrome.

@@ -29,6 +29,8 @@
     color-scheme: light;
     --happy-brand-logo-source: url("./assets/brand/logo-black.png");
     --happy-wordmark-source: url("./assets/brand/happy-engineering-stacked-light.svg");
+    /* The picture a todo list is laid over. */
+    --happy-todo-backdrop-source: url("./assets/backdrops/todo-ginkgo.jpg");
 
     /* File tabs, their mode bars, and the path rows below them are one piece
        of chrome. Keep the containing row and its inset controls on one shared
@@ -151,6 +153,9 @@
     --button-primary-disabled: #c0c0c0;
     --button-secondary-tint: #666666;
     --input-background: #f5f5f5;
+    /* The sidebar search sits on the sidebar itself, so it is lifted off it. */
+    --sidebar-search-background: #ffffff;
+    --sidebar-search-border: rgb(0 0 0 / 0.12);
     --input-text: #000000;
     --input-placeholder: #999999;
     --box-warning-background: #fff8f0;
@@ -318,6 +323,7 @@
         color-scheme: dark;
         --happy-brand-logo-source: url("./assets/brand/logo-white.png");
         --happy-wordmark-source: url("./assets/brand/happy-engineering-stacked-dark.svg");
+        --happy-todo-backdrop-source: url("./assets/backdrops/todo-ginkgo-dark.jpg");
         --text: #ffffff;
         --text-destructive: #f48fb1;
         --text-secondary: #cac4d0;
@@ -367,6 +373,8 @@
         --button-primary-disabled: #c0c0c0;
         --button-secondary-tint: #8e8e93;
         --input-background: #303030;
+        --sidebar-search-background: #303030;
+        --sidebar-search-border: rgb(255 255 255 / 0.1);
         --input-text: #ffffff;
         --input-placeholder: #8e8e93;
         --box-warning-background: rgb(255 159 10 / 0.15);
@@ -489,6 +497,7 @@
     color-scheme: dark;
     --happy-brand-logo-source: url("./assets/brand/logo-white.png");
     --happy-wordmark-source: url("./assets/brand/happy-engineering-stacked-dark.svg");
+    --happy-todo-backdrop-source: url("./assets/backdrops/todo-ginkgo-dark.jpg");
     --text: #ffffff;
     --text-destructive: #f48fb1;
     --text-secondary: #cac4d0;
@@ -538,6 +547,8 @@
     --button-primary-disabled: #c0c0c0;
     --button-secondary-tint: #8e8e93;
     --input-background: #303030;
+    --sidebar-search-background: #303030;
+    --sidebar-search-border: rgb(255 255 255 / 0.1);
     --input-text: #ffffff;
     --input-placeholder: #8e8e93;
     --box-warning-background: rgb(255 159 10 / 0.15);

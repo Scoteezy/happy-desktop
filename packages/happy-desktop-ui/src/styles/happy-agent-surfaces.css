@@ -1,11 +1,11 @@
 /*
  * P-019 Happy Agent Surfaces: the header every Surface shares, the todo list,
- * the state for a type this build cannot show, and the browse and create
- * dialogs.
+ * the state for a type this build cannot show, and the create dialog.
  *
- * A Surface page reads down one column under the surface header, at the same
- * 720px measure as the artifacts and inbox pages. A todo is a fixed 40px row on
- * 2px gaps, because the reordering list places its rows by slot.
+ * A todo list is one centred column of cards, at the same 720px measure as the
+ * artifacts and inbox pages, laid over the list's picture under a one-line
+ * header. A todo is a fixed 40px card on 4px gaps, because the reordering list
+ * places its rows by slot.
  *
  * Layout is flexbox throughout; colors, radii, and type come only from theme
  * roles.
@@ -64,40 +64,17 @@
    The band itself is the shared PanelHeader, so its height, inset, and drag
    contract are a chat header's. These rules only lay out what it carries. */
 
-.happy-agent-surface-header__heading {
-    display: flex;
+.happy-agent-surface-header__title {
     flex: 1 1 0%;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.happy-agent-surface-header__title,
-.happy-agent-surface-header__subtitle {
     min-width: 0;
     margin: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.happy-agent-surface-header__title {
     color: var(--text);
     font-size: 15px;
     font-weight: 600;
     line-height: 20px;
-}
-
-.happy-agent-surface-header__subtitle {
-    color: var(--text-secondary);
-    font-size: 12px;
-    line-height: 16px;
-}
-
-.happy-agent-surface-header__trailing {
-    display: flex;
-    flex: none;
-    align-items: center;
-    gap: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* ---- Todo list page ---------------------------------------------------- */
@@ -116,10 +93,15 @@
     font-synthesis: none;
 }
 
+/* The picture stays put behind the column while it scrolls. */
 .happy-agent-todo-surface__scroll {
     flex: 1 1 auto;
     min-height: 0;
     width: 100%;
+    background-color: var(--surface);
+    background-image: var(--happy-todo-backdrop-source);
+    background-position: center;
+    background-size: cover;
 }
 
 .happy-agent-todo-surface__scroll-viewport {
@@ -132,19 +114,35 @@
     display: flex;
     flex: 1 0 auto;
     flex-direction: column;
+    align-self: center;
     gap: 12px;
     box-sizing: border-box;
     width: 100%;
     max-width: 720px;
-    padding: 4px 16px 48px;
+    padding: 24px 16px 48px;
+}
+
+/* Everything in the column is a card, so it reads over any part of the picture. */
+.happy-agent-todo-surface__empty {
+    border-radius: var(--happy-radius-md);
+    background: var(--surface);
+    box-shadow: 0 1px 3px var(--shadow-color);
 }
 
 .happy-agent-todo-surface__empty {
     margin: 0;
-    padding: 0 12px;
+    padding: 10px 16px;
     color: var(--text-secondary);
     font-size: 13px;
     line-height: 20px;
+}
+
+/* The add field is a card of its own, the same surface as the todos below it. */
+.happy-agent-todo-surface__add .happy-text-field__control {
+    border-color: transparent;
+    border-radius: var(--happy-radius-md);
+    background: var(--surface);
+    box-shadow: 0 1px 3px var(--shadow-color);
 }
 
 /* The rows, then the completed section below them. */
@@ -165,10 +163,11 @@
     gap: 6px;
     height: 28px;
     margin: 0;
-    padding: 0 10px 0 8px;
+    padding: 0 12px 0 10px;
     border: 0;
-    border-radius: var(--happy-radius-sm);
-    background: transparent;
+    border-radius: var(--happy-radius-pill);
+    background: var(--surface);
+    box-shadow: 0 1px 3px var(--shadow-color);
     color: var(--text-secondary);
     font: inherit;
     font-size: 13px;
@@ -187,11 +186,6 @@
     outline-offset: -2px;
 }
 
-/* A lifted row is the one thing above the list, so it paints its own surface. */
-.happy-agent-todo-surface .happy-reordering-list__row[data-held] {
-    background: var(--surface);
-}
-
 /* ---- Todo row ---------------------------------------------------------- */
 
 .happy-agent-todo-row {
@@ -203,11 +197,13 @@
     min-width: 0;
     padding: 0 6px 0 12px;
     border-radius: var(--happy-radius-md);
+    background: var(--surface);
+    box-shadow: 0 1px 3px var(--shadow-color);
 }
 
 .happy-agent-todo-row:hover,
 .happy-agent-todo-row:focus-within {
-    background: var(--surface-pressed);
+    background: var(--surface-high);
 }
 
 .happy-agent-todo-row__check {
@@ -286,9 +282,8 @@
     padding: 24px;
 }
 
-/* ---- Browse dialog ----------------------------------------------------- */
+/* ---- Create dialog ----------------------------------------------------- */
 
-.happy-agent-surface-browse-dialog,
 .happy-agent-surface-create-dialog {
     display: flex;
     flex-direction: column;
@@ -298,58 +293,6 @@
     font-family: var(--happy-font-ui);
     font-synthesis: none;
 }
-
-.happy-agent-surface-browse-dialog__empty {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 13px;
-    line-height: 20px;
-}
-
-.happy-agent-surface-browse-dialog__list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-}
-
-.happy-agent-surface-browse-dialog__row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-    min-height: 40px;
-}
-
-.happy-agent-surface-browse-dialog__text {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.happy-agent-surface-browse-dialog__name,
-.happy-agent-surface-browse-dialog__detail {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.happy-agent-surface-browse-dialog__name {
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 20px;
-}
-
-.happy-agent-surface-browse-dialog__detail {
-    color: var(--text-secondary);
-    font-size: 12px;
-    line-height: 16px;
-}
-
-/* ---- Create dialog ----------------------------------------------------- */
 
 .happy-agent-surface-create-dialog__picture {
     display: flex;

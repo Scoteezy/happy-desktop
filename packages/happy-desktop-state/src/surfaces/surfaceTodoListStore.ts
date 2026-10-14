@@ -25,6 +25,13 @@ import type {
 export const HAPPY_AGENT_TODO_TEXT_LIMIT = 10_000;
 /** How often one change is re-sent after the todo moved on under it before it gives up. */
 const CONFLICT_RETRIES = 3;
+/**
+ * The control characters the daemon refuses in a todo: everything below a
+ * space except tab and line feed, and DEL. A change it would refuse is undone,
+ * so a pasted one becomes a space before the todo is ever shown.
+ */
+// eslint-disable-next-line no-control-regex
+const TODO_TEXT_FORBIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f]/gu;
 
 /** The todo being edited in place, and its text so far. */
 export interface HappyAgentTodoEditing {
@@ -38,6 +45,8 @@ export interface HappyAgentTodoListSnapshot {
      * `loading` until the list has been read once, and `missing` when the
      * daemon has no such Surface. A list read before stays `ready` while it is
      * read again, so returning to it shows what it held rather than a loader.
+     * Todos can be added in either of the first two; they apply at once and
+     * reach the daemon once it has the list.
      */
     readonly status: "loading" | "ready" | "missing";
     /** Active todos in list order, with this window's own changes applied as they are made. */
@@ -87,6 +96,12 @@ export interface HappyAgentTodoListDeps {
     readonly sync: HappyAgentSync;
     readonly surfaceId: HappyAgentSurfaceId;
     readonly now?: () => number;
+    /**
+     * Given for a list this window is still making: settles once the daemon
+     * has it, rejected if it refused it. Reading the list and sending changes
+     * to it wait for it; changes made meanwhile apply at once as always.
+     */
+    readonly surfaceCreated?: Promise<void>;
 }
 
 /** One change this window asked for, held over the list until the daemon answers. */
@@ -374,6 +389,11 @@ export function happyAgentTodoListStoreCreate(
             signal,
             async () => {
                 try {
+                    await deps.surfaceCreated;
+                } catch {
+                    return undefined;
+                }
+                try {
                     const [active, completed] = await Promise.all([
                         deps.client.listTodos(surfaceId, { scope: "active", signal }),
                         deps.client.listTodos(surfaceId, { scope: "completed", signal }),
@@ -554,6 +574,9 @@ export function happyAgentTodoListStoreCreate(
         if (queueRunning) return;
         queueRunning = true;
         try {
+            // A list still being made takes changes once it exists; one the
+            // daemon refused turns each change into a refusal of its own.
+            await deps.surfaceCreated?.catch(() => undefined);
             let delay = 1_000;
             while (!disposed && queue.length > 0) {
                 const entry = queue[0]!;
@@ -631,7 +654,10 @@ export function happyAgentTodoListStoreCreate(
 
     /** The text a todo may hold: trimmed, within the daemon's bound, and not blank. */
     const textClean = (text: string): string | undefined => {
-        const clean = text.trim().slice(0, HAPPY_AGENT_TODO_TEXT_LIMIT);
+        const clean = text
+            .replace(TODO_TEXT_FORBIDDEN, " ")
+            .trim()
+            .slice(0, HAPPY_AGENT_TODO_TEXT_LIMIT);
         return clean.length === 0 ? undefined : clean;
     };
 
@@ -659,7 +685,7 @@ export function happyAgentTodoListStoreCreate(
         },
         draftSubmit() {
             const text = textClean(snapshot.draft);
-            if (disposed || snapshot.status !== "ready") return;
+            if (disposed || snapshot.status === "missing") return;
             if (text === undefined) {
                 if (snapshot.draft !== "") publish({ draft: "" });
                 return;

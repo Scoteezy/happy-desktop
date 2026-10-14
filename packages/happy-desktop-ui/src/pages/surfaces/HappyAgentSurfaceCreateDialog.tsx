@@ -1,5 +1,4 @@
 import { useRef, useState, type CSSProperties } from "react";
-import { Banner } from "../../Banner";
 import { Button } from "../../Button";
 import { Icon } from "../../Icon";
 import { Modal } from "../../Modal";
@@ -9,6 +8,20 @@ import { TextField } from "../../TextField";
 /** The pictures the daemon accepts, and how large one may be. */
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const IMAGE_BYTES_LIMIT = 8 * 1024 * 1024;
+const IMAGE_PIXELS_LIMIT = 40_000_000;
+
+/**
+ * Whether a file's first bytes are a PNG, JPEG, or WebP picture. The type a
+ * file is named with comes from its extension; the daemon reads the bytes.
+ */
+function imageSignatureAccepted(bytes: Uint8Array): boolean {
+    const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
+    return (
+        (bytes[0] === 0x89 && ascii(1, 4) === "PNG") ||
+        (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) ||
+        (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP")
+    );
+}
 
 export interface HappyAgentSurfaceCreateInput {
     readonly name: string;
@@ -16,10 +29,6 @@ export interface HappyAgentSurfaceCreateInput {
 }
 
 export type HappyAgentSurfaceCreateDialogProps = {
-    /** True while the Happy Agent has the request and has not answered. */
-    pending: boolean;
-    /** Why the last attempt was refused, in the Happy Agent's own words. */
-    error?: string;
     onSubmit: (input: HappyAgentSurfaceCreateInput) => void;
     onClose: () => void;
     className?: string;
@@ -38,15 +47,19 @@ interface Picture {
  * reader wants, gives it a picture.
  *
  * The form is the dialog's own until it is submitted: the name typed, the
- * picture chosen and its preview. The owner hears only the finished request
- * and answers with whether it is still running and why it was refused.
+ * picture chosen and its preview. The owner hears only the finished request;
+ * the list is made at once and the dialog closes, so it never waits on the
+ * Happy Agent and has no refusal to state. A picture is therefore held to
+ * everything the Happy Agent checks before it can be chosen at all — its
+ * bytes, its size, and its pixel count — because a list the Happy Agent
+ * refused would vanish from the sidebar.
  */
 export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDialogProps) {
     const [name, setName] = useState("");
     const [picture, setPicture] = useState<Picture>();
     const [pictureError, setPictureError] = useState<string>();
     const fileInput = useRef<HTMLInputElement>(null);
-    const ready = name.trim().length > 0 && !props.pending;
+    const ready = name.trim().length > 0;
     const submit = () => {
         if (!ready) return;
         props.onSubmit({ name: name.trim(), ...(picture ? { image: picture.file } : {}) });
@@ -61,29 +74,52 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
             setPictureError("Choose a picture no larger than 8 MB.");
             return;
         }
-        const reader = new FileReader();
-        reader.onload = () => {
-            if (typeof reader.result !== "string") return;
-            setPictureError(undefined);
-            setPicture({ file, preview: reader.result });
-        };
-        reader.onerror = () => setPictureError("That picture could not be read.");
-        reader.readAsDataURL(file);
+        const unreadable = () => setPictureError("That picture could not be read.");
+        void file
+            .slice(0, 12)
+            .arrayBuffer()
+            .then((head) => {
+                if (!imageSignatureAccepted(new Uint8Array(head))) {
+                    setPictureError("Choose a PNG, JPEG, or WebP picture.");
+                    return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const preview = reader.result;
+                    if (typeof preview !== "string") return unreadable();
+                    // Decoded here once, so a picture that cannot be read or
+                    // is too large to process is caught while it can be changed.
+                    const image = new Image();
+                    image.onload = () => {
+                        if (image.naturalWidth === 0 || image.naturalHeight === 0)
+                            return unreadable();
+                        if (image.naturalWidth * image.naturalHeight > IMAGE_PIXELS_LIMIT) {
+                            setPictureError("Choose a picture under 40 megapixels.");
+                            return;
+                        }
+                        setPictureError(undefined);
+                        setPicture({ file, preview });
+                    };
+                    image.onerror = unreadable;
+                    image.src = preview;
+                };
+                reader.onerror = unreadable;
+                reader.readAsDataURL(file);
+            }, unreadable);
     };
     return (
-        <ModalOverlay onDismiss={props.pending ? undefined : props.onClose}>
+        <ModalOverlay onDismiss={props.onClose}>
             <Modal
                 className={props.className}
                 data-testid={props["data-testid"]}
                 footer={
                     <>
-                        <Button disabled={props.pending} onClick={props.onClose} variant="ghost">
+                        <Button onClick={props.onClose} variant="ghost">
                             Cancel
                         </Button>
                         <Button
                             data-testid="happy-agent-surface-create-submit"
                             disabled={!ready}
-                            loading={props.pending}
                             onClick={submit}
                             variant="primary"
                         >
@@ -101,15 +137,9 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
                     className="happy-agent-surface-create-dialog"
                     data-happy-desktop-ui="happy-agent-surface-create-dialog"
                 >
-                    {props.error ? (
-                        <Banner tone="danger" title="Couldn’t make the list">
-                            {props.error}
-                        </Banner>
-                    ) : null}
                     <TextField
                         autoFocus
                         data-testid="happy-agent-surface-create-name"
-                        disabled={props.pending}
                         fullWidth
                         label="Name"
                         onSubmit={submit}
@@ -141,7 +171,6 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
                         </span>
                         {picture ? (
                             <Button
-                                disabled={props.pending}
                                 onClick={() => setPicture(undefined)}
                                 size="small"
                                 variant="ghost"
@@ -150,7 +179,6 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
                             </Button>
                         ) : null}
                         <Button
-                            disabled={props.pending}
                             onClick={() => fileInput.current?.click()}
                             size="small"
                             variant="secondary"

@@ -26,29 +26,33 @@ import type {
 
 /** The daemon's bound on one user lookup. */
 const USERS_BATCH_LIMIT = 100;
-/** The daemon's bound on a Surface picture, decoded. */
-const IMAGE_BYTES_LIMIT = 8 * 1024 * 1024;
+/** The daemon's bound on a Surface name. */
+const NAME_LIMIT = 256;
+/**
+ * The control characters the daemon refuses in a name, tab among them. A
+ * list it refused would vanish, so a pasted one becomes a space first.
+ */
+// eslint-disable-next-line no-control-regex
+const NAME_FORBIDDEN = /[\u0000-\u001f\u007f]/gu;
 
 /** A membership act on one Surface, as the sidebar reports it back when it fails. */
 export type HappyAgentSurfaceMembershipAction = "join" | "leave" | "reorder";
 
-/** Where making a new list stands. It is a form, so it is open or it is not. */
+/**
+ * Whether the form that makes a new list is open. Making one never waits on
+ * the daemon, so the form has nothing else to say.
+ */
 export type HappyAgentSurfaceCreateState =
     | { readonly phase: "closed" }
-    | {
-          readonly phase: "open";
-          /** True while the daemon has the request and has not answered. */
-          readonly pending: boolean;
-          /** Why the last attempt was refused, in the daemon's words. */
-          readonly error?: UserError;
-      };
+    | { readonly phase: "open" };
 
 export interface HappyAgentSurfaceCatalogSnapshot {
     /** Whether this Happy Agent has Surfaces at all; an older one never will. */
     readonly availability: HappyAgentSurfacesAvailability;
     /**
      * Every Surface on this Happy Agent, whatever its type, in ID order, with
-     * this reader's own joins and leaves applied as soon as they are asked for.
+     * this reader's own lists, joins, and leaves applied as soon as they are
+     * asked for.
      */
     readonly surfaces: readonly HappyAgentSurface[];
     /** The reader's sidebar: the Surfaces they joined, in their own order. */
@@ -71,8 +75,6 @@ export interface HappyAgentSurfaceCatalogSnapshot {
         readonly action: HappyAgentSurfaceMembershipAction;
         readonly error: UserError;
     };
-    /** Whether the catalog is open for browsing and joining. */
-    readonly browseOpen: boolean;
     readonly create: HappyAgentSurfaceCreateState;
     /** The last read failed; the retained catalog stays visible and the read is retried. */
     readonly error?: UserError;
@@ -81,7 +83,10 @@ export interface HappyAgentSurfaceCatalogSnapshot {
 /** What a new todo list is made from. */
 export interface HappyAgentSurfaceCreateInput {
     readonly name: string;
-    /** A PNG, JPEG, or WebP picture, at most 8 MiB; the daemon normalizes it. */
+    /**
+     * A PNG, JPEG, or WebP picture, at most 8 MiB; the daemon normalizes it.
+     * The list shows it once the daemon has it.
+     */
     readonly image?: Blob;
 }
 
@@ -94,16 +99,15 @@ export interface HappyAgentSurfaceCatalogStore {
     surfaceLeave(surfaceId: HappyAgentSurfaceId): void;
     /** Moves a joined Surface to just after `afterId` in the reader's sidebar, or first. */
     surfaceReorder(surfaceId: HappyAgentSurfaceId, afterId: HappyAgentSurfaceId | null): void;
-    browseOpen(): void;
-    browseClose(): void;
     createOpen(): void;
     createClose(): void;
     /**
-     * Makes a todo list, joined by the reader at the end of their sidebar, and
-     * answers with its ID once the daemon has it. Rejects with a displayable
-     * `UserError`, which the open form also states.
+     * Makes a todo list, joined by the reader at the end of their sidebar,
+     * and closes the form. The list is in the catalog at once and answers with
+     * its ID; the daemon is told in the background, again until it hears. A
+     * blank name makes nothing and answers `undefined`.
      */
-    surfaceCreate(input: HappyAgentSurfaceCreateInput): Promise<HappyAgentSurfaceId>;
+    surfaceCreate(input: HappyAgentSurfaceCreateInput): HappyAgentSurfaceId | undefined;
     [Symbol.dispose](): void;
 }
 
@@ -121,11 +125,18 @@ export interface HappyAgentSurfaceCatalogDeps {
     >;
     readonly sync: HappyAgentSync;
     readonly now?: () => number;
+    /**
+     * Told of each list this store starts making, with a promise that settles
+     * once the daemon has it — rejected if the daemon refused it — so a store
+     * reading the new list can wait for it to exist.
+     */
+    readonly surfaceCreating?: (surfaceId: HappyAgentSurfaceId, created: Promise<void>) => void;
 }
 
 const NO_USERS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map();
 const NO_PENDING: ReadonlySet<HappyAgentSurfaceId> = new Set();
 const CREATE_CLOSED: HappyAgentSurfaceCreateState = { phase: "closed" };
+const CREATE_OPEN: HappyAgentSurfaceCreateState = { phase: "open" };
 
 const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     availability: "unsupported",
@@ -133,7 +144,6 @@ const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     joined: [],
     users: NO_USERS,
     membershipPending: NO_PENDING,
-    browseOpen: false,
     create: CREATE_CLOSED,
 };
 
@@ -148,11 +158,9 @@ export const happyAgentSurfaceCatalogStoreNoop: HappyAgentSurfaceCatalogStore = 
     surfaceJoin: () => undefined,
     surfaceLeave: () => undefined,
     surfaceReorder: () => undefined,
-    browseOpen: () => undefined,
-    browseClose: () => undefined,
     createOpen: () => undefined,
     createClose: () => undefined,
-    surfaceCreate: () => Promise.reject(new UserError("Surfaces are not available here.")),
+    surfaceCreate: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
 
@@ -161,6 +169,20 @@ type MembershipIntent =
     | { readonly kind: "join"; readonly orderKey: string; readonly joinedAt: number }
     | { readonly kind: "leave" }
     | { readonly kind: "reorder"; readonly orderKey: string };
+
+/** A list this reader made that the daemon has not confirmed yet. */
+interface PendingCreate {
+    readonly surfaceId: HappyAgentSurfaceId;
+    /** One idempotency key for every attempt; the ID alone already makes it once. */
+    readonly mutationId: string;
+    readonly name: string;
+    readonly image?: Blob;
+    /** Where it goes in the reader's sidebar until the daemon says. */
+    readonly orderKey: string;
+    readonly at: number;
+    /** Settles once the daemon has it, or rejects once it refuses it. */
+    readonly created: Promise<void>;
+}
 
 interface MembershipOp {
     readonly surfaceId: HappyAgentSurfaceId;
@@ -221,6 +243,12 @@ function sidebarCompare(
  * top of it by their version chain, and a broken chain reads the catalog
  * again, since there is no route that reads one Surface.
  *
+ * Making a list applies at once too: it is in the catalog, joined at the end
+ * of the reader's sidebar, the moment it is asked for, and the daemon is told
+ * in the background under the list's own ID until it hears. Its picture shows
+ * once the daemon has it. A membership act on a list still being made waits
+ * for it.
+ *
  * Joining, leaving, and reordering are this reader's own and apply at once.
  * Each is held over the catalog as an intent until the daemon answers, and
  * they are sent one at a time, so a move anchored on a Surface just joined
@@ -246,10 +274,10 @@ export function happyAgentSurfaceCatalogStoreCreate(
         joined: [],
         users: NO_USERS,
         membershipPending: NO_PENDING,
-        browseOpen: false,
         create: CREATE_CLOSED,
     };
     let ops: MembershipOp[] = [];
+    let creates: PendingCreate[] = [];
     let queueRunning = false;
     let following: AbortController | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
@@ -333,10 +361,39 @@ export function happyAgentSurfaceCatalogStoreCreate(
         const viewer = snapshot.viewer;
         const intents = new Map<HappyAgentSurfaceId, MembershipIntent>();
         for (const op of ops) intents.set(op.surfaceId, op.intent);
+        const made = creates.filter(
+            (create) => !authoritative.some((surface) => surface.id === create.surfaceId),
+        );
+        const base =
+            made.length === 0
+                ? authoritative
+                : [
+                      ...authoritative,
+                      ...made.map(
+                          (create): HappyAgentSurface => ({
+                              id: create.surfaceId,
+                              type: { kind: "todo" },
+                              name: create.name,
+                              image: null,
+                              members:
+                                  viewer === undefined
+                                      ? []
+                                      : [
+                                            {
+                                                userId: viewer.userId,
+                                                orderKey: create.orderKey,
+                                                joinedAt: create.at,
+                                            },
+                                        ],
+                              version: "",
+                              updatedAt: create.at,
+                          }),
+                      ),
+                  ].sort((left, right) => stringCompare(left.id, right.id));
         const surfaces =
             viewer === undefined || intents.size === 0
-                ? authoritative
-                : authoritative.map((surface) => {
+                ? base
+                : base.map((surface) => {
                       const intent = intents.get(surface.id);
                       if (intent === undefined) return surface;
                       const others = surface.members.filter(
@@ -579,6 +636,13 @@ export function happyAgentSurfaceCatalogStoreCreate(
             let delay = 1_000;
             while (!disposed && ops.length > 0) {
                 const op = ops[0]!;
+                // An act on a list still being made goes once the list exists;
+                // one that was refused makes the act a refusal of its own.
+                const making = creates.find((create) => create.surfaceId === op.surfaceId);
+                if (making !== undefined) {
+                    await making.created.catch(() => undefined);
+                    continue;
+                }
                 op.sent = true;
                 const intent = op.intent;
                 let afterId: HappyAgentSurfaceId | null = null;
@@ -706,72 +770,83 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 orderKey: orderKeyDecimalBetween(before, after),
             });
         },
-        browseOpen() {
-            if (disposed || snapshot.browseOpen) return;
-            publish({ browseOpen: true });
-        },
-        browseClose() {
-            if (disposed || !snapshot.browseOpen) return;
-            publish({ browseOpen: false });
-        },
         createOpen() {
             if (disposed || snapshot.create.phase === "open") return;
-            publish({ create: { phase: "open", pending: false } });
+            publish({ create: CREATE_OPEN });
         },
         createClose() {
             if (disposed || snapshot.create.phase === "closed") return;
-            if (snapshot.create.pending) return;
             publish({ create: CREATE_CLOSED });
         },
-        async surfaceCreate(input) {
-            if (disposed) throw new UserError("This Happy Agent is no longer connected.");
-            const name = input.name.trim();
-            const fail = (error: UserError): never => {
-                if (snapshot.create.phase === "open")
-                    publish({ create: { phase: "open", pending: false, error } });
-                throw error;
-            };
-            if (name.length === 0) fail(new UserError("Give the list a name."));
-            if (input.image !== undefined && input.image.size > IMAGE_BYTES_LIMIT)
-                fail(new UserError("The picture is larger than 8 MB."));
-            if (snapshot.create.phase === "open")
-                publish({ create: { phase: "open", pending: true } });
-            const id = idCreate() as HappyAgentSurfaceId;
+        surfaceCreate(input) {
+            const name = input.name.replace(NAME_FORBIDDEN, " ").trim().slice(0, NAME_LIMIT);
+            if (disposed || name.length === 0) return undefined;
+            const surfaceId = idCreate() as HappyAgentSurfaceId;
             const mutationId = idCreate();
-            let image: { data: string } | undefined;
-            try {
-                image =
-                    input.image === undefined ? undefined : { data: await base64Of(input.image) };
-            } catch (error) {
-                return fail(new UserError("The picture could not be read.", undefined, error));
-            }
-            let delay = 1_000;
-            for (;;) {
-                try {
-                    const response = await deps.client.createSurface(
-                        {
-                            id,
-                            type: "todo",
-                            name,
-                            mutationId,
-                            ...(image === undefined ? {} : { image }),
-                        },
-                        { signal: life.signal },
+            let settle!: { resolve: () => void; reject: (error: unknown) => void };
+            const created = new Promise<void>((resolve, reject) => {
+                settle = { resolve, reject };
+            });
+            // Nobody may be waiting; a refusal is still an answer, not a crash.
+            created.catch(() => undefined);
+            creates = [
+                ...creates,
+                {
+                    surfaceId,
+                    mutationId,
+                    name,
+                    ...(input.image === undefined ? {} : { image: input.image }),
+                    orderKey: keyAppended(),
+                    at: now(),
+                    created,
+                },
+            ];
+            deps.surfaceCreating?.(surfaceId, created);
+            republish({ create: CREATE_CLOSED });
+            void (async () => {
+                let image: { data: string } | undefined;
+                // A picture that cannot be read leaves the list without one.
+                if (input.image !== undefined)
+                    image = await base64Of(input.image).then(
+                        (data) => ({ data }),
+                        () => undefined,
                     );
-                    if (disposed) return id;
-                    surfaceAdopt(happyAgentSurfaceProject(endpoint, response.surface));
-                    republish({ create: CREATE_CLOSED });
-                    return id;
-                } catch (error) {
-                    if (disposed || life.signal.aborted)
-                        throw new UserError("This Happy Agent is no longer connected.");
-                    if (refused(error)) return fail(happyAgentUserError(error));
-                    // The ID names the list, so asking again can only ever make
-                    // it once: a repeat answers with the list already made.
-                    await waitFor(delay, life.signal);
-                    delay = Math.min(delay * 2, 10_000);
+                let delay = 1_000;
+                for (;;) {
+                    if (disposed || life.signal.aborted) return;
+                    try {
+                        const response = await deps.client.createSurface(
+                            {
+                                id: surfaceId,
+                                type: "todo",
+                                name,
+                                mutationId,
+                                ...(image === undefined ? {} : { image }),
+                            },
+                            { signal: life.signal },
+                        );
+                        if (disposed) return;
+                        surfaceAdopt(happyAgentSurfaceProject(endpoint, response.surface));
+                        creates = creates.filter((create) => create.surfaceId !== surfaceId);
+                        republish();
+                        settle.resolve();
+                        return;
+                    } catch (error) {
+                        if (disposed || life.signal.aborted) return;
+                        if (refused(error)) {
+                            creates = creates.filter((create) => create.surfaceId !== surfaceId);
+                            republish();
+                            settle.reject(error);
+                            return;
+                        }
+                        // The ID names the list, so asking again can only ever
+                        // make it once: a repeat answers with the list made.
+                        await waitFor(delay, life.signal);
+                        delay = Math.min(delay * 2, 10_000);
+                    }
                 }
-            }
+            })();
+            return surfaceId;
         },
         [Symbol.dispose]() {
             if (disposed) return;
@@ -780,6 +855,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
             life.abort();
             listeners.clear();
             ops = [];
+            creates = [];
         },
     };
 }

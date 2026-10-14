@@ -120,6 +120,57 @@
     min-width: 0;
 }
 
+/* The heading's own control: the same 28px box, radius, and tone as the
+   shell's collapse control it sits beside, so the two read as one pair. */
+.happy-sidebar__header-action {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--header-tint-secondary);
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+.happy-sidebar__header-action:hover:not(:disabled) {
+    background: var(--surface-pressed);
+    color: var(--text);
+}
+
+.happy-sidebar__header-action:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: 1px;
+}
+
+.happy-sidebar__header-action:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+/* The search field sits on the rows' own inset, so its edges line up with a
+   row's highlight below it; the body's top inset is the gap under it. It stands
+   on a surface of its own so it reads against the sidebar. */
+.happy-sidebar__search {
+    display: flex;
+    flex: none;
+    min-width: 0;
+    padding: 0 var(--happy-panel-inset);
+}
+
+.happy-sidebar__search .happy-text-field__control {
+    border-color: var(--sidebar-search-border);
+    background: var(--sidebar-search-background);
+}
+
 .happy-sidebar__header-trailing {
     display: flex;
     flex: 0 1 auto;
