@@ -8,6 +8,7 @@ import {
 } from "happy-desktop-state";
 import type {
     HappyAgentActivity,
+    HappyAgentAttentionSource,
     HappyAgentBot,
     HappyAgentBotCreating,
     HappyAgentConnectionSnapshot,
@@ -124,10 +125,20 @@ export interface HappyAgentDirectoryDeps {
      * so this is read once per shell rather than followed.
      */
     readonly terminalColorScheme: () => TerminalColorScheme;
+    /**
+     * Keeps one Happy Agent's mute, hide, and completion-sound choices in that
+     * daemon's user settings for as long as its connection is open, through
+     * that connection's own client and feed. Returns the way to stop.
+     */
+    readonly attentionFollow?: (
+        happyAgentId: string,
+        source: HappyAgentAttentionSource,
+    ) => () => void;
 }
 
 interface LocalHappyAgent {
     connection?: HappyAgentConnectionHandle;
+    attentionUnfollow?: () => void;
     connectionUnsubscribe?: () => void;
     workspaceUnsubscribe?: () => void;
     node?: HappyAgentNodeStore;
@@ -301,6 +312,8 @@ export function happyAgentDirectoryStoreCreate(
         happyAgent.workspaceUnsubscribe = undefined;
         happyAgent.nodeUnsubscribe?.();
         happyAgent.nodeUnsubscribe = undefined;
+        happyAgent.attentionUnfollow?.();
+        happyAgent.attentionUnfollow = undefined;
         happyAgent.node?.[Symbol.dispose]();
         happyAgent.node = undefined;
         happyAgent.connection?.dispose();
@@ -483,6 +496,13 @@ export function happyAgentDirectoryStoreCreate(
             const { node: _node, ...entry } = happyAgent.entry;
             happyAgent.entry = identity === undefined ? entry : { ...entry, node: identity };
             publish();
+        });
+        // The person's choices about this Happy Agent are its own user
+        // settings: a remote's are read and written through its own route, with
+        // its own authority, and belong to whoever that daemon authenticates.
+        happyAgent.attentionUnfollow = deps.attentionFollow?.(happyAgent.entry.id, {
+            client,
+            sync: happyAgent.connection.sync,
         });
     };
 

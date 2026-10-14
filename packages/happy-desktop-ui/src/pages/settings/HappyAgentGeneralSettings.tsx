@@ -275,7 +275,7 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
             ) : null}
             {props.completionSound && props.onCompletionSoundChange ? (
                 <HappyAgentSettingsSection
-                    description="How this connection tells you a conversation finished. Each connection keeps its own choice."
+                    description="How this connection tells you a conversation finished. Each connection keeps your choice, on every device you use it from."
                     title="Sound"
                 >
                     <FormRow

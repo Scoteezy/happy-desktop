@@ -36,7 +36,7 @@ import {
     happyAgentSidebarVisibilityStoreCreate,
     happyAgentSettingsStoreCreate,
     happyAgentAttentionConnection,
-    happyAgentAttentionStoreCreate,
+    happyAgentAttentionStoreOwnedCreate,
     type AppearanceStore,
     type HappyAgentAttentionStore,
     type HappyAgentCompletionSound,
@@ -1104,9 +1104,12 @@ if (mediaPreviewBridge) {
         // come back to, so nothing is persisted.
         const sidebarSearch = happyAgentSidebarSearchStoreCreate();
         // Which bots the person muted or hid and when each connection chimes.
-        // The window's own record, kept per connection, so a machine going
+        // Each connection's Happy Agent keeps them as the person's own user
+        // settings, followed below as every connection opens; the window keeps
+        // the last of them it knew, and its unsent changes, so a machine going
         // offline and coming back finds every choice where it was left.
-        const attention = happyAgentAttentionStoreCreate(desktopAttentionPersistence());
+        const { store: attention, connectionFollow: attentionFollow } =
+            happyAgentAttentionStoreOwnedCreate({ persistence: desktopAttentionPersistence() });
         // Whether this window offers the features that are not finished yet. It
         // is kept beside the arrangement above and for the same reason: it says
         // what this installation shows, so no machine has a say in it.
@@ -1153,6 +1156,7 @@ if (mediaPreviewBridge) {
         // the addressed conversation without the reader navigating twice.
         const happyAgents = happyAgentDirectoryStoreCreate(desktopBridge, runtimeStore, {
             cloudHostFor: auth.hostFor,
+            attentionFollow,
             readLegacyCli: window.happyDesktop?.legacyCliStatus,
             resetLegacyCli: window.happyDesktop?.legacyCliReset,
             conversationOpen: (happyAgentId, location) =>

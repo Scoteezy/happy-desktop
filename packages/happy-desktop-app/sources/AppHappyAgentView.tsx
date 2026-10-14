@@ -2765,8 +2765,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         sidebarSearchStore.get,
     );
     const searching = sidebarSearch.query.trim().length > 0;
-    // Which bots the reader muted or hid. Like the folding above it belongs to
-    // the window, so a machine dropping off neither unmutes nor reveals one.
+    // Which bots the reader muted or hid. Each machine keeps the reader's own
+    // choices, and the window keeps its last copy of them, so a machine
+    // dropping off neither unmutes nor reveals one.
     const attentionStore = props.attention ?? happyAgentAttentionStoreNoop;
     const attention = useSyncExternalStore(
         attentionStore.subscribe,

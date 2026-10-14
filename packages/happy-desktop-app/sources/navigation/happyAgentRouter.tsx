@@ -119,9 +119,10 @@ export interface HappyAgentRouterContext {
      */
     readonly sidebarSearch?: HappyAgentSidebarSearchStore;
     /**
-     * Which bots the reader muted or hid, and when each connection chimes.
-     * Window-owned and shared by every connection; absent in a host that keeps
-     * no such record, which offers none of those controls.
+     * Which bots the reader muted or hid, and when each connection chimes:
+     * each connection's own user settings for the reader, in one window store
+     * shared by every connection. Absent in a host that keeps no such record,
+     * which offers none of those controls.
      */
     readonly attention?: HappyAgentAttentionStore;
     /** Whether this window's left side is folded away; shared by every connection. */

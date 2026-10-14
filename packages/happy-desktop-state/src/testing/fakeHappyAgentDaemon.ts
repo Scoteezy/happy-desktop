@@ -21,7 +21,9 @@ import {
     type Project,
     type Question,
     type Run,
+    type SaveUserSettingRequest,
     type SendMessageRequest,
+    type StoredUserSetting,
     type Task,
     type TaskMembership,
     type User,
@@ -156,6 +158,15 @@ export interface FakeHappyAgentDaemon {
     /** Authoritative Live resource state; control frames are supplied by the test's socket port. */
     liveSessionSet(session: LiveSession): void;
     liveSessionGet(id: string): LiveSession | undefined;
+
+    /**
+     * Whether this daemon keeps user settings. Turned off, it is a daemon from
+     * before the feature: bootstrap omits `userSettings` and every user-settings
+     * route answers `404`. Held settings survive being turned off and on.
+     */
+    userSettingsSupportedSet(supported: boolean): void;
+    /** Every held user setting, clears included, in ascending key order. */
+    userSettingsGet(): readonly StoredUserSetting[];
 
     /** The effective configuration `getConfig` and the desktop bootstrap serve. */
     configGet(): DaemonConfig;
@@ -339,6 +350,16 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     const histories = new Map<string, { runs: HistoryRun[]; pending: UserMessage[] }>();
     const hasMore = new Map<string, boolean>();
     const questions = new Map<string, Question | null>();
+    const userSettings = new Map<string, StoredUserSetting>();
+    let userSettingsSupported = true;
+    const userSettingsOrdered = (): StoredUserSetting[] =>
+        [...userSettings.values()].sort((left, right) =>
+            left.key < right.key ? -1 : left.key > right.key ? 1 : 0,
+        );
+    const userSettingsRequire = (): void => {
+        if (!userSettingsSupported)
+            throw new HappyAgentApiError(404, "Not found.", "not_found", null);
+    };
 
     const calls: FakeDaemonCall[] = [];
     const failures = new Map<string, Error[]>();
@@ -617,7 +638,46 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
                 workspaces: workspacesWithAgents(),
                 tasks: [...tasks.values()],
                 taskMemberships: [...memberships.values()],
+                ...(userSettingsSupported ? { userSettings: userSettingsOrdered() } : {}),
             };
+        },
+        async getUserSettings(...args: unknown[]) {
+            await record("getUserSettings", args);
+            userSettingsRequire();
+            return { cursor: latestCursor, settings: userSettingsOrdered() };
+        },
+        async getUserSetting(key: string, ...rest: unknown[]) {
+            await record("getUserSetting", [key, ...rest]);
+            userSettingsRequire();
+            return {
+                setting: userSettings.get(key) ?? {
+                    key,
+                    value: null,
+                    updatedAt: null,
+                    version: null,
+                },
+            };
+        },
+        // Last-write-wins by `updatedAt`, clamped to the daemon's own clock: a
+        // stale write changes nothing and answers the stored entry.
+        async saveUserSetting(key: string, request: SaveUserSettingRequest, ...rest: unknown[]) {
+            await record("saveUserSetting", [key, request, ...rest]);
+            userSettingsRequire();
+            const at = Math.min(request.updatedAt ?? Date.now(), Date.now());
+            const stored = userSettings.get(key);
+            if (stored !== undefined && at < stored.updatedAt) return { setting: stored };
+            const setting: StoredUserSetting = {
+                key,
+                value: request.value,
+                updatedAt: at,
+                version: versionOf((versionCounter += 1)),
+            };
+            userSettings.set(key, setting);
+            emit("user_settings.updated", {
+                setting,
+                ...(request.mutationId === undefined ? {} : { mutationId: request.mutationId }),
+            });
+            return { setting };
         },
         async getUsers(ids: readonly string[], ...rest: unknown[]) {
             await record("getUsers", [ids, ...rest]);
@@ -1264,6 +1324,10 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         liveSessionGet(id) {
             return liveSessions.get(id);
         },
+        userSettingsSupportedSet(supported) {
+            userSettingsSupported = supported;
+        },
+        userSettingsGet: userSettingsOrdered,
         configGet: () => config,
         configSet(next) {
             config = next;
