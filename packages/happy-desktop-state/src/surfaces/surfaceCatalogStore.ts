@@ -8,7 +8,13 @@ import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
-import type { HappyAgentBotId, HappyAgentTaskId } from "../happyAgent/happyAgentTypes.js";
+import type { HappyAgentSessionLocation } from "../happyAgent/happyAgentSessionListStore.js";
+import type {
+    HappyAgentBotId,
+    HappyAgentGroupId,
+    HappyAgentSessionId,
+    HappyAgentTaskId,
+} from "../happyAgent/happyAgentTypes.js";
 import { UserError } from "../types.js";
 import { cuid2Create } from "../utils/cuid2Create.js";
 import { orderKeyDecimalBetween, stringCompare } from "../utils/orderKeyDecimal.js";
@@ -136,6 +142,14 @@ export type HappyAgentSurfaceCreateState =
     | { readonly phase: "closed" }
     | { readonly phase: "open"; readonly kind: HappyAgentSurfaceCreateKind };
 
+/**
+ * A Surface's shared chat this window asked to open: still being made or
+ * found by the daemon, or why it could not be, until the reader moves on.
+ */
+export type HappyAgentSurfaceChatOpening =
+    | { readonly phase: "opening" }
+    | { readonly phase: "failed"; readonly error: UserError };
+
 export interface HappyAgentSurfaceCatalogSnapshot {
     /** Whether this Happy Agent has Surfaces at all; an older one never will. */
     readonly availability: HappyAgentSurfacesAvailability;
@@ -173,6 +187,14 @@ export interface HappyAgentSurfaceCatalogSnapshot {
         readonly error: UserError;
     };
     readonly create: HappyAgentSurfaceCreateState;
+    /** Shared chats asked to open here, by Surface; a chat already found is not in it. */
+    readonly chatsOpening: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatOpening>;
+    /**
+     * Where each Surface chat found here is held, by Surface, as the daemon
+     * answered when it was opened. It is the one say on which conversation is
+     * a Surface's chat: an address naming another is not it.
+     */
+    readonly chats: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSessionLocation>;
     /** The last read failed; the retained catalog stays visible and the read is retried. */
     readonly error?: UserError;
 }
@@ -225,6 +247,15 @@ export interface HappyAgentSurfaceCatalogStore {
      * happens when the reader already has it.
      */
     referenceAdd(reference: HappyAgentSurfaceReference, name: string): void;
+    /**
+     * Opens a Surface's one shared chat, which the daemon makes the first time
+     * anybody asks, and answers where it is held. A chat already found here
+     * answers at once. Asked again under one mutation ID until the daemon
+     * hears; rejects with its refusal, which `chatsOpening` states too.
+     */
+    chatOpen(surfaceId: HappyAgentSurfaceId): Promise<HappyAgentSessionLocation>;
+    /** Stops opening a Surface's chat, or forgets why it could not be opened. */
+    chatOpenCancel(surfaceId: HappyAgentSurfaceId): void;
     [Symbol.dispose](): void;
 }
 
@@ -240,9 +271,15 @@ export interface HappyAgentSurfaceCatalogDeps {
         | "reorderSurface"
         | "getProfile"
         | "getUsers"
+        | "ensureSurfaceChat"
     >;
     readonly sync: HappyAgentSync;
     readonly now?: () => number;
+    /**
+     * Told where a Surface chat is held, its workspace and its one agent, once
+     * the daemon has said, since no listing names that workspace.
+     */
+    readonly chatFound?: (location: HappyAgentSessionLocation) => void;
     /**
      * Told of each list this store starts making, with a promise that settles
      * once the daemon has it — rejected if the daemon refused it — so a store
@@ -255,6 +292,9 @@ const NO_USERS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map();
 const NO_PENDING: ReadonlySet<HappyAgentSurfaceId> = new Set();
 const NO_COUNTS: ReadonlyMap<HappyAgentSurfaceId, number> = new Map();
 const CREATE_CLOSED: HappyAgentSurfaceCreateState = { phase: "closed" };
+const NO_CHATS_OPENING: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatOpening> = new Map();
+const CHAT_OPENING: HappyAgentSurfaceChatOpening = { phase: "opening" };
+const NO_CHATS: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSessionLocation> = new Map();
 
 const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     availability: "unsupported",
@@ -264,6 +304,8 @@ const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     membershipPending: NO_PENDING,
     activeTodoCounts: NO_COUNTS,
     create: CREATE_CLOSED,
+    chatsOpening: NO_CHATS_OPENING,
+    chats: NO_CHATS,
 };
 
 /**
@@ -281,6 +323,8 @@ export const happyAgentSurfaceCatalogStoreNoop: HappyAgentSurfaceCatalogStore = 
     createClose: () => undefined,
     surfaceCreate: () => undefined,
     referenceAdd: () => undefined,
+    chatOpen: () => Promise.reject(new UserError("This Happy Agent has no Surfaces.")),
+    chatOpenCancel: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
 
@@ -317,6 +361,20 @@ interface MembershipOp {
 /** Whether a failure is the daemon's refusal rather than a request that never arrived. */
 function refused(error: unknown): error is HappyAgentApiError {
     return error instanceof HappyAgentApiError && error.status >= 400 && error.status < 500;
+}
+
+/** Why a Surface's chat could not be opened, in words for the reader. */
+function chatRefusal(error: HappyAgentApiError): UserError {
+    // A daemon from before Surface chats has no such route at all.
+    if (error.status === 404 || error.status === 405)
+        return new UserError(
+            "This Happy Agent can’t keep a chat for a Surface yet.",
+            undefined,
+            error,
+        );
+    if (error.status === 409)
+        return new UserError("This Surface can’t have a chat.", undefined, error);
+    return happyAgentUserError(error);
 }
 
 function unsupported(error: unknown): boolean {
@@ -398,8 +456,18 @@ export function happyAgentSurfaceCatalogStoreCreate(
         membershipPending: NO_PENDING,
         activeTodoCounts: NO_COUNTS,
         create: CREATE_CLOSED,
+        chatsOpening: NO_CHATS_OPENING,
+        chats: NO_CHATS,
     };
     let ops: MembershipOp[] = [];
+    /** Chats being opened, each with its own way to stop asking. */
+    const chatOpenings = new Map<
+        HappyAgentSurfaceId,
+        {
+            readonly answer: Promise<HappyAgentSessionLocation>;
+            readonly abort: AbortController;
+        }
+    >();
     let creates: PendingCreate[] = [];
     let queueRunning = false;
     let following: AbortController | undefined;
@@ -488,6 +556,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
                                                 joinedAt: create.at,
                                             },
                                         ],
+                              chatAgentId: null,
                               version: "",
                               updatedAt: create.at,
                               ...(create.reference
@@ -712,6 +781,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
         const surface = {
             ...current,
             members: event.members,
+            ...(event.chatAgentId === undefined ? {} : { chatAgentId: event.chatAgentId }),
             updatedAt: event.updatedAt,
             version: event.version,
         };
@@ -1122,6 +1192,88 @@ export function happyAgentSurfaceCatalogStoreCreate(
             })();
             return surfaceId;
         },
+        chatOpen(surfaceId) {
+            // Where a chat is held never moves.
+            const found = snapshot.chats.get(surfaceId);
+            if (found !== undefined) return Promise.resolve(found);
+            const running = chatOpenings.get(surfaceId);
+            if (running !== undefined) return running.answer;
+            if (disposed) return Promise.reject(new UserError("This connection has closed."));
+            const abort = new AbortController();
+            const stopped = (): boolean => disposed || abort.signal.aborted;
+            const cancelled = (): UserError => new UserError("The chat was not opened.");
+            // One idempotency key for every attempt; the Surface already makes it once.
+            const mutationId = idCreate();
+            const making = creates.find((create) => create.surfaceId === surfaceId);
+            const answer = (async (): Promise<HappyAgentSessionLocation> => {
+                // A Surface still being made has no chat to ask for until it exists.
+                if (making !== undefined)
+                    await making.created.catch(() => {
+                        throw new UserError("This Surface was not made.");
+                    });
+                let delay = 1_000;
+                for (;;) {
+                    if (stopped()) throw cancelled();
+                    try {
+                        const response = await deps.client.ensureSurfaceChat(surfaceId, {
+                            mutationId,
+                            signal: abort.signal,
+                        });
+                        const location: HappyAgentSessionLocation = {
+                            sessionId: response.agent.id as HappyAgentSessionId,
+                            groupId: response.agent.workspaceId as HappyAgentGroupId,
+                        };
+                        deps.chatFound?.(location);
+                        if (!disposed) {
+                            surfaceAdopt(happyAgentSurfaceProject(endpoint, response.surface));
+                            republish({
+                                chats: new Map([...snapshot.chats, [surfaceId, location]]),
+                            });
+                        }
+                        // Found, but no longer asked for: nothing opens it.
+                        if (stopped()) throw cancelled();
+                        return location;
+                    } catch (error) {
+                        if (stopped()) throw cancelled();
+                        if (refused(error)) throw chatRefusal(error);
+                        // A request that never arrived, or a daemon still
+                        // preparing the chat's folder, is asked again.
+                        await waitFor(delay, abort.signal);
+                        delay = Math.min(delay * 2, 10_000);
+                    }
+                }
+            })();
+            chatOpenings.set(surfaceId, { answer, abort });
+            const settle = (next: HappyAgentSurfaceChatOpening | undefined): void => {
+                // A later open, or a cancel, owns the entry now.
+                if (chatOpenings.get(surfaceId)?.answer !== answer) return;
+                chatOpenings.delete(surfaceId);
+                if (disposed) return;
+                const chats = new Map(snapshot.chatsOpening);
+                if (next === undefined) chats.delete(surfaceId);
+                else chats.set(surfaceId, next);
+                publish({ chatsOpening: chats });
+            };
+            answer.then(
+                () => settle(undefined),
+                (error: unknown) => settle({ phase: "failed", error: happyAgentUserError(error) }),
+            );
+            publish({
+                chatsOpening: new Map([...snapshot.chatsOpening, [surfaceId, CHAT_OPENING]]),
+            });
+            return answer;
+        },
+        chatOpenCancel(surfaceId) {
+            const running = chatOpenings.get(surfaceId);
+            if (running !== undefined) {
+                chatOpenings.delete(surfaceId);
+                running.abort.abort();
+            }
+            if (disposed || !snapshot.chatsOpening.has(surfaceId)) return;
+            const chats = new Map(snapshot.chatsOpening);
+            chats.delete(surfaceId);
+            publish({ chatsOpening: chats });
+        },
         referenceAdd(reference, name) {
             if (disposed || snapshot.viewer === undefined) return;
             const existing = happyAgentSurfaceReferenceFind(snapshot.surfaces, reference);
@@ -1140,6 +1292,8 @@ export function happyAgentSurfaceCatalogStoreCreate(
             listeners.clear();
             ops = [];
             creates = [];
+            for (const running of chatOpenings.values()) running.abort.abort();
+            chatOpenings.clear();
         },
     };
     return store;

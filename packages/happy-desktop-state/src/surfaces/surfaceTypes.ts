@@ -7,7 +7,11 @@
  */
 
 import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
-import type { HappyAgentBotId, HappyAgentTaskId } from "../happyAgent/happyAgentTypes.js";
+import type {
+    HappyAgentBotId,
+    HappyAgentSessionId,
+    HappyAgentTaskId,
+} from "../happyAgent/happyAgentTypes.js";
 
 declare const happyAgentSurfaceIdBrand: unique symbol;
 declare const happyAgentSurfaceTodoIdBrand: unique symbol;
@@ -37,6 +41,24 @@ export type HappyAgentSurfaceType =
 
 /** What a reference Surface can point at. */
 export type HappyAgentSurfaceReferenceKind = "artifact" | "bot" | "task";
+
+/**
+ * Whether a Surface of this type can have a shared chat. A separator has no
+ * content to talk about, and a type this build cannot show is not offered one.
+ */
+export function happyAgentSurfaceChatSupported(type: HappyAgentSurfaceType): boolean {
+    switch (type.kind) {
+        case "todo":
+        case "document":
+        case "artifact":
+        case "bot":
+        case "task":
+            return true;
+        case "separator":
+        case "unsupported":
+            return false;
+    }
+}
 
 /**
  * What a reference Surface points at, as the daemon resolved it for this
@@ -109,6 +131,12 @@ export interface HappyAgentSurface {
      * Surface this window made or heard of by event, until the catalog is read.
      */
     readonly target?: HappyAgentSurfaceTarget;
+    /**
+     * The agent holding the Surface's one shared chat, which everyone in it
+     * reads and writes. `null` until somebody first opens the chat, which is
+     * when the daemon makes it.
+     */
+    readonly chatAgentId: HappyAgentSessionId | null;
     /** The resource version, covering the Surface and every member record. */
     readonly version: string;
     readonly updatedAt: number;

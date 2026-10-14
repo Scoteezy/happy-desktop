@@ -1,7 +1,10 @@
 import type { CSSProperties } from "react";
 import type { HappyAgentSurfaceReferenceKind } from "happy-desktop-state";
 import { EmptyState } from "../../EmptyState";
-import { HappyAgentSurfaceHeader } from "./HappyAgentSurfaceHeader";
+import {
+    HappyAgentSurfaceHeader,
+    type HappyAgentSurfaceChatToggle,
+} from "./HappyAgentSurfaceHeader";
 import { surfaceTypeIcon, type HappyAgentSurfaceView } from "./surfacePresentation";
 
 /** What a reference Surface's page can say about what it points at. */
@@ -23,6 +26,8 @@ export interface HappyAgentSurfaceReferencePageProps {
     reference: HappyAgentSurfaceReferenceView;
     /** Opens the target where it always opens, or joins the task first. */
     onOpen: () => void;
+    /** The Surface's shared chat, toggled from the header. */
+    chat?: HappyAgentSurfaceChatToggle;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -97,7 +102,10 @@ export function HappyAgentSurfaceReferencePage(props: HappyAgentSurfaceReference
             data-testid={props["data-testid"]}
             style={props.style}
         >
-            <HappyAgentSurfaceHeader surface={props.surface} />
+            <HappyAgentSurfaceHeader
+                {...(props.chat ? { chat: props.chat } : {})}
+                surface={props.surface}
+            />
             <div className="happy-agent-surface-reference__body">{body()}</div>
         </div>
     );

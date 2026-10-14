@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Button } from "../../Button";
 import { PanelHeader } from "../../PanelHeader";
 import { SurfaceMemberStack, type HappyAgentSurfaceView } from "./surfacePresentation";
 
@@ -6,6 +7,14 @@ export interface HappyAgentSurfaceHeaderProps {
     surface: HappyAgentSurfaceView;
     /** What the Surface's own page offers in its header, before the faces. */
     actions?: ReactNode;
+    /** The Surface's shared chat, opened beside it; absent for a type that has none. */
+    chat?: HappyAgentSurfaceChatToggle;
+}
+
+/** Whether a Surface's shared chat is open beside it, and how to open or close it. */
+export interface HappyAgentSurfaceChatToggle {
+    readonly open: boolean;
+    readonly onToggle: () => void;
 }
 
 /**
@@ -40,6 +49,23 @@ export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
                 <div className="happy-agent-surface-header__actions">{props.actions}</div>
             )}
             <SurfaceMemberStack members={props.surface.members} />
+            {/* At the edge the chat opens from. */}
+            {props.chat ? (
+                <Button
+                    aria-pressed={props.chat.open}
+                    className="happy-agent-surface-header__chat"
+                    data-testid="happy-agent-surface-chat-toggle"
+                    icon="chat"
+                    onClick={props.chat.onToggle}
+                    size="small"
+                    title={
+                        props.chat.open ? "Close the chat" : "Open the chat everyone here shares"
+                    }
+                    variant="ghost"
+                >
+                    Chat
+                </Button>
+            ) : null}
         </PanelHeader>
     );
 }

@@ -7,7 +7,11 @@ import type {
     Todo,
 } from "@slopus/happy-agent-client";
 import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
-import type { HappyAgentBotId, HappyAgentTaskId } from "../happyAgent/happyAgentTypes.js";
+import type {
+    HappyAgentBotId,
+    HappyAgentSessionId,
+    HappyAgentTaskId,
+} from "../happyAgent/happyAgentTypes.js";
 import { stringCompare } from "../utils/orderKeyDecimal.js";
 import type {
     HappyAgentSurface,
@@ -105,6 +109,8 @@ export function happyAgentSurfaceProject(endpoint: string, surface: Surface): Ha
         // A daemon from before creators leaves the field out; that credits nobody.
         creatorUserId: surface.creatorUserId ?? null,
         ...(surface.target === undefined ? {} : { target: targetProject(surface.target) }),
+        // A daemon from before Surface chats leaves the field out; that is no chat.
+        chatAgentId: (surface.chatAgentId ?? null) as HappyAgentSessionId | null,
         version: surface.version,
         updatedAt: surface.updatedAt,
     };
@@ -200,6 +206,8 @@ export type HappyAgentSurfaceEvent =
           readonly previousVersion: string;
           readonly version: string;
           readonly members: readonly HappyAgentSurfaceMember[];
+          /** The chat's agent, when this change is the chat being made. */
+          readonly chatAgentId?: HappyAgentSessionId | null;
           readonly updatedAt: number;
       };
 
@@ -220,6 +228,13 @@ export function happyAgentSurfaceEventProject(
                 previousVersion: event.payload.previousVersion,
                 version: event.payload.version,
                 members: event.payload.changes.members.map(memberProject),
+                // Absent when the change is not the chat being made.
+                ...(event.payload.changes.chatAgentId === undefined
+                    ? {}
+                    : {
+                          chatAgentId: event.payload.changes
+                              .chatAgentId as HappyAgentSessionId | null,
+                      }),
                 updatedAt: event.payload.changes.updatedAt,
             };
         default:

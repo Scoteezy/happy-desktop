@@ -47,8 +47,16 @@ export type HappyAgentRoute =
     | { readonly kind: "happyAgent"; readonly happyAgentId: string }
     | { readonly kind: "settings" }
     | { readonly kind: "settingsSection"; readonly section: string }
-    /** One shared Surface on one machine, such as a todo list. */
-    | { readonly kind: "surface"; readonly happyAgentId: string; readonly surfaceId: string }
+    /**
+     * One shared Surface on one machine, such as a todo list — with its shared
+     * chat open beside it when `chat` names the conversation the chat is.
+     */
+    | {
+          readonly kind: "surface";
+          readonly happyAgentId: string;
+          readonly surfaceId: string;
+          readonly chat?: { readonly groupId: string; readonly chatId: string };
+      }
     /** Where a new task is made, on the machine it will live on, as a bot is. */
     | { readonly kind: "taskCreate"; readonly happyAgentId: string };
 
@@ -91,8 +99,12 @@ export function happyAgentRoutePath(route: HappyAgentRoute): string {
             return "/settings";
         case "settingsSection":
             return `/settings/${part(route.section)}`;
-        case "surface":
-            return `/surfaces/${part(route.happyAgentId)}/${part(route.surfaceId)}`;
+        case "surface": {
+            const chat = route.chat
+                ? `/chat/${part(route.chat.groupId)}/${part(route.chat.chatId)}`
+                : "";
+            return `/surfaces/${part(route.happyAgentId)}/${part(route.surfaceId)}${chat}`;
+        }
         case "taskCreate":
             return `/tasks/new/${part(route.happyAgentId)}`;
     }
@@ -181,8 +193,16 @@ export function happyAgentRoutePathParse(pathname: string): HappyAgentRoute | un
             if (first === undefined) return { kind: "settings" };
             return segments.length === 2 ? { kind: "settingsSection", section: first } : undefined;
         case "surfaces":
-            return first !== undefined && second !== undefined && segments.length === 3
-                ? { kind: "surface", happyAgentId: first, surfaceId: second }
+            if (first === undefined || second === undefined) return undefined;
+            if (segments.length === 3)
+                return { kind: "surface", happyAgentId: first, surfaceId: second };
+            return third === "chat" && fourth && fifth && segments.length === 6
+                ? {
+                      chat: { chatId: fifth, groupId: fourth },
+                      kind: "surface",
+                      happyAgentId: first,
+                      surfaceId: second,
+                  }
                 : undefined;
         case "tasks":
             return first === "new" && second !== undefined && segments.length === 3
@@ -276,8 +296,20 @@ export function happyAgentRouteParse(value: unknown): HappyAgentRoute | undefine
         case "surface": {
             const happyAgentId = fieldOf(record, "happyAgentId");
             const surfaceId = fieldOf(record, "surfaceId");
+            const stored = record["chat"];
+            const chatRecord =
+                typeof stored === "object" && stored !== null
+                    ? (stored as Record<string, unknown>)
+                    : undefined;
+            const groupId = chatRecord ? fieldOf(chatRecord, "groupId") : undefined;
+            const chatId = chatRecord ? fieldOf(chatRecord, "chatId") : undefined;
             return happyAgentId && surfaceId
-                ? { kind: "surface", happyAgentId, surfaceId }
+                ? {
+                      ...(groupId && chatId ? { chat: { chatId, groupId } } : {}),
+                      kind: "surface",
+                      happyAgentId,
+                      surfaceId,
+                  }
                 : undefined;
         }
         case "taskCreate": {

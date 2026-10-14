@@ -88,6 +88,7 @@ export {
     type HappyAgentSurfaceReference,
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
+    type HappyAgentSurfaceChatOpening,
     type HappyAgentSurfaceCreateInput,
     type HappyAgentSurfaceCreateKind,
     type HappyAgentSurfaceCreateState,

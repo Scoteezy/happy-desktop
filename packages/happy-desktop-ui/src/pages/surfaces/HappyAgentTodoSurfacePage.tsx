@@ -10,7 +10,10 @@ import { Icon } from "../../Icon";
 import { ReorderingList } from "../../ReorderingList";
 import { ScrollArea } from "../../Scrollbar";
 import { TextField } from "../../TextField";
-import { HappyAgentSurfaceHeader } from "./HappyAgentSurfaceHeader";
+import {
+    HappyAgentSurfaceHeader,
+    type HappyAgentSurfaceChatToggle,
+} from "./HappyAgentSurfaceHeader";
 import { HappyAgentTodoRow } from "./HappyAgentTodoRow";
 import type { HappyAgentSurfacePersonView, HappyAgentSurfaceView } from "./surfacePresentation";
 
@@ -63,6 +66,8 @@ export interface HappyAgentTodoSurfacePageProps {
      * other control wants it lands in it. Give it to the one list on screen.
      */
     focusOnType?: boolean;
+    /** The Surface's shared chat, toggled from the header. */
+    chat?: HappyAgentSurfaceChatToggle;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -139,7 +144,10 @@ export function HappyAgentTodoSurfacePage(props: HappyAgentTodoSurfacePageProps)
             data-testid={props["data-testid"]}
             style={props.style}
         >
-            <HappyAgentSurfaceHeader surface={props.surface} />
+            <HappyAgentSurfaceHeader
+                {...(props.chat ? { chat: props.chat } : {})}
+                surface={props.surface}
+            />
             <ScrollArea
                 className="happy-agent-todo-surface__scroll"
                 data-happy-desktop-ui="happy-agent-todo-surface-scroll"

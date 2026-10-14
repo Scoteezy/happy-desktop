@@ -8,7 +8,10 @@ import { EmptyState } from "../../EmptyState";
 import { MarkdownDocument } from "../../MarkdownDocument";
 import { ScrollArea } from "../../Scrollbar";
 import { useFocusOnType } from "../../useFocusOnType";
-import { HappyAgentSurfaceHeader } from "./HappyAgentSurfaceHeader";
+import {
+    HappyAgentSurfaceHeader,
+    type HappyAgentSurfaceChatToggle,
+} from "./HappyAgentSurfaceHeader";
 import type { HappyAgentSurfaceView } from "./surfacePresentation";
 
 export interface HappyAgentDocumentSurfacePageProps {
@@ -21,6 +24,14 @@ export interface HappyAgentDocumentSurfacePageProps {
     onEditEnd: () => void;
     onTextChange: (text: string) => void;
     onConflictDismiss: () => void;
+    /**
+     * Whether the text being written is the window's place to type: a
+     * character typed while no other control wants it lands in it. On unless
+     * something beside the page claims typing instead.
+     */
+    focusOnType?: boolean;
+    /** The Surface's shared chat, toggled from the header. */
+    chat?: HappyAgentSurfaceChatToggle;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -106,7 +117,11 @@ export function HappyAgentDocumentSurfacePage(props: HappyAgentDocumentSurfacePa
             end: element.selectionEnd,
         };
     };
-    useFocusOnType(textarea, snapshot.editing, snapshot.editing ? snapshot.surfaceId : undefined);
+    useFocusOnType(
+        textarea,
+        snapshot.editing && props.focusOnType !== false,
+        snapshot.editing ? snapshot.surfaceId : undefined,
+    );
     // eslint-disable-next-line happy-react/no-layout-effect -- a controlled textarea whose value is replaced by someone else's change puts the caret at the end; carrying it to the same character needs the committed DOM selection, which no handler or ref callback sees
     useLayoutEffect(() => {
         const element = textarea.current;
@@ -304,7 +319,11 @@ export function HappyAgentDocumentSurfacePage(props: HappyAgentDocumentSurfacePa
             data-testid={props["data-testid"]}
             style={props.style}
         >
-            <HappyAgentSurfaceHeader actions={actions} surface={props.surface} />
+            <HappyAgentSurfaceHeader
+                actions={actions}
+                {...(props.chat ? { chat: props.chat } : {})}
+                surface={props.surface}
+            />
             {snapshot.conflict ? (
                 <div
                     className="happy-agent-document-surface__conflict"

@@ -4639,6 +4639,7 @@ export function happyAgentWorkspaceStoreCreate(
      */
     const attachmentsPlace = async (
         groupId: HappyAgentGroupId,
+        sessionId: HappyAgentSessionId,
         text: string,
         attachments: readonly ComposerAttachment[],
     ): Promise<string> => {
@@ -4651,7 +4652,7 @@ export function happyAgentWorkspaceStoreCreate(
             // prepared takes the sentence but has nowhere to put the file. The
             // refusal is raised here rather than swallowed so the composer keeps
             // the draft and its attachments for another attempt.
-            const refusal = groupWorkRefusalFind(groupId);
+            const refusal = groupWorkRefusalFind(groupId, sessionId);
             if (refusal) throw new Error(refusal);
             paths.push(await attachmentReferenceOf(groupId, attachment));
         }
@@ -4774,6 +4775,8 @@ export function happyAgentWorkspaceStoreCreate(
                     if (worktree.conversations.some((summary) => summary.id === conversationId))
                         return worktree.id;
             }
+        // A Surface chat's workspace answers here too, and refuses every
+        // conversation but its own agent's when asked whether it may be sent to.
         return addressedGroupId;
     };
 
@@ -4881,11 +4884,12 @@ export function happyAgentWorkspaceStoreCreate(
                                 const group = conversationGroupId(conversationId);
                                 if (!group)
                                     throw new Error("That conversation is no longer in a project.");
-                                const refusal = groupConversationRefusalFind(group);
+                                const refusal = groupConversationRefusalFind(group, conversationId);
                                 if (refusal) throw new Error(refusal);
                                 const images = await happyAgentImageInputsOf(event.attachments);
                                 const text = await attachmentsPlace(
                                     group,
+                                    conversationId,
                                     event.text,
                                     event.attachments,
                                 );
@@ -5110,10 +5114,13 @@ export function happyAgentWorkspaceStoreCreate(
        removed is deliberately left out of the rows, and if permission were read
        from them its absence would look exactly like permission.
     */
-    const groupWorkRefusalFind = (groupId: HappyAgentGroupId | undefined): string | undefined =>
+    const groupWorkRefusalFind = (
+        groupId: HappyAgentGroupId | undefined,
+        sessionId?: HappyAgentSessionId,
+    ): string | undefined =>
         groupId === undefined
             ? HAPPY_AGENT_GROUP_UNLISTED_REFUSAL
-            : list.groupWriteRefusal(groupId);
+            : list.groupWriteRefusal(groupId, sessionId);
 
     /**
      * The same question for a conversation rather than for the directory: why a
@@ -5129,9 +5136,10 @@ export function happyAgentWorkspaceStoreCreate(
      */
     const groupConversationRefusalFind = (
         groupId: HappyAgentGroupId | undefined,
+        sessionId?: HappyAgentSessionId,
     ): string | undefined => {
         if (groupId === undefined) return HAPPY_AGENT_GROUP_UNLISTED_REFUSAL;
-        return list.groupConversationRefusal(groupId);
+        return list.groupConversationRefusal(groupId, sessionId);
     };
 
     /**
@@ -5142,16 +5150,20 @@ export function happyAgentWorkspaceStoreCreate(
      */
     /** The same, for an operation that speaks to one session rather than its checkout. */
     const sessionConversationRefusal = (sessionId: HappyAgentSessionId): string | undefined =>
-        groupConversationRefusalFind(conversationGroupId(sessionId));
+        groupConversationRefusalFind(conversationGroupId(sessionId), sessionId);
 
     /** The group an operation on the open conversation would act in. */
     const openGroupWorkRefusal = (): string | undefined =>
-        groupWorkRefusalFind((addressedGroupId ?? openGroupId) as HappyAgentGroupId | undefined);
+        groupWorkRefusalFind(
+            (addressedGroupId ?? openGroupId) as HappyAgentGroupId | undefined,
+            openId,
+        );
 
     /** The same, for an operation that speaks to the open conversation. */
     const openGroupConversationRefusal = (): string | undefined =>
         groupConversationRefusalFind(
             (addressedGroupId ?? openGroupId) as HappyAgentGroupId | undefined,
+            openId,
         );
 
     /**
@@ -5293,7 +5305,12 @@ export function happyAgentWorkspaceStoreCreate(
                 const model = activityModel(create);
                 activityRecord({ kind: "conversationCreated", source: "workspace", model });
                 output({ type: "conversationOpenRequested", location });
-                const placed = await attachmentsPlace(location.groupId, text, attachments);
+                const placed = await attachmentsPlace(
+                    location.groupId,
+                    location.sessionId,
+                    text,
+                    attachments,
+                );
                 const acquired = await client.chat(location.sessionId);
                 try {
                     await acquired.store.messageSend(placed, images);
@@ -5551,6 +5568,7 @@ export function happyAgentWorkspaceStoreCreate(
             const images = await happyAgentImageInputsOf(message.attachments);
             const text = await attachmentsPlace(
                 location.groupId,
+                location.sessionId,
                 message.text,
                 message.attachments,
             );

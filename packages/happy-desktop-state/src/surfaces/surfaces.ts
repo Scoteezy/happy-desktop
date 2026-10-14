@@ -44,6 +44,8 @@ export interface HappyAgentSurfacesDeps {
         HappyAgentTodoListDeps["client"] &
         HappyAgentSurfaceDocumentDeps["client"];
     readonly sync: HappyAgentSync;
+    /** Told of the workspace each Surface chat is held in, once the daemon has said. */
+    readonly chatFound?: HappyAgentSurfaceCatalogDeps["chatFound"];
 }
 
 export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAgentSurfaces {
@@ -69,6 +71,7 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
                 happyAgentSurfaceCatalogStoreCreate({
                     client: deps.client,
                     sync: deps.sync,
+                    ...(deps.chatFound ? { chatFound: deps.chatFound } : {}),
                     surfaceCreating(surfaceId, created) {
                         creating.set(surfaceId, created);
                         const done = (): void => {

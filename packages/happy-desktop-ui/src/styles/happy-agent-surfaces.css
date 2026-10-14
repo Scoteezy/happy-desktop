@@ -121,6 +121,12 @@
     gap: 8px;
 }
 
+/* Pressed while the chat is open beside the Surface, as a hovered ghost button looks. */
+.happy-agent-surface-header__chat[aria-pressed="true"] {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
 @container (max-width: 479px) {
     .happy-agent-surface-header__dot,
     .happy-agent-surface-header__creator {
@@ -585,4 +591,63 @@
 
 .happy-agent-surface-create-dialog__picture-hint[data-invalid] {
     color: var(--text-destructive);
+}
+
+/* ---- Shared chat panel ---------------------------------------------------
+   The column beside a Surface. Its header band is a PanelHeader, level with
+   the Surface's own; the conversation under it fills what is left. */
+
+.happy-agent-surface-chat {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-agent-surface-chat__lead {
+    display: flex;
+    flex: 1 1 0%;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-agent-surface-chat__title {
+    flex: none;
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+/* Secondary to the title, so it gives up its width first. */
+.happy-agent-surface-chat__scope {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-surface-chat__body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    min-height: 0;
+}
+
+.happy-agent-surface-chat[data-phase="open"] .happy-agent-surface-chat__body {
+    justify-content: flex-start;
 }

@@ -32,6 +32,8 @@ import type {
     HappyAgentSessionId,
     HappyAgentSessionLocation,
     HappyAgentSettingsStore,
+    HappyAgentSurfaceId,
+    HappyAgentSurfaces,
     TitleShimmerStore,
     HappyAgentWindowStore,
     HappyAgentWorkspaceStore,
@@ -243,6 +245,16 @@ function happyAgentWorkspace(
         .happyAgents.find((happyAgent) => happyAgent.id === happyAgentId)?.session?.workspace;
 }
 
+/** One machine's Surfaces, once it has stores to answer through. */
+function happyAgentSurfaces(
+    context: HappyAgentRouterContext,
+    happyAgentId: string,
+): HappyAgentSurfaces | undefined {
+    return context.happyAgents
+        .get()
+        .happyAgents.find((happyAgent) => happyAgent.id === happyAgentId)?.session?.surfaces;
+}
+
 const indexRoute = createRoute({
     getParentRoute: () => rootRoute,
     path: "/",
@@ -427,6 +439,47 @@ const surfaceRoute = createRoute({
 });
 
 /**
+ * A Surface with its shared chat open beside it. The chat is an ordinary
+ * conversation, so the address names it, as a chat's own address does — but
+ * only the Surface says which conversation that is. Arriving asks the Surface
+ * for its chat, which is also what makes its workspace, listed nowhere, known
+ * on a window that starts here; the conversation the Surface answers with is
+ * the one opened, and an address naming any other is replaced by it.
+ *
+ * It renders nothing of its own: the Surface's window stays mounted while the
+ * chat opens and closes beside it, so the page keeps its scroll, caret, and
+ * edit, and the sidebar its own.
+ */
+const surfaceChatRoute = createRoute({
+    getParentRoute: () => surfaceRoute,
+    loader: async ({ abortController, context, params }) => {
+        const workspace = happyAgentWorkspace(context, params.happyAgentId);
+        const surfaces = happyAgentSurfaces(context, params.happyAgentId);
+        if (!workspace || !surfaces) return;
+        // A chat that cannot be opened says why in its panel; nothing opens.
+        const location = await surfaces
+            .catalog()
+            .chatOpen(params.surfaceId as HappyAgentSurfaceId)
+            .catch(() => undefined);
+        // A reader who has gone elsewhere meanwhile stays there.
+        if (location === undefined || abortController.signal.aborted) return;
+        if (location.sessionId !== params.chatAgentId || location.groupId !== params.chatGroupId)
+            throw redirect({
+                params: {
+                    chatAgentId: location.sessionId,
+                    chatGroupId: location.groupId,
+                    happyAgentId: params.happyAgentId,
+                    surfaceId: params.surfaceId,
+                },
+                replace: true,
+                to: "/surfaces/$happyAgentId/$surfaceId/chat/$chatGroupId/$chatAgentId",
+            });
+        workspace.conversationOpen(location.sessionId, location.groupId);
+    },
+    path: "chat/$chatGroupId/$chatAgentId",
+});
+
+/**
  * The component workbench, addressed without a Happy Agent because it renders component
  * pages rather than anything a machine holds. The route is registered only in a
  * development build, which is also the only build whose sidebar offers it.
@@ -486,7 +539,7 @@ const routeTree = rootRoute.addChildren([
     inboxRoute,
     artifactsRoute,
     artifactRoute,
-    surfaceRoute,
+    surfaceRoute.addChildren([surfaceChatRoute]),
     botCreateRoute,
     taskCreateRoute,
     ...(import.meta.env.DEV ? [blueprintRoute] : []),
@@ -601,12 +654,47 @@ function HappyAgentWorkspaceLayout(
             {...(props.surface && params.surfaceId !== undefined
                 ? { surfaceId: params.surfaceId }
                 : {})}
+            {...(props.surface &&
+            params.chatGroupId !== undefined &&
+            params.chatAgentId !== undefined
+                ? { surfaceChat: { groupId: params.chatGroupId, chatId: params.chatAgentId } }
+                : {})}
             onSurfaceOpen={(happyAgentId, surfaceId) =>
                 void navigate({
                     params: { happyAgentId, surfaceId },
                     to: "/surfaces/$happyAgentId/$surfaceId",
                 })
             }
+            onSurfaceChatShow={(happyAgentId, surfaceId, chat) => {
+                // The chat is found in the background; a reader who has moved
+                // on by the time it answers stays where they went.
+                const shown = happyAgentRoutePathParse(router.history.location.pathname);
+                if (
+                    shown?.kind !== "surface" ||
+                    shown.happyAgentId !== happyAgentId ||
+                    shown.surfaceId !== surfaceId
+                )
+                    return;
+                // Showing or hiding the chat is not a step to go back through.
+                void navigate(
+                    chat === undefined
+                        ? {
+                              params: { happyAgentId, surfaceId },
+                              replace: true,
+                              to: "/surfaces/$happyAgentId/$surfaceId",
+                          }
+                        : {
+                              params: {
+                                  chatAgentId: chat.chatId,
+                                  chatGroupId: chat.groupId,
+                                  happyAgentId,
+                                  surfaceId,
+                              },
+                              replace: true,
+                              to: "/surfaces/$happyAgentId/$surfaceId/chat/$chatGroupId/$chatAgentId",
+                          },
+                );
+            }}
             blueprintOpen={props.blueprint}
             // Offered only where the route exists, which is what puts the
             // workbench row in a development sidebar and nowhere else.

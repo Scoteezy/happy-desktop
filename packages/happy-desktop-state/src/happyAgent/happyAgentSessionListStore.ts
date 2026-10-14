@@ -13,6 +13,7 @@ import {
 } from "./happyAgentProjectGroupProject.js";
 import {
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
+    HAPPY_AGENT_SURFACE_CHAT_OTHER_REFUSAL,
     HAPPY_AGENT_GROUP_UNREAD_REFUSAL,
     happyAgentProjectWriteRefusal,
     happyAgentWorktreeConversationRefusal,
@@ -29,6 +30,7 @@ import {
     happyAgentProjectSettingsRequest,
 } from "./happyAgentProject.js";
 import { happyAgentWorkspaceGeneratedName } from "./happyAgentWorkspaceNames.js";
+import type { HappyAgentSurfaceChatGroups } from "../surfaces/surfaceChatGroups.js";
 import type {
     HappyAgentBot,
     HappyAgentAvatarImage,
@@ -444,8 +446,14 @@ export interface HappyAgentSessionListStore {
      * `undefined` when it can. Answered from the raw catalog record rather than
      * from the projected rows: a group on its way out is deliberately absent
      * from the rows, and an absence there must never read as permission.
+     *
+     * `sessionId` is the conversation the write is for, when it is for one. A
+     * Surface chat's workspace is written to only for its own agent.
      */
-    groupWriteRefusal(groupId: HappyAgentGroupId): string | undefined;
+    groupWriteRefusal(
+        groupId: HappyAgentGroupId,
+        sessionId?: HappyAgentSessionId,
+    ): string | undefined;
 
     /**
      * Why a conversation cannot be started in a group or sent to, or `undefined`
@@ -453,8 +461,15 @@ export interface HappyAgentSessionListStore {
      * is still being prepared may accept the user's intent, but Happy holds that
      * intent locally until the workspace is ready. Answered from the raw catalog
      * record for the same reason as its sibling.
+     *
+     * `sessionId` is the conversation being sent to; without one the question
+     * is whether a new conversation may start there. A Surface chat's
+     * workspace holds one conversation, its agent's, and takes no other.
      */
-    groupConversationRefusal(groupId: HappyAgentGroupId): string | undefined;
+    groupConversationRefusal(
+        groupId: HappyAgentGroupId,
+        sessionId?: HappyAgentSessionId,
+    ): string | undefined;
 
     /**
      * Whether this session belongs to another session rather than to a list.
@@ -570,6 +585,12 @@ export interface HappyAgentSessionListDeps {
         listener: (rejection: MutationRejectedDelta) => void,
     ) => () => void;
     readonly output?: (event: HappyAgentSessionListOutput) => void;
+    /**
+     * The workspaces Surface chats are held in, each with its one agent. No
+     * listing names them, so a Surface chat's workspace is accepted from here,
+     * and for that agent alone.
+     */
+    readonly surfaceChatGroups?: HappyAgentSurfaceChatGroups;
 }
 
 export interface HappyAgentSessionCatalogSnapshot {
@@ -711,6 +732,7 @@ export function happyAgentSessionListStoreCreate(
     let reconcileAgain = false;
     let unsubscribeGlobal: (() => void) | undefined;
     let unsubscribeMutationRejections: (() => void) | undefined;
+    let unsubscribeSurfaceChatGroups: (() => void) | undefined;
     // Mutations issued through `connectActions` and not yet refused, newest last.
     // The bound keeps a long-lived list from remembering every mutation it ever
     // made; a refusal that arrives after this many later ones is not worth the
@@ -1757,6 +1779,8 @@ export function happyAgentSessionListStoreCreate(
             },
         );
         unsubscribeMutationRejections = deps.connectMutationSubscribe(mutationRejected);
+        // A Surface chat's workspace learned is somewhere a reader may now write.
+        unsubscribeSurfaceChatGroups = deps.surfaceChatGroups?.subscribe(() => notify());
         void reconcile();
     };
 
@@ -1773,6 +1797,8 @@ export function happyAgentSessionListStoreCreate(
         unsubscribeGlobal = undefined;
         unsubscribeMutationRejections?.();
         unsubscribeMutationRejections = undefined;
+        unsubscribeSurfaceChatGroups?.();
+        unsubscribeSurfaceChatGroups = undefined;
     };
 
     const notify = (): void => {
@@ -1797,6 +1823,30 @@ export function happyAgentSessionListStoreCreate(
                 (task) => task.workspaceId === groupId,
             )
         );
+    };
+
+    /**
+     * Whether a session's place is one this list would show a reader. A
+     * Surface's chat is addressed through the workspace made for it, which
+     * holds that chat's agent and shows nothing else.
+     */
+    const locationListed = (location: HappyAgentSessionLocation): boolean => {
+        const surfaceChatAgent = deps.surfaceChatGroups?.agentOf(location.groupId);
+        if (surfaceChatAgent !== undefined) return surfaceChatAgent === location.sessionId;
+        return groupListed(location.groupId);
+    };
+
+    /**
+     * Why a Surface chat's workspace refuses something, or `undefined` when it
+     * is for that chat's own agent; `null` when `groupId` is no Surface chat's.
+     */
+    const surfaceChatRefusal = (
+        groupId: HappyAgentGroupId,
+        sessionId: HappyAgentSessionId | undefined,
+    ): string | undefined | null => {
+        const agent = deps.surfaceChatGroups?.agentOf(groupId);
+        if (agent === undefined) return null;
+        return agent === sessionId ? undefined : HAPPY_AGENT_SURFACE_CHAT_OTHER_REFUSAL;
     };
 
     /**
@@ -1962,7 +2012,7 @@ export function happyAgentSessionListStoreCreate(
             };
         },
         sessionsRefresh: () => reconcile(),
-        groupWriteRefusal(groupId) {
+        groupWriteRefusal(groupId, sessionId) {
             const { catalog, catalogListed } = internal.getState();
             const worktree = catalog.worktrees.find((entry) => entry.id === groupId);
             if (worktree !== undefined) return happyAgentWorktreeWriteRefusal(worktree);
@@ -1976,11 +2026,15 @@ export function happyAgentSessionListStoreCreate(
                 )
             )
                 return undefined;
+            // A Surface chat's workspace is made with the chat, like a bot's,
+            // and is there for that chat alone.
+            const surfaceChat = surfaceChatRefusal(groupId, sessionId);
+            if (surfaceChat !== null) return surfaceChat;
             return catalogListed
                 ? HAPPY_AGENT_GROUP_UNLISTED_REFUSAL
                 : HAPPY_AGENT_GROUP_UNREAD_REFUSAL;
         },
-        groupConversationRefusal(groupId) {
+        groupConversationRefusal(groupId, sessionId) {
             const { catalog, catalogListed } = internal.getState();
             const worktree = catalog.worktrees.find((entry) => entry.id === groupId);
             if (worktree !== undefined) return happyAgentWorktreeConversationRefusal(worktree);
@@ -2001,6 +2055,10 @@ export function happyAgentSessionListStoreCreate(
                 )
             )
                 return undefined;
+            // A Surface chat's workspace is made with the chat, like a bot's,
+            // and is there for that chat alone.
+            const surfaceChat = surfaceChatRefusal(groupId, sessionId);
+            if (surfaceChat !== null) return surfaceChat;
             return catalogListed
                 ? HAPPY_AGENT_GROUP_UNLISTED_REFUSAL
                 : HAPPY_AGENT_GROUP_UNREAD_REFUSAL;
@@ -2027,7 +2085,7 @@ export function happyAgentSessionListStoreCreate(
             // those apart from a session that really has left.
             if (listed) {
                 const location = sessionLocationOf(listed);
-                return groupListed(location.groupId) ? location : undefined;
+                return locationListed(location) ? location : undefined;
             }
             const response = await deps.client.getAgent(sessionId).catch(() => undefined);
             if (!response) return undefined;
@@ -2035,7 +2093,7 @@ export function happyAgentSessionListStoreCreate(
                 sessionId,
                 groupId: response.agent.workspaceId as HappyAgentGroupId,
             };
-            return groupListed(location.groupId) ? location : undefined;
+            return locationListed(location) ? location : undefined;
         },
         sessionRead(sessionId, knownUnread) {
             const { catalog, sessions } = internal.getState();

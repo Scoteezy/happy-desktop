@@ -76,6 +76,7 @@ import type {
     HappyAgentAvailabilitySnapshot,
     HappyAgentProviderUsageStore,
     HappyAgentProvidersStore,
+    HappyAgentSessionLocation,
     HappyAgentBot,
     HappyAgentBotCreating,
     HappyAgentBotSubtask,
@@ -121,6 +122,7 @@ import {
     happyAgentArtifactChatContext,
     happyAgentSurfaceCatalogStoreNoop,
     happyAgentSurfaceReferenceFind,
+    happyAgentSurfaceChatSupported,
     type HappyAgentSurfaceReference,
     happyAgentArtifactNames,
     happyAgentArtifactSourceLabel,
@@ -223,6 +225,8 @@ import {
     HappyAgentSurfaceUnsupportedPage,
     HappyAgentSurfaceReferencePage,
     type HappyAgentSurfaceReferenceView,
+    HappyAgentSurfaceChatPanel,
+    type HappyAgentSurfaceChatToggle,
     HappyAgentTodoSurfacePage,
     HappyAgentDocumentSurfacePage,
     surfaceTypeIcon,
@@ -735,6 +739,18 @@ export interface AppHappyAgentViewProps {
     surfaceId?: string;
     /** Addresses one Surface on one Happy Agent. */
     onSurfaceOpen?(happyAgentId: string, surfaceId: string): void;
+    /** The open Surface's shared chat, when the URL opens it beside the Surface. */
+    surfaceChat?: { readonly groupId: string; readonly chatId: string };
+    /**
+     * Shows the Surface's shared chat beside it, at the conversation it is, or
+     * hides it. Ignored once the reader has left that Surface, since the chat
+     * is found in the background.
+     */
+    onSurfaceChatShow?(
+        happyAgentId: string,
+        surfaceId: string,
+        chat: { readonly groupId: string; readonly chatId: string } | undefined,
+    ): void;
     /** Whether the URL addresses the enrolled account's friends surface. */
     /** Addresses that friends surface. */
     /** Whether the URL addresses the component workbench, in a development build. */
@@ -3896,10 +3912,45 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         // header carries Leave or Join, so the header is the window's drag
         // band rather than an overlay on top of it.
         if (props.surfaceId !== undefined && active?.session?.surfaces) {
-            const workspace = active.session.workspace;
+            const session = active.session;
+            const workspace = session.workspace;
             return (
                 <HappyAgentSurfaceContent
                     key={props.surfaceId}
+                    {...(props.surfaceChat ? { chat: props.surfaceChat } : {})}
+                    chatConversation={(chat, surfaceName) => (
+                        <HappyAgentSurfaceChat
+                            {...(artifactsAvailable && session.artifacts
+                                ? { artifacts: session.artifacts }
+                                : {})}
+                            chatId={chat.chatId}
+                            clock={session.clock}
+                            groupId={chat.groupId}
+                            happyAgentOnline={activeHappyAgentOnline}
+                            onChatSelect={(groupId, chatId) =>
+                                props.onChatSelect(active.id, groupId, chatId)
+                            }
+                            onExternalLinkOpen={props.onExternalLinkOpen ?? openExternalLink}
+                            {...(session.providerUsage
+                                ? { providerUsage: session.providerUsage }
+                                : {})}
+                            surfaceName={surfaceName}
+                            {...(activeAvailability?.refusal === undefined
+                                ? {}
+                                : { unavailable: activeAvailability.refusal })}
+                            viewerId={viewerId}
+                            workspace={workspace}
+                        />
+                    )}
+                    onChatShow={(location) =>
+                        props.onSurfaceChatShow?.(
+                            active.id,
+                            props.surfaceId!,
+                            location === undefined
+                                ? undefined
+                                : { groupId: location.groupId, chatId: location.sessionId },
+                        )
+                    }
                     onTargetOpen={(surface) => {
                         if (surfaceTargetOpen(active, surface)) return;
                         // A task the reader is not in is joined, and then opened.
@@ -4982,6 +5033,9 @@ function HappyAgentArtifactViewerSurface(props: {
     );
 }
 
+/** How wide a Surface's shared chat opens: a conversation needs more than a file tree does. */
+const SURFACE_CHAT_PANEL_WIDTH = 420;
+
 /**
  * One Surface in the content area. Everything but its content is the same for
  * every type — its header names it and shows who is in it — and the content
@@ -4994,6 +5048,15 @@ function HappyAgentSurfaceContent(props: {
     places: SurfacePlaces;
     /** Opens what an artifact, bot, or task Surface points at, joining a task first. */
     onTargetOpen: (surface: HappyAgentSurface) => void;
+    /** The shared chat the address opens beside the Surface, when it does. */
+    chat?: { readonly groupId: string; readonly chatId: string };
+    /** Shows the shared chat, at the conversation it is, or hides it. */
+    onChatShow: (location: HappyAgentSessionLocation | undefined) => void;
+    /** The conversation that is the open chat, as the window composes it. */
+    chatConversation: (
+        chat: { readonly groupId: string; readonly chatId: string },
+        surfaceName: string,
+    ) => ReactNode;
 }) {
     const catalogStore = props.surfaces.catalog();
     const catalog = useSyncExternalStore(
@@ -5008,26 +5071,189 @@ function HappyAgentSurfaceContent(props: {
     // A separator has no page; a route that names one shows nothing.
     if (surface === undefined || surface.type.kind === "separator") return <WindowDragRegion />;
     const view = surfaceViewOf(catalog, surface);
-    if (surface.type.kind === "todo")
-        return <HappyAgentTodoSurface store={props.surfaces.todoList(surface.id)} surface={view} />;
-    if (surface.type.kind === "document")
-        return (
-            <HappyAgentDocumentSurface store={props.surfaces.document(surface.id)} surface={view} />
-        );
-    if (
-        surface.type.kind === "artifact" ||
-        surface.type.kind === "bot" ||
-        surface.type.kind === "task"
-    )
-        return (
-            <HappyAgentSurfaceReferencePage
-                onOpen={() => props.onTargetOpen(surface)}
-                reference={surfaceReferenceView(surface, props.places)}
-                surface={view}
-            />
-        );
-    return <HappyAgentSurfaceUnsupportedPage surface={view} />;
+    const opening = catalog.chatsOpening.get(surface.id);
+    // Shown from the moment it is asked for, so the reader sees it being made.
+    const chatShown = props.chat !== undefined || opening !== undefined;
+    const chatClose = () => {
+        catalogStore.chatOpenCancel(surface.id);
+        if (props.chat !== undefined) props.onChatShow(undefined);
+    };
+    // A reference whose target the reader cannot see has no chat they may
+    // read either: the daemon guards it by the target's own access.
+    const chat: HappyAgentSurfaceChatToggle | undefined =
+        happyAgentSurfaceChatSupported(surface.type) && surface.target?.state !== "unavailable"
+            ? {
+                  open: chatShown,
+                  onToggle: () => {
+                      if (chatShown) {
+                          chatClose();
+                          return;
+                      }
+                      catalogStore.chatOpen(surface.id).then(props.onChatShow, () => undefined);
+                  },
+              }
+            : undefined;
+    // The address only asks for the chat; where it is held is the Surface's
+    // to say. An address naming any other conversation shows none, and the
+    // window replaces it with the Surface's own.
+    const found = catalog.chats.get(surface.id);
+    const chatFound =
+        props.chat !== undefined &&
+        found !== undefined &&
+        found.sessionId === surface.chatAgentId &&
+        found.sessionId === props.chat.chatId &&
+        found.groupId === props.chat.groupId
+            ? found
+            : undefined;
+    // Once the chat's composer is there, stray typing lands in it; the
+    // Surface's own field gives it up, and keeps it while the chat is still
+    // being opened or could not be, and takes it back when the chat closes.
+    const conversationShown = chatFound !== undefined && opening?.phase !== "failed";
+    const page = () => {
+        if (surface.type.kind === "todo")
+            return (
+                <HappyAgentTodoSurface
+                    {...(chat ? { chat } : {})}
+                    focusOnType={!conversationShown}
+                    store={props.surfaces.todoList(surface.id)}
+                    surface={view}
+                />
+            );
+        if (surface.type.kind === "document")
+            return (
+                <HappyAgentDocumentSurface
+                    {...(chat ? { chat } : {})}
+                    focusOnType={!conversationShown}
+                    store={props.surfaces.document(surface.id)}
+                    surface={view}
+                />
+            );
+        if (
+            surface.type.kind === "artifact" ||
+            surface.type.kind === "bot" ||
+            surface.type.kind === "task"
+        )
+            return (
+                <HappyAgentSurfaceReferencePage
+                    {...(chat ? { chat } : {})}
+                    onOpen={() => props.onTargetOpen(surface)}
+                    reference={surfaceReferenceView(surface, props.places)}
+                    surface={view}
+                />
+            );
+        return <HappyAgentSurfaceUnsupportedPage surface={view} />;
+    };
+    // The shell is there whether or not the chat is, so opening it does not
+    // remount the Surface's page and lose its scroll, caret, or edit.
+    return (
+        <AppShell
+            embedded
+            panel={
+                chatShown && chat ? (
+                    <HappyAgentSurfaceChatPanel
+                        onClose={chatClose}
+                        state={
+                            opening?.phase === "failed"
+                                ? { phase: "failed", message: opening.error.message }
+                                : conversationShown
+                                  ? { phase: "open" }
+                                  : { phase: "opening" }
+                        }
+                        surfaceName={view.name}
+                    >
+                        {conversationShown && chatFound !== undefined
+                            ? props.chatConversation(
+                                  { groupId: chatFound.groupId, chatId: chatFound.sessionId },
+                                  view.name,
+                              )
+                            : null}
+                    </HappyAgentSurfaceChatPanel>
+                ) : undefined
+            }
+            panelDefaultWidth={SURFACE_CHAT_PANEL_WIDTH}
+            panelResizable
+        >
+            {page()}
+        </AppShell>
+    );
 }
+
+/**
+ * A Surface's shared chat, in the panel beside it. It is the ordinary
+ * conversation the address opened — transcript, composer, model and access
+ * controls — not a second chat of its own. Its composer claims stray typing:
+ * opening the chat is the reader saying that is where they are writing now.
+ *
+ * Its folder has no file panel here, so a file the transcript names is not
+ * opened from it, and a web link opens in the machine's browser.
+ */
+function HappyAgentSurfaceChat(props: {
+    workspace: HappyAgentWorkspaceStore;
+    groupId: string;
+    chatId: string;
+    surfaceName: string;
+    artifacts?: HappyAgentArtifacts;
+    clock: HappyAgentClockStore;
+    providerUsage?: HappyAgentProviderUsageStore;
+    viewerId: string;
+    happyAgentOnline: () => boolean;
+    /** Why this Happy Agent cannot currently accept network actions. */
+    unavailable?: string;
+    onChatSelect: (groupId: string | undefined, chatId?: string) => void;
+    onExternalLinkOpen: (url: string) => void;
+}) {
+    const workspace = useSyncExternalStore(
+        reactFrameSubscribe(props.workspace),
+        props.workspace.get,
+        props.workspace.get,
+    );
+    const now = useSyncExternalStore(props.clock.subscribe, props.clock.get, props.clock.get);
+    const modelUsageWatch = useComposerModelUsageWatch(props.providerUsage);
+    // The address applies the conversation before this renders; one still
+    // naming another is the moment between, and reads as still loading.
+    const conversation =
+        workspace.conversation.type === "ready" &&
+        workspace.conversation.value.conversationId !== props.chatId
+            ? SURFACE_CHAT_LOADING
+            : workspace.conversation;
+    const writeRefusal = props.unavailable ?? workspace.groupAccess.conversationRefusal;
+    return (
+        <HappyAgentConversationBody
+            activitySelected={false}
+            {...(props.artifacts ? { artifacts: props.artifacts } : {})}
+            referenceEntities={messageReferenceEntities(workspace.list)}
+            onReferenceGroupOpen={(groupId, agentId) => props.onChatSelect(groupId, agentId)}
+            modelUsageWatch={modelUsageWatch}
+            conversation={conversation}
+            emptyContent={
+                <EmptyState
+                    description={`Everyone in ${props.surfaceName} reads and writes this chat. Its agent can work on ${props.surfaceName} for whoever asks.`}
+                    icon="chat"
+                    size="panel"
+                    title="One chat for everyone here"
+                />
+            }
+            focusOnType
+            groupId={props.groupId}
+            groupName={props.surfaceName}
+            now={now}
+            onChatSelect={(groupId, chatId) => props.onChatSelect(groupId, chatId)}
+            onFileOpen={() => undefined}
+            onFileLinkOpen={() => undefined}
+            onLinkOpen={(url) => props.onExternalLinkOpen(url)}
+            linkOpenDefault="browser"
+            canAbort
+            readOnly={false}
+            happyAgentOnline={props.happyAgentOnline}
+            {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
+            {...(writeRefusal === undefined ? {} : { writeRefusal })}
+            viewerId={props.viewerId}
+            workspace={props.workspace}
+        />
+    );
+}
+
+const SURFACE_CHAT_LOADING = { type: "loading" } as const;
 
 /**
  * Hands the task to `open` once the reader's join of it has landed, and
@@ -5072,12 +5298,16 @@ function surfaceReferenceView(
 function HappyAgentDocumentSurface(props: {
     store: HappyAgentSurfaceDocumentStore;
     surface: HappyAgentSurfaceView;
+    chat?: HappyAgentSurfaceChatToggle;
+    focusOnType: boolean;
 }) {
     const store = props.store;
     const document = useSyncExternalStore(store.subscribe, store.get, store.get);
     return (
         <HappyAgentDocumentSurfacePage
+            {...(props.chat ? { chat: props.chat } : {})}
             document={document}
+            focusOnType={props.focusOnType}
             onConflictDismiss={store.conflictDismiss}
             onEditEnd={store.editEnd}
             onEditStart={store.editStart}
@@ -5091,12 +5321,15 @@ function HappyAgentDocumentSurface(props: {
 function HappyAgentTodoSurface(props: {
     store: HappyAgentTodoListStore;
     surface: HappyAgentSurfaceView;
+    chat?: HappyAgentSurfaceChatToggle;
+    focusOnType: boolean;
 }) {
     const store = props.store;
     const list = useSyncExternalStore(store.subscribe, store.get, store.get);
     return (
         <HappyAgentTodoSurfacePage
-            focusOnType
+            {...(props.chat ? { chat: props.chat } : {})}
+            focusOnType={props.focusOnType}
             list={list}
             onCompletedShownChange={store.completedShownUpdate}
             onDraftChange={store.draftUpdate}

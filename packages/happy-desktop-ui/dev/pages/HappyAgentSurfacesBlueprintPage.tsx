@@ -1,6 +1,9 @@
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import {
     happyAgentTodoHeading,
+    type ComposerSnapshot,
+    type ConversationEntry,
+    type ConversationMessageEntry,
     type HappyAgentSurfaceActiveTodo,
     type HappyAgentSurfaceCompletedTodo,
     type HappyAgentSurfaceDocumentSnapshot,
@@ -10,12 +13,21 @@ import {
     type HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
 import { AppShell } from "../../src/AppShell";
+import { ComposerModelControl } from "../../src/ComposerModelControl";
+import { ComposerFooterBar } from "../../src/ConversationDock";
+import { ConversationView } from "../../src/ConversationView";
+import { HappyAgentSessionControls } from "../../src/HappyAgentSessionControls";
+import { happyAgentComposerModelControlProps } from "../../src/happyAgentComposerModelControl";
+import { HappyAgentSurfaceChatPanel } from "../../src/pages/surfaces/HappyAgentSurfaceChatPanel";
 import { EmptyState } from "../../src/EmptyState";
 import type { MenuItem } from "../../src/Menu";
 import { Sidebar, type SidebarItem, type SidebarReorder } from "../../src/Sidebar";
 import { HappyAgentDocumentSurfacePage } from "../../src/pages/surfaces/HappyAgentDocumentSurfacePage";
 import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
-import { HappyAgentSurfaceHeader } from "../../src/pages/surfaces/HappyAgentSurfaceHeader";
+import {
+    HappyAgentSurfaceHeader,
+    type HappyAgentSurfaceChatToggle,
+} from "../../src/pages/surfaces/HappyAgentSurfaceHeader";
 import {
     HappyAgentSurfaceReferencePage,
     type HappyAgentSurfaceReferenceView,
@@ -28,6 +40,7 @@ import {
 } from "../../src/pages/surfaces/surfacePresentation";
 import type { HappyAgentSurfaceCreateKind } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import { ComponentPage, FullScreenSpecimen, Specimen } from "../kit";
+import { happyAgentMenus } from "./happyAgentChatFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "P-019";
@@ -147,11 +160,13 @@ const documentHandlers = {
 function LiveDocumentPage(props: {
     readonly surface?: HappyAgentSurfaceView;
     readonly initial?: HappyAgentSurfaceDocumentSnapshot;
+    readonly chat?: HappyAgentSurfaceChatToggle;
 }) {
     const [document, setDocument] = useState(props.initial ?? DOCUMENT);
     const typed = useRef(0);
     return (
         <HappyAgentDocumentSurfacePage
+            {...(props.chat ? { chat: props.chat, focusOnType: !props.chat.open } : {})}
             document={document}
             onConflictDismiss={() => setDocument({ ...document, conflict: undefined })}
             onEditEnd={() => setDocument({ ...document, editing: false, saving: false })}
@@ -263,6 +278,7 @@ const handlers = {
 function LiveTodoPage(props: {
     readonly initial?: HappyAgentTodoListSnapshot;
     readonly focusOnType?: boolean;
+    readonly chat?: HappyAgentSurfaceChatToggle;
     /** Told how many todos are open after each change, as the sidebar's count is. */
     readonly onActiveCount?: (count: number) => void;
 }) {
@@ -282,6 +298,7 @@ function LiveTodoPage(props: {
     return (
         <HappyAgentTodoSurfacePage
             {...handlers}
+            {...(props.chat ? { chat: props.chat } : {})}
             {...(props.focusOnType ? { focusOnType: true } : {})}
             list={list}
             onCompletedShownChange={(shown) => set({ completedShown: shown })}
@@ -344,6 +361,139 @@ function LiveTodoPage(props: {
                 set({ active: moved });
             }}
             surface={GROCERIES}
+        />
+    );
+}
+
+/** One message in the Surface's shared chat, from a member or from its agent. */
+function said(
+    id: string,
+    sender: "steve" | "ada" | "agent",
+    text: string,
+    minute: number,
+): ConversationMessageEntry {
+    const people = {
+        steve: { id: "u1", displayName: "Steve Korshakov", username: "steve", kind: "human" },
+        ada: { id: "u2", displayName: "Ada Park", username: "ada", kind: "human" },
+        agent: {
+            id: "happy-agent:agent",
+            displayName: "Happy",
+            username: "happy",
+            kind: "agent",
+            agentRole: "default",
+        },
+    } as const;
+    return {
+        kind: "message",
+        source: "server",
+        delivery: "sent",
+        message: {
+            id,
+            chatId: "surface-groceries-chat",
+            sequence: id,
+            changePts: id,
+            sender: people[sender],
+            text,
+            ...(sender === "agent" ? { generationStatus: "complete" as const } : {}),
+            attachments: [],
+            reactions: [],
+            createdAt: `2026-10-14T09:${String(minute).padStart(2, "0")}:00.000Z`,
+        },
+    };
+}
+
+/** Two members and the list's agent, in the one chat everyone in Groceries shares. */
+const CHAT: readonly ConversationEntry[] = [
+    said("c1", "ada", "Can you put the breakfast things in the order we walk the shop?", 2),
+    said(
+        "c2",
+        "agent",
+        "Done: **Oat milk** and **Coffee beans** are together now, then the **Sourdough loaf**. I left the lemons and coriander where they were, since they are for Thursday.",
+        3,
+    ),
+    said("c3", "steve", "We're out of eggs again, add them back please", 9),
+    said("c4", "agent", "Added **Eggs** under Breakfast and took it out of the completed ones.", 9),
+];
+
+function chatComposer(text: string, sending = false): ComposerSnapshot {
+    return {
+        agentUserIds: [],
+        attachments: [],
+        capabilities: { commands: [], mentions: false, shellMode: false },
+        focused: false,
+        mentionCandidates: [],
+        revision: 0,
+        scopeId: "surface-groceries-chat",
+        submission: sending ? { status: "pending", revision: 0 } : { status: "idle" },
+        text,
+    };
+}
+
+/**
+ * The conversation the app puts in the panel: the ordinary one, with the
+ * same composer controls. While the chat is open its composer is where stray
+ * typing lands.
+ */
+function MockChat(props: { readonly entries?: readonly ConversationEntry[] }) {
+    const [text, setText] = useState("");
+    // A send takes a moment, as it does against the daemon, so the composer
+    // is busy and then hands the caret back.
+    const [sending, setSending] = useState(false);
+    const send = () => {
+        setSending(true);
+        setTimeout(() => {
+            setText("");
+            setSending(false);
+        }, 1_200);
+    };
+    return (
+        <ConversationView
+            agentAuthor={{
+                id: "happy-agent:agent",
+                displayName: "Happy",
+                username: "happy",
+                kind: "agent",
+            }}
+            composer={chatComposer(text, sending)}
+            composerControls={
+                <ComposerModelControl
+                    {...happyAgentComposerModelControlProps(happyAgentMenus, {
+                        onEffortChange: noop,
+                        onModelChange: noop,
+                    })}
+                />
+            }
+            composerFocusKey="surface-groceries-chat"
+            composerFocusOnType
+            composerFooterControl={
+                <ComposerFooterBar
+                    leading={
+                        <HappyAgentSessionControls
+                            fields={["permission", "tier"]}
+                            menuPlacement="above"
+                            variant="ghost"
+                            menus={happyAgentMenus}
+                            onEffortChange={noop}
+                            onModelChange={noop}
+                            onPermissionModeChange={noop}
+                            onServiceTierChange={noop}
+                        />
+                    }
+                />
+            }
+            composerPlaceholder="Message Happy in “Groceries”…"
+            emptyContent={
+                <EmptyState
+                    description="Everyone in Groceries reads and writes this chat. Its agent can work on Groceries for whoever asks."
+                    icon="chat"
+                    size="panel"
+                    title="One chat for everyone here"
+                />
+            }
+            entries={props.entries ?? CHAT}
+            onComposerSend={send}
+            onComposerValueChange={setText}
+            viewerId="u1"
         />
     );
 }
@@ -593,8 +743,12 @@ function MockWindow(props: {
     readonly focusOnType?: boolean;
     readonly initialSearch?: string;
     readonly initialList?: HappyAgentTodoListSnapshot;
+    /** Opens the open Surface's shared chat beside it. */
+    readonly initialChat?: boolean;
 }) {
     const [surfaces, setSurfaces] = useState(SURFACES);
+    const [chatOpen, setChatOpen] = useState(props.initialChat ?? false);
+    const chat = { open: chatOpen, onToggle: () => setChatOpen(!chatOpen) };
     const [search, setSearch] = useState(props.initialSearch ?? "");
     const [selected, setSelected] = useState("groceries");
     const [creating, setCreating] = useState<HappyAgentSurfaceCreateKind>();
@@ -718,45 +872,68 @@ function MockWindow(props: {
                 sidebarCollapsible
                 windowControls
             >
-                {open?.view.type.kind === "todo" && open.id === "groceries" ? (
-                    <LiveTodoPage
-                        {...(props.focusOnType ? { focusOnType: true } : {})}
-                        {...(props.initialList ? { initial: props.initialList } : {})}
-                        onActiveCount={(count) =>
-                            setSurfaces(
-                                surfaces.map((surface) =>
-                                    surface.id === "groceries" ? { ...surface, count } : surface,
-                                ),
-                            )
-                        }
-                    />
-                ) : open?.view.type.kind === "document" ? (
-                    <LiveDocumentPage
-                        {...(open.id === "house"
-                            ? {}
-                            : { initial: { ...DOCUMENT, text: "", editing: true } })}
-                        key={open.id}
-                        surface={open.view}
-                    />
-                ) : open?.reference ? (
-                    <HappyAgentSurfaceReferencePage
-                        onOpen={noop}
-                        reference={open.reference.view}
-                        surface={open.view}
-                    />
-                ) : open ? (
-                    open.view.type.kind === "todo" ? (
-                        <HappyAgentTodoSurfacePage
-                            {...handlers}
-                            list={{ ...LIST, active: [], completed: [] }}
+                <AppShell
+                    embedded
+                    panel={
+                        chatOpen && open && open.view.type.kind !== "separator" ? (
+                            <HappyAgentSurfaceChatPanel
+                                onClose={() => setChatOpen(false)}
+                                state={{ phase: "open" }}
+                                surfaceName={open.view.name}
+                            >
+                                <MockChat {...(open.id === "groceries" ? {} : { entries: [] })} />
+                            </HappyAgentSurfaceChatPanel>
+                        ) : undefined
+                    }
+                    panelDefaultWidth={420}
+                    panelResizable
+                >
+                    {open?.view.type.kind === "todo" && open.id === "groceries" ? (
+                        <LiveTodoPage
+                            chat={chat}
+                            {...(props.focusOnType && !chatOpen ? { focusOnType: true } : {})}
+                            {...(props.initialList ? { initial: props.initialList } : {})}
+                            onActiveCount={(count) =>
+                                setSurfaces(
+                                    surfaces.map((surface) =>
+                                        surface.id === "groceries"
+                                            ? { ...surface, count }
+                                            : surface,
+                                    ),
+                                )
+                            }
+                        />
+                    ) : open?.view.type.kind === "document" ? (
+                        <LiveDocumentPage
+                            chat={chat}
+                            {...(open.id === "house"
+                                ? {}
+                                : { initial: { ...DOCUMENT, text: "", editing: true } })}
+                            key={open.id}
                             surface={open.view}
                         />
-                    ) : (
-                        <HappyAgentSurfaceUnsupportedPage surface={open.view} />
-                    )
-                ) : target ? (
-                    <MockTarget item={target} />
-                ) : null}
+                    ) : open?.reference ? (
+                        <HappyAgentSurfaceReferencePage
+                            {...(open.reference.view.phase === "unavailable" ? {} : { chat })}
+                            onOpen={noop}
+                            reference={open.reference.view}
+                            surface={open.view}
+                        />
+                    ) : open ? (
+                        open.view.type.kind === "todo" ? (
+                            <HappyAgentTodoSurfacePage
+                                {...handlers}
+                                chat={chat}
+                                list={{ ...LIST, active: [], completed: [] }}
+                                surface={open.view}
+                            />
+                        ) : (
+                            <HappyAgentSurfaceUnsupportedPage surface={open.view} />
+                        )
+                    ) : target ? (
+                        <MockTarget item={target} />
+                    ) : null}
+                </AppShell>
             </AppShell>
             <TrafficLights />
             {creating ? (
@@ -793,6 +970,7 @@ const HEADERS: readonly {
     readonly key: string;
     readonly width: number;
     readonly surface: HappyAgentSurfaceView;
+    readonly chat?: HappyAgentSurfaceChatToggle;
 }[] = [
     { key: "creator", width: 760, surface: GROCERIES },
     { key: "nobody", width: 760, surface: { ...GROCERIES, creator: undefined } },
@@ -806,6 +984,8 @@ const HEADERS: readonly {
         },
     },
     { key: "narrow", width: 440, surface: GROCERIES },
+    { key: "chat", width: 760, surface: GROCERIES, chat: { open: false, onToggle: noop } },
+    { key: "chat-open", width: 560, surface: GROCERIES, chat: { open: true, onToggle: noop } },
 ];
 
 /** Gives each fixed overlay a desktop-sized, clipping-safe specimen window. */
@@ -954,7 +1134,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             </FullScreenSpecimen>
 
             <Specimen
-                detail="56px · one line: the name, who made it, and the faces of who is in it. Who made it is dropped below 480px, and long names truncate, the creator first."
+                detail="56px · one line: the name, who made it, and the faces of who is in it, with Chat at the edge the chat opens from (pressed while it is open). Who made it is dropped below 480px, and long names truncate, the creator first."
                 label="Header"
                 number="06"
                 stage="surface"
@@ -969,7 +1149,10 @@ export function HappyAgentSurfacesBlueprintPage() {
                                 width: `${String(entry.width)}px`,
                             }}
                         >
-                            <HappyAgentSurfaceHeader surface={entry.surface} />
+                            <HappyAgentSurfaceHeader
+                                {...(entry.chat ? { chat: entry.chat } : {})}
+                                surface={entry.surface}
+                            />
                         </div>
                     ))}
                 </div>
@@ -1134,6 +1317,63 @@ export function HappyAgentSurfacesBlueprintPage() {
                     reference={{ phase: "unavailable", kind: "bot" }}
                     surface={{ ...REFERENCE, name: "Release notes", type: { kind: "bot" } }}
                 />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Live. Groceries with its one shared chat open beside it: the ordinary conversation, everyone's messages in it, and its agent's. Chat in the header closes it, as does the ×; the panel is resized from its edge. While it is open, typing anywhere no control wants lands in the chat's composer, not the add field; closing it gives the add field the caret back. Every Surface but a separator has a chat."
+                label="Window, chat open"
+                number="10"
+                screen="10-chat-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <MockWindow focusOnType initialChat />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Asked for and not answered yet: the daemon makes the chat the first time anybody opens it, or finds the one somebody already made."
+                label="Chat, opening"
+                number="10b"
+                screen="10b-chat-opening-420x640"
+                window={{ width: 420, height: 640 }}
+            >
+                <HappyAgentSurfaceChatPanel
+                    onClose={noop}
+                    state={{ phase: "opening" }}
+                    surfaceName="Groceries"
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="It could not be opened — here, a Happy Agent from before Surface chats. Said once, quietly; closing the panel forgets it."
+                label="Chat, not opened"
+                number="10c"
+                screen="10c-chat-failed-420x640"
+                window={{ width: 420, height: 640 }}
+            >
+                <HappyAgentSurfaceChatPanel
+                    onClose={noop}
+                    state={{
+                        phase: "failed",
+                        message: "This Happy Agent can’t keep a chat for a Surface yet.",
+                    }}
+                    surfaceName="Groceries"
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Nobody has written in it yet."
+                label="Chat, empty"
+                number="10d"
+                screen="10d-chat-empty-420x640"
+                window={{ width: 420, height: 640 }}
+            >
+                <HappyAgentSurfaceChatPanel
+                    onClose={noop}
+                    state={{ phase: "open" }}
+                    surfaceName="Groceries"
+                >
+                    <MockChat entries={[]} />
+                </HappyAgentSurfaceChatPanel>
             </FullScreenSpecimen>
 
             <Specimen

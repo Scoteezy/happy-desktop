@@ -734,6 +734,12 @@ export {
     type HappyAgentSurfaceReferenceView,
 } from "./pages/surfaces/HappyAgentSurfaceReferencePage";
 export {
+    HappyAgentSurfaceChatPanel,
+    type HappyAgentSurfaceChatPanelProps,
+    type HappyAgentSurfaceChatPanelState,
+} from "./pages/surfaces/HappyAgentSurfaceChatPanel";
+export type { HappyAgentSurfaceChatToggle } from "./pages/surfaces/HappyAgentSurfaceHeader";
+export {
     HappyAgentSurfaceUnsupportedPage,
     type HappyAgentSurfaceUnsupportedPageProps,
 } from "./pages/surfaces/HappyAgentSurfaceUnsupportedPage";

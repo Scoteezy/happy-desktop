@@ -103,6 +103,7 @@ import {
 } from "./happyAgentCloudStore.js";
 import { happyAgentTeamsStoreCreate, type HappyAgentTeamsStore } from "./happyAgentTeamsStore.js";
 import { happyAgentArtifactsCreate, type HappyAgentArtifacts } from "../artifacts/artifacts.js";
+import { happyAgentSurfaceChatGroupsCreate } from "../surfaces/surfaceChatGroups.js";
 import { happyAgentSurfacesCreate, type HappyAgentSurfaces } from "../surfaces/surfaces.js";
 import {
     happyAgentDeviceBridgesStoreCreate,
@@ -503,6 +504,8 @@ export function happyAgentWorkspaceClientCreate(
     });
     const memory = happyAgentWorkspaceMemoryStoreCreate(deps.workspaceMemoryPersistence);
     let sessionListStore: HappyAgentSessionListStore | undefined;
+    /** Surface chat workspaces, which the Surfaces learn and the conversation list accepts. */
+    const surfaceChatGroups = happyAgentSurfaceChatGroupsCreate();
     let agentIdentities: HappyAgentAgentIdentitySource | undefined;
     let inboxStore: HappyAgentInboxStore | undefined;
     let providerUsageStore: HappyAgentProviderUsageStore | undefined;
@@ -687,6 +690,7 @@ export function happyAgentWorkspaceClientCreate(
                     connectActions: deps.connection,
                     connectMutationSubscribe: deps.connectMutationSubscribe,
                     output: deps.sessionListOutput,
+                    surfaceChatGroups: surfaceChatGroups.groups,
                 });
             }
             return sessionListStore;
@@ -712,6 +716,7 @@ export function happyAgentWorkspaceClientCreate(
             surfaces ??= happyAgentSurfacesCreate({
                 client: deps.client,
                 sync: deps.connection.sync,
+                chatFound: surfaceChatGroups.add,
             });
             return surfaces;
         },
