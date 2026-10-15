@@ -18,6 +18,7 @@ import {
 import { createRenderer } from "./testing";
 import nestedLinkList from "./fixtures/nested-link-list.txt?raw";
 import richTablePayload from "./fixtures/streaming-layout-rich-table.txt?raw";
+import movieListPayload from "./fixtures/movie-list-layout.txt?raw";
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 const agent: ConversationAuthor = {
@@ -391,6 +392,45 @@ it("keeps settled narrow URL text exact, including Gecko's breaks after slashes"
     const bounds = body.getBoundingClientRect();
     const settled = markdownBodyHeight(text, bounds.width, messageTextLayoutCacheCreate());
     expect(Math.abs(settled - bounds.height)).toBeLessThanOrEqual(2.1);
+});
+
+it("keeps the reported movie list adjacent to the next row at subpixel wrap boundaries", async () => {
+    const view = createRenderer();
+    let update!: (width: number, text: string, streaming: boolean) => void;
+    function Harness() {
+        const [state, setState] = useState({ width: 880, text: movieListPayload, streaming: true });
+        update = (width, text, streaming) => setState({ width, text, streaming });
+        return (
+            <div style={{ width: state.width, height: 700 }}>
+                <ConversationView
+                    agentAuthor={agent}
+                    composer={composer}
+                    conversationId="movie-list-layout"
+                    entries={[message(state.text, state.streaming), tool]}
+                    motion="calm"
+                    onComposerSend={() => {}}
+                    onComposerValueChange={() => {}}
+                    running={state.streaming}
+                />
+            </div>
+        );
+    }
+    view.render(Harness, { width: 1300, height: 700 });
+    await view.ready();
+    await nextFrame();
+    await nextFrame();
+    for (const width of [720, 876, 878, 879, 880, 881, 882, 884, 1000, 1300, 880]) {
+        for (const streaming of [true, false]) {
+            flushSync(() => update(width, movieListPayload, streaming));
+            await nextFrame();
+            expectRowGeometry(view.container, `movie list at ${width}px, streaming=${streaming}`);
+        }
+    }
+    const boundary = movieListPayload.indexOf("3. **Ready");
+    for (const end of [boundary - 3, boundary - 2, boundary - 1, boundary, boundary + 1]) {
+        flushSync(() => update(880, movieListPayload.slice(0, end), true));
+        expectRowGeometry(view.container, `movie list streaming prefix ${end}`);
+    }
 });
 
 it("keeps expanded shell output adjacent to the live status while output grows", async () => {
