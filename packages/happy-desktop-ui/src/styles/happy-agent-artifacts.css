@@ -326,64 +326,11 @@
     font-synthesis: none;
 }
 
-.happy-agent-artifact-viewer__facts {
-    display: flex;
-    flex: 0 0 auto;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 8px 12px;
-    padding: 12px 24px;
-    border-bottom: 1px solid var(--divider);
-}
-
-.happy-agent-artifact-viewer__glyph {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--happy-radius-sm);
-    background: var(--surface-high);
-    color: var(--text-secondary);
-}
-
-.happy-agent-artifact-viewer__fact-list {
-    display: flex;
-    flex: 1 1 0%;
-    flex-wrap: wrap;
-    gap: 4px 24px;
-    min-width: 0;
-    margin: 0;
-}
-
-.happy-agent-artifact-viewer__fact {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    min-width: 0;
-    font-size: 13px;
-    line-height: 18px;
-}
-
-.happy-agent-artifact-viewer__fact dt {
-    color: var(--text-secondary);
-    font-family: var(--happy-font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 16px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-}
-
-.happy-agent-artifact-viewer__fact dd {
-    margin: 0;
-    overflow-wrap: anywhere;
-}
-
 .happy-agent-artifact-viewer__older {
     display: flex;
-    flex: 1 0 100%;
+    flex: 0 0 auto;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--divider);
 }
 
 .happy-agent-artifact-viewer__main {

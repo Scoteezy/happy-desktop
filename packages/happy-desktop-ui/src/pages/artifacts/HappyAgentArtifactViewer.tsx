@@ -139,15 +139,14 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                             </>
                         }
                     />
-                    <ArtifactFacts
-                        artifact={artifact}
-                        labels={props.labels}
-                        onLatestShow={() => props.onVersionSelect(artifact.latestVersion)}
-                        {...(viewer.version ? { version: viewer.version } : {})}
-                        {...(viewer.versionSelected === undefined
-                            ? {}
-                            : { versionSelected: viewer.versionSelected })}
-                    />
+                    {viewer.versionSelected !== undefined && artifact.status === "active" ? (
+                        <ArtifactOlder
+                            labels={props.labels}
+                            onLatestShow={() => props.onVersionSelect(artifact.latestVersion)}
+                            {...(viewer.version ? { version: viewer.version } : {})}
+                            versionSelected={viewer.versionSelected}
+                        />
+                    ) : null}
                     <div
                         className="happy-agent-artifact-viewer__main"
                         data-happy-desktop-ui="happy-agent-artifact-viewer-main"
@@ -237,84 +236,32 @@ function deletedSentence(artifact: HappyAgentArtifact, labels: HappyAgentArtifac
 }
 
 /**
- * Who made the artifact and where, who changed it last and where, and which
- * version is on screen. When the reader is looking back at an older version,
- * that is said here with the way back to the newest, since everything below
- * now describes a version that is no longer current.
+ * Said only when the reader is looking back at an older version, with the way
+ * back to the newest, since everything below then describes a version that is
+ * no longer current.
  */
-function ArtifactFacts(props: {
-    artifact: HappyAgentArtifact;
+function ArtifactOlder(props: {
     labels: HappyAgentArtifactLabels;
     version?: HappyAgentArtifactVersion;
-    versionSelected?: number;
+    versionSelected: number;
     onLatestShow: () => void;
 }) {
-    const artifact = props.artifact;
     const labels = props.labels;
-    const shown = props.versionSelected ?? artifact.latestVersion;
+    const shown = props.versionSelected;
     return (
         <div
-            className="happy-agent-artifact-viewer__facts"
-            data-happy-desktop-ui="happy-agent-artifact-viewer-facts"
+            className="happy-agent-artifact-viewer__older"
+            data-happy-desktop-ui="happy-agent-artifact-viewer-older"
         >
-            <span
-                aria-hidden="true"
-                className="happy-agent-artifact-viewer__glyph"
-                data-type={artifact.type}
+            <Banner
+                action={{ label: "Show latest", onClick: props.onLatestShow }}
+                tone="info"
+                title={`Showing version ${String(shown)}`}
             >
-                <ArtifactTypeGlyph size={16} type={artifact.type} />
-            </span>
-            <dl className="happy-agent-artifact-viewer__fact-list">
-                <div className="happy-agent-artifact-viewer__fact">
-                    <dt>Version</dt>
-                    <dd>
-                        {artifact.status === "deleted"
-                            ? `${String(artifact.latestVersion)} (deleted)`
-                            : `${String(shown)} of ${String(artifact.latestVersion)}`}
-                    </dd>
-                </div>
-                <div className="happy-agent-artifact-viewer__fact">
-                    <dt>Created</dt>
-                    <dd>
-                        {artifactMadeBy(
-                            labels.author(artifact.createdBy),
-                            labels.source(artifact.source),
-                        )}{" "}
-                        · {labels.time(artifact.createdAt)}
-                    </dd>
-                </div>
-                {artifact.latestVersion > 1 || artifact.status === "deleted" ? (
-                    <div className="happy-agent-artifact-viewer__fact">
-                        <dt>{artifact.status === "deleted" ? "Deleted" : "Updated"}</dt>
-                        <dd>
-                            {artifactMadeBy(
-                                labels.author(artifact.updatedBy),
-                                labels.source(artifact.updatedSource),
-                            )}{" "}
-                            · {labels.time(artifact.updatedAt)}
-                        </dd>
-                    </div>
-                ) : null}
-                <div className="happy-agent-artifact-viewer__fact">
-                    <dt>Files</dt>
-                    <dd>
-                        {String(artifact.fileCount)} · {artifactSizeText(artifact.size)}
-                    </dd>
-                </div>
-            </dl>
-            {props.versionSelected !== undefined && artifact.status === "active" ? (
-                <div className="happy-agent-artifact-viewer__older">
-                    <Banner
-                        action={{ label: "Show latest", onClick: props.onLatestShow }}
-                        tone="info"
-                        title={`Showing version ${String(shown)}`}
-                    >
-                        {props.version && props.version.number === shown
-                            ? `Made by ${artifactMadeBy(labels.author(props.version.createdBy), labels.source(props.version.source))} · ${labels.time(props.version.createdAt)}.`
-                            : "An older version of this artifact."}
-                    </Banner>
-                </div>
-            ) : null}
+                {props.version && props.version.number === shown
+                    ? `Made by ${artifactMadeBy(labels.author(props.version.createdBy), labels.source(props.version.source))} · ${labels.time(props.version.createdAt)}.`
+                    : "An older version of this artifact."}
+            </Banner>
         </div>
     );
 }

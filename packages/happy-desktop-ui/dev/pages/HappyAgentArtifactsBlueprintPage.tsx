@@ -510,7 +510,7 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="History open, looking back at version 2: the strip says so and offers the newest again."
+                detail="History open, looking back at version 2: a banner says so and offers the newest again. On the newest version nothing stands between the title and the artifact."
                 label="Viewer · older version"
                 screen="07-older-1100x760"
                 window={{ width: 1100, height: 760 }}
