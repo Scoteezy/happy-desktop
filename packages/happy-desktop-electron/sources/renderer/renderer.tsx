@@ -582,33 +582,23 @@ function DesktopScreens(props: DesktopRendererProps) {
     // usable, and the update is told on a card in the local sidebar's footer.
     return (
         <ConnectionShell
-            items={directory.happyAgents.map((entry) => ({
-                id: entry.id,
-                // The rail names a machine the way its own daemon does. The
-                // host's roster name stands in until that daemon has answered.
-                label: entry.node?.name ?? entry.label,
-                local: entry.id === LOCAL_HAPPY_AGENT_ID,
-                status: entry.status,
-                working:
-                    entry.bots.some((bot) => bot.conversation.activity === "running") ||
-                    entry.projects.some(
-                        (project) =>
-                            project.conversations.some(
-                                (conversation) => conversation.activity === "running",
-                            ) ||
-                            project.worktrees.some((worktree) =>
-                                worktree.conversations.some(
-                                    (conversation) => conversation.activity === "running",
-                                ),
-                            ),
-                    ),
-                // Only what this window's sidebar lists can light the dot, the
-                // same set the Dock counts and the chime speaks for.
-                unread: happyAgentListedConversations(entry, projectsVisibility).some(
-                    (conversation) => conversation.unread,
-                ),
-                ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
-            }))}
+            items={directory.happyAgents.map((entry) => {
+                // Only what this window's sidebar lists can spin the tile or
+                // light its dot, the same set the Dock counts and the chime
+                // speaks for.
+                const listed = happyAgentListedConversations(entry, projectsVisibility);
+                return {
+                    id: entry.id,
+                    // The rail names a machine the way its own daemon does. The
+                    // host's roster name stands in until that daemon has answered.
+                    label: entry.node?.name ?? entry.label,
+                    local: entry.id === LOCAL_HAPPY_AGENT_ID,
+                    status: entry.status,
+                    working: listed.some((conversation) => conversation.activity === "running"),
+                    unread: listed.some((conversation) => conversation.unread),
+                    ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
+                };
+            })}
             selectedId={directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID}
             onSelect={props.happyAgents.happyAgentActivate}
             onReorder={

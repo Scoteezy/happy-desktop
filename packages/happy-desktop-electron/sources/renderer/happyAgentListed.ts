@@ -10,9 +10,9 @@ import type {
  * Projects section — every session in its projects and their worktrees.
  *
  * It is the one answer to "is this on screen" for everything that speaks for
- * the window as a whole: the connection rail's dot, the Dock's count, and the
- * completion chime. A conversation the sidebar does not list is silent in all
- * three, in both directions; a task the reader never joined, or a session in a
+ * the window as a whole: the connection rail's spinner and dot, the Dock's
+ * count, and the completion chime. A conversation the sidebar does not list is
+ * silent in all of them, in both directions; a task the reader never joined, or a session in a
  * hidden project, can neither raise those signals nor clear them. Its own
  * unread state stays exactly as the host keeps it, so showing the section again
  * or joining the task brings it back as it was.
