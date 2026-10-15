@@ -7,8 +7,11 @@ description: Use whenever someone asks to review, tour, walk through, or explain
 
 A big diff in file order makes a reader jump between files for half an hour
 to learn what the change even does. A guided review does that work for them in
-a minute: what the change is, the files it touches, then its ideas in
-chapters, most important first, each beside the code that shows it.
+a minute: what the change is, how control now flows through it, what
+changed in its contracts — types, signatures, endpoints — and then its ideas
+in chapters, most important first, each beside the code that shows it. A
+reader learns a change from its calls and its contracts, not from its list of
+files; the diff viewer already has that list.
 
 Write it as an ordinary Markdown reply. Where a component helps, put a small
 **Happy fence** in the reply; Happy draws each one with its own component, in
@@ -76,20 +79,48 @@ lines: 40-52
 ```
 ````
 
-**`happy-flow`** — the parts a change touches and how they connect, drawn
-top to bottom. One arrow or one part per line: `From -> To: label`. Mark a
-part `[new]`, `[changed]`, or `[gone]`, and add the number of the chapter
-about it: `[new 2]`; clicking that number goes to the chapter. Unmarked
-parts are drawn quiet, as context.
+**Two diagrams, one syntax.** Both take one arrow per line,
+`From -> To: what passes`, and a part on its own line when nothing points at
+it. Mark a part `[new]`, `[changed]`, or `[gone]` and add the number of the
+chapter about it: `[new 2]`; clicking that number goes to the chapter. Mark
+an arrow the change added or changed after its label: `: lookup [new]`.
+Everything unmarked is drawn quiet, as context. Pick the one that answers the
+change's question:
+
+**`happy-sequence`** — _what happens_: the calls in the order they happen,
+each part a column, each call an arrow between them. Use it when the change
+is about behaviour — a request's path, what a click sets off, a lifecycle, an
+event handled, a retry or an error path. Write the calls in order, starting
+where it starts (a click, a request, an event); an answer back to an earlier
+caller is drawn dashed; a part calling itself is `Part -> Part: what it does`.
+
+````
+```happy-sequence
+Transcript -> ChatStore [changed 2]: sender ids
+ChatStore -> AgentIdentities [new 1]: lookup [new]
+AgentIdentities -> getAgent [new 1]: unknown id [new]
+getAgent -> AgentIdentities: agent
+AgentIdentities -> ChatStore: name
+```
+````
+
+**`happy-flow`** — _how parts connect_: each part once, top to bottom, an
+arrow from each part to what it feeds or depends on. Use it when the change
+is about structure — a new module and where it sits, who owns which data,
+what now depends on what, a part removed or replaced. Order does not matter
+here; each part appears once however many arrows it has.
 
 ````
 ```happy-flow
 Transcript -> ChatStore [changed 2]: sender ids
-ChatStore -> AgentIdentities [new 1]: lookup
-AgentIdentities -> getAgent [new 1]: unknown id
+ChatStore -> AgentIdentities [new 1]: lookup [new]
+AgentIdentities -> SessionList: index
 OldResolver [gone]
 ```
 ````
+
+When both questions matter, open with the one that matters more and put the
+other in the chapter it explains. Never draw the same thing twice.
 
 **`happy-finding`** — one problem a review found. `severity` is `high` (must
 be fixed before it goes in), `medium` (should be fixed), or `low` (worth
@@ -142,11 +173,12 @@ Prose is the reply's own Markdown: short paragraphs, `inline code` for names,
 belong to `happy-diff`, `happy-files`, and `happy-finding`.
 
 Chapters are `##` headings. Happy numbers them in order — the numbers a
-`happy-flow` points at — and lays each one out as its heading and the
+diagram's parts point at — and lays each one out as its heading and the
 paragraphs right under it, then the **one** `happy-diff`, `happy-flow`, or
 `happy-files` that follows them. In a wide column that component takes the
 left and the words a narrow column at the right; in a narrow one it goes
-under them. Long code lines wrap, so a quote never needs scrolling.
+under them. A `happy-sequence` reads across, so it always takes the whole
+width under the words. Long code lines wrap, so a quote never needs scrolling.
 Anything after it in the chapter (a finding, a second diff) comes below,
 full width. So a chapter is: heading, one or two sentences, one component,
 then its findings.
@@ -154,28 +186,43 @@ then its findings.
 ### Recipe: review of a change
 
 1. `happy-review` with the base or range.
-2. One or two sentences: what the change does and why, in ordinary words.
+2. One or two sentences: what changes for whoever uses this code — its
+   behaviour or its contract — and why, in ordinary words.
 3. `happy-verdict` — only when asked to review rather than to explain.
-4. `happy-flow` — when the change is about how parts connect; skip it for a
-   change inside one part.
-5. `happy-files` (empty) — every changed file with its counts.
-6. Two to four chapters, most important first, groundwork after, tests and
-   generated files last. Each: `## Idea in a few words`, one or two
-   sentences, then the `happy-diff` of the few lines that are the idea, or a
-   `happy-files` slice when the chapter is a group of files (tests, pages).
-7. Each `happy-finding` right after the chapter whose lines it is about; a
+4. One diagram, marked with what the change adds and changes: a
+   `happy-sequence` of the calls when the change is about what happens, a
+   `happy-flow` of the parts when it is about how they connect. Skip it only
+   for a change inside one function.
+5. Two to four chapters, most important first:
+    - **Contracts first.** A chapter per contract that changed — an exported
+      type, a function's signature, an endpoint's request or response, a
+      store's actions or events, a component's props. Quote the declaration
+      with `happy-diff` on exactly those lines, and say in a sentence what a
+      caller passes or gets now that it did not before.
+    - **Then the behaviour** that serves it: the few lines where the flow
+      turns, each quoted with `happy-diff`.
+    - **Groundwork, tests, and generated files last**, briefly; a
+      `happy-files` slice is right only for a chapter that really is a group
+      of files (tests, fixtures, pages).
+6. Each `happy-finding` right after the chapter whose lines it is about; a
    problem with the change as a whole goes after the last chapter, without
    lines.
-8. Before/after screenshots, when the change is visible, right after the
+7. Before/after screenshots, when the change is visible, right after the
    opening sentences.
+
+Do not open with a file list. An empty `happy-files` (every changed file)
+belongs only at the very end, and only when the reader asked what the change
+touches.
 
 ### Recipe: explanation (not a change)
 
 `happy-review` with `commit:` from `git rev-parse HEAD`, so the quotes are
-the code you read. One sentence on what is being explained, a `happy-flow`
-of the parts, then chapters with `happy-diff` of the code where it helps. A
-flow of something that did not change has no marks, and there is no
-`happy-files` or verdict.
+the code you read. One sentence on what is being explained, then a
+`happy-sequence` for how something happens or a `happy-flow` for how
+something is built, then chapters on its contracts and the lines where the
+flow turns, with `happy-diff` of the code where it helps. A diagram of
+something that did not change has no marks, and there is no `happy-files` or
+verdict.
 
 ## Short is the point
 
@@ -189,7 +236,9 @@ A review is read in place, in one or two screens of a chat column.
   range is the wrong lines themselves, one to five.
 - Only real problems as findings, four at most, no nitpicks, no praise. What
   is good goes in the verdict, briefly.
-- A flow has at most eight parts; a label is one to three words, never a
+- A sequence has at most eight calls across at most five parts; a flow at
+  most eight parts. A part is a name from the code — a component, a store, a function, an endpoint — never
+  a file or a folder. A label is what passes, one to three words, never a
   sentence or a path.
 - Skip the routine: imports, plumbing, renames, formatting, lockfiles.
 - After the last chapter, at most one sentence, only for what you could not
@@ -230,6 +279,8 @@ any of this.
   from `git rev-parse`, or, for an explanation, a `commit`?
 - Is it one or two screens: two to four chapters, each one idea with one
   component beside it?
+- Does it show how control flows and which contracts changed, rather than
+  which files?
 - Is it a review? Then is there a verdict, and is every real problem a
   finding after its chapter, on its exact lines?
 - Is every line range checked against the current file, and every statement

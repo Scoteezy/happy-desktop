@@ -132,7 +132,7 @@ const messySenders = [
 const explanation = [
     "How a transcript row knows its height before it mounts.",
     fence(
-        "happy-flow",
+        "happy-sequence",
         [
             "MessageBody -> RemarkTree: parse once",
             "RemarkTree -> RowHeightModel: measure blocks",

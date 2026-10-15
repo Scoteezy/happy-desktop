@@ -1,17 +1,20 @@
 /*
- * The flow a review draws: named parts of a system and the arrows between
- * them, each part saying whether this change added it, changed it, or took
- * it out, and which chapter is about it.
+ * The two drawings a review makes of a system, read from one syntax: named
+ * parts and the arrows between them, each part saying whether this change
+ * added it, changed it, or took it out, and which chapter is about it, and
+ * each arrow whether this change added or changed it.
  *
- *   ChatStore [changed 2] -> Identities [new 1]: lookup
- *   Identities -> Host [new]: getAgent
+ *   Transcript -> ChatStore [changed 2]: sender ids
+ *   ChatStore -> AgentIdentities [new 1]: lookup [new]
+ *   AgentIdentities -> ChatStore: name
  *   OldResolver [gone]
  *
- * Laid out here, not by a graph library, because the picture is always the
- * same kind: a short flow read top to bottom in a narrow column. Parts sit in
- * rows by how far down the flow they are, arrows curve from a part's foot into
- * the next part's head, and every name is mono, so every width is known
- * without measuring anything.
+ * `happy-flow` draws them as a graph — how the parts connect, top to bottom,
+ * each part once (`flowGraphLayout`, below). `happy-sequence` draws them as
+ * calls in the order written — what happens, step by step, between lifelines
+ * (`flowSequenceLayout` in `sequenceDiagramLayout.ts`). Both are laid out
+ * here rather than by a library: every name is mono and every label short,
+ * so every width is known without measuring anything.
  */
 
 export type FlowNodeMark = "new" | "changed" | "gone";
@@ -26,10 +29,14 @@ export type FlowEdge = {
     readonly source: string;
     readonly target: string;
     readonly label?: string;
+    /** What this change did to the call itself. */
+    readonly mark?: FlowNodeMark;
 };
 
 export type FlowGraph = {
+    /** In the order they first appear, which is the order of the columns. */
     readonly nodes: readonly FlowNode[];
+    /** In the order they happen. */
     readonly edges: readonly FlowEdge[];
 };
 
@@ -38,6 +45,7 @@ export type FlowParsed =
     | { readonly type: "invalid"; readonly reason: string };
 
 const NODE = /^\s*([^[\]:]+?)\s*(?:\[\s*(new|changed|gone)?\s*(\d+)?\s*\])?\s*$/u;
+const LABEL = /^(.*?)\s*(?:\[\s*(new|changed|gone)\s*\])?\s*$/u;
 
 function nodeParse(text: string): FlowNode | undefined {
     const match = NODE.exec(text);
@@ -73,20 +81,58 @@ export function flowParse(source: string): FlowParsed {
         }
         const tail = line.slice(arrow + 2);
         const colon = tail.indexOf(":");
-        const from = nodeParse(line.slice(0, arrow));
+        // A colon left before the arrow, `A: -> B: label`, says nothing.
+        const from = nodeParse(line.slice(0, arrow).replace(/:\s*$/u, ""));
         const to = nodeParse(colon === -1 ? tail : tail.slice(0, colon));
-        const label = colon === -1 ? "" : tail.slice(colon + 1).trim();
+        const after = LABEL.exec(colon === -1 ? "" : tail.slice(colon + 1).trim());
+        const label = after?.[1] ?? "";
+        const mark = after?.[2] as FlowNodeMark | undefined;
         if (from === undefined || to === undefined)
             return { type: "invalid", reason: `Line ${String(index + 1)} is not an arrow.` };
         add(from);
         add(to);
-        edges.push({ source: from.id, target: to.id, ...(label === "" ? {} : { label }) });
+        edges.push({
+            source: from.id,
+            target: to.id,
+            ...(label === "" ? {} : { label }),
+            ...(mark === undefined ? {} : { mark }),
+        });
     }
     if (nodes.size === 0) return { type: "invalid", reason: "The flow names no parts." };
     return { type: "ready", graph: { nodes: [...nodes.values()], edges } };
 }
 
-/* Geometry. Mono advances are 0.6em in the bundled JetBrains Mono. */
+/** The marks a flow uses, parts and calls alike, in legend order. */
+export function flowMarks(graph: FlowGraph): readonly FlowNodeMark[] {
+    return (["new", "changed", "gone"] as const).filter(
+        (mark) =>
+            graph.nodes.some((node) => node.mark === mark) ||
+            graph.edges.some((edge) => edge.mark === mark),
+    );
+}
+
+export type FlowPoint = { readonly x: number; readonly y: number };
+
+/** Room for the strokes and label halos round a drawing. */
+export const FLOW_PAD = 4;
+/** A drawing wider than its column shrinks to fit, down to this; then it scrolls. */
+export const FLOW_MIN_SCALE = 0.8;
+
+/**
+ * A drawing's painted height in a column `column` wide: at its own size when
+ * it fits, else shrunk to the column but no further than `FLOW_MIN_SCALE`,
+ * past which it scrolls. `FlowDiagram` sizes it the same way in CSS.
+ */
+export function flowPaintedHeight(
+    size: { readonly width: number; readonly height: number },
+    column: number,
+): number {
+    const width = size.width + FLOW_PAD * 2;
+    const height = size.height + FLOW_PAD * 2;
+    return height * Math.min(1, Math.max(FLOW_MIN_SCALE, column / width));
+}
+
+/* The graph. Mono advances are 0.6em in the bundled JetBrains Mono. */
 export const FLOW_NODE_HEIGHT = 36;
 export const FLOW_NODE_PADDING = 12;
 export const FLOW_CHIP = 18;
@@ -104,10 +150,6 @@ const LABEL_ADVANCE = 7;
 const LABEL_SPACE = 8;
 // Several labels in one gap alternate this far above and below its middle.
 const LABEL_STAGGER = 9;
-/** Room for the strokes and label halos round the drawing. */
-export const FLOW_PAD = 2;
-/** A drawing wider than its column shrinks to fit, down to this; then it scrolls. */
-export const FLOW_MIN_SCALE = 0.8;
 // Ports along one edge of a part, at most this far apart, clear of its corners.
 const PORT_STEP = 20;
 const PORT_INSET = 12;
@@ -117,8 +159,6 @@ const LANE_STEP = 12;
 const LANE_TURN = 10;
 const LANE_LABEL_OFFSET = 8;
 const CORNER = 8;
-
-export type FlowPoint = { readonly x: number; readonly y: number };
 
 /** The face of a part a lane arrow meets. */
 type LaneFace = "side" | "top" | "bottom";
@@ -141,7 +181,7 @@ export type FlowPlacedEdge = FlowEdge & {
     readonly back: boolean;
 };
 
-export type FlowLayout = {
+export type FlowGraphLayout = {
     readonly width: number;
     readonly height: number;
     readonly nodes: readonly FlowPlacedNode[];
@@ -245,7 +285,7 @@ function rounded(points: readonly FlowPoint[]): string {
  * the right. The height depends only on the rows and which gaps hold labels,
  * never on how wide any text is.
  */
-export function flowLayout(graph: FlowGraph): FlowLayout {
+export function flowGraphLayout(graph: FlowGraph): FlowGraphLayout {
     const rankOf = ranks(graph);
     const count = Math.max(...rankOf.values()) + 1;
     const rows = Array.from({ length: count }, (): FlowNode[] => []);
@@ -528,16 +568,4 @@ export function flowLayout(graph: FlowGraph): FlowLayout {
         return [{ ...edge, back, d, labelAt: at }];
     });
     return { width: Math.ceil(right), height: top + below, nodes, edges };
-}
-
-/**
- * The drawing's painted height in a column `column` wide: at its own size
- * when it fits, else shrunk to the column but no further than
- * `FLOW_MIN_SCALE`, past which it scrolls. `FlowDiagram` sizes it the same
- * way in CSS.
- */
-export function flowPaintedHeight(layout: FlowLayout, column: number): number {
-    const width = layout.width + FLOW_PAD * 2;
-    const height = layout.height + FLOW_PAD * 2;
-    return height * Math.min(1, Math.max(FLOW_MIN_SCALE, column / width));
 }

@@ -44,6 +44,7 @@ export const GUIDED_REVIEW_FENCE_LABELS = [
     "happy-diff",
     "happy-files",
     "happy-flow",
+    "happy-sequence",
     "happy-finding",
     "happy-verdict",
     "happy-before-after",
@@ -58,7 +59,10 @@ export function guidedReviewFenceLabel(
     return GUIDED_REVIEW_FENCE_LABELS.find((candidate) => candidate === label);
 }
 
-/** Fences that can stand beside a chapter's words in a wide column. */
+/**
+ * Fences that can stand beside a chapter's words in a wide column. A sequence
+ * reads across, one column per part, so it takes the whole width below them.
+ */
 const ASIDE_LABELS: ReadonlySet<GuidedReviewFenceLabel> = new Set([
     "happy-diff",
     "happy-files",
@@ -79,7 +83,8 @@ export type GuidedReviewFence =
     | { readonly type: "diff"; readonly path: string; readonly lines: HappyUiLineRange }
     /** Every changed file, or the ones under the paths and folders named. */
     | { readonly type: "files"; readonly paths: readonly string[] }
-    | { readonly type: "flow"; readonly source: string }
+    /** One syntax, two drawings: how parts connect, or what happens in order. */
+    | { readonly type: "flow"; readonly layout: "graph" | "sequence"; readonly source: string }
     | {
           readonly type: "finding";
           readonly severity: ReviewSeverity;
@@ -192,7 +197,9 @@ function fenceRead(label: GuidedReviewFenceLabel, source: string): GuidedReviewF
                     .filter((line) => line.length > 0),
             };
         case "happy-flow":
-            return { type: "flow", source };
+            return { type: "flow", layout: "graph", source };
+        case "happy-sequence":
+            return { type: "flow", layout: "sequence", source };
         case "happy-finding": {
             const { fields, body } = fieldsRead(source, ["severity", "title", "path", "lines"]);
             const severity = fields.get("severity") as ReviewSeverity | undefined;
@@ -356,8 +363,8 @@ export function guidedReviewDocument(text: string): GuidedReviewDocument {
  * Chapters. In a reply with Happy fences, every `##` heading opens a chapter
  * that runs to the next `##`, `#`, or rule. Happy numbers the chapters in
  * order — a flow's chips point at those numbers — and lays each out as its
- * heading and leading words, then the one diff, flow, or file list right after
- * them (side by side once the column is wide), then anything else.
+ * heading and leading words, then the one diff, flow, or file list right
+ * after them (side by side once the column is wide), then anything else.
  */
 
 type MdNode = {

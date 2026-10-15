@@ -188,6 +188,7 @@ export function GuidedReviewFence(props: GuidedReviewFenceProps) {
             return (
                 <FlowDiagram
                     className="happy-review-block"
+                    layout={fence.layout}
                     onChapterOpen={(chapter, chip) => {
                         // The chapter is in the same reply as the drawing.
                         const section = chip

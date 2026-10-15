@@ -1,5 +1,6 @@
 import { changedFileListShown } from "./ChangedFileList";
-import { flowLayout, flowPaintedHeight, flowParse } from "./flowDiagramLayout";
+import { flowGraphLayout, flowMarks, flowPaintedHeight, flowParse } from "./flowDiagramLayout";
+import { flowSequenceLayout } from "./sequenceDiagramLayout";
 import { reviewDiffRows } from "./reviewDiffLayout";
 import {
     guidedReviewFenceParse,
@@ -158,10 +159,15 @@ export function guidedReviewFenceHeight(
                     REASON_LINE,
                     width,
                 );
-            const marked = flow.graph.nodes.some((node) => node.mark !== undefined);
+            const marked = flowMarks(flow.graph).length > 0;
             return (
                 (marked ? FLOW_LEGEND + FLOW_GAP : 0) +
-                flowPaintedHeight(flowLayout(flow.graph), width)
+                flowPaintedHeight(
+                    fence.layout === "graph"
+                        ? flowGraphLayout(flow.graph)
+                        : flowSequenceLayout(flow.graph),
+                    width,
+                )
             );
         }
         case "finding": {

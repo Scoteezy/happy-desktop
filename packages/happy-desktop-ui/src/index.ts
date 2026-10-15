@@ -245,7 +245,7 @@ export {
     type ChangedFileListProps,
 } from "./ChangedFileList";
 export { DiffStat } from "./DiffStat";
-export { FlowDiagram, type FlowDiagramProps } from "./FlowDiagram";
+export { FlowDiagram, type FlowDiagramLayout, type FlowDiagramProps } from "./FlowDiagram";
 export { ReviewDiff, type ReviewDiffProps, type ReviewDiffStatus } from "./ReviewDiff";
 export {
     ReviewFinding,
