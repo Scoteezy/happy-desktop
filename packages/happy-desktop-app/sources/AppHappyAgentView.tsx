@@ -223,6 +223,7 @@ import {
     HappyAgentTaskBrowseDialog,
     HappyAgentSurfaceCreateDialog,
     HappyAgentSurfaceUnsupportedPage,
+    HappyAgentSurfaceNotMadePage,
     HappyAgentSurfaceReferencePage,
     type HappyAgentSurfaceReferenceView,
     HappyAgentSurfaceChatPanel,
@@ -5068,8 +5069,21 @@ function HappyAgentSurfaceContent(props: {
     // Until the catalog names it the page is simply empty: a list made here is
     // in the catalog the moment it is asked for, and one opened on launch
     // appears as the catalog arrives, so there is no loader or error to show.
-    // A separator has no page; a route that names one shows nothing.
-    if (surface === undefined || surface.type.kind === "separator") return <WindowDragRegion />;
+    // A separator has no page; a route that names one shows nothing. One the
+    // reader made here and the Happy Agent turned down says why instead.
+    if (surface === undefined) {
+        const refusal = catalog.createsRefused.get(props.surfaceId);
+        return refusal === undefined ? (
+            <WindowDragRegion />
+        ) : (
+            <HappyAgentSurfaceNotMadePage
+                name={refusal.name}
+                reason={refusal.error.message}
+                type={refusal.type}
+            />
+        );
+    }
+    if (surface.type.kind === "separator") return <WindowDragRegion />;
     const view = surfaceViewOf(catalog, surface);
     const opening = catalog.chatsOpening.get(surface.id);
     // Shown from the moment it is asked for, so the reader sees it being made.

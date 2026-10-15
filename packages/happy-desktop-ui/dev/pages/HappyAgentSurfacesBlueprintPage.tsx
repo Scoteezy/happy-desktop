@@ -32,6 +32,7 @@ import {
     HappyAgentSurfaceReferencePage,
     type HappyAgentSurfaceReferenceView,
 } from "../../src/pages/surfaces/HappyAgentSurfaceReferencePage";
+import { HappyAgentSurfaceNotMadePage } from "../../src/pages/surfaces/HappyAgentSurfaceNotMadePage";
 import { HappyAgentSurfaceUnsupportedPage } from "../../src/pages/surfaces/HappyAgentSurfaceUnsupportedPage";
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
 import {
@@ -1166,6 +1167,20 @@ export function HappyAgentSurfacesBlueprintPage() {
                 window={{ width: 1100, height: 760 }}
             >
                 <HappyAgentSurfaceUnsupportedPage surface={KANBAN} />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="A document the reader made and opened at once, which a Happy Agent from before documents then turned down: its name, and why, where the page would have been."
+                label="Not made"
+                number="05b"
+                screen="05b-not-made-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <HappyAgentSurfaceNotMadePage
+                    name="Launch plan"
+                    reason="This Happy Agent can’t make documents yet."
+                    type={{ kind: "document" }}
+                />
             </FullScreenSpecimen>
 
             <Specimen

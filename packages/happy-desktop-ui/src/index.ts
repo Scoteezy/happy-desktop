@@ -729,6 +729,10 @@ export {
     type HappyAgentDocumentSurfacePageProps,
 } from "./pages/surfaces/HappyAgentDocumentSurfacePage";
 export {
+    HappyAgentSurfaceNotMadePage,
+    type HappyAgentSurfaceNotMadePageProps,
+} from "./pages/surfaces/HappyAgentSurfaceNotMadePage";
+export {
     HappyAgentSurfaceReferencePage,
     type HappyAgentSurfaceReferencePageProps,
     type HappyAgentSurfaceReferenceView,

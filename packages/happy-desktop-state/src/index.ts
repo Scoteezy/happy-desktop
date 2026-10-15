@@ -91,6 +91,7 @@ export {
     type HappyAgentSurfaceChatOpening,
     type HappyAgentSurfaceCreateInput,
     type HappyAgentSurfaceCreateKind,
+    type HappyAgentSurfaceCreateRefusal,
     type HappyAgentSurfaceCreateState,
     type HappyAgentSurfaceMembershipAction,
 } from "./surfaces/surfaceCatalogStore.js";

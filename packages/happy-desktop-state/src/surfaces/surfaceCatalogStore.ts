@@ -36,6 +36,7 @@ import {
     type HappyAgentSurfacePerson,
     type HappyAgentSurfaceReferenceKind,
     type HappyAgentSurfaceTarget,
+    type HappyAgentSurfaceType,
     type HappyAgentSurfacesAvailability,
 } from "./surfaceTypes.js";
 
@@ -150,6 +151,16 @@ export type HappyAgentSurfaceChatOpening =
     | { readonly phase: "opening" }
     | { readonly phase: "failed"; readonly error: UserError };
 
+/**
+ * A Surface this window asked for that the Happy Agent turned down: what it
+ * was to be, and why, in words for the reader.
+ */
+export interface HappyAgentSurfaceCreateRefusal {
+    readonly type: HappyAgentSurfaceType;
+    readonly name: string;
+    readonly error: UserError;
+}
+
 export interface HappyAgentSurfaceCatalogSnapshot {
     /** Whether this Happy Agent has Surfaces at all; an older one never will. */
     readonly availability: HappyAgentSurfacesAvailability;
@@ -187,6 +198,12 @@ export interface HappyAgentSurfaceCatalogSnapshot {
         readonly error: UserError;
     };
     readonly create: HappyAgentSurfaceCreateState;
+    /**
+     * Surfaces this window asked for and the Happy Agent turned down, by the ID
+     * they were asked under, so a page opened on one can say why it is not
+     * there instead of going blank.
+     */
+    readonly createsRefused: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceCreateRefusal>;
     /** Shared chats asked to open here, by Surface; a chat already found is not in it. */
     readonly chatsOpening: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatOpening>;
     /**
@@ -291,6 +308,9 @@ export interface HappyAgentSurfaceCatalogDeps {
 const NO_USERS: ReadonlyMap<string, HappyAgentSurfacePerson> = new Map();
 const NO_PENDING: ReadonlySet<HappyAgentSurfaceId> = new Set();
 const NO_COUNTS: ReadonlyMap<HappyAgentSurfaceId, number> = new Map();
+
+const NO_CREATES_REFUSED: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceCreateRefusal> =
+    new Map();
 const CREATE_CLOSED: HappyAgentSurfaceCreateState = { phase: "closed" };
 const NO_CHATS_OPENING: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatOpening> = new Map();
 const CHAT_OPENING: HappyAgentSurfaceChatOpening = { phase: "opening" };
@@ -304,6 +324,7 @@ const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     membershipPending: NO_PENDING,
     activeTodoCounts: NO_COUNTS,
     create: CREATE_CLOSED,
+    createsRefused: NO_CREATES_REFUSED,
     chatsOpening: NO_CHATS_OPENING,
     chats: NO_CHATS,
 };
@@ -362,6 +383,32 @@ interface MembershipOp {
 function refused(error: unknown): error is HappyAgentApiError {
     return error instanceof HappyAgentApiError && error.status >= 400 && error.status < 500;
 }
+
+/** Why a Surface could not be made, in words for the reader. */
+function createRefusal(
+    kind: HappyAgentSurfaceCreateKind | HappyAgentSurfaceReferenceKind,
+    image: boolean,
+    error: HappyAgentApiError,
+): UserError {
+    // A daemon from before a type turns down a well-formed request for it as
+    // invalid; only a picture could make one otherwise invalid.
+    if (error.status === 400 && kind !== "todo" && !image)
+        return new UserError(
+            `This Happy Agent can’t make ${CREATE_NOUNS[kind]} yet.`,
+            undefined,
+            error,
+        );
+    return happyAgentUserError(error);
+}
+
+const CREATE_NOUNS = {
+    todo: "todo lists",
+    document: "documents",
+    separator: "separators",
+    artifact: "Surfaces for artifacts",
+    bot: "Surfaces for bots",
+    task: "Surfaces for tasks",
+} as const satisfies Record<HappyAgentSurfaceCreateKind | HappyAgentSurfaceReferenceKind, string>;
 
 /** Why a Surface's chat could not be opened, in words for the reader. */
 function chatRefusal(error: HappyAgentApiError): UserError {
@@ -456,6 +503,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
         membershipPending: NO_PENDING,
         activeTodoCounts: NO_COUNTS,
         create: CREATE_CLOSED,
+        createsRefused: NO_CREATES_REFUSED,
         chatsOpening: NO_CHATS_OPENING,
         chats: NO_CHATS,
     };
@@ -1179,7 +1227,21 @@ export function happyAgentSurfaceCatalogStoreCreate(
                         if (disposed || life.signal.aborted) return;
                         if (refused(error)) {
                             creates = creates.filter((create) => create.surfaceId !== surfaceId);
-                            republish();
+                            const kind =
+                                input.kind === "reference" ? input.reference.kind : input.kind;
+                            republish({
+                                createsRefused: new Map([
+                                    ...snapshot.createsRefused,
+                                    [
+                                        surfaceId,
+                                        {
+                                            type: { kind },
+                                            name,
+                                            error: createRefusal(kind, image !== undefined, error),
+                                        },
+                                    ],
+                                ]),
+                            });
                             settle.reject(error);
                             return;
                         }
