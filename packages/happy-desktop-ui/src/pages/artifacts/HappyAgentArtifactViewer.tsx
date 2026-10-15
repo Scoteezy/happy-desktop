@@ -60,6 +60,12 @@ export interface HappyAgentArtifactViewerProps {
      */
     defaultHistoryShown?: boolean;
     /**
+     * Drawn as a tab's content — beside a chat in the side panel, or as a tab
+     * of the main content — under a strip that is already the window's header
+     * row, so the viewer's own header is a slim toolbar.
+     */
+    tab?: boolean;
+    /**
      * The host's isolated guest for an HTML version served as a site. Absent
      * where the host has none, in which case the viewer never holds a site.
      */
@@ -108,6 +114,7 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                 <>
                     <ArtifactHeader
                         className="happy-agent-artifact-viewer__header"
+                        {...(props.tab ? { compact: true } : {})}
                         {...(back ? { leading: back } : {})}
                         subtitle={happyAgentArtifactTypeLabel(artifact.type)}
                         title={artifact.title || "Untitled"}
@@ -197,6 +204,7 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                 <>
                     <ArtifactHeader
                         className="happy-agent-artifact-viewer__header"
+                        {...(props.tab ? { compact: true } : {})}
                         {...(back ? { leading: back } : {})}
                         title="Artifact"
                     />

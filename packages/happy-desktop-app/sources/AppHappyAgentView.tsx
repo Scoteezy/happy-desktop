@@ -4815,6 +4815,7 @@ function HappyAgentArtifactPanelViewerSurface(props: {
             onVersionSelect={store.versionSelect}
             onVersionsLoadMore={store.versionsNextLoad}
             {...(props.artifactPage ? { renderPage: props.artifactPage } : {})}
+            tab
             viewer={viewer.artifactId === artifactId ? viewer : VIEWER_OPENING}
         />
     );
@@ -4857,6 +4858,7 @@ function HappyAgentArtifactTabSurface(props: {
             onVersionSelect={store.versionSelect}
             onVersionsLoadMore={store.versionsNextLoad}
             {...(props.artifactPage ? { renderPage: props.artifactPage } : {})}
+            tab
             viewer={viewer.artifactId === artifactId ? viewer : VIEWER_OPENING}
         />
     );

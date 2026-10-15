@@ -525,7 +525,7 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Where the host has no isolated guest: a static, scriptless preview built from its own files, with its stylesheet and picture inlined."
+                detail="Where the host has no isolated guest: a scriptless page built from its own files, with its stylesheet and picture inlined."
                 label="Viewer · web page, static"
                 screen="08-html-1100x760"
                 window={{ width: 1100, height: 760 }}
@@ -691,7 +691,7 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Beside a chat in the side panel: a tab, closed by its own button, so the header offers no way back."
+                detail="Beside a chat in the side panel, under its tab strip: a slim toolbar with no way back, since the tab's own button closes it. A page the host cannot run is drawn without a notice."
                 label="Viewer · side panel"
                 screen="18-panel-560x760"
                 window={{ width: 560, height: 760 }}
@@ -700,6 +700,7 @@ export function HappyAgentArtifactsBlueprintPage() {
                 <HappyAgentArtifactViewer
                     {...panelViewerHandlers}
                     labels={labels}
+                    tab
                     viewer={landingViewer}
                 />
             </FullScreenSpecimen>
