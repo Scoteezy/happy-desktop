@@ -40,6 +40,15 @@
         box-shadow 160ms ease;
 }
 
+/* Each row is its own stacking context, and a row later in the DOM may sit in
+   any slot, so something a row floats past its edge — a tooltip over the row
+   above — would be painted over by that row. The row being pointed at or worked
+   in comes forward, still beneath a held one. */
+.happy-reordering-list__row:hover,
+.happy-reordering-list__row:focus-within {
+    z-index: 1;
+}
+
 .happy-reordering-list__rows[data-reorderable] .happy-reordering-list__row {
     cursor: grab;
 }
