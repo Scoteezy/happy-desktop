@@ -11,8 +11,12 @@ declare const happyAgentPanelTabIdBrand: unique symbol;
 /** Branded identifier of one tab in the workspace panel, minted by this store. */
 export type HappyAgentPanelTabId = string & { readonly [happyAgentPanelTabIdBrand]: true };
 
-/** What a panel tab holds beside the conversation. */
-export type HappyAgentPanelTabKind = "terminal" | "browser";
+/**
+ * What a tool tab holds. An artifact is one only once the reader moved it out
+ * of the panel's artifact tab into the main content; in the panel it is that
+ * one replaceable tab rather than a tool tab of its own.
+ */
+export type HappyAgentPanelTabKind = "terminal" | "browser" | "artifact";
 
 /**
  * Which of the workspace's two tab strips a view is being shown in.
@@ -43,6 +47,12 @@ export type HappyAgentPanelTabSnapshot =
           readonly workspaceId: HappyAgentGroupId;
           /** Last committed main-frame location, restored if the surface remounts. */
           readonly url: string;
+      })
+    | (HappyAgentPanelTabSnapshotBase & {
+          readonly kind: "artifact";
+          readonly artifactId: HappyAgentArtifactId;
+          /** The version it was on when it moved; absent, it follows the latest. */
+          readonly version?: number;
       });
 
 export interface HappyAgentBrowserUpdate {
@@ -178,6 +188,20 @@ export interface HappyAgentPanelStore {
     /** Closes the artifact tab and returns to Files. */
     artifactViewClose(): void;
     /**
+     * Moves the artifact tab's artifact into the main content as a tab of its
+     * own, at `version` — the one the reader has on screen, or absent to keep
+     * following the latest — and returns that tab's id. The panel gives up its
+     * artifact tab exactly as closing it would. Nothing moves when the panel
+     * has no artifact open or no group is addressed.
+     */
+    artifactViewDetach(version: number | undefined): HappyAgentPanelTabId | undefined;
+    /**
+     * Moves an artifact tab out of the main content back into the panel's
+     * artifact tab, at `version`, and shows it there. The artifact tab is one
+     * slot, so whatever it held steps aside.
+     */
+    artifactTabAttach(tabId: HappyAgentPanelTabId, version: number | undefined): void;
+    /**
      * Adds a terminal tab to the open group and selects it. The shell runs in
      * the open session, so there has to be one; the tab itself belongs to the
      * group and stays put as the reader moves between that group's sessions.
@@ -250,6 +274,8 @@ interface Tab {
     readonly terminal?: HappyAgentTerminalHandle;
     title?: string;
     url?: string;
+    readonly artifactId?: HappyAgentArtifactId;
+    readonly version?: number;
     placement: HappyAgentViewPlacement;
 }
 
@@ -264,17 +290,26 @@ function tabSame(
     before: HappyAgentPanelTabSnapshot | undefined,
     next: HappyAgentPanelTabSnapshot,
 ): before is HappyAgentPanelTabSnapshot {
-    return (
-        before !== undefined &&
-        before.id === next.id &&
-        before.kind === next.kind &&
-        before.label === next.label &&
-        before.placement === next.placement &&
-        (before.kind === "terminal" ||
-            (next.kind !== "terminal" &&
-                before.url === next.url &&
-                before.workspaceId === next.workspaceId))
-    );
+    if (
+        before === undefined ||
+        before.id !== next.id ||
+        before.label !== next.label ||
+        before.placement !== next.placement
+    )
+        return false;
+    if (before.kind === "browser")
+        return (
+            next.kind === "browser" &&
+            before.url === next.url &&
+            before.workspaceId === next.workspaceId
+        );
+    if (before.kind === "artifact")
+        return (
+            next.kind === "artifact" &&
+            before.artifactId === next.artifactId &&
+            before.version === next.version
+        );
+    return next.kind === "terminal";
 }
 
 /**
@@ -339,24 +374,24 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             fileViewOpen: fileViewShown,
             ...(artifactView === undefined ? {} : { artifactView }),
             open,
-            tabs: visible.map(
-                (tab): HappyAgentPanelTabSnapshot =>
-                    tab.kind === "browser"
-                        ? {
-                              id: tab.id,
-                              kind: tab.kind,
-                              label: tab.label,
-                              placement: tab.placement,
-                              url: tab.url ?? "about:blank",
-                              workspaceId: tab.groupId,
-                          }
-                        : {
-                              id: tab.id,
-                              kind: tab.kind,
-                              label: tab.label,
-                              placement: tab.placement,
-                          },
-            ),
+            tabs: visible.map((tab): HappyAgentPanelTabSnapshot => {
+                const base = { id: tab.id, label: tab.label, placement: tab.placement };
+                if (tab.kind === "browser")
+                    return {
+                        ...base,
+                        kind: tab.kind,
+                        url: tab.url ?? "about:blank",
+                        workspaceId: tab.groupId,
+                    };
+                if (tab.kind === "artifact" && tab.artifactId !== undefined)
+                    return {
+                        ...base,
+                        kind: tab.kind,
+                        artifactId: tab.artifactId,
+                        ...(tab.version === undefined ? {} : { version: tab.version }),
+                    };
+                return { ...base, kind: "terminal" };
+            }),
             ...(previewEntryId === undefined ? {} : { previewEntryId }),
             ...(previewMediaIndex === undefined ? {} : { previewMediaIndex }),
             ...(terminalRefusal === undefined ? {} : { terminalRefusal }),
@@ -651,6 +686,43 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             remember();
             recompute();
         },
+        artifactViewDetach(version) {
+            if (disposed || !groupId || artifactView === undefined) return undefined;
+            const id = `tab_${nextTabNumber}` as HappyAgentPanelTabId;
+            nextTabNumber += 1;
+            tabs.push({
+                id,
+                kind: "artifact",
+                // The owner names it by the artifact's live title.
+                label: "Artifact",
+                groupId,
+                placement: "main",
+                artifactId: artifactView.artifactId,
+                ...(version === undefined ? {} : { version }),
+            });
+            artifactView = undefined;
+            if (activeViewId === "artifact") activeViewId = "files";
+            remember();
+            recompute();
+            return id;
+        },
+        artifactTabAttach(tabId, version) {
+            if (disposed) return;
+            const index = tabs.findIndex(
+                (candidate) => candidate.id === tabId && candidate.kind === "artifact",
+            );
+            const tab = tabs[index];
+            if (!tab?.artifactId) return;
+            tabs.splice(index, 1);
+            artifactView =
+                version === undefined
+                    ? { artifactId: tab.artifactId }
+                    : { artifactId: tab.artifactId, version };
+            activeViewId = "artifact";
+            open = true;
+            remember();
+            recompute();
+        },
         terminalAdd() {
             if (disposed || !groupId || !conversationId || terminalRefusal !== undefined) return;
             terminalTabAdd(groupId, conversationId);
@@ -701,7 +773,9 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         tabPlacementUpdate(tabId, placement) {
             if (disposed) return;
             const tab = tabs.find((candidate) => candidate.id === tabId);
-            if (!tab || tab.placement === placement) return;
+            // An artifact has no tool tab in the panel: it goes back into the
+            // artifact tab, through `artifactTabAttach`.
+            if (!tab || tab.placement === placement || tab.kind === "artifact") return;
             tab.placement = placement;
             if (placement === "panel") {
                 // Arriving is being looked at: the reader moved this tab here,

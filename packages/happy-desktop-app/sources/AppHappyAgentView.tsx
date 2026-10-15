@@ -16,6 +16,9 @@ import type {
     HappyAgentArtifactId,
     HappyAgentArtifactPlaces,
     HappyAgentArtifacts,
+    HappyAgentArtifactTitlesSnapshot,
+    HappyAgentArtifactTitlesStore,
+    HappyAgentArtifactViewerStore,
     ConversationEntry,
     ComposerSnapshot,
     ExperimentsStore,
@@ -1289,14 +1292,58 @@ function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefine
     return tab?.id;
 }
 
-/** One tab per tool, iconed by what it holds. */
-function toolTabItems(tabs: readonly HappyAgentPanelTabSnapshot[]): TabItem[] {
+/**
+ * One tab per tool, iconed by what it holds. An artifact is named by its live
+ * title, which the strip drawing it reads.
+ */
+function toolTabItems(
+    tabs: readonly HappyAgentPanelTabSnapshot[],
+    artifactLabel?: (artifactId: HappyAgentArtifactId) => string,
+): TabItem[] {
     return tabs.map((tab) => ({
         closable: true,
         id: tab.id,
-        label: tab.label,
-        icon: tab.kind === "terminal" ? ("terminal" as const) : ("globe" as const),
+        label: tab.kind === "artifact" ? (artifactLabel?.(tab.artifactId) ?? tab.label) : tab.label,
+        icon:
+            tab.kind === "terminal"
+                ? ("terminal" as const)
+                : tab.kind === "artifact"
+                  ? ("package" as const)
+                  : ("globe" as const),
     }));
+}
+
+/**
+ * What a tab holding an artifact is called: the same live title a reference
+ * to it reads as, and "Artifact" until that title has been read.
+ */
+function artifactTabLabelOf(
+    titles: HappyAgentArtifactTitlesSnapshot,
+    titlesStore: HappyAgentArtifactTitlesStore,
+    artifactId: HappyAgentArtifactId,
+): string {
+    const view = messageReferencesCreate({
+        titles,
+        titlesStore,
+        entities: messageReferenceEntities(undefined),
+        onArtifactOpen: () => undefined,
+    }).view({ kind: "artifact", id: artifactId });
+    return view.type === "link" && view !== ARTIFACT_READING ? view.label : "Artifact";
+}
+
+/**
+ * The version a viewer has on screen for one artifact, to carry it across the
+ * window: what the reader picked in it, or absent while it follows the latest.
+ * A viewer not yet holding that artifact has shown no other version, so the
+ * one the tab was opened on stands.
+ */
+function artifactVersionOnScreen(
+    store: HappyAgentArtifactViewerStore,
+    artifactId: HappyAgentArtifactId,
+    opened: number | undefined,
+): number | undefined {
+    const viewer = store.get();
+    return viewer.artifactId === artifactId ? viewer.versionSelected : opened;
 }
 
 /**
@@ -4742,7 +4789,6 @@ function HappyAgentArtifactPanelViewerSurface(props: {
     artifactPage?: HtmlPreviewRenderer;
     places: HappyAgentArtifactPlaces;
     view: HappyAgentPanelArtifactView;
-    onClose(): void;
 }) {
     const store = props.artifacts.panelViewer();
     const peopleStore = props.artifacts.people();
@@ -4758,7 +4804,48 @@ function HappyAgentArtifactPanelViewerSurface(props: {
     return (
         <HappyAgentArtifactViewer
             labels={artifactLabels(props.places, people)}
-            onBack={props.onClose}
+            onDeletionCancel={store.deletionCancel}
+            onDeletionConfirm={store.deletionConfirm}
+            onDeletionRequest={store.deletionRequest}
+            onFileDownload={(link) => {
+                void fileDownload(link.file.path, { type: "url", url: link.url }).catch(
+                    () => undefined,
+                );
+            }}
+            onVersionSelect={store.versionSelect}
+            onVersionsLoadMore={store.versionsNextLoad}
+            {...(props.artifactPage ? { renderPage: props.artifactPage } : {})}
+            viewer={viewer.artifactId === artifactId ? viewer : VIEWER_OPENING}
+        />
+    );
+}
+
+/**
+ * An artifact the reader moved out of the side panel, as a tab of the main
+ * content: the same viewer again, opened on the version it was on when it
+ * moved. A tab is ended by its own close button and has no page behind it to
+ * go back to, so the viewer offers no way back.
+ */
+function HappyAgentArtifactTabSurface(props: {
+    artifacts: HappyAgentArtifacts;
+    artifactPage?: HtmlPreviewRenderer;
+    places: HappyAgentArtifactPlaces;
+    tab: Extract<HappyAgentPanelTabSnapshot, { kind: "artifact" }>;
+}) {
+    const store = props.artifacts.tabViewer();
+    const peopleStore = props.artifacts.people();
+    const people = useSyncExternalStore(peopleStore.subscribe, peopleStore.get, peopleStore.get);
+    const { artifactId, version } = props.tab;
+    // The main content shows one tab at a time, so the tab on screen holds the
+    // shared viewer for as long as it is shown.
+    useDisposableLease(`${props.tab.id}:${artifactId}@${String(version ?? "latest")}`, () => {
+        store.artifactOpen(artifactId, version);
+        return { [Symbol.dispose]: () => store.artifactOpen(undefined) };
+    });
+    const viewer = useSyncExternalStore(store.subscribe, store.get, store.get);
+    return (
+        <HappyAgentArtifactViewer
+            labels={artifactLabels(props.places, people)}
             onDeletionCancel={store.deletionCancel}
             onDeletionConfirm={store.deletionConfirm}
             onDeletionRequest={store.deletionRequest}
@@ -5078,10 +5165,17 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     activeFile.document.value !== activeFile.displayedDocument)))
             ? activeFile
             : undefined;
-    // Terminals and pages the reader moved out of the panel. They belong to the
-    // addressed group the way the panel does, so they are listed and drawn here
-    // only while that group is the one open.
+    // Terminals, pages, and artifacts the reader moved out of the panel. They
+    // belong to the addressed group the way the panel does, so they are listed
+    // and drawn here only while that group is the one open.
     const mainTools = openGroup ? toolTabsPlaced(panel, "main") : [];
+    // An artifact moved here is named by the same live title as everywhere else.
+    const artifactTitlesStore = props.artifacts?.titles() ?? artifactTitlesStoreNoop;
+    const artifactTitles = useSyncExternalStore(
+        artifactTitlesStore.subscribe,
+        artifactTitlesStore.get,
+        artifactTitlesStore.get,
+    );
     const activeMainTool = mainTools.find((tab) => tab.id === workspace.activeMainViewId);
     const displayedMainTool = mainTools.find((tab) => tab.id === workspace.displayedMainViewId);
     const openInRecent = workspace.openInRecent;
@@ -5148,7 +5242,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                           ).map((tab) => (availability.online ? tab : { ...tab, closable: false })),
                           ...(openReview ? [reviewTabItem(openReview)] : []),
                           ...groupFileTabs.map(fileTabItem),
-                          ...toolTabItems(mainTools),
+                          ...toolTabItems(mainTools, (artifactId) =>
+                              artifactTabLabelOf(artifactTitles, artifactTitlesStore, artifactId),
+                          ),
                       ]
                     : [],
                 workspace.tabOrder,
@@ -5810,6 +5906,20 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         }
                         onLoadMore={(path) => props.workspace.fileTreeLoadMore(path)}
                         onViewTransfer={(viewId) => {
+                            if (viewId === "artifact") {
+                                const view = panel.artifactView;
+                                if (!view || !props.artifacts) return;
+                                props.workspace.artifactPlacementUpdate(
+                                    viewId,
+                                    "main",
+                                    artifactVersionOnScreen(
+                                        props.artifacts.panelViewer(),
+                                        view.artifactId,
+                                        view.version,
+                                    ),
+                                );
+                                return;
+                            }
                             const file =
                                 viewId === HAPPY_AGENT_PANEL_FILE_VIEW_ID
                                     ? workspace.panelFile
@@ -6172,6 +6282,23 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 props.onChatSelect(openGroup.id, tabId);
                             }}
                             onTransfer={(tabId) => {
+                                const artifact = mainTools.find(
+                                    (tab) => tab.id === tabId && tab.kind === "artifact",
+                                );
+                                if (artifact?.kind === "artifact") {
+                                    props.workspace.artifactPlacementUpdate(
+                                        tabId,
+                                        "panel",
+                                        props.artifacts
+                                            ? artifactVersionOnScreen(
+                                                  props.artifacts.tabViewer(),
+                                                  artifact.artifactId,
+                                                  artifact.version,
+                                              )
+                                            : artifact.version,
+                                    );
+                                    return;
+                                }
                                 const file = groupFileTabs.find((tab) => tab.id === tabId);
                                 const selected = workspace.activeMainViewId === tabId;
                                 props.workspace.viewPlacementUpdate(tabId, "panel");
@@ -6295,6 +6422,17 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                     persistent={
                                         <HappyAgentToolBodies
                                             activeId={workspace.displayedMainViewId}
+                                            {...(props.artifacts
+                                                ? {
+                                                      artifacts: {
+                                                          artifacts: props.artifacts,
+                                                          places: artifactPlaces,
+                                                          ...(props.artifactPage
+                                                              ? { page: props.artifactPage }
+                                                              : {}),
+                                                      },
+                                                  }
+                                                : {})}
                                             browserConnectionId={props.browserConnectionId}
                                             {...(props.browserContent
                                                 ? { browserContent: props.browserContent }
@@ -8579,19 +8717,10 @@ function HappyAgentPanelBody(props: {
     );
     const devicesOffered = props.devices !== undefined && deviceSupport.status === "supported";
     const artifactView = props.panel.artifactView;
-    const artifactTabView =
-        artifactView === undefined
-            ? undefined
-            : messageReferencesCreate({
-                  titles,
-                  titlesStore,
-                  entities: messageReferenceEntities(undefined),
-                  onArtifactOpen: () => undefined,
-              }).view({ kind: "artifact", id: artifactView.artifactId });
     const artifactTabLabel =
-        artifactTabView?.type === "link" && artifactTabView !== ARTIFACT_READING
-            ? artifactTabView.label
-            : "Artifact";
+        artifactView === undefined
+            ? "Artifact"
+            : artifactTabLabelOf(titles, titlesStore, artifactView.artifactId);
     const activityTabShown =
         props.panel.activityViewOpen ||
         (props.activity?.activityAvailable === true && !props.panel.activityViewDismissed);
@@ -8764,7 +8893,8 @@ function HappyAgentPanelBody(props: {
                     // the main content is showing; neither has a form over there.
                     // A file read through a link into another workspace is a
                     // preview beside this conversation, not one of this
-                    // checkout's tabs.
+                    // checkout's tabs. An open artifact becomes a main-content
+                    // tab of its own.
                     transferable={(tab) =>
                         tab.id !== "files" &&
                         tab.id !== "artifacts" &&
@@ -8772,7 +8902,6 @@ function HappyAgentPanelBody(props: {
                         tab.id !== "usage" &&
                         tab.id !== "devices" &&
                         tab.id !== "preview" &&
-                        tab.id !== "artifact" &&
                         !(tab.id === HAPPY_AGENT_PANEL_FILE_VIEW_ID && panelFile?.linked)
                     }
                     transferTargets={PANEL_TRANSFER_TARGETS}
@@ -8893,7 +9022,6 @@ function HappyAgentPanelBody(props: {
                                 {...(props.artifacts.page
                                     ? { artifactPage: props.artifacts.page }
                                     : {})}
-                                onClose={() => props.store.artifactViewClose()}
                                 places={props.artifacts.places}
                                 view={props.panel.artifactView}
                             />
@@ -9037,6 +9165,12 @@ function HappyAgentToolBodies(props: {
     tabs: readonly HappyAgentPanelTabSnapshot[];
     activeId: string | undefined;
     store: HappyAgentPanelStore;
+    /** Where an artifact tab is read from; only the main content holds one. */
+    artifacts?: {
+        readonly artifacts: HappyAgentArtifacts;
+        readonly places: HappyAgentArtifactPlaces;
+        readonly page?: HtmlPreviewRenderer;
+    };
     browserContent?: BrowserContentRenderer;
     browserConnectionId: string | null;
     /** Owning Happy Agent availability applied to retained terminal tabs. */
@@ -9076,6 +9210,24 @@ function HappyAgentToolBodies(props: {
                         }
                     />
                 ))}
+            {active?.kind === "artifact" ? (
+                props.artifacts ? (
+                    <HappyAgentArtifactTabSurface
+                        artifacts={props.artifacts.artifacts}
+                        {...(props.artifacts.page ? { artifactPage: props.artifacts.page } : {})}
+                        key={active.id}
+                        places={props.artifacts.places}
+                        tab={active}
+                    />
+                ) : (
+                    <EmptyState
+                        description="This Happy Agent does not keep artifacts."
+                        icon="package"
+                        size="panel"
+                        title="No artifacts"
+                    />
+                )
+            ) : null}
             {active?.kind === "terminal" ? (
                 <HappyAgentTerminalTab
                     key={active.id}

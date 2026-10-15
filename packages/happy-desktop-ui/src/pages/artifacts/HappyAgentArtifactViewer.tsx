@@ -49,8 +49,16 @@ export interface HappyAgentArtifactViewerProps {
      * page here to navigate to.
      */
     onFileDownload: (link: HappyAgentArtifactFileLink) => void;
-    /** Leaves the viewer for wherever it was opened from. */
+    /**
+     * Leaves the viewer for wherever it was opened from. Absent where there is
+     * nowhere to go back to, such as a tab, which its own close button ends.
+     */
     onBack?: () => void;
+    /**
+     * Whether the versions column starts out shown. It starts hidden: the
+     * artifact comes first, and the History button brings the column up.
+     */
+    defaultHistoryShown?: boolean;
     /**
      * The host's isolated guest for an HTML version served as a site. Absent
      * where the host has none, in which case the viewer never holds a site.
@@ -74,7 +82,7 @@ export interface HappyAgentArtifactViewerProps {
  */
 export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
     const viewer = props.viewer;
-    const [historyShown, setHistoryShown] = useState(true);
+    const [historyShown, setHistoryShown] = useState(props.defaultHistoryShown ?? false);
     const state = viewer.artifact;
     const artifact = state.type === "ready" ? state.value : undefined;
     const back = props.onBack ? (

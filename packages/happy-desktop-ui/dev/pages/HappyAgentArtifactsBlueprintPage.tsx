@@ -192,6 +192,8 @@ const viewerHandlers = {
     onVersionsLoadMore: noop,
     onBack: noop,
 };
+/** The side panel's viewer: a tab, which its close button ends, so it has no way back. */
+const { onBack: _onBack, ...panelViewerHandlers } = viewerHandlers;
 
 function link(artifactId: string, number: number, entry: HappyAgentArtifactFile, url?: string) {
     return {
@@ -494,7 +496,7 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Markdown read as a document; its own picture is shown from the same version, and a link to one of its files saves that file."
+                detail="Markdown read as a document; its own picture is shown from the same version, and a link to one of its files saves that file. The history stays folded away until History is pressed."
                 label="Viewer · markdown"
                 screen="06-markdown-1100x760"
                 window={{ width: 1100, height: 760 }}
@@ -508,7 +510,7 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Looking back at version 2: the strip says so and offers the newest again."
+                detail="History open, looking back at version 2: the strip says so and offers the newest again."
                 label="Viewer · older version"
                 screen="07-older-1100x760"
                 window={{ width: 1100, height: 760 }}
@@ -516,6 +518,7 @@ export function HappyAgentArtifactsBlueprintPage() {
             >
                 <HappyAgentArtifactViewer
                     {...viewerHandlers}
+                    defaultHistoryShown
                     labels={labels}
                     viewer={{ ...launchViewer, versionSelected: 2, version: launchVersions[1]! }}
                 />
@@ -684,6 +687,20 @@ export function HappyAgentArtifactsBlueprintPage() {
                             message: "This artifact holds too many files to serve.",
                         },
                     })}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Beside a chat in the side panel: a tab, closed by its own button, so the header offers no way back."
+                label="Viewer · side panel"
+                screen="18-panel-560x760"
+                window={{ width: 560, height: 760 }}
+                number="18"
+            >
+                <HappyAgentArtifactViewer
+                    {...panelViewerHandlers}
+                    labels={labels}
+                    viewer={landingViewer}
                 />
             </FullScreenSpecimen>
         </ComponentPage>

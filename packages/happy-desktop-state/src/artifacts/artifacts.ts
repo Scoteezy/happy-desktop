@@ -38,6 +38,12 @@ export interface HappyAgentArtifacts {
      * over which artifact one store holds.
      */
     panelViewer(): HappyAgentArtifactViewerStore;
+    /**
+     * The artifact a reader moved out of the side panel into the main content.
+     * The main content shows one tab at a time, so its artifact tabs share
+     * this one viewer, each opening it on its own artifact while it is shown.
+     */
+    tabViewer(): HappyAgentArtifactViewerStore;
     /** The live titles of the artifacts conversations name. */
     titles(): HappyAgentArtifactTitlesStore;
     /** The names of the people artifacts credit. */
@@ -72,6 +78,7 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
     let panel: HappyAgentArtifactCatalogStore | undefined;
     let viewer: HappyAgentArtifactViewerStore | undefined;
     let panelViewer: HappyAgentArtifactViewerStore | undefined;
+    let tabViewer: HappyAgentArtifactViewerStore | undefined;
     let titles: HappyAgentArtifactTitlesStore | undefined;
     let people: HappyAgentArtifactPeople | undefined;
     let disposed = false;
@@ -125,6 +132,9 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
         panelViewer() {
             return (panelViewer ??= viewerCreate());
         },
+        tabViewer() {
+            return (tabViewer ??= viewerCreate());
+        },
         titles() {
             return (titles ??= inert(
                 happyAgentArtifactTitlesStoreCreate({ client: deps.client, sync: deps.sync }),
@@ -140,6 +150,7 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
             panel?.[Symbol.dispose]();
             viewer?.[Symbol.dispose]();
             panelViewer?.[Symbol.dispose]();
+            tabViewer?.[Symbol.dispose]();
             titles?.[Symbol.dispose]();
             people?.[Symbol.dispose]();
         },

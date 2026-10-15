@@ -1702,6 +1702,21 @@ export interface HappyAgentWorkspaceStore {
      */
     viewPlacementUpdate(viewId: string, placement: HappyAgentViewPlacement): void;
     /**
+     * Moves an artifact to the other side of the workspace: the panel's
+     * artifact tab (`viewId` `"artifact"`) into a main-content tab of its own,
+     * or such a tab (`viewId` its tab id) back into the panel's artifact tab.
+     *
+     * `version` is the version the reader has on screen, absent when they are
+     * following the latest. It is the caller's to say because the version on
+     * screen belongs to the artifact viewer drawing it, and the artifact lands
+     * on it again on the other side.
+     */
+    artifactPlacementUpdate(
+        viewId: string,
+        placement: HappyAgentViewPlacement,
+        version: number | undefined,
+    ): void;
+    /**
      * Puts one main-content view on screen — an open file tab or a tool tab
      * moved into the main content — or clears it so the addressed conversation
      * is what the main content shows.
@@ -7302,7 +7317,9 @@ export function happyAgentWorkspaceStoreCreate(
             // somewhere else rather than closed and reopened.
             const tool = panel.get().tabs.find((tab) => tab.id === viewId);
             if (tool) {
-                if (tool.placement === placement) return;
+                // An artifact moves with the version on screen, through
+                // `artifactPlacementUpdate`.
+                if (tool.placement === placement || tool.kind === "artifact") return;
                 panel.tabPlacementUpdate(tool.id, placement);
                 if (placement === "main") {
                     activeMainViewId = tool.id;
@@ -7363,6 +7380,34 @@ export function happyAgentWorkspaceStoreCreate(
                 }
                 recompute();
             });
+        },
+        artifactPlacementUpdate(viewId, placement, version) {
+            if (disposed) return;
+            if (placement === "main") {
+                if (viewId !== "artifact") return;
+                const id = panel.artifactViewDetach(version);
+                if (id === undefined) return;
+                activeMainViewId = id;
+                displayedMainViewId = id;
+                activeMainViewGroupId = addressedGroupId;
+                if (addressedGroupId !== undefined) groupTabRemember(addressedGroupId, id);
+                recompute();
+                return;
+            }
+            const tab = panel
+                .get()
+                .tabs.find((entry) => entry.id === viewId && entry.kind === "artifact");
+            if (!tab) return;
+            panel.artifactTabAttach(tab.id, version);
+            if (activeMainViewId === tab.id) {
+                // The main content uncovers the conversation the address names.
+                activeMainViewId = undefined;
+                displayedMainViewId = undefined;
+                activeMainViewGroupId = undefined;
+                if (addressedGroupId !== undefined && openId !== undefined)
+                    groupTabRemember(addressedGroupId, openId);
+            }
+            recompute();
         },
         mainViewSelect(viewId) {
             if (disposed) return;
