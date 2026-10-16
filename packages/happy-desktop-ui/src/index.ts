@@ -546,10 +546,13 @@ export {
 } from "./CommandPaletteResults";
 export { FormRow, type FormRowAlign, type FormRowLayout, type FormRowProps } from "./FormRow";
 export {
-    DocumentSurface,
-    type DocumentSurfaceParticipant,
-    type DocumentSurfaceProps,
-} from "./DocumentSurface";
+    DocumentEditor,
+    documentFragmentName,
+    type DocumentEditorPresence,
+    type DocumentEditorPresencePayload,
+    type DocumentEditorProps,
+    type DocumentEditorUser,
+} from "./DocumentEditor";
 export {
     DataTable,
     type DataTableAlign,
@@ -726,7 +729,9 @@ export {
 } from "./pages/surfaces/HappyAgentTodoSurfacePage";
 export {
     HappyAgentDocumentSurfacePage,
+    type HappyAgentDocumentSurfaceContent,
     type HappyAgentDocumentSurfacePageProps,
+    type HappyAgentDocumentSync,
 } from "./pages/surfaces/HappyAgentDocumentSurfacePage";
 export {
     HappyAgentSurfaceNotMadePage,

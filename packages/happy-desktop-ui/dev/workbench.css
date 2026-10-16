@@ -627,3 +627,16 @@
 .blueprint-zoom-frame .happy-zoom-indicator {
     animation-play-state: paused;
 }
+
+/* Two windows on one document, side by side, a hairline between them. */
+.blueprint-document-pair {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 1px;
+    min-width: 0;
+    background: var(--divider);
+}
+
+.blueprint-document-pair > * {
+    flex: 1 1 0%;
+}

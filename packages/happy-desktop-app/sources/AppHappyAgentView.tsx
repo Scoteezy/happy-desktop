@@ -2227,10 +2227,7 @@ const SURFACE_CREATE_OFFERS: readonly {
     readonly kind: HappyAgentSurfaceCreateKind;
     readonly icon: IconName;
     readonly label: string;
-}[] = [
-    { kind: "todo", icon: "tasks", label: "New todo list" },
-    { kind: "document", icon: "doc", label: "New document" },
-];
+}[] = [{ kind: "todo", icon: "tasks", label: "New todo list" }];
 
 const SURFACE_CREATE_MENU: MenuItem[] = SURFACE_CREATE_OFFERS.map((offer) => ({
     kind: "item",
@@ -4159,11 +4156,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     onSubmit={(input) => {
                         // The list exists the moment it is asked for, so it is
                         // opened at once; the Happy Agent hears in the background.
-                        // A new document opens ready to be written in.
                         const surfaceId = surfaceCatalogStore.surfaceCreate(input);
                         if (surfaceId === undefined) return;
-                        if (input.kind === "document")
-                            active.session?.surfaces?.document(surfaceId).editStart();
                         props.onSurfaceOpen?.(active.id, surfaceId);
                     }}
                 />
@@ -5308,12 +5302,12 @@ function HappyAgentDocumentSurface(props: {
     return (
         <HappyAgentDocumentSurfacePage
             {...(props.chat ? { chat: props.chat } : {})}
-            document={document}
+            content={
+                document.status === "ready"
+                    ? { kind: "readOnly", text: document.text }
+                    : { kind: document.status }
+            }
             focusOnType={props.focusOnType}
-            onConflictDismiss={store.conflictDismiss}
-            onEditEnd={store.editEnd}
-            onEditStart={store.editStart}
-            onTextChange={store.textUpdate}
             surface={props.surface}
         />
     );

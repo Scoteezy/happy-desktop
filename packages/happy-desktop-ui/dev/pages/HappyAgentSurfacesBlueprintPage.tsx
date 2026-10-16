@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
     happyAgentTodoHeading,
     type ComposerSnapshot,
@@ -6,7 +6,6 @@ import {
     type ConversationMessageEntry,
     type HappyAgentSurfaceActiveTodo,
     type HappyAgentSurfaceCompletedTodo,
-    type HappyAgentSurfaceDocumentSnapshot,
     type HappyAgentSurfaceId,
     type HappyAgentSurfacePerson,
     type HappyAgentSurfaceTodoId,
@@ -22,6 +21,7 @@ import { HappyAgentSurfaceChatPanel } from "../../src/pages/surfaces/HappyAgentS
 import { EmptyState } from "../../src/EmptyState";
 import type { MenuItem } from "../../src/Menu";
 import { Sidebar, type SidebarItem, type SidebarReorder } from "../../src/Sidebar";
+import { DocumentSlashMenu, documentSlashMenuItems } from "../../src/DocumentEditorMenus";
 import { HappyAgentDocumentSurfacePage } from "../../src/pages/surfaces/HappyAgentDocumentSurfacePage";
 import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import {
@@ -41,6 +41,7 @@ import {
 } from "../../src/pages/surfaces/surfacePresentation";
 import type { HappyAgentSurfaceCreateKind } from "../../src/pages/surfaces/HappyAgentSurfaceCreateDialog";
 import { ComponentPage, FullScreenSpecimen, Specimen } from "../kit";
+import { documentDocFromMarkdown, useDocumentAlone, useDocumentPair } from "./documentFixtures";
 import { happyAgentMenus } from "./happyAgentChatFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
@@ -138,51 +139,76 @@ Everyone in the flat edits this page. Keep it short; the history keeps the rest.
 Questions go to [the flat's chat](https://example.com/flat-chat).
 `;
 
-const DOCUMENT: HappyAgentSurfaceDocumentSnapshot = {
-    surfaceId: "surface-house" as HappyAgentSurfaceId,
-    status: "ready",
-    text: HOUSE_TEXT,
-    editing: false,
-    saving: false,
-};
-
-const documentHandlers = {
-    onConflictDismiss: noop,
-    onEditEnd: noop,
-    onEditStart: noop,
-    onTextChange: noop,
-};
+const READER = { name: "Steve Korshakov", tone: "violet" } as const;
+const OTHER = { name: "Ada Park", tone: "mint" } as const;
 
 /**
- * The page against a document held here, so reading, clicking into the text,
- * and writing can be tried in the workbench. Typing is "saved" a second
- * after it rests, as the store saves it.
+ * The page on a document held here, so writing in it can be tried in the
+ * workbench: headings, lists, `/`, and the bar over selected text.
  */
 function LiveDocumentPage(props: {
     readonly surface?: HappyAgentSurfaceView;
-    readonly initial?: HappyAgentSurfaceDocumentSnapshot;
+    readonly markdown?: string;
     readonly chat?: HappyAgentSurfaceChatToggle;
+    readonly focusKey?: string;
 }) {
-    const [document, setDocument] = useState(props.initial ?? DOCUMENT);
-    const typed = useRef(0);
+    const window = useDocumentAlone(props.markdown ?? HOUSE_TEXT, READER);
     return (
         <HappyAgentDocumentSurfacePage
             {...(props.chat ? { chat: props.chat, focusOnType: !props.chat.open } : {})}
-            document={document}
-            onConflictDismiss={() => setDocument({ ...document, conflict: undefined })}
-            onEditEnd={() => setDocument({ ...document, editing: false, saving: false })}
-            onEditStart={() => setDocument({ ...document, editing: true })}
-            onTextChange={(text) => {
-                typed.current += 1;
-                const at = typed.current;
-                setDocument({ ...document, text, saving: true });
-                setTimeout(() => {
-                    if (typed.current === at)
-                        setDocument((current) => ({ ...current, saving: false }));
-                }, 1_000);
-            }}
+            {...(props.focusKey === undefined ? {} : { focusKey: props.focusKey })}
+            content={{ kind: "live", ...window }}
             surface={props.surface ?? HOUSE}
         />
+    );
+}
+
+const SHORT_TEXT = `# Packing list
+
+Everything for the long weekend, in one place.
+
+- [x] Passports
+- [ ] Chargers and the travel adapter
+- [ ] Snacks for the drive
+`;
+
+// Each on its own document: two editors on one would write in each other.
+const SAVING_DOC = documentDocFromMarkdown(SHORT_TEXT);
+const OFFLINE_DOC = documentDocFromMarkdown(SHORT_TEXT);
+
+const SLASH_ITEMS = documentSlashMenuItems(
+    (
+        [
+            "paragraph",
+            "heading",
+            "heading_2",
+            "heading_3",
+            "bullet_list",
+            "numbered_list",
+            "check_list",
+            "quote",
+            "code_block",
+            "divider",
+        ] as const
+    ).map((key) => ({ key, title: key, onItemClick: noop })),
+);
+
+/** Two windows on one document, side by side, as two people write in it at once. */
+function DocumentPair() {
+    const [left, right] = useDocumentPair(HOUSE_TEXT, [READER, OTHER]);
+    return (
+        <div className="blueprint-document-pair">
+            <HappyAgentDocumentSurfacePage
+                content={{ kind: "live", ...left }}
+                focusOnType={false}
+                surface={HOUSE}
+            />
+            <HappyAgentDocumentSurfacePage
+                content={{ kind: "live", ...right }}
+                focusOnType={false}
+                surface={HOUSE}
+            />
+        </div>
     );
 }
 
@@ -894,9 +920,7 @@ function MockWindow(props: {
                     ) : open?.view.type.kind === "document" ? (
                         <LiveDocumentPage
                             chat={chat}
-                            {...(open.id === "house"
-                                ? {}
-                                : { initial: { ...DOCUMENT, text: "", editing: true } })}
+                            {...(open.id === "house" ? {} : { focusKey: open.id, markdown: "" })}
                             key={open.id}
                             surface={open.view}
                         />
@@ -1195,7 +1219,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             </Specimen>
 
             <FullScreenSpecimen
-                detail="Live. The shared Markdown rendered on the reading measure. Click any block to write: the text opens as Markdown in the same place, the caret at the start of that block and its line where the block was. A link or a selection does not open it. Escape, Cmd+Enter, or Done closes it; typing is saved as it rests."
+                detail="Live. The document as it reads, always open for writing: click anywhere to put the caret there. / on a line offers headings, lists, a checklist, a quote, code, and a divider; selecting text raises a bar for bold, italic, strikethrough, code, and a link. Hover a block for + and its drag handle. There is no Save."
                 label="Document"
                 number="08"
                 screen="08-document-1100x760"
@@ -1205,62 +1229,115 @@ export function HappyAgentSurfacesBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Written in: the Markdown on the same measure, saving what was just typed."
-                label="Document, writing"
+                detail="Live. Two windows on one document, as Steve and Ada see it: write in either and it arrives in the other at once, with the writer's caret and name. Changes to the same line merge; nothing is saved over anyone. The window a change was made in says Saving… until it has arrived."
+                label="Document, two people writing"
                 number="08b"
-                screen="08b-document-writing-1100x760"
+                screen="08b-document-pair-1100x760"
                 window={{ width: 1100, height: 760 }}
             >
-                <HappyAgentDocumentSurfacePage
-                    {...documentHandlers}
-                    document={{ ...DOCUMENT, editing: true, saving: true }}
-                    surface={HOUSE}
-                />
+                <DocumentPair />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Someone changed the same lines while the reader was writing: the reader's text was kept and saved over theirs, which stays among the versions."
-                label="Document, both changed the same lines"
+                detail="Something written here is still on its way to the Happy Agent."
+                label="Document, saving"
                 number="08c"
-                screen="08c-document-conflict-1100x760"
-                window={{ width: 1100, height: 760 }}
+                screen="08c-document-saving-720x640"
             >
                 <HappyAgentDocumentSurfacePage
-                    {...documentHandlers}
-                    document={{
-                        ...DOCUMENT,
-                        editing: true,
-                        conflict: { lastEditorUserId: "u3", updatedAt: 1_760_000_000_000 },
+                    content={{
+                        kind: "live",
+                        ydoc: SAVING_DOC,
+                        user: READER,
+                        presence: [],
+                        onPresence: noop,
+                        sync: "saving",
                     }}
+                    focusOnType={false}
                     surface={HOUSE}
                 />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Nothing written yet: one quiet line that opens it for writing."
-                label="Document, empty"
-                number="08d"
-                screen="08d-document-empty-720x640"
+                detail="The connection is gone: writing goes on, and reaches everyone once it is back."
+                label="Document, offline"
+                number="08c2"
+                screen="08c2-document-offline-720x640"
             >
                 <HappyAgentDocumentSurfacePage
-                    {...documentHandlers}
-                    document={{ ...DOCUMENT, text: "" }}
+                    content={{
+                        kind: "live",
+                        ydoc: OFFLINE_DOC,
+                        user: READER,
+                        presence: [],
+                        onPresence: noop,
+                        sync: "offline",
+                    }}
+                    focusOnType={false}
+                    surface={HOUSE}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Live. A document just made: nothing written yet, the caret in it, and the line saying how to begin."
+                label="Document, new"
+                number="08d"
+                screen="08d-document-new-720x640"
+            >
+                <LiveDocumentPage
+                    markdown=""
                     surface={{ ...HOUSE, name: "Notes", creator: undefined }}
                 />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="The daemon has no such document."
-                label="Document, missing"
+                detail="On a Happy Agent from before shared editing: the Markdown to read, and one quiet line saying writing in it needs a newer Happy Agent."
+                label="Document, older Happy Agent"
                 number="08e"
-                screen="08e-document-missing-720x640"
+                screen="08e-document-read-only-1100x760"
+                window={{ width: 1100, height: 760 }}
             >
                 <HappyAgentDocumentSurfacePage
-                    {...documentHandlers}
-                    document={{ ...DOCUMENT, status: "missing", text: "" }}
+                    content={{ kind: "readOnly", text: HOUSE_TEXT }}
                     surface={HOUSE}
                 />
             </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="On a Happy Agent from before shared editing, with nothing written in it: the quiet line alone."
+                label="Document, older Happy Agent, empty"
+                number="08f"
+                screen="08f-document-read-only-empty-720x640"
+            >
+                <HappyAgentDocumentSurfacePage
+                    content={{ kind: "readOnly", text: "" }}
+                    surface={{ ...HOUSE, name: "Notes", creator: undefined }}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="The Happy Agent has no such document."
+                label="Document, missing"
+                number="08g"
+                screen="08g-document-missing-720x640"
+            >
+                <HappyAgentDocumentSurfacePage content={{ kind: "missing" }} surface={HOUSE} />
+            </FullScreenSpecimen>
+
+            <Specimen
+                detail="What / offers at the caret, the second entry selected by the arrow keys."
+                label="Document slash menu"
+                number="08h"
+                stage="surface"
+            >
+                <div className="happy-document-editor">
+                    <DocumentSlashMenu
+                        items={SLASH_ITEMS}
+                        loadingState="loaded"
+                        selectedIndex={1}
+                    />
+                </div>
+            </Specimen>
 
             <FullScreenSpecimen
                 detail="An artifact kept among the Surfaces that has not been read for this reader yet: its header, and nothing guessed. Once read, its row opens the artifact viewer itself and this page is not seen."

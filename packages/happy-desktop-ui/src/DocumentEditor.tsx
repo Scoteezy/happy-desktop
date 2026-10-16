@@ -1,10 +1,16 @@
-import { useCreateBlockNote } from "@blocknote/react";
-import { BlockNoteView } from "@blocknote/mantine";
 import {
-    CommentsExtension,
-    DefaultThreadStoreAuth,
-    YjsThreadStore,
-} from "@blocknote/core/comments";
+    type CollaborationUser,
+    filterSuggestionItems,
+    getDefaultSlashMenuItems,
+} from "@blocknote/core/extensions";
+import {
+    BlockNoteViewRaw,
+    FormattingToolbarController,
+    LinkToolbarController,
+    SideMenuController,
+    SuggestionMenuController,
+    useCreateBlockNote,
+} from "@blocknote/react";
 import { useEffectEvent, useLayoutEffect, useMemo, useRef } from "react";
 import {
     Awareness,
@@ -12,40 +18,39 @@ import {
     encodeAwarenessUpdate,
     removeAwarenessStates,
 } from "y-protocols/awareness";
-import * as Y from "yjs";
+import type * as Y from "yjs";
+import type { ToneName } from "./Avatar";
+import {
+    DocumentFormattingToolbar,
+    DocumentLinkToolbar,
+    DocumentSideMenu,
+    DocumentSlashMenu,
+    type DocumentSlashMenuItem,
+    documentSlashMenuItems,
+} from "./DocumentEditorMenus";
+import { useFocusOnType } from "./useFocusOnType";
 
-/** Shared type name of the BlockNote fragment inside a collaborative document Y.Doc. */
+/**
+ * Shared type name of the BlockNote fragment inside a collaborative document
+ * Y.Doc. The Happy Agent reads and writes the same fragment, under the same
+ * name, with the same BlockNote schema.
+ */
 export const documentFragmentName = "document";
-
-/** Shared type name of the comment-thread map inside a collaborative document Y.Doc. */
-export const documentThreadsName = "threads";
 
 const remotePresenceOrigin = "happy-remote-presence";
 
-/**
- * Pause after a change before the Markdown projection is derived again. Shorter
- * than any host's own save pause, so the readable copy is ready before the write
- * that carries it.
- */
-const MARKDOWN_DERIVE_PAUSE_MS = 200;
-
+/** Who is writing here, as everyone else in the document sees their caret. */
 export interface DocumentEditorUser {
     readonly name: string;
-    readonly color: string;
-}
-
-/** One resolved comment author identity shown on threads and reactions. */
-export interface DocumentEditorCommentUser {
-    readonly id: string;
-    readonly username: string;
-    readonly avatarUrl?: string;
+    /** The tone their caret and its label are drawn in. */
+    readonly tone: ToneName;
 }
 
 /**
- * One remote participant's awareness payload as relayed by the server. The
+ * One remote participant's awareness payload as relayed by the host. The
  * `update` is an opaque base64 y-protocols awareness update produced by that
  * participant's editor; `awarenessClientId` is its numeric Yjs client id so a
- * departed participant's cursor can be removed.
+ * departed participant's caret can be removed.
  */
 export interface DocumentEditorPresence {
     readonly clientId: string;
@@ -67,80 +72,111 @@ export interface DocumentEditorProps {
     user: DocumentEditorUser;
     presence?: readonly DocumentEditorPresence[];
     onPresence?: (payload: DocumentEditorPresencePayload) => void;
+    /**
+     * The pointer went down in the editor, or came back up once the click has
+     * placed the caret. Changes from elsewhere applied to `ydoc` in between
+     * would put back the caret from before the click, so the owner holds them
+     * until it is up.
+     */
+    onPointerPress?: (pressed: boolean) => void;
     editable?: boolean;
-    theme?: "light" | "dark";
     /**
-     * The local user's stable id. Providing it enables inline comment threads,
-     * stored in the same collaborative Y.Doc so they sync and persist with the
-     * document content.
+     * Whether the editor is the window's place to type: a character typed
+     * while no other control wants it lands in it, at the caret.
      */
-    commentUserId?: string;
-    /** Resolves comment author ids to display identities; used with commentUserId. */
-    commentUsersResolve?: (
-        userIds: readonly string[],
-    ) => Promise<readonly DocumentEditorCommentUser[]>;
-    /**
-     * The document's text after each change, as normalized Markdown.
-     *
-     * The collaborative state stays the authority; this is a projection of it.
-     * But only the editor knows its own schema, so a host that keeps a readable
-     * copy beside the document gets it from here rather than parsing Yjs itself.
-     */
-    onMarkdown?: (markdown: string) => void;
-    /** Shows BlockNote's block drag menu. */
-    blockDragEnabled?: boolean;
+    focusOnType?: boolean;
+    /** Puts the caret in the editor whenever it changes; see `useFocusOnType`. */
+    focusKey?: string;
     "data-testid"?: string;
 }
 
+/** Tone names are carried in the awareness `color` field; anything else is drawn quietly. */
+const TONES: ReadonlySet<string> = new Set<ToneName>([
+    "violet",
+    "ember",
+    "mint",
+    "ocean",
+    "rose",
+    "amber",
+    "slate",
+    "brand",
+]);
+
 /**
- * Collaborative BlockNote editor over a shared Y.Doc. Content synchronization
- * happens entirely through the Y.Doc handed in by the host; presence flows
- * through opaque awareness payloads so the host transport never interprets
- * editor internals.
+ * Someone else's caret: a thin bar in their tone, with their name above it
+ * while they type or the pointer rests on it. The tone is a name, not a
+ * colour, so each window paints it from its own theme.
+ */
+function cursorRender(user: CollaborationUser): HTMLElement {
+    const cursor = document.createElement("span");
+    cursor.className = "bn-collaboration-cursor__base";
+    cursor.setAttribute("data-tone", TONES.has(user.color) ? user.color : "slate");
+    const caret = document.createElement("span");
+    caret.className = "bn-collaboration-cursor__caret";
+    caret.setAttribute("contenteditable", "false");
+    const label = document.createElement("span");
+    label.className = "bn-collaboration-cursor__label";
+    label.textContent = user.name;
+    caret.append(label);
+    // Word joiners on both sides keep the caret from breaking a line by itself.
+    cursor.append("\u2060", caret, "\u2060");
+    return cursor;
+}
+
+/**
+ * Placeholder text for an empty block, by block type, in sentence case. The
+ * first block of an empty document invites writing; any other empty line the
+ * caret is on says how to make it something else.
+ */
+const PLACEHOLDERS = {
+    emptyDocument: "Write something, or press / for headings, lists, and more",
+    default: "Press / for headings, lists, and more",
+    heading: "Heading",
+    bulletListItem: "List",
+    numberedListItem: "List",
+    checkListItem: "To do",
+} as const;
+
+/**
+ * C-301 DocumentEditor — a WYSIWYG editor over one shared Y.Doc.
+ *
+ * The document is a CRDT: every keystroke is a Yjs change to the BlockNote
+ * fragment, which the host carries to everyone else, and theirs arrive in the
+ * same Y.Doc and merge without conflicts. Presence flows through opaque
+ * awareness payloads, so the host transport never interprets editor internals.
+ *
+ * The editor offers only what a Markdown copy of the document can hold:
+ * headings, lists, checklists, quotes, code, dividers, and bold, italic,
+ * struck-through, code, and linked text. Its menus are drawn in the house
+ * style, with the house icon fonts.
  */
 export function DocumentEditor(props: DocumentEditorProps) {
     // Identity contract: the Awareness instance and editor must be recreated
     // exactly when the underlying Y.Doc changes, never on ordinary re-renders,
-    // or cursors and undo history would reset while typing.
+    // or carets and undo history would reset while typing.
     const awareness = useMemo(() => new Awareness(props.ydoc), [props.ydoc]);
-    const commentUsersResolve = props.commentUsersResolve;
-    const commentUserId = props.commentUserId;
-    const comments = useMemo(
-        () =>
-            commentUserId
-                ? CommentsExtension({
-                      threadStore: new YjsThreadStore(
-                          commentUserId,
-                          props.ydoc.getMap(documentThreadsName),
-                          new DefaultThreadStoreAuth(commentUserId, "editor"),
-                      ),
-                      resolveUsers: async (userIds) => {
-                          const users = (await commentUsersResolve?.(userIds)) ?? [];
-                          return userIds.map((id) => {
-                              const user = users.find((candidate) => candidate.id === id);
-                              return {
-                                  id,
-                                  username: user?.username ?? "Someone",
-                                  avatarUrl: user?.avatarUrl ?? "",
-                              };
-                          });
-                      },
-                  })
-                : undefined,
-        [props.ydoc, commentUserId, commentUsersResolve],
-    );
     const editor = useCreateBlockNote(
         {
+            animations: false,
+            placeholders: PLACEHOLDERS,
             collaboration: {
                 provider: { awareness },
                 fragment: props.ydoc.getXmlFragment(documentFragmentName),
-                user: { name: props.user.name, color: props.user.color },
+                // The awareness `color` carries the tone's name; `cursorRender`
+                // turns it into this window's own colour for that tone.
+                user: { name: props.user.name, color: props.user.tone },
                 showCursorLabels: "activity",
+                renderCursor: cursorRender,
             },
-            ...(comments ? { extensions: [comments] } : {}),
         },
-        [props.ydoc, awareness, comments],
+        [props.ydoc, awareness],
     );
+
+    /** Remote presence last applied to the Awareness, by participant. */
+    const appliedRef = useRef(new Map<string, DocumentEditorPresence>());
+    const pointerHeld = useRef(false);
+    /** Remote presence that arrived while a click here was placing the caret. */
+    const presenceHeld = useRef<readonly DocumentEditorPresence[] | null>(null);
 
     const presenceEmit = useEffectEvent((payload: DocumentEditorPresencePayload) =>
         props.onPresence?.(payload),
@@ -163,6 +199,7 @@ export function DocumentEditor(props: DocumentEditorProps) {
             });
         };
         awareness.on("update", onUpdate);
+        const applied = appliedRef.current;
         // The editor seeds its local awareness state during creation, before
         // this listener exists; announce that initial state explicitly.
         if (awareness.getLocalState() !== null)
@@ -173,71 +210,119 @@ export function DocumentEditor(props: DocumentEditorProps) {
         return () => {
             awareness.off("update", onUpdate);
             awareness.destroy();
+            // Carets applied to this Awareness, or held for it, go with it.
+            applied.clear();
+            presenceHeld.current = null;
         };
     }, [awareness]);
 
-    const markdownEmit = useEffectEvent((markdown: string) => props.onMarkdown?.(markdown));
-    const markdownWanted = props.onMarkdown !== undefined;
-    // eslint-disable-next-line happy-react/no-layout-effect -- the editor's change stream is an imperative resource that must be subscribed after commit and unsubscribed with this document
-    useLayoutEffect(() => {
-        if (!markdownWanted) return;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        // Deriving Markdown walks the whole document, so it runs on a short pause
-        // rather than per keystroke: the projection is always read from the
-        // document as it stands when the pause ends, so coalescing loses nothing.
-        const derive = () => {
-            timer = undefined;
-            markdownEmit(editor.blocksToMarkdownLossy());
+    // A remote caret that moves redraws the line it sits on. Redrawn while a
+    // click here is still placing this person's caret, ProseMirror puts back
+    // the caret from before the click, so remote presence waits until the
+    // pointer is released and the click's own caret has been read.
+    // Changes to the document itself are redrawn the same way, so the owner
+    // holds those too, and lets them go first: the carets held here are
+    // placed in the text as it is once they have landed.
+    const pointerPress = () => {
+        if (pointerHeld.current) return;
+        pointerHeld.current = true;
+        const pressed = props.onPointerPress;
+        pressed?.(true);
+        const release = () => {
+            window.removeEventListener("pointerup", release, true);
+            window.removeEventListener("pointercancel", release, true);
+            window.removeEventListener("blur", release);
+            window.setTimeout(() => {
+                pointerHeld.current = false;
+                pressed?.(false);
+                const held = presenceHeld.current;
+                presenceHeld.current = null;
+                if (held !== null) presenceApply(awareness, appliedRef.current, held);
+            });
         };
-        // Every change, local or remote: the projection describes the document,
-        // not who last touched it, so a remote edit must update it too.
-        const unsubscribe = editor.onChange(() => {
-            if (timer === undefined) timer = setTimeout(derive, MARKDOWN_DERIVE_PAUSE_MS);
-        });
-        return () => {
-            unsubscribe?.();
-            // Closing the document must not drop the last words written in it.
-            if (timer === undefined) return;
-            clearTimeout(timer);
-            derive();
-        };
-    }, [editor, markdownWanted]);
+        window.addEventListener("pointerup", release, true);
+        window.addEventListener("pointercancel", release, true);
+        // A press the window never sees end, because it lost focus first.
+        window.addEventListener("blur", release);
+    };
 
-    const appliedRef = useRef(new Map<string, DocumentEditorPresence>());
     // eslint-disable-next-line happy-react/no-layout-effect -- remote presence payloads must be applied to the live Yjs Awareness instance after the matching document render commits
     useLayoutEffect(() => {
-        const applied = appliedRef.current;
-        const present = new Set<string>();
-        for (const entry of props.presence ?? []) {
-            present.add(entry.clientId);
-            const previous = applied.get(entry.clientId);
-            if (previous && previous.revision >= entry.revision) continue;
-            applied.set(entry.clientId, entry);
-            if (entry.active && entry.update !== undefined) {
-                applyAwarenessUpdate(awareness, base64Decode(entry.update), remotePresenceOrigin);
-            } else if (!entry.active && entry.awarenessClientId !== undefined) {
-                removeAwarenessStates(awareness, [entry.awarenessClientId], remotePresenceOrigin);
-            }
-        }
-        for (const [clientId, entry] of applied) {
-            if (present.has(clientId)) continue;
-            applied.delete(clientId);
-            if (entry.awarenessClientId !== undefined)
-                removeAwarenessStates(awareness, [entry.awarenessClientId], remotePresenceOrigin);
-        }
+        if (pointerHeld.current) presenceHeld.current = props.presence ?? [];
+        else presenceApply(awareness, appliedRef.current, props.presence ?? []);
     }, [awareness, props.presence]);
 
+    const slashItems = async (query: string): Promise<DocumentSlashMenuItem[]> =>
+        filterSuggestionItems(documentSlashMenuItems(getDefaultSlashMenuItems(editor)), query);
+
+    /** The editable element itself, for the window's place to type. */
+    const writing = useRef<HTMLElement | null>(null);
+    useFocusOnType(writing, props.focusOnType === true, props.focusKey);
+    const containerAttach = (element: HTMLDivElement | null) => {
+        writing.current = element?.querySelector<HTMLElement>(".bn-editor") ?? null;
+    };
+
     return (
-        <div className="happy-document-editor" data-happy-desktop-ui="document-editor">
-            <BlockNoteView
+        <div
+            className="happy-document-editor"
+            data-happy-desktop-ui="document-editor"
+            onPointerDownCapture={pointerPress}
+        >
+            <BlockNoteViewRaw
+                comments={false}
                 data-testid={props["data-testid"]}
                 editable={props.editable ?? true}
                 editor={editor}
-                sideMenu={props.blockDragEnabled ?? true}
-                theme={props.theme ?? "light"}
-            />
+                emojiPicker={false}
+                filePanel={false}
+                formattingToolbar={false}
+                linkToolbar={false}
+                ref={containerAttach}
+                sideMenu={false}
+                slashMenu={false}
+                tableHandles={false}
+            >
+                <FormattingToolbarController formattingToolbar={DocumentFormattingToolbar} />
+                <LinkToolbarController linkToolbar={DocumentLinkToolbar} />
+                <SideMenuController sideMenu={DocumentSideMenu} />
+                <SuggestionMenuController
+                    getItems={slashItems}
+                    suggestionMenuComponent={DocumentSlashMenu}
+                    triggerCharacter="/"
+                />
+            </BlockNoteViewRaw>
         </div>
     );
+}
+
+/**
+ * Brings `awareness` up to the remote participants in `entries`: newer
+ * payloads are applied, and anyone who left or is no longer listed loses
+ * their caret. `applied` remembers what was last applied, by participant.
+ */
+function presenceApply(
+    awareness: Awareness,
+    applied: Map<string, DocumentEditorPresence>,
+    entries: readonly DocumentEditorPresence[],
+) {
+    const present = new Set<string>();
+    for (const entry of entries) {
+        present.add(entry.clientId);
+        const previous = applied.get(entry.clientId);
+        if (previous && previous.revision >= entry.revision) continue;
+        applied.set(entry.clientId, entry);
+        if (entry.active && entry.update !== undefined) {
+            applyAwarenessUpdate(awareness, base64Decode(entry.update), remotePresenceOrigin);
+        } else if (!entry.active && entry.awarenessClientId !== undefined) {
+            removeAwarenessStates(awareness, [entry.awarenessClientId], remotePresenceOrigin);
+        }
+    }
+    for (const [clientId, entry] of applied) {
+        if (present.has(clientId)) continue;
+        applied.delete(clientId);
+        if (entry.awarenessClientId !== undefined)
+            removeAwarenessStates(awareness, [entry.awarenessClientId], remotePresenceOrigin);
+    }
 }
 
 function base64Encode(bytes: Uint8Array): string {
