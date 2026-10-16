@@ -519,6 +519,7 @@ function markdownInlineItemsAppend(
         );
         if (text.length === 0) return;
         const tokens = atomic ? [text] : (text.match(/\s*\S+|\s+$/gu) ?? [text]);
+        const itemStart = current().length;
         for (const token of tokens) {
             const match = /^(\s*)(\S+)$/u.exec(token);
             if (
@@ -551,6 +552,17 @@ function markdownInlineItemsAppend(
                 font,
                 text: token,
             });
+        }
+        /* Blink rounds each shaped inline text run upward to 1/64px before
+           the next run starts. Keep that advance at the AST boundary, rather
+           than rounding the final line: several inline runs can otherwise
+           consume the line-fit tolerance and hide a real wrapped line. */
+        if (!WEBKIT_INLINE_SLICE && !GECKO_INLINE_SLICE) {
+            const last = current().at(-1);
+            if (current().length > itemStart && last && last.text.trim().length > 0) {
+                const width = naturalTextWidth(text, font, cache);
+                last.extraWidth = (last.extraWidth ?? 0) + Math.ceil(width * 64) / 64 - width;
+            }
         }
         return;
     }
