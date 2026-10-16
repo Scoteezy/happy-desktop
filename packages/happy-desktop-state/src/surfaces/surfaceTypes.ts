@@ -33,8 +33,6 @@ export type HappyAgentSurfaceType =
     | { readonly kind: "todo" }
     /** One shared Markdown document, kept with every version it has had. */
     | { readonly kind: "document" }
-    /** A name and nothing else, that heads the Surfaces after it in a sidebar. */
-    | { readonly kind: "separator" }
     /** One artifact, bot, or task, kept among the Surfaces; opening it opens that. */
     | { readonly kind: HappyAgentSurfaceReferenceKind }
     | { readonly kind: "unsupported"; readonly type: string };
@@ -43,8 +41,8 @@ export type HappyAgentSurfaceType =
 export type HappyAgentSurfaceReferenceKind = "artifact" | "bot" | "task";
 
 /**
- * Whether a Surface of this type can have a shared chat. A separator has no
- * content to talk about, and a type this build cannot show is not offered one.
+ * Whether a Surface of this type can have a shared chat. A type this build
+ * cannot show is not offered one.
  */
 export function happyAgentSurfaceChatSupported(type: HappyAgentSurfaceType): boolean {
     switch (type.kind) {
@@ -54,7 +52,6 @@ export function happyAgentSurfaceChatSupported(type: HappyAgentSurfaceType): boo
         case "bot":
         case "task":
             return true;
-        case "separator":
         case "unsupported":
             return false;
     }

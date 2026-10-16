@@ -562,12 +562,7 @@ function reference(
     };
 }
 
-function separator(id: string, name: string): MockSurface {
-    return { id, joined: true, view: { name, type: { kind: "separator" }, members: MEMBERS } };
-}
-
 const SURFACES: readonly MockSurface[] = [
-    separator("home", "Home"),
     { id: "groceries", joined: true, view: GROCERIES, count: openCount(ACTIVE) },
     {
         id: "reading",
@@ -581,7 +576,6 @@ const SURFACES: readonly MockSurface[] = [
         opens: "chief",
         view: { phase: "available", kind: "bot", name: "Chief of Staff", action: "open" },
     }),
-    separator("work", "Work"),
     { id: "launch", joined: true, view: KANBAN },
     reference("ref-spec", "Launch spec", "artifact", {
         face: { icon: "package" },
@@ -627,20 +621,17 @@ const SURFACES: readonly MockSurface[] = [
     },
 ];
 
-/** A Surface's row, as the app lists it: a joined separator heads the rows after it. */
+/** A Surface's row, as the app lists it. */
 function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
-    const heading = !fixed && surface.view.type.kind === "separator";
     return {
         id: surface.id,
-        kind: heading ? "heading" : "project",
+        kind: "project",
         label: surface.view.name,
-        ...(heading
-            ? {}
-            : surface.reference
-              ? surface.reference.face
-              : surface.view.image
-                ? { imageUrl: surface.view.image.url }
-                : { icon: surfaceTypeIcon(surface.view.type) }),
+        ...(surface.reference
+            ? surface.reference.face
+            : surface.view.image
+              ? { imageUrl: surface.view.image.url }
+              : { icon: surfaceTypeIcon(surface.view.type) }),
         ...(surface.joined && surface.count ? { count: surface.count } : {}),
         ...(fixed ? { reorderable: false } : {}),
         action: surface.joined
@@ -656,13 +647,11 @@ function surfaceItem(surface: MockSurface, fixed: boolean): SidebarItem {
 const CREATE_OFFERS = [
     "todo",
     "document",
-    "separator",
 ] as const satisfies readonly HappyAgentSurfaceCreateKind[];
 
 const CREATE_MENU: MenuItem[] = [
     { kind: "item", id: "todo", icon: "tasks", label: "New todo list" },
     { kind: "item", id: "document", icon: "doc", label: "New document" },
-    { kind: "item", id: "separator", icon: "hash", label: "New separator" },
 ];
 
 const ARTIFACTS: SidebarItem = {
@@ -805,10 +794,8 @@ function MockWindow(props: {
                         onItemAction={noop}
                         onItemReorder={reorder}
                         onItemSelect={(id) => {
-                            // A separator has nothing to open; a kept artifact,
-                            // bot, or task opens what it points at.
+                            // A kept artifact, bot, or task opens what it points at.
                             const surface = surfaces.find((entry) => entry.id === id);
-                            if (surface?.view.type.kind === "separator") return;
                             setSelected(surface?.reference?.opens ?? id);
                         }}
                         onSectionAction={noop}
@@ -876,7 +863,7 @@ function MockWindow(props: {
                 <AppShell
                     embedded
                     panel={
-                        chatOpen && open && open.view.type.kind !== "separator" ? (
+                        chatOpen && open ? (
                             <HappyAgentSurfaceChatPanel
                                 onClose={() => setChatOpen(false)}
                                 state={{ phase: "open" }}
@@ -945,20 +932,18 @@ function MockWindow(props: {
                         const id = `made-${String(surfaces.length)}`;
                         setSurfaces([
                             ...surfaces,
-                            input.kind === "separator"
-                                ? separator(id, input.name)
-                                : {
-                                      id,
-                                      joined: true,
-                                      view: {
-                                          name: input.name,
-                                          type: { kind: input.kind },
-                                          members: MEMBERS.slice(0, 1),
-                                      },
-                                  },
+                            {
+                                id,
+                                joined: true,
+                                view: {
+                                    name: input.name,
+                                    type: { kind: input.kind },
+                                    members: MEMBERS.slice(0, 1),
+                                },
+                            },
                         ]);
                         setCreating(undefined);
-                        if (input.kind !== "separator") setSelected(id);
+                        setSelected(id);
                     }}
                 />
             ) : null}
@@ -1018,7 +1003,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             title="HappyAgentSurfaces"
         >
             <FullScreenSpecimen
-                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others, separators included — Home and Work are separators, which head the Surfaces after them and open nothing. Chief of Staff, Launch spec, and Rewrite onboarding guide are a bot, an artifact, and a task kept among the Surfaces, wearing their own faces and opening where they always open; Old pricing page was deleted since. + beside the collapse control offers a todo list or a separator; the search above everything replaces the sidebar with what matches. The list's add field has the caret, and typing anywhere no other control wants lands in it, as in a chat."
+                detail="Live, in the window. Artifacts heads the first group and never moves; drag a Surface among the others. Chief of Staff, Launch spec, and Rewrite onboarding guide are a bot, an artifact, and a task kept among the Surfaces, wearing their own faces and opening where they always open; Old pricing page was deleted since. + beside the collapse control offers a todo list or a document; the search above everything replaces the sidebar with what matches. The list's add field has the caret, and typing anywhere no other control wants lands in it, as in a chat."
                 label="Window"
                 number="00"
                 screen="00-window-1100x760"
@@ -1335,7 +1320,7 @@ export function HappyAgentSurfacesBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Live. Groceries with its one shared chat open beside it: the ordinary conversation, everyone's messages in it, and its agent's. Chat in the header closes it, as does the ×; the panel is resized from its edge. While it is open, typing anywhere no control wants lands in the chat's composer, not the add field; closing it gives the add field the caret back. Every Surface but a separator has a chat."
+                detail="Live. Groceries with its one shared chat open beside it: the ordinary conversation, everyone's messages in it, and its agent's. Chat in the header closes it, as does the ×; the panel is resized from its edge. While it is open, typing anywhere no control wants lands in the chat's composer, not the add field; closing it gives the add field the caret back."
                 label="Window, chat open"
                 number="10"
                 screen="10-chat-1100x760"
@@ -1390,21 +1375,6 @@ export function HappyAgentSurfacesBlueprintPage() {
                     <MockChat entries={[]} />
                 </HappyAgentSurfaceChatPanel>
             </FullScreenSpecimen>
-
-            <Specimen
-                detail="480px · a separator is only a name"
-                label="Create separator"
-                number="07b"
-                stage="app"
-            >
-                {frame(
-                    <HappyAgentSurfaceCreateDialog
-                        kind="separator"
-                        onClose={noop}
-                        onSubmit={noop}
-                    />,
-                )}
-            </Specimen>
         </ComponentPage>
     );
 }

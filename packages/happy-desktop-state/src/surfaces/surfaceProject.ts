@@ -46,7 +46,6 @@ export function happyAgentSurfaceTypeProject(type: string): HappyAgentSurfaceTyp
     switch (type) {
         case "todo":
         case "document":
-        case "separator":
         case "artifact":
         case "bot":
         case "task":

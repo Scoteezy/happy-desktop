@@ -2230,7 +2230,6 @@ const SURFACE_CREATE_OFFERS: readonly {
 }[] = [
     { kind: "todo", icon: "tasks", label: "New todo list" },
     { kind: "document", icon: "doc", label: "New document" },
-    { kind: "separator", icon: "hash", label: "New separator" },
 ];
 
 const SURFACE_CREATE_MENU: MenuItem[] = SURFACE_CREATE_OFFERS.map((offer) => ({
@@ -2294,27 +2293,23 @@ function surfaceViewOf(
 /**
  * A Surface's row: its own name and picture whatever its type, with Leave on
  * one the reader joined and Join on one a search found. A joined todo list
- * also says how many of its todos are still open. A separator joined to the
- * sidebar is a heading over the Surfaces after it; found by a search, where
- * nothing comes after it, it is a row like the others.
+ * also says how many of its todos are still open.
  */
 function surfaceSidebarItem(
     happyAgentId: string,
     surface: HappyAgentSurface,
     places: SurfacePlaces,
-    listing: "sidebar" | "search",
     joined: boolean,
     offline: boolean,
     activeTodoCounts?: ReadonlyMap<HappyAgentSurfaceId, number>,
 ): SidebarItem {
     const count = joined ? activeTodoCounts?.get(surface.id) : undefined;
-    const heading = listing === "sidebar" && surface.type.kind === "separator";
     const label = surfaceLabel(surface);
     return {
         id: happyAgentItemId(happyAgentId, surfaceRowId(surface.id)),
-        kind: heading ? "heading" : "project",
+        kind: "project",
         label,
-        ...(heading ? {} : surfaceFace(surface, places)),
+        ...surfaceFace(surface, places),
         ...(count !== undefined && count > 0 ? { count } : {}),
         ...(joined ? {} : { reorderable: false }),
         action: joined
@@ -2441,7 +2436,6 @@ function happyAgentTopSection(
                           happyAgentId,
                           surface,
                           surfacePlacesOf(happyAgent),
-                          "sidebar",
                           true,
                           offline,
                           activeTodoCounts,
@@ -2534,7 +2528,6 @@ function happyAgentSearchSections(
                                     happyAgent.id,
                                     surface,
                                     surfacePlacesOf(happyAgent),
-                                    "search",
                                     true,
                                     offline,
                                     activeTodoCounts,
@@ -2550,7 +2543,6 @@ function happyAgentSearchSections(
                                 happyAgent.id,
                                 surface,
                                 surfacePlacesOf(happyAgent),
-                                "search",
                                 false,
                                 offline,
                             ),
@@ -3538,8 +3530,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         ?.catalog()
                         .get()
                         .surfaces.find((entry) => entry.id === surfaceId);
-                    // A separator has nothing to open; it only heads a group.
-                    if (surface?.type.kind === "separator") return;
                     // An artifact, bot, or task opens where it always does;
                     // only one that cannot be opened from here shows its page.
                     if (surface !== undefined && surfaceTargetOpen(happyAgent, surface)) return;
@@ -4169,10 +4159,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     onSubmit={(input) => {
                         // The list exists the moment it is asked for, so it is
                         // opened at once; the Happy Agent hears in the background.
-                        // A separator has no page, so the open one stays; a new
-                        // document opens ready to be written in.
+                        // A new document opens ready to be written in.
                         const surfaceId = surfaceCatalogStore.surfaceCreate(input);
-                        if (surfaceId === undefined || input.kind === "separator") return;
+                        if (surfaceId === undefined) return;
                         if (input.kind === "document")
                             active.session?.surfaces?.document(surfaceId).editStart();
                         props.onSurfaceOpen?.(active.id, surfaceId);
@@ -5069,8 +5058,8 @@ function HappyAgentSurfaceContent(props: {
     // Until the catalog names it the page is simply empty: a list made here is
     // in the catalog the moment it is asked for, and one opened on launch
     // appears as the catalog arrives, so there is no loader or error to show.
-    // A separator has no page; a route that names one shows nothing. One the
-    // reader made here and the Happy Agent turned down says why instead.
+    // One the reader made here and the Happy Agent turned down says why
+    // instead.
     if (surface === undefined) {
         const refusal = catalog.createsRefused.get(props.surfaceId);
         return refusal === undefined ? (
@@ -5083,7 +5072,6 @@ function HappyAgentSurfaceContent(props: {
             />
         );
     }
-    if (surface.type.kind === "separator") return <WindowDragRegion />;
     const view = surfaceViewOf(catalog, surface);
     const opening = catalog.chatsOpening.get(surface.id);
     // Shown from the moment it is asked for, so the reader sees it being made.

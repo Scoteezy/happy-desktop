@@ -133,7 +133,7 @@ const NAME_FORBIDDEN = /[\u0000-\u001f\u007f]/gu;
 export type HappyAgentSurfaceMembershipAction = "join" | "leave" | "reorder";
 
 /** The kinds of Surface the reader can make here. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document" | "separator";
+export type HappyAgentSurfaceCreateKind = "todo" | "document";
 
 /**
  * Whether the form that makes a new Surface is open, and for which kind.
@@ -228,8 +228,6 @@ export type HappyAgentSurfaceCreateInput =
            */
           readonly image?: Blob;
       }
-    /** A separator is only its name. */
-    | { readonly kind: "separator"; readonly name: string }
     /**
      * An artifact, bot, or task kept among the Surfaces. The name is the
      * Surface's own label, shown only while the target cannot be.
@@ -404,7 +402,6 @@ function createRefusal(
 const CREATE_NOUNS = {
     todo: "todo lists",
     document: "documents",
-    separator: "separators",
     artifact: "Surfaces for artifacts",
     bot: "Surfaces for bots",
     task: "Surfaces for tasks",
@@ -1192,8 +1189,6 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 const request = ((): CreateSurfaceRequest => {
                     const base = { id: surfaceId, name, mutationId };
                     switch (input.kind) {
-                        case "separator":
-                            return { ...base, type: "separator" };
                         case "reference": {
                             const target = input.reference;
                             if (target.kind === "artifact")
