@@ -9,6 +9,7 @@ import {
     type ConversationDelegationChild,
     type ConversationDiffHunk,
     type ConversationEntry,
+    type ConversationError,
     type ConversationFileDiff,
     type ConversationJson,
     type ConversationMediaItem,
@@ -205,6 +206,7 @@ function payloadEqual(left: ConversationEntry, right: ConversationEntry): boolea
         return (
             left.level === right.level &&
             left.title === right.title &&
+            errorEqual(left.error, right.error) &&
             left.source?.messageId === right.source?.messageId &&
             left.source?.runId === right.source?.runId
         );
@@ -229,6 +231,43 @@ function payloadEqual(left: ConversationEntry, right: ConversationEntry): boolea
             left.tools === right.tools
         );
     return false;
+}
+
+function errorEqual(
+    left: ConversationError | undefined,
+    right: ConversationError | undefined,
+): boolean {
+    if (left === right) return true;
+    if (!left || !right) return false;
+    return (
+        left.code === right.code &&
+        left.modelName === right.modelName &&
+        (left.mode === right.mode ||
+            (left.mode !== null &&
+                right.mode !== null &&
+                left.mode.providerId === right.mode.providerId &&
+                left.mode.providerType === right.mode.providerType &&
+                left.mode.modelId === right.mode.modelId &&
+                left.mode.effort === right.mode.effort &&
+                left.mode.permissionMode === right.mode.permissionMode &&
+                left.mode.serviceTier === right.mode.serviceTier &&
+                left.mode.account?.id === right.mode.account?.id &&
+                left.mode.account?.label === right.mode.account?.label)) &&
+        left.credentialSource?.kind === right.credentialSource?.kind &&
+        left.credentialSource?.location === right.credentialSource?.location &&
+        left.credentialSource?.host === right.credentialSource?.host &&
+        left.recovery.steps.length === right.recovery.steps.length &&
+        left.recovery.steps.every((step, index) => step === right.recovery.steps[index]) &&
+        left.recovery.actions.length === right.recovery.actions.length &&
+        left.recovery.actions.every((action, index) => action === right.recovery.actions[index]) &&
+        (left.recovery.commands?.length ?? 0) === (right.recovery.commands?.length ?? 0) &&
+        (left.recovery.commands?.every(
+            (command, index) =>
+                command.label === right.recovery.commands?.[index]?.label &&
+                command.command === right.recovery.commands?.[index]?.command,
+        ) ??
+            true)
+    );
 }
 
 /**

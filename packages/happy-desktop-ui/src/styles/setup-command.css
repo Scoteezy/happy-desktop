@@ -63,6 +63,8 @@
     width: 28px;
     height: 28px;
     margin-right: 3px;
+    /* 8px well radius minus the 4px border-box inset. */
+    border-radius: 4px;
     color: color-mix(in srgb, var(--terminal-command) 70%, transparent);
     /* Always present: the well exists so this command can be taken. */
     opacity: 1;

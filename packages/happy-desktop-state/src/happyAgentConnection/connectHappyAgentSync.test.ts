@@ -4,7 +4,12 @@ import { happyAgentChatStoreCreate } from "../happyAgent/happyAgentChatStore.js"
 import { happyAgentModelCatalogProject } from "../happyAgent/happyAgentProject.js";
 import type { HappyAgentSessionId } from "../happyAgent/happyAgentTypes.js";
 import { MINIMUM_HAPPY_AGENT_VERSION } from "./compatibility.js";
-import { HAPPY_AGENT_PROTOCOL_VERSION, HappyAgentApiError } from "@slopus/happy-agent-client";
+import {
+    HAPPY_AGENT_PROTOCOL_VERSION,
+    HappyAgentApiError,
+    type Message,
+    type MessageMode,
+} from "@slopus/happy-agent-client";
 import type {
     ChatDelta,
     ChatElement,
@@ -523,6 +528,87 @@ it("applies a redelivered message.created only once", async () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(userMessages(chat.elements)).toHaveLength(1);
     expect(userMessages(chat.elements)[0]?.text).toBe("once");
+});
+
+it("preserves configuration and diagnostic identities from live delivery through history reload", async () => {
+    const { daemon, connection, chat, sessionId } = await liveHarness();
+    const before: MessageMode = {
+        providerId: "claude",
+        providerType: "claude",
+        account: { id: "work", label: "Work" },
+        modelId: "opus",
+        effort: "high",
+        serviceTier: null,
+        permissionMode: "auto",
+    };
+    const after: MessageMode = {
+        ...before,
+        providerId: "claude_extra",
+        account: { id: "personal", label: "Personal" },
+    };
+    const messages: Message[] = [
+        {
+            id: "baseline",
+            role: "service",
+            createdAt: 1,
+            metadata: {},
+            content: [
+                { type: "configuration", before: null, after: before, beforeMessageId: null },
+            ],
+        },
+        {
+            id: "configuration",
+            role: "service",
+            createdAt: 2,
+            metadata: {},
+            content: [{ type: "configuration", before, after, beforeMessageId: "baseline" }],
+        },
+        {
+            id: "opaque-durable-history-id",
+            role: "service",
+            createdAt: 3,
+            metadata: {},
+            content: [{ type: "text", text: "Authentication failed\n  preserved details" }],
+            error: {
+                code: "authentication_failed",
+                mode: after,
+                credentialSource: {
+                    kind: "native_login",
+                    location: "Claude Code sign-in",
+                    host: "Agent host",
+                },
+                recovery: { steps: ["Retry first."], actions: ["ask_chief"] },
+            },
+        },
+    ];
+    const run = fakeRun({ id: "configuration-run", status: "running", messages });
+    daemon.historySet(sessionId, [run]);
+    daemon.eventEmit("run.started", { agentId: sessionId, run, acceptedMessageIds: [] });
+    for (const message of messages) {
+        const event = daemon.eventEmit("message.created", {
+            agentId: sessionId,
+            message,
+            runId: run.id,
+        });
+        daemon.eventRedeliver(event);
+    }
+    const diagnosticElements = (elements: readonly ChatElement[]) =>
+        elements.filter(
+            (element) => element.kind === "configuration" || element.kind === "failure",
+        );
+    await vi.waitFor(() => expect(diagnosticElements(chat.elements)).toHaveLength(2));
+    const live = diagnosticElements(chat.elements);
+    expect(live[1]).toMatchObject({
+        kind: "failure",
+        messageId: "opaque-durable-history-id",
+        error: { mode: after },
+    });
+    expect(chat.elements.some((element) => element.id.includes("baseline"))).toBe(false);
+    connection.close();
+    const reloaded = harnessOpen(daemon);
+    groupsWatch(reloaded.connection);
+    const replay = sessionWatch(reloaded.connection, sessionId);
+    await vi.waitFor(() => expect(diagnosticElements(replay.elements)).toEqual(live));
 });
 
 it("ignores a redelivered message.delta instead of appending its text twice", async () => {

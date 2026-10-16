@@ -36,6 +36,7 @@ import { gitSnapshotStateUpdate, type GitSnapshotState } from "./gitSnapshotStat
 import { CHECKING_SERVER_COMPATIBILITY, serverCompatibility } from "./compatibility.js";
 import { projectRegistrationError } from "./errors.js";
 import { deepEqual } from "../happyAgent/happyAgentSupport.js";
+import { happyAgentDraftAppended } from "../happyAgent/happyAgentChatDraftAppend.js";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
 import { cuid2Create } from "../utils/cuid2Create.js";
 import {
@@ -174,6 +175,7 @@ interface RecentEvent {
 }
 
 interface DraftSave {
+    readonly confirmation?: { readonly finish: (error?: Error) => void };
     readonly draft: AgentDraftSnapshot;
     readonly mutationId: string;
     readonly previousDraft: AgentDraftSnapshot;
@@ -2525,7 +2527,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         mutationId: string,
         request: () => Promise<T>,
         applied?: (value: T) => void,
-        rejected?: () => boolean | void,
+        rejected?: (error: unknown) => boolean | void,
         sessionId?: string,
         queueKey = mutationId,
     ): string => {
@@ -2564,7 +2566,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         void completed
             .catch((error: unknown) => {
                 if (!rootController.signal.aborted) {
-                    const shouldReport = rejected?.() !== false;
+                    const shouldReport = rejected?.(error) !== false;
                     const timedOut = error instanceof DOMException && error.name === "TimeoutError";
                     if (shouldReport) {
                         reportMutationFailure(
@@ -2645,6 +2647,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
 
     const draftSave = (sessionId: string, save: DraftSave): string => {
         if (writesHeld()) {
+            if (save.confirmation) {
+                save.confirmation.finish(
+                    new Error(
+                        "This Happy Agent is offline or updating. Try again when it is available.",
+                    ),
+                );
+                return save.mutationId;
+            }
             heldDraftSaves.set(sessionId, save);
             return save.mutationId;
         }
@@ -2652,35 +2662,80 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             "set_draft",
             save.mutationId,
             async () => {
-                try {
-                    return await client.saveAgentDraft(
-                        sessionId,
-                        {
-                            draft: save.draft.value,
-                            mutationId: save.mutationId,
-                            updatedAt: save.updatedAt,
-                        },
-                        { signal: deadlineSignal() },
-                    );
-                } catch (error) {
-                    if (!drainingRefusal(error)) throw error;
-                    // The drain began while this was on its way. Held, with
-                    // the same idempotency key, unless a newer save already is.
-                    admitting = false;
-                    if (!heldDraftSaves.has(sessionId)) heldDraftSaves.set(sessionId, save);
-                    return undefined;
+                const request = {
+                    draft: save.draft.value,
+                    mutationId: save.mutationId,
+                    updatedAt: save.updatedAt,
+                };
+                for (let attempt = 1; ; attempt += 1) {
+                    try {
+                        return await client.saveAgentDraft(sessionId, request, {
+                            signal: deadlineSignal(),
+                        });
+                    } catch (error) {
+                        if (drainingRefusal(error)) {
+                            admitting = false;
+                            if (save.confirmation) throw error;
+                            if (!heldDraftSaves.has(sessionId)) heldDraftSaves.set(sessionId, save);
+                            return undefined;
+                        }
+                        const retryable =
+                            !(error instanceof HappyAgentApiError) ||
+                            error.status === 408 ||
+                            error.status === 429 ||
+                            error.status >= 500;
+                        if (
+                            !save.confirmation ||
+                            rootController.signal.aborted ||
+                            !retryable ||
+                            attempt >= SEND_ATTEMPTS
+                        )
+                            throw error;
+                        await wait(
+                            INITIAL_SEND_RETRY_MS * 2 ** (attempt - 1),
+                            rootController.signal,
+                        );
+                    }
                 }
             },
             (response) => {
                 if (response === undefined) return;
                 const saved = response.draft;
-                if (draftRevisions.get(sessionId) !== save.revision) return;
+                if (draftRevisions.get(sessionId) !== save.revision) {
+                    save.confirmation?.finish(new Error("The draft changed. Try again."));
+                    return;
+                }
                 draftRevisions.delete(sessionId);
+                // A newer remote draft may arrive while this response is in
+                // flight. An old acknowledgement must not replace that draft
+                // or claim that the diagnostic is still prepared.
+                if (
+                    save.confirmation &&
+                    (agentDrafts.get(sessionId)?.updatedAt ?? 0) > save.updatedAt
+                ) {
+                    save.confirmation.finish(new Error("The draft changed. Try again."));
+                    return;
+                }
                 replaceDraft(sessionId, saved);
+                save.confirmation?.finish(
+                    deepEqual(saved, save.draft)
+                        ? undefined
+                        : new Error("The draft changed. Try again."),
+                );
             },
-            () => {
+            (error) => {
+                save.confirmation?.finish(
+                    error instanceof Error
+                        ? error
+                        : new Error("The draft could not be saved. Try again."),
+                );
                 if (draftRevisions.get(sessionId) !== save.revision) return;
                 draftRevisions.delete(sessionId);
+                if (
+                    save.confirmation &&
+                    (agentDrafts.get(sessionId)?.updatedAt ?? 0) > save.updatedAt
+                )
+                    return;
                 replaceDraft(sessionId, save.previousDraft);
             },
             sessionId,
@@ -3539,6 +3594,72 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             }
             draftSaveCancel(sessionId);
             return draftSave(sessionId, save);
+        },
+        async draftAppendConfirmed(sessionId, text, updatedAt) {
+            if (writesHeld())
+                throw new Error(
+                    "This Happy Agent is offline or updating. Try again when it is available.",
+                );
+            if (draftRevisions.has(sessionId))
+                throw new Error("The Chief of Staff draft is still saving. Try again.");
+            const previous = agentDrafts.get(sessionId);
+            const bootstrap = await client.getAgentBootstrap(sessionId, {
+                signal: deadlineSignal(),
+            });
+            if (closed || writesHeld()) throw new Error("This Happy Agent is no longer available.");
+            if (bootstrap.agent.archivedAt !== null) throw new Error("Chief of Staff is archived.");
+            // A local edit during the read must never be replaced by its answer.
+            if (draftRevisions.has(sessionId) || agentDrafts.get(sessionId) !== previous)
+                throw new Error("The draft changed. Try again.");
+            const previousDraft = bootstrap.draft;
+            replaceDraft(sessionId, previousDraft);
+            const existing = previousDraft.value?.text ?? "";
+            // The complete deterministic evidence block is the dedupe value,
+            // even when the reader typed directly beside it after a reload.
+            if (existing.includes(text)) return;
+            const next = happyAgentDraftAppended(existing, text);
+            if (next === undefined) return;
+            if (config === undefined) throw new Error("The agent is not loaded.");
+            const mode = previousDraft.value ?? bootstrap.mode ?? defaultMode(config);
+            const timestamp = Math.max(updatedAt, (previousDraft.updatedAt ?? 0) + 1);
+            const draft: AgentDraftSnapshot = {
+                value: {
+                    providerId: mode.providerId,
+                    modelId: mode.modelId,
+                    effort: mode.effort,
+                    serviceTier: mode.serviceTier,
+                    permissionMode: mode.permissionMode,
+                    text: next,
+                },
+                updatedAt: timestamp,
+            };
+            // The value, timestamp and mutation ID are captured once. Retries do
+            // not re-append, adopt the failed agent's mode, or advance this stamp.
+            const mutationId = nextId();
+            const revision = (draftRevisions.get(sessionId) ?? 0) + 1;
+            draftRevisions.set(sessionId, revision);
+            replaceDraft(sessionId, draft);
+            await new Promise<void>((resolve, reject) => {
+                let settled = false;
+                const finish = (error?: Error) => {
+                    if (settled) return;
+                    settled = true;
+                    rootController.signal.removeEventListener("abort", aborted);
+                    if (error) reject(error);
+                    else resolve();
+                };
+                const aborted = () =>
+                    finish(new Error("The connection ended before the draft save was confirmed."));
+                rootController.signal.addEventListener("abort", aborted, { once: true });
+                draftSave(sessionId, {
+                    draft,
+                    previousDraft,
+                    updatedAt: timestamp,
+                    mutationId,
+                    revision,
+                    confirmation: { finish },
+                });
+            });
         },
         switchModel(sessionId, selection) {
             const value = typeof selection === "string" ? { modelId: selection } : selection;

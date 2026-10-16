@@ -10,7 +10,9 @@ export function conversationErrorAssistanceText(assistance: ConversationErrorAss
         case "ready":
             return { label: "Ask Chief of Staff", disabled: false };
         case "pending":
-            return { label: "Opening Chief of Staff…", disabled: true };
+            return { label: "Preparing Chief of Staff draft…", disabled: true };
+        case "prepared":
+            return { label: "Draft prepared in Chief of Staff", disabled: true };
         case "failed":
             return {
                 label: "Ask Chief of Staff",

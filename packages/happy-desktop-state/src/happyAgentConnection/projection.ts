@@ -355,7 +355,12 @@ export function projectElements(input: SessionProjectionInput): readonly ChatEle
 function runProduced(elements: readonly ChatElement[], from: number, runId: string): boolean {
     for (let index = from; index < elements.length; index += 1) {
         const element = elements[index]!;
-        if (element.runId === runId && !chatElementRequest(element) && element.kind !== "inference")
+        if (
+            element.runId === runId &&
+            !chatElementRequest(element) &&
+            element.kind !== "inference" &&
+            element.kind !== "configuration"
+        )
             return true;
     }
     return false;
@@ -1120,7 +1125,10 @@ function messageElementsProject(
                     text: block.text,
                     complete: runStatus !== "running",
                 });
-            } else if (message.role === "service" && runStatus === "failed") {
+            } else if (
+                message.role === "service" &&
+                (message.error !== undefined || runStatus === "failed")
+            ) {
                 elements.push({
                     ...base,
                     id,
@@ -1128,10 +1136,14 @@ function messageElementsProject(
                     messageId: message.id,
                     outcome: "failed",
                     reason: block.text,
+                    ...(message.error === undefined ? {} : { error: message.error }),
                 });
             } else {
                 elements.push({ ...base, id, kind: "system_notice", text: block.text });
             }
+        } else if (block.type === "configuration") {
+            if (block.before !== null)
+                elements.push({ ...base, id, kind: "configuration", configuration: block });
         } else if (block.type === "reasoning") {
             elements.push({
                 ...base,

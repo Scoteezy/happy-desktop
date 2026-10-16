@@ -521,6 +521,7 @@ function sessionProject(session: SessionState): HappyAgentSession {
 
 export interface HappyAgentChatSnapshot {
     readonly sessionId: HappyAgentSessionId;
+    readonly connection: SessionState["connection"];
     readonly ready: boolean;
     readonly archived: boolean;
     readonly title?: string;
@@ -591,6 +592,7 @@ export interface HappyAgentChatStore {
     ): Promise<void>;
     slashCommandInvoke(name: string, argumentsValue?: string): Promise<void>;
     draftSet(draft: string, updatedAt: number, origin: string): Promise<void>;
+    draftAppendConfirmed(text: string, updatedAt: number): Promise<void>;
     runAbort(): Promise<void>;
     answerInput(input: HappyAgentUserInputAnswers): Promise<void>;
     requestSelectionUpdate(
@@ -637,6 +639,7 @@ export interface HappyAgentChatDeps {
         | "sendMessage"
         | "sendMessageConfirmed"
         | "setDraft"
+        | "draftAppendConfirmed"
         | "setEffort"
         | "setPermissionMode"
         | "setServiceTier"
@@ -690,6 +693,7 @@ export function happyAgentChatStoreCreate(
     const output = deps.output ?? (() => undefined);
     const store = createStore<HappyAgentChatSnapshot>()(() => ({
         sessionId,
+        connection: "connecting",
         session: { type: "loading" },
         modelLocked: false,
         ready: false,
@@ -852,6 +856,7 @@ export function happyAgentChatStoreCreate(
                 ? []
                 : happyAgentConversationProject({
                       cache: conversationCache,
+                      models: catalog.models,
                       elements,
                       sentImages,
                       sessionId,
@@ -914,6 +919,7 @@ export function happyAgentChatStoreCreate(
         const openImage = openImageProject(entries, openImageRef);
         const next: HappyAgentChatSnapshot = {
             sessionId,
+            connection: connected?.connection ?? "connecting",
             ready: connected !== undefined && connected.historyLoading !== true,
             archived: connected?.archived ?? false,
             ...(connected?.title === undefined ? {} : { title: connected.title }),
@@ -1305,6 +1311,8 @@ export function happyAgentChatStoreCreate(
                     deps.connectActions.setDraft(sessionId, { draft, updatedAt, origin }),
                 );
             }),
+        draftAppendConfirmed: (text, updatedAt) =>
+            rejecting(() => deps.connectActions.draftAppendConfirmed(sessionId, text, updatedAt)),
         runAbort: () =>
             rejecting(() => {
                 connectMutationTrack(deps.connectActions.stopRun(sessionId));

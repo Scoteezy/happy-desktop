@@ -987,12 +987,25 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
                 value: request.draft,
                 updatedAt: request.updatedAt ?? 1,
             };
+            const existing = drafts.get(agentId);
+            if (
+                existing?.updatedAt !== null &&
+                existing?.updatedAt !== undefined &&
+                existing.updatedAt > draft.updatedAt!
+            )
+                return { draft: existing };
             drafts.set(agentId, draft);
             emit("agent.draft.updated", {
                 agentId,
                 draft,
                 ...(request.mutationId === undefined ? {} : { mutationId: request.mutationId }),
             });
+            const respond = gates.get("saveAgentDraft:respond");
+            if (respond !== undefined) await respond;
+            const responseFailures = failures.get("saveAgentDraft:respond");
+            const responseFailure = responseFailures?.shift();
+            if (responseFailures?.length === 0) failures.delete("saveAgentDraft:respond");
+            if (responseFailure !== undefined) throw responseFailure;
             return { draft };
         },
         async answerQuestion(agentId: string, questionId: string, ...rest: unknown[]) {

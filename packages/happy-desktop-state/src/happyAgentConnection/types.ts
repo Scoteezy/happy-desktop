@@ -1,9 +1,11 @@
 import type {
     Agent,
     Bot,
+    ConfigurationBlock,
     HappyAgentClient,
     HappyAgentEvent,
     MessageBlock,
+    MessageError,
     MessageMode,
     MutationId,
     Project,
@@ -315,6 +317,12 @@ export interface FailureElement extends BaseChatElement {
     outcome: "retried" | "continued" | "failed";
     attempt?: number;
     reason: string;
+    error?: MessageError;
+}
+
+export interface ConfigurationElement extends BaseChatElement {
+    kind: "configuration";
+    configuration: ConfigurationBlock;
 }
 
 export type GroupEndReason = "completed" | "steering" | "compaction" | "abort" | "error";
@@ -347,6 +355,7 @@ export type ChatElement =
     | ToolCallElement
     | CompactionElement
     | FailureElement
+    | ConfigurationElement
     | GroupEndElement;
 
 export interface UserInputRequest {
@@ -962,6 +971,8 @@ export interface HappyAgentConnection {
     stopRun(sessionId: string): MutationId;
     compactSession(sessionId: string): MutationId;
     setDraft(sessionId: string, update: string | DraftUpdate): MutationId;
+    /** Fresh authoritative read, one append, and confirmed idempotent draft save; never sends. */
+    draftAppendConfirmed(sessionId: string, text: string, updatedAt: number): Promise<void>;
     switchModel(sessionId: string, selection: string | ModelSelection): MutationId;
     setEffort(sessionId: string, effort?: string): MutationId;
     setServiceTier(sessionId: string, serviceTier?: HappyAgentServiceTier): MutationId;
