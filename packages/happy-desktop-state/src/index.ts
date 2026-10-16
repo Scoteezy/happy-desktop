@@ -102,12 +102,18 @@ export {
     type HappyAgentTodoListSnapshot,
     type HappyAgentTodoListStore,
 } from "./surfaces/surfaceTodoListStore.js";
-export {
-    HAPPY_AGENT_SURFACE_DOCUMENT_TEXT_LIMIT,
-    type HappyAgentSurfaceDocumentConflict,
-    type HappyAgentSurfaceDocumentSnapshot,
-    type HappyAgentSurfaceDocumentStore,
+export type {
+    HappyAgentSurfaceDocumentPresence,
+    HappyAgentSurfaceDocumentPresencePayload,
+    HappyAgentSurfaceDocumentSnapshot,
+    HappyAgentSurfaceDocumentStore,
+    HappyAgentSurfaceDocumentSync,
 } from "./surfaces/surfaceDocumentStore.js";
+export {
+    happyAgentSurfaceDocumentSupportStoreNone,
+    type HappyAgentSurfaceDocumentSupportSnapshot,
+    type HappyAgentSurfaceDocumentSupportStore,
+} from "./surfaces/surfaceDocumentSupportStore.js";
 export type { HappyAgentSurfaces } from "./surfaces/surfaces.js";
 export type {
     HappyAgentArtifactTitle,

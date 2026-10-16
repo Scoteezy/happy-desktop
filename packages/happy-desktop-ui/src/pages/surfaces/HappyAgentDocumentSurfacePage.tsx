@@ -38,7 +38,14 @@ export type HappyAgentDocumentSurfaceContent =
           readonly user: DocumentEditorUser;
           readonly presence: readonly DocumentEditorPresence[];
           readonly onPresence: (payload: DocumentEditorPresencePayload) => void;
+          /** The reader's pointer went down in the document, or came back up. */
+          readonly onPointerPress?: (pressed: boolean) => void;
           readonly sync: HappyAgentDocumentSync;
+          /**
+           * Why the Happy Agent refused the last change, which was undone
+           * because a shared document cannot hold what it will not keep.
+           */
+          readonly failure?: string;
       }
     /** A Happy Agent from before shared editing: its Markdown, to read. */
     | { readonly kind: "readOnly"; readonly text: string };
@@ -109,20 +116,36 @@ export function HappyAgentDocumentSurfacePage(props: HappyAgentDocumentSurfacePa
                 );
             case "live":
                 return (
-                    <ScrollArea
-                        className="happy-agent-document-surface__scroll"
-                        viewportClassName="happy-agent-document-surface__scroll-viewport"
-                    >
-                        <DocumentEditor
-                            data-testid="happy-agent-document-editor"
-                            focusOnType={props.focusOnType !== false}
-                            {...(props.focusKey === undefined ? {} : { focusKey: props.focusKey })}
-                            onPresence={content.onPresence}
-                            presence={content.presence}
-                            user={content.user}
-                            ydoc={content.ydoc}
-                        />
-                    </ScrollArea>
+                    <>
+                        {content.failure === undefined ? null : (
+                            <div
+                                className="happy-agent-document-surface__notice"
+                                data-testid="happy-agent-document-failure"
+                                role="alert"
+                            >
+                                That change couldn’t be saved, so it was undone: {content.failure}
+                            </div>
+                        )}
+                        <ScrollArea
+                            className="happy-agent-document-surface__scroll"
+                            viewportClassName="happy-agent-document-surface__scroll-viewport"
+                        >
+                            <DocumentEditor
+                                data-testid="happy-agent-document-editor"
+                                focusOnType={props.focusOnType !== false}
+                                {...(props.focusKey === undefined
+                                    ? {}
+                                    : { focusKey: props.focusKey })}
+                                {...(content.onPointerPress === undefined
+                                    ? {}
+                                    : { onPointerPress: content.onPointerPress })}
+                                onPresence={content.onPresence}
+                                presence={content.presence}
+                                user={content.user}
+                                ydoc={content.ydoc}
+                            />
+                        </ScrollArea>
+                    </>
                 );
             case "readOnly":
                 return (

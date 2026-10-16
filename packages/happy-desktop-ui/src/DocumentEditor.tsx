@@ -50,10 +50,11 @@ export interface DocumentEditorUser {
  * One remote participant's awareness payload as relayed by the host. The
  * `update` is an opaque base64 y-protocols awareness update produced by that
  * participant's editor; `awarenessClientId` is its numeric Yjs client id so a
- * departed participant's caret can be removed.
+ * departed participant's caret can be removed. `clientKey` names that
+ * participant's window, and `revision` orders what it says.
  */
 export interface DocumentEditorPresence {
-    readonly clientId: string;
+    readonly clientKey: string;
     readonly revision: number;
     readonly active: boolean;
     readonly update?: string;
@@ -307,19 +308,19 @@ function presenceApply(
 ) {
     const present = new Set<string>();
     for (const entry of entries) {
-        present.add(entry.clientId);
-        const previous = applied.get(entry.clientId);
+        present.add(entry.clientKey);
+        const previous = applied.get(entry.clientKey);
         if (previous && previous.revision >= entry.revision) continue;
-        applied.set(entry.clientId, entry);
+        applied.set(entry.clientKey, entry);
         if (entry.active && entry.update !== undefined) {
             applyAwarenessUpdate(awareness, base64Decode(entry.update), remotePresenceOrigin);
         } else if (!entry.active && entry.awarenessClientId !== undefined) {
             removeAwarenessStates(awareness, [entry.awarenessClientId], remotePresenceOrigin);
         }
     }
-    for (const [clientId, entry] of applied) {
-        if (present.has(clientId)) continue;
-        applied.delete(clientId);
+    for (const [clientKey, entry] of applied) {
+        if (present.has(clientKey)) continue;
+        applied.delete(clientKey);
         if (entry.awarenessClientId !== undefined)
             removeAwarenessStates(awareness, [entry.awarenessClientId], remotePresenceOrigin);
     }

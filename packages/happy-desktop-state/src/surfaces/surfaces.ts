@@ -10,6 +10,11 @@ import {
     type HappyAgentSurfaceDocumentStore,
 } from "./surfaceDocumentStore.js";
 import {
+    happyAgentSurfaceDocumentSupportStoreCreate,
+    type HappyAgentSurfaceDocumentSupportDeps,
+    type HappyAgentSurfaceDocumentSupportStore,
+} from "./surfaceDocumentSupportStore.js";
+import {
     happyAgentTodoListStoreCreate,
     type HappyAgentTodoListDeps,
     type HappyAgentTodoListStore,
@@ -33,16 +38,19 @@ export interface HappyAgentSurfaces {
     todoList(surfaceId: HappyAgentSurfaceId): HappyAgentTodoListStore;
     /**
      * One document Surface, kept for the life of the connection like a todo
-     * list, so typing is still saved after the reader has moved on.
+     * list, so typing is still sent after the reader has moved on.
      */
     document(surfaceId: HappyAgentSurfaceId): HappyAgentSurfaceDocumentStore;
+    /** Whether documents can be made and written here, as this Happy Agent says. */
+    documentSupport(): HappyAgentSurfaceDocumentSupportStore;
     [Symbol.dispose](): void;
 }
 
 export interface HappyAgentSurfacesDeps {
     readonly client: HappyAgentSurfaceCatalogDeps["client"] &
         HappyAgentTodoListDeps["client"] &
-        HappyAgentSurfaceDocumentDeps["client"];
+        HappyAgentSurfaceDocumentDeps["client"] &
+        HappyAgentSurfaceDocumentSupportDeps["client"];
     readonly sync: HappyAgentSync;
     /** Told of the workspace each Surface chat is held in, once the daemon has said. */
     readonly chatFound?: HappyAgentSurfaceCatalogDeps["chatFound"];
@@ -52,6 +60,7 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
     let catalog: HappyAgentSurfaceCatalogStore | undefined;
     const todoLists = new Map<HappyAgentSurfaceId, HappyAgentTodoListStore>();
     const documents = new Map<HappyAgentSurfaceId, HappyAgentSurfaceDocumentStore>();
+    let documentSupport: HappyAgentSurfaceDocumentSupportStore | undefined;
     /** Lists this connection is making, until the daemon answers, for their todo stores to wait on. */
     const creating = new Map<HappyAgentSurfaceId, Promise<void>>();
     let disposed = false;
@@ -114,10 +123,19 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             }
             return store;
         },
+        documentSupport() {
+            return (documentSupport ??= inert(
+                happyAgentSurfaceDocumentSupportStoreCreate({
+                    client: deps.client,
+                    sync: deps.sync,
+                }),
+            ));
+        },
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
             catalog?.[Symbol.dispose]();
+            documentSupport?.[Symbol.dispose]();
             for (const store of todoLists.values()) store[Symbol.dispose]();
             todoLists.clear();
             for (const store of documents.values()) store[Symbol.dispose]();

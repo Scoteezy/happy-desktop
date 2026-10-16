@@ -260,6 +260,9 @@ export class GymHappyAgentClient {
                         resolveReady();
                         continue;
                     }
+                    // Live document frames come only to streams subscribed to a
+                    // document, which an agent's stream never is.
+                    if (frame.kind === "document") continue;
                     if (eventAgentId(frame.event) !== agentId) continue;
                     await onEvent({
                         cursor: frame.cursor,

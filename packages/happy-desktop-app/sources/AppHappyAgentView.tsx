@@ -121,6 +121,7 @@ import {
     happyAgentArtifactCatalogStoreNoop,
     happyAgentArtifactChatContext,
     happyAgentSurfaceCatalogStoreNoop,
+    happyAgentSurfaceDocumentSupportStoreNone,
     happyAgentSurfaceReferenceFind,
     happyAgentSurfaceChatSupported,
     type HappyAgentSurfaceReference,
@@ -230,6 +231,8 @@ import {
     type HappyAgentSurfaceChatToggle,
     HappyAgentTodoSurfacePage,
     HappyAgentDocumentSurfacePage,
+    type HappyAgentDocumentSurfaceContent,
+    type DocumentEditorUser,
     surfaceTypeIcon,
     type HappyAgentSurfaceMemberView,
     type HappyAgentSurfaceView,
@@ -2227,14 +2230,36 @@ const SURFACE_CREATE_OFFERS: readonly {
     readonly kind: HappyAgentSurfaceCreateKind;
     readonly icon: IconName;
     readonly label: string;
-}[] = [{ kind: "todo", icon: "tasks", label: "New todo list" }];
+}[] = [
+    { kind: "todo", icon: "tasks", label: "New todo list" },
+    { kind: "document", icon: "doc", label: "New document" },
+];
 
-const SURFACE_CREATE_MENU: MenuItem[] = SURFACE_CREATE_OFFERS.map((offer) => ({
-    kind: "item",
-    id: offer.kind,
-    icon: offer.icon,
-    label: offer.label,
-}));
+/**
+ * The + menu: a document only from a Happy Agent that serves collaborative
+ * documents, since an older one can show a document but nobody can write it.
+ */
+function surfaceCreateMenu(documents: boolean): MenuItem[] {
+    return SURFACE_CREATE_OFFERS.filter((offer) => offer.kind !== "document" || documents).map(
+        (offer) => ({ kind: "item", id: offer.kind, icon: offer.icon, label: offer.label }),
+    );
+}
+
+/** The tones a person's caret can wear in a shared document. */
+const PERSON_TONES = ["violet", "ember", "mint", "ocean", "rose", "amber"] as const;
+
+/**
+ * The reader as everyone else in a shared document sees their caret: their
+ * name, and a tone fixed by who they are, so it is the same in every document
+ * and every window.
+ */
+function documentUserOf(catalog: HappyAgentSurfaceCatalogSnapshot): DocumentEditorUser {
+    const userId = catalog.viewer?.userId ?? null;
+    const person = userId === null ? catalog.profile : catalog.users.get(userId);
+    let hash = 0;
+    for (const character of userId ?? "") hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    return { name: person?.name ?? "Someone", tone: PERSON_TONES[hash % PERSON_TONES.length]! };
+}
 
 /** The Surface a row id names, or nothing for any other row. */
 function surfaceRowParse(rowId: string): HappyAgentSurfaceId | undefined {
@@ -3067,6 +3092,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         surfaceCatalogStore.get,
         surfaceCatalogStore.get,
     );
+    const documentSupportStore =
+        active?.session?.surfaces?.documentSupport() ?? happyAgentSurfaceDocumentSupportStoreNone;
+    const documentSupport = useSyncExternalStore(
+        documentSupportStore.subscribe,
+        documentSupportStore.get,
+        documentSupportStore.get,
+    );
     /**
      * Opens what an artifact, bot, or task Surface points at, where it always
      * opens: the artifact viewer, or the bot's or task's own chat. Answers
@@ -3208,7 +3240,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           disabled: active?.status !== "connected",
                           icon: "plus" as const,
                           label: "New Surface",
-                          menu: SURFACE_CREATE_MENU,
+                          menu: surfaceCreateMenu(documentSupport.status === "supported"),
                       },
                       onHeaderMenuSelect: (id: string) => {
                           const offer = SURFACE_CREATE_OFFERS.find((entry) => entry.kind === id);
@@ -5122,6 +5154,7 @@ function HappyAgentSurfaceContent(props: {
                     focusOnType={!conversationShown}
                     store={props.surfaces.document(surface.id)}
                     surface={view}
+                    user={documentUserOf(catalog)}
                 />
             );
         if (
@@ -5294,19 +5327,42 @@ function surfaceReferenceView(
 function HappyAgentDocumentSurface(props: {
     store: HappyAgentSurfaceDocumentStore;
     surface: HappyAgentSurfaceView;
+    user: DocumentEditorUser;
     chat?: HappyAgentSurfaceChatToggle;
     focusOnType: boolean;
 }) {
     const store = props.store;
     const document = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const content = ((): HappyAgentDocumentSurfaceContent => {
+        switch (document.status) {
+            case "loading":
+            case "missing":
+                return { kind: document.status };
+            case "readOnly":
+                return { kind: "readOnly", text: document.text };
+            case "live":
+                return {
+                    kind: "live",
+                    ydoc: document.ydoc,
+                    user: props.user,
+                    presence: document.presence,
+                    onPresence: store.presenceUpdate,
+                    onPointerPress: store.pointerPressUpdate,
+                    sync: document.sync,
+                    ...(document.failure === undefined
+                        ? {}
+                        : { failure: document.failure.message }),
+                };
+        }
+    })();
     return (
         <HappyAgentDocumentSurfacePage
             {...(props.chat ? { chat: props.chat } : {})}
-            content={
-                document.status === "ready"
-                    ? { kind: "readOnly", text: document.text }
-                    : { kind: document.status }
-            }
+            content={content}
+            // A document made here opens with the caret in its empty first line.
+            {...(document.status === "live" && document.madeHere
+                ? { focusKey: document.surfaceId }
+                : {})}
             focusOnType={props.focusOnType}
             surface={props.surface}
         />

@@ -1,8 +1,5 @@
-import {
-    HappyAgentApiError,
-    type HappyAgentClient,
-    type SurfaceDocument,
-} from "@slopus/happy-agent-client";
+import { HappyAgentApiError, type HappyAgentClient } from "@slopus/happy-agent-client";
+import * as Y from "yjs";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
@@ -13,155 +10,137 @@ import {
     happyAgentSurfaceDocumentEventProject,
     happyAgentSurfaceDocumentProject,
     happyAgentVersionNewer,
-    type HappyAgentSurfaceDocumentEvent,
 } from "./surfaceProject.js";
 import type { HappyAgentSurfaceDocument, HappyAgentSurfaceId } from "./surfaceTypes.js";
 
-/** The daemon's bound on a document's text, in UTF-16 code units. */
-export const HAPPY_AGENT_SURFACE_DOCUMENT_TEXT_LIMIT = 262_144;
-/** How long typing rests before it is saved. */
-const SAVE_IDLE = 1_000;
+/** The least time between two changes sent for one document. */
+const SEND_SPACING = 200;
+/** The least time between two presence updates sent for one document. */
+const PRESENCE_SPACING = 250;
 /**
- * The longest typing goes unsaved while it never rests. Every save is a
- * permanent version, so a save per keystroke would bury the history.
+ * The most change bytes merged into one request, under the daemon's 1 MiB
+ * bound on one change. A single change larger than this is still sent alone.
  */
-const SAVE_LONGEST = 5_000;
-/** How many conflicts in a row are answered at once before answering waits. */
-const CONFLICT_RETRIES = 5;
+const SEND_BATCH_BYTES = 768 * 1024;
 
-/**
- * The version the reader's typing was saved over because both changed the
- * same part of the text at once.
- */
-export interface HappyAgentSurfaceDocumentConflict {
-    readonly lastEditorUserId: string | null;
-    readonly updatedAt: number;
+/** Whether the reader's changes have reached the Happy Agent. */
+export type HappyAgentSurfaceDocumentSync = "saved" | "saving" | "offline";
+
+/** Someone else's window in the document, as its editor last described itself. */
+export interface HappyAgentSurfaceDocumentPresence {
+    /** Names one window in this document; assigned by the Happy Agent, opaque. */
+    readonly clientKey: string;
+    /** Rises with each update from that window. */
+    readonly revision: number;
+    readonly active: boolean;
+    /** That editor's awareness update, base64; absent once the window has left. */
+    readonly update?: string;
+    /** That editor's awareness client, so its caret can be taken away when it leaves. */
+    readonly awarenessClientId?: number;
 }
 
-export interface HappyAgentSurfaceDocumentSnapshot {
-    readonly surfaceId: HappyAgentSurfaceId;
-    /**
-     * `loading` until the document has been read once, and `missing` when the
-     * daemon has no such document. A document this window is making is
-     * `ready` at once, empty, and can be written in before the daemon has it.
-     */
-    readonly status: "loading" | "ready" | "missing";
-    /** The text as it stands here: the daemon's, with the reader's own typing over it. */
-    readonly text: string;
-    /** Whether the text is open for writing, rather than shown rendered. */
-    readonly editing: boolean;
-    /** Whether some of the reader's typing has not reached the daemon yet. */
-    readonly saving: boolean;
-    /**
-     * Someone changed the same part of the text while the reader was typing,
-     * and the reader's text was kept. Theirs is still among the versions.
-     */
-    readonly conflict?: HappyAgentSurfaceDocumentConflict;
-    /** The daemon refused the reader's text. It is kept, and sent again with the next change. */
-    readonly failure?: UserError;
-    /** The last read failed; what was held stays visible and the read is retried. */
-    readonly error?: UserError;
+/** The reader's own editor's awareness, to be relayed to everyone else in the document. */
+export interface HappyAgentSurfaceDocumentPresencePayload {
+    readonly update: string;
+    readonly awarenessClientId: number;
 }
+
+export type HappyAgentSurfaceDocumentSnapshot =
+    | {
+          readonly surfaceId: HappyAgentSurfaceId;
+          /** Not read yet. A read that failed is retried, and says why meanwhile. */
+          readonly status: "loading";
+          readonly error?: UserError;
+      }
+    | { readonly surfaceId: HappyAgentSurfaceId; readonly status: "missing" }
+    | {
+          readonly surfaceId: HappyAgentSurfaceId;
+          /** A collaborative document, open for writing. */
+          readonly status: "live";
+          /**
+           * The shared document itself. It is the CRDT everyone's changes merge
+           * in: the editor writes to it directly, and the store sends what is
+           * written and applies what arrives. It stays the same object until the
+           * Happy Agent refuses a change, when it is replaced by what it holds.
+           */
+          readonly ydoc: Y.Doc;
+          readonly sync: HappyAgentSurfaceDocumentSync;
+          /** Everyone else with the document open, by window. */
+          readonly presence: readonly HappyAgentSurfaceDocumentPresence[];
+          /** The Happy Agent refused a change, which was undone; cleared by the next one. */
+          readonly failure?: UserError;
+          /** Made in this window, so the reader is about to write its first line. */
+          readonly madeHere: boolean;
+      }
+    | {
+          readonly surfaceId: HappyAgentSurfaceId;
+          /**
+           * A Happy Agent too old for collaborative documents: its Markdown,
+           * shown as it is and kept current, but not written here.
+           */
+          readonly status: "readOnly";
+          readonly text: string;
+          readonly error?: UserError;
+      };
 
 export interface HappyAgentSurfaceDocumentStore {
     get(): HappyAgentSurfaceDocumentSnapshot;
     subscribe(listener: () => void): () => void;
-    /** Opens the text for writing; a document not read yet stays closed. */
-    editStart(): void;
-    /** Closes the text, and sends what was typed without waiting for the typing to rest. */
-    editEnd(): void;
-    /** Replaces the text. It is saved once the typing rests, as a new version. */
-    textUpdate(text: string): void;
-    conflictDismiss(): void;
+    /** The reader's editor says where its caret is; everyone else is told, at a steady pace. */
+    presenceUpdate(payload: HappyAgentSurfaceDocumentPresencePayload): void;
+    /**
+     * The reader's pointer went down in the document, or came back up. While
+     * it is down, everyone else's changes wait: one arriving while a click is
+     * still placing the caret would put back the caret from before the click.
+     */
+    pointerPressUpdate(pressed: boolean): void;
     [Symbol.dispose](): void;
 }
 
 export interface HappyAgentSurfaceDocumentDeps {
     readonly client: Pick<
         HappyAgentClient,
+        | "getHealth"
         | "getSurfaceDocument"
-        | "updateSurfaceDocument"
-        | "listSurfaceDocumentVersions"
-        | "getSurfaceDocumentVersion"
+        | "getSurfaceDocumentState"
+        | "sendSurfaceDocumentUpdate"
+        | "subscribeSurfaceDocument"
+        | "unsubscribeSurfaceDocument"
+        | "sendSurfaceDocumentPresence"
     >;
     readonly sync: HappyAgentSync;
     readonly surfaceId: HappyAgentSurfaceId;
     readonly now?: () => number;
     /**
      * Given for a document this window is still making: settles once the
-     * daemon has it, rejected if it refused it. Reading and saving wait for it.
+     * daemon has it, rejected if it refused it. A document is only made here
+     * when the Happy Agent serves collaborative documents, so it is open for
+     * writing at once, empty; sending and subscribing wait for it.
      */
     readonly surfaceCreated?: Promise<void>;
 }
 
-/** The reader's text, and the daemon's version and text it was written over. */
-interface Draft {
-    readonly text: string;
-    /** `undefined` only for a document made here and not read yet, which is empty. */
-    readonly baseVersion: string | undefined;
-    readonly baseText: string;
-}
+/** The origin of every change this store applies to the document from elsewhere. */
+const REMOTE = Symbol("happy-agent-surface-document-remote");
 
-/** One save: the whole text, the version it was written over, and its mutation ID. */
-interface Save {
-    readonly text: string;
-    readonly ifMatch: string;
+/** A change being sent, kept whole so a retry repeats it under the same mutation ID. */
+interface Sending {
     readonly mutationId: string;
+    readonly update: string;
 }
 
-/** Where `next` differs from `base`, as one span: `base[start, end)` becomes `text`. */
-function spanOf(base: string, next: string): { start: number; end: number; text: string } {
-    const limit = Math.min(base.length, next.length);
-    let start = 0;
-    while (start < limit && base.charCodeAt(start) === next.charCodeAt(start)) start += 1;
-    let tail = 0;
-    while (
-        tail < limit - start &&
-        base.charCodeAt(base.length - 1 - tail) === next.charCodeAt(next.length - 1 - tail)
-    )
-        tail += 1;
-    return { start, end: base.length - tail, text: next.slice(start, next.length - tail) };
+function base64Encode(bytes: Uint8Array): string {
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000)
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    return btoa(binary);
 }
 
-/**
- * Both changes to `base`, when they touch different parts of it, or
- * `undefined` when they overlap. Each side's change is taken as the one span
- * it differs from `base` by, which is what typing between two saves a second
- * apart nearly always is.
- */
-export function happyAgentSurfaceDocumentMerge(
-    base: string,
-    ours: string,
-    theirs: string,
-): string | undefined {
-    if (ours === base || ours === theirs) return theirs;
-    if (theirs === base) return ours;
-    const mine = spanOf(base, ours);
-    const other = spanOf(base, theirs);
-    if (mine.end <= other.start)
-        return (
-            base.slice(0, mine.start) +
-            mine.text +
-            base.slice(mine.end, other.start) +
-            other.text +
-            base.slice(other.end)
-        );
-    if (other.end <= mine.start)
-        return (
-            base.slice(0, other.start) +
-            other.text +
-            base.slice(other.end, mine.start) +
-            mine.text +
-            base.slice(mine.end)
-        );
-    return undefined;
-}
-
-function conflictDocument(error: HappyAgentApiError): SurfaceDocument | undefined {
-    const document = error.body?.["document"];
-    return typeof document === "object" && document !== null
-        ? (document as SurfaceDocument)
-        : undefined;
+function base64Decode(value: string): Uint8Array {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes;
 }
 
 function waitFor(milliseconds: number, signal: AbortSignal): Promise<void> {
@@ -176,440 +155,571 @@ function waitFor(milliseconds: number, signal: AbortSignal): Promise<void> {
     });
 }
 
+function notFound(error: unknown): boolean {
+    return error instanceof HappyAgentApiError && error.status === 404;
+}
+
+/** The daemon answered and refused, as opposed to never answering or failing. */
+function refusal(error: unknown): boolean {
+    return error instanceof HappyAgentApiError && error.status >= 400 && error.status < 500;
+}
+
 /**
- * One document Surface, kept live while something shows it.
+ * One document Surface, kept for the life of the connection.
  *
- * The constructor opens nothing. The first subscriber follows
- * `surface.document.updated` and reads the document; the last one stops
- * following, and the text it held is shown again, while it is read once more,
- * when the document is next opened.
+ * The constructor opens nothing. The first subscriber asks the Happy Agent's
+ * health whether it serves collaborative documents, and asks again on every
+ * new connection, since a different daemon may be answering.
  *
- * Typing applies at once and is held over the daemon's text until the daemon
- * has it. It is saved once it rests for a second, or every five seconds while
- * it never does, and at once when writing ends; one save is in flight at a
- * time, naming the version the typing was written over as `If-Match`. A save
- * that never arrived is sent again under the same mutation ID. One whose
- * answer was lost may still have been taken; when the daemon's next version
- * turns out to be it, the typing done since stands on it instead of being
- * merged with it. An event says so by the save's mutation ID. A read or a
- * conflict names none, so the document's history is asked: the revision right
- * after the version the save named carries the mutation ID that made it, and
- * its text is what the typing then stands on.
+ * A collaborative document is one Yjs document. While something shows it, the
+ * connection's event stream is subscribed to it, and every change anyone makes
+ * arrives on that stream in order and is merged in; what the stream missed,
+ * across a gap or a reconnect, is read as whatever the document here lacks.
+ * The reader's own changes are written to the document by the editor and sent
+ * from here: merged while one request is in flight, at most one request at a
+ * time and no closer than 200 ms apart, each repeated under its mutation ID
+ * until the daemon has it, whether or not the document is still on screen. A
+ * change the daemon refuses cannot be taken back out of a CRDT, so the
+ * document is replaced by what the daemon holds, and says so.
  *
- * Someone else's change is merged into the reader's typing as it arrives, and
- * again when a save meets a version it did not name. Changes to different
- * parts of the text both stand. Changes to the same part keep the reader's
- * typing, which is saved over theirs and said so; theirs stays among the
- * document's permanent versions. A save the daemon refuses keeps the typing
- * and states the refusal. Typing is sent whether or not the document is still
- * on screen.
+ * The reader's editor describes its caret through `presenceUpdate`; that is
+ * sent at most every 250 ms, and the editor itself renews it every 15 seconds
+ * while it is open. Everyone else's arrives on the same stream.
+ *
+ * An older Happy Agent has the Markdown text only, which is shown read-only
+ * and kept current from its `surface.document.updated` events.
  */
 export function happyAgentSurfaceDocumentStoreCreate(
     deps: HappyAgentSurfaceDocumentDeps,
 ): HappyAgentSurfaceDocumentStore {
-    const idCreate = cuid2Create(deps.now ?? Date.now);
+    const now = deps.now ?? Date.now;
+    const idCreate = cuid2Create(now);
     const surfaceId = deps.surfaceId;
     const listeners = new Set<() => void>();
-    /** The daemon's document as last read, confirmed, or followed. */
-    let authoritative: HappyAgentSurfaceDocument | undefined;
-    let draft: Draft | undefined;
-    let snapshot: HappyAgentSurfaceDocumentSnapshot = {
-        surfaceId,
-        status: deps.surfaceCreated === undefined ? "loading" : "ready",
-        text: "",
-        editing: false,
-        saving: false,
-    };
-    /** The save last sent, so the same text over the same version reuses its mutation ID. */
-    let sent: Save | undefined;
-    /**
-     * Saves sent over the typing's version and not answered: the one in flight,
-     * and any whose answer never came. The daemon may have taken one of them,
-     * and at most one, since each names that version. Once one shows up as the
-     * next version, the typing stands on its text rather than on the version
-     * it was written over, or what was saved would be merged in twice.
-     */
-    let unanswered: Save[] = [];
-    /** Whether the typing has rested, or writing ended, so it should be sent. */
-    let due = false;
-    let saveRunning = false;
-    /** The daemon refused the last save; nothing is sent until the reader types again. */
-    let refused = false;
-    let idle: ReturnType<typeof setTimeout> | undefined;
-    let longest: ReturnType<typeof setTimeout> | undefined;
+    const life = new AbortController();
+    let disposed = false;
+
+    /** What this Happy Agent serves, once its health has said. */
+    let mode: "collaborative" | "markdown" | undefined =
+        deps.surfaceCreated === undefined ? undefined : "collaborative";
+    let missing = false;
+    let error: UserError | undefined;
+
+    // Collaborative.
+    let ydoc: Y.Doc | undefined;
+    /** Whether the document holds what the daemon had when it was first read. */
+    let loaded = false;
+    /** The latest change seen from the stream or a read; a frame past the next is a gap. */
+    let seq = 0;
+    /** The current connection's stream, while it is connected. */
+    let streamId: string | undefined;
+    /** The stream this document is subscribed on, once the daemon has said so. */
+    let subscribed: string | undefined;
+    const presence = new Map<string, HappyAgentSurfaceDocumentPresence>();
+    /** The reader's changes not yet in a request. */
+    let pending: Uint8Array[] = [];
+    let sending: Sending | undefined;
+    let sendRunning = false;
+    let sendAt = 0;
+    /** The last request failed without an answer; the reader is offline until one arrives. */
+    let sendFailing = false;
+    let failure: UserError | undefined;
+    let presenceLatest: HappyAgentSurfaceDocumentPresencePayload | undefined;
+    let presenceAt = 0;
+    let presenceTimer: ReturnType<typeof setTimeout> | undefined;
+    /** The reader's pointer is down in the document. */
+    let pressed = false;
+    /** Everyone else's changes that arrived while it was, for the document as it is now. */
+    let held: Uint8Array[] = [];
+
+    // Markdown.
+    let markdown: HappyAgentSurfaceDocument | undefined;
+
+    // Following.
     let following: AbortController | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
-    let reads = new AbortController();
-    let readsInFlight = 0;
-    let readLatest = 0;
-    let journal: HappyAgentSurfaceDocumentEvent[] = [];
-    let failed = false;
-    let disposed = false;
-    const life = new AbortController();
+    let health: AbortController | undefined;
 
-    const publish = (next: Partial<HappyAgentSurfaceDocumentSnapshot>): void => {
-        snapshot = { ...snapshot, ...next };
+    const snapshotOf = (): HappyAgentSurfaceDocumentSnapshot => {
+        if (missing) return { surfaceId, status: "missing" };
+        if (mode === "collaborative" && ydoc !== undefined && loaded)
+            return {
+                surfaceId,
+                status: "live",
+                ydoc,
+                sync:
+                    streamId === undefined || sendFailing
+                        ? "offline"
+                        : sending !== undefined || pending.length > 0
+                          ? "saving"
+                          : "saved",
+                presence: [...presence.values()],
+                ...(failure === undefined ? {} : { failure }),
+                madeHere: deps.surfaceCreated !== undefined,
+            };
+        if (mode === "markdown" && markdown !== undefined)
+            return {
+                surfaceId,
+                status: "readOnly",
+                text: markdown.text,
+                ...(error === undefined ? {} : { error }),
+            };
+        return { surfaceId, status: "loading", ...(error === undefined ? {} : { error }) };
+    };
+    let snapshot = snapshotOf();
+
+    const publish = (): void => {
+        if (disposed) return;
+        const next = snapshotOf();
+        const previous = snapshot;
+        // The status line changes far less often than the document does.
+        if (
+            next.status === "live" &&
+            previous.status === "live" &&
+            next.ydoc === previous.ydoc &&
+            next.sync === previous.sync &&
+            next.failure === previous.failure &&
+            next.presence.length === previous.presence.length &&
+            next.presence.every((entry, index) => entry === previous.presence[index])
+        )
+            return;
+        snapshot = next;
         for (const listener of listeners) listener();
     };
 
-    const republish = (next: Partial<HappyAgentSurfaceDocumentSnapshot> = {}): void => {
-        publish({
-            ...next,
-            text: draft?.text ?? authoritative?.text ?? "",
-            saving: draft !== undefined,
-        });
-    };
-
-    /** Takes a later version of the document; answers whether anything changed. */
-    const documentAdopt = (document: HappyAgentSurfaceDocument): boolean => {
-        if (document.surfaceId !== surfaceId) return false;
-        if (
-            authoritative !== undefined &&
-            !happyAgentVersionNewer(document.version, authoritative.version)
-        )
+    const created = async (): Promise<boolean> => {
+        if (deps.surfaceCreated === undefined) return true;
+        try {
+            await deps.surfaceCreated;
+            return true;
+        } catch {
             return false;
-        authoritative = document;
-        return true;
+        }
     };
 
-    /** Moves the reader's typing onto a version that holds the reader's own save. */
-    const draftStandOn = (version: string, text: string): void => {
-        unanswered = [];
-        if (draft === undefined) return;
-        draft =
-            draft.text === text
-                ? undefined
-                : { text: draft.text, baseVersion: version, baseText: text };
+    // ---- Collaborative --------------------------------------------------
+
+    const localChange = (update: Uint8Array, origin: unknown): void => {
+        if (origin === REMOTE || disposed) return;
+        pending.push(update);
+        failure = undefined;
+        publish();
+        void sendRun();
+    };
+
+    const ydocCreate = (): Y.Doc => {
+        const doc = new Y.Doc();
+        doc.on("update", localChange);
+        return doc;
+    };
+
+    /** Applies what the daemon sent, as everyone else's change, once the reader's pointer is up. */
+    const remoteApply = (doc: Y.Doc, update: string): void => {
+        if (pressed && doc === ydoc) held.push(base64Decode(update));
+        else Y.applyUpdate(doc, base64Decode(update), REMOTE);
+    };
+
+    const heldRelease = (): void => {
+        const updates = held;
+        held = [];
+        if (updates.length > 0 && ydoc !== undefined && !disposed)
+            Y.applyUpdate(ydoc, Y.mergeUpdates(updates), REMOTE);
     };
 
     /**
-     * Moves the reader's typing onto the daemon's latest version: merged when
-     * the two changed different parts, the reader's kept when they did not.
+     * Reads what the document here lacks and merges it in: the whole document
+     * the first time. Answers false once the document turns out to be gone.
      */
-    const rebase = (): void => {
-        const current = authoritative;
-        if (draft === undefined || current === undefined) return;
-        if (draft.baseVersion === current.version) return;
-        const base = draft.baseVersion;
-        // Until it is known whether a save over that version was taken, the
-        // typing has no certain text to be merged from; the history says.
-        if (unanswered.some((save) => save.ifMatch === base)) return;
-        const merged = happyAgentSurfaceDocumentMerge(draft.baseText, draft.text, current.text);
-        if (merged === undefined) {
-            snapshot = {
-                ...snapshot,
-                conflict: {
-                    lastEditorUserId: current.lastEditorUserId,
-                    updatedAt: current.updatedAt,
+    const catchUp = async (signal: AbortSignal): Promise<boolean> => {
+        const doc = (ydoc ??= ydocCreate());
+        const stateVector = loaded ? base64Encode(Y.encodeStateVector(doc)) : undefined;
+        try {
+            const state = await happyAgentSyncRead(
+                signal,
+                () =>
+                    deps.client.getSurfaceDocumentState(surfaceId, {
+                        ...(stateVector === undefined ? {} : { stateVector }),
+                        signal,
+                    }),
+                (readError) => {
+                    if (notFound(readError)) throw readError;
+                    if (!loaded) {
+                        error = happyAgentUserError(readError);
+                        publish();
+                    }
                 },
-            };
-            draft = { text: draft.text, baseVersion: current.version, baseText: current.text };
+            );
+            if (signal.aborted || disposed || ydoc !== doc) return true;
+            remoteApply(doc, state.update);
+            seq = Math.max(seq, state.seq);
+            loaded = true;
+            error = undefined;
+            publish();
+            return true;
+        } catch (readError) {
+            if (notFound(readError)) {
+                missing = true;
+                publish();
+                return false;
+            }
+            return true;
+        }
+    };
+
+    /** Subscribes the current stream to the document, then catches up on it. */
+    const attach = async (signal: AbortSignal): Promise<void> => {
+        if (!(await created())) {
+            missing = true;
+            publish();
             return;
         }
-        draft =
-            merged === current.text
-                ? undefined
-                : { text: merged, baseVersion: current.version, baseText: current.text };
-    };
-
-    /**
-     * Learns whether a save whose answer never came was taken, once the
-     * document has moved past the version it named. Every save names the
-     * version it is written over, so the revision right after that version is
-     * the only one that can be it: it carries the mutation ID that made it, or
-     * `null` when it was made without one. A daemon too old to keep that ID
-     * leaves it out, which says nothing either way, and the typing is merged
-     * as it was before the history could tell. Answers false when the history
-     * could not be read, to be asked again.
-     */
-    const unansweredSettle = async (): Promise<boolean> => {
-        const base = draft?.baseVersion;
-        const current = authoritative;
-        if (base === undefined || current === undefined || current.version === base) return true;
-        if (!unanswered.some((save) => save.ifMatch === base)) return true;
-        try {
-            const page = await deps.client.listSurfaceDocumentVersions(surfaceId, {
-                afterVersion: base,
-                limit: 1,
-                signal: life.signal,
-            });
-            const next = page.versions[0];
-            const taken =
-                next === undefined
-                    ? undefined
-                    : unanswered.find(
-                          (save) => save.ifMatch === base && save.mutationId === next.mutationId,
-                      );
-            if (next === undefined || taken === undefined) {
-                // Someone else's version came next, so none of them can be
-                // taken now; or this daemon keeps no mutation IDs, and nothing
-                // says one was. Either way the typing is merged.
-                unanswered = [];
-                return true;
-            }
-            const { revision } = await deps.client.getSurfaceDocumentVersion(
-                surfaceId,
-                next.version,
-                { signal: life.signal },
+        if (signal.aborted || mode !== "collaborative") return;
+        const stream = streamId;
+        if (stream !== undefined && subscribed !== stream) {
+            const answered = await happyAgentSyncRead(
+                signal,
+                () =>
+                    deps.client.subscribeSurfaceDocument(
+                        surfaceId,
+                        { streamId: stream },
+                        { signal },
+                    ),
+                (subscribeError) => {
+                    // A refusal is not asked again: a document that is gone is
+                    // found by the read below, a stream that is gone is
+                    // replaced by the next connection, and a document open in
+                    // too many windows is still read, without live changes.
+                    if (refusal(subscribeError) || streamId !== stream) throw subscribeError;
+                },
+            ).then(
+                () => true,
+                () => false,
             );
-            // An event naming the save may have moved the typing meanwhile.
-            if (draft?.baseVersion === base && revision.mutationId === taken.mutationId)
-                draftStandOn(revision.document.version, revision.document.text);
-            return true;
-        } catch (error) {
-            if (error instanceof HappyAgentApiError && error.status >= 400 && error.status < 500) {
-                // A history this window may not read settles nothing; the
-                // typing is merged as it stands.
-                unanswered = [];
-                return true;
+            if (signal.aborted) return;
+            if (answered && streamId === stream) {
+                subscribed = stream;
+                // Said again on the new subscription, still no sooner than the pace allows.
+                presenceSchedule();
             }
-            return false;
         }
+        await catchUp(signal);
     };
 
-    const timersClear = (): void => {
-        if (idle) clearTimeout(idle);
-        if (longest) clearTimeout(longest);
-        idle = undefined;
-        longest = undefined;
+    const detach = (): void => {
+        const stream = subscribed;
+        subscribed = undefined;
+        presenceLatest = undefined;
+        if (presenceTimer) clearTimeout(presenceTimer);
+        presenceTimer = undefined;
+        presence.clear();
+        // Ending the subscription also ends this window's presence there.
+        if (stream !== undefined && !disposed)
+            void deps.client
+                .unsubscribeSurfaceDocument(
+                    surfaceId,
+                    { streamId: stream },
+                    { signal: life.signal },
+                )
+                .catch(() => undefined);
     };
 
-    const saveRun = async (): Promise<void> => {
-        if (saveRunning || disposed) return;
-        saveRunning = true;
+    const sendRun = async (): Promise<void> => {
+        if (sendRunning || disposed) return;
+        sendRunning = true;
         try {
-            if (deps.surfaceCreated !== undefined) {
-                try {
-                    await deps.surfaceCreated;
-                } catch {
-                    return;
-                }
+            if (!(await created())) {
+                missing = true;
+                publish();
+                return;
             }
             let delay = 1_000;
-            let conflicts = 0;
-            while (!disposed && due && draft !== undefined && !refused) {
-                if (authoritative === undefined) {
-                    // A version must be named, so a document never read is read first.
-                    try {
-                        const response = await deps.client.getSurfaceDocument(surfaceId, {
-                            signal: life.signal,
-                        });
-                        if (disposed) return;
-                        documentAdopt(happyAgentSurfaceDocumentProject(response.document));
-                        rebase();
-                        republish({ status: "ready" });
-                    } catch (error) {
-                        if (disposed || life.signal.aborted) return;
-                        if (error instanceof HappyAgentApiError && error.status === 404) {
-                            republish({ status: "missing", editing: false });
-                            return;
-                        }
-                        await waitFor(delay, life.signal);
-                        delay = Math.min(delay * 2, 10_000);
-                    }
-                    continue;
-                }
-                if (!(await unansweredSettle())) {
-                    if (disposed || life.signal.aborted) return;
-                    await waitFor(delay, life.signal);
-                    delay = Math.min(delay * 2, 10_000);
-                    continue;
-                }
-                if (disposed) return;
-                rebase();
-                if (draft === undefined) {
-                    republish();
-                    break;
-                }
-                const text = draft.text;
-                const ifMatch = draft.baseVersion ?? authoritative.version;
-                if (sent === undefined || sent.text !== text || sent.ifMatch !== ifMatch)
-                    sent = { text, ifMatch, mutationId: idCreate() };
-                const save = sent;
-                if (!unanswered.includes(save)) unanswered.push(save);
-                due = false;
-                try {
-                    const response = await deps.client.updateSurfaceDocument(
-                        surfaceId,
-                        { text, mutationId: save.mutationId },
-                        { ifMatch, signal: life.signal },
-                    );
-                    if (disposed) return;
-                    delay = 1_000;
-                    conflicts = 0;
-                    sent = undefined;
-                    const saved = happyAgentSurfaceDocumentProject(response.document);
-                    documentAdopt(saved);
-                    // What was typed meanwhile now stands on the version just saved.
-                    draftStandOn(saved.version, saved.text);
-                    republish();
-                } catch (error) {
-                    if (disposed || life.signal.aborted) return;
-                    if (
-                        error instanceof HappyAgentApiError &&
-                        error.status >= 400 &&
-                        error.status < 500
-                    )
-                        unanswered = unanswered.filter((other) => other !== save);
-                    if (error instanceof HappyAgentApiError && error.status === 409) {
-                        const current = conflictDocument(error);
-                        if (current === undefined) authoritative = undefined;
-                        else documentAdopt(happyAgentSurfaceDocumentProject(current));
-                        due = true;
-                        conflicts += 1;
-                        if (conflicts > CONFLICT_RETRIES) {
-                            await waitFor(delay, life.signal);
-                            delay = Math.min(delay * 2, 10_000);
-                        }
-                        continue;
-                    }
-                    if (
-                        error instanceof HappyAgentApiError &&
-                        error.status >= 400 &&
-                        error.status < 500
+            while (!disposed && (sending !== undefined || pending.length > 0)) {
+                if (sending === undefined) {
+                    let bytes = 0;
+                    let count = 0;
+                    while (
+                        count < pending.length &&
+                        (count === 0 || bytes + pending[count]!.length <= SEND_BATCH_BYTES)
                     ) {
-                        refused = true;
-                        sent = undefined;
-                        republish({ failure: happyAgentUserError(error) });
+                        bytes += pending[count]!.length;
+                        count += 1;
+                    }
+                    const batch = pending.slice(0, count);
+                    pending = pending.slice(count);
+                    sending = {
+                        mutationId: idCreate(),
+                        update: base64Encode(
+                            batch.length === 1 ? batch[0]! : Y.mergeUpdates(batch),
+                        ),
+                    };
+                }
+                const wait = sendAt + SEND_SPACING - now();
+                if (wait > 0) await waitFor(wait, life.signal);
+                if (disposed) return;
+                sendAt = now();
+                const request = sending;
+                try {
+                    await deps.client.sendSurfaceDocumentUpdate(surfaceId, request, {
+                        signal: life.signal,
+                    });
+                    if (disposed) return;
+                    sending = undefined;
+                    sendFailing = false;
+                    delay = 1_000;
+                    publish();
+                } catch (sendError) {
+                    if (disposed || life.signal.aborted) return;
+                    if (notFound(sendError)) {
+                        missing = true;
+                        sending = undefined;
+                        pending = [];
+                        publish();
                         return;
                     }
-                    // Never arrived, or the daemon failed: the same save, under
-                    // the same mutation ID, once it can be heard again.
-                    due = true;
+                    if (refusal(sendError)) {
+                        // What was refused, and everything written over it,
+                        // cannot be taken out of the document; it is read again.
+                        sending = undefined;
+                        pending = [];
+                        failure = happyAgentUserError(sendError);
+                        ydocReplace();
+                        return;
+                    }
+                    // Never answered, or the daemon failed: the same change,
+                    // under the same mutation ID, once it can be heard again.
+                    sendFailing = true;
+                    publish();
                     await waitFor(delay, life.signal);
                     delay = Math.min(delay * 2, 10_000);
                 }
             }
         } finally {
-            saveRunning = false;
+            sendRunning = false;
+            // Written while the last run was ending, after it last looked.
+            if (!disposed && !missing && pending.length > 0) void sendRun();
         }
     };
 
-    const flush = (): void => {
-        timersClear();
-        if (draft === undefined) return;
-        due = true;
-        void saveRun();
+    /** Drops the document held here for what the daemon holds. */
+    const ydocReplace = (): void => {
+        const previous = ydoc;
+        previous?.off("update", localChange);
+        ydoc = ydocCreate();
+        // The read below brings everything held for the old document.
+        held = [];
+        loaded = false;
+        seq = 0;
+        sendFailing = false;
+        publish();
+        previous?.destroy();
+        const signal = following?.signal ?? life.signal;
+        void catchUp(signal);
     };
 
-    /** Applies one event; answers whether the document changed. */
-    const eventApply = (event: HappyAgentSurfaceDocumentEvent): boolean => {
-        const current = authoritative;
-        if (event.surfaceId !== surfaceId || current === undefined) return false;
-        if (!happyAgentVersionNewer(event.version, current.version)) return false;
-        if (event.previousVersion !== current.version) {
-            // A version this window never saw came between: read it whole.
-            reload();
-            return false;
+    const presenceSend = (): void => {
+        presenceTimer = undefined;
+        const payload = presenceLatest;
+        const stream = subscribed;
+        if (payload === undefined || stream === undefined || disposed) return;
+        presenceAt = now();
+        void deps.client
+            .sendSurfaceDocumentPresence(
+                surfaceId,
+                {
+                    streamId: stream,
+                    awarenessClientId: payload.awarenessClientId,
+                    update: payload.update,
+                },
+                { signal: life.signal },
+            )
+            .catch(() => undefined);
+    };
+
+    const presenceSchedule = (): void => {
+        if (presenceTimer !== undefined || subscribed === undefined) return;
+        const wait = presenceAt + PRESENCE_SPACING - now();
+        if (wait <= 0) presenceSend();
+        else presenceTimer = setTimeout(presenceSend, wait);
+    };
+
+    // ---- Markdown -------------------------------------------------------
+
+    const markdownRead = async (signal: AbortSignal): Promise<void> => {
+        try {
+            const response = await happyAgentSyncRead(
+                signal,
+                () => deps.client.getSurfaceDocument(surfaceId, { signal }),
+                (readError) => {
+                    if (notFound(readError)) throw readError;
+                    error = happyAgentUserError(readError);
+                    publish();
+                },
+            );
+            if (signal.aborted || mode !== "markdown") return;
+            const document = happyAgentSurfaceDocumentProject(response.document);
+            // An event may already have brought a later version than this read.
+            if (
+                markdown === undefined ||
+                !happyAgentVersionNewer(markdown.version, document.version)
+            )
+                markdown = document;
+            error = undefined;
+            publish();
+        } catch (readError) {
+            if (notFound(readError) && !signal.aborted) {
+                missing = true;
+                publish();
+            }
         }
-        authoritative = {
-            ...current,
-            text: event.text,
-            lastEditorUserId: event.lastEditorUserId,
-            updatedAt: event.updatedAt,
-            version: event.version,
-        };
-        // An event names the save that made it; one that names none leaves
-        // the question to the document's history.
-        if (
-            draft !== undefined &&
-            draft.baseVersion === event.previousVersion &&
-            event.mutationId !== undefined &&
-            unanswered.some((save) => save.mutationId === event.mutationId)
-        )
-            draftStandOn(event.version, event.text);
-        return true;
     };
 
-    const reload = (): void => {
-        if (following === undefined) return;
-        readsInFlight += 1;
-        readLatest += 1;
-        const token = readLatest;
-        const signal = reads.signal;
-        const mark = journal.length;
-        let ended = false;
-        const end = (): void => {
-            if (ended || signal.aborted) return;
-            ended = true;
-            readsInFlight -= 1;
-            if (readsInFlight === 0) journal = [];
-        };
-        void happyAgentSyncRead(
-            signal,
-            async () => {
+    // ---- Following ------------------------------------------------------
+
+    /** Learns what this Happy Agent serves, then reads the document as that. */
+    const modeCheck = (signal: AbortSignal): void => {
+        health?.abort();
+        const own = new AbortController();
+        health = own;
+        const checkSignal = AbortSignal.any([signal, own.signal]);
+        void (async () => {
+            // A document this window is making is collaborative; asking would
+            // only delay writing in it.
+            let next = mode;
+            if (deps.surfaceCreated === undefined) {
                 try {
-                    await deps.surfaceCreated;
+                    const answer = await happyAgentSyncRead(
+                        checkSignal,
+                        () => deps.client.getHealth({ signal: checkSignal }),
+                        () => undefined,
+                    );
+                    next =
+                        answer.capabilities?.collaborativeDocuments === true
+                            ? "collaborative"
+                            : "markdown";
                 } catch {
-                    return undefined;
-                }
-                try {
-                    return (await deps.client.getSurfaceDocument(surfaceId, { signal })).document;
-                } catch (error) {
-                    if (error instanceof HappyAgentApiError && error.status === 404)
-                        return undefined;
-                    throw error;
-                }
-            },
-            (error) => {
-                if (signal.aborted) return;
-                failed = true;
-                publish({ error: happyAgentUserError(error) });
-            },
-        )
-            .then((document) => {
-                if (signal.aborted || token !== readLatest) return;
-                failed = false;
-                const { error: _error, ...rest } = snapshot;
-                snapshot = rest;
-                if (document === undefined) {
-                    republish({ status: "missing", editing: false });
                     return;
                 }
-                documentAdopt(happyAgentSurfaceDocumentProject(document));
-                for (const event of journal.slice(mark)) eventApply(event);
-                // A save in flight moves the typing itself when it is answered.
-                if (!saveRunning) rebase();
-                republish({ status: "ready" });
-            })
-            .catch(() => undefined)
-            .finally(end);
+            }
+            if (checkSignal.aborted || disposed) return;
+            if (next !== mode) {
+                // A different daemon answers now; what the last one held is
+                // read again in the form this one serves.
+                if (mode === "collaborative") {
+                    detach();
+                    ydoc?.off("update", localChange);
+                    ydoc?.destroy();
+                    ydoc = undefined;
+                    loaded = false;
+                    seq = 0;
+                    pending = [];
+                    held = [];
+                    sending = undefined;
+                }
+                markdown = undefined;
+                mode = next;
+                publish();
+            }
+            if (mode === "collaborative") await attach(checkSignal);
+            else await markdownRead(checkSignal);
+        })();
     };
 
     const start = (): void => {
         if (disposed || following || listeners.size === 0) return;
         const active = new AbortController();
         following = active;
+        if (mode === "collaborative" && ydoc === undefined && deps.surfaceCreated !== undefined) {
+            // Made here: empty, and open for writing before the daemon has it.
+            ydoc = ydocCreate();
+            loaded = true;
+            publish();
+        }
         void (async () => {
             for await (const input of deps.sync.follow({
                 signal: active.signal,
                 events: [...HAPPY_AGENT_SURFACE_DOCUMENT_EVENT_TYPES],
+                documents: true,
             })) {
-                if (input.kind === "error") {
-                    failed = true;
+                if (input.kind === "error") continue;
+                if (input.kind === "bootstrap" || input.kind === "reconcile") {
+                    modeCheck(active.signal);
                     continue;
                 }
-                if (
-                    input.kind === "bootstrap" ||
-                    input.kind === "reconcile" ||
-                    (input.kind === "update" && input.update.kind === "connected" && failed)
-                ) {
-                    reload();
+                if (input.kind !== "update") continue;
+                const update = input.update;
+                if (update.kind === "connected") {
+                    streamId = update.streamId;
+                    if (subscribed !== undefined && subscribed !== streamId) {
+                        // The old stream's subscription and presence ended with it.
+                        subscribed = undefined;
+                        presence.clear();
+                    }
+                    publish();
+                    modeCheck(active.signal);
                     continue;
                 }
-                if (input.kind !== "update" || input.update.kind !== "event") continue;
-                const event = happyAgentSurfaceDocumentEventProject(input.update.event);
+                if (update.kind === "disconnected") {
+                    streamId = undefined;
+                    subscribed = undefined;
+                    presence.clear();
+                    publish();
+                    continue;
+                }
+                if (update.kind === "document") {
+                    const frame = update.frame;
+                    // Frames reach this connection only for documents it
+                    // subscribed, and can arrive before the subscription or
+                    // the first read has answered; neither is waited for.
+                    if (frame.data.surfaceId !== surfaceId || mode !== "collaborative") continue;
+                    if (frame.type === "document.update") {
+                        // Applied even before the first read lands: Yjs holds a
+                        // change until what it builds on arrives, and the read
+                        // may have been taken before this change was made.
+                        const doc = (ydoc ??= ydocCreate());
+                        const gap = loaded && frame.data.seq > seq + 1;
+                        remoteApply(doc, frame.data.update);
+                        seq = Math.max(seq, frame.data.seq);
+                        // A change the stream skipped is read as whatever is missing.
+                        if (gap) void catchUp(active.signal);
+                        continue;
+                    }
+                    const known = presence.get(frame.data.clientKey);
+                    if (known !== undefined && known.revision >= frame.data.revision) continue;
+                    if (frame.data.active)
+                        presence.set(frame.data.clientKey, {
+                            clientKey: frame.data.clientKey,
+                            revision: frame.data.revision,
+                            active: true,
+                            ...(frame.data.update === undefined
+                                ? {}
+                                : { update: frame.data.update }),
+                            ...(frame.data.awarenessClientId === undefined
+                                ? {}
+                                : { awarenessClientId: frame.data.awarenessClientId }),
+                        });
+                    else presence.delete(frame.data.clientKey);
+                    publish();
+                    continue;
+                }
+                if (update.kind !== "event" || mode !== "markdown") continue;
+                const event = happyAgentSurfaceDocumentEventProject(update.event);
                 if (event === undefined || event.surfaceId !== surfaceId) continue;
-                if (readsInFlight > 0) journal.push(event);
-                if (snapshot.status !== "ready") continue;
-                if (!eventApply(event)) continue;
-                if (!saveRunning) rebase();
-                republish();
+                if (
+                    markdown === undefined ||
+                    !happyAgentVersionNewer(event.version, markdown.version)
+                )
+                    continue;
+                markdown = {
+                    ...markdown,
+                    text: event.text,
+                    lastEditorUserId: event.lastEditorUserId,
+                    updatedAt: event.updatedAt,
+                    version: event.version,
+                };
+                publish();
             }
         })()
-            .catch(() => {
-                failed = true;
-            })
+            .catch(() => undefined)
             .finally(() => {
                 if (following === active) following = undefined;
                 if (!active.signal.aborted && !disposed && listeners.size > 0)
@@ -620,18 +730,16 @@ export function happyAgentSurfaceDocumentStoreCreate(
     const stop = (): void => {
         following?.abort();
         following = undefined;
-        reads.abort();
-        reads = new AbortController();
-        readsInFlight = 0;
-        journal = [];
+        health?.abort();
+        health = undefined;
         if (retry) clearTimeout(retry);
         retry = undefined;
+        detach();
+        // Nobody is reading it, so no pointer is down in it.
+        pressed = false;
+        heldRelease();
+        publish();
     };
-
-    // A document this window could not make has nothing to show or save.
-    deps.surfaceCreated?.catch(() => {
-        if (!disposed) republish({ status: "missing", editing: false });
-    });
 
     return {
         get: () => snapshot,
@@ -647,46 +755,22 @@ export function happyAgentSurfaceDocumentStoreCreate(
                 if (listeners.size === 0) stop();
             };
         },
-        editStart() {
-            if (disposed || snapshot.editing || snapshot.status !== "ready") return;
-            publish({ editing: true });
+        presenceUpdate(payload) {
+            if (disposed || mode !== "collaborative") return;
+            presenceLatest = payload;
+            presenceSchedule();
         },
-        editEnd() {
-            if (disposed || !snapshot.editing) return;
-            publish({ editing: false });
-            flush();
-        },
-        textUpdate(value) {
-            if (disposed || snapshot.status !== "ready") return;
-            const text = value
-                .replaceAll("\u0000", "")
-                .slice(0, HAPPY_AGENT_SURFACE_DOCUMENT_TEXT_LIMIT);
-            if (text === snapshot.text) return;
-            draft = {
-                text,
-                baseVersion: draft?.baseVersion ?? authoritative?.version,
-                baseText: draft?.baseText ?? authoritative?.text ?? "",
-            };
-            refused = false;
-            const { failure: _failure, ...rest } = snapshot;
-            snapshot = rest;
-            republish();
-            if (idle) clearTimeout(idle);
-            idle = setTimeout(flush, SAVE_IDLE);
-            longest ??= setTimeout(flush, SAVE_LONGEST);
-        },
-        conflictDismiss() {
-            if (disposed || snapshot.conflict === undefined) return;
-            const { conflict: _conflict, ...rest } = snapshot;
-            snapshot = rest;
-            publish({});
+        pointerPressUpdate(next) {
+            if (disposed || pressed === next) return;
+            pressed = next;
+            if (!next) heldRelease();
         },
         [Symbol.dispose]() {
             if (disposed) return;
-            disposed = true;
             stop();
-            timersClear();
+            disposed = true;
             life.abort();
+            ydoc?.off("update", localChange);
             listeners.clear();
         },
     };

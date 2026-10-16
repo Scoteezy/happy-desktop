@@ -175,6 +175,7 @@ Everything for the long weekend, in one place.
 // Each on its own document: two editors on one would write in each other.
 const SAVING_DOC = documentDocFromMarkdown(SHORT_TEXT);
 const OFFLINE_DOC = documentDocFromMarkdown(SHORT_TEXT);
+const REFUSED_DOC = documentDocFromMarkdown(SHORT_TEXT);
 
 const SLASH_ITEMS = documentSlashMenuItems(
     (
@@ -1272,6 +1273,27 @@ export function HappyAgentSurfacesBlueprintPage() {
                         presence: [],
                         onPresence: noop,
                         sync: "offline",
+                    }}
+                    focusOnType={false}
+                    surface={HOUSE}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="The Happy Agent refused the last change. A shared document cannot keep what it will not hold, so the change was undone, and the page says why until the next one."
+                label="Document, change refused"
+                number="08c3"
+                screen="08c3-document-refused-720x640"
+            >
+                <HappyAgentDocumentSurfacePage
+                    content={{
+                        kind: "live",
+                        ydoc: REFUSED_DOC,
+                        user: READER,
+                        presence: [],
+                        onPresence: noop,
+                        sync: "saved",
+                        failure: "The document would be longer than a document may be.",
                     }}
                     focusOnType={false}
                     surface={HOUSE}

@@ -28,6 +28,11 @@ export interface HappyAgentSync {
     follow(options: {
         readonly signal: AbortSignal;
         readonly events: readonly HappyAgentEvent["type"][];
+        /**
+         * Opts into live document frames, which carry typing as it happens and
+         * would otherwise crowd every other follower's queue.
+         */
+        readonly documents?: boolean;
         /** Opts into narrow startup reads, without releasing protected surface reads. */
         readonly onOnboarding?: (input: HappyAgentOnboardingInput | undefined) => void;
     }): AsyncIterable<HappyAgentSyncInput>;
@@ -46,6 +51,8 @@ export function happyAgentSyncCreate() {
     let initialized = false;
     let closed = false;
     let connectionUpdate: HappyAgentUpdate | undefined;
+    /** The latest connection, which names the stream documents subscribe on. */
+    let connected: Extract<HappyAgentUpdate, { kind: "connected" }> | undefined;
     let onboarding: HappyAgentOnboardingInput | undefined;
     const onboardingPublish = (input: HappyAgentOnboardingInput | undefined): void => {
         if (closed) return;
@@ -57,7 +64,7 @@ export function happyAgentSyncCreate() {
         for (const listener of listeners) listener(input);
     };
     const source: HappyAgentSync = {
-        async *follow({ signal, events, onOnboarding }) {
+        async *follow({ signal, events, documents, onOnboarding }) {
             if (closed || signal.aborted) return;
             const queue: QueuedSyncInput[] = [];
             let wake: (() => void) | undefined;
@@ -72,6 +79,8 @@ export function happyAgentSyncCreate() {
                     input.update.kind === "event" &&
                     !events.includes(input.update.event.type)
                 )
+                    return;
+                if (input.kind === "update" && input.update.kind === "document" && !documents)
                     return;
                 if (input.kind === "bootstrap") queue.length = 0;
                 // A slow endpoint cannot accumulate an unbounded journal. The
@@ -92,6 +101,10 @@ export function happyAgentSyncCreate() {
                 if (onOnboarding && onboarding) receive({ kind: "onboarding", input: onboarding });
                 if (initialized) {
                     receive({ kind: "reconcile" });
+                    // A draining connection is still the stream documents are
+                    // subscribed on, which only its connection named.
+                    if (documents && connectionUpdate?.kind === "draining" && connected)
+                        receive({ kind: "update", update: connected });
                     if (connectionUpdate) receive({ kind: "update", update: connectionUpdate });
                 }
                 while (!closed && !signal.aborted) {
@@ -127,6 +140,8 @@ export function happyAgentSyncCreate() {
                 publish({ kind: "bootstrap", bootstrap });
             },
             updateReceived(update: HappyAgentUpdate): void {
+                if (update.kind === "connected") connected = update;
+                else if (update.kind === "disconnected") connected = undefined;
                 if (
                     update.kind === "connected" ||
                     update.kind === "disconnected" ||

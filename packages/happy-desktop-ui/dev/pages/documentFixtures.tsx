@@ -83,7 +83,7 @@ export function useDocumentPair(
         onPresence: (payload) => {
             pair.revisions[index] += 1;
             const entry: DocumentEditorPresence = {
-                clientId: `window-${String(index)}`,
+                clientKey: `window-${String(index)}`,
                 revision: pair.revisions[index],
                 active: true,
                 update: payload.update,

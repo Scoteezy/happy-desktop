@@ -2419,6 +2419,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             source: "sse",
                         });
                         publishConnection("reconnecting");
+                    } else if (update.kind === "document") {
+                        // A live document frame carries someone's typing to
+                        // the document stores following it; it has no cursor
+                        // and is never journaled, so nothing here moves.
                     } else {
                         reportDebug({
                             detail: debugDetail(update.event),
