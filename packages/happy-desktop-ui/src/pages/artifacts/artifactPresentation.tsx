@@ -29,18 +29,6 @@ export interface HappyAgentArtifactSourceChoice {
     readonly label: string;
 }
 
-/** `#rgb`, `#rgba`, `#rrggbb`, or `#rrggbbaa`: the only colours a version may name. */
-const ARTIFACT_BACKGROUND = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu;
-
-/**
- * The colour a version asked to be shown on, when it is one a slot may paint.
- * It comes from whoever published the version, so anything that is not a plain
- * hex colour is refused here rather than handed to a style.
- */
-export function artifactBackground(value: string | undefined): string | undefined {
-    return value !== undefined && ARTIFACT_BACKGROUND.test(value) ? value : undefined;
-}
-
 /**
  * The glyph an artifact wears for its type, so a list is read by shape before
  * it is read by title. A type this build does not know wears the house

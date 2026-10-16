@@ -48,6 +48,7 @@ export * from "./happyAgent/happyAgentCloudStore.js";
 export * from "./happyAgent/happyAgentTeamsStore.js";
 export * from "./happyAgent/happyAgentInboxStore.js";
 export * from "./artifacts/artifactTypes.js";
+export { happyAgentArtifactBackground } from "./artifacts/artifactProject.js";
 export {
     happyAgentArtifactFilterMatches,
     happyAgentArtifactSourceId,

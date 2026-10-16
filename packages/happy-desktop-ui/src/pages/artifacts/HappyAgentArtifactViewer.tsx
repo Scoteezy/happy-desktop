@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import {
+    happyAgentArtifactBackground,
     happyAgentArtifactReferenceResolve,
     happyAgentArtifactTypeLabel,
     type HappyAgentArtifact,
@@ -25,7 +26,6 @@ import { VideoViewer } from "../../VideoViewer";
 import { Ionicon } from "../../vectorIcons/VectorIcon";
 import {
     ArtifactTypeGlyph,
-    artifactBackground,
     artifactFileName,
     artifactMadeBy,
     artifactSizeText,
@@ -97,7 +97,8 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
     const [historyShown, setHistoryShown] = useState(props.defaultHistoryShown ?? false);
     const state = viewer.artifact;
     const artifact = state.type === "ready" ? state.value : undefined;
-    const background = artifactBackground(viewer.version?.background);
+    // Checked again where it becomes a style: a snapshot can be built by hand.
+    const background = happyAgentArtifactBackground(viewer.version?.background);
     const back = props.onBack ? (
         <Button
             aria-label="Back"
