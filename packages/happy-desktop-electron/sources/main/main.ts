@@ -93,7 +93,7 @@ import {
     happyAgentRendererSessionCreate,
     type HappyAgentRendererSession,
 } from "./happyAgentRendererSession";
-import { HappyAgentServiceBrowser } from "./happyAgentServiceBrowser";
+import { HappyAgentBrowser } from "./happyAgentBrowser";
 import { desktopConfigPath, DesktopConfigStore } from "./desktopConfig";
 import { DesktopDebugController } from "./desktopDebugController";
 import { desktopMainInspectorStart } from "./desktopInspector";
@@ -332,7 +332,7 @@ let onboarding: LocalOnboarding;
 let quitting = false;
 let desktopUpdater: DesktopUpdater | undefined;
 /** Each workspace keeps its own network profile, including while its tabs are hidden. */
-const browserProxies = new Map<string, HappyAgentServiceBrowser>();
+const browserProxies = new Map<string, HappyAgentBrowser>();
 let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
 let artifactSites: ArtifactSiteHandle | undefined;
 let artifactGuests: ArtifactGuests | undefined;
@@ -588,15 +588,15 @@ function browserProxySerial<T>(work: () => Promise<T>): Promise<T> {
 
 function browserProxyApply(target: DesktopBrowserProxyTarget): Promise<string> {
     return browserProxySerial(async () => {
-        const partition = HappyAgentServiceBrowser.partition(target);
+        const partition = HappyAgentBrowser.partition(target);
         if (browserProxies.has(partition)) return partition;
         if (browserProxies.size >= 128)
             throw new Error("Too many workspace browser profiles are open.");
         const browserSession = electronSession.fromPartition(partition, { cache: true });
         await browserSessionConfigure(browserSession);
-        let candidate: HappyAgentServiceBrowser | undefined;
+        let candidate: HappyAgentBrowser | undefined;
         try {
-            candidate = await HappyAgentServiceBrowser.create(browserSession, target, runtime);
+            candidate = await HappyAgentBrowser.create(browserSession, target, runtime);
             browserProxies.set(partition, candidate);
             return partition;
         } catch (error) {
@@ -763,8 +763,8 @@ app.on("login", (event, _webContents, _details, authInfo, callback) => {
         else callback();
         return;
     }
-    // Chromium's ws:// CONNECT uses proxy login before its inner Upgrade can
-    // carry request-bound admission. Only the exact owning guest may obtain it.
+    // Only a guest in the owning workspace profile receives loopback proxy login.
+    // The daemon's authentication stays behind this local network boundary.
     for (const browser of browserProxies.values()) {
         if (authInfo.port !== browser.proxy.port) continue;
         event.preventDefault();
@@ -846,21 +846,7 @@ function browserGuestAttach(window: BrowserWindow): void {
             // opening a window from it, is browsing, and browsing is the browser
             // tab's job — so the guest stays on the document it was opened with.
             guest.setWindowOpenHandler(({ url }) => {
-                // A document cannot turn an unsolicited popup into trusted service navigation.
-                try {
-                    const address = new URL(url);
-                    if (
-                        address.hostname === "localhost" ||
-                        address.hostname.endsWith(".localhost") ||
-                        address.hostname.endsWith(".happy.invalid") ||
-                        address.hostname.startsWith("127.") ||
-                        ["[::1]", "0.0.0.0"].includes(address.hostname)
-                    )
-                        return { action: "deny" };
-                    browserOpenPublish(window, url);
-                } catch {
-                    /* Invalid navigation is refused. */
-                }
+                browserOpenPublish(window, url);
                 return { action: "deny" };
             });
             const stayOnPreview = (event: Electron.Event, candidate: string) => {
@@ -1818,7 +1804,7 @@ void app
                 )
                     throw new Error("Invalid browser tab.");
                 const target = desktopBrowserProxyTargetValidate(rawTarget);
-                const browser = browserProxies.get(HappyAgentServiceBrowser.partition(target));
+                const browser = browserProxies.get(HappyAgentBrowser.partition(target));
                 const guest = electronWebContents.fromId(guestId as number);
                 if (
                     !browser ||

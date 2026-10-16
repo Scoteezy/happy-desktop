@@ -755,10 +755,9 @@ export interface HappyDesktopBridge {
      * body every hop holds whole. A video is the case that makes that plain.
      */
     attachmentSourcePath(file: File): string | undefined;
-    /** Points this window's browser guests at one local Happy Agent session's network boundary. */
-    /** Returns the guest partition only after its workspace proxy is configured. */
+    /** Returns the guest partition after configuring its owning agent's workspace proxy. */
     browserProxyApply(target: DesktopBrowserProxyTarget): Promise<string>;
-    /** Absent on older native hosts, which cannot safely open private service pages. */
+    /** Absent on older native hosts that do not support workspace browser navigation. */
     browserCommand?(
         target: DesktopBrowserProxyTarget,
         guestId: number,

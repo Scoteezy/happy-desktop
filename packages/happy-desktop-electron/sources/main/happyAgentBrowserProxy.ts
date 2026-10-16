@@ -19,7 +19,7 @@ export interface HappyAgentBrowserProxyHandle {
 }
 
 export interface HappyAgentBrowserProxyOptions {
-    readonly openHttpProxy: () => Promise<Duplex>;
+    readonly openHttpProxy: (signal: AbortSignal) => Promise<Duplex>;
 }
 
 /**
@@ -33,22 +33,38 @@ export function happyAgentBrowserProxyCreate(
     const password = randomBytes(32).toString("base64url");
     const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
     const sockets = new Set<Duplex>();
+    const operations = new Set<AbortController>();
     let closed = false;
     let generation = 0;
     const connectionsClose = () => {
         generation += 1;
+        for (const operation of operations) operation.abort();
         for (const socket of sockets) socket.destroy();
         sockets.clear();
     };
-    const openHttpProxy = async () => {
+    const openHttpProxy = async (signal: AbortSignal) => {
         const openingGeneration = generation;
         if (closed) throw new Error("The Happy Agent browser proxy is closed.");
-        const tunnel = await options.openHttpProxy();
-        if (closed || openingGeneration !== generation) {
-            tunnel.destroy();
-            throw new Error("The Happy Agent connection changed while opening the browser tunnel.");
+        const controller = new AbortController();
+        operations.add(controller);
+        try {
+            const openingSignal = AbortSignal.any([
+                signal,
+                controller.signal,
+                AbortSignal.timeout(10_000),
+            ]);
+            openingSignal.throwIfAborted();
+            const tunnel = await options.openHttpProxy(openingSignal);
+            if (closed || openingGeneration !== generation || openingSignal.aborted) {
+                tunnel.destroy();
+                throw new Error(
+                    "The Happy Agent connection changed while opening the browser tunnel.",
+                );
+            }
+            return tunnel;
+        } finally {
+            operations.delete(controller);
         }
-        return tunnel;
     };
     const server = createServer((request, response) => {
         if (!proxyAuthorized(request, authorization)) {
@@ -98,14 +114,20 @@ export function happyAgentBrowserProxyCreate(
 }
 
 async function proxyRequest(
-    openHttpProxy: () => Promise<Duplex>,
+    openHttpProxy: (signal: AbortSignal) => Promise<Duplex>,
     request: IncomingMessage,
     response: ServerResponse,
     sockets: Set<Duplex>,
 ): Promise<void> {
+    const controller = new AbortController();
     let tunnel: Duplex | undefined;
+    response.once("close", () => {
+        controller.abort();
+        tunnel?.destroy();
+    });
+    request.once("aborted", () => controller.abort());
     try {
-        tunnel = await openHttpProxy();
+        tunnel = await openHttpProxy(controller.signal);
         sockets.add(tunnel);
         tunnel.on("error", () => tunnel?.destroy());
         tunnel.once("close", () => sockets.delete(tunnel!));
@@ -143,15 +165,20 @@ async function proxyRequest(
 }
 
 async function proxyConnect(
-    openHttpProxy: () => Promise<Duplex>,
+    openHttpProxy: (signal: AbortSignal) => Promise<Duplex>,
     request: IncomingMessage,
     client: Duplex,
     head: Buffer,
     sockets: Set<Duplex>,
 ): Promise<void> {
+    const controller = new AbortController();
     let tunnel: Duplex | undefined;
+    client.once("close", () => {
+        controller.abort();
+        tunnel?.destroy();
+    });
     try {
-        tunnel = await openHttpProxy();
+        tunnel = await openHttpProxy(controller.signal);
         sockets.add(tunnel);
         tunnel.on("error", () => tunnel?.destroy());
         tunnel.once("close", () => sockets.delete(tunnel!));
@@ -201,6 +228,8 @@ async function proxyConnect(
 function relay(first: Duplex, second: Duplex): void {
     first.on("error", () => second.destroy());
     second.on("error", () => first.destroy());
+    first.once("close", () => second.destroy());
+    second.once("close", () => first.destroy());
     first.pipe(second);
     second.pipe(first);
 }
@@ -223,7 +252,8 @@ function forwardedHeaders(headers: IncomingHttpHeaders): Record<string, string |
         if (
             value === undefined ||
             name.toLowerCase() === "proxy-authorization" ||
-            name.toLowerCase() === "proxy-connection"
+            name.toLowerCase() === "proxy-connection" ||
+            name.toLowerCase() === "proxy-authenticate"
         )
             continue;
         forwarded[name] = typeof value === "number" ? String(value) : value;

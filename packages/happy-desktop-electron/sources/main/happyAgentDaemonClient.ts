@@ -9,7 +9,6 @@ import {
     HappyAgentApiError,
     HappyAgentClient,
     WORKSPACE_BRIDGE_MAX_BINARY_MESSAGE_BYTES,
-    WORKSPACE_SERVICE_AUTHORIZATION_HEADER,
     type AgentResponse,
     type ArtifactVersionResponse,
     type Cuid2,
@@ -24,7 +23,6 @@ import {
     type InspectorStoppedResponse,
     type ShutdownResponse,
     type WorkspaceResponse,
-    type WorkspaceService,
     type WriteFileRequest,
     type WriteFileResponse,
 } from "@slopus/happy-agent-client";
@@ -339,76 +337,15 @@ export class HappyAgentDaemonClient {
     }
 
     /** Opens `CONNECT /v0/workspaces/:workspaceId/proxy`. */
-    openWorkspaceHttpProxy(workspaceId: string): Promise<Duplex> {
+    openWorkspaceHttpProxy(workspaceId: string, signal?: AbortSignal): Promise<Duplex> {
         // The SDK owns and validates the host-published connection prefix, just
         // as it does for ordinary HTTP requests and terminal attachments.
         const prefix = new URL(this.#client.endpoint).pathname.replace(/\/$/u, "");
         const path = `${prefix}/v0/workspaces/${encodeURIComponent(workspaceId)}/proxy`;
-        return this.#openConnect(path);
+        return this.#openConnect(path, signal);
     }
 
-    /** Only explicitly started services can be selected; an ordinary host port is not exposed. */
-    async browserServiceResolve(
-        workspaceId: string,
-        selector: { readonly id: string } | { readonly port: number },
-        signal: AbortSignal,
-    ): Promise<string> {
-        let candidates: readonly WorkspaceService[];
-        if ("id" in selector) {
-            const result = await this.#client.getWorkspaceService(
-                workspaceId as Cuid2,
-                selector.id as Cuid2,
-                { signal },
-            );
-            candidates = [result.service];
-        } else {
-            const result = await this.#client.listWorkspaceServices(
-                workspaceId as Cuid2,
-                { limit: 100 },
-                { signal },
-            );
-            if (result.nextPageCursor !== null)
-                throw new Error("The service catalog is incomplete.");
-            candidates = result.services.filter((service) => service.port === selector.port);
-        }
-        const active = candidates.filter((service) => service.status === "running");
-        if (active.length === 0)
-            throw new Error(
-                "No running sandboxed service matches this address. Ask the agent to start it with service_start.",
-            );
-        if (active.length !== 1)
-            throw new Error(
-                "More than one sandboxed service uses this port. Open its service-specific address instead.",
-            );
-        return active[0]!.id;
-    }
-
-    /** Both credentials stay in main and cover only this service's current execution. */
-    async openWorkspaceServiceProxy(
-        workspaceId: string,
-        serviceId: string,
-        signal: AbortSignal,
-    ): Promise<Duplex> {
-        const credential = await this.#client.issueWorkspaceServiceAccessToken(
-            workspaceId as Cuid2,
-            serviceId as Cuid2,
-            { signal },
-        );
-        const path = new URL(
-            this.#client.workspaceServiceProxyUrl(workspaceId as Cuid2, serviceId as Cuid2),
-        ).pathname;
-        return this.#openConnect(
-            path,
-            { [WORKSPACE_SERVICE_AUTHORIZATION_HEADER]: `Bearer ${credential.accessToken}` },
-            signal,
-        );
-    }
-
-    #openConnect(
-        path: string,
-        headers: Readonly<Record<string, string>> = {},
-        signal?: AbortSignal,
-    ): Promise<Duplex> {
+    #openConnect(path: string, signal?: AbortSignal): Promise<Duplex> {
         return new Promise((resolvePromise, reject) => {
             if (signal?.aborted) {
                 reject(abortedError());
@@ -417,7 +354,7 @@ export class HappyAgentDaemonClient {
             const request = httpRequest({
                 // CONNECT must enter the daemon's tunnel router on a fresh connection.
                 agent: false,
-                headers: { ...headers, authorization: `Bearer ${this.#token}` },
+                headers: { authorization: `Bearer ${this.#token}` },
                 method: "CONNECT",
                 path,
                 socketPath: this.socketPath,

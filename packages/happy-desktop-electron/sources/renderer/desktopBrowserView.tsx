@@ -129,8 +129,8 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             return;
         }
         if (event.type === "did-stop-loading") {
-            // The bootstrap blank document is not the requested address. Service
-            // discovery may still be in flight when that document finishes.
+            // The bootstrap blank document can finish before the requested
+            // navigation has committed through the workspace proxy.
             if (
                 view.getURL() === "about:blank" &&
                 this.requested &&
@@ -243,7 +243,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         }
         if (!desktop.browserCommand) {
             this.props.browserFailed({
-                message: "Update Happy Nightly to enable the private workspace service browser.",
+                message: "Update Happy Nightly to enable the workspace browser.",
             });
             return;
         }
