@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import type {
     HappyAgentBot,
@@ -12,6 +12,9 @@ import type {
     HappyAgentSidebarCollapseStore,
     HappyAgentWorkspaceStore,
     HappyAgentWorktreeId,
+    GptLiveRuntimeEvent,
+    GptLiveStore,
+    HappyAgentAttentionStore,
 } from "happy-desktop-state";
 import {
     appearanceStoreCreate,
@@ -19,6 +22,8 @@ import {
     happyAgentGroupAccessRefused,
     happyAgentHostNoop,
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
+    gptLiveStoreCreate,
+    happyAgentAttentionStoreCreate,
 } from "happy-desktop-state";
 import {
     AppHappyAgentView,
@@ -166,6 +171,8 @@ function view(
         >;
         groupId?: string;
         sidebarCollapse?: HappyAgentSidebarCollapseStore;
+        attention?: HappyAgentAttentionStore;
+        gptLive?: GptLiveStore;
     } = {},
 ) {
     const subtaskArchive = options.subtaskArchive ?? (() => Promise.resolve());
@@ -220,6 +227,8 @@ function view(
             onSettingsOpen={() => undefined}
             happyAgentId="local"
             happyAgents={directory}
+            attention={options.attention}
+            gptLive={options.gptLive}
         />,
     );
 }
@@ -229,12 +238,83 @@ const rowIds = (container: HTMLElement): (string | null)[] =>
         row.getAttribute("data-item-id"),
     );
 
+it("points at the Bots heading for hidden bots and children without changing the hidden choice", async () => {
+    const attention = happyAgentAttentionStoreCreate();
+    attention.botHiddenUpdate("local", BOTS[0]!.id, true);
+    const hidden = attention.get();
+    let receive: ((event: GptLiveRuntimeEvent) => void) | undefined;
+    const gptLive = gptLiveStoreCreate(
+        { read: () => ({ gptLiveEnabled: true, accountId: "codex" }), write: () => {} },
+        {
+            availabilityRead: async () => ({
+                supported: true,
+                accounts: [
+                    { id: "codex", label: "codex", providerId: "codex", kind: "subscription" },
+                ],
+            }),
+            callOpen: async (_input, listener) => {
+                receive = listener;
+                return { close: () => {}, microphoneMutedUpdate: () => {} };
+            },
+        },
+    );
+    const { container, getByText } = view({ attention, gptLive });
+    await act(async () => {
+        gptLive.callStart();
+        await vi.waitFor(() => expect(receive).toBeDefined());
+        receive!({ type: "callActive" });
+    });
+    const heading = getByText("Bots").parentElement!;
+    const headingCue = () =>
+        heading.querySelector('[data-happy-desktop-ui="sidebar-section-voice"]');
+    const targets = [
+        {
+            kind: "bot",
+            connectionId: "local",
+            groupId: "ws_debugger",
+            sessionId: "ses_debugger",
+            botId: "bot_debugger",
+        },
+        { kind: "session", connectionId: "local", groupId: "wt_flicker", sessionId: "ses_flicker" },
+    ] as const;
+    for (const target of targets) {
+        act(() =>
+            receive!({
+                type: "voiceFocusUpdated",
+                focus: { id: target.sessionId, reason: "navigation", target },
+            }),
+        );
+        expect(headingCue()).not.toBeNull();
+        expect(rowIds(container)).not.toContain("local/ws_debugger");
+        expect(rowIds(container)).not.toContain("local/ses_flicker");
+        expect(attention.get()).toBe(hidden);
+        act(() => receive!({ type: "voiceFocusUpdated", focus: null }));
+        expect(headingCue()).toBeNull();
+    }
+    // When a row is present, that row carries the cue instead of the heading.
+    act(() => {
+        attention.botHiddenUpdate("local", BOTS[0]!.id, false);
+        receive!({
+            type: "voiceFocusUpdated",
+            focus: { id: "visible", reason: "navigation", target: targets[1] },
+        });
+    });
+    expect(
+        container.querySelector('[data-item-id="local/ses_flicker"][data-voice-focus]'),
+    ).not.toBeNull();
+    expect(headingCue()).toBeNull();
+    act(() => gptLive.callEnd());
+    expect(container.querySelector("[data-voice-focus]")).toBeNull();
+    gptLive[Symbol.dispose]();
+});
+
 it("lists a subtask's worktree once, under its bot, with the worktree's line delta", () => {
     const { container } = view();
 
     // The bot's tree carries both subtasks; the Projects section keeps only the
     // worktree no bot owns, so the subtask's checkout is not listed twice.
     expect(rowIds(container)).toEqual([
+        "artifacts",
         "local/ws_debugger",
         "local/ses_flicker",
         "local/ses_notes",
@@ -308,6 +388,7 @@ it("hides and shows the whole Projects list from its heading, kept in the foldin
     fireEvent.click(toggle());
     // The heading stays with its controls; only the project rows go.
     expect(rowIds(container)).toEqual([
+        "artifacts",
         "local/ws_debugger",
         "local/ses_flicker",
         "local/ses_notes",

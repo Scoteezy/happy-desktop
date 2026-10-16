@@ -727,6 +727,16 @@ export function gptLiveControllerCreate(options: {
         const { action } = request;
         if (closed || signal.aborted)
             throw new Refusal("ended", "This voice call or action has ended.");
+        if (action.type === "taskCreate" && !capabilities.has("taskCreate"))
+            throw new Refusal(
+                "unavailable",
+                "This Happy Agent has not enabled task creation by voice. Nothing was created.",
+            );
+        if (action.type === "sessionModelChange" && !capabilities.has("sessionModelChange"))
+            throw new Refusal(
+                "unavailable",
+                "This Happy Agent has not enabled model changes by voice. Nothing was changed.",
+            );
         if (action.type === "sessionWatch" && !action.enabled) {
             const key = refKey(action.target);
             const watch = watches.get(key);

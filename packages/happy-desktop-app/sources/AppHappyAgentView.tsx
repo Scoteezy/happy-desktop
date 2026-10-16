@@ -2046,6 +2046,7 @@ function sectionsVoiceFocused(
     sections: readonly SidebarSection[],
     collapsed: ReadonlySet<string>,
     focus: GptLiveVoiceFocus | undefined,
+    directory: AppHappyAgentDirectorySnapshot,
 ): SidebarSection[] {
     if (!focus) return sectionsCollapsed(sections, collapsed);
     let place: { readonly section: number; readonly index: number } | undefined;
@@ -2057,10 +2058,22 @@ function sectionsVoiceFocused(
         if (place) break;
     }
     if (!place) {
-        const heading = happyAgentSectionId(focus.target.connectionId);
+        const { target } = focus;
+        const bots =
+            directory.happyAgents.find((entry) => entry.id === target.connectionId)?.bots ?? [];
+        // Hidden bots stay selectable by voice. Their heading carries the cue
+        // when the bot or a child has no visible row; the hidden choice stays put.
+        const inBots = [...bots, ...happyAgentBotSubtasks(bots)].some(
+            (entry) =>
+                entry.workspaceId === target.groupId ||
+                ("sessionId" in target && entry.conversation.id === target.sessionId),
+        );
+        const heading = inBots
+            ? happyAgentBotsSectionId(target.connectionId)
+            : happyAgentSectionId(target.connectionId);
         return sectionsCollapsed(
             sections.map((section) =>
-                section.id === heading && section.items.length === 0
+                section.id === heading && (inBots || section.items.length === 0)
                     ? { ...section, voiceFocus: true }
                     : section,
             ),
@@ -3861,12 +3874,17 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                                   attention,
                                   workspaceCreateTarget,
                                   props.sidebarCollapse
-                                      ? voiceFocus?.reason === "navigation" &&
+                                      ? // A navigation into a folded-away Projects list
+                                        // shows it while voice points there.
+                                        voiceFocus?.reason === "navigation" &&
                                         voiceFocusInProjects(voiceFocus, directory)
                                           ? new Set(
                                                 [...sidebarCollapse.collapsed].filter(
                                                     (id) =>
-                                                        id !== happyAgentSectionId(voiceFocus.target.connectionId),
+                                                        id !==
+                                                        happyAgentSectionId(
+                                                            voiceFocus.target.connectionId,
+                                                        ),
                                                 ),
                                             )
                                           : sidebarCollapse.collapsed
@@ -3875,6 +3893,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               ),
                               sidebarCollapse.collapsed,
                               voiceFocus,
+                              directory,
                           ),
                       ]
             }

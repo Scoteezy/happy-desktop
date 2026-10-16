@@ -648,6 +648,8 @@ function DesktopScreens(props: DesktopRendererProps) {
                     working: listed.some((conversation) => conversation.activity === "running"),
                     unread: happyAgentEntryUnreadCount(entry, projectsVisibility, attention) > 0,
                     ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
+                    // A call pointing into a machine not on screen is said on its
+                    // rail button, the one place that machine is visible.
                     ...(voiceFocusConnectionId === entry.id &&
                     entry.id !== (directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID)
                         ? { voiceFocus: true }

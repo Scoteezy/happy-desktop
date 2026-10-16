@@ -47,7 +47,11 @@ const loaded = (conversationId: string) => ({
  * moves the address the way the router would.
  */
 function fixture(
-    options: { capabilities?: readonly string[]; taskCreate?: () => Promise<never> } = {},
+    options: {
+        capabilities?: readonly string[];
+        taskCreate?: () => Promise<never>;
+        sessionAcquire?: HappyAgentWorkspaceStore["voiceSessionAcquire"];
+    } = {},
 ) {
     const listeners = new Set<() => void>();
     let snapshot = {
@@ -89,6 +93,7 @@ function fixture(
     const workspace = {
         get: () => snapshot,
         voiceTaskCreate: options.taskCreate,
+        voiceSessionAcquire: options.sessionAcquire,
         subscribe: (listener: () => void) => {
             listeners.add(listener);
             return () => listeners.delete(listener);
@@ -159,6 +164,50 @@ function fixture(
 afterEach(() => vi.useRealTimers());
 
 describe("GPT-Live controller navigation", () => {
+    it.each(["taskCreate", "sessionModelChange"] as const)(
+        "refuses %s before acquiring or mutating when Happy Agent accepted no v2 capabilities",
+        async (type) => {
+            vi.useFakeTimers();
+            const taskCreate = vi.fn(async (): Promise<never> => {
+                throw new Error("An unaccepted task mutation was attempted.");
+            });
+            const sessionAcquire = vi.fn((): never => {
+                throw new Error("An unaccepted model change acquired a session.");
+            });
+            const f = fixture({ taskCreate, sessionAcquire });
+            f.update((current) => ({
+                ...current,
+                address: { groupId: botTarget.groupId, conversationId: botTarget.sessionId },
+                conversation: loaded(botTarget.sessionId),
+            }));
+            f.controller.start([]);
+            const action: Request["action"] =
+                type === "taskCreate"
+                    ? { type, connectionId: "local", name: "Audit", text: "Review the changelog." }
+                    : {
+                          type,
+                          target: botTarget,
+                          providerId: "voice",
+                          modelId: "openai/gpt-6.1-sol",
+                      };
+            f.controller.actionReceive(f.request("unsupported", action));
+            await vi.advanceTimersByTimeAsync(0);
+            expect(f.result("unsupported")).toMatchObject({
+                result: { status: "refused", code: "unavailable" },
+            });
+            expect(taskCreate).not.toHaveBeenCalled();
+            expect(sessionAcquire).not.toHaveBeenCalled();
+            expect(f.opened).toEqual([]);
+            expect(
+                f.events.some(
+                    (event) =>
+                        event.type === "actionStatusUpdated" || event.type === "voiceFocusUpdated",
+                ),
+            ).toBe(false);
+            f.controller.close();
+        },
+    );
+
     it("keeps task creation uncertainty and no-replay advice in voice failures without a raw task ID", async () => {
         vi.useFakeTimers();
         const taskCreate = vi.fn(async () => {
