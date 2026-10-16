@@ -791,6 +791,33 @@ export function happyAgentChatStoreCreate(
     const requestSubmissions = new Map<string, ConversationRequestSubmission>();
     const requestMutationIds = new Map<string, string>();
     const requestSelections = new Map<string, Readonly<Record<string, readonly string[]>>>();
+    /* Sends made before the conversation's first full read, waiting for it.
+       Until it lands nothing here knows the session's mode or its open
+       question, and the agent of a Surface's chat is in no list the connection
+       holds, so a message sent then would go out wrong or not at all. */
+    let arrivalWaiters: {
+        readonly resolve: () => void;
+        readonly reject: (error: UserError) => void;
+    }[] = [];
+
+    const arrived = (): boolean =>
+        transcriptSession !== undefined && transcriptSession.historyLoading !== true;
+
+    const arrivalWait = (): Promise<void> =>
+        !active || disposed
+            ? Promise.reject(new UserError("This conversation isn’t open."))
+            : new Promise((resolve, reject) => {
+                  arrivalWaiters.push({ resolve, reject });
+              });
+
+    const arrivalSettle = (failure?: UserError): void => {
+        const waiters = arrivalWaiters;
+        arrivalWaiters = [];
+        for (const waiter of waiters) {
+            if (failure === undefined) waiter.resolve();
+            else waiter.reject(failure);
+        }
+    };
 
     const sessionLoadable = (): Loadable<HappyAgentSession> =>
         status === "ready" && transcriptSession !== undefined
@@ -1008,10 +1035,12 @@ export function happyAgentChatStoreCreate(
                     }
                 status = "ready";
                 error = undefined;
+                if (arrived()) arrivalSettle();
                 commit();
             },
             onError: (caught) => {
                 if (!active || disposed) return;
+                arrivalSettle(happyAgentUserError(caught));
                 if (transcriptSession === undefined) {
                     status = "error";
                     error = happyAgentUserError(caught);
@@ -1027,6 +1056,7 @@ export function happyAgentChatStoreCreate(
         active = false;
         transcriptConnection?.close();
         transcriptConnection = undefined;
+        arrivalSettle(new UserError("The conversation closed before this was sent."));
     };
 
     const notify = (): void => {
@@ -1209,6 +1239,7 @@ export function happyAgentChatStoreCreate(
             }),
         messageSend: (text, images) =>
             rejecting(async () => {
+                if (!arrived()) await arrivalWait();
                 if ((await pendingQuestionAnswer(text)).textUsed) return;
                 const steered = runStatus === "running";
                 const mutationId = deps.connectActions.sendMessage(
