@@ -558,7 +558,10 @@ export function gptLiveControllerCreate(options: {
                     snapshot.address.conversationId !== target.sessionId ||
                     conversation.type === "error" ||
                     (conversation.type === "ready" &&
-                        conversation.value.conversationId === target.sessionId)
+                        conversation.value.conversationId === target.sessionId &&
+                        (conversation.value.session.type === "error" ||
+                            (conversation.value.ready &&
+                                conversation.value.session.type === "ready")))
                 )
                     done();
             };

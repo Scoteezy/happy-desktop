@@ -3,7 +3,10 @@ import type {
     LiveControlServerMessage,
 } from "@slopus/happy-agent-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { HappyAgentWorkspaceStore } from "../happyAgent/happyAgentWorkspaceStore.js";
+import type {
+    HappyAgentVoiceSession,
+    HappyAgentWorkspaceStore,
+} from "../happyAgent/happyAgentWorkspaceStore.js";
 import {
     GPT_LIVE_DESKTOP_CAPABILITIES,
     GPT_LIVE_NAVIGATION_HOLD_MS,
@@ -31,6 +34,7 @@ const loaded = (conversationId: string) => ({
     type: "ready",
     value: {
         conversationId,
+        ready: true,
         title: "Release bot",
         entries: [],
         transcriptComplete: true,
@@ -101,6 +105,7 @@ function fixture(
     } as unknown as HappyAgentWorkspaceStore;
     const opened: GptLiveNavigationTarget[] = [];
     const frames: LiveControlClientMessage[] = [];
+    const resultRevisions = new Map<string, number>();
     const events: GptLiveRuntimeEvent[] = [];
     const controller = gptLiveControllerCreate({
         windowId: "window-1",
@@ -125,7 +130,11 @@ function fixture(
             },
             paint: () => Promise.resolve(),
         },
-        send: (frame) => frames.push(frame),
+        send: (frame) => {
+            if (frame.type === "actionResult")
+                resultRevisions.set(frame.actionId, controller.contextRead().revision);
+            frames.push(frame);
+        },
         receive: (event) => events.push(event),
         capabilities: options.capabilities ?? GPT_LIVE_DESKTOP_CAPABILITIES,
     });
@@ -153,6 +162,7 @@ function fixture(
         opened,
         request,
         result,
+        resultRevisions,
         focus,
         update(next: (current: typeof snapshot) => typeof snapshot) {
             snapshot = next(snapshot);
@@ -164,6 +174,114 @@ function fixture(
 afterEach(() => vi.useRealTimers());
 
 describe("GPT-Live controller navigation", () => {
+    it("acknowledges a cold open after its session and composer hydrate, then stages at that revision", async () => {
+        vi.useFakeTimers();
+        const draftAppend = vi.fn(async () => {});
+        const handle = {
+            get: () => ({
+                ready: true,
+                session: loaded(botTarget.sessionId).value.session,
+                pendingUserInputs: [],
+            }),
+            draftRead: () => ({ text: "", attachments: [], submission: { status: "idle" } }),
+            subscribe: () => () => {},
+            draftAppend,
+            [Symbol.dispose]: () => {},
+        } as unknown as HappyAgentVoiceSession;
+        const f = fixture({ sessionAcquire: async () => handle });
+        const cold = {
+            ...loaded(botTarget.sessionId).value,
+            ready: false,
+            session: { type: "loading" },
+        };
+        f.update((current) => ({ ...current, conversation: { type: "ready", value: cold } }));
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(
+            f.request("cold-open", { type: "desktopOpen", target: botTarget }),
+        );
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS);
+        expect(f.opened).toEqual([botTarget]);
+        expect(f.result("cold-open")).toBeUndefined();
+        f.update((current) => ({
+            ...current,
+            conversation: { type: "ready", value: { ...cold, ready: true } },
+        }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.result("cold-open")).toBeUndefined();
+        f.update((current) => ({
+            ...current,
+            conversation: {
+                type: "ready",
+                value: {
+                    ...loaded(botTarget.sessionId).value,
+                    composer: { text: "", attachments: [], revision: 2 },
+                },
+            },
+        }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.result("cold-open")).toMatchObject({ result: { status: "succeeded" } });
+        const published = f.frames.filter((frame) => frame.type === "desktopContext").at(-1)!;
+        expect(published.revision).toBe(f.resultRevisions.get("cold-open"));
+        expect(f.frames.indexOf(published)).toBeLessThan(f.frames.indexOf(f.result("cold-open")!));
+        f.controller.actionReceive({
+            ...f.request("next-draft", {
+                type: "sessionSend",
+                target: botTarget,
+                text: "Bring the seed catalog",
+            }),
+            contextRevision: f.resultRevisions.get("cold-open")!,
+        });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(f.result("next-draft")).toMatchObject({
+            result: { status: "succeeded", output: { type: "staged" } },
+        });
+        expect(draftAppend).toHaveBeenCalledExactlyOnceWith("Bring the seed catalog", "");
+        f.controller.close();
+    });
+
+    it.each(["error", "leave", "end"] as const)("ends a cold-open wait on %s", async (ending) => {
+        vi.useFakeTimers();
+        const f = fixture();
+        f.update((current) => ({
+            ...current,
+            conversation: {
+                type: "ready",
+                value: {
+                    ...loaded(botTarget.sessionId).value,
+                    ready: false,
+                    session: { type: "loading" },
+                },
+            },
+        }));
+        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+        f.controller.actionReceive(
+            f.request("cold-open", { type: "desktopOpen", target: botTarget }),
+        );
+        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS);
+        expect(f.result("cold-open")).toBeUndefined();
+        if (ending === "end") f.controller.close();
+        else
+            f.update((current) =>
+                ending === "leave"
+                    ? { ...current, address: { groupId: "project-3" } }
+                    : {
+                          ...current,
+                          conversation: {
+                              type: "ready",
+                              value: {
+                                  ...loaded(botTarget.sessionId).value,
+                                  ready: false,
+                                  session: { type: "error", error: { message: "Session failed." } },
+                              },
+                          },
+                      },
+            );
+        await vi.advanceTimersByTimeAsync(0);
+        if (ending === "end") expect(f.result("cold-open")).toBeUndefined();
+        else expect(f.result("cold-open")).toMatchObject({ result: { status: "succeeded" } });
+        f.controller.close();
+    });
+
     it.each(["taskCreate", "sessionModelChange"] as const)(
         "refuses %s before acquiring or mutating when Happy Agent accepted no v2 capabilities",
         async (type) => {
@@ -440,17 +558,36 @@ describe("GPT-Live controller navigation", () => {
         f.controller.close();
     });
 
-    it("reports an opening whose conversation is still loading once the load bound passes", async () => {
-        vi.useFakeTimers();
-        const f = fixture();
-        f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
-        f.controller.actionReceive(f.request("open", { type: "desktopOpen", target: botTarget }));
-        await vi.advanceTimersByTimeAsync(GPT_LIVE_NAVIGATION_HOLD_MS + 10);
-        expect(f.result("open")).toBeUndefined();
-        await vi.advanceTimersByTimeAsync(GPT_LIVE_OPEN_LOAD_MS);
-        expect(f.result("open")).toMatchObject({ result: { status: "succeeded" } });
-        f.controller.close();
-    });
+    it.each(["conversation", "session"] as const)(
+        "reports an opening whose %s is still loading once the load bound passes",
+        async (loading) => {
+            vi.useFakeTimers();
+            const f = fixture();
+            if (loading === "session")
+                f.update((current) => ({
+                    ...current,
+                    conversation: {
+                        type: "ready",
+                        value: {
+                            ...loaded(botTarget.sessionId).value,
+                            ready: false,
+                            session: { type: "loading" },
+                        },
+                    },
+                }));
+            f.controller.start(GPT_LIVE_DESKTOP_CAPABILITIES);
+            f.controller.actionReceive(
+                f.request("open", { type: "desktopOpen", target: botTarget }),
+            );
+            await vi.advanceTimersByTimeAsync(
+                GPT_LIVE_NAVIGATION_HOLD_MS + GPT_LIVE_OPEN_LOAD_MS - 1,
+            );
+            expect(f.result("open")).toBeUndefined();
+            await vi.advanceTimersByTimeAsync(1);
+            expect(f.result("open")).toMatchObject({ result: { status: "succeeded" } });
+            f.controller.close();
+        },
+    );
 
     it("runs actions in arrival order instead of refusing one that arrives while another runs", async () => {
         vi.useFakeTimers();

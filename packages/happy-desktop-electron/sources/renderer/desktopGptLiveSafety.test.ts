@@ -636,6 +636,136 @@ it("allows desktopState to recover after a stale mutation refuses before any sid
     }
 });
 
+it.each(["empty", "restored"] as const)(
+    "waits for the opened conversation's %s composer before acknowledging navigation",
+    async (draft) => {
+        const f = await fixture();
+        const savedText = draft === "restored" ? "Keep my human draft" : "";
+        if (savedText)
+            f.daemon.draftSeed(f.otherId, {
+                value: {
+                    text: savedText,
+                    effort: "medium",
+                    modelId: "test-model",
+                    permissionMode: "read_only",
+                    providerId: "test-provider",
+                    serviceTier: null,
+                },
+                updatedAt: 500,
+            });
+        const releaseBootstrap = f.daemon.pause("getAgentBootstrap");
+        const frames: Parameters<Parameters<typeof gptLiveControllerCreate>[0]["send"]>[0][] = [];
+        let acknowledgedConversation:
+            | ReturnType<typeof f.workspace.get>["conversation"]
+            | undefined;
+        let acknowledgedRevision: number | undefined;
+        const controller = gptLiveControllerCreate({
+            windowId: "window-hydration",
+            capabilities: ["appState", "voiceFocus"],
+            source: {
+                get: () => ({
+                    activeConnectionId: "local",
+                    connections: [
+                        {
+                            id: "local",
+                            name: "Test desktop",
+                            kind: "local",
+                            online: true,
+                            workspace: f.workspace,
+                        },
+                    ],
+                }),
+                subscribe: () => () => {},
+                targetOpen: (target) => {
+                    if ("sessionId" in target)
+                        f.workspace.conversationOpen(
+                            target.sessionId as HappyAgentSessionId,
+                            target.groupId as HappyAgentProjectId,
+                        );
+                },
+            },
+            send: (frame) => {
+                if (frame.type === "actionResult" && frame.actionId === "open-unloaded") {
+                    acknowledgedConversation = f.workspace.get().conversation;
+                    acknowledgedRevision = controller.contextRead().revision;
+                }
+                frames.push(frame);
+            },
+            receive: () => {},
+        });
+        const result = (id: string) =>
+            frames.find((frame) => frame.type === "actionResult" && frame.actionId === id);
+        const target = {
+            kind: "session",
+            connectionId: "local",
+            groupId: f.group,
+            sessionId: f.otherId,
+        } as const;
+        try {
+            controller.start(["appState", "voiceFocus"]);
+            controller.actionReceive({
+                type: "actionRequested",
+                actionId: "open-unloaded",
+                contextRevision: controller.contextRead().revision,
+                inputTranscriptIds: [],
+                action: { type: "desktopOpen", target },
+            });
+            await vi.waitFor(
+                () => expect(f.workspace.get().address.conversationId).toBe(f.otherId),
+                {
+                    timeout: 3_000,
+                },
+            );
+            // The catalog can supply session metadata before the conversation bootstrap arrives.
+            expect(f.workspace.get().conversation).toMatchObject({
+                type: "ready",
+                value: { ready: false },
+            });
+            expect(result("open-unloaded")).toBeUndefined();
+            releaseBootstrap();
+            await vi.waitFor(() =>
+                expect(result("open-unloaded")).toMatchObject({ result: { status: "succeeded" } }),
+            );
+            expect(acknowledgedConversation).toMatchObject({
+                type: "ready",
+                value: { ready: true, session: { type: "ready" }, composer: { text: savedText } },
+            });
+            const published = frames.filter((frame) => frame.type === "desktopContext").at(-1)!;
+            expect(published.revision).toBe(acknowledgedRevision);
+            expect(frames.indexOf(published)).toBeLessThan(
+                frames.indexOf(result("open-unloaded")!),
+            );
+            controller.actionReceive({
+                type: "actionRequested",
+                actionId: "draft-after-open",
+                contextRevision: acknowledgedRevision!,
+                inputTranscriptIds: [],
+                action: { type: "sessionSend", target, text: "Bring the seed catalog" },
+            });
+            await vi.waitFor(() =>
+                expect(result("draft-after-open")).toMatchObject({
+                    result: savedText
+                        ? { status: "refused", code: "draftConflict" }
+                        : { status: "succeeded", output: { type: "staged" } },
+                }),
+            );
+            expect(f.workspace.get().conversation).toMatchObject({
+                type: "ready",
+                value: {
+                    composer: savedText
+                        ? { text: savedText }
+                        : { text: "Bring the seed catalog", voiceDraft: true },
+                },
+            });
+            expect(f.daemon.callCount("sendMessage")).toBe(0);
+        } finally {
+            releaseBootstrap();
+            controller.close();
+            f.voice[Symbol.dispose]();
+        }
+    },
+);
+
 it.each(["open"] as const)(
     "executes real runtime %s then state and exact draft actions using each accepted revision",
     async (first) => {
