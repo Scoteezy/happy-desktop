@@ -402,7 +402,7 @@ export function gptLiveControllerCreate(options: {
         send({ type: "actionResult", actionId: id, result });
     };
     const creationFinish = async (
-        target: LiveDesktopTarget,
+        target: Exclude<LiveDesktopTarget, { kind: "task" }>,
         prompt: string | undefined,
         before: LiveDesktopTarget | null,
         signal: AbortSignal,
@@ -468,6 +468,10 @@ export function gptLiveControllerCreate(options: {
         const { action } = request;
         if (closed || signal.aborted)
             throw new Refusal("ended", "This voice call or action has ended.");
+        // The voice contract's later actions arrive only for capabilities this
+        // Desktop asks for, and it asks for none.
+        if (action.type === "taskCreate" || action.type === "sessionModelChange")
+            throw new Refusal("unavailable", "This Desktop cannot do that yet.");
         if (action.type === "sessionWatch" && !action.enabled) {
             const key = refKey(action.target);
             const watch = watches.get(key);
@@ -479,6 +483,12 @@ export function gptLiveControllerCreate(options: {
         if (action.type === "desktopOpen") {
             const current = contextRead().context;
             const target = action.target;
+            // Tasks are listed only with the `appState` capability, which this Desktop does not ask for.
+            if (target.kind === "task")
+                throw new Refusal(
+                    "notFound",
+                    "The requested target is not in the current Desktop context.",
+                );
             const listed =
                 target.kind === "project"
                     ? current.projects.some((item) => targetEqual(item.target, target))
