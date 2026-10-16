@@ -133,5 +133,6 @@ export function happyAgentArtifactVersionProject(
         createdBy: happyAgentArtifactAuthorProject(version.createdBy),
         source: happyAgentArtifactSourceProject(version.source),
         createdAt: version.createdAt,
+        // `background` is projected here once the client carries it.
     };
 }

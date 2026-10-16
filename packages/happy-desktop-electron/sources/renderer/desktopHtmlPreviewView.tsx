@@ -4,8 +4,25 @@ import type { DesktopPreviewNavigation } from "../shared/desktopContract";
 
 interface HtmlPreviewWebViewElement extends HTMLElement {
     getWebContentsId(): number;
+    insertCSS(css: string): Promise<string>;
     reload(): void;
 }
+
+/**
+ * The canvas a page written for a light window is given in a dark one, when
+ * nothing is painted under the guest.
+ *
+ * A guest has no backdrop of its own: what shows through a page that leaves its
+ * background alone is whatever the embedder paints. A page that names no colour
+ * scheme is drawn in the browser's light one — black text — which is unreadable
+ * on a dark surface. This gives such a page the paper it was written for, the
+ * same canvas the engine gives a frame whose scheme differs from its embedder's.
+ * A page that declares `light dark` is drawn dark in a dark window, resolves to
+ * `transparent`, and keeps the surface under it. `:where` has no specificity, so
+ * any background the page gives its own root outranks this.
+ */
+const PREVIEW_CANVAS_DARK =
+    "@media (prefers-color-scheme: dark) { :where(:root) { background-color: light-dark(Canvas, transparent); } }";
 
 /**
  * How many steps are held while this view still has no guest id.
@@ -53,6 +70,13 @@ export interface DesktopHtmlPreviewViewProps extends HtmlPreviewProps {
      * which it can only do for a popup it is asked about.
      */
     readonly popups: boolean;
+    /**
+     * What is painted under the guest. `paper` is the white a workspace
+     * document assumes, already painted by the region around it. `none` is an
+     * artifact's slot, which paints nothing, so the guest itself gives a page
+     * written for a light window the paper it needs in a dark one.
+     */
+    readonly canvas: "paper" | "none";
 }
 
 export class DesktopHtmlPreviewView extends Component<DesktopHtmlPreviewViewProps> {
@@ -189,11 +213,24 @@ export class DesktopHtmlPreviewView extends Component<DesktopHtmlPreviewViewProp
         if (this.guestId !== undefined) this.drain();
     };
 
+    /**
+     * Every document the guest parses, including each reload. A stylesheet
+     * inserted into a guest belongs to the document it was inserted into, so
+     * each new one is given its canvas again.
+     */
+    private readonly documentReady = (): void => {
+        if (this.props.canvas !== "none") return;
+        // A guest that is already gone has no document left to style.
+        this.element?.insertCSS(PREVIEW_CANVAS_DARK).catch(() => undefined);
+    };
+
     private readonly elementApply = (view: HtmlPreviewWebViewElement | null): void => {
         if (view === this.element) return;
         this.element?.removeEventListener("did-attach", this.attached);
+        this.element?.removeEventListener("dom-ready", this.documentReady);
         this.element = view ?? undefined;
         this.element?.addEventListener("did-attach", this.attached);
+        this.element?.addEventListener("dom-ready", this.documentReady);
         // A different element is a different guest, and everything this view
         // believed about a page belongs to the one it no longer holds.
         this.guestId = undefined;

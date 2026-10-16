@@ -55,6 +55,16 @@
     outline-offset: -2px;
 }
 
+/* Set on a surface that is already the room — an artifact's slot. The viewer
+   contributes nothing under the recording, so letterboxing is whatever the
+   room is. Full screen keeps the viewer's own surface: there the viewer is the
+   whole room, and the engine's black backdrop is not one of ours. */
+.happy-video-viewer[data-tone="immersive"]:not([data-fullscreen]),
+.happy-video-viewer[data-tone="immersive"]:not([data-fullscreen]) .happy-video-viewer__frame,
+.happy-video-viewer[data-tone="immersive"]:not([data-fullscreen]) .happy-video-viewer__video {
+    background: transparent;
+}
+
 /* While the controls are away the pointer goes with them: it is the same
    gesture that brings both back. */
 .happy-video-viewer[data-idle] .happy-video-viewer__frame {

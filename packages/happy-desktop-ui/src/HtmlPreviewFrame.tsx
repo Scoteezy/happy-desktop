@@ -32,6 +32,15 @@ export type HtmlPreviewFrameProps = {
      * the guest itself. Supplying it takes the place of `renderContent`.
      */
     children?: ReactNode;
+    /**
+     * What the region paints under the page. `paper` (default) is the white a
+     * document assumes when it sets no background of its own — right for an
+     * arbitrary HTML file, which was written for a browser. `none` paints
+     * nothing, so the surface around the region shows through a page that
+     * leaves its own background transparent: an artifact, which is drawn for
+     * Happy and decides for itself what, if anything, is under it.
+     */
+    canvas?: "paper" | "none";
 };
 
 /**
@@ -39,9 +48,9 @@ export type HtmlPreviewFrameProps = {
  *
  * A previewed page is drawn by the embedder's engine, not by this package, so
  * this component owns only where that page sits: it fills the region it is
- * given, sizes its guest to the whole of it, and paints the white canvas a
- * document assumes underneath, so a page that sets no background of its own
- * does not read as a hole in the app.
+ * given, sizes its guest to the whole of it, and by default paints the white
+ * canvas a document assumes underneath, so a page that sets no background of
+ * its own does not read as a hole in the app.
  *
  * It also owns what the region says when there is no page: waiting for an
  * address, and every way loading one can fail. A failure is drawn over the
@@ -58,10 +67,12 @@ export function HtmlPreviewFrame(props: HtmlPreviewFrameProps) {
         "renderContent",
         "failure",
         "children",
+        "canvas",
     ]);
     return (
         <div
             className={["happy-html-preview", local.className].filter(Boolean).join(" ")}
+            data-canvas={local.canvas ?? "paper"}
             data-happy-desktop-ui="html-preview"
             data-testid={local["data-testid"]}
             style={local.style}

@@ -377,7 +377,11 @@
     min-height: 0;
     width: 100%;
     border: 0;
-    background: var(--surface);
+}
+
+/* The document reads on the slot it is shown in, not on a surface of its own. */
+.happy-markdown-document.happy-agent-artifact-viewer__markdown {
+    background: transparent;
 }
 
 .happy-agent-artifact-viewer__fallback {
@@ -456,7 +460,6 @@
     width: 100%;
     border: 0;
     border-top: 1px solid var(--divider);
-    background: var(--surface);
 }
 
 /* ---- Image series ------------------------------------------------------ */

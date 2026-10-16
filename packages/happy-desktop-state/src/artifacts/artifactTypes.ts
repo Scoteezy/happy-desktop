@@ -115,6 +115,12 @@ export interface HappyAgentArtifactVersion {
     readonly createdBy: HappyAgentArtifactAuthor;
     readonly source: HappyAgentArtifactSource | null;
     readonly createdAt: number;
+    /**
+     * The colour this version asks to be shown on, as the daemon stated it.
+     * Absent means none: the version is drawn on whatever surface holds it.
+     * Not yet projected — the client does not carry it.
+     */
+    readonly background?: string;
 }
 
 /**

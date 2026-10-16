@@ -9,8 +9,12 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    /* A document assumes paper under it. Without this a page that sets no
-       background of its own shows the app's surface through it. */
+}
+
+/* A document assumes paper under it. Without this a page that sets no
+   background of its own shows the app's surface through it — which is exactly
+   what a region with no canvas is for. */
+.happy-html-preview[data-canvas="paper"] {
     background: var(--page-canvas);
 }
 

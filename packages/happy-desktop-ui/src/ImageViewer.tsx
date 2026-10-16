@@ -36,8 +36,9 @@ export type ImageViewerProps = {
      * `panel` (default) paints the viewer's own room: a grouped frame and a
      * ruled tool bar, for a viewer set into a page or a side panel. `immersive`
      * paints no surface at all, for a viewer hung on something that is already
-     * the room — the full-window lightbox — so the picture sits on one flat
-     * dark instead of on three stacked bands of surface.
+     * the room — the full-window lightbox, or an artifact's slot — so the
+     * picture sits on that one flat room instead of on three stacked bands of
+     * surface.
      */
     tone?: "panel" | "immersive";
     /**

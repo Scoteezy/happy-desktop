@@ -160,6 +160,25 @@ export function VideoViewerPage() {
                     180,
                 )}
             </Specimen>
+
+            <Specimen
+                detail='tone="immersive" · nothing painted under the recording — the room it is set on, here an artifact slot painted its own colour, is the letterbox'
+                label="Immersive tone"
+                number="08"
+                stage="surface"
+            >
+                {frame(
+                    <div style={{ background: "#10161c", display: "flex", height: "100%" }}>
+                        <VideoViewer
+                            content={{ type: "url", url: videoClipPortrait }}
+                            name="handheld.webm"
+                            tone="immersive"
+                        />
+                    </div>,
+                    340,
+                    420,
+                )}
+            </Specimen>
         </ComponentPage>
     );
 }

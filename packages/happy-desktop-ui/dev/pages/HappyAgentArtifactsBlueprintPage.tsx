@@ -325,6 +325,48 @@ function landingStatic(reason: HappyAgentArtifactStaticReason): HappyAgentArtifa
     return { ...landingViewer, content: { ...content, page: { ...content.page, reason } } };
 }
 
+/**
+ * A page written the way artifacts are: it takes the window's colour scheme,
+ * names no colours, and leaves its background alone, so it reads on whatever
+ * surface it is shown on.
+ */
+const plainFiles = [file("index.html", "text/html", 120)];
+const plainViewer = viewerOf(
+    landing,
+    [version(landing, 1, plainFiles)],
+    {
+        type: "html",
+        entryPath: "index.html",
+        page: {
+            kind: "static",
+            reason: { type: "no-guest" },
+            text: "<!doctype html><html><head><style>:root{color-scheme:light dark}</style></head><body><h1>Hello</h1><p>A page with no colours of its own.</p></body></html>",
+            assets: new Map(),
+            omitted: [],
+        },
+    },
+    plainFiles.map((entry) => link("landing", 1, entry)),
+);
+
+/** A version that names the colour it is shown on, for a page drawn in light ink. */
+const posterFiles = [file("index.html", "text/html", 240)];
+const posterViewer = viewerOf(
+    landing,
+    [version(landing, 1, posterFiles, { background: "#10161c" })],
+    {
+        type: "html",
+        entryPath: "index.html",
+        page: {
+            kind: "static",
+            reason: { type: "no-guest" },
+            text: "<!doctype html><html><head><style>body{margin:0;padding:48px;font-family:sans-serif;color:#f6f8fa}h1{margin:0 0 12px}</style></head><body><h1>Night shift</h1><p>Light ink on the colour this version names for its slot.</p></body></html>",
+            assets: new Map(),
+            omitted: [],
+        },
+    },
+    posterFiles.map((entry) => link("landing", 1, entry)),
+);
+
 const shotFiles = [
     file("01-welcome.svg", "image/svg+xml", 1_400),
     file("02-sign-in.svg", "image/svg+xml", 1_400),
@@ -711,6 +753,34 @@ export function HappyAgentArtifactsBlueprintPage() {
                     labels={labels}
                     tab
                     viewer={landingViewer}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="The slot paints nothing of its own: a page that declares the light and dark schemes and names no colours reads on the surface around it, in either appearance."
+                label="Viewer · web page, on the surface"
+                screen="19-html-plain-1100x760"
+                window={{ width: 1100, height: 760 }}
+                number="19"
+            >
+                <HappyAgentArtifactViewer
+                    {...viewerHandlers}
+                    labels={labels}
+                    viewer={plainViewer}
+                />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="A version that names a background colour has its slot painted that colour, whatever the window's appearance."
+                label="Viewer · named background"
+                screen="20-html-background-1100x760"
+                window={{ width: 1100, height: 760 }}
+                number="20"
+            >
+                <HappyAgentArtifactViewer
+                    {...viewerHandlers}
+                    labels={labels}
+                    viewer={posterViewer}
                 />
             </FullScreenSpecimen>
         </ComponentPage>

@@ -163,8 +163,12 @@ export function artifactHtmlDocument(input: {
     referrer.setAttribute("name", "referrer");
     referrer.setAttribute("content", "no-referrer");
     // A page that sets no colors of its own expects the light canvas a browser
-    // gives it, whatever appearance the window around it is in. `:where` keeps
-    // this weaker than anything the page says.
+    // gives it, whatever appearance the window around it is in. The frame
+    // paints nothing under the page, so in a dark window it is the engine that
+    // gives it one: a frame whose scheme differs from its embedder's is drawn
+    // on an opaque canvas of its own scheme. A page that declares `light dark`
+    // matches the window and stays transparent. `:where` keeps this weaker
+    // than anything the page says.
     const canvas = document.createElement("style");
     canvas.textContent = ":where(html) { color-scheme: light; }";
     head.prepend(policy, referrer, canvas);

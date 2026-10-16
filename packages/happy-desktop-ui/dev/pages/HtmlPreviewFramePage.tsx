@@ -54,6 +54,18 @@ function frame(children: ReactNode, height = 420, width = 720) {
     );
 }
 
+/* A page that sets no colours of its own and leaves its background alone, the
+   way an artifact is written. */
+const transparentGuest = (
+    <iframe
+        sandbox=""
+        src={`data:text/html;charset=utf-8,${encodeURIComponent(
+            "<!doctype html><style>:root{color-scheme:light dark}body{margin:24px;font:16px/1.5 sans-serif}</style><h1>Hello</h1><p>No background of its own.</p>",
+        )}`}
+        title="Transparent page"
+    />
+);
+
 /* A guest that loads and then loses the process drawing it. Blueprint has no
    engine to crash, so the report is made once on mount — which is exactly how
    the product's Electron guest reports one — and the specimen then shows the
@@ -76,7 +88,7 @@ export function HtmlPreviewFramePage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Where a rendered HTML file sits. The page itself is drawn by the host's engine; this owns the box it fills, the white canvas under it, and what the region says before the page has an address to load from."
+            summary="Where a rendered HTML file sits. The page itself is drawn by the host's engine; this owns the box it fills, the white canvas under it unless asked to paint none, and what the region says before the page has an address to load from."
             title="HTML preview frame"
         >
             <Specimen
@@ -149,6 +161,15 @@ export function HtmlPreviewFramePage() {
                     />,
                     300,
                 )}
+            </Specimen>
+
+            <Specimen
+                detail='canvas="none" · nothing painted under the page, so a page that sets no background of its own shows the surface around the region'
+                label="Rendered page, no canvas"
+                number="06"
+                stage="surface"
+            >
+                {frame(<HtmlPreviewFrame canvas="none">{transparentGuest}</HtmlPreviewFrame>, 220)}
             </Specimen>
         </ComponentPage>
     );

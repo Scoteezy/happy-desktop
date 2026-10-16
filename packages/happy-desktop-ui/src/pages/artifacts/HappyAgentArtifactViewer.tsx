@@ -25,6 +25,7 @@ import { VideoViewer } from "../../VideoViewer";
 import { Ionicon } from "../../vectorIcons/VectorIcon";
 import {
     ArtifactTypeGlyph,
+    artifactBackground,
     artifactFileName,
     artifactMadeBy,
     artifactSizeText,
@@ -96,6 +97,7 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
     const [historyShown, setHistoryShown] = useState(props.defaultHistoryShown ?? false);
     const state = viewer.artifact;
     const artifact = state.type === "ready" ? state.value : undefined;
+    const background = artifactBackground(viewer.version?.background);
     const back = props.onBack ? (
         <Button
             aria-label="Back"
@@ -178,9 +180,17 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                         className="happy-agent-artifact-viewer__main"
                         data-happy-desktop-ui="happy-agent-artifact-viewer-main"
                     >
+                        {/* The slot the version is shown in. It paints nothing of
+                            its own, so the surface shows through, unless the
+                            version names a colour to be shown on. */}
                         <div
                             className="happy-agent-artifact-viewer__body"
                             data-happy-desktop-ui="happy-agent-artifact-viewer-body"
+                            style={
+                                background && artifact.status === "active"
+                                    ? { backgroundColor: background }
+                                    : undefined
+                            }
                         >
                             {artifact.status === "deleted" ? (
                                 <EmptyState
@@ -338,6 +348,7 @@ function ArtifactContent(props: {
             };
             return (
                 <MarkdownDocument
+                    className="happy-agent-artifact-viewer__markdown"
                     onFileOpen={(path) => {
                         const link = fileOf(path);
                         if (link) props.onFileDownload(link);
@@ -350,6 +361,7 @@ function ArtifactContent(props: {
         case "html":
             return content.page.kind === "site" ? (
                 <HtmlPreviewFrame
+                    canvas="none"
                     data-testid="happy-agent-artifact-page"
                     {...(props.renderPage ? { renderContent: props.renderPage } : {})}
                     source={content.page.url}
@@ -369,6 +381,7 @@ function ArtifactContent(props: {
                 <ImageViewer
                     content={{ type: "url", url: content.image.url }}
                     name={artifactFileName(content.image.file.path)}
+                    tone="immersive"
                 />
             );
         case "image_series":
@@ -378,6 +391,7 @@ function ArtifactContent(props: {
                 <VideoViewer
                     content={{ type: "url", url: content.video.url }}
                     name={artifactFileName(content.video.file.path)}
+                    tone="immersive"
                 />
             );
         case "document":
@@ -427,6 +441,7 @@ function ArtifactGallery(props: { images: readonly HappyAgentArtifactFileLink[] 
                 <ImageViewer
                     content={{ type: "url", url: shown.url }}
                     name={artifactFileName(shown.file.path)}
+                    tone="immersive"
                 />
             </div>
             <ScrollArea
