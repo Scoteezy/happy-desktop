@@ -2676,17 +2676,12 @@ function happyAgentSearchSections(
             .map((task) => rowOf(taskSidebarItem(task, titleShimmerEnabled)));
         const projects = projectsHidden
             ? []
-            : happyAgent.projects.flatMap((project) =>
-                  sidebarItems(
-                      project,
-                      [...happyAgent.bots, ...(happyAgent.tasks ?? [])],
-                      titleShimmerEnabled,
-                      false,
-                  )
+            : happyAgentSidebarTree(happyAgent).projects.flatMap((entry) =>
+                  sidebarItems(entry, titleShimmerEnabled, false)
                       .filter((item) => matches(item.label))
                       // A worktree found on its own says which project it is in.
                       .map((item) =>
-                          rowOf(item.depth === 1 ? { ...item, meta: project.name } : item),
+                          rowOf(item.depth === 1 ? { ...item, meta: entry.project.name } : item),
                       ),
               );
         const chats = happyAgent.projects

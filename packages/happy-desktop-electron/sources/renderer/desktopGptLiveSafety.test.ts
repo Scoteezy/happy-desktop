@@ -786,9 +786,10 @@ it("cancels a slow Desktop action at fifty seconds and remains able to read stat
         },
         send: (frame) => frames.push(frame),
         receive: () => {},
+        capabilities: ["taskCreate"],
     });
     try {
-        controller.start();
+        controller.start(["taskCreate"]);
         const revision = controller.contextRead().revision;
         controller.actionReceive({
             type: "actionRequested",
