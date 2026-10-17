@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer as createHttpServer, type IncomingMessage } from "node:http";
 import { connect, createServer, type AddressInfo, type Server, type Socket } from "node:net";
@@ -51,8 +52,12 @@ interface Opened {
  */
 async function daemonCreate() {
     // Unix socket paths are short; a long temporary directory leaves little room.
+    // Windows listens on a named pipe instead of a path in the file system.
     const directory = await mkdtemp(join(tmpdir(), "hdb-"));
-    const socketPath = join(directory, "d.sock");
+    const socketPath =
+        process.platform === "win32"
+            ? String.raw`\\.\pipe\happy-desktop-bridge-test-` + randomUUID()
+            : join(directory, "d.sock");
     const webSockets = new WebSocketServer({ noServer: true });
     const usb = queue<Opened>();
     const ports = queue<Opened>();
