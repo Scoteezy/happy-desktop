@@ -238,6 +238,7 @@ export {
     type FileOpenHandler,
     type FileReference,
 } from "./fileReference";
+export { MathFormula, type MathFormulaProps } from "./MathFormula";
 export { MermaidDiagram, type MermaidDiagramProps } from "./MermaidDiagram";
 export { Icon, type IconName, iconNames, type IconProps } from "./Icon";
 export {

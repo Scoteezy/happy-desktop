@@ -1,0 +1,46 @@
+/*
+ * KaTeX formulas. KaTeX's own stylesheet (imported once in styles.css) owns the
+ * typesetting; these rules only place a formula in Happy text. Ink inherits the
+ * surrounding text colour, so a formula follows the theme with no colour of its
+ * own. The row-height model measures formulas built with exactly these classes,
+ * so a change here is a change to that measurement too.
+ */
+
+/* An inline formula is one unbreakable unit: the text model measures it whole
+   and wraps around it, never inside it. */
+.happy-math--inline {
+    white-space: nowrap;
+}
+
+/* A display formula carries its own body type ramp, so it measures the same
+   whether it sits under a paragraph, in a list, or in a quote. It is as wide as
+   its content but never narrower than its host, which centres a short formula
+   and lets a long one overflow into its host's scrollport. The vertical inset
+   keeps tall ink (big operators, stacked limits) clear of the clip edge. */
+.happy-math--display {
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 100%;
+    padding: 4px 0;
+    font-size: 16px;
+    line-height: 24px;
+}
+
+.happy-math--display > .katex-display {
+    margin: 0;
+}
+
+/* A formula KaTeX could not parse keeps its source, set as code, with a soft
+   wavy underline instead of KaTeX's red error text. */
+.happy-math-error {
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: var(--text-destructive);
+    text-decoration-thickness: 1px;
+    text-decoration-skip-ink: none;
+    text-underline-offset: 3px;
+}
+
+.happy-math-error-block {
+    margin: 0;
+}

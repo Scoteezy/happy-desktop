@@ -16,6 +16,8 @@ import { type MenuItem } from "./Menu";
 import { markdownFence, markdownFenceIsMermaid } from "./markdownFence";
 import { type FileLinkOpenHandler, type FileOpenHandler } from "./fileReference";
 import { markdownDocumentLinkTarget, markdownFileUrlTransform } from "./MarkdownDocument";
+import { MathFormula } from "./MathFormula";
+import { mathFormulaRender } from "./mathFormulaRender";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { FILE_REFERENCE_LINK_ATTRIBUTE } from "./messageFileReferences";
 import { MESSAGE_MARKDOWN_REMARK_PLUGINS } from "./messageMarkdownAst";
@@ -420,6 +422,52 @@ const MarkdownPre = ({
         </ScrollArea>
     );
 };
+/** The TeX a formula element was given by `messageMathTreeShape`. */
+function markdownMathSource(node: ExtraProps["node"]): string {
+    return (node?.children ?? [])
+        .map((child) => (child.type === "text" ? child.value : ""))
+        .join("");
+}
+/**
+ * An inline formula in running text. Every other `<span>` the Markdown tree
+ * produces renders unchanged.
+ */
+const MarkdownSpan = ({
+    children,
+    node,
+    ...props
+}: ComponentPropsWithoutRef<"span"> & ExtraProps) =>
+    node?.properties["dataMath"] === "inline" ? (
+        <MathFormula display={false} source={markdownMathSource(node)} />
+    ) : (
+        <span {...props}>{children}</span>
+    );
+/**
+ * A display formula on its own line, scrolling sideways when it is wider than
+ * the body. One KaTeX cannot parse is a code block of its source, exactly the
+ * box the row-height model reserved for it.
+ */
+const MarkdownDiv = ({
+    children,
+    node,
+    ...props
+}: ComponentPropsWithoutRef<"div"> & ExtraProps) => {
+    if (node?.properties["dataMath"] !== "display") return <div {...props}>{children}</div>;
+    const source = markdownMathSource(node);
+    const failed = mathFormulaRender(source, true).kind === "failed";
+    return (
+        <ScrollArea
+            axes="horizontal"
+            className={failed ? "happy-message__code-block" : "happy-message__math-block"}
+            data-happy-desktop-ui={failed ? "message-code-block" : "message-math-block"}
+            viewportClassName={
+                failed ? "happy-message__code-block-viewport" : "happy-message__math-block-viewport"
+            }
+        >
+            <MathFormula display source={source} />
+        </ScrollArea>
+    );
+};
 /** Cells in the header row, which is how many columns the table renders. */
 function markdownTableColumnCount(node: ExtraProps["node"]): number {
     const head = node?.children.find(
@@ -522,9 +570,11 @@ const headingOverride = (
 };
 const markdownComponents: Components = {
     a: MarkdownLink,
+    div: MarkdownDiv,
     img: MarkdownImage,
     p: MarkdownParagraph,
     pre: MarkdownPre,
+    span: MarkdownSpan,
     sup: MarkdownSup,
     table: MarkdownTable,
     h1: headingOverride("h1"),

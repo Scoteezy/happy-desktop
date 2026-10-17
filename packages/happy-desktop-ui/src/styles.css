@@ -94,6 +94,8 @@
 @import "./styles/file-path-label.css";
 @import "./styles/markdown-document.css";
 @import "./styles/mermaid-diagram.css";
+@import "katex/dist/katex.min.css";
+@import "./styles/math-formula.css";
 @import "./styles/file-preview.css";
 @import "./styles/image-viewer.css";
 @import "./styles/video-viewer.css";
