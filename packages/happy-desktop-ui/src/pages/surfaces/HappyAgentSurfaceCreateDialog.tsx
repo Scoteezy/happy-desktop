@@ -24,7 +24,7 @@ function imageSignatureAccepted(bytes: Uint8Array): boolean {
 }
 
 /** The kinds of Surface this dialog makes. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document";
+export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar";
 
 /** What the dialog asks for: a name, and a picture if the reader chose one. */
 export interface HappyAgentSurfaceCreateInput {
@@ -37,6 +37,7 @@ export interface HappyAgentSurfaceCreateInput {
 const KINDS = {
     todo: { title: "New todo list", icon: "tasks", placeholder: "Groceries" },
     document: { title: "New document", icon: "doc", placeholder: "House rules" },
+    calendar: { title: "New calendar", icon: "calendar", placeholder: "Team" },
 } as const satisfies Record<
     HappyAgentSurfaceCreateKind,
     { title: string; icon: IconName; placeholder: string }
@@ -58,7 +59,7 @@ interface Picture {
 }
 
 /**
- * C-298 HappyAgentSurfaceCreateDialog — names a new todo list or document
+ * C-298 HappyAgentSurfaceCreateDialog — names a new todo list, document, or calendar
  * and, if the reader wants, gives it a picture.
  *
  * The form is the dialog's own until it is submitted: the name typed, the

@@ -110,10 +110,27 @@ export type {
     HappyAgentSurfaceDocumentSync,
 } from "./surfaces/surfaceDocumentStore.js";
 export {
-    happyAgentSurfaceDocumentSupportStoreNone,
-    type HappyAgentSurfaceDocumentSupportSnapshot,
-    type HappyAgentSurfaceDocumentSupportStore,
-} from "./surfaces/surfaceDocumentSupportStore.js";
+    happyAgentSurfaceSupportStoreNone,
+    type HappyAgentSurfaceSupport,
+    type HappyAgentSurfaceSupportSnapshot,
+    type HappyAgentSurfaceSupportStore,
+} from "./surfaces/surfaceSupportStore.js";
+export {
+    happyAgentCalendarRangeOf,
+    HAPPY_AGENT_CALENDAR_COUNT_LIMIT,
+    HAPPY_AGENT_CALENDAR_INTERVAL_LIMIT,
+    HAPPY_AGENT_CALENDAR_LOCATION_LIMIT,
+    HAPPY_AGENT_CALENDAR_NOTES_LIMIT,
+    HAPPY_AGENT_CALENDAR_TITLE_LIMIT,
+    type HappyAgentCalendarDraft,
+    type HappyAgentCalendarEditor,
+    type HappyAgentCalendarEditorTarget,
+    type HappyAgentCalendarRange,
+    type HappyAgentCalendarSnapshot,
+    type HappyAgentCalendarStore,
+    type HappyAgentCalendarView,
+} from "./surfaces/surfaceCalendarStore.js";
+export * from "./surfaces/calendarTime.js";
 export type { HappyAgentSurfaces } from "./surfaces/surfaces.js";
 export type {
     HappyAgentArtifactTitle,

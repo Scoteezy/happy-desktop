@@ -749,6 +749,24 @@ export {
 } from "./pages/surfaces/HappyAgentSurfaceChatPanel";
 export type { HappyAgentSurfaceChatToggle } from "./pages/surfaces/HappyAgentSurfaceHeader";
 export {
+    HappyAgentCalendarSurfacePage,
+    type HappyAgentCalendarSurfacePageProps,
+} from "./pages/surfaces/HappyAgentCalendarSurfacePage";
+export {
+    HappyAgentCalendarEventPopover,
+    type HappyAgentCalendarEditorHandlers,
+    type HappyAgentCalendarEventPopoverProps,
+} from "./pages/surfaces/HappyAgentCalendarEventPopover";
+export {
+    HappyAgentCalendarMonthView,
+    type HappyAgentCalendarMonthViewProps,
+} from "./pages/surfaces/HappyAgentCalendarMonthView";
+export { CalendarSeriesNote } from "./pages/surfaces/CalendarSeriesNote";
+export {
+    HappyAgentCalendarWeekView,
+    type HappyAgentCalendarWeekViewProps,
+} from "./pages/surfaces/HappyAgentCalendarWeekView";
+export {
     HappyAgentSurfaceUnsupportedPage,
     type HappyAgentSurfaceUnsupportedPageProps,
 } from "./pages/surfaces/HappyAgentSurfaceUnsupportedPage";

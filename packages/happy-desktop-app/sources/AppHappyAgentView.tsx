@@ -121,7 +121,8 @@ import {
     happyAgentArtifactCatalogStoreNoop,
     happyAgentArtifactChatContext,
     happyAgentSurfaceCatalogStoreNoop,
-    happyAgentSurfaceDocumentSupportStoreNone,
+    happyAgentSurfaceSupportStoreNone,
+    calendarTimeZones,
     happyAgentSurfaceReferenceFind,
     happyAgentSurfaceChatSupported,
     type HappyAgentSurfaceReference,
@@ -156,10 +157,12 @@ import {
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
     type HappyAgentSurfaceCreateKind,
+    type HappyAgentSurfaceSupportSnapshot,
     type HappyAgentSurfaceId,
     type HappyAgentSurfaces,
     type HappyAgentTodoListStore,
     type HappyAgentSurfaceDocumentStore,
+    type HappyAgentCalendarStore,
 } from "happy-desktop-state";
 import {
     type AgentWaitStatus,
@@ -231,6 +234,7 @@ import {
     type HappyAgentSurfaceChatToggle,
     HappyAgentTodoSurfacePage,
     HappyAgentDocumentSurfacePage,
+    HappyAgentCalendarSurfacePage,
     type HappyAgentDocumentSurfaceContent,
     type DocumentEditorUser,
     surfaceTypeIcon,
@@ -2233,16 +2237,20 @@ const SURFACE_CREATE_OFFERS: readonly {
 }[] = [
     { kind: "todo", icon: "tasks", label: "New todo list" },
     { kind: "document", icon: "doc", label: "New document" },
+    { kind: "calendar", icon: "calendar", label: "New calendar" },
 ];
 
 /**
  * The + menu: a document only from a Happy Agent that serves collaborative
- * documents, since an older one can show a document but nobody can write it.
+ * documents, since an older one can show a document but nobody can write it,
+ * and a calendar only from one that serves calendars.
  */
-function surfaceCreateMenu(documents: boolean): MenuItem[] {
-    return SURFACE_CREATE_OFFERS.filter((offer) => offer.kind !== "document" || documents).map(
-        (offer) => ({ kind: "item", id: offer.kind, icon: offer.icon, label: offer.label }),
-    );
+function surfaceCreateMenu(support: HappyAgentSurfaceSupportSnapshot): MenuItem[] {
+    return SURFACE_CREATE_OFFERS.filter(
+        (offer) =>
+            (offer.kind !== "document" || support.documents === "supported") &&
+            (offer.kind !== "calendar" || support.calendars === "supported"),
+    ).map((offer) => ({ kind: "item", id: offer.kind, icon: offer.icon, label: offer.label }));
 }
 
 /** The tones a person's caret can wear in a shared document. */
@@ -3092,12 +3100,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         surfaceCatalogStore.get,
         surfaceCatalogStore.get,
     );
-    const documentSupportStore =
-        active?.session?.surfaces?.documentSupport() ?? happyAgentSurfaceDocumentSupportStoreNone;
-    const documentSupport = useSyncExternalStore(
-        documentSupportStore.subscribe,
-        documentSupportStore.get,
-        documentSupportStore.get,
+    const surfaceSupportStore =
+        active?.session?.surfaces?.support() ?? happyAgentSurfaceSupportStoreNone;
+    const surfaceSupport = useSyncExternalStore(
+        surfaceSupportStore.subscribe,
+        surfaceSupportStore.get,
+        surfaceSupportStore.get,
     );
     /**
      * Opens what an artifact, bot, or task Surface points at, where it always
@@ -3240,7 +3248,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           disabled: active?.status !== "connected",
                           icon: "plus" as const,
                           label: "New Surface",
-                          menu: surfaceCreateMenu(documentSupport.status === "supported"),
+                          menu: surfaceCreateMenu(surfaceSupport),
                       },
                       onHeaderMenuSelect: (id: string) => {
                           const offer = SURFACE_CREATE_OFFERS.find((entry) => entry.kind === id);
@@ -3990,6 +3998,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             )
                             .catch(() => undefined);
                     }}
+                    clock={session.clock}
                     places={surfacePlacesOf(active)}
                     surfaceId={props.surfaceId as HappyAgentSurfaceId}
                     surfaces={active.session.surfaces}
@@ -5061,6 +5070,8 @@ const SURFACE_CHAT_PANEL_WIDTH = 420;
 function HappyAgentSurfaceContent(props: {
     surfaces: HappyAgentSurfaces;
     surfaceId: HappyAgentSurfaceId;
+    /** The connection's clock, which a calendar's line across today follows. */
+    clock: HappyAgentClockStore;
     places: SurfacePlaces;
     /** Opens what an artifact, bot, or task Surface points at, joining a task first. */
     onTargetOpen: (surface: HappyAgentSurface) => void;
@@ -5155,6 +5166,15 @@ function HappyAgentSurfaceContent(props: {
                     store={props.surfaces.document(surface.id)}
                     surface={view}
                     user={documentUserOf(catalog)}
+                />
+            );
+        if (surface.type.kind === "calendar")
+            return (
+                <HappyAgentCalendarSurface
+                    {...(chat ? { chat } : {})}
+                    clock={props.clock}
+                    store={props.surfaces.calendar(surface.id)}
+                    surface={view}
                 />
             );
         if (
@@ -5365,6 +5385,58 @@ function HappyAgentDocumentSurface(props: {
                 : {})}
             focusOnType={props.focusOnType}
             surface={props.surface}
+        />
+    );
+}
+
+/** The minute a clock is in, so a calendar redraws once a minute rather than every tick. */
+function clockMinuteOf(clock: HappyAgentClockStore): number {
+    return Math.floor(clock.get() / 60_000) * 60_000;
+}
+
+/** A calendar Surface, read from its own store for as long as it is on screen. */
+function HappyAgentCalendarSurface(props: {
+    store: HappyAgentCalendarStore;
+    surface: HappyAgentSurfaceView;
+    clock: HappyAgentClockStore;
+    chat?: HappyAgentSurfaceChatToggle;
+}) {
+    const store = props.store;
+    const calendar = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const now = useSyncExternalStore(
+        props.clock.subscribe,
+        () => clockMinuteOf(props.clock),
+        () => clockMinuteOf(props.clock),
+    );
+    return (
+        <HappyAgentCalendarSurfacePage
+            {...(props.chat ? { chat: props.chat } : {})}
+            calendar={calendar}
+            now={now}
+            onAllDayChange={store.editorAllDayUpdate}
+            onClose={store.editorClose}
+            onDelete={store.editorDelete}
+            onDraftMove={store.editorTimingUpdate}
+            onDraftOpen={store.draftOpen}
+            onEndDateChange={store.editorEndDateUpdate}
+            onEndMinutesChange={store.editorEndMinutesUpdate}
+            onFailureDismiss={store.failureDismiss}
+            onLocationChange={store.editorLocationUpdate}
+            onNotesChange={store.editorNotesUpdate}
+            onOccurrenceMove={store.occurrenceTimingUpdate}
+            onOccurrenceOpen={store.occurrenceEditOpen}
+            onPeriodStep={store.periodStep}
+            onRecurrenceChange={store.editorRecurrenceUpdate}
+            onSave={store.editorSave}
+            onStartDateChange={store.editorStartDateUpdate}
+            onStartMinutesChange={store.editorStartMinutesUpdate}
+            onTimeZoneChange={store.editorTimeZoneUpdate}
+            onTitleChange={store.editorTitleUpdate}
+            onTodayShow={store.todayShow}
+            onViewChange={store.viewUpdate}
+            onWeekShow={store.weekShow}
+            surface={props.surface}
+            timeZones={calendarTimeZones()}
         />
     );
 }

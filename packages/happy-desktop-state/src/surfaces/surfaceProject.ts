@@ -1,4 +1,10 @@
 import type {
+    CalendarEvent,
+    CalendarOccurrence,
+    CalendarRecurrence,
+    CalendarRecurrenceInput,
+    CalendarTiming,
+    CalendarTimingInput,
     HappyAgentEvent,
     Surface,
     SurfaceDocument,
@@ -14,6 +20,11 @@ import type {
 } from "../happyAgent/happyAgentTypes.js";
 import { stringCompare } from "../utils/orderKeyDecimal.js";
 import type {
+    HappyAgentCalendarEvent,
+    HappyAgentCalendarEventId,
+    HappyAgentCalendarOccurrence,
+    HappyAgentCalendarRecurrence,
+    HappyAgentCalendarTiming,
     HappyAgentSurface,
     HappyAgentSurfaceDocument,
     HappyAgentSurfaceId,
@@ -41,11 +52,114 @@ export const HAPPY_AGENT_SURFACE_DOCUMENT_EVENT_TYPES = [
     "surface.document.updated",
 ] as const satisfies readonly HappyAgentEvent["type"][];
 
+/**
+ * The events an open calendar follows. They carry whole series, never
+ * occurrences, so each one only says the range on screen is read again.
+ */
+export const HAPPY_AGENT_CALENDAR_EVENT_TYPES = [
+    "calendar_event.created",
+    "calendar_event.updated",
+] as const satisfies readonly HappyAgentEvent["type"][];
+
+/** The calendar a `calendar_event.*` event is about, or `undefined` for any other event. */
+export function happyAgentCalendarEventSurfaceOf(
+    event: HappyAgentEvent,
+): HappyAgentSurfaceId | undefined {
+    switch (event.type) {
+        case "calendar_event.created":
+            return event.payload.event.surfaceId as HappyAgentSurfaceId;
+        case "calendar_event.updated":
+            return event.payload.surfaceId as HappyAgentSurfaceId;
+        default:
+            return undefined;
+    }
+}
+
+export function happyAgentCalendarTimingProject(timing: CalendarTiming): HappyAgentCalendarTiming {
+    return timing.kind === "timed"
+        ? { kind: "timed", start: timing.start, end: timing.end, timeZone: timing.timeZone }
+        : { kind: "allDay", startDate: timing.startDate, endDate: timing.endDate };
+}
+
+export function happyAgentCalendarTimingWire(
+    timing: HappyAgentCalendarTiming,
+): CalendarTimingInput {
+    return timing.kind === "timed"
+        ? { kind: "timed", start: timing.start, end: timing.end, timeZone: timing.timeZone }
+        : { kind: "allDay", startDate: timing.startDate, endDate: timing.endDate };
+}
+
+export function happyAgentCalendarRecurrenceProject(
+    recurrence: CalendarRecurrence,
+): HappyAgentCalendarRecurrence {
+    return {
+        frequency: recurrence.frequency,
+        interval: recurrence.interval,
+        weekdays: recurrence.frequency === "weekly" ? recurrence.weekdays : null,
+        end:
+            recurrence.until !== null
+                ? { kind: "until", date: recurrence.until }
+                : recurrence.count !== null
+                  ? { kind: "count", count: recurrence.count }
+                  : { kind: "never" },
+    };
+}
+
+export function happyAgentCalendarRecurrenceWire(
+    recurrence: HappyAgentCalendarRecurrence,
+): CalendarRecurrenceInput {
+    const end = recurrence.end;
+    const bounds = {
+        interval: recurrence.interval,
+        until: end.kind === "until" ? end.date : null,
+        count: end.kind === "count" ? end.count : null,
+    };
+    return recurrence.frequency === "weekly"
+        ? {
+              frequency: "weekly",
+              ...bounds,
+              weekdays: recurrence.weekdays === null ? null : [...recurrence.weekdays],
+          }
+        : { frequency: recurrence.frequency, ...bounds };
+}
+
+export function happyAgentCalendarEventProject(event: CalendarEvent): HappyAgentCalendarEvent {
+    return {
+        id: event.id as HappyAgentCalendarEventId,
+        surfaceId: event.surfaceId as HappyAgentSurfaceId,
+        authorUserId: event.authorUserId,
+        title: event.title,
+        notes: event.notes,
+        location: event.location,
+        timing: happyAgentCalendarTimingProject(event.timing),
+        recurrence:
+            event.recurrence === null
+                ? null
+                : happyAgentCalendarRecurrenceProject(event.recurrence),
+        status: event.status,
+        deletedAt: event.deletedAt,
+        createdAt: event.createdAt,
+        updatedAt: event.updatedAt,
+        version: event.version,
+    };
+}
+
+export function happyAgentCalendarOccurrenceProject(
+    occurrence: CalendarOccurrence,
+): HappyAgentCalendarOccurrence {
+    return {
+        eventId: occurrence.eventId as HappyAgentCalendarEventId,
+        index: occurrence.index,
+        timing: happyAgentCalendarTimingProject(occurrence.timing),
+    };
+}
+
 /** The daemon's type name, as the kind this build shows, or as unsupported. */
 export function happyAgentSurfaceTypeProject(type: string): HappyAgentSurfaceType {
     switch (type) {
         case "todo":
         case "document":
+        case "calendar":
         case "artifact":
         case "bot":
         case "task":

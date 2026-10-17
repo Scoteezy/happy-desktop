@@ -10,10 +10,15 @@ import {
     type HappyAgentSurfaceDocumentStore,
 } from "./surfaceDocumentStore.js";
 import {
-    happyAgentSurfaceDocumentSupportStoreCreate,
-    type HappyAgentSurfaceDocumentSupportDeps,
-    type HappyAgentSurfaceDocumentSupportStore,
-} from "./surfaceDocumentSupportStore.js";
+    happyAgentSurfaceSupportStoreCreate,
+    type HappyAgentSurfaceSupportDeps,
+    type HappyAgentSurfaceSupportStore,
+} from "./surfaceSupportStore.js";
+import {
+    happyAgentCalendarStoreCreate,
+    type HappyAgentCalendarDeps,
+    type HappyAgentCalendarStore,
+} from "./surfaceCalendarStore.js";
 import {
     happyAgentTodoListStoreCreate,
     type HappyAgentTodoListDeps,
@@ -41,8 +46,14 @@ export interface HappyAgentSurfaces {
      * list, so typing is still sent after the reader has moved on.
      */
     document(surfaceId: HappyAgentSurfaceId): HappyAgentSurfaceDocumentStore;
-    /** Whether documents can be made and written here, as this Happy Agent says. */
-    documentSupport(): HappyAgentSurfaceDocumentSupportStore;
+    /**
+     * One calendar Surface, kept for the life of the connection like a todo
+     * list, so a change is still sent after the reader has moved on, and the
+     * month or week last shown is where the calendar opens again.
+     */
+    calendar(surfaceId: HappyAgentSurfaceId): HappyAgentCalendarStore;
+    /** Whether documents and calendars can be made here, as this Happy Agent says. */
+    support(): HappyAgentSurfaceSupportStore;
     [Symbol.dispose](): void;
 }
 
@@ -50,7 +61,8 @@ export interface HappyAgentSurfacesDeps {
     readonly client: HappyAgentSurfaceCatalogDeps["client"] &
         HappyAgentTodoListDeps["client"] &
         HappyAgentSurfaceDocumentDeps["client"] &
-        HappyAgentSurfaceDocumentSupportDeps["client"];
+        HappyAgentCalendarDeps["client"] &
+        HappyAgentSurfaceSupportDeps["client"];
     readonly sync: HappyAgentSync;
     /** Told of the workspace each Surface chat is held in, once the daemon has said. */
     readonly chatFound?: HappyAgentSurfaceCatalogDeps["chatFound"];
@@ -60,7 +72,8 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
     let catalog: HappyAgentSurfaceCatalogStore | undefined;
     const todoLists = new Map<HappyAgentSurfaceId, HappyAgentTodoListStore>();
     const documents = new Map<HappyAgentSurfaceId, HappyAgentSurfaceDocumentStore>();
-    let documentSupport: HappyAgentSurfaceDocumentSupportStore | undefined;
+    const calendars = new Map<HappyAgentSurfaceId, HappyAgentCalendarStore>();
+    let support: HappyAgentSurfaceSupportStore | undefined;
     /** Lists this connection is making, until the daemon answers, for their todo stores to wait on. */
     const creating = new Map<HappyAgentSurfaceId, Promise<void>>();
     let disposed = false;
@@ -123,9 +136,25 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             }
             return store;
         },
-        documentSupport() {
-            return (documentSupport ??= inert(
-                happyAgentSurfaceDocumentSupportStoreCreate({
+        calendar(surfaceId) {
+            let store = calendars.get(surfaceId);
+            if (store === undefined) {
+                const created = creating.get(surfaceId);
+                store = inert(
+                    happyAgentCalendarStoreCreate({
+                        client: deps.client,
+                        sync: deps.sync,
+                        surfaceId,
+                        ...(created === undefined ? {} : { surfaceCreated: created }),
+                    }),
+                );
+                if (!disposed) calendars.set(surfaceId, store);
+            }
+            return store;
+        },
+        support() {
+            return (support ??= inert(
+                happyAgentSurfaceSupportStoreCreate({
                     client: deps.client,
                     sync: deps.sync,
                 }),
@@ -135,11 +164,13 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             if (disposed) return;
             disposed = true;
             catalog?.[Symbol.dispose]();
-            documentSupport?.[Symbol.dispose]();
+            support?.[Symbol.dispose]();
             for (const store of todoLists.values()) store[Symbol.dispose]();
             todoLists.clear();
             for (const store of documents.values()) store[Symbol.dispose]();
             documents.clear();
+            for (const store of calendars.values()) store[Symbol.dispose]();
+            calendars.clear();
         },
     };
 }

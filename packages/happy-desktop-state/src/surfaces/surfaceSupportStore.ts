@@ -1,45 +1,57 @@
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 
-/** Whether a Happy Agent serves collaborative documents, which can be made and written here. */
-export interface HappyAgentSurfaceDocumentSupportSnapshot {
-    readonly status: "checking" | "supported" | "unsupported";
+/** Whether one kind of Surface can be made, and for a document written, here. */
+export type HappyAgentSurfaceSupport = "checking" | "supported" | "unsupported";
+
+/**
+ * Which Surfaces a Happy Agent can make that an older one cannot, as its
+ * health says: collaborative documents, and calendars.
+ */
+export interface HappyAgentSurfaceSupportSnapshot {
+    readonly documents: HappyAgentSurfaceSupport;
+    readonly calendars: HappyAgentSurfaceSupport;
 }
 
-export interface HappyAgentSurfaceDocumentSupportStore {
-    get(): HappyAgentSurfaceDocumentSupportSnapshot;
+export interface HappyAgentSurfaceSupportStore {
+    get(): HappyAgentSurfaceSupportSnapshot;
     subscribe(listener: () => void): () => void;
     [Symbol.dispose](): void;
 }
 
-export interface HappyAgentSurfaceDocumentSupportDeps {
+export interface HappyAgentSurfaceSupportDeps {
     readonly client: Pick<HappyAgentClient, "getHealth">;
     readonly sync: HappyAgentSync;
 }
 
-const CHECKING: HappyAgentSurfaceDocumentSupportSnapshot = { status: "checking" };
-const SUPPORTED: HappyAgentSurfaceDocumentSupportSnapshot = { status: "supported" };
-const UNSUPPORTED: HappyAgentSurfaceDocumentSupportSnapshot = { status: "unsupported" };
+const CHECKING: HappyAgentSurfaceSupportSnapshot = { documents: "checking", calendars: "checking" };
+const UNSUPPORTED: HappyAgentSurfaceSupportSnapshot = {
+    documents: "unsupported",
+    calendars: "unsupported",
+};
 const RETRY_MS = 5_000;
 
+const supportOf = (supported: boolean): HappyAgentSurfaceSupport =>
+    supported ? "supported" : "unsupported";
+
 /**
- * One connection's answer to whether it serves collaborative documents, read
- * from its health and read again whenever the connection is re-established,
- * since that is when a different daemon may be answering. Offering a new
- * document waits on it: an older Happy Agent can show a document, but nobody
- * can write one here.
+ * One connection's answer to which newer Surfaces it serves, read from its
+ * health and read again whenever the connection is re-established, since that
+ * is when a different daemon may be answering. Offering a new document or a
+ * new calendar waits on it: an older Happy Agent can show a document, but
+ * nobody can write one here, and it cannot make a calendar at all.
  */
-export function happyAgentSurfaceDocumentSupportStoreCreate(
-    deps: HappyAgentSurfaceDocumentSupportDeps,
-): HappyAgentSurfaceDocumentSupportStore {
+export function happyAgentSurfaceSupportStoreCreate(
+    deps: HappyAgentSurfaceSupportDeps,
+): HappyAgentSurfaceSupportStore {
     const listeners = new Set<() => void>();
     let snapshot = CHECKING;
     let controller: AbortController | undefined;
     let pending: AbortController | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
 
-    const set = (next: HappyAgentSurfaceDocumentSupportSnapshot): void => {
-        if (next === snapshot) return;
+    const set = (next: HappyAgentSurfaceSupportSnapshot): void => {
+        if (next.documents === snapshot.documents && next.calendars === snapshot.calendars) return;
         snapshot = next;
         for (const listener of listeners) listener();
     };
@@ -54,7 +66,10 @@ export function happyAgentSurfaceDocumentSupportStoreCreate(
         void deps.client.getHealth({ signal }).then(
             (health) => {
                 if (signal.aborted) return;
-                set(health.capabilities?.collaborativeDocuments === true ? SUPPORTED : UNSUPPORTED);
+                set({
+                    documents: supportOf(health.capabilities?.collaborativeDocuments === true),
+                    calendars: supportOf(health.capabilities?.calendarSurfaces === true),
+                });
             },
             () => {
                 // Not knowing is not "unsupported": an offer already made stays
@@ -105,7 +120,7 @@ export function happyAgentSurfaceDocumentSupportStoreCreate(
 }
 
 /** For a connection without Surfaces: never supported, and nothing to follow. */
-export const happyAgentSurfaceDocumentSupportStoreNone: HappyAgentSurfaceDocumentSupportStore = {
+export const happyAgentSurfaceSupportStoreNone: HappyAgentSurfaceSupportStore = {
     get: () => UNSUPPORTED,
     subscribe: () => () => undefined,
     [Symbol.dispose]: () => undefined,

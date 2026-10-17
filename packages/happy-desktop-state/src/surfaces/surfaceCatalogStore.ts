@@ -133,7 +133,7 @@ const NAME_FORBIDDEN = /[\u0000-\u001f\u007f]/gu;
 export type HappyAgentSurfaceMembershipAction = "join" | "leave" | "reorder";
 
 /** The kinds of Surface the reader can make here. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document";
+export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar";
 
 /**
  * Whether the form that makes a new Surface is open, and for which kind.
@@ -219,8 +219,8 @@ export interface HappyAgentSurfaceCatalogSnapshot {
 /** What a new Surface is made from, by kind. */
 export type HappyAgentSurfaceCreateInput =
     | {
-          /** A todo list, or a document, which starts empty. */
-          readonly kind: "todo" | "document";
+          /** A todo list, a document, or a calendar, which starts empty. */
+          readonly kind: HappyAgentSurfaceCreateKind;
           readonly name: string;
           /**
            * A PNG, JPEG, or WebP picture, at most 8 MiB; the daemon normalizes
@@ -402,6 +402,7 @@ function createRefusal(
 const CREATE_NOUNS = {
     todo: "todo lists",
     document: "documents",
+    calendar: "calendars",
     artifact: "Surfaces for artifacts",
     bot: "Surfaces for bots",
     task: "Surfaces for tasks",
@@ -1181,7 +1182,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
             void (async () => {
                 let image: { data: string } | undefined;
                 // A picture that cannot be read leaves the list without one.
-                if ((input.kind === "todo" || input.kind === "document") && input.image)
+                if (input.kind !== "reference" && input.image)
                     image = await base64Of(input.image).then(
                         (data) => ({ data }),
                         () => undefined,
