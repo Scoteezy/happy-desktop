@@ -1,4 +1,8 @@
 import type { HappyAgentClient, HappyIntegration } from "@slopus/happy-agent-client";
+import {
+    happyAgentMobileConnectorStoreNoop,
+    type HappyAgentMobileConnectorStore,
+} from "../happyAgent/happyAgentMobileConnectorStore.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
@@ -41,6 +45,11 @@ export type HappyMobileOnboardingSnapshot =
 export type HappyMobileOnboardingOutput = { readonly type: "happyMobileSkipped" };
 
 export interface HappyMobileOnboardingStore {
+    /**
+     * The same Happy Agent's direct connector. Its pairing is open while this
+     * flow shows its pairing code, so both methods are offered together.
+     */
+    readonly direct: HappyAgentMobileConnectorStore;
     get(): HappyMobileOnboardingSnapshot;
     subscribe(listener: () => void): () => void;
     happyMobileConnect(): void;
@@ -56,6 +65,8 @@ export interface HappyMobileOnboardingStoreOptions {
         "cancelHappyIntegration" | "getHappyIntegration" | "startHappyIntegration"
     >;
     readonly initialSkipped?: boolean;
+    /** The direct connector offered beside the relay code; absent offers the relay alone. */
+    readonly mobileConnector?: HappyAgentMobileConnectorStore;
     /**
      * The guided flow: store code and platform pick, then the pairing code, on
      * one setup surface. The local desktop uses it; remote Happy Agents keep
@@ -69,6 +80,15 @@ const CHECKING: HappyMobileOnboardingSnapshot = { status: "checking" };
 const CONFIGURED: HappyMobileOnboardingSnapshot = { status: "configured" };
 const DISABLED: HappyMobileOnboardingSnapshot = { status: "disabled" };
 const SKIPPED: HappyMobileOnboardingSnapshot = { status: "skipped" };
+
+/** The relay's error code when a pairing code ran out unused. */
+export const HAPPY_MOBILE_CODE_EXPIRED = "authorization_expired";
+
+/** Whether the direct connector has just paired a phone, which finishes phone setup too. */
+export function happyMobileDirectPaired(direct: HappyAgentMobileConnectorStore): boolean {
+    const read = direct.get().connector;
+    return read.kind === "ready" && read.connector.pairing?.status === "completed";
+}
 
 function resolved(snapshot: HappyMobileOnboardingSnapshot): boolean {
     return (
@@ -93,15 +113,29 @@ export function happyMobileOnboardingStoreCreate(
 ): HappyMobileOnboardingStore {
     if (options.guided) return happyDesktopMobileOnboardingStoreCreate(options);
     const listeners = new Set<() => void>();
+    const direct = options.mobileConnector ?? happyAgentMobileConnectorStoreNoop;
+    let directOpen = false;
     let snapshot: HappyMobileOnboardingSnapshot = options.initialSkipped ? SKIPPED : CHECKING;
     let version: string | undefined;
     let networkAbort: AbortController | undefined;
     let mutation = 0;
     let disposed = false;
 
+    /** The direct code is offered exactly while the relay's pairing view is on screen. */
+    const directSync = (): void => {
+        const wanted =
+            !disposed &&
+            listeners.size > 0 &&
+            (snapshot.status === "pairing" || snapshot.status === "failed");
+        if (wanted === directOpen) return;
+        directOpen = wanted;
+        if (wanted) direct.pairingOpen();
+        else direct.pairingClose();
+    };
     const publish = (next: HappyMobileOnboardingSnapshot): void => {
         if (disposed) return;
         snapshot = next;
+        directSync();
         for (const listener of listeners) listener();
     };
     const networkStop = (): void => {
@@ -139,9 +173,16 @@ export function happyMobileOnboardingStoreCreate(
                     status: "pairing",
                 });
                 return;
-            case "failed":
+            case "failed": {
+                const expired =
+                    snapshot.status === "pairing" &&
+                    integration.error.code === HAPPY_MOBILE_CODE_EXPIRED;
                 publish({ message: integration.error.message, pending: false, status: "failed" });
+                // A code that ran out unused while on screen is replaced, not reported.
+                if (expired && listeners.size > 0 && !happyMobileDirectPaired(direct))
+                    store.happyMobileConnect();
                 return;
+            }
         }
     };
     const follow = async (abort: AbortController): Promise<void> => {
@@ -220,15 +261,20 @@ export function happyMobileOnboardingStoreCreate(
             });
     };
 
-    return {
+    const store: HappyMobileOnboardingStore = {
+        direct,
         get: () => snapshot,
         subscribe(listener) {
             if (disposed) return () => undefined;
             listeners.add(listener);
-            if (listeners.size === 1) networkEnsure();
+            if (listeners.size === 1) {
+                networkEnsure();
+                directSync();
+            }
             return () => {
                 listeners.delete(listener);
                 if (listeners.size === 0) {
+                    directSync();
                     networkStop();
                     mutation += 1;
                     if (
@@ -244,6 +290,16 @@ export function happyMobileOnboardingStoreCreate(
             };
         },
         happyMobileConnect() {
+            // A phone paired directly: phone setup is done whatever the relay says.
+            if (!disposed && directOpen && happyMobileDirectPaired(direct)) {
+                mutation += 1;
+                const cancelPairing = snapshot.status === "pairing";
+                publish(CONFIGURED);
+                networkStop();
+                if (cancelPairing)
+                    void options.client.cancelHappyIntegration().catch(() => undefined);
+                return;
+            }
             if (
                 disposed ||
                 (snapshot.status !== "offer" && snapshot.status !== "failed") ||
@@ -288,10 +344,13 @@ export function happyMobileOnboardingStoreCreate(
         },
         happyMobilePlatformSelect() {},
         [Symbol.dispose]() {
+            if (directOpen) direct.pairingClose();
+            directOpen = false;
             disposed = true;
             mutation += 1;
             networkStop();
             listeners.clear();
         },
     };
+    return store;
 }

@@ -101,6 +101,10 @@ import {
     type HappyAgentIntegrationStore,
 } from "./happyAgentIntegrationStore.js";
 import {
+    happyAgentMobileConnectorStoreCreate,
+    type HappyAgentMobileConnectorStore,
+} from "./happyAgentMobileConnectorStore.js";
+import {
     happyAgentCloudStoreCreate,
     type HappyAgentCloudHost,
     type HappyAgentCloudStore,
@@ -167,6 +171,8 @@ export interface HappyAgentWorkspaceClient {
     providerUsage(): HappyAgentProviderUsageStore | undefined;
     /** The installation-wide Happy Mobile connection, materialized on first access. */
     happyIntegration(): HappyAgentIntegrationStore;
+    /** Phones paired directly with this Happy Agent, and the pairing that adds one. */
+    mobileConnector(): HappyAgentMobileConnectorStore;
     /** The installation-wide WorkOS account, materialized on first access. */
     cloud(): HappyAgentCloudStore;
     /** WorkOS organizations shown as teams, on agents that support the organization API. */
@@ -354,6 +360,11 @@ export interface HappyAgentWorkspaceClient {
 export interface HappyAgentWorkspaceClientDeps {
     /** The local desktop pairs Happy Mobile through the guided setup. */
     readonly guidedMobileSetup?: boolean;
+    /**
+     * The connection's mobile connector, when its owner shares it with
+     * onboarding. The owner disposes it; without one, the client makes its own.
+     */
+    readonly mobileConnector?: HappyAgentMobileConnectorStore;
     readonly readLegacyCli?: () => Promise<
         import("./happyTerminalCli.js").HappyTerminalCliInspection
     >;
@@ -520,6 +531,13 @@ export function happyAgentWorkspaceClientCreate(
     let inboxStore: HappyAgentInboxStore | undefined;
     let providerUsageStore: HappyAgentProviderUsageStore | undefined;
     let happyIntegrationStore: HappyAgentIntegrationStore | undefined;
+    let ownMobileConnectorStore: HappyAgentMobileConnectorStore | undefined;
+    const mobileConnectorStore = (): HappyAgentMobileConnectorStore =>
+        deps.mobileConnector ??
+        (ownMobileConnectorStore ??= happyAgentMobileConnectorStoreCreate({
+            client: deps.client,
+            sync: deps.connection.sync,
+        }));
     let cloudStore: HappyAgentCloudStore | undefined;
     let teamsStore: HappyAgentTeamsStore | undefined;
     let profileStore: HappyAgentProfileStore | undefined;
@@ -795,11 +813,16 @@ export function happyAgentWorkspaceClientCreate(
             happyIntegrationStore ??= happyAgentIntegrationStoreCreate({
                 client: deps.client,
                 sync: deps.connection.sync,
+                mobileConnector: mobileConnectorStore(),
                 guidedMobileSetup: deps.guidedMobileSetup,
                 readLegacyCli: deps.readLegacyCli,
                 resetLegacyCli: deps.resetLegacyCli,
             });
             return happyIntegrationStore;
+        },
+        mobileConnector() {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            return mobileConnectorStore();
         },
         cloud() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
@@ -968,6 +991,8 @@ export function happyAgentWorkspaceClientCreate(
             providerUsageStore?.[Symbol.dispose]();
             providerUsageStore = undefined;
             happyIntegrationStore?.[Symbol.dispose]();
+            ownMobileConnectorStore?.[Symbol.dispose]();
+            ownMobileConnectorStore = undefined;
             cloudStore?.[Symbol.dispose]();
             teamsStore?.[Symbol.dispose]();
             happyIntegrationStore = undefined;

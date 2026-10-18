@@ -1,10 +1,13 @@
 import type { HappyIntegration } from "@slopus/happy-agent-client";
+import { happyAgentMobileConnectorStoreNoop } from "../happyAgent/happyAgentMobileConnectorStore.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
-import type {
-    HappyDesktopMobileStep,
-    HappyMobileOnboardingSnapshot,
-    HappyMobileOnboardingStore,
-    HappyMobileOnboardingStoreOptions,
+import {
+    HAPPY_MOBILE_CODE_EXPIRED,
+    happyMobileDirectPaired,
+    type HappyDesktopMobileStep,
+    type HappyMobileOnboardingSnapshot,
+    type HappyMobileOnboardingStore,
+    type HappyMobileOnboardingStoreOptions,
 } from "./happyMobileOnboardingStore.js";
 
 /**
@@ -14,14 +17,16 @@ import type {
 const CODE_PLACEHOLDER_MINIMUM_MS = 1_000;
 
 /**
- * The guided phone setup: the store code first, then one pairing code for
- * Happy Agent. The phone reaches this computer through Happy Agent alone, so
- * nothing is installed on the computer for it.
+ * The guided phone setup: the store code first, then the pairing codes for
+ * Happy Agent, relay and direct side by side. The phone reaches this computer
+ * through Happy Agent alone, so nothing is installed on the computer for it.
  */
 export function happyDesktopMobileOnboardingStoreCreate(
     options: HappyMobileOnboardingStoreOptions,
 ): HappyMobileOnboardingStore {
     const listeners = new Set<() => void>();
+    const direct = options.mobileConnector ?? happyAgentMobileConnectorStoreNoop;
+    let directOpen = false;
     let snapshot: HappyMobileOnboardingSnapshot = options.initialSkipped
         ? { status: "skipped" }
         : { status: "desktop", step: { kind: "intro", platform: "ios" } };
@@ -105,6 +110,14 @@ export function happyDesktopMobileOnboardingStoreCreate(
                   },
         };
     };
+    /** The direct code is offered exactly while the link step is on screen. */
+    const directSync = () => {
+        const wanted = active() && snapshot.status === "desktop" && snapshot.step.kind === "link";
+        if (wanted === directOpen) return;
+        directOpen = wanted;
+        if (wanted) direct.pairingOpen();
+        else direct.pairingClose();
+    };
     const publish = () => {
         if (disposed) return;
         snapshot = skipped
@@ -112,6 +125,7 @@ export function happyDesktopMobileOnboardingStoreCreate(
             : continued
               ? { status: "configured" }
               : { status: "desktop", step: step() };
+        directSync();
         for (const listener of listeners) listener();
     };
     const stop = () => {
@@ -126,8 +140,18 @@ export function happyDesktopMobileOnboardingStoreCreate(
         if (!active()) return;
         if (!authoritative && integration && integration.version.localeCompare(next.version) > 0)
             return;
+        const expired =
+            integration?.status === "pairing" &&
+            next.status === "failed" &&
+            !next.configured &&
+            next.error.code === HAPPY_MOBILE_CODE_EXPIRED;
         integration = next;
         networkError = undefined;
+        // A code that ran out unused while on screen is replaced, not reported.
+        if (expired && consented && !pairing && !pairingError && !happyMobileDirectPaired(direct)) {
+            pair();
+            return;
+        }
         publish();
     }
     /** Shows a held code once its placeholder has been up for the minimum. */
@@ -268,11 +292,13 @@ export function happyDesktopMobileOnboardingStoreCreate(
             });
     }
     return {
+        direct,
         get: () => snapshot,
         subscribe(listener) {
             if (disposed) return () => undefined;
             listeners.add(listener);
             start();
+            directSync();
             // A screen that comes back within the hold still gets its code.
             codeRelease();
             return () => {
@@ -290,10 +316,15 @@ export function happyDesktopMobileOnboardingStoreCreate(
         },
         happyMobileConnect() {
             if (!active() || snapshot.status !== "desktop") return;
-            if (snapshot.step.kind === "connected") {
+            // A phone paired directly: phone setup is done whatever the relay says.
+            const directPaired =
+                snapshot.step.kind === "link" && directOpen && happyMobileDirectPaired(direct);
+            if (snapshot.step.kind === "connected" || directPaired) {
+                const cancel = directPaired && integration?.status === "pairing";
                 continued = true;
                 publish();
                 stop();
+                if (cancel) void options.client.cancelHappyIntegration().catch(() => undefined);
                 return;
             }
             // The first screen shows the store code, so confirming it is both
@@ -323,6 +354,8 @@ export function happyDesktopMobileOnboardingStoreCreate(
         [Symbol.dispose]() {
             if (disposed) return;
             const cancel = !skipped && !continued && consented && integration?.status === "pairing";
+            if (directOpen) direct.pairingClose();
+            directOpen = false;
             disposed = true;
             generation += 1;
             stop();

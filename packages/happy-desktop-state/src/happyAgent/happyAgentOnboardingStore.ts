@@ -1,6 +1,7 @@
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
+import type { HappyAgentMobileConnectorStore } from "./happyAgentMobileConnectorStore.js";
 import {
     happyMobileOnboardingStoreCreate,
     type HappyMobileOnboardingStore,
@@ -57,6 +58,8 @@ export function happyAgentOnboardingStoreCreate(
         readonly onMobileSkip?: () => void;
         /** The local desktop pairs Happy Mobile through the guided setup. */
         readonly guidedMobileSetup?: boolean;
+        /** The connection's direct connector, offered beside the relay code. */
+        readonly mobileConnector?: HappyAgentMobileConnectorStore;
     } = {},
 ): HappyAgentOnboardingStore {
     let snapshot: HappyAgentOnboardingSnapshot = {
@@ -78,6 +81,7 @@ export function happyAgentOnboardingStoreCreate(
         initialSkipped: options.mobileSkipped,
         guided: options.guidedMobileSetup,
         onOutput: options.onMobileSkip,
+        ...(options.mobileConnector ? { mobileConnector: options.mobileConnector } : {}),
     });
     const publish = (next: HappyAgentOnboardingSnapshot): void => {
         const state = onboardingStatesEqual(snapshot.state, next.state)
