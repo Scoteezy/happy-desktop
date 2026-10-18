@@ -3,6 +3,8 @@ import { CopyButton } from "./CopyButton";
 import {
     DesktopMobileSetup,
     MobileAppCopy,
+    desktopMobilePairingOptionsCopy,
+    type DesktopMobilePairingOptions,
     type DesktopMobileSetupStep,
 } from "./DesktopMobileSetup";
 import { OnboardingHelp } from "./OnboardingHelp";
@@ -154,6 +156,11 @@ export interface LocalOnboardingScreenProps {
     onHappyMobileConnect(): void;
     onHappyMobileSkip(): void;
     onHappyMobilePlatformSelect?(platform: "ios" | "android"): void;
+    /**
+     * Both pairing methods. When present, linking shows them side by side in
+     * place of the relay-only code and failure pages.
+     */
+    readonly happyMobilePairingOptions?: DesktopMobilePairingOptions;
 }
 
 /** What a reader is told to run when Happy cannot start their Happy Agent itself. */
@@ -553,6 +560,9 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 onSkip={props.onHappyMobileSkip}
                 onPlatformSelect={props.onHappyMobilePlatformSelect}
                 onExternalOpen={props.onExternalOpen}
+                {...(props.happyMobilePairingOptions === undefined
+                    ? {}
+                    : { pairingOptions: props.happyMobilePairingOptions })}
             />
         );
     // Download, start, discovery, and verification are one machine-setup
@@ -582,7 +592,8 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 failed={
                     view.kind === "node-missing" ||
                     view.kind === "connect-failed" ||
-                    view.kind === "happy-mobile-failed"
+                    (view.kind === "happy-mobile-failed" &&
+                        props.happyMobilePairingOptions === undefined)
                 }
             />
         ) : undefined,
@@ -694,6 +705,23 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 {...(view.message ? { status: { label: view.message } } : {})}
                 title="Get Mobile App"
             />
+        );
+
+    if (
+        props.happyMobilePairingOptions !== undefined &&
+        (view.kind === "happy-mobile-pairing" || view.kind === "happy-mobile-failed")
+    )
+        return (
+            <SetupPage
+                {...frame}
+                className="happy-local-onboarding__mobile happy-local-onboarding__mobile-options"
+                copy={desktopMobilePairingOptionsCopy(props.happyMobilePairingOptions)}
+                data-testid="local-onboarding-screen"
+                secondary={skipMobile}
+                title="Link Mobile App"
+            >
+                {props.happyMobilePairingOptions.view}
+            </SetupPage>
         );
 
     if (view.kind === "happy-mobile-pairing")

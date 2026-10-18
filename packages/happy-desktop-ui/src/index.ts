@@ -586,6 +586,8 @@ export {
 export { ProfileSetupScreen, type ProfileSetupScreenProps } from "./ProfileSetupScreen";
 export {
     DesktopMobileSetup,
+    desktopMobilePairingOptionsCopy,
+    type DesktopMobilePairingOptions,
     type DesktopMobileSetupProps,
     type DesktopMobileSetupStep,
 } from "./DesktopMobileSetup";
@@ -806,6 +808,32 @@ export {
     type HappyAgentMobileStatus,
     type HappyAgentMobileTerminal,
 } from "./pages/settings/HappyAgentMobileSettings";
+export {
+    MobileDirectConnectionSection,
+    MobileDirectEmoji,
+    MobileDirectPairingPanel,
+    MobileDirectRemoveConfirmation,
+    mobileDirectPairingEngaged,
+    type MobileDirectConnectionSectionProps,
+    type MobileDirectConnector,
+    type MobileDirectConnectorState,
+    type MobileDirectDeviceClaim,
+    type MobileDirectEmojiProps,
+    type MobileDirectPairedDevice,
+    type MobileDirectPairing,
+    type MobileDirectPairingPanelProps,
+    type MobileDirectPairingStatus,
+    type MobileDirectPlatform,
+    type MobileDirectRemoval,
+    type MobileDirectRemoveConfirmationProps,
+    type MobileDirectSocketStatus,
+} from "./MobileDirectConnection";
+export {
+    MobilePairingOptions,
+    type MobilePairingOptionsLayout,
+    type MobilePairingOptionsProps,
+    type MobileRelayPairingState,
+} from "./MobilePairingOptions";
 export {
     MobileAccessConfirmation,
     MobileAccessDetail,

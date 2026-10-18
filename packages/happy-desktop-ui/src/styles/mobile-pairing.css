@@ -1,0 +1,511 @@
+/*
+ * Phone pairing: the parts both methods share (MobilePairingParts), C-298
+ * MobileDirectPairingPanel and MobileDirectConnectionSection, and C-299
+ * MobilePairingOptions, which sets the Happy relay and direct codes side by
+ * side.
+ */
+
+.happy-mobile-pairing__code,
+.happy-mobile-pairing__note,
+.happy-mobile-pairing__result,
+.happy-mobile-pairing__actions,
+.happy-mobile-direct-pairing,
+.happy-mobile-direct-pairing__connected,
+.happy-mobile-direct-pairing__verify,
+.happy-mobile-direct-pairing__device,
+.happy-mobile-direct-pairing__progress,
+.happy-mobile-direct-emoji,
+.happy-mobile-direct-section,
+.happy-mobile-direct-device,
+.happy-mobile-pairing-options,
+.happy-mobile-pairing-options__slot,
+.happy-mobile-pairing-options__slots {
+    box-sizing: border-box;
+}
+
+/* A code, its copy link, and its countdown, centred on one axis. */
+.happy-mobile-pairing__code {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+/* The copy link and the countdown share one 28px row under the code. */
+.happy-mobile-pairing__code-footer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 28px;
+}
+
+.happy-mobile-pairing__expiry {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 16px;
+}
+
+/* The code's place while it is on its way: the code's own card, empty. */
+.happy-mobile-pairing__placeholder {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--happy-radius-shell);
+    background: var(--page-canvas);
+    box-shadow: 0 12px 36px var(--shadow-floating);
+    color: var(--text-secondary);
+}
+
+.happy-mobile-pairing__note,
+.happy-mobile-pairing__result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    max-width: 320px;
+    text-align: center;
+}
+
+.happy-mobile-pairing__note-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-mobile-pairing__note-detail {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.happy-mobile-pairing__title {
+    margin: 0;
+    color: var(--text);
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-mobile-pairing__result-icon {
+    display: flex;
+    color: var(--text-secondary);
+}
+
+.happy-mobile-pairing__result[data-tone="success"] .happy-mobile-pairing__result-icon {
+    color: var(--success);
+}
+
+.happy-mobile-pairing__result[data-tone="danger"] .happy-mobile-pairing__result-icon {
+    color: var(--text-destructive);
+}
+
+.happy-mobile-pairing__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* C-298 MobileDirectPairingPanel */
+
+.happy-mobile-direct-pairing {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.happy-mobile-direct-pairing__connected {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.happy-mobile-direct-pairing__waiting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-mobile-direct-pairing__verify {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    max-width: 440px;
+    text-align: center;
+}
+
+.happy-mobile-direct-pairing__verify[data-density="compact"] {
+    gap: 8px;
+}
+
+.happy-mobile-direct-pairing__verify[data-density="compact"]
+    .happy-mobile-direct-pairing__instruction {
+    color: var(--text);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+/* Focused on arrival for assistive technology, not as a visible control. */
+.happy-mobile-direct-pairing__verify:focus {
+    outline: none;
+}
+
+.happy-mobile-direct-pairing__instruction {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+/* What the phone says about itself, so it reads as a claim. */
+.happy-mobile-direct-pairing__device {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.happy-mobile-direct-pairing__device-icon {
+    display: flex;
+    flex: none;
+    color: var(--text-secondary);
+}
+
+.happy-mobile-direct-pairing__device-text {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 18px;
+}
+
+/* A phone names itself; the name is unbounded user content. */
+.happy-mobile-direct-pairing__device-name {
+    overflow: hidden;
+    color: var(--text);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-mobile-direct-pairing__device-claim {
+    flex: none;
+    color: var(--text-secondary);
+}
+
+.happy-mobile-direct-pairing__progress {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.happy-mobile-direct-pairing__mark {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-mobile-direct-pairing__mark[data-confirmed] {
+    color: var(--text);
+}
+
+.happy-mobile-direct-pairing__mark[data-confirmed] .happy-vector-icon {
+    color: var(--success);
+}
+
+.happy-mobile-direct-pairing__progress-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/*
+ * Four fixed 64px slots: colour-emoji artwork differs in width and mass at one
+ * font size, so each glyph is centred in its own box rather than set as a run.
+ */
+.happy-mobile-direct-emoji {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-mobile-direct-emoji__slot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    border-radius: var(--happy-radius-shell);
+    background: var(--surface);
+    border: 1px solid var(--divider);
+    box-sizing: border-box;
+    font-family: var(--happy-font-emoji);
+    font-size: 40px;
+    line-height: 1;
+}
+
+.happy-mobile-direct-emoji[data-size="48"] .happy-mobile-direct-emoji__slot {
+    width: 48px;
+    height: 48px;
+    font-size: 30px;
+}
+
+/* C-298b MobileDirectConnectionSection */
+
+.happy-mobile-direct-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.happy-mobile-direct-section__status-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.happy-mobile-direct-section__empty {
+    padding: 16px 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 20px;
+}
+
+.happy-mobile-direct-section__devices {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-mobile-direct-device {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-mobile-direct-device__icon {
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--surface-high);
+    border: 1px solid var(--divider);
+    border-radius: 8px;
+    color: var(--text-secondary);
+}
+
+.happy-mobile-direct-device__text {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.happy-mobile-direct-device__name {
+    overflow: hidden;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-mobile-direct-device__detail {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-mobile-direct-remove__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.happy-mobile-direct-remove__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.happy-mobile-direct-remove__lead {
+    margin: 0;
+    color: var(--text);
+}
+
+/* C-299 MobilePairingOptions */
+
+.happy-mobile-pairing-options {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+}
+
+.happy-mobile-pairing-options[data-layout="settings"] {
+    padding: 16px;
+    background: var(--surface-high);
+    border: 1px solid var(--divider);
+    border-radius: 10px;
+}
+
+.happy-mobile-pairing-options__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.happy-mobile-pairing-options__heading {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-mobile-pairing-options__slots {
+    display: flex;
+    align-items: stretch;
+    gap: 16px;
+    width: 100%;
+}
+
+.happy-mobile-pairing-options__slot {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+}
+
+.happy-mobile-pairing-options[data-layout="settings"] .happy-mobile-pairing-options__slot {
+    padding: 16px;
+    background: var(--surface);
+    border: 1px solid var(--divider);
+    /* 10px card, 16px inset: the slot sits beyond the card's corner field. */
+    border-radius: 8px;
+}
+
+.happy-mobile-pairing-options__slot-heading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    max-width: 280px;
+    text-align: center;
+}
+
+.happy-mobile-pairing-options__slot-title {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-mobile-pairing-options__slot-detail {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-mobile-pairing-options__slot-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+/*
+ * In setup each heading sits beside its code, with the countdown under the
+ * heading, so two codes hang under the title line in the height of one: the
+ * code, 8px, and its 28px copy link (the single code's own budget).
+ */
+.happy-mobile-pairing-options[data-layout="setup"] {
+    --happy-qr-code-size: var(--happy-setup-pairing-qr-size, 136px);
+}
+
+.happy-mobile-pairing-options[data-layout="setup"] .happy-mobile-pairing-options__slots {
+    justify-content: center;
+    gap: 24px;
+}
+
+.happy-mobile-pairing-options[data-layout="setup"] .happy-mobile-pairing-options__slot {
+    flex: 0 1 auto;
+    flex-direction: row-reverse;
+    gap: 16px;
+}
+
+/* Two 160px bodies and 128px headings, 16px apart, with 24px between the
+   slots: 632px, inside the 640px a minimum window leaves the body. */
+.happy-mobile-pairing-options[data-layout="setup"] .happy-mobile-pairing-options__slot-heading {
+    align-items: flex-start;
+    flex: none;
+    width: 128px;
+    text-align: start;
+}
+
+.happy-mobile-pairing-options[data-layout="setup"] .happy-mobile-pairing-options__slot-body {
+    flex: none;
+    width: 160px;
+}
+
+.happy-mobile-pairing-options[data-layout="setup"] .happy-mobile-pairing__note,
+.happy-mobile-pairing-options[data-layout="setup"] .happy-mobile-pairing__result {
+    max-width: 100%;
+}
+
+/* The emoji step, alone, takes the row. */
+.happy-mobile-pairing-options[data-layout="setup"][data-engaged]
+    .happy-mobile-pairing-options__slot,
+.happy-mobile-pairing-options[data-layout="setup"][data-engaged]
+    .happy-mobile-pairing-options__slot-body {
+    flex: 1 1 auto;
+    width: auto;
+}
+
+/* Setup's body is wider for two codes than for one. */
+.happy-desktop-mobile-setup--options .happy-setup-page__body,
+.happy-local-onboarding__mobile-options .happy-setup-page__body {
+    max-width: 720px;
+}

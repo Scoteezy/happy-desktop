@@ -22,6 +22,21 @@ export type DesktopMobileSetupStep =
       }
     | { readonly kind: "connected"; readonly online: boolean; readonly message?: string };
 
+/** Both pairing methods on a setup page, and whether the direct emoji step leads. */
+export interface DesktopMobilePairingOptions {
+    /** MobilePairingOptions in its `setup` layout. */
+    readonly view: ReactNode;
+    /** A phone has connected directly (`mobileDirectPairingEngaged`). */
+    readonly verifying: boolean;
+}
+
+/** The subtitle over both codes, or over the emoji step once a phone connects directly. */
+export function desktopMobilePairingOptionsCopy(options: DesktopMobilePairingOptions): string {
+    return options.verifying
+        ? "Check the emoji on this computer and on your phone."
+        : "Open Happy on your phone and scan either code.";
+}
+
 export interface DesktopMobileSetupProps {
     /** Full first-run context; Settings shows only the opted-in mobile branch. */
     readonly onboarding?: boolean;
@@ -36,6 +51,12 @@ export interface DesktopMobileSetupProps {
     readonly onPlatformSelect?: (platform: "ios" | "android") => void;
     /** Opens an external page: the host owns how a link leaves the app. */
     onExternalOpen?(url: string): void;
+    /**
+     * Both pairing methods. When present, the link step shows them side by
+     * side, each with its own state, instead of the relay-only code and its
+     * failure page.
+     */
+    readonly pairingOptions?: DesktopMobilePairingOptions;
 }
 
 const STORE_URLS = {
@@ -94,7 +115,9 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
     const { step } = props;
     const mobile: MobileOnboardingStage =
         step.kind === "intro" ? "get-app" : step.kind === "link" ? "connect-phone" : "complete";
-    const failed = step.kind === "link" && step.phase.kind === "failed";
+    // With both methods, a failed relay shows in its own slot, not on the bar.
+    const failed =
+        step.kind === "link" && step.phase.kind === "failed" && props.pairingOptions === undefined;
     const steps = props.onboarding ? (
         <OnboardingSteps
             scope="desktop"
@@ -161,6 +184,20 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
                         size={176}
                     />
                 </div>
+            </SetupPage>
+        );
+
+    if (step.kind === "link" && props.pairingOptions !== undefined)
+        return (
+            <SetupPage
+                {...frame}
+                className="happy-desktop-mobile-setup happy-desktop-mobile-setup--options"
+                copy={desktopMobilePairingOptionsCopy(props.pairingOptions)}
+                scene="closed-lock"
+                secondary={skip}
+                title="Link Mobile App"
+            >
+                {props.pairingOptions.view}
             </SetupPage>
         );
 

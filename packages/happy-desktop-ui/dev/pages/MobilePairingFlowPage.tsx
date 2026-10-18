@@ -1,0 +1,434 @@
+import type { ReactNode } from "react";
+import { DesktopMobileSetup } from "../../src/DesktopMobileSetup";
+import { LocalOnboardingScreen } from "../../src/LocalOnboardingScreen";
+import {
+    MobileDirectConnectionSection,
+    mobileDirectPairingEngaged,
+    type MobileDirectConnectorState,
+    type MobileDirectRemoval,
+} from "../../src/MobileDirectConnection";
+import {
+    MobilePairingOptions,
+    type MobilePairingOptionsLayout,
+    type MobilePairingOptionsProps,
+} from "../../src/MobilePairingOptions";
+import {
+    HappyAgentMobileSettings,
+    type HappyAgentMobileSettingsProps,
+} from "../../src/pages/settings/HappyAgentMobileSettings";
+import {
+    HappyAgentSettingsShell,
+    type HappyAgentSettingsCategory,
+} from "../../src/pages/settings/HappyAgentSettingsShell";
+import { ThemeScope } from "../../src/ThemeScope";
+import { ComponentPage, FullScreenSpecimen } from "../kit";
+import { devices, direct, now, relayCode, relayWaiting } from "./mobilePairingFixtures";
+
+/** The page plan this page documents. The selector and the page header read the same value. */
+export const componentNumber = "P-021";
+
+const noop = () => undefined;
+
+const categories: readonly HappyAgentSettingsCategory[] = [
+    { icon: "settings", id: "general", label: "General" },
+    { icon: "users", id: "account", label: "Account" },
+    { icon: "globe", id: "providers", label: "Providers" },
+    { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
+    { icon: "code", id: "debug", label: "Dev Tools" },
+];
+
+/** The window Happy opens at, and the smallest one it allows. */
+const defaultWindow = { width: 1100, height: 760 } as const;
+const minimumWindow = { width: 720, height: 640 } as const;
+
+type Options = Pick<MobilePairingOptionsProps, "direct" | "relay"> &
+    Partial<MobilePairingOptionsProps>;
+
+function options(layout: MobilePairingOptionsLayout, variant: Options) {
+    return (
+        <MobilePairingOptions
+            layout={layout}
+            now={now}
+            onClose={noop}
+            onDirectConfirm={noop}
+            onDirectErrorAssist={noop}
+            onDirectReject={noop}
+            onDirectStart={noop}
+            onRelayRetry={noop}
+            {...variant}
+        />
+    );
+}
+
+function settings(props: {
+    readonly direct: MobileDirectConnectorState;
+    readonly pairing?: Options;
+    readonly relay?: Partial<HappyAgentMobileSettingsProps>;
+    readonly removal?: MobileDirectRemoval;
+    readonly unavailable?: string;
+}) {
+    return (
+        <HappyAgentSettingsShell
+            activeCategoryId="mobile-access"
+            categories={categories}
+            description="This Happy Agent's connection to Happy Mobile"
+            onCategorySelect={noop}
+            onClose={noop}
+            title="Mobile Access"
+        >
+            <HappyAgentMobileSettings
+                configured={false}
+                direct={
+                    <MobileDirectConnectionSection
+                        connector={props.direct}
+                        now={now}
+                        onDeviceRemoveCancel={noop}
+                        onDeviceRemoveConfirm={noop}
+                        onDeviceRemoveRequest={noop}
+                        onErrorAssist={noop}
+                        {...(props.removal ? { removal: props.removal } : {})}
+                        {...(props.unavailable ? { unavailable: props.unavailable } : {})}
+                    />
+                }
+                onDisconnect={noop}
+                onPair={noop}
+                onPairingCancel={noop}
+                onPairingOptionsOpen={noop}
+                {...(props.pairing
+                    ? {
+                          pairingOptions: options("settings", {
+                              ...props.pairing,
+                              ...(props.unavailable ? { unavailable: props.unavailable } : {}),
+                          }),
+                      }
+                    : {})}
+                status={props.pairing ? "pairing" : "disconnected"}
+                {...(props.unavailable ? { unavailable: props.unavailable } : {})}
+                {...props.relay}
+            />
+        </HappyAgentSettingsShell>
+    );
+}
+
+function setup(variant: Options) {
+    return (
+        <DesktopMobileSetup
+            appearance="dark"
+            onboarding
+            onContinue={noop}
+            onSkip={noop}
+            pairingOptions={{
+                view: options("setup", variant),
+                verifying: mobileDirectPairingEngaged(variant.direct),
+            }}
+            step={{ kind: "link", phase: { kind: "checking" } }}
+        />
+    );
+}
+
+function remote(variant: Options) {
+    return (
+        <LocalOnboardingScreen
+            appearance="dark"
+            happyMobilePairingOptions={{
+                view: options("setup", variant),
+                verifying: mobileDirectPairingEngaged(variant.direct),
+            }}
+            onAssistantsContinue={noop}
+            onConnectRetry={noop}
+            onHappyMobileConnect={noop}
+            onHappyMobileSkip={noop}
+            showSteps
+            view={{ kind: "happy-mobile-pairing", data: relayCode, expiresAt: now + 104_000 }}
+        />
+    );
+}
+
+/** Holds a window-fixed dialog inside its own viewport rather than the workbench's. */
+function contained(children: ReactNode) {
+    return (
+        <div
+            style={{
+                display: "flex",
+                height: "100%",
+                position: "relative",
+                transform: "translateZ(0)",
+                width: "100%",
+            }}
+        >
+            {children}
+        </div>
+    );
+}
+
+const settingsScreens: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly render: () => ReactNode;
+}[] = [
+    {
+        id: "idle",
+        label: "Connect a phone, relay and direct sections",
+        render: () => settings({ direct: direct.closed }),
+    },
+    {
+        id: "codes",
+        label: "Both codes, side by side",
+        render: () =>
+            settings({
+                direct: direct.waiting,
+                pairing: { direct: direct.waiting, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "phone-connected",
+        label: "Phone connected, verifying…",
+        render: () =>
+            settings({
+                direct: direct.connected,
+                pairing: { direct: direct.connected, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "verifying",
+        label: "Emoji step · nobody confirmed",
+        render: () =>
+            settings({
+                direct: direct.verifying,
+                pairing: { direct: direct.verifying, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "phone-confirmed",
+        label: "Emoji step · phone confirmed",
+        render: () =>
+            settings({
+                direct: direct.phoneConfirmed,
+                pairing: { direct: direct.phoneConfirmed, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "desktop-confirmed",
+        label: "Emoji step · waiting for the phone",
+        render: () =>
+            settings({
+                direct: direct.desktopConfirmed,
+                pairing: { direct: direct.desktopConfirmed, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "completed",
+        label: "Direct pairing completed",
+        render: () =>
+            settings({
+                direct: direct.completed,
+                pairing: { direct: direct.completed, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "rejected",
+        label: "Rejected by the phone",
+        render: () =>
+            settings({
+                direct: direct.rejected,
+                pairing: { direct: direct.rejected, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "cancelled",
+        label: "Cancelled on this computer",
+        render: () =>
+            settings({
+                direct: direct.cancelled,
+                pairing: { direct: direct.cancelled, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "expired",
+        label: "Verification timed out",
+        render: () =>
+            settings({
+                direct: direct.expiredVerifying,
+                pairing: { direct: direct.expiredVerifying, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "code-expired",
+        label: "Direct code expired before a scan",
+        render: () =>
+            settings({
+                direct: direct.expiredBeforeScan,
+                pairing: { direct: direct.expiredBeforeScan, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "failed",
+        label: "Direct pairing failed",
+        render: () =>
+            settings({
+                direct: direct.failed,
+                pairing: { direct: direct.failed, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "relay-failed",
+        label: "Relay failed, direct unaffected",
+        render: () =>
+            settings({
+                direct: direct.waiting,
+                pairing: {
+                    direct: direct.waiting,
+                    relay: { kind: "failed", message: "Happy couldn't reach its server." },
+                },
+            }),
+    },
+    {
+        id: "relay-connected",
+        label: "Relay already linked; direct pairs another phone",
+        render: () =>
+            settings({
+                direct: direct.waiting,
+                pairing: { direct: direct.waiting, relay: { kind: "connected" } },
+                relay: { configured: true, status: "connected" },
+            }),
+    },
+    {
+        id: "paired-devices",
+        label: "Phones paired directly",
+        render: () => settings({ direct: direct.paired }),
+    },
+    {
+        id: "remove-confirm",
+        label: "Remove a directly paired phone",
+        render: () =>
+            settings({
+                direct: direct.paired,
+                removal: { deviceId: devices[0]?.id ?? "", pending: false },
+            }),
+    },
+    {
+        id: "direct-disabled",
+        label: "Direct connection disabled",
+        render: () =>
+            settings({
+                direct: direct.disabled,
+                pairing: { direct: direct.disabled, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "direct-starting",
+        label: "Direct socket opening",
+        render: () =>
+            settings({
+                direct: direct.starting,
+                pairing: { direct: direct.starting, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "direct-socket-failed",
+        label: "Direct socket failed",
+        render: () =>
+            settings({
+                direct: direct.socketFailed,
+                pairing: { direct: direct.socketFailed, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "older-agent",
+        label: "Older Happy Agent (404)",
+        render: () =>
+            settings({
+                direct: direct.unsupported,
+                pairing: { direct: direct.unsupported, relay: relayWaiting },
+            }),
+    },
+    {
+        id: "unavailable",
+        label: "Happy Agent reconnecting",
+        render: () =>
+            settings({
+                direct: direct.paired,
+                unavailable: "Happy Agent is reconnecting. Actions return when it is back.",
+            }),
+    },
+];
+
+const setupScreens: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly render: () => ReactNode;
+}[] = [
+    {
+        id: "setup-codes",
+        label: "Onboarding · both codes",
+        render: () => setup({ direct: direct.waiting, relay: relayWaiting }),
+    },
+    {
+        id: "setup-verifying",
+        label: "Onboarding · emoji step",
+        render: () => setup({ direct: direct.phoneConfirmed, relay: relayWaiting }),
+    },
+    {
+        id: "setup-relay-failed",
+        label: "Onboarding · relay failed, direct code shown",
+        render: () =>
+            setup({
+                direct: direct.waiting,
+                relay: { kind: "failed", message: "Happy couldn't reach its server." },
+            }),
+    },
+    {
+        id: "setup-older-agent",
+        label: "Onboarding · older Happy Agent",
+        render: () => setup({ direct: direct.unsupported, relay: relayWaiting }),
+    },
+    {
+        id: "remote-codes",
+        label: "Remote onboarding · both codes",
+        render: () => remote({ direct: direct.waiting, relay: relayWaiting }),
+    },
+];
+
+export function MobilePairingFlowPage() {
+    return (
+        <ComponentPage
+            number={componentNumber}
+            summary="Pairing a phone with both methods side by side, in Settings › Mobile Access and in first-run setup. Each viewport is named for `pnpm blueprint:screens`."
+            title="Mobile pairing flow"
+        >
+            {settingsScreens.map((screen, index) => {
+                const number = String(index + 1).padStart(2, "0");
+                return (
+                    <FullScreenSpecimen
+                        detail={`${String(defaultWindow.width)} × ${String(defaultWindow.height)}`}
+                        key={screen.id}
+                        label={screen.label}
+                        number={number}
+                        screen={`${number}-${screen.id}-${String(defaultWindow.width)}x${String(defaultWindow.height)}`}
+                        window={defaultWindow}
+                    >
+                        <ThemeScope mode="light">{contained(screen.render())}</ThemeScope>
+                    </FullScreenSpecimen>
+                );
+            })}
+            {[defaultWindow, minimumWindow].flatMap((window) =>
+                setupScreens.map((screen, index) => {
+                    const number = String(settingsScreens.length + index + 1).padStart(2, "0");
+                    const size = `${String(window.width)}x${String(window.height)}`;
+                    return (
+                        <FullScreenSpecimen
+                            detail={`${String(window.width)} × ${String(window.height)}`}
+                            key={`${size}-${screen.id}`}
+                            label={screen.label}
+                            number={number}
+                            screen={`${number}-${screen.id}-${size}`}
+                            window={window}
+                        >
+                            <ThemeScope mode="dark">{contained(screen.render())}</ThemeScope>
+                        </FullScreenSpecimen>
+                    );
+                }),
+            )}
+        </ComponentPage>
+    );
+}
