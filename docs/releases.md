@@ -14,6 +14,7 @@ names contain their versions and successful deployments identify what shipped.
 | ------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | Happy Agent preview      | Agent repository's `release-happy-agent.yml`: version, release_notes, prerelease=true | Agent binaries for Nightly                                       |
 | Desktop native preview   | `desktop-release.yml`: version, release_notes, prerelease=true                        | Signed arm64/x64 standard and Nightly apps and updater manifests |
+| Nightly native preview   | `desktop-release.yml`: as above, plus nightly_only=true                               | Signed arm64/x64 Nightly app and `nightly-mac.yml` only          |
 | Desktop renderer preview | `local-web-pages.yml`: version, release_notes                                         | Hosted renderer at `https://local.app.happy.engineering` only    |
 
 Each workflow validates and builds the requested source, then publishes in the same
@@ -37,6 +38,10 @@ requested workflow and any required matching Agent version are verified.
 Use `gh workflow run ... --ref main` with `-f version=<chosen-version>` and
 `-F release_notes=@.context/release-notes.md` (the `@` reads the file contents).
 For Agent/native previews also pass `-F prerelease=true`; renderer has no such input.
+A request for Happy Nightly alone also passes `-F nightly_only=true`: the run then
+builds, signs, notarizes, and publishes only the Nightly app and its manifest, and
+refuses to start unless it is a preview. Standard installs skip such a release,
+because their update feed only considers releases carrying `latest-mac.yml`.
 Watch with `gh run watch`, and read back the
 release notes, version, and assets before reporting success. For renderer previews,
 verify Pages succeeded and the deployed `local-web-version.json` matches the build.
@@ -46,7 +51,7 @@ because release tooling was changed.
 Production needs no prior preview. Native production uses the same workflow with
 `prerelease=false` and stable `X.Y.Z`, shipping both app flavors on macOS and Windows.
 Windows installers are always Azure-signed (see `windows-release-ci.md`) and retain
-their installed-app and Agent checks. Native previews ship both macOS app flavors. Preserve the existing
+their installed-app and Agent checks. Native previews ship both macOS app flavors unless `nightly_only` is set. Preserve the existing
 requirement that root and Electron manifests match that stable version: update them
 before dispatch under normal Git authorization. Standard bundles its renderer, so
 production renderer delivery requires explicit native-release scope.

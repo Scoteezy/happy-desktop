@@ -17,6 +17,11 @@ on:
                 required: true
                 default: true
                 type: boolean
+            nightly_only:
+                description: Preview of Happy Nightly alone, without the standard macOS app; requires prerelease
+                required: false
+                default: false
+                type: boolean
 
 permissions:
     contents: read
@@ -29,6 +34,7 @@ env:
     RELEASE_TAG: v${{ inputs.version }}
     RELEASE_VERSION: ${{ inputs.version }}
     RELEASE_PRERELEASE: ${{ inputs.prerelease }}
+    RELEASE_NIGHTLY_ONLY: ${{ inputs.nightly_only }}
 
 jobs:
     linux:
@@ -91,6 +97,10 @@ jobs:
                     echo "Use X.Y.Z-preview.N for previews, or X.Y.Z with prerelease=false for production." >&2
                     exit 1
                   fi
+                  if [[ "$RELEASE_NIGHTLY_ONLY" == true && "$RELEASE_PRERELEASE" != true ]]; then
+                    echo "A Nightly-only release must be a preview; stable releases ship every app." >&2
+                    exit 1
+                  fi
                   if [[ -z "${RELEASE_NOTES//[[:space:]]/}" ]]; then
                     echo "Release notes must not be blank." >&2
                     exit 1
@@ -131,18 +141,15 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
+                arch: [arm64, x64]
+                flavor: [standard, local-web]
+                # A Nightly-only preview builds no standard app at all.
+                exclude:
+                    - flavor: ${{ inputs.nightly_only && 'standard' || 'none' }}
                 include:
                     - arch: arm64
-                      flavor: standard
-                      runner: macos-14
-                    - arch: arm64
-                      flavor: local-web
                       runner: macos-14
                     - arch: x64
-                      flavor: standard
-                      runner: macos-15-intel
-                    - arch: x64
-                      flavor: local-web
                       runner: macos-15-intel
         runs-on: ${{ matrix.runner }}
         timeout-minutes: 60
@@ -190,7 +197,7 @@ jobs:
               run: pnpm install --frozen-lockfile
 
             - name: Typecheck desktop source
-              if: matrix.arch == 'arm64' && matrix.flavor == 'standard'
+              if: matrix.arch == 'arm64' && matrix.flavor == (inputs.nightly_only && 'local-web' || 'standard')
               run: |
                   pnpm --dir packages/happy-desktop-electron typecheck
                   pnpm --dir packages/happy-desktop-app typecheck
@@ -299,7 +306,9 @@ jobs:
 
             - name: Create architecture-aware updater manifests
               run: |
-                  node scripts/create-mac-update-manifest.mjs standard
+                  if [[ "$RELEASE_NIGHTLY_ONLY" != true ]]; then
+                    node scripts/create-mac-update-manifest.mjs standard
+                  fi
                   node scripts/create-mac-update-manifest.mjs local-web
 
             - name: Create tag and GitHub release
@@ -312,7 +321,8 @@ jobs:
                   node --input-type=module <<'NODE'
                   import { stat } from 'node:fs/promises';
                   import { desktopFlavorNames, desktopFlavorRead } from './scripts/desktopFlavors.mjs';
-                  for (const name of desktopFlavorNames) {
+                  const macFlavorNames = process.env.RELEASE_NIGHTLY_ONLY === 'true' ? ['local-web'] : desktopFlavorNames;
+                  for (const name of macFlavorNames) {
                     const flavor = desktopFlavorRead(name);
                     const directory = `packages/happy-desktop-electron/release/${flavor.output}`;
                     const files = [`${flavor.channel}-mac.yml`, ...['arm64', 'x64'].flatMap(arch =>
@@ -342,7 +352,12 @@ jobs:
                   }
                   NODE
                   shopt -s nullglob
-                  assets=(packages/happy-desktop-electron/release/{standard,local-web}/*.{dmg,zip,blockmap} packages/happy-desktop-electron/release/{standard,local-web}/*-mac.yml)
+                  macOutputs=(standard local-web)
+                  if [[ "$RELEASE_NIGHTLY_ONLY" == true ]]; then macOutputs=(local-web); fi
+                  assets=()
+                  for output in "${macOutputs[@]}"; do
+                    assets+=(packages/happy-desktop-electron/release/"$output"/*.{dmg,zip,blockmap} packages/happy-desktop-electron/release/"$output"/*-mac.yml)
+                  done
                   if [[ "$RELEASE_PRERELEASE" != true ]]; then
                     assets+=(packages/happy-desktop-electron/release/windows/*.{exe,blockmap} packages/happy-desktop-electron/release/windows/{latest,nightly}.yml)
                     assets+=(packages/happy-desktop-electron/release/linux/*.AppImage)
