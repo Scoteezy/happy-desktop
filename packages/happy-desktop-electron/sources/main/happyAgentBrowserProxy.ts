@@ -202,6 +202,10 @@ async function proxyConnect(
                 );
                 return;
             }
+            // Either side may finish sending while the other still has bytes to
+            // deliver. Left at its default, the tunnel would end its own writes on
+            // the origin's FIN and drop the rest of the browser's data.
+            upstream.allowHalfOpen = true;
             sockets.add(upstream);
             upstream.once("close", () => sockets.delete(upstream));
             client.write("HTTP/1.1 200 Connection Established\r\n\r\n");
