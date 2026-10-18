@@ -127,7 +127,7 @@ interface TaskActions {
     taskArchive: (taskId: string) => Promise<void>;
     taskReorder: (taskId: string, afterId: string | null) => Promise<void>;
     taskBrowseOpen: () => void;
-    taskRenameOpen: (taskId: string) => void;
+    taskRename: (taskId: string, name: string) => Promise<void>;
 }
 
 interface Listing {
@@ -227,7 +227,7 @@ function view(
         taskArchive: vi.fn(() => Promise.resolve()),
         taskReorder: vi.fn(() => Promise.resolve()),
         taskBrowseOpen: vi.fn(),
-        taskRenameOpen: vi.fn(),
+        taskRename: vi.fn(() => Promise.resolve()),
         ...options.actions,
     };
     const snapshot: AppHappyAgentDirectorySnapshot = {
@@ -507,7 +507,14 @@ it("renames a task from its context menu on a Happy Agent that renames them", ()
             '[data-happy-desktop-ui="sidebar-item-menu"] [data-item-id="rename"]',
         )!,
     );
-    expect(actions.taskRenameOpen).toHaveBeenCalledWith("billing");
+    const input = container.querySelector<HTMLInputElement>(".happy-sidebar__item-rename")!;
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe("Fix invoice rounding");
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+    fireEvent.change(input, { target: { value: "Fix rounding" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(actions.taskRename).toHaveBeenCalledWith("billing", "Fix rounding");
     expect(actions.taskLeave).not.toHaveBeenCalled();
 });
 
