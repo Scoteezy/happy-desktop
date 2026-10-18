@@ -66,13 +66,19 @@ export function happyAgentBrowserProxyCreate(
             operations.delete(controller);
         }
     };
-    const server = createServer((request, response) => {
-        if (!proxyAuthorized(request, authorization)) {
-            proxyAuthenticationRequired(response);
-            return;
-        }
-        void proxyRequest(openHttpProxy, request, response, sockets);
-    });
+    // A page may upload or stream for as long as it likes; only a request whose
+    // headers never finish arriving is cut off. Node derives the headers limit
+    // from the request limit, so it is named here or it would vanish with it.
+    const server = createServer(
+        { requestTimeout: 0, headersTimeout: 60_000 },
+        (request, response) => {
+            if (!proxyAuthorized(request, authorization)) {
+                proxyAuthenticationRequired(response);
+                return;
+            }
+            void proxyRequest(openHttpProxy, request, response, sockets);
+        },
+    );
     server.on("connect", (request, client, head) => {
         // An upgraded socket has left the HTTP server's own error handling, so it
         // must carry a handler from the first moment: Chromium abandoning a tunnel
