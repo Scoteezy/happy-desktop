@@ -34,6 +34,8 @@ export type HappyAgentRecentTabMemory =
 export interface HappyAgentPanelBrowserMemory {
     readonly url: string;
     readonly label: string;
+    /** The agent whose machine the page's network belongs to, fixed when it opened. */
+    readonly agentId: HappyAgentSessionId;
     /**
      * Which strip the page was being read in. Absent means the panel, which is
      * where every page opens and where every page remembered before this was
@@ -256,28 +258,35 @@ function orderParse(value: unknown): { readonly [tabId: string]: string } | unde
 function panelParse(value: unknown): HappyAgentPanelMemory | undefined {
     if (typeof value !== "object" || value === null) return undefined;
     const record = value as Record<string, unknown>;
-    const browsers = Array.isArray(record.browsers)
-        ? record.browsers.flatMap((entry) => {
-              if (typeof entry !== "object" || entry === null) return [];
-              const browser = entry as Record<string, unknown>;
-              if (typeof browser.url !== "string") return [];
-              return [
-                  {
-                      url: browser.url,
-                      label: typeof browser.label === "string" ? browser.label : browser.url,
-                  },
-              ];
-          })
-        : [];
     const stored = record.active;
-    const active: HappyAgentPanelViewMemory =
+    const storedIndex =
         typeof stored === "object" &&
         stored !== null &&
         (stored as Record<string, unknown>).type === "browser" &&
-        typeof (stored as Record<string, unknown>).index === "number" &&
-        (stored as { index: number }).index < browsers.length
-            ? { type: "browser", index: (stored as { index: number }).index }
-            : { type: "files" };
+        typeof (stored as Record<string, unknown>).index === "number"
+            ? (stored as { index: number }).index
+            : undefined;
+    let activeIndex: number | undefined;
+    const browsers: HappyAgentPanelBrowserMemory[] = [];
+    // A page remembered without its agent has no machine to load from, so it
+    // is not brought back on some other agent's network.
+    for (const [index, entry] of (Array.isArray(record.browsers)
+        ? record.browsers
+        : []
+    ).entries()) {
+        if (typeof entry !== "object" || entry === null) continue;
+        const browser = entry as Record<string, unknown>;
+        if (typeof browser.url !== "string") continue;
+        if (typeof browser.agentId !== "string" || browser.agentId.length === 0) continue;
+        if (index === storedIndex) activeIndex = browsers.length;
+        browsers.push({
+            url: browser.url,
+            label: typeof browser.label === "string" ? browser.label : browser.url,
+            agentId: browser.agentId as HappyAgentSessionId,
+        });
+    }
+    const active: HappyAgentPanelViewMemory =
+        activeIndex === undefined ? { type: "files" } : { type: "browser", index: activeIndex };
     const panel: HappyAgentPanelMemory = {
         open: record.open === true,
         browsers,

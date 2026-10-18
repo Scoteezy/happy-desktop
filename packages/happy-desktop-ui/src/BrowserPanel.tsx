@@ -31,10 +31,11 @@ export interface BrowserFailure {
 }
 
 export interface BrowserContentProps {
-    /** Owning workspace and host-published Happy Agent route. No chat is required. */
+    /** Owning workspace, host-published Happy Agent route, and the agent whose network it uses. */
     readonly target?: {
         readonly connectionId: string | null;
         readonly workspaceId: string;
+        readonly agentId: string;
     };
     /** Initial location for the Chromium guest. Further navigation uses the controller. */
     readonly source: string;

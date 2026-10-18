@@ -5,6 +5,7 @@ import {
     desktopIpc,
     mediaPreviewArgument,
     liveWindowArgument,
+    type DesktopBrowserPopup,
     type DesktopBrowserStatus,
     type DesktopNavigationStep,
     type DesktopPreviewNavigation,
@@ -81,9 +82,16 @@ const bridge: HappyDesktopBridge = {
             return undefined;
         }
     },
-    browserProxyApply: (target) => ipcRenderer.invoke(desktopIpc.browserProxyApply, target),
-    browserCommand: (target, guestId, command) =>
-        ipcRenderer.invoke(desktopIpc.browserCommand, target, guestId, command),
+    browserAgentProxyApply: (target) =>
+        ipcRenderer.invoke(desktopIpc.browserAgentProxyApply, target),
+    browserAgentCommand: (target, guestId, command) =>
+        ipcRenderer.invoke(desktopIpc.browserAgentCommand, target, guestId, command),
+    browserAgentPopupSubscribe(listener: (popup: DesktopBrowserPopup) => void) {
+        const receive = (_event: Electron.IpcRendererEvent, popup: DesktopBrowserPopup) =>
+            listener(popup);
+        ipcRenderer.on(desktopIpc.browserAgentPopupRequested, receive);
+        return () => ipcRenderer.removeListener(desktopIpc.browserAgentPopupRequested, receive);
+    },
     browserOpenSubscribe(listener: (url: string) => void) {
         const receive = (_event: Electron.IpcRendererEvent, url: string) => listener(url);
         ipcRenderer.on(desktopIpc.browserOpenRequested, receive);

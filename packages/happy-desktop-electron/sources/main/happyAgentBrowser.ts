@@ -7,14 +7,14 @@ import {
 } from "./happyAgentBrowserProxy";
 import type { DesktopRuntime } from "./desktopRuntime";
 
-/** Chromium stays local; all network traffic exits through the owning workspace's agent. */
+/** Chromium stays local; all network traffic exits through the owning agent's machine. */
 export class HappyAgentBrowser {
     readonly #guests = new Map<number, WebContents>();
     #closed = false;
 
     static partition(target: DesktopBrowserProxyTarget): string {
         const identity = createHash("sha256")
-            .update(JSON.stringify([target.connectionId, target.workspaceId]))
+            .update(JSON.stringify([target.connectionId, target.workspaceId, target.agentId]))
             .digest("hex");
         return `persist:happy-browser-${identity}`;
     }
@@ -29,7 +29,7 @@ export class HappyAgentBrowser {
             // not replace the profile or its guests. An unavailable agent rejects.
             openHttpProxy: (signal) => runtime.openHttpProxy(target, signal),
         });
-        const browser = new HappyAgentBrowser(session, proxy);
+        const browser = new HappyAgentBrowser(session, target, proxy);
         try {
             session.webRequest.onBeforeRequest((details, callback) => {
                 const protocol = new URL(details.url).protocol;
@@ -65,6 +65,8 @@ export class HappyAgentBrowser {
 
     private constructor(
         readonly session: Session,
+        /** Where the profile's pages, and pages they open, have their network. */
+        readonly target: DesktopBrowserProxyTarget,
         readonly proxy: HappyAgentBrowserProxyHandle,
     ) {}
 

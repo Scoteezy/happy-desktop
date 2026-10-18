@@ -15,8 +15,10 @@ import type {
     HappyAgentHost,
     HappyAgentModelPreferencePersistence,
     HappyAgentCloudHost,
+    HappyAgentGroupId,
     HappyAgentProjectAddSnapshot,
     HappyAgentProjectGroup,
+    HappyAgentSessionId,
     HappyAgentSessionListSnapshot,
     HappyAgentSessionLocation,
     TerminalColorScheme,
@@ -268,6 +270,7 @@ export function happyAgentDirectoryStoreCreate(
     let snapshot: HappyAgentDirectorySnapshot = { happyAgents: [] };
     let runtimeUnsubscribe: (() => void) | undefined;
     let browserOpenUnsubscribe: (() => void) | undefined;
+    let browserPopupUnsubscribe: (() => void) | undefined;
     const remotes = new Map<string, LocalHappyAgent>();
     let roster: HappyAgentConnectionsStore | undefined;
     let rosterUnsubscribe: (() => void) | undefined;
@@ -620,6 +623,17 @@ export function happyAgentDirectoryStoreCreate(
                         .find((entry) => entry.id === snapshot.activeHappyAgentId)
                         ?.session?.workspace.panel.browserAdd(url);
                 });
+                // A page's popup belongs to the Happy Agent, workspace, and agent
+                // of the page that opened it, not to whatever is on screen now.
+                browserPopupUnsubscribe = bridge.browserAgentPopupSubscribe?.(({ url, opener }) => {
+                    snapshot.happyAgents
+                        .find((entry) => (entry.remoteId ?? null) === opener.connectionId)
+                        ?.session?.workspace.panel.browserPopupAdd(
+                            url,
+                            opener.workspaceId as HappyAgentGroupId,
+                            opener.agentId as HappyAgentSessionId,
+                        );
+                });
                 localReconcile();
             }
             return () => {
@@ -629,6 +643,8 @@ export function happyAgentDirectoryStoreCreate(
                 runtimeUnsubscribe = undefined;
                 browserOpenUnsubscribe?.();
                 browserOpenUnsubscribe = undefined;
+                browserPopupUnsubscribe?.();
+                browserPopupUnsubscribe = undefined;
                 rosterUnsubscribe?.();
                 rosterUnsubscribe = undefined;
                 roster?.[Symbol.dispose]();

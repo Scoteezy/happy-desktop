@@ -270,9 +270,13 @@ export class DesktopRuntime implements AsyncDisposable {
         return endpoint ? endpoint.replace(/\/$/u, "") : undefined;
     }
 
-    /** Opens a workspace tunnel through its owning host-published connection. */
+    /** Opens a browser tunnel to the target agent's machine through its owning connection. */
     openHttpProxy(target: DesktopBrowserProxyTarget, signal?: AbortSignal): Promise<Duplex> {
-        return this.browserClient(target).openWorkspaceHttpProxy(target.workspaceId, signal);
+        return this.browserClient(target).openWorkspaceAgentHttpProxy(
+            target.workspaceId,
+            target.agentId,
+            signal,
+        );
     }
 
     private browserClient(target: DesktopBrowserProxyTarget) {

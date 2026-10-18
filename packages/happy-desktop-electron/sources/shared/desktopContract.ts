@@ -644,11 +644,19 @@ export interface DesktopBrowserStatus {
     readonly statusText: string;
 }
 
-/** The owning Happy Agent route and workspace whose network the guest uses. */
+/** The owning Happy Agent route, workspace, and agent whose network the guest uses. */
 export interface DesktopBrowserProxyTarget {
     /** Null names the host; otherwise the host-published connection identity. */
     readonly connectionId: string | null;
     readonly workspaceId: string;
+    /** The agent whose machine carries the traffic, fixed for the tab's lifetime. */
+    readonly agentId: string;
+}
+
+/** A page a workspace browser guest opened, with the network it was opened on. */
+export interface DesktopBrowserPopup {
+    readonly url: string;
+    readonly opener: DesktopBrowserProxyTarget;
 }
 
 /** User-initiated navigation; guest pages never receive this bridge. */
@@ -755,14 +763,20 @@ export interface HappyDesktopBridge {
      * body every hop holds whole. A video is the case that makes that plain.
      */
     attachmentSourcePath(file: File): string | undefined;
-    /** Returns the guest partition after configuring its owning agent's workspace proxy. */
-    browserProxyApply(target: DesktopBrowserProxyTarget): Promise<string>;
-    /** Absent on older native hosts that do not support workspace browser navigation. */
-    browserCommand?(
+    /**
+     * Returns the guest partition after routing it through its agent's proxy.
+     * The three agent browser members are absent on native hosts that cannot
+     * route a browser to one agent, which must not open one at all.
+     */
+    browserAgentProxyApply?(target: DesktopBrowserProxyTarget): Promise<string>;
+    browserAgentCommand?(
         target: DesktopBrowserProxyTarget,
         guestId: number,
         command: DesktopBrowserCommand,
     ): Promise<void>;
+    /** Pages a workspace browser guest opened, to be opened on the same agent. */
+    browserAgentPopupSubscribe?(listener: (popup: DesktopBrowserPopup) => void): () => void;
+    /** Web links Happy itself was asked to open, outside any workspace browser. */
     browserOpenSubscribe(listener: (url: string) => void): () => void;
     browserStatusSubscribe(listener: (status: DesktopBrowserStatus) => void): () => void;
     /** Announces that the shell received a WorkOS OAuth callback. */
@@ -926,8 +940,9 @@ export const desktopIpc = {
     liveMicrophoneRevoke: "happy:live:microphone-revoke",
     /** Renderer → main only: the appearance source inherited by local web contents. */
     appearanceSet: "happy:appearance:set",
-    browserProxyApply: "happy:browser:proxy-apply",
-    browserCommand: "happy:browser:command",
+    browserAgentProxyApply: "happy:browser:agent-proxy-apply",
+    browserAgentPopupRequested: "happy:browser:agent-popup-requested",
+    browserAgentCommand: "happy:browser:agent-command",
     browserOpenRequested: "happy:browser:open-requested",
     browserStatusChanged: "happy:browser:status-changed",
     cloudAuthCallbackReceived: "happy:cloud-auth:callback-received",

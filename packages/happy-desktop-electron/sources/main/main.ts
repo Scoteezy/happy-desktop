@@ -46,6 +46,7 @@ import {
     mediaPreviewArgument,
     liveWindowArgument,
     mediaPreviewView,
+    type DesktopBrowserPopup,
     type DesktopBrowserProxyTarget,
     type DesktopBrowserStatus,
     type DesktopCloudAuthConfiguration,
@@ -618,6 +619,20 @@ function browserWebUrl(candidate: string, allowBlank = false): string | undefine
     }
 }
 
+/** A guest's popup opens on the guest's own agent, whatever the window has open now. */
+function browserPopupPublish(
+    window: BrowserWindow,
+    candidate: string,
+    opener: DesktopBrowserProxyTarget,
+): void {
+    const url = browserWebUrl(candidate);
+    if (!url || window.isDestroyed() || window.webContents.isDestroyed()) return;
+    window.webContents.send(desktopIpc.browserAgentPopupRequested, {
+        url,
+        opener,
+    } satisfies DesktopBrowserPopup);
+}
+
 function browserOpenPublish(window: BrowserWindow, candidate: string): void {
     const url = browserWebUrl(candidate);
     if (!url || window.isDestroyed() || window.webContents.isDestroyed()) return;
@@ -870,7 +885,7 @@ function browserGuestAttach(window: BrowserWindow): void {
         // guest is still on about:blank here, so no page runs before it holds.
         guest.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
         guest.setWindowOpenHandler(({ url }) => {
-            if (browser.popupAllowed(guest, url)) browserOpenPublish(window, url);
+            if (browser.popupAllowed(guest, url)) browserPopupPublish(window, url, browser.target);
             return { action: "deny" };
         });
         const navigationGuard = (event: Electron.Event, candidate: string) => {
@@ -1790,14 +1805,14 @@ void app
                 desktopReactDevtoolsMessageValidate(raw);
             if (message) desktopProfilerController.reactMessage(message);
         });
-        ipcMain.handle(desktopIpc.browserProxyApply, (event, target: unknown) => {
+        ipcMain.handle(desktopIpc.browserAgentProxyApply, (event, target: unknown) => {
             desktopDaemonSenderRequire(event.sender);
             if (event.senderFrame !== event.sender.mainFrame)
                 throw new Error("Only Happy can configure a browser profile.");
             return browserProxyApply(desktopBrowserProxyTargetValidate(target));
         });
         ipcMain.handle(
-            desktopIpc.browserCommand,
+            desktopIpc.browserAgentCommand,
             (event, rawTarget: unknown, guestId: unknown, rawCommand: unknown) => {
                 desktopDaemonSenderRequire(event.sender);
                 if (

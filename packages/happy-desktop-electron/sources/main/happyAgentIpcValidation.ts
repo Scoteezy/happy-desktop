@@ -24,11 +24,15 @@ export function desktopBrowserCommandValidate(value: unknown): DesktopBrowserCom
     throw new Error("Invalid browser command.");
 }
 
-/** The explicit Happy Agent connection and workspace a browser tunnel is asked for. */
+/** The explicit Happy Agent connection, workspace, and agent a browser tunnel is asked for. */
 export function desktopBrowserProxyTargetValidate(value: unknown): DesktopBrowserProxyTarget {
     if (typeof value !== "object" || value === null)
         throw new Error("The Happy Agent browser target is invalid.");
-    const target = value as { readonly connectionId?: unknown; readonly workspaceId?: unknown };
+    const target = value as {
+        readonly connectionId?: unknown;
+        readonly workspaceId?: unknown;
+        readonly agentId?: unknown;
+    };
     const connectionId =
         target.connectionId === null
             ? null
@@ -42,7 +46,8 @@ export function desktopBrowserProxyTargetValidate(value: unknown): DesktopBrowse
         "The Happy Agent browser workspace identity",
         256,
     );
-    return { connectionId, workspaceId };
+    const agentId = boundedString(target.agentId, "The Happy Agent browser agent identity", 256);
+    return { connectionId, workspaceId, agentId };
 }
 
 export function happyAgentTerminalInputValidate(value: unknown): string {

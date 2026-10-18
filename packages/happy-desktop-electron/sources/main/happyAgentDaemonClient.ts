@@ -336,6 +336,22 @@ export class HappyAgentDaemonClient {
         });
     }
 
+    /**
+     * Opens `CONNECT /v0/workspaces/:workspaceId/agents/:agentId/proxy`: the
+     * network of that agent's own machine. A daemon that does not know the agent,
+     * or this route, refuses it, and nothing falls back to the workspace's.
+     */
+    openWorkspaceAgentHttpProxy(
+        workspaceId: string,
+        agentId: string,
+        signal?: AbortSignal,
+    ): Promise<Duplex> {
+        const url = new URL(
+            this.#client.workspaceAgentProxyUrl(workspaceId as Cuid2, agentId as Cuid2),
+        );
+        return this.#openConnect(url.pathname, signal);
+    }
+
     /** Opens `CONNECT /v0/workspaces/:workspaceId/proxy`. */
     openWorkspaceHttpProxy(workspaceId: string, signal?: AbortSignal): Promise<Duplex> {
         // The SDK owns and validates the host-published connection prefix, just

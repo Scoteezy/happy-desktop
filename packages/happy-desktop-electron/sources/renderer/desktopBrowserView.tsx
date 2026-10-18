@@ -92,10 +92,10 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         const desktop = window.happyDesktop;
         const target = this.props.target;
         const view = this.element;
-        if (!desktop?.browserCommand || !target || !view || !this.initialized) return;
+        if (!desktop?.browserAgentCommand || !target || !view || !this.initialized) return;
         const generation = this.proxyGeneration;
         void desktop
-            .browserCommand(target, view.getWebContentsId(), command)
+            .browserAgentCommand(target, view.getWebContentsId(), command)
             .catch((error: unknown) => {
                 if (
                     generation !== this.proxyGeneration ||
@@ -185,7 +185,8 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
     componentDidUpdate(before: BrowserContentProps): void {
         if (
             before.target?.workspaceId !== this.props.target?.workspaceId ||
-            before.target?.connectionId !== this.props.target?.connectionId
+            before.target?.connectionId !== this.props.target?.connectionId ||
+            before.target?.agentId !== this.props.target?.agentId
         )
             this.proxyApply();
     }
@@ -241,13 +242,15 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             this.props.browserFailed({ message: "The browser has no Happy Agent workspace." });
             return;
         }
-        if (!desktop.browserCommand) {
+        // A host without the agent route would put the page on some other
+        // machine's network, so it does not get to open one.
+        if (!desktop.browserAgentProxyApply || !desktop.browserAgentCommand) {
             this.props.browserFailed({
-                message: "Update Happy Nightly to enable the workspace browser.",
+                message: "Update Happy to use the workspace browser.",
             });
             return;
         }
-        void desktop.browserProxyApply(target).then(
+        void desktop.browserAgentProxyApply(target).then(
             (partition) => {
                 if (generation === this.proxyGeneration) this.setState({ partition });
             },

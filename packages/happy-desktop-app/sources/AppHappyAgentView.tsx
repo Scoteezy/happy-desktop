@@ -6655,7 +6655,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                               }
                             : {})}
                         activity={conversation.type === "ready" ? conversation.value : undefined}
-                        canStartBrowser={availability.online && openGroup !== undefined}
+                        canStartBrowser={
+                            availability.online &&
+                            openGroup !== undefined &&
+                            props.chatId !== undefined
+                        }
                         canStartTerminal={availability.online && props.chatId !== undefined}
                         {...(deviceBridgeSupport && deviceBridges && openGroup
                             ? {
@@ -10053,6 +10057,7 @@ function HappyAgentToolBodies(props: {
                                           target: {
                                               connectionId: props.browserConnectionId,
                                               workspaceId: tab.workspaceId,
+                                              agentId: tab.agentId,
                                           },
                                       })
                                 : undefined

@@ -43,8 +43,13 @@ export type HappyAgentPanelTabSnapshot =
       })
     | (HappyAgentPanelTabSnapshotBase & {
           readonly kind: "browser";
-          /** Authoritative workspace network boundary, independent of the open chat. */
+          /** Authoritative workspace network boundary. */
           readonly workspaceId: HappyAgentGroupId;
+          /**
+           * The agent whose machine carries the page's network, fixed when the
+           * tab opened. Reading another of the workspace's chats never moves it.
+           */
+          readonly agentId: HappyAgentSessionId;
           /** Last committed main-frame location, restored if the surface remounts. */
           readonly url: string;
       })
@@ -207,8 +212,17 @@ export interface HappyAgentPanelStore {
      * group and stays put as the reader moves between that group's sessions.
      */
     terminalAdd(): void;
-    /** Adds a browser tab to the open group, optionally at one safe web URL, and selects it. */
+    /**
+     * Adds a browser tab to the open group, optionally at one safe web URL, and
+     * selects it. The page uses the open conversation's agent, so without one
+     * nothing is added.
+     */
     browserAdd(url?: string): void;
+    /**
+     * Adds a page another page opened. It belongs where its opener does, to the
+     * opener's group and on the opener's agent, whichever group is open now.
+     */
+    browserPopupAdd(url: string, groupId: HappyAgentGroupId, agentId: HappyAgentSessionId): void;
     /** Reconciles Chromium-owned location/title metadata into one browser tab. */
     browserUpdate(tabId: HappyAgentPanelTabId, update: HappyAgentBrowserUpdate): void;
     tabSelect(tabId: HappyAgentPanelTabId): void;
@@ -271,6 +285,7 @@ interface Tab {
     readonly kind: HappyAgentPanelTabKind;
     label: string;
     readonly groupId: HappyAgentGroupId;
+    readonly agentId?: HappyAgentSessionId;
     readonly terminal?: HappyAgentTerminalHandle;
     title?: string;
     url?: string;
@@ -301,7 +316,8 @@ function tabSame(
         return (
             next.kind === "browser" &&
             before.url === next.url &&
-            before.workspaceId === next.workspaceId
+            before.workspaceId === next.workspaceId &&
+            before.agentId === next.agentId
         );
     if (before.kind === "artifact")
         return (
@@ -374,23 +390,30 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             fileViewOpen: fileViewShown,
             ...(artifactView === undefined ? {} : { artifactView }),
             open,
-            tabs: visible.map((tab): HappyAgentPanelTabSnapshot => {
+            tabs: visible.flatMap((tab): HappyAgentPanelTabSnapshot[] => {
                 const base = { id: tab.id, label: tab.label, placement: tab.placement };
                 if (tab.kind === "browser")
-                    return {
-                        ...base,
-                        kind: tab.kind,
-                        url: tab.url ?? "about:blank",
-                        workspaceId: tab.groupId,
-                    };
+                    return tab.agentId === undefined
+                        ? []
+                        : [
+                              {
+                                  ...base,
+                                  kind: tab.kind,
+                                  url: tab.url ?? "about:blank",
+                                  workspaceId: tab.groupId,
+                                  agentId: tab.agentId,
+                              },
+                          ];
                 if (tab.kind === "artifact" && tab.artifactId !== undefined)
-                    return {
-                        ...base,
-                        kind: tab.kind,
-                        artifactId: tab.artifactId,
-                        ...(tab.version === undefined ? {} : { version: tab.version }),
-                    };
-                return { ...base, kind: "terminal" };
+                    return [
+                        {
+                            ...base,
+                            kind: tab.kind,
+                            artifactId: tab.artifactId,
+                            ...(tab.version === undefined ? {} : { version: tab.version }),
+                        },
+                    ];
+                return [{ ...base, kind: "terminal" }];
             }),
             ...(previewEntryId === undefined ? {} : { previewEntryId }),
             ...(previewMediaIndex === undefined ? {} : { previewMediaIndex }),
@@ -457,17 +480,26 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
      * derived from the tabs themselves, so there is no second copy of the panel
      * to keep in step with this one.
      */
-    const remember = (): void => {
-        if (!groupId || !deps.memoryWrite) return;
-        const browsers = tabs.filter((tab) => tab.groupId === groupId && tab.kind === "browser");
-        const activeIndex = browsers.findIndex((tab) => tab.id === activeViewId);
-        deps.memoryWrite(groupId, {
-            open,
-            browsers: browsers.map((tab) => ({
-                url: tab.url ?? "about:blank",
-                label: tab.label,
-                placement: tab.placement,
-            })),
+    const remember = (group = groupId): void => {
+        if (!group || !deps.memoryWrite) return;
+        const addressed = group === groupId;
+        const browsers = tabs.filter((tab) => tab.groupId === group && tab.kind === "browser");
+        const selected = addressed ? activeViewId : activeByGroup.get(group);
+        const activeIndex = browsers.findIndex((tab) => tab.id === selected);
+        deps.memoryWrite(group, {
+            open: addressed ? open : (chromeByGroup.get(group)?.open ?? false),
+            browsers: browsers.flatMap((tab) =>
+                tab.agentId === undefined
+                    ? []
+                    : [
+                          {
+                              url: tab.url ?? "about:blank",
+                              label: tab.label,
+                              agentId: tab.agentId,
+                              placement: tab.placement,
+                          },
+                      ],
+            ),
             active: activeIndex >= 0 ? { type: "browser", index: activeIndex } : { type: "files" },
         });
     };
@@ -490,9 +522,14 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         activeViewId = id;
     };
 
-    const browserTabAdd = (group: HappyAgentGroupId, candidate?: string, label?: string): void => {
+    const browserTabAdd = (
+        group: HappyAgentGroupId,
+        agent: HappyAgentSessionId,
+        candidate?: string,
+        label?: string,
+    ): boolean => {
         const url = candidate === undefined ? "about:blank" : browserUrl(candidate);
-        if (!url) return;
+        if (!url) return false;
         const id = `tab_${nextTabNumber}` as HappyAgentPanelTabId;
         nextTabNumber += 1;
         tabs.push({
@@ -500,11 +537,13 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             kind: "browser",
             label: label ?? browserLabel(url),
             groupId: group,
+            agentId: agent,
             placement: "panel",
             url,
         });
         activeByGroup.set(group, id);
         activeViewId = id;
+        return true;
     };
 
     /**
@@ -518,7 +557,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         const memory = deps.memoryRead?.(group);
         if (!memory) return;
         for (const browser of memory.browsers) {
-            browserTabAdd(group, browser.url, browser.label);
+            browserTabAdd(group, browser.agentId, browser.url, browser.label);
             // A page left in the main content comes back to the main content.
             // Where it was being read is part of how the group was arranged.
             const added = tabs.at(-1);
@@ -731,11 +770,30 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             recompute();
         },
         browserAdd(url) {
-            if (disposed || !groupId) return;
-            browserTabAdd(groupId, url);
+            if (disposed || !groupId || !conversationId) return;
+            if (!browserTabAdd(groupId, conversationId, url)) return;
             open = true;
             remember();
             recompute();
+        },
+        browserPopupAdd(url, group, agent) {
+            if (disposed) return;
+            if (group === groupId) {
+                if (!browserTabAdd(group, agent, url)) return;
+                open = true;
+                remember();
+                recompute();
+                return;
+            }
+            // Read the group's own pages back first, so writing this one down
+            // does not replace what that group remembered.
+            const selected = activeViewId;
+            groupRestore(group);
+            const added = browserTabAdd(group, agent, url);
+            activeViewId = selected;
+            if (!added) return;
+            chromeByGroup.set(group, { open: true });
+            remember(group);
         },
         browserUpdate(tabId, update) {
             if (disposed) return;
