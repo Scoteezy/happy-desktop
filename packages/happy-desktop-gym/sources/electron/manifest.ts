@@ -45,7 +45,9 @@ const manifests: Readonly<Record<GymProfile, GymManifest>> = {
             primarySessions: 6,
             subagentShapedSessions: 3,
             turns: 30,
-            messageRange: [60, 64],
+            // Thirty user/reply pairs, four initial configuration records, and
+            // one explicit compaction after turn 16. No spare message allowance.
+            messageRange: [30 * 2, 30 * 2 + 4 + 1],
             fileCount: 38,
             changedFileCount: 9,
             largeFileBytes: 101_280,
