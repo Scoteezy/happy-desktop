@@ -219,3 +219,34 @@ it("uses catalog display names only for presentation, including provider-defined
         { field: "speed", text: "Speed Regular → Fast" },
     ]);
 });
+
+it("shows only the model change when the model and known provider family both change", () => {
+    const before = { ...mode, account: { id: "native-a" } };
+    const after: MessageMode = {
+        ...mode,
+        providerId: "codex_extra",
+        providerType: "codex",
+        modelId: "gpt",
+        account: { id: "native-b" },
+    };
+    expect(happyAgentConfigurationChanges(change(before, after), [])).toEqual([
+        { field: "model", text: "Model opus → gpt" },
+    ]);
+});
+
+it("keeps the provider fallback on a model change when either provider family is unknown", () => {
+    const after: MessageMode = {
+        ...mode,
+        providerId: "codex_extra",
+        providerType: "codex",
+        modelId: "gpt",
+    };
+    for (const block of [
+        change({ ...mode, providerType: undefined }, after),
+        change(mode, { ...after, providerType: undefined }),
+    ])
+        expect(happyAgentConfigurationChanges(block, [])).toEqual([
+            { field: "model", text: "Model opus → gpt" },
+            { field: "provider", text: "Provider selection changed: claude → codex_extra" },
+        ]);
+});

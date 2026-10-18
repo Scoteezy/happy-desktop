@@ -33,13 +33,18 @@ export function happyAgentConfigurationChanges(
             .find((model) => model.id === modelId)
             ?.serviceTierOptions.find((option) => option.id === tier)?.label ??
         (tier === null ? "Default" : tier === "fast" ? "Fast" : tier);
-    if (before.modelId !== after.modelId)
+    const modelChanged = before.modelId !== after.modelId;
+    if (modelChanged)
         changes.push({
             field: "model",
             text: `Model ${modelName(before.modelId)} → ${modelName(after.modelId)}`,
         });
     const sameFamily =
         before.providerType !== undefined && before.providerType === after.providerType;
+    const familyChanged =
+        before.providerType !== undefined &&
+        after.providerType !== undefined &&
+        before.providerType !== after.providerType;
     if (sameFamily && before.account && after.account && before.account.id !== after.account.id) {
         changes.push({
             field: "account",
@@ -48,7 +53,8 @@ export function happyAgentConfigurationChanges(
                     ? `Account ${before.account.label} → ${after.account.label}`
                     : "Account changed",
         });
-    } else if (before.providerId !== after.providerId) {
+    } else if (before.providerId !== after.providerId && !(modelChanged && familyChanged)) {
+        // A known cross-family model switch already states the change.
         // Route IDs are authoritative even if family/account identity was withheld.
         changes.push({
             field: "provider",
