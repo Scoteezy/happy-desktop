@@ -1158,12 +1158,9 @@ function workspaceLifecyclePhase(
 
 /** The row action ids the sidebar's context menu dispatches back to this surface. */
 const ROW_MENU_ARCHIVE = "archive";
-/**
- * Opens the row's naming surface: the settings dialog for a project, which is
- * where its name is set, and the rename field for a worktree, whose name is the
- * only thing there is to say about it.
- */
+/** Edits the existing sidebar label without changing the row's layout. */
 const ROW_MENU_RENAME = "rename";
+const ROW_MENU_SETTINGS = "settings";
 /** Takes a task off the reader's own list; it carries on for everyone else. */
 const ROW_MENU_LEAVE = "leave";
 /** Mutes or unmutes a bot: its unread stops counting anywhere but its own row. */
@@ -1287,7 +1284,8 @@ function rowMenuItems(
     // offers neither renaming nor archiving.
     if (owner.project.kind === "home") return [];
     return [
-        { kind: "item", id: ROW_MENU_RENAME, label: "Project settings…", icon: "settings" },
+        { kind: "item", id: ROW_MENU_RENAME, label: "Rename project", icon: "edit" },
+        { kind: "item", id: ROW_MENU_SETTINGS, label: "Project settings…", icon: "settings" },
         { kind: "separator" },
         {
             kind: "item",
@@ -3537,6 +3535,32 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     else workspace.taskBrowseOpen();
                 } else workspace.projectAdd();
             }}
+            itemRename={{
+                actionId: ROW_MENU_RENAME,
+                onSubmit: (item, name) => {
+                    const row = happyAgentItemParse(item.id);
+                    const happyAgent = happyAgentOf(row.happyAgentId);
+                    const workspace = happyAgent?.session?.workspace;
+                    if (happyAgent?.status !== "connected" || !workspace) return;
+                    const task = happyAgent.tasks?.find((entry) => entry.workspaceId === row.id);
+                    if (task) {
+                        void workspace.taskRename(task.id, name).catch(() => undefined);
+                        return;
+                    }
+                    const bot = happyAgent.bots.find((entry) => entry.workspaceId === row.id);
+                    if (bot) {
+                        void workspace.botRename(bot.id, name).catch(() => undefined);
+                        return;
+                    }
+                    const owner = rowOwnerFind(happyAgent.projects, row.id);
+                    if (!owner) return;
+                    void (
+                        owner.worktreeId
+                            ? workspace.worktreeRename(owner.project.id, owner.worktreeId, name)
+                            : workspace.projectRename(owner.project.id, name)
+                    ).catch(() => undefined);
+                },
+            }}
             onItemMenuSelect={(item, actionId) => {
                 const row = happyAgentItemParse(item.id);
                 const happyAgent = happyAgentOf(row.happyAgentId);
@@ -3600,7 +3624,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     // No navigation either way: the task leaves the list when
                     // the host's own catalog stops listing it, and the
                     // workspace follows that, so a refusal strands nobody.
-                    if (actionId === ROW_MENU_RENAME) workspace.taskRenameOpen(task.id);
                     if (actionId === ROW_MENU_LEAVE)
                         void workspace.taskLeave(task.id).catch(() => undefined);
                     if (actionId === ROW_MENU_ARCHIVE && task.canArchive)
@@ -3609,15 +3632,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 }
                 const bot = happyAgent.bots.find((candidate) => candidate.workspaceId === row.id);
                 if (bot) {
-                    if (actionId === ROW_MENU_RENAME) workspace.botRenameOpen(bot.id);
                     if (actionId === ROW_MENU_ARCHIVE)
                         void workspace.botArchive(bot.id).catch(() => undefined);
                     return;
                 }
                 const owner = rowOwnerFind(happyAgent.projects, row.id);
                 if (!owner) return;
-                if (actionId === ROW_MENU_RENAME) {
-                    workspace.renameOpen(owner.project.id, owner.worktreeId);
+                if (actionId === ROW_MENU_SETTINGS) {
+                    workspace.renameOpen(owner.project.id, undefined);
                     return;
                 }
                 if (actionId !== ROW_MENU_ARCHIVE) return;

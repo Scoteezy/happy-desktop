@@ -1199,6 +1199,47 @@ const SHORTCUT_TARGETS = [
     { itemId: "other-project", sectionId: "shortcuts" },
 ] as const;
 
+function InlineRenameDemo() {
+    const [items, setItems] = useState<SidebarItem[]>([
+        { id: "rename-task", kind: "agent", label: "Sidebar polish", avatarId: "rename-task" },
+        { id: "rename-unread", kind: "agent", label: "Unread task", unread: true },
+        { id: "rename-working", kind: "agent", label: "Working task", status: "working" },
+        { id: "rename-project", kind: "project", label: "Happy desktop" },
+        { id: "rename-worktree", kind: "workspace", label: "Sidebar branch", depth: 1 },
+    ]);
+    return (
+        <Frame height={260}>
+            <Sidebar
+                activeItemId="rename-task"
+                itemMenuItems={() => [
+                    { kind: "item", id: "rename", label: "Rename", icon: "edit" },
+                    { kind: "item", id: "leave", label: "Leave task", icon: "close" },
+                    { kind: "separator" },
+                    {
+                        kind: "item",
+                        id: "archive",
+                        label: "Archive task",
+                        icon: "archive",
+                        danger: true,
+                    },
+                ]}
+                itemRename={{
+                    actionId: "rename",
+                    onSubmit: (item, name) =>
+                        setItems((current) =>
+                            current.map((row) =>
+                                row.id === item.id ? { ...row, label: name } : row,
+                            ),
+                        ),
+                }}
+                onItemSelect={() => {}}
+                sections={[{ id: "rename", label: "Right-click to rename", items }]}
+                title="Rename in place"
+            />
+        </Frame>
+    );
+}
+
 export function SidebarPage() {
     return (
         <ComponentPage
@@ -1206,6 +1247,14 @@ export function SidebarPage() {
             summary="288px workspace navigation column — header with workspace switcher, sectioned rows for views, channels, people, agents, and actions, actionable empty states, and an optional footer."
             title="Sidebar"
         >
+            <Specimen
+                detail="Right-click a label and choose Rename. The text keeps its position and weight. Enter or blur saves; Escape cancels."
+                label="Rename in place"
+                number="00"
+                stage="app"
+            >
+                <InlineRenameDemo />
+            </Specimen>
             <Specimen
                 detail="288 wide · header 52 · rows 32 on a 2px rhythm · footer 52 with top hairline"
                 label="Full workspace sidebar"

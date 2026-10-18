@@ -403,6 +403,11 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     /** Returns the context-menu actions available for one row. Empty means no menu. */
     itemMenuItems?: (item: SidebarItem) => MenuItem[];
     onItemMenuSelect?: (item: SidebarItem, actionId: string) => void;
+    /** The menu action that edits the row's existing label in place. */
+    itemRename?: {
+        actionId: string;
+        onSubmit: (item: SidebarItem, name: string) => void;
+    };
     onItemSelect: (id: string) => void;
     /** Invoked when a row's trailing `action` control is used. */
     onItemAction?: (id: string) => void;
@@ -1006,17 +1011,18 @@ function SidebarRow({
     /** The pointer has crossed the drag threshold and is still holding this row. */
     grabbed?: boolean;
     item: SidebarItem;
+    rename?: { onSubmit: (name: string) => void; onCancel: () => void };
     /** Which end of the row reports work. See `SidebarProps.activityPlacement`. */
     activityPlacement?: SidebarActivityPlacement;
-    onContextMenu?: (item: SidebarItem, event: MouseEvent<HTMLButtonElement>) => void;
-    onKeyDown?: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
+    onContextMenu?: (item: SidebarItem, event: MouseEvent<HTMLElement>) => void;
+    onKeyDown?: (event: ReactKeyboardEvent<HTMLElement>) => void;
     /** The gesture was taken away rather than finished; nothing is reported. */
-    onPointerCancel?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-    onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-    onPointerMove?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-    onPointerUp?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+    onPointerCancel?: (event: ReactPointerEvent<HTMLElement>) => void;
+    onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
+    onPointerMove?: (event: ReactPointerEvent<HTMLElement>) => void;
+    onPointerUp?: (event: ReactPointerEvent<HTMLElement>) => void;
     /** Registers the live node so a drop can measure and animate this row. */
-    nodeRef?: (node: HTMLButtonElement | null) => void;
+    nodeRef?: (node: HTMLElement | null) => void;
     /** Invoked by the row's trailing control; absent when the row offers none. */
     onAction?: () => void;
     /** Invoked by the control left of it; absent when the row offers no second one. */
@@ -1032,6 +1038,25 @@ function SidebarRow({
     shift?: number;
 }) {
     const item = () => props.item;
+    const renameFinished = useRef(false);
+    const renameRestoreFocus = useRef(false);
+    // Stable ref identity keeps store renders from selecting the draft again.
+    const [renameInputRef] = useState(() => (node: HTMLInputElement | null) => {
+        if (!node) return;
+        renameFinished.current = false;
+        node.focus({ preventScroll: true });
+        node.select();
+        node.scrollLeft = 0;
+    });
+    const renameFinish = (name: string | undefined) => {
+        if (renameFinished.current) return;
+        renameFinished.current = true;
+        if (name === undefined || name.trim() === "" || name.trim() === item().label)
+            props.rename?.onCancel();
+        else props.rename?.onSubmit(name.trim());
+    };
+    // An editing row hosts a real textbox, so it must not be a native button.
+    const Row = props.rename ? "div" : "button";
     const unread = () => item().unread === true;
     // A muted row keeps the unread weight on its name and gives up only the dot.
     const unreadDot = () => unread() && item().muted !== true;
@@ -1256,7 +1281,7 @@ function SidebarRow({
             </span>
         ) : null;
     return (
-        <button
+        <Row
             aria-current={props.active ? "page" : undefined}
             aria-expanded={props.onCollapseToggle ? item().collapsed !== true : undefined}
             aria-keyshortcuts={
@@ -1284,7 +1309,9 @@ function SidebarRow({
             data-voice-focus={item().voiceFocus ? "" : undefined}
             data-dragging={props.dragging ? "" : undefined}
             data-grabbed={props.grabbed ? "" : undefined}
-            onClick={() => props.onSelect(item().id)}
+            onClick={() => {
+                if (!props.rename) props.onSelect(item().id);
+            }}
             onContextMenu={(event) => props.onContextMenu?.(item(), event)}
             onKeyDown={props.onKeyDown}
             onPointerDown={props.onPointerDown}
@@ -1295,14 +1322,20 @@ function SidebarRow({
                removed under it, or the system claiming the gesture. */
             onLostPointerCapture={props.onPointerCancel}
             onPointerUp={props.onPointerUp}
-            ref={nodeRef}
+            ref={(node: HTMLButtonElement | HTMLDivElement | null) => {
+                nodeRef?.(node);
+                if (node && !props.rename && renameRestoreFocus.current) {
+                    renameRestoreFocus.current = false;
+                    node.focus({ preventScroll: true });
+                }
+            }}
             style={{
                 ...(depth() > 0
                     ? { paddingLeft: SIDEBAR_ROW_PADDING_X + depth() * SIDEBAR_ROW_INDENT }
                     : {}),
                 ...(props.shift ? { transform: `translateY(${String(props.shift)}px)` } : {}),
             }}
-            type="button"
+            type={props.rename ? undefined : "button"}
         >
             {depth() > 0 ? (
                 <span
@@ -1410,7 +1443,30 @@ function SidebarRow({
                         neighbours, and painting the name again here would stack a
                         second emphasis on top of one the row had already earned.
                         Only the travelling band is new. */}
-                {shimmerLabel() ? (
+                {props.rename ? (
+                    <input
+                        aria-label={`Rename ${item().label}`}
+                        className="happy-sidebar__item-rename"
+                        defaultValue={item().label}
+                        onBlur={(event) => renameFinish(event.currentTarget.value)}
+                        onClick={(event) => event.stopPropagation()}
+                        onContextMenu={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.nativeEvent.isComposing) return;
+                            if (event.key === "Enter" || event.key === "Escape") {
+                                event.preventDefault();
+                                renameRestoreFocus.current = true;
+                                renameFinish(
+                                    event.key === "Enter" ? event.currentTarget.value : undefined,
+                                );
+                            }
+                        }}
+                        ref={renameInputRef}
+                        type="text"
+                    />
+                ) : shimmerLabel() ? (
                     <ShimmerText sweep="sheen" tone="inherit">
                         {item().label}
                     </ShimmerText>
@@ -1546,7 +1602,7 @@ function SidebarRow({
                 swapsTrailing(),
                 showCount() ? item().count : undefined,
             )}
-        </button>
+        </Row>
     );
 }
 /**
@@ -1570,6 +1626,7 @@ export function Sidebar(props: SidebarProps) {
         "onHeaderMenuSelect",
         "headerTrailing",
         "itemMenuItems",
+        "itemRename",
         "onActionReorder",
         "onBack",
         "onHeaderAction",
@@ -1591,6 +1648,7 @@ export function Sidebar(props: SidebarProps) {
         "title",
     ]);
     const menuRoot = useRef<HTMLDivElement>(null);
+    const [renamingId, setRenamingId] = useState<string>();
     // One menu at a time, opened either from a row or from a heading control.
     const [itemMenu, setItemMenu] = useState<{
         target:
@@ -1640,7 +1698,7 @@ export function Sidebar(props: SidebarProps) {
     // because nothing stops one caller's section from naming a row the same
     // thing another one does, and one list's registration must not delete
     // another's node out from under a drop.
-    const [rowNodes] = useState(() => new Map<string, HTMLButtonElement>());
+    const [rowNodes] = useState(() => new Map<string, HTMLElement>());
     // Connector stems have stable parent keys, so the drop can animate their
     // endpoint separately from the rows that carry the horizontal elbows.
     const [connectorNodes] = useState(() => new Map<string, HTMLSpanElement>());
@@ -1760,7 +1818,7 @@ export function Sidebar(props: SidebarProps) {
     };
 
     const dragStart = (
-        event: ReactPointerEvent<HTMLButtonElement>,
+        event: ReactPointerEvent<HTMLElement>,
         listId: SidebarListId,
         items: readonly SidebarItem[],
         rowIndex: number,
@@ -1818,7 +1876,7 @@ export function Sidebar(props: SidebarProps) {
         });
     };
 
-    const dragMove = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    const dragMove = (event: ReactPointerEvent<HTMLElement>): void => {
         const current = dragRef.current;
         if (!current || event.pointerId !== current.drag.pointerId) return;
         const pointerDeltaY = event.clientY - current.drag.startY;
@@ -1888,7 +1946,7 @@ export function Sidebar(props: SidebarProps) {
     };
 
     const dragEnd = (
-        event: ReactPointerEvent<HTMLButtonElement>,
+        event: ReactPointerEvent<HTMLElement>,
         items: readonly SidebarItem[],
     ): void => {
         const current = dragRef.current;
@@ -1930,7 +1988,7 @@ export function Sidebar(props: SidebarProps) {
      * not a drag anybody finished: the rows go back to where they were, and the
      * list must not be left holding a capture nobody will ever release.
      */
-    const dragCancel = (event: ReactPointerEvent<HTMLButtonElement>): void => {
+    const dragCancel = (event: ReactPointerEvent<HTMLElement>): void => {
         const current = dragRef.current;
         if (!current || event.pointerId !== current.drag.pointerId) return;
         // Interrupted is still let go of: the rows snap back to the order they
@@ -1979,7 +2037,7 @@ export function Sidebar(props: SidebarProps) {
      * ways of arranging the list can never disagree about what moved.
      */
     const moveByKey = (
-        event: ReactKeyboardEvent<HTMLButtonElement>,
+        event: ReactKeyboardEvent<HTMLElement>,
         listId: SidebarListId,
         items: readonly SidebarItem[],
         rowIndex: number,
@@ -2120,7 +2178,7 @@ export function Sidebar(props: SidebarProps) {
         // teardown would abort the drop animation on the next unrelated render.
     });
 
-    const openItemMenu = (item: SidebarItem, event: MouseEvent<HTMLButtonElement>) => {
+    const openItemMenu = (item: SidebarItem, event: MouseEvent<HTMLElement>) => {
         const items = local.itemMenuItems?.(item) ?? [];
         if (!items.some((entry) => entry.kind === "item")) {
             setItemMenu(undefined);
@@ -2564,6 +2622,21 @@ export function Sidebar(props: SidebarProps) {
                                             const held = dragging && unitIndex === drag.from;
                                             return (
                                                 <SidebarRow
+                                                    rename={
+                                                        renamingId === item.id
+                                                            ? {
+                                                                  onCancel: () =>
+                                                                      setRenamingId(undefined),
+                                                                  onSubmit: (name) => {
+                                                                      setRenamingId(undefined);
+                                                                      local.itemRename?.onSubmit(
+                                                                          item,
+                                                                          name,
+                                                                      );
+                                                                  },
+                                                              }
+                                                            : undefined
+                                                    }
                                                     active={item.id === local.activeItemId}
                                                     activityPlacement={local.activityPlacement}
                                                     dragging={
@@ -2722,6 +2795,10 @@ export function Sidebar(props: SidebarProps) {
                         onSelect={(actionId) => {
                             const target = itemMenu.target;
                             setItemMenu(undefined);
+                            if (target.kind === "item" && actionId === local.itemRename?.actionId) {
+                                setRenamingId(target.item.id);
+                                return;
+                            }
                             if (target.kind === "item")
                                 local.onItemMenuSelect?.(target.item, actionId);
                             else

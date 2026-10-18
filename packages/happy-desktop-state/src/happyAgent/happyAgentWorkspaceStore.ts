@@ -1974,6 +1974,15 @@ export interface HappyAgentWorkspaceStore {
     taskCreateSubmit(): Promise<void>;
     /** Opens the name dialog for a task. Any member may rename it. */
     taskRenameOpen(taskId: HappyAgentTaskId): void;
+    /** Saves a sidebar label without opening a settings dialog. */
+    taskRename(taskId: HappyAgentTaskId, name: string): Promise<void>;
+    botRename(botId: string, name: string): Promise<void>;
+    projectRename(projectId: HappyAgentProjectId, name: string): Promise<void>;
+    worktreeRename(
+        projectId: HappyAgentProjectId,
+        worktreeId: HappyAgentWorktreeId,
+        name: string,
+    ): Promise<void>;
     /** Starts renaming a project, or one of its worktrees, from its current name. */
     renameOpen(projectId: HappyAgentProjectId, worktreeId: HappyAgentWorktreeId | undefined): void;
     /** Opens the same name dialog for a bot's persistent identity. */
@@ -7856,6 +7865,11 @@ export function happyAgentWorkspaceStoreCreate(
             projectSettingsClose();
             recompute();
         },
+        taskRename: (taskId, name) => list.taskRename(taskId, name),
+        botRename: (botId, name) => list.botRename(botId, name),
+        projectRename: (projectId, name) => list.projectRename(projectId, name),
+        worktreeRename: (projectId, worktreeId, name) =>
+            list.worktreeRename(projectId, worktreeId, name),
         botCreateModelUpdate: (input) => botCreateSessionDraft?.modelUpdate(input),
         botCreateEffortUpdate: (effort) => botCreateSessionDraft?.effortUpdate(effort),
         botCreatePermissionModeUpdate: (mode) => botCreateSessionDraft?.permissionModeUpdate(mode),
