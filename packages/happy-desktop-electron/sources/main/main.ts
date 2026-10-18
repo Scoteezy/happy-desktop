@@ -301,7 +301,6 @@ protocol.registerSchemesAsPrivileged([
         privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true },
     },
 ]);
-app.commandLine.appendSwitch("force-webrtc-ip-handling-policy", "disable_non_proxied_udp");
 if (desktopDebugEnabled) {
     // This branch is unavailable in packaged builds. Chromium's raw CDP server
     // has no authentication, so even an explicit flag must remain development
@@ -866,6 +865,10 @@ function browserGuestAttach(window: BrowserWindow): void {
         }
         browser.register(guest);
         guest.setUserAgent(guest.session.getUserAgent());
+        // The agent proxy carries TCP only. Without this a page's WebRTC sends
+        // UDP straight from this computer and lists its local addresses; the
+        // guest is still on about:blank here, so no page runs before it holds.
+        guest.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
         guest.setWindowOpenHandler(({ url }) => {
             if (browser.popupAllowed(guest, url)) browserOpenPublish(window, url);
             return { action: "deny" };
