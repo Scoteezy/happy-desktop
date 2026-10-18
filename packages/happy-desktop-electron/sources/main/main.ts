@@ -626,19 +626,19 @@ function browserOpenPublish(window: BrowserWindow, candidate: string): void {
 }
 
 /**
- * Keeps Chromium's true engine/version while removing the Electron/app tokens
- * that make sites serve an embedded-shell variant.
+ * Chromium's own user agent: Electron's default without the two tokens it adds,
+ * the app's name and version (written without spaces, so `HappyDev/…` for a
+ * development build) and its own. Those make sites serve an embedded-shell
+ * variant.
  */
-function browserUserAgent(defaultUserAgent: string): string {
-    return defaultUserAgent
-        .replace(/\sElectron\/\S+/giu, "")
-        .replace(/\sHappy(?:%20|\s)Place(?:%20|\s)Desktop\/\S+/giu, "")
-        .replace(/\s{2,}/gu, " ")
-        .trim();
+function browserUserAgent(): string {
+    return app.userAgentFallback
+        .replace(` ${app.getName().replaceAll(" ", "")}/${app.getVersion()}`, "")
+        .replace(` Electron/${process.versions.electron}`, "");
 }
 
 async function browserSessionConfigure(browserSession: Electron.Session): Promise<void> {
-    browserSession.setUserAgent(browserUserAgent(browserSession.getUserAgent()), app.getLocale());
+    browserSession.setUserAgent(browserUserAgent(), app.getLocale());
     await browserProxyFailClosed(browserSession);
 
     const permissionLabels = new Map<string, string>([
