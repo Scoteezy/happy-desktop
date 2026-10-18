@@ -83,8 +83,8 @@ it("shows a refused removal once, with Try again and Keep linked", async () => {
                     disconnectError={REFUSED}
                     message={REFUSED}
                     onDisconnect={noop}
-                    onPair={noop}
-                    onPairingCancel={noop}
+                    direct={null}
+                    onPairingOptionsOpen={noop}
                     onReconnect={() => calls.push("reconnect")}
                     onRemovalRetry={() => calls.push("retry")}
                     removalIncomplete
@@ -123,8 +123,8 @@ it("keeps the ordinary failure copy when this window did not ask to remove", asy
                     configured
                     message={REFUSED}
                     onDisconnect={noop}
-                    onPair={noop}
-                    onPairingCancel={noop}
+                    direct={null}
+                    onPairingOptionsOpen={noop}
                     status="failed"
                 />
             </div>

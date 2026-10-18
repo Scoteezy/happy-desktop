@@ -208,6 +208,7 @@ function HappyAgentRootContent({ context }: { readonly context: HappyAgentRouter
             welcome={setup.welcome}
             appearance={context.appearance}
             profile={setup.profile}
+            clock={setup.clock}
             online={entry?.status === "connected"}
             onRetry={setup.retry}
             {...(context.externalLinkOpen ? { onExternalOpen: context.externalLinkOpen } : {})}

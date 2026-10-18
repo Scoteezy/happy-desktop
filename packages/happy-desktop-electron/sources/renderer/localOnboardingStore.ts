@@ -7,6 +7,8 @@ import type {
 } from "happy-desktop-ui";
 import {
     HappyAgentClient,
+    happyAgentMobileConnectorStoreNoop,
+    type HappyAgentMobileConnectorStore,
     type HappyAgentWorkspaceStore,
     type HappyMobileOnboardingSnapshot,
     type HappyMobileOnboardingStore,
@@ -83,6 +85,8 @@ export interface LocalOnboardingStore {
     happyMobileConnect(): void;
     happyMobileSkip(): void;
     happyMobilePlatformSelect(platform: "ios" | "android"): void;
+    /** The direct connector the mobile steps offer beside the relay code. */
+    happyMobileDirect(): HappyAgentMobileConnectorStore;
 }
 
 export interface LocalOnboardingStoreOptions {
@@ -841,6 +845,9 @@ export function localOnboardingStoreCreate(
         happyMobilePlatformSelect(platform) {
             happyMobileStore?.happyMobilePlatformSelect(platform);
         },
+        happyMobileDirect() {
+            return happyMobileStore?.direct ?? happyAgentMobileConnectorStoreNoop;
+        },
     };
 }
 
@@ -917,17 +924,8 @@ export function localOnboardingView(
                         ...(mobile.message ? { message: mobile.message } : {}),
                     };
                 case "pairing":
-                    return {
-                        data: mobile.data,
-                        expiresAt: mobile.expiresAt,
-                        kind: "happy-mobile-pairing",
-                    };
                 case "failed":
-                    return {
-                        busy: mobile.pending,
-                        kind: "happy-mobile-failed",
-                        message: mobile.message,
-                    };
+                    return { kind: "happy-mobile-pairing" };
                 case "configured":
                 case "disabled":
                 case "skipped":

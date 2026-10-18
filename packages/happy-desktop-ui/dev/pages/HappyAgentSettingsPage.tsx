@@ -23,6 +23,12 @@ import {
     type HappyAgentSettingsCategory,
 } from "../../src";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
+import { direct, relayWaiting } from "./mobilePairingFixtures";
+import {
+    directSectionSpecimen,
+    pairingOptionsSpecimen,
+    setupPairingOptions,
+} from "./mobilePairingSpecimens";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "P-012";
@@ -657,10 +663,9 @@ export function HappyAgentSettingsBlueprintPage() {
                 >
                     <HappyAgentMobileSettings
                         configured
+                        direct={directSectionSpecimen(direct.paired)}
                         onDisconnect={noop}
-                        onSetup={noop}
-                        onPair={noop}
-                        onPairingCancel={noop}
+                        onPairingOptionsOpen={noop}
                         status="connected"
                     />
                 </HappyAgentSettingsShell>
@@ -682,12 +687,11 @@ export function HappyAgentSettingsBlueprintPage() {
                         configured
                         disconnectError="Happy Agent couldn't remove this computer from Happy Mobile. Check your internet connection and try again. This computer stays linked until it is removed."
                         message="Happy Agent couldn't remove this computer from Happy Mobile. Check your internet connection and try again. This computer stays linked until it is removed."
+                        direct={directSectionSpecimen()}
                         onDisconnect={noop}
-                        onPair={noop}
-                        onPairingCancel={noop}
+                        onPairingOptionsOpen={noop}
                         onReconnect={noop}
                         onRemovalRetry={noop}
-                        onSetup={noop}
                         removalIncomplete
                         removesComputer
                         status="failed"
@@ -695,7 +699,7 @@ export function HappyAgentSettingsBlueprintPage() {
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
             <FullScreenSpecimen
-                detail="Remote Agent-only pairing remains unchanged; local Desktop opens the shared mobile setup instead."
+                detail="Remote Agents pair in place with both codes; local Desktop opens the shared mobile setup instead."
                 label="Happy Agent settings — Remote Mobile Access pairing"
                 number="01f"
             >
@@ -709,11 +713,13 @@ export function HappyAgentSettingsBlueprintPage() {
                 >
                     <HappyAgentMobileSettings
                         configured={false}
+                        direct={directSectionSpecimen(direct.waiting)}
                         onDisconnect={noop}
-                        onPair={noop}
-                        onPairingCancel={noop}
-                        pairingData="happy://pair?authorization=blueprint-happy-mobile"
-                        pairingExpiresAt={1_700_003_600_000}
+                        onPairingOptionsOpen={noop}
+                        pairingOptions={pairingOptionsSpecimen("settings", {
+                            direct: direct.waiting,
+                            relay: relayWaiting,
+                        })}
                         status="pairing"
                     />
                 </HappyAgentSettingsShell>
@@ -735,10 +741,11 @@ export function HappyAgentSettingsBlueprintPage() {
                     >
                         <HappyAgentMobileSettings
                             configured={configured}
+                            direct={directSectionSpecimen(
+                                configured === false ? direct.closed : direct.loading,
+                            )}
                             onDisconnect={noop}
-                            onSetup={noop}
-                            onPair={noop}
-                            onPairingCancel={noop}
+                            onPairingOptionsOpen={noop}
                             status={configured === false ? "disconnected" : "loading"}
                         />
                     </HappyAgentSettingsShell>
@@ -755,10 +762,11 @@ export function HappyAgentSettingsBlueprintPage() {
                     onContinue={noop}
                     onSkip={noop}
                     onPlatformSelect={noop}
+                    pairingOptions={setupPairingOptions()}
                 />
             </FullScreenSpecimen>
             <FullScreenSpecimen
-                detail="A failed native status read stays unknown and shows its reason."
+                detail="A failed native status read shows its reason in the relay slot; the direct code stays usable."
                 label="Happy Mobile — native status unavailable"
                 number="01f-read-failed"
             >
@@ -775,6 +783,14 @@ export function HappyAgentSettingsBlueprintPage() {
                     onContinue={noop}
                     onSkip={noop}
                     onPlatformSelect={noop}
+                    pairingOptions={setupPairingOptions({
+                        direct: direct.waiting,
+                        relay: {
+                            kind: "failed",
+                            message:
+                                "Happy cannot reach the local Happy Agent. Reconnect and try again.",
+                        },
+                    })}
                 />
             </FullScreenSpecimen>
             <FullScreenSpecimen

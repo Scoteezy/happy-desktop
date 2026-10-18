@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Button } from "./Button";
-import { CopyButton } from "./CopyButton";
 import {
     OnboardingSteps,
     type MobileOnboardingStage,
@@ -28,10 +27,13 @@ export interface DesktopMobilePairingOptions {
     readonly view: ReactNode;
     /** A phone has connected directly (`mobileDirectPairingEngaged`). */
     readonly verifying: boolean;
+    /** The direct pairing finished: the page offers Continue instead of Skip. */
+    readonly completed: boolean;
 }
 
 /** The subtitle over both codes, or over the emoji step once a phone connects directly. */
 export function desktopMobilePairingOptionsCopy(options: DesktopMobilePairingOptions): string {
+    if (options.completed) return "Your phone can now reach this computer directly.";
     return options.verifying
         ? "Check the emoji on this computer and on your phone."
         : "Open Happy on your phone and scan either code.";
@@ -51,12 +53,8 @@ export interface DesktopMobileSetupProps {
     readonly onPlatformSelect?: (platform: "ios" | "android") => void;
     /** Opens an external page: the host owns how a link leaves the app. */
     onExternalOpen?(url: string): void;
-    /**
-     * Both pairing methods. When present, the link step shows them side by
-     * side, each with its own state, instead of the relay-only code and its
-     * failure page.
-     */
-    readonly pairingOptions?: DesktopMobilePairingOptions;
+    /** Both pairing methods, shown side by side on the link step, each with its own state. */
+    readonly pairingOptions: DesktopMobilePairingOptions;
 }
 
 const STORE_URLS = {
@@ -66,11 +64,6 @@ const STORE_URLS = {
     android: "https://play.google.com/store/apps/details?id=com.ex3ndr.happy",
 } as const;
 const ENCRYPTION_DOCS_URL = "https://happy.engineering/docs/security/";
-/**
- * Drawn blurred while the real code is on its way. It has the real payload's
- * shape and length, so the stand-in has the same density as what replaces it.
- */
-const PLACEHOLDER_CODE = "happy://terminal?AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 /** The one line every phone screen leads with, and where encryption is explained. */
 export function MobileAppCopy(props: { onExternalOpen?(url: string): void }) {
@@ -115,20 +108,17 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
     const { step } = props;
     const mobile: MobileOnboardingStage =
         step.kind === "intro" ? "get-app" : step.kind === "link" ? "connect-phone" : "complete";
-    // With both methods, a failed relay shows in its own slot, not on the bar.
-    const failed =
-        step.kind === "link" && step.phase.kind === "failed" && props.pairingOptions === undefined;
+    // A failed method shows in its own slot, not on the bar.
     const steps = props.onboarding ? (
         <OnboardingSteps
             scope="desktop"
             stage={
                 mobile === "connect-phone" || mobile === "complete" ? "connect-phone" : "get-app"
             }
-            failed={failed}
             {...(props.onStageSelect ? { onStageSelect: props.onStageSelect } : {})}
         />
     ) : (
-        <OnboardingSteps scope="mobile" stage={mobile} failed={failed} />
+        <OnboardingSteps scope="mobile" stage={mobile} />
     );
     const frame = {
         backdrop: { appearance: props.appearance, kind: "sky" },
@@ -187,78 +177,21 @@ export function DesktopMobileSetup(props: DesktopMobileSetupProps) {
             </SetupPage>
         );
 
-    if (step.kind === "link" && props.pairingOptions !== undefined)
+    if (step.kind === "link")
         return (
             <SetupPage
                 {...frame}
                 className="happy-desktop-mobile-setup happy-desktop-mobile-setup--options"
                 copy={desktopMobilePairingOptionsCopy(props.pairingOptions)}
                 scene="closed-lock"
-                secondary={skip}
-                title="Link Mobile App"
+                {...(props.pairingOptions.completed
+                    ? { action: { label: "Continue", onSelect: props.onContinue } }
+                    : { secondary: skip })}
+                title={props.pairingOptions.completed ? "Mobile App Linked" : "Link Mobile App"}
             >
                 {props.pairingOptions.view}
             </SetupPage>
         );
-
-    if (step.kind === "link") {
-        const { phase } = step;
-        if (phase.kind === "failed")
-            return (
-                <SetupPage
-                    {...frame}
-                    action={{ label: "Try again", onSelect: props.onContinue }}
-                    scene="closed-lock"
-                    secondary={skip}
-                    status={{ label: phase.message }}
-                    title="Mobile App Didn't Link"
-                />
-            );
-        // One page whether or not the code has arrived. Until it has, a
-        // blurred stand-in holds its exact place, so nothing moves when the
-        // real one replaces it.
-        return (
-            <SetupPage
-                {...frame}
-                copy="Open Happy mobile app and scan."
-                scene="closed-lock"
-                secondary={skip}
-                title="Link Mobile App"
-            >
-                <div className="happy-desktop-mobile-setup__pairing">
-                    {phase.kind === "pairing" ? (
-                        <>
-                            <QRCode
-                                data={phase.data}
-                                data-testid="happy-mobile-pairing-qr"
-                                label="QR code to link your devices"
-                                mark="link"
-                                size={136}
-                            />
-                            {/* The payload is opaque by contract: a client either
-                                draws it as a QR code or hands it over as a deep
-                                link, and never reads or rebuilds it. */}
-                            <CopyButton
-                                caption="Copy auth link"
-                                copiedCaption="Link copied"
-                                data-testid="happy-mobile-pairing-copy"
-                                label="Copy auth link"
-                                text={phase.data}
-                            />
-                        </>
-                    ) : (
-                        <div
-                            aria-hidden
-                            className="happy-desktop-mobile-setup__code-placeholder"
-                            data-testid="happy-mobile-pairing-placeholder"
-                        >
-                            <QRCode data={PLACEHOLDER_CODE} mark="link" size={136} />
-                        </div>
-                    )}
-                </div>
-            </SetupPage>
-        );
-    }
 
     return (
         <SetupPage

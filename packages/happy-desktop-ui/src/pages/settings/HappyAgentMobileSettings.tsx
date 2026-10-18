@@ -3,15 +3,12 @@ import { Badge, type BadgeVariant } from "../../Badge";
 import { Banner } from "../../Banner";
 import { Button } from "../../Button";
 import { Box } from "../../Box";
-import { CopyButton } from "../../CopyButton";
 import { FormRow } from "../../FormRow";
 import {
     MobileAccessConfirmation,
     MobileAccessDetail,
     type MobileAccessConfirmationState,
 } from "../../MobileAccessConfirmation";
-import { QRCode } from "../../QRCode";
-import { Spinner } from "../../Spinner";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 export type HappyAgentMobileStatus =
@@ -54,16 +51,12 @@ export interface HappyAgentMobileSettingsProps {
     /** When the integration last changed, as the Agent reports it (epoch ms). */
     readonly updatedAt?: number;
     readonly disconnecting?: boolean;
+    /** True while Happy Agent is asked to connect a saved pairing again. */
     readonly pairingStarting?: boolean;
-    readonly pairingCanceling?: boolean;
-    readonly pairingData?: string;
-    readonly pairingExpiresAt?: number;
     /** Why the live integration state could not be read. */
     readonly error?: string;
     /** Why the last disconnect attempt was refused. */
     readonly disconnectError?: string;
-    /** Why the last pairing action was refused. */
-    readonly pairingError?: string;
     /** Detail Happy Agent reported for a failed or disconnected integration. */
     readonly message?: string;
     /**
@@ -85,14 +78,10 @@ export interface HappyAgentMobileSettingsProps {
     readonly terminalReadError?: string;
     /** The open destructive confirmation, if any. */
     readonly management?: MobileAccessConfirmationState;
-    /** Opens the shared Desktop mobile setup; absent for remote Agent-only pairing. */
-    readonly onSetup?: () => void;
     /** Opens the terminal sign-out confirmation; absent when the host cannot reset. */
     readonly onTerminalReset?: () => void;
     /** Opens the disconnect confirmation. */
     onDisconnect(): void;
-    onPair(): void;
-    onPairingCancel(): void;
     /** Retries a refused removal without asking again; the person already confirmed. */
     onRemovalRetry?(): void;
     /** Keeps a saved pairing and connects it again. */
@@ -100,16 +89,12 @@ export interface HappyAgentMobileSettingsProps {
     onManagementCancel?(): void;
     onManagementConfirm?(): void;
     onTerminalRegistrationRemovalChange?(remove: boolean): void;
-    /**
-     * Opens pairing with both methods side by side. When present, Connect a
-     * phone opens it whatever the relay's state, and the relay's code is drawn
-     * inside it rather than on its own.
-     */
-    onPairingOptionsOpen?(): void;
+    /** Opens pairing with both methods side by side, whatever the relay's state. */
+    onPairingOptionsOpen(): void;
     /** The open pairing UI (MobilePairingOptions), shown in place of Connect a phone. */
     readonly pairingOptions?: ReactNode;
     /** The direct connection's section body (MobileDirectConnectionSection). */
-    readonly direct?: ReactNode;
+    readonly direct: ReactNode;
 }
 
 interface MobileState {
@@ -123,49 +108,37 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
     const mobile = mobileState(props);
     const blocked = props.unavailable !== undefined;
     const paired = props.configured === true;
-    const combined = props.onPairingOptionsOpen !== undefined;
     return (
         <>
-            {combined ? (
-                <HappyAgentSettingsSection>
-                    {props.unavailable && props.pairingOptions === undefined ? (
-                        <Banner tone="warning" title="Happy Agent unavailable">
-                            {props.unavailable}
-                        </Banner>
-                    ) : null}
-                    {props.pairingOptions ?? (
-                        <FormRow
-                            align="start"
-                            control={
-                                <Button
-                                    disabled={blocked}
-                                    icon="link"
-                                    onClick={() => props.onPairingOptionsOpen?.()}
-                                    size="small"
-                                    variant="primary"
-                                >
-                                    Connect phone
-                                </Button>
-                            }
-                            description="Pair through Happy relay or connect directly. Both codes appear together."
-                            label="Connect a phone"
-                        />
-                    )}
-                </HappyAgentSettingsSection>
-            ) : null}
-            <HappyAgentSettingsSection
-                description={
-                    combined
-                        ? "Through the Happy server, Happy Mobile follows and continues the work running through this Happy Agent."
-                        : "Pairing lets Happy Mobile follow and continue the work running through this Happy Agent."
-                }
-                title={combined ? "Happy relay" : "Happy Mobile"}
-            >
-                {props.unavailable && !combined ? (
+            <HappyAgentSettingsSection>
+                {props.unavailable && props.pairingOptions === undefined ? (
                     <Banner tone="warning" title="Happy Agent unavailable">
                         {props.unavailable}
                     </Banner>
                 ) : null}
+                {props.pairingOptions ?? (
+                    <FormRow
+                        align="start"
+                        control={
+                            <Button
+                                disabled={blocked}
+                                icon="link"
+                                onClick={props.onPairingOptionsOpen}
+                                size="small"
+                                variant="primary"
+                            >
+                                Connect phone
+                            </Button>
+                        }
+                        description="Pair through Happy relay or connect directly. Both codes appear together."
+                        label="Connect a phone"
+                    />
+                )}
+            </HappyAgentSettingsSection>
+            <HappyAgentSettingsSection
+                description="Through the Happy server, Happy Mobile follows and continues the work running through this Happy Agent."
+                title="Happy relay"
+            >
                 {props.error ? (
                     <Banner tone="danger" title="Happy Mobile status unavailable">
                         {props.error}
@@ -204,71 +177,11 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                         {props.disconnectError}
                     </Banner>
                 ) : null}
-                {props.pairingError ? (
-                    <Banner tone="danger" title="Pairing unavailable">
-                        {props.pairingError}
-                    </Banner>
-                ) : null}
                 <FormRow
                     control={<Badge label={mobile.label} variant={mobile.variant} />}
                     description={statusDetail(mobile.description, props)}
                     label="Status"
                 />
-                {!combined && props.status === "pairing" && props.pairingData ? (
-                    <Box className="happy-agent-mobile-settings__pairing">
-                        <QRCode
-                            data={props.pairingData}
-                            data-testid="happy-mobile-settings-pairing-qr"
-                            label="QR code to pair Happy Mobile"
-                            size={240}
-                        />
-                        {/* The payload is opaque: drawn as a QR code or copied as is. */}
-                        <CopyButton
-                            caption="Copy auth link"
-                            copiedCaption="Link copied"
-                            data-testid="happy-mobile-settings-pairing-copy"
-                            label="Copy auth link"
-                            text={props.pairingData}
-                        />
-                        <Box className="happy-agent-mobile-settings__waiting">
-                            <Spinner label="Pairing in progress" size={16} />
-                            <span>{pairingWaitingLabel(props.pairingExpiresAt)}</span>
-                        </Box>
-                        <Button
-                            loading={props.pairingCanceling}
-                            onClick={props.onPairingCancel}
-                            size="small"
-                            variant="ghost"
-                        >
-                            Cancel pairing
-                        </Button>
-                    </Box>
-                ) : null}
-                {!combined &&
-                props.configured === false &&
-                (props.status === "disconnected" || props.status === "failed") ? (
-                    <FormRow
-                        align="start"
-                        control={
-                            <Button
-                                disabled={blocked}
-                                icon="link"
-                                loading={props.pairingStarting}
-                                onClick={props.onPair}
-                                size="small"
-                                variant="primary"
-                            >
-                                Connect phone
-                            </Button>
-                        }
-                        description={
-                            props.onSetup
-                                ? "Get Happy on your phone and link this computer with one pairing code."
-                                : "Start a secure pairing and scan the QR code with Happy Mobile."
-                        }
-                        label="Connect a phone"
-                    />
-                ) : null}
                 {paired ? (
                     <FormRow
                         align="start"
@@ -292,14 +205,12 @@ export function HappyAgentMobileSettings(props: HappyAgentMobileSettingsProps) {
                     />
                 ) : null}
             </HappyAgentSettingsSection>
-            {props.direct ? (
-                <HappyAgentSettingsSection
-                    description="Straight to this computer over a private Tailcat connection, without the Happy server."
-                    title="Direct connection"
-                >
-                    {props.direct}
-                </HappyAgentSettingsSection>
-            ) : null}
+            <HappyAgentSettingsSection
+                description="Straight to this computer over a private Tailcat connection, without the Happy server."
+                title="Direct connection"
+            >
+                {props.direct}
+            </HappyAgentSettingsSection>
             {props.terminal ? (
                 <TerminalSection
                     blocked={blocked || props.disconnecting === true}
@@ -637,13 +548,4 @@ function statusDetail(description: string, props: HappyAgentMobileSettingsProps)
             }).format(props.updatedAt)}.`,
         );
     return parts.join(" ");
-}
-
-function pairingWaitingLabel(expiresAt: number | undefined): string {
-    if (expiresAt === undefined) return "Waiting for your phone…";
-    const expiration = new Intl.DateTimeFormat(undefined, {
-        hour: "numeric",
-        minute: "2-digit",
-    }).format(expiresAt);
-    return `Waiting for your phone · expires ${expiration}`;
 }

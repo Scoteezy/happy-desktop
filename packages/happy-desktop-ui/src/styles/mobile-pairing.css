@@ -381,6 +381,7 @@
 }
 
 .happy-mobile-pairing-options[data-layout="settings"] {
+    container: happy-mobile-pairing-options / inline-size;
     padding: 16px;
     background: var(--surface-high);
     border: 1px solid var(--divider);
@@ -423,6 +424,13 @@
     border: 1px solid var(--divider);
     /* 10px card, 16px inset: the slot sits beyond the card's corner field. */
     border-radius: 8px;
+}
+
+/* A narrow Settings column stacks the slots, so each code keeps its full size. */
+@container happy-mobile-pairing-options (width < 600px) {
+    .happy-mobile-pairing-options__slots {
+        flex-direction: column;
+    }
 }
 
 .happy-mobile-pairing-options__slot-heading {

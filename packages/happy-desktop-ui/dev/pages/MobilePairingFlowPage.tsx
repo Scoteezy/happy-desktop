@@ -1,17 +1,10 @@
 import type { ReactNode } from "react";
 import { DesktopMobileSetup } from "../../src/DesktopMobileSetup";
 import { LocalOnboardingScreen } from "../../src/LocalOnboardingScreen";
-import {
-    MobileDirectConnectionSection,
-    mobileDirectPairingEngaged,
-    type MobileDirectConnectorState,
-    type MobileDirectRemoval,
+import type {
+    MobileDirectConnectorState,
+    MobileDirectRemoval,
 } from "../../src/MobileDirectConnection";
-import {
-    MobilePairingOptions,
-    type MobilePairingOptionsLayout,
-    type MobilePairingOptionsProps,
-} from "../../src/MobilePairingOptions";
 import {
     HappyAgentMobileSettings,
     type HappyAgentMobileSettingsProps,
@@ -22,7 +15,13 @@ import {
 } from "../../src/pages/settings/HappyAgentSettingsShell";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
-import { devices, direct, now, relayCode, relayWaiting } from "./mobilePairingFixtures";
+import { devices, direct, relayWaiting } from "./mobilePairingFixtures";
+import {
+    directSectionSpecimen,
+    pairingOptionsSpecimen,
+    setupPairingOptions,
+    type PairingVariant,
+} from "./mobilePairingSpecimens";
 
 /** The page plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "P-021";
@@ -41,28 +40,9 @@ const categories: readonly HappyAgentSettingsCategory[] = [
 const defaultWindow = { width: 1100, height: 760 } as const;
 const minimumWindow = { width: 720, height: 640 } as const;
 
-type Options = Pick<MobilePairingOptionsProps, "direct" | "relay"> &
-    Partial<MobilePairingOptionsProps>;
-
-function options(layout: MobilePairingOptionsLayout, variant: Options) {
-    return (
-        <MobilePairingOptions
-            layout={layout}
-            now={now}
-            onClose={noop}
-            onDirectConfirm={noop}
-            onDirectErrorAssist={noop}
-            onDirectReject={noop}
-            onDirectStart={noop}
-            onRelayRetry={noop}
-            {...variant}
-        />
-    );
-}
-
 function settings(props: {
     readonly direct: MobileDirectConnectorState;
-    readonly pairing?: Options;
+    readonly pairing?: PairingVariant;
     readonly relay?: Partial<HappyAgentMobileSettingsProps>;
     readonly removal?: MobileDirectRemoval;
     readonly unavailable?: string;
@@ -78,25 +58,15 @@ function settings(props: {
         >
             <HappyAgentMobileSettings
                 configured={false}
-                direct={
-                    <MobileDirectConnectionSection
-                        connector={props.direct}
-                        now={now}
-                        onDeviceRemoveCancel={noop}
-                        onDeviceRemoveConfirm={noop}
-                        onDeviceRemoveRequest={noop}
-                        onErrorAssist={noop}
-                        {...(props.removal ? { removal: props.removal } : {})}
-                        {...(props.unavailable ? { unavailable: props.unavailable } : {})}
-                    />
-                }
+                direct={directSectionSpecimen(props.direct, {
+                    ...(props.removal ? { removal: props.removal } : {}),
+                    ...(props.unavailable ? { unavailable: props.unavailable } : {}),
+                })}
                 onDisconnect={noop}
-                onPair={noop}
-                onPairingCancel={noop}
                 onPairingOptionsOpen={noop}
                 {...(props.pairing
                     ? {
-                          pairingOptions: options("settings", {
+                          pairingOptions: pairingOptionsSpecimen("settings", {
                               ...props.pairing,
                               ...(props.unavailable ? { unavailable: props.unavailable } : {}),
                           }),
@@ -110,36 +80,30 @@ function settings(props: {
     );
 }
 
-function setup(variant: Options) {
+function setup(variant: PairingVariant) {
     return (
         <DesktopMobileSetup
             appearance="dark"
             onboarding
             onContinue={noop}
             onSkip={noop}
-            pairingOptions={{
-                view: options("setup", variant),
-                verifying: mobileDirectPairingEngaged(variant.direct),
-            }}
+            pairingOptions={setupPairingOptions(variant)}
             step={{ kind: "link", phase: { kind: "checking" } }}
         />
     );
 }
 
-function remote(variant: Options) {
+function remote(variant: PairingVariant) {
     return (
         <LocalOnboardingScreen
             appearance="dark"
-            happyMobilePairingOptions={{
-                view: options("setup", variant),
-                verifying: mobileDirectPairingEngaged(variant.direct),
-            }}
+            happyMobilePairingOptions={setupPairingOptions(variant)}
             onAssistantsContinue={noop}
             onConnectRetry={noop}
             onHappyMobileConnect={noop}
             onHappyMobileSkip={noop}
             showSteps
-            view={{ kind: "happy-mobile-pairing", data: relayCode, expiresAt: now + 104_000 }}
+            view={{ kind: "happy-mobile-pairing" }}
         />
     );
 }
@@ -383,11 +347,19 @@ const setupScreens: readonly {
         render: () => setup({ direct: direct.unsupported, relay: relayWaiting }),
     },
     {
+        id: "setup-completed",
+        label: "Onboarding · paired directly, Continue",
+        render: () => setup({ direct: direct.completed, relay: relayWaiting }),
+    },
+    {
         id: "remote-codes",
         label: "Remote onboarding · both codes",
         render: () => remote({ direct: direct.waiting, relay: relayWaiting }),
     },
 ];
+
+/** Settings screens also shown at the smallest window, where the codes stack. */
+const narrowSettingsScreens = new Set(["codes", "verifying", "older-agent", "paired-devices"]);
 
 export function MobilePairingFlowPage() {
     return (
@@ -396,21 +368,27 @@ export function MobilePairingFlowPage() {
             summary="Pairing a phone with both methods side by side, in Settings › Mobile Access and in first-run setup. Each viewport is named for `pnpm blueprint:screens`."
             title="Mobile pairing flow"
         >
-            {settingsScreens.map((screen, index) => {
-                const number = String(index + 1).padStart(2, "0");
-                return (
-                    <FullScreenSpecimen
-                        detail={`${String(defaultWindow.width)} × ${String(defaultWindow.height)}`}
-                        key={screen.id}
-                        label={screen.label}
-                        number={number}
-                        screen={`${number}-${screen.id}-${String(defaultWindow.width)}x${String(defaultWindow.height)}`}
-                        window={defaultWindow}
-                    >
-                        <ThemeScope mode="light">{contained(screen.render())}</ThemeScope>
-                    </FullScreenSpecimen>
-                );
-            })}
+            {[defaultWindow, minimumWindow].flatMap((window) =>
+                settingsScreens.flatMap((screen, index) => {
+                    // The smallest window shows the screens whose layout changes in it.
+                    if (window === minimumWindow && !narrowSettingsScreens.has(screen.id))
+                        return [];
+                    const number = String(index + 1).padStart(2, "0");
+                    const size = `${String(window.width)}x${String(window.height)}`;
+                    return [
+                        <FullScreenSpecimen
+                            detail={`${String(window.width)} × ${String(window.height)}`}
+                            key={`${size}-${screen.id}`}
+                            label={screen.label}
+                            number={number}
+                            screen={`${number}-${screen.id}-${size}`}
+                            window={window}
+                        >
+                            <ThemeScope mode="light">{contained(screen.render())}</ThemeScope>
+                        </FullScreenSpecimen>,
+                    ];
+                }),
+            )}
             {[defaultWindow, minimumWindow].flatMap((window) =>
                 setupScreens.map((screen, index) => {
                     const number = String(settingsScreens.length + index + 1).padStart(2, "0");

@@ -1,5 +1,4 @@
 import { type AssistantMarkName } from "./AssistantMark";
-import { CopyButton } from "./CopyButton";
 import {
     DesktopMobileSetup,
     MobileAppCopy,
@@ -9,7 +8,6 @@ import {
 } from "./DesktopMobileSetup";
 import { OnboardingHelp } from "./OnboardingHelp";
 import { OnboardingSteps, type OnboardingStage } from "./OnboardingSteps";
-import { QRCode } from "./QRCode";
 import {
     SetupAssistants,
     type SetupAssistantAction,
@@ -117,16 +115,8 @@ export type LocalOnboardingView =
           readonly kind: "happy-mobile-offer";
           readonly message?: string;
       }
-    | {
-          readonly data: string;
-          readonly expiresAt: number;
-          readonly kind: "happy-mobile-pairing";
-      }
-    | {
-          readonly busy: boolean;
-          readonly kind: "happy-mobile-failed";
-          readonly message: string;
-      }
+    /** Both pairing codes; each method's state is in `happyMobilePairingOptions`. */
+    | { readonly kind: "happy-mobile-pairing" }
     | {
           /**
            * Mobile setup is answered and the app is opening. The host shows its
@@ -156,11 +146,8 @@ export interface LocalOnboardingScreenProps {
     onHappyMobileConnect(): void;
     onHappyMobileSkip(): void;
     onHappyMobilePlatformSelect?(platform: "ios" | "android"): void;
-    /**
-     * Both pairing methods. When present, linking shows them side by side in
-     * place of the relay-only code and failure pages.
-     */
-    readonly happyMobilePairingOptions?: DesktopMobilePairingOptions;
+    /** Both pairing methods, shown side by side while linking. */
+    readonly happyMobilePairingOptions: DesktopMobilePairingOptions;
 }
 
 /** What a reader is told to run when Happy cannot start their Happy Agent itself. */
@@ -208,12 +195,6 @@ function byteSize(bytes: number): string {
     if (bytes < 1024) return `${String(bytes)} B`;
     if (bytes < 1024 * 1024) return `${String(Math.round(bytes / 1024))} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function pairingExpiration(expiresAt: number): string {
-    return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(
-        expiresAt,
-    );
 }
 
 /**
@@ -560,9 +541,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 onSkip={props.onHappyMobileSkip}
                 onPlatformSelect={props.onHappyMobilePlatformSelect}
                 onExternalOpen={props.onExternalOpen}
-                {...(props.happyMobilePairingOptions === undefined
-                    ? {}
-                    : { pairingOptions: props.happyMobilePairingOptions })}
+                pairingOptions={props.happyMobilePairingOptions}
             />
         );
     // Download, start, discovery, and verification are one machine-setup
@@ -573,7 +552,6 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
             case "happy-mobile-checking":
             case "happy-mobile-offer":
             case "happy-mobile-pairing":
-            case "happy-mobile-failed":
                 return view.kind;
             default:
                 return "local-agent-setup";
@@ -589,12 +567,7 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 stage={localOnboardingStage(view)}
                 {...(props.reachedStage ? { reached: props.reachedStage } : {})}
                 {...(props.onStageSelect ? { onStageSelect: props.onStageSelect } : {})}
-                failed={
-                    view.kind === "node-missing" ||
-                    view.kind === "connect-failed" ||
-                    (view.kind === "happy-mobile-failed" &&
-                        props.happyMobilePairingOptions === undefined)
-                }
+                failed={view.kind === "node-missing" || view.kind === "connect-failed"}
             />
         ) : undefined,
     } as const;
@@ -707,66 +680,24 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
             />
         );
 
-    if (
-        props.happyMobilePairingOptions !== undefined &&
-        (view.kind === "happy-mobile-pairing" || view.kind === "happy-mobile-failed")
-    )
+    if (view.kind === "happy-mobile-pairing")
         return (
             <SetupPage
                 {...frame}
                 className="happy-local-onboarding__mobile happy-local-onboarding__mobile-options"
                 copy={desktopMobilePairingOptionsCopy(props.happyMobilePairingOptions)}
                 data-testid="local-onboarding-screen"
-                secondary={skipMobile}
-                title="Link Mobile App"
+                {...(props.happyMobilePairingOptions.completed
+                    ? { action: { label: "Continue", onSelect: props.onHappyMobileConnect } }
+                    : { secondary: skipMobile })}
+                title={
+                    props.happyMobilePairingOptions.completed
+                        ? "Mobile App Linked"
+                        : "Link Mobile App"
+                }
             >
                 {props.happyMobilePairingOptions.view}
             </SetupPage>
-        );
-
-    if (view.kind === "happy-mobile-pairing")
-        return (
-            <SetupPage
-                {...frame}
-                className="happy-local-onboarding__mobile happy-local-onboarding__mobile-pairing"
-                copy="Open Happy mobile app and scan."
-                data-testid="local-onboarding-screen"
-                secondary={skipMobile}
-                status={{
-                    busy: true,
-                    label: `Waiting for phone · expires ${pairingExpiration(view.expiresAt)}`,
-                }}
-                title="Link Mobile App"
-            >
-                <div className="happy-local-onboarding__mobile-pairing-body">
-                    <QRCode
-                        data={view.data}
-                        data-testid="happy-mobile-pairing-qr"
-                        label="QR code to link your devices"
-                        mark="link"
-                        size={136}
-                    />
-                    <PairingLinkCopy data={view.data} />
-                </div>
-            </SetupPage>
-        );
-
-    if (view.kind === "happy-mobile-failed")
-        return (
-            <SetupPage
-                {...frame}
-                action={{
-                    busy: view.busy,
-                    label: "Try again",
-                    onSelect: props.onHappyMobileConnect,
-                }}
-                className="happy-local-onboarding__mobile"
-                data-testid="local-onboarding-screen"
-                scene="owl"
-                secondary={skipMobile}
-                status={{ label: view.message }}
-                title="Mobile App Didn't Link"
-            />
         );
 
     if (view.kind === "connect-failed")
@@ -804,29 +735,9 @@ export function localOnboardingStage(view: LocalOnboardingView): OnboardingStage
         case "happy-mobile-offer":
             return "get-app";
         case "happy-mobile-pairing":
-        case "happy-mobile-failed":
         case "finishing":
             return "connect-phone";
         default:
             return "setup";
     }
-}
-
-/**
- * The pairing payload, offered as a link for a phone that cannot see the
- * screen. The daemon's contract says this string is either encoded as a QR
- * code or handed over as a copyable deep link, and that it is opaque — so it
- * is copied exactly as it arrived and nothing here reads it.
- */
-function PairingLinkCopy(props: { readonly data: string }) {
-    return (
-        <CopyButton
-            caption="Copy auth link"
-            className="happy-local-onboarding__pairing-link"
-            copiedCaption="Link copied"
-            data-testid="happy-mobile-pairing-copy"
-            label="Copy auth link"
-            text={props.data}
-        />
-    );
 }

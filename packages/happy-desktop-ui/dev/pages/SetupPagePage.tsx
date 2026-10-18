@@ -5,6 +5,9 @@ import { ProfileSetupScreen } from "../../src/ProfileSetupScreen";
 import { SetupHandoff, SetupPage } from "../../src/SetupPage";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import type { MobileRelayPairingState } from "../../src/MobilePairingOptions";
+import { direct, relayWaiting } from "./mobilePairingFixtures";
+import { setupPairingOptions } from "./mobilePairingSpecimens";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-252";
@@ -61,6 +64,14 @@ const mobileSteps: readonly { label: string; step: DesktopMobileSetupStep }[] = 
     { label: "Mobile · connected", step: { kind: "connected", online: true } },
     { label: "Mobile · linked and offline", step: { kind: "connected", online: false } },
 ];
+
+/** The relay slot for a link step, drawn at the fixtures' fixed time. */
+function relayOf(step: DesktopMobileSetupStep): MobileRelayPairingState {
+    if (step.kind !== "link" || step.phase.kind === "checking") return { kind: "starting" };
+    return step.phase.kind === "pairing"
+        ? relayWaiting
+        : { kind: "failed", message: step.phase.message };
+}
 
 /** Setup fills the window, so every specimen gets a window-shaped frame. */
 const frame = {
@@ -306,6 +317,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -335,6 +347,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -355,6 +368,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -398,6 +412,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -441,6 +456,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -482,6 +498,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -506,6 +523,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -550,6 +568,7 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
@@ -570,23 +589,20 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions()}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
                             onHappyMobileConnect={noop}
                             onHappyMobileSkip={noop}
-                            view={{
-                                data: "happy://terminal?eyJ2IjoxLCJwYWlyaW5nSWQiOiJibHVlcHJpbnQtcGFpcmluZyIsIm5vbmNlIjoiaGFwcHktbW9iaWxlIn0",
-                                expiresAt: 1_900_000_000_000,
-                                kind: "happy-mobile-pairing",
-                            }}
+                            view={{ kind: "happy-mobile-pairing" }}
                         />
                     </ThemeScope>
                 </div>
             </Specimen>
 
             <Specimen
-                detail="pairing failure remains optional · retry is local to this step · Skip is still available"
+                detail="a relay failure stays in its own slot · retry is local to it · the direct code and Skip stay available"
                 label="Happy Mobile failure"
                 number="17"
                 stage="surface"
@@ -594,17 +610,20 @@ export function SetupPagePage() {
                 <div style={frame}>
                     <ThemeScope mode="dark">
                         <LocalOnboardingScreen
+                            happyMobilePairingOptions={setupPairingOptions({
+                                direct: direct.waiting,
+                                relay: {
+                                    kind: "failed",
+                                    message:
+                                        "The pairing code expired before Happy Mobile approved it.",
+                                },
+                            })}
                             appearance="dark"
                             onAssistantsContinue={noop}
                             onConnectRetry={noop}
                             onHappyMobileConnect={noop}
                             onHappyMobileSkip={noop}
-                            view={{
-                                busy: false,
-                                kind: "happy-mobile-failed",
-                                message:
-                                    "The pairing code expired before Happy Mobile approved it.",
-                            }}
+                            view={{ kind: "happy-mobile-pairing" }}
                         />
                     </ThemeScope>
                 </div>
@@ -620,6 +639,7 @@ export function SetupPagePage() {
                     <div style={{ ...frame, height: "800px" }} data-progress-specimen={label}>
                         <ThemeScope mode="dark">
                             <LocalOnboardingScreen
+                                happyMobilePairingOptions={setupPairingOptions()}
                                 appearance="dark"
                                 showSteps
                                 view={view}
@@ -649,6 +669,10 @@ export function SetupPagePage() {
                                 onContinue={noop}
                                 onSkip={noop}
                                 onPlatformSelect={noop}
+                                pairingOptions={setupPairingOptions({
+                                    direct: direct.waiting,
+                                    relay: relayOf(step),
+                                })}
                             />
                         </ThemeScope>
                     </div>

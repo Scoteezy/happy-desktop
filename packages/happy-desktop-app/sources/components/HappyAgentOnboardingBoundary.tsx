@@ -1,9 +1,11 @@
 import { useSyncExternalStore, type ReactNode } from "react";
-import type {
-    AppearanceStore,
-    HappyAgentOnboardingStore,
-    HappyAgentProfileStore,
-    WelcomeStore,
+import {
+    happyAgentMobileConnectorStoreNoop,
+    type AppearanceStore,
+    type HappyAgentClockStore,
+    type HappyAgentOnboardingStore,
+    type HappyAgentProfileStore,
+    type WelcomeStore,
 } from "happy-desktop-state";
 import {
     LocalOnboardingScreen,
@@ -12,12 +14,14 @@ import {
     type LocalOnboardingView,
 } from "happy-desktop-ui";
 import { happyAgentWelcomeSlides } from "../onboarding/happyAgentWelcomeSlides";
+import { appMobileRelayFromOnboarding, useAppMobilePairingOptions } from "./AppMobilePairing";
 
 export function HappyAgentOnboardingBoundary(props: {
     readonly store: HappyAgentOnboardingStore;
     readonly welcome: WelcomeStore;
     readonly appearance: AppearanceStore;
     readonly profile: HappyAgentProfileStore;
+    readonly clock: HappyAgentClockStore;
     readonly online: boolean;
     readonly onRetry: () => void;
     readonly onExternalOpen?: (url: string) => void;
@@ -44,6 +48,22 @@ export function HappyAgentOnboardingBoundary(props: {
         props.store.mobile.get,
         props.store.mobile.get,
     );
+    const online = props.online;
+    // The relay offer leads to both codes: the direct pairing opens with it,
+    // and the connector is read only while they are on screen.
+    const pairing =
+        snapshot.state?.completed === false &&
+        (mobile.status === "pairing" || mobile.status === "failed");
+    const pairingOptions = useAppMobilePairingOptions({
+        layout: "setup",
+        relay: appMobileRelayFromOnboarding(mobile),
+        relayStarting: mobile.status === "failed" && mobile.pending,
+        onRelayRetry: props.store.mobile.happyMobileConnect,
+        direct: pairing ? props.store.mobile.direct : happyAgentMobileConnectorStoreNoop,
+        clock: props.clock,
+        online: () => online,
+        ...(online ? {} : { unavailable: "Happy can't reach this Happy Agent right now." }),
+    });
     const profileAvailable = props.online || snapshot.available === true;
     if (!snapshot.state || snapshot.state.completed) return props.children;
     if (!welcome.welcomeAcknowledged)
@@ -98,17 +118,8 @@ export function HappyAgentOnboardingBoundary(props: {
                     ...(mobile.message ? { message: mobile.message } : {}),
                 };
             case "pairing":
-                return {
-                    kind: "happy-mobile-pairing",
-                    data: mobile.data,
-                    expiresAt: mobile.expiresAt,
-                };
             case "failed":
-                return {
-                    kind: "happy-mobile-failed",
-                    busy: mobile.pending || !props.online,
-                    message: mobile.message,
-                };
+                return { kind: "happy-mobile-pairing" };
             case "configured":
             case "disabled":
             case "skipped":
@@ -125,6 +136,7 @@ export function HappyAgentOnboardingBoundary(props: {
             onHappyMobileConnect={props.store.mobile.happyMobileConnect}
             onHappyMobileSkip={props.store.mobile.happyMobileSkip}
             onHappyMobilePlatformSelect={props.store.mobile.happyMobilePlatformSelect}
+            happyMobilePairingOptions={pairingOptions}
         />
     );
 }

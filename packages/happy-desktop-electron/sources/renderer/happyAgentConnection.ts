@@ -11,6 +11,7 @@ import {
     happyAgentDebugLogStoreCreate,
     happyAgentWorkspaceStoreCreate,
     happyAgentOnboardingStoreCreate,
+    happyAgentMobileConnectorStoreCreate,
     welcomeStoreCreate,
     type WelcomeStore,
     type HappyAgentOnboardingStore,
@@ -29,6 +30,7 @@ import {
     type HappyAgentDebugLogStore,
     type HappyAgentHost,
     type HappyAgentIntegrationStore,
+    type HappyAgentMobileConnectorStore,
     type HappyAgentInstructionsStore,
     type HappyAgentModelPreferencePersistence,
     type HappyAgentModelStore,
@@ -110,6 +112,8 @@ export interface HappyAgentSession {
     readonly host: HappyAgentHost;
     readonly models: HappyAgentModelStore;
     readonly happyIntegration: () => HappyAgentIntegrationStore;
+    /** Phones paired directly with this Happy Agent, and the pairing that adds one. */
+    readonly mobileConnector: () => HappyAgentMobileConnectorStore;
     readonly profile: () => HappyAgentProfileStore | undefined;
     readonly providerUsage: HappyAgentProviderUsageStore | undefined;
     readonly providers: HappyAgentProvidersStore;
@@ -395,15 +399,24 @@ export function happyAgentConnectionOpen(input: {
         { deviceBridges: input.deviceBridges ?? false },
     );
     const welcome = welcomeStoreCreate(desktopWelcomePersistence(input.happyAgentId));
+    // One clock and one mobile connector per Happy Agent: onboarding and
+    // Settings show the same pairing, and both count its codes down.
+    const clock = happyAgentClockStoreCreate();
+    const mobileConnector = happyAgentMobileConnectorStoreCreate({
+        client: directClient,
+        sync: agentConnection.sync,
+    });
     const onboarding = happyAgentOnboardingStoreCreate(directClient, agentConnection.sync, {
         setupActive: input.happyAgentId !== "local" && welcome.get().welcomeAcknowledged,
         mobileSkipped: desktopHappyMobileOnboardingSkipped(input.happyAgentId),
         onMobileSkip: () => desktopHappyMobileOnboardingSkip(input.happyAgentId),
         guidedMobileSetup: input.guidedMobileSetup,
+        mobileConnector,
     });
     const client: HappyAgentWorkspaceClient = happyAgentWorkspaceClientCreate({
         client: directClient,
         guidedMobileSetup: input.guidedMobileSetup,
+        mobileConnector,
         cloudHost: input.cloudHost,
         readLegacyCli: input.readLegacyCli,
         resetLegacyCli: input.resetLegacyCli,
@@ -434,7 +447,13 @@ export function happyAgentConnectionOpen(input: {
     const profileStore = client.profile();
     const accountKeepWarm: (() => void)[] = [];
     const setup: AppHappyAgentSetup | undefined = profileStore
-        ? { welcome, onboarding, profile: profileStore, retry: () => agentConnection.retry() }
+        ? {
+              welcome,
+              onboarding,
+              profile: profileStore,
+              clock,
+              retry: () => agentConnection.retry(),
+          }
         : undefined;
 
     let workspace: HappyAgentWorkspaceStore | undefined;
@@ -528,6 +547,7 @@ export function happyAgentConnectionOpen(input: {
                     debugLog,
                     host: input.host,
                     happyIntegration: () => client.happyIntegration(),
+                    mobileConnector: () => client.mobileConnector(),
                     models: client.models,
                     profile: () => profileStore,
                     providerUsage: client.providerUsage(),
@@ -539,7 +559,7 @@ export function happyAgentConnectionOpen(input: {
                     secrets: () => client.secrets(),
                     artifacts: client.artifacts(),
                     surfaces: client.surfaces(),
-                    clock: happyAgentClockStoreCreate(),
+                    clock,
                 };
                 debugEntry({
                     level: "info",
@@ -610,13 +630,14 @@ export function happyAgentConnectionOpen(input: {
             workspace?.[Symbol.dispose]();
             if (session) {
                 session.connection[Symbol.dispose]();
-                session.clock[Symbol.dispose]();
                 session = undefined;
                 sessionConnection = undefined;
             }
             for (const unsubscribe of accountKeepWarm) unsubscribe();
             onboarding[Symbol.dispose]();
             client[Symbol.dispose]();
+            mobileConnector[Symbol.dispose]();
+            clock[Symbol.dispose]();
             mutationListeners.clear();
             agentConnection.close();
         },

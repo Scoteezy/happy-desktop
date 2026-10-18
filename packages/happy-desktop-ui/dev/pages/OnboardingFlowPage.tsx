@@ -6,6 +6,7 @@ import type { WelcomeSlide } from "../../src/WelcomeDeck";
 import { WelcomeScreen } from "../../src/WelcomeScreen";
 import { SplashCover } from "../../src/SplashCover";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
+import { setupPairingOptions } from "./mobilePairingSpecimens";
 
 /** The page plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "P-014";
@@ -36,6 +37,7 @@ function onboarding(
 ) {
     return (
         <LocalOnboardingScreen
+            happyMobilePairingOptions={setupPairingOptions()}
             agentPromptsOpen={agentPromptsOpen}
             appearance={appearance}
             onAssistantsContinue={noop}

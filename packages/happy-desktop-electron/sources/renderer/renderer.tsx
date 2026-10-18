@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import {
     DesktopStartupScreen,
+    appMobileRelayFromLink,
+    appMobileRelayFromOnboarding,
+    useAppMobilePairingOptions,
     happyAgentHistoryCreate,
     happyAgentWelcomeSlides,
     happyAgentRouterConversationOpen,
@@ -37,7 +40,10 @@ import {
     happyAgentSettingsStoreOwnedCreate,
     happyAgentAttentionConnection,
     happyAgentAttentionStoreOwnedCreate,
+    happyAgentClockStoreCreate,
+    happyAgentMobileConnectorStoreNoop,
     type AppearanceStore,
+    type HappyAgentClockStore,
     type HappyAgentAttentionStore,
     type HappyAgentCompletionSound,
     type CommandPaletteStore,
@@ -439,6 +445,7 @@ function DesktopOnboardingGate(props: {
     appearance: AppearanceStore;
     bridge: HappyDesktopBridge;
     children: ReactNode;
+    clock: HappyAgentClockStore;
     platform: "desktop" | "web";
     store: LocalOnboardingStore;
 }) {
@@ -448,11 +455,29 @@ function DesktopOnboardingGate(props: {
         props.appearance.get,
         props.appearance.get,
     );
+    const view = snapshot.onboarding ? localOnboardingView(snapshot) : undefined;
+    const linkPhase =
+        view?.kind === "happy-mobile-desktop" && view.step.kind === "link"
+            ? view.step.phase
+            : undefined;
+    // Linking offers both codes; the direct connector is read only while it does.
+    const linking = linkPhase !== undefined || view?.kind === "happy-mobile-pairing";
+    const pairingOptions = useAppMobilePairingOptions({
+        layout: "setup",
+        relay: linkPhase
+            ? appMobileRelayFromLink(linkPhase)
+            : snapshot.happyMobile
+              ? appMobileRelayFromOnboarding(snapshot.happyMobile)
+              : { kind: "starting" },
+        onRelayRetry: () => props.store.happyMobileConnect(),
+        direct: linking ? props.store.happyMobileDirect() : happyAgentMobileConnectorStoreNoop,
+        clock: props.clock,
+        online: () => true,
+    });
     // Nothing has answered yet, so nothing is known to be owed. On an ordinary
     // launch the boot cover holds the window meanwhile; a first launch spends
     // that time on the welcome.
     if (!snapshot.onboarding) return null;
-    const view = localOnboardingView(snapshot);
     const reached = localOnboardingReachedStage(snapshot);
     // The interface is the final onboarding step. Keep the sidebar (+) usable
     // while Chief of Staff's unsent draft is being prepared in the background.
@@ -478,6 +503,7 @@ function DesktopOnboardingGate(props: {
             onHappyMobilePlatformSelect={(platform) =>
                 props.store.happyMobilePlatformSelect(platform)
             }
+            happyMobilePairingOptions={pairingOptions}
             onStageSelect={(stage) => {
                 if (stage === "setup" || stage === "subscriptions") props.store.stepBack(stage);
             }}
@@ -507,6 +533,9 @@ function DesktopOnboardingGate(props: {
  */
 
 /** True while the runtime is working on, or running, this machine's own Happy Agent. */
+/** Counts setup's pairing codes down. It ticks only while one is on screen. */
+const onboardingClock = happyAgentClockStoreCreate();
+
 function desktopLocalPhase(snapshot: DesktopRuntimeSnapshot): boolean {
     if (snapshot.phase === "choosing") return false;
     if (snapshot.phase === "ready") return snapshot.mode === "local";
@@ -771,6 +800,7 @@ function DesktopLocalScreens(props: DesktopRendererProps) {
             <DesktopOnboardingGate
                 appearance={props.appearance}
                 bridge={props.bridge}
+                clock={onboardingClock}
                 platform={props.platform}
                 store={props.onboarding}
             >

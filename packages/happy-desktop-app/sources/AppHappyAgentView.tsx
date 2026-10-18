@@ -453,6 +453,8 @@ export interface AppHappyAgentSetup {
     readonly welcome: import("happy-desktop-state").WelcomeStore;
     readonly onboarding: import("happy-desktop-state").HappyAgentOnboardingStore;
     readonly profile: HappyAgentProfileStore;
+    /** Counts pairing codes down during setup, before the session's stores load. */
+    readonly clock: HappyAgentClockStore;
     readonly retry: () => void;
 }
 
@@ -472,6 +474,8 @@ export interface AppHappyAgentSession {
     readonly models: HappyAgentModelStore;
     /** This Happy Agent installation's live Happy Mobile integration. */
     readonly happyIntegration?: () => HappyAgentIntegrationStore;
+    /** Phones paired directly with this Happy Agent, and the pairing that adds one. */
+    readonly mobileConnector?: () => import("happy-desktop-state").HappyAgentMobileConnectorStore;
     readonly workspace: HappyAgentWorkspaceStore;
     /**
      * Every question this Happy Agent's agents are waiting on. Absent when the machine

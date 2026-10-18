@@ -10,6 +10,8 @@ import {
 } from "../../src/pages/settings/HappyAgentSettingsShell";
 import type { MobileAccessTerminalResetPreview } from "../../src/MobileAccessConfirmation";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
+import { direct, relayWaiting } from "./mobilePairingFixtures";
+import { directSectionSpecimen, pairingOptionsSpecimen } from "./mobilePairingSpecimens";
 
 /** The page plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "P-015";
@@ -68,11 +70,10 @@ const handlers = {
     onDisconnect: noop,
     onManagementCancel: noop,
     onManagementConfirm: noop,
-    onPair: noop,
-    onPairingCancel: noop,
-    onSetup: noop,
+    onPairingOptionsOpen: noop,
     onTerminalRegistrationRemovalChange: noop,
     onTerminalReset: noop,
+    direct: directSectionSpecimen(),
 } satisfies Partial<HappyAgentMobileSettingsProps>;
 
 /** A local Agent with a saved pairing; each screen overrides only what it is about. */
@@ -103,13 +104,15 @@ const screens: readonly {
     },
     {
         id: "pairing",
-        label: "Pairing · QR code and auth link",
+        label: "Pairing · both codes",
         props: {
             ...handlers,
             configured: false,
             status: "pairing",
-            pairingData: "happy://pair?authorization=blueprint-happy-mobile",
-            pairingExpiresAt: 1_924_992_000_000,
+            pairingOptions: pairingOptionsSpecimen("settings", {
+                direct: direct.waiting,
+                relay: relayWaiting,
+            }),
             terminal: terminalSignedOut,
             terminalSetupSupport: "standalone",
         },

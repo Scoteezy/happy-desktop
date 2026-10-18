@@ -39,6 +39,7 @@ import {
     happyAgentCloudStoreNoop,
     happyAgentAvailabilityProject,
     happyAgentIntegrationStoreNoop,
+    happyAgentMobileConnectorStoreNoop,
     happyAgentIntegrationRemovalIncomplete,
     happyAgentVersionAtLeast,
     HAPPY_AGENT_COMPUTER_REMOVAL_VERSION,
@@ -80,6 +81,12 @@ import {
     type HappyAgentStateDocument,
 } from "happy-desktop-ui";
 import { HappyAgentVersionProvider } from "../HappyAgentVersionProvider";
+import {
+    AppMobileDirectSection,
+    appMobilePairingOptions,
+    appMobileRelayFromIntegration,
+    appMobileRelayFromLink,
+} from "../components/AppMobilePairing";
 import type { SelectOption } from "happy-desktop-ui";
 import { hostHappyAgent, type AppHappyAgentDirectoryStore } from "../AppHappyAgentView";
 
@@ -476,6 +483,16 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         happyIntegrationStore.get,
         happyIntegrationStore.get,
     );
+    // Phones paired directly, and the direct half of every pairing this
+    // category opens. Its pairing code is secret, so Dev Tools never prints it.
+    const mobileConnectorStore =
+        (section === "mobile-access" ? host?.session?.mobileConnector?.() : undefined) ??
+        happyAgentMobileConnectorStoreNoop;
+    const mobileConnector = useSyncExternalStore(
+        mobileConnectorStore.subscribe,
+        mobileConnectorStore.get,
+        mobileConnectorStore.get,
+    );
     // Subscribing is what starts the read, so the instructions are asked for
     // only while this window is open, and only once however often it is.
     const instructionsStore = host?.session?.instructions;
@@ -591,18 +608,35 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         model?.model && !model.model.thinkingLevels.includes(settings.defaultEffort)
             ? model.model.defaultThinkingLevel
             : settings.defaultEffort;
-    if (section === "mobile-access" && happyIntegration.setup && happyIntegrationStore.mobileSetup)
+    const sessionClock = host?.session?.clock;
+    const mobileSetup = happyIntegrationStore.mobileSetup;
+    if (section === "mobile-access" && happyIntegration.setup && mobileSetup && sessionClock) {
+        const step = happyIntegration.setup;
         return (
             <HappyAgentVersionProvider lastKnownVersion={host?.version}>
                 <DesktopMobileSetup
                     appearance={appearance.mode}
-                    step={happyIntegration.setup}
-                    onContinue={happyIntegrationStore.mobileSetup.continue}
-                    onSkip={happyIntegrationStore.mobileSetup.close}
-                    onPlatformSelect={happyIntegrationStore.mobileSetup.platformSelect}
+                    step={step}
+                    onContinue={mobileSetup.continue}
+                    onSkip={mobileSetup.close}
+                    onPlatformSelect={mobileSetup.platformSelect}
+                    pairingOptions={appMobilePairingOptions({
+                        layout: "setup",
+                        relay:
+                            step.kind === "link"
+                                ? appMobileRelayFromLink(step.phase)
+                                : { kind: "starting" },
+                        onRelayRetry: mobileSetup.continue,
+                        direct: mobileConnectorStore,
+                        snapshot: mobileConnector,
+                        clock: sessionClock,
+                        online: happyAgentOnline,
+                        ...(unavailable === undefined ? {} : { unavailable }),
+                    })}
                 />
             </HappyAgentVersionProvider>
         );
+    }
     const content = (
         <HappyAgentSettingsShell
             activeCategoryId={section}
@@ -756,7 +790,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     onTerminalRegistrationRemovalChange={
                         happyIntegrationStore.terminalCliRegistrationRemovalUpdate
                     }
-                    onSetup={happyIntegrationStore.mobileSetup?.start}
                     // What Disconnect does depends on the running Agent: from
                     // this version it deletes the computer from the account.
                     removesComputer={happyAgentVersionAtLeast(
@@ -775,24 +808,44 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         if (happyAgentOnline())
                             happyIntegrationStore.happyIntegrationDisconnectRequest();
                     }}
-                    onPair={() => {
-                        if (happyAgentOnline()) happyIntegrationStore.happyIntegrationPair();
+                    onPairingOptionsOpen={() => {
+                        if (!happyAgentOnline()) return;
+                        // The local desktop walks through getting the app first.
+                        if (mobileSetup) mobileSetup.start();
+                        else happyIntegrationStore.happyIntegrationPairingOpen();
                     }}
-                    onPairingCancel={() => {
-                        if (happyAgentOnline())
-                            happyIntegrationStore.happyIntegrationPairingCancel();
-                    }}
-                    pairingCanceling={happyIntegration.pairingCanceling}
-                    pairingData={happyIntegration.pairing?.data}
-                    pairingExpiresAt={happyIntegration.pairing?.expiresAt}
+                    {...(happyIntegration.pairingOpen && sessionClock
+                        ? {
+                              pairingOptions: appMobilePairingOptions({
+                                  layout: "settings",
+                                  relay: appMobileRelayFromIntegration(happyIntegration),
+                                  relayStarting: happyIntegration.pairingStarting,
+                                  onRelayRetry: happyIntegrationStore.happyIntegrationPair,
+                                  direct: mobileConnectorStore,
+                                  snapshot: mobileConnector,
+                                  clock: sessionClock,
+                                  online: happyAgentOnline,
+                                  onClose: happyIntegrationStore.happyIntegrationPairingClose,
+                                  ...(unavailable === undefined ? {} : { unavailable }),
+                              }).view,
+                          }
+                        : {})}
+                    direct={
+                        sessionClock ? (
+                            <AppMobileDirectSection
+                                direct={mobileConnectorStore}
+                                snapshot={mobileConnector}
+                                clock={sessionClock}
+                                online={happyAgentOnline}
+                                {...(unavailable === undefined ? {} : { unavailable })}
+                            />
+                        ) : null
+                    }
                     pairingStarting={happyIntegration.pairingStarting}
                     status={happyIntegration.status}
                     {...(happyIntegration.error ? { error: happyIntegration.error.message } : {})}
                     {...(happyIntegration.disconnectError
                         ? { disconnectError: happyIntegration.disconnectError.message }
-                        : {})}
-                    {...(happyIntegration.pairingError
-                        ? { pairingError: happyIntegration.pairingError.message }
                         : {})}
                     {...(happyIntegration.message ? { message: happyIntegration.message } : {})}
                     {...(unavailable === undefined ? {} : { unavailable })}
