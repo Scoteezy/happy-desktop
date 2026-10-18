@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { readFile, rm } from "node:fs/promises";
+import { open, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
@@ -49,6 +49,9 @@ run(["exec", "vite", "build", "--config", "vite.main.config.ts"]);
 run(["exec", "vite", "build", "--config", "vite.preload.config.ts"]);
 const output = join(desktop, "release", flavor.output);
 await rm(output, { recursive: true, force: true });
+// usb ships prebuilds for every platform, and signing every .node file refuses
+// another platform's binary, so the Windows package keeps only win32 prebuilds.
+const otherPlatformPrebuilds = "!node_modules/usb/prebuilds/{android,darwin,linux}-*{,/**}";
 await build({
     projectDir: desktop,
     publish: "never",
@@ -66,20 +69,40 @@ await build({
         artifactName: `${flavor.artifactPrefix}-\${version}-\${arch}.\${ext}`,
         extraMetadata: { name: flavor.updaterCacheDirName.replace(/-updater$/u, "") },
         directories: { ...metadata.build.directories, output },
-        ...(flavorName === "local-web"
-            ? {
-                  files: [
+        files: [
+            ...(flavorName === "local-web"
+                ? [
                       "dist/*.js",
                       "dist/assets/**/*.js",
                       "dist/preload.cjs",
                       "assets/app-icon/generated/app-icon.png",
                       "package.json",
-                  ],
-              }
-            : {}),
+                  ]
+                : metadata.build.files),
+            otherPlatformPrebuilds,
+        ],
         publish: { ...metadata.build.publish, channel: flavor.channel },
     },
 });
+const unpacked = join(output, "win-unpacked", "resources", "app.asar.unpacked");
+const prebuilds = await readdir(join(unpacked, "node_modules", "usb", "prebuilds"));
+console.log(`Packaged usb prebuilds: ${prebuilds.join(", ")}`);
+if (prebuilds.length === 0 || prebuilds.some((name) => !name.startsWith("win32-"))) {
+    throw new Error(
+        `The Windows package must hold only win32 usb prebuilds: ${prebuilds.join(", ")}`,
+    );
+}
+for (const entry of await readdir(unpacked, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".node")) continue;
+    const path = join(entry.parentPath, entry.name);
+    const file = await open(path);
+    const { buffer } = await file.read({ buffer: Buffer.alloc(2), position: 0 });
+    await file.close();
+    if (buffer.toString("latin1") !== "MZ") {
+        throw new Error(`Packaged native module is not a Windows binary: ${path}`);
+    }
+    console.log(`Packaged Windows native module: ${path}`);
+}
 const updater = parse(
     await readFile(join(output, "win-unpacked", "resources", "app-update.yml"), "utf8"),
 );

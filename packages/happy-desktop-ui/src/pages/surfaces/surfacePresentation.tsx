@@ -41,8 +41,8 @@ export function surfaceTypeIcon(type: HappyAgentSurfaceType): IconName {
             return "tasks";
         case "document":
             return "doc";
-        case "separator":
-            return "hash";
+        case "calendar":
+            return "calendar";
         case "artifact":
             return "package";
         case "bot":
@@ -61,8 +61,8 @@ export function surfaceTypeLabel(type: HappyAgentSurfaceType): string {
             return "Todo list";
         case "document":
             return "Document";
-        case "separator":
-            return "Separator";
+        case "calendar":
+            return "Calendar";
         case "artifact":
             return "Artifact";
         case "bot":

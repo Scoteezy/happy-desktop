@@ -115,6 +115,12 @@ export interface HappyAgentArtifactVersion {
     readonly createdBy: HappyAgentArtifactAuthor;
     readonly source: HappyAgentArtifactSource | null;
     readonly createdAt: number;
+    /**
+     * The hex colour this version asks to be shown on. Absent means none —
+     * the daemon sent `null`, left the field out, or sent something that is
+     * not a hex colour — and the version is drawn on whatever surface holds it.
+     */
+    readonly background?: string;
 }
 
 /**

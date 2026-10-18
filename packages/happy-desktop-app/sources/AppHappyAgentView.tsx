@@ -130,6 +130,8 @@ import {
     happyAgentArtifactCatalogStoreNoop,
     happyAgentArtifactChatContext,
     happyAgentSurfaceCatalogStoreNoop,
+    happyAgentSurfaceSupportStoreNone,
+    calendarTimeZones,
     happyAgentSurfaceReferenceFind,
     happyAgentSurfaceChatSupported,
     type HappyAgentSurfaceReference,
@@ -164,10 +166,12 @@ import {
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
     type HappyAgentSurfaceCreateKind,
+    type HappyAgentSurfaceSupportSnapshot,
     type HappyAgentSurfaceId,
     type HappyAgentSurfaces,
     type HappyAgentTodoListStore,
     type HappyAgentSurfaceDocumentStore,
+    type HappyAgentCalendarStore,
 } from "happy-desktop-state";
 import {
     type AgentWaitStatus,
@@ -239,6 +243,9 @@ import {
     type HappyAgentSurfaceChatToggle,
     HappyAgentTodoSurfacePage,
     HappyAgentDocumentSurfacePage,
+    HappyAgentCalendarSurfacePage,
+    type HappyAgentDocumentSurfaceContent,
+    type DocumentEditorUser,
     surfaceTypeIcon,
     type HappyAgentSurfaceMemberView,
     type HappyAgentSurfaceView,
@@ -2329,15 +2336,37 @@ const SURFACE_CREATE_OFFERS: readonly {
 }[] = [
     { kind: "todo", icon: "tasks", label: "New todo list" },
     { kind: "document", icon: "doc", label: "New document" },
-    { kind: "separator", icon: "hash", label: "New separator" },
+    { kind: "calendar", icon: "calendar", label: "New calendar" },
 ];
 
-const SURFACE_CREATE_MENU: MenuItem[] = SURFACE_CREATE_OFFERS.map((offer) => ({
-    kind: "item",
-    id: offer.kind,
-    icon: offer.icon,
-    label: offer.label,
-}));
+/**
+ * The + menu: a document only from a Happy Agent that serves collaborative
+ * documents, since an older one can show a document but nobody can write it,
+ * and a calendar only from one that serves calendars.
+ */
+function surfaceCreateMenu(support: HappyAgentSurfaceSupportSnapshot): MenuItem[] {
+    return SURFACE_CREATE_OFFERS.filter(
+        (offer) =>
+            (offer.kind !== "document" || support.documents === "supported") &&
+            (offer.kind !== "calendar" || support.calendars === "supported"),
+    ).map((offer) => ({ kind: "item", id: offer.kind, icon: offer.icon, label: offer.label }));
+}
+
+/** The tones a person's caret can wear in a shared document. */
+const PERSON_TONES = ["violet", "ember", "mint", "ocean", "rose", "amber"] as const;
+
+/**
+ * The reader as everyone else in a shared document sees their caret: their
+ * name, and a tone fixed by who they are, so it is the same in every document
+ * and every window.
+ */
+function documentUserOf(catalog: HappyAgentSurfaceCatalogSnapshot): DocumentEditorUser {
+    const userId = catalog.viewer?.userId ?? null;
+    const person = userId === null ? catalog.profile : catalog.users.get(userId);
+    let hash = 0;
+    for (const character of userId ?? "") hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    return { name: person?.name ?? "Someone", tone: PERSON_TONES[hash % PERSON_TONES.length]! };
+}
 
 /** The Surface a row id names, or nothing for any other row. */
 function surfaceRowParse(rowId: string): HappyAgentSurfaceId | undefined {
@@ -2393,27 +2422,23 @@ function surfaceViewOf(
 /**
  * A Surface's row: its own name and picture whatever its type, with Leave on
  * one the reader joined and Join on one a search found. A joined todo list
- * also says how many of its todos are still open. A separator joined to the
- * sidebar is a heading over the Surfaces after it; found by a search, where
- * nothing comes after it, it is a row like the others.
+ * also says how many of its todos are still open.
  */
 function surfaceSidebarItem(
     happyAgentId: string,
     surface: HappyAgentSurface,
     places: SurfacePlaces,
-    listing: "sidebar" | "search",
     joined: boolean,
     offline: boolean,
     activeTodoCounts?: ReadonlyMap<HappyAgentSurfaceId, number>,
 ): SidebarItem {
     const count = joined ? activeTodoCounts?.get(surface.id) : undefined;
-    const heading = listing === "sidebar" && surface.type.kind === "separator";
     const label = surfaceLabel(surface);
     return {
         id: happyAgentItemId(happyAgentId, surfaceRowId(surface.id)),
-        kind: heading ? "heading" : "project",
+        kind: "project",
         label,
-        ...(heading ? {} : surfaceFace(surface, places)),
+        ...surfaceFace(surface, places),
         ...(count !== undefined && count > 0 ? { count } : {}),
         ...(joined ? {} : { reorderable: false }),
         action: joined
@@ -2540,7 +2565,6 @@ function happyAgentTopSection(
                           happyAgentId,
                           surface,
                           surfacePlacesOf(happyAgent),
-                          "sidebar",
                           true,
                           offline,
                           activeTodoCounts,
@@ -2633,7 +2657,6 @@ function happyAgentSearchSections(
                                     happyAgent.id,
                                     surface,
                                     surfacePlacesOf(happyAgent),
-                                    "search",
                                     true,
                                     offline,
                                     activeTodoCounts,
@@ -2649,7 +2672,6 @@ function happyAgentSearchSections(
                                 happyAgent.id,
                                 surface,
                                 surfacePlacesOf(happyAgent),
-                                "search",
                                 false,
                                 offline,
                             ),
@@ -3179,6 +3201,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         surfaceCatalogStore.get,
         surfaceCatalogStore.get,
     );
+    const surfaceSupportStore =
+        active?.session?.surfaces?.support() ?? happyAgentSurfaceSupportStoreNone;
+    const surfaceSupport = useSyncExternalStore(
+        surfaceSupportStore.subscribe,
+        surfaceSupportStore.get,
+        surfaceSupportStore.get,
+    );
     /**
      * Opens what an artifact, bot, or task Surface points at, where it always
      * opens: the artifact viewer, or the bot's or task's own chat. Answers
@@ -3320,7 +3349,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           disabled: active?.status !== "connected",
                           icon: "plus" as const,
                           label: "New Surface",
-                          menu: SURFACE_CREATE_MENU,
+                          menu: surfaceCreateMenu(surfaceSupport),
                       },
                       onHeaderMenuSelect: (id: string) => {
                           const offer = SURFACE_CREATE_OFFERS.find((entry) => entry.kind === id);
@@ -3639,8 +3668,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         ?.catalog()
                         .get()
                         .surfaces.find((entry) => entry.id === surfaceId);
-                    // A separator has nothing to open; it only heads a group.
-                    if (surface?.type.kind === "separator") return;
                     // An artifact, bot, or task opens where it always does;
                     // only one that cannot be opened from here shows its page.
                     if (surface !== undefined && surfaceTargetOpen(happyAgent, surface)) return;
@@ -4089,6 +4116,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             )
                             .catch(() => undefined);
                     }}
+                    clock={session.clock}
                     places={surfacePlacesOf(active)}
                     surfaceId={props.surfaceId as HappyAgentSurfaceId}
                     surfaces={active.session.surfaces}
@@ -4291,12 +4319,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     onSubmit={(input) => {
                         // The list exists the moment it is asked for, so it is
                         // opened at once; the Happy Agent hears in the background.
-                        // A separator has no page, so the open one stays; a new
-                        // document opens ready to be written in.
                         const surfaceId = surfaceCatalogStore.surfaceCreate(input);
-                        if (surfaceId === undefined || input.kind === "separator") return;
-                        if (input.kind === "document")
-                            active.session?.surfaces?.document(surfaceId).editStart();
+                        if (surfaceId === undefined) return;
                         props.onSurfaceOpen?.(active.id, surfaceId);
                     }}
                 />
@@ -5168,6 +5192,8 @@ const SURFACE_CHAT_PANEL_WIDTH = 420;
 function HappyAgentSurfaceContent(props: {
     surfaces: HappyAgentSurfaces;
     surfaceId: HappyAgentSurfaceId;
+    /** The connection's clock, which a calendar's line across today follows. */
+    clock: HappyAgentClockStore;
     places: SurfacePlaces;
     /** Opens what an artifact, bot, or task Surface points at, joining a task first. */
     onTargetOpen: (surface: HappyAgentSurface) => void;
@@ -5191,8 +5217,8 @@ function HappyAgentSurfaceContent(props: {
     // Until the catalog names it the page is simply empty: a list made here is
     // in the catalog the moment it is asked for, and one opened on launch
     // appears as the catalog arrives, so there is no loader or error to show.
-    // A separator has no page; a route that names one shows nothing. One the
-    // reader made here and the Happy Agent turned down says why instead.
+    // One the reader made here and the Happy Agent turned down says why
+    // instead.
     if (surface === undefined) {
         const refusal = catalog.createsRefused.get(props.surfaceId);
         return refusal === undefined ? (
@@ -5205,7 +5231,6 @@ function HappyAgentSurfaceContent(props: {
             />
         );
     }
-    if (surface.type.kind === "separator") return <WindowDragRegion />;
     const view = surfaceViewOf(catalog, surface);
     const opening = catalog.chatsOpening.get(surface.id);
     // Shown from the moment it is asked for, so the reader sees it being made.
@@ -5261,6 +5286,16 @@ function HappyAgentSurfaceContent(props: {
                     {...(chat ? { chat } : {})}
                     focusOnType={!conversationShown}
                     store={props.surfaces.document(surface.id)}
+                    surface={view}
+                    user={documentUserOf(catalog)}
+                />
+            );
+        if (surface.type.kind === "calendar")
+            return (
+                <HappyAgentCalendarSurface
+                    {...(chat ? { chat } : {})}
+                    clock={props.clock}
+                    store={props.surfaces.calendar(surface.id)}
                     surface={view}
                 />
             );
@@ -5434,21 +5469,96 @@ function surfaceReferenceView(
 function HappyAgentDocumentSurface(props: {
     store: HappyAgentSurfaceDocumentStore;
     surface: HappyAgentSurfaceView;
+    user: DocumentEditorUser;
     chat?: HappyAgentSurfaceChatToggle;
     focusOnType: boolean;
 }) {
     const store = props.store;
     const document = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const content = ((): HappyAgentDocumentSurfaceContent => {
+        switch (document.status) {
+            case "loading":
+            case "missing":
+                return { kind: document.status };
+            case "readOnly":
+                return { kind: "readOnly", text: document.text };
+            case "live":
+                return {
+                    kind: "live",
+                    ydoc: document.ydoc,
+                    user: props.user,
+                    presence: document.presence,
+                    onPresence: store.presenceUpdate,
+                    onPointerPress: store.pointerPressUpdate,
+                    sync: document.sync,
+                    ...(document.failure === undefined
+                        ? {}
+                        : { failure: document.failure.message }),
+                };
+        }
+    })();
     return (
         <HappyAgentDocumentSurfacePage
             {...(props.chat ? { chat: props.chat } : {})}
-            document={document}
+            content={content}
+            // A document made here opens with the caret in its empty first line.
+            {...(document.status === "live" && document.madeHere
+                ? { focusKey: document.surfaceId }
+                : {})}
             focusOnType={props.focusOnType}
-            onConflictDismiss={store.conflictDismiss}
-            onEditEnd={store.editEnd}
-            onEditStart={store.editStart}
-            onTextChange={store.textUpdate}
             surface={props.surface}
+        />
+    );
+}
+
+/** The minute a clock is in, so a calendar redraws once a minute rather than every tick. */
+function clockMinuteOf(clock: HappyAgentClockStore): number {
+    return Math.floor(clock.get() / 60_000) * 60_000;
+}
+
+/** A calendar Surface, read from its own store for as long as it is on screen. */
+function HappyAgentCalendarSurface(props: {
+    store: HappyAgentCalendarStore;
+    surface: HappyAgentSurfaceView;
+    clock: HappyAgentClockStore;
+    chat?: HappyAgentSurfaceChatToggle;
+}) {
+    const store = props.store;
+    const calendar = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const now = useSyncExternalStore(
+        props.clock.subscribe,
+        () => clockMinuteOf(props.clock),
+        () => clockMinuteOf(props.clock),
+    );
+    return (
+        <HappyAgentCalendarSurfacePage
+            {...(props.chat ? { chat: props.chat } : {})}
+            calendar={calendar}
+            now={now}
+            onAllDayChange={store.editorAllDayUpdate}
+            onClose={store.editorClose}
+            onDelete={store.editorDelete}
+            onDraftMove={store.editorTimingUpdate}
+            onDraftOpen={store.draftOpen}
+            onEndDateChange={store.editorEndDateUpdate}
+            onEndMinutesChange={store.editorEndMinutesUpdate}
+            onFailureDismiss={store.failureDismiss}
+            onLocationChange={store.editorLocationUpdate}
+            onNotesChange={store.editorNotesUpdate}
+            onOccurrenceMove={store.occurrenceTimingUpdate}
+            onOccurrenceOpen={store.occurrenceEditOpen}
+            onPeriodStep={store.periodStep}
+            onRecurrenceChange={store.editorRecurrenceUpdate}
+            onSave={store.editorSave}
+            onStartDateChange={store.editorStartDateUpdate}
+            onStartMinutesChange={store.editorStartMinutesUpdate}
+            onTimeZoneChange={store.editorTimeZoneUpdate}
+            onTitleChange={store.editorTitleUpdate}
+            onTodayShow={store.todayShow}
+            onViewChange={store.viewUpdate}
+            onWeekShow={store.weekShow}
+            surface={props.surface}
+            timeZones={calendarTimeZones()}
         />
     );
 }

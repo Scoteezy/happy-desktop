@@ -349,6 +349,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                     className={props.activityAuthor ? undefined : props.className}
                     data-testid={props["data-testid"]}
                     reason={entry.text}
+                    error={entry.error}
                     style={props.activityAuthor ? undefined : props.style}
                     title={conversationErrorTitle(entry)}
                     tone={entry.retry ? "warning" : "error"}
@@ -362,7 +363,9 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                     className={props.activityAuthor ? undefined : props.className}
                     icon={NOTICE_ICON[entry.level]}
                     style={props.activityAuthor ? undefined : props.style}
-                    text={SYSTEM_NOTIFICATION_LABEL}
+                    text={
+                        entry.variant === "configuration" ? entry.text : SYSTEM_NOTIFICATION_LABEL
+                    }
                 />
             );
         /* A turn can fail before it does anything else, and then these notices

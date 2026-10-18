@@ -99,21 +99,7 @@ export type SidebarItem = {
     id: string;
     imageUrl?: string;
     initials?: string;
-    /**
-     * What the row is drawn as. A `heading` is a row that names the rows after
-     * it: only its label, quieter than a row and with no mark, yet placed,
-     * dragged, and acted on like any other row in its section.
-     */
-    kind:
-        | "view"
-        | "channel"
-        | "workspace"
-        | "project"
-        | "person"
-        | "agent"
-        | "folder"
-        | "action"
-        | "heading";
+    kind: "view" | "channel" | "workspace" | "project" | "person" | "agent" | "folder" | "action";
     label: string;
     /** Whether a busy or creating row shimmers its label. Defaults to true. */
     labelShimmer?: boolean;
@@ -492,7 +478,6 @@ function leadingIcon(item: SidebarItem): IconName {
  * carries it.
  */
 function showsLeadingSlot(item: SidebarItem): boolean {
-    if (item.kind === "heading") return false;
     if (item.contextAvatars?.length) return true;
     if ((item.depth ?? 0) === 0) return true;
     if (item.kind === "person" || item.kind === "agent" || item.kind === "project") return true;

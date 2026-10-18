@@ -2,11 +2,17 @@ import type { HappyAgentChatStore } from "./happyAgentChatStore.js";
 
 /**
  * The draft after adding `message` below what is already there, separated by a
- * blank line, or `undefined` when the draft already ends with it — a repeated
+ * blank line, or `undefined` when the draft already contains it — a repeated
  * request leaves an unchanged suggestion as it is rather than doubling it.
  */
 export function happyAgentDraftAppended(existing: string, message: string): string | undefined {
-    if (existing === message || existing.endsWith(`\n\n${message}`)) return undefined;
+    if (
+        existing === message ||
+        existing.startsWith(`${message}\n\n`) ||
+        existing.endsWith(`\n\n${message}`) ||
+        existing.includes(`\n\n${message}\n\n`)
+    )
+        return undefined;
     return existing ? `${existing}\n\n${message}` : message;
 }
 
@@ -17,12 +23,13 @@ export function happyAgentDraftAppended(existing: string, message: string): stri
  * access mode.
  */
 export async function happyAgentChatDraftAppend(
-    store: Pick<HappyAgentChatStore, "get" | "subscribe" | "draftSet">,
+    store: Pick<HappyAgentChatStore, "get" | "subscribe" | "draftSet" | "draftAppendConfirmed">,
     message: string,
     options: {
         readonly updatedAt: () => number;
         readonly origin: string;
         readonly closed: () => boolean;
+        readonly confirmed?: boolean;
     },
 ): Promise<void> {
     // Read the existing draft before adding anything. Acquiring a chat starts
@@ -58,6 +65,10 @@ export async function happyAgentChatDraftAppend(
         else check();
     });
     if (options.closed()) throw new Error("This workspace is no longer open.");
+    if (options.confirmed) {
+        await store.draftAppendConfirmed(message, options.updatedAt());
+        return;
+    }
     const next = happyAgentDraftAppended(store.get().draft ?? "", message);
     if (next === undefined) return;
     await store.draftSet(next, options.updatedAt(), options.origin);

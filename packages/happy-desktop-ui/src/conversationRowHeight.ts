@@ -39,6 +39,7 @@ import { SYSTEM_NOTIFICATION_HEIGHT } from "./systemNotification";
 import { agentTraceMetaStats, agentTraceMetaTitle } from "./agentTraceMeta";
 import { conversationErrorTitle } from "./conversationErrorTitle";
 import { conversationErrorAssistanceText } from "./conversationErrorAssistanceText";
+import { conversationErrorDetails } from "./conversationErrorDetails";
 import {
     MEDIA_SINGLE_MAX_W,
     MESSAGE_MEDIA_MAX,
@@ -712,9 +713,11 @@ export function conversationRowHeight(
                 : 0;
         if (entry.level === "error" || entry.retry !== undefined) {
             const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
-            const assistance = context.errorAssistance
-                ? conversationErrorAssistanceText(context.errorAssistance)
-                : undefined;
+            const assistance =
+                context.errorAssistance &&
+                (!entry.error || entry.error.recovery.actions.includes("ask_chief"))
+                    ? conversationErrorAssistanceText(context.errorAssistance)
+                    : undefined;
             return rowHeightCached(
                 cache,
                 entry,
@@ -724,6 +727,22 @@ export function conversationRowHeight(
                     ERROR_TEXT_CHROME +
                     errorTextHeight(conversationErrorTitle(entry), measure, cache?.text, true) +
                     errorTextHeight(entry.text, measure, cache?.text) +
+                    [
+                        ...conversationErrorDetails(entry.error),
+                        ...(entry.error?.recovery.steps ?? []),
+                    ].reduce(
+                        (height, text) => height + 4 + errorTextHeight(text, measure, cache?.text),
+                        0,
+                    ) +
+                    (entry.error?.recovery.commands ?? []).reduce(
+                        (height, command) =>
+                            height +
+                            4 +
+                            errorTextHeight(command.label, measure, cache?.text) +
+                            4 +
+                            36,
+                        0,
+                    ) +
                     (assistance
                         ? 4 +
                           errorTextHeight(assistance.label, measure, cache?.text) +

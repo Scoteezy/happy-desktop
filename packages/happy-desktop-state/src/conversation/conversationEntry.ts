@@ -429,7 +429,7 @@ interface ConversationNoticeEntryBase {
 /** The ordinary service line and the section boundary that closes a turn. */
 export interface ConversationServiceNoticeEntry extends ConversationNoticeEntryBase {
     /** `divider` closes a section (a completed turn); `notice` is a service line. */
-    readonly variant: "notice" | "divider";
+    readonly variant: "notice" | "divider" | "configuration";
     readonly level: "info" | "warning" | "error";
     /** Automatic recovery attempt represented by this notice. */
     readonly retry?: {
@@ -439,15 +439,46 @@ export interface ConversationServiceNoticeEntry extends ConversationNoticeEntryB
     readonly title?: string;
     /** Explicit durable provenance for a user-requested diagnostic handoff. */
     readonly source?: { readonly messageId: string; readonly runId: string };
+    /** Execution facts and manual recovery supplied by the daemon, never the composer. */
+    readonly error?: ConversationError;
+}
+
+export interface ConversationExecutionMode {
+    readonly providerId: string;
+    readonly providerType?: string;
+    readonly account?: { readonly id: string; readonly label?: string } | null;
+    readonly modelId: string;
+    readonly effort: string;
+    readonly serviceTier: string | null;
+    readonly permissionMode: "read_only" | "workspace_write" | "auto" | "full_access";
+}
+
+/** Public, read-only execution evidence; commands are manual copy-only suggestions. */
+export interface ConversationError {
+    readonly code: string;
+    readonly mode: ConversationExecutionMode | null;
+    /** Catalog presentation label only; the persisted model ID remains in mode. */
+    readonly modelName?: string;
+    readonly credentialSource: {
+        readonly kind: string;
+        readonly location: string;
+        readonly host: string | null;
+    } | null;
+    readonly recovery: {
+        readonly steps: readonly string[];
+        readonly actions: readonly string[];
+        readonly commands?: readonly { readonly label: string; readonly command: string }[];
+    };
 }
 
 /**
  * Whether an error can be handed to the Chief of Staff. A handoff writes that
- * conversation's draft and opens it, so once written it is ready again.
+ * conversation's draft and opens it; a prepared handoff is not sent.
  */
 export type ConversationErrorAssistance =
     | { readonly status: "ready" }
     | { readonly status: "pending" }
+    | { readonly status: "prepared" }
     | { readonly status: "failed"; readonly reason: string }
     | { readonly status: "unavailable"; readonly reason: string };
 
@@ -521,7 +552,9 @@ export type ConversationNoticeEntry =
  * machine never came up.
  */
 export function noticeInformational(entry: ConversationNoticeEntry): boolean {
-    return entry.variant === "compute" ? entry.state !== "failed" : entry.level === "info";
+    return entry.variant === "compute"
+        ? entry.state !== "failed"
+        : entry.variant !== "configuration" && entry.level === "info";
 }
 
 /**

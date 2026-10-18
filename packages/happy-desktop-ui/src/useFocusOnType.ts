@@ -101,7 +101,7 @@ function typingIsUnclaimed(event: KeyboardEvent, control: HTMLElement): boolean 
  * control stays mounted across the move. Leave it out to never take the caret.
  */
 export function useFocusOnType(
-    control: RefObject<HTMLInputElement | HTMLTextAreaElement | null>,
+    control: RefObject<HTMLElement | null>,
     claimTyping: boolean,
     focusKey: string | undefined,
 ): void {

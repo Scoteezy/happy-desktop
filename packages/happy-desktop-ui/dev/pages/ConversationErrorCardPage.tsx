@@ -1,4 +1,5 @@
 import { ConversationErrorCard } from "../../src/ConversationErrorCard";
+import { SystemNotice } from "../../src/Message";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
 export const componentNumber = "C-283";
@@ -10,6 +11,69 @@ export function ConversationErrorCardPage() {
             summary="Full diagnostic text stays readable in the transcript: paragraphs and indentation are preserved, long identifiers wrap, and the one way out is Ask Chief of Staff, which receives the error itself."
             title="Conversation error card"
         >
+            <Specimen
+                label="Source-specific manual recovery"
+                number="05"
+                detail="Manual steps and exact Copy stay usable without Chief of Staff. Nothing executes or sends automatically."
+                stage="surface"
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "24px",
+                        width: "760px",
+                    }}
+                >
+                    <ConversationErrorCard
+                        title="Authentication failed"
+                        reason={
+                            "The provider rejected authentication.\n\nYour conversation and draft are preserved."
+                        }
+                        assistance={{
+                            status: "unavailable",
+                            reason: "Chief of Staff is not available on this Happy Agent.",
+                        }}
+                        error={{
+                            code: "authentication_failed",
+                            mode: {
+                                providerId: "claude",
+                                providerType: "claude",
+                                account: null,
+                                modelId: "anthropic/opus-5-5",
+                                effort: "high",
+                                permissionMode: "auto",
+                                serviceTier: null,
+                            },
+                            credentialSource: {
+                                kind: "native_login",
+                                location: "Claude Code sign-in (default configuration)",
+                                host: "Agent host",
+                            },
+                            recovery: {
+                                steps: [
+                                    "Retry this chat first.",
+                                    "If it still fails, run the sign-in command on Agent host as the same operating-system user that runs the agent, then retry this chat.",
+                                ],
+                                actions: ["ask_chief"],
+                                commands: [
+                                    {
+                                        label: "Sign in to Claude Code",
+                                        command: "claude auth login",
+                                    },
+                                ],
+                            },
+                        }}
+                    />
+                    <ConversationErrorCard
+                        title="Failure"
+                        reason="The provider connection closed."
+                        assistance={{ status: "prepared" }}
+                    />
+                    <SystemNotice align="start" text="Model Opus 5.5 → Sonnet 5.5" />
+                    <SystemNotice align="start" text="Account Work → Personal" />
+                </div>
+            </Specimen>
             <Specimen
                 detail="Heading and reason stay separate; there is no copy or log button."
                 label="Short failure"

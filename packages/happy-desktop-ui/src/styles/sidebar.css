@@ -738,33 +738,6 @@
     color: var(--text);
 }
 
-/*
- * A heading row names the rows after it, so it reads as a label rather than a
- * place to go: no fill under the pointer, its name set on the row's floor to
- * sit with the rows it heads, and in the quieter weight of a section's own
- * label. It is still a row, so it keeps the row's height and is dragged and
- * acted on like one.
- */
-.happy-sidebar__item[data-kind="heading"] {
-    align-items: flex-end;
-    padding-bottom: 4px;
-    cursor: default;
-}
-
-.happy-sidebar__item[data-kind="heading"]:hover {
-    background: transparent;
-}
-
-.happy-sidebar__item[data-kind="heading"] .happy-sidebar__item-label {
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.happy-sidebar__item[data-kind="heading"] .happy-sidebar__item-trailing {
-    align-self: center;
-}
-
 /* The horizontal elbow from the parent-owned stem into one nested row. */
 .happy-sidebar__item-branch {
     position: relative;

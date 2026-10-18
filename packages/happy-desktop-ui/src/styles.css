@@ -94,6 +94,8 @@
 @import "./styles/file-path-label.css";
 @import "./styles/markdown-document.css";
 @import "./styles/mermaid-diagram.css";
+@import "katex/dist/katex.min.css";
+@import "./styles/math-formula.css";
 @import "./styles/file-preview.css";
 @import "./styles/image-viewer.css";
 @import "./styles/video-viewer.css";
@@ -102,7 +104,7 @@
 @import "./styles/changed-file-diff.css";
 @import "./styles/code-block.css";
 @import "./styles/code-editor.css";
-@import "./styles/document-surface.css";
+@import "./styles/document-editor.css";
 @import "./styles/media-gallery.css";
 @import "./styles/file-attachment.css";
 @import "./styles/result-card.css";
@@ -159,6 +161,7 @@
 @import "./styles/happy-agent-task-browse-dialog.css";
 @import "./styles/reordering-list.css";
 @import "./styles/happy-agent-surfaces.css";
+@import "./styles/happy-agent-calendar.css";
 @import "./styles/workspace-lifecycle-notice.css";
 @import "./styles/connections.css";
 @import "./styles/window-chrome.css";

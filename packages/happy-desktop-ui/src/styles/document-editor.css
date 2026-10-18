@@ -1,0 +1,458 @@
+@import "@blocknote/react/style.css";
+
+/*
+ * The shared document editor. BlockNote lays out and edits the blocks; this
+ * file restates every colour, face, and size it draws in the house tokens, on
+ * the same reading measure and type scale as the Markdown reader, so a
+ * document reads the same whether it is being written or not.
+ */
+
+.happy-document-editor {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+}
+
+.happy-document-editor .bn-container {
+    --bn-font-family: var(--happy-font-ui);
+    --bn-border-radius: var(--happy-radius-sm);
+    --bn-colors-editor-text: var(--text);
+    --bn-colors-editor-background: transparent;
+    --bn-colors-menu-text: var(--text);
+    --bn-colors-menu-background: var(--surface);
+    --bn-colors-tooltip-text: var(--text);
+    --bn-colors-tooltip-background: var(--surface-high);
+    --bn-colors-hovered-text: var(--text);
+    --bn-colors-hovered-background: var(--surface-ripple);
+    /* Selection is a shade, not a hue, as in the product's own lists. */
+    --bn-colors-selected-text: var(--text);
+    --bn-colors-selected-background: var(--surface-selected);
+    --bn-colors-disabled-text: var(--text-secondary);
+    --bn-colors-disabled-background: var(--input-background);
+    --bn-colors-border: var(--divider);
+    --bn-colors-side-menu: var(--text-secondary);
+    --bn-colors-shadow: var(--shadow-color);
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* The editable column: the reader's 768px measure, its text on the same 704px
+   line, with the gutters wide enough for the side menu beside each block. */
+.happy-document-editor .bn-editor {
+    box-sizing: border-box;
+    flex: 1 0 auto;
+    align-self: center;
+    width: 100%;
+    max-width: 832px;
+    padding: 24px 64px 64px;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text);
+    caret-color: var(--radio-active);
+    font-family: var(--happy-font-ui);
+    font-size: 15px;
+    font-weight: 400;
+    font-synthesis: none;
+    -webkit-font-smoothing: auto;
+}
+
+.happy-document-editor .bn-default-styles {
+    font-family: var(--happy-font-ui);
+    font-size: 15px;
+}
+
+.happy-document-editor .bn-block-outer {
+    line-height: 24px;
+}
+
+/* Typing is not an animation: a line made a heading is already that size. */
+.happy-document-editor .bn-block-outer,
+.happy-document-editor .bn-block-content,
+.happy-document-editor .bn-block-content::before {
+    transition: none;
+}
+
+.happy-document-editor ::selection {
+    background: var(--surface-selected);
+}
+
+/* ---- Headings, on the reader's scale ------------------------------------ */
+
+.happy-document-editor [data-content-type="heading"] {
+    padding-top: 16px;
+    letter-spacing: -0.01em;
+    --level: 28px;
+}
+
+.happy-document-editor [data-content-type="heading"][data-level="2"] {
+    --level: 21px;
+}
+
+.happy-document-editor [data-content-type="heading"][data-level="3"] {
+    --level: 17px;
+}
+
+.happy-document-editor [data-content-type="heading"][data-level="4"],
+.happy-document-editor [data-content-type="heading"][data-level="5"],
+.happy-document-editor [data-content-type="heading"][data-level="6"] {
+    --level: 15px;
+}
+
+.happy-document-editor [data-content-type="heading"] .bn-inline-content {
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+/* The first level carries no level attribute; its element says it. */
+.happy-document-editor [data-content-type="heading"] h1.bn-inline-content {
+    font-weight: 700;
+}
+
+/* ---- Inline -------------------------------------------------------------- */
+
+.happy-document-editor .bn-inline-content strong {
+    font-weight: 700;
+}
+
+.happy-document-editor .bn-inline-content code {
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: var(--surface-pressed);
+    color: var(--text);
+    font-family: var(--happy-font-mono);
+    font-size: 13px;
+}
+
+.happy-document-editor .bn-inline-content a {
+    color: var(--text-link);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* Placeholders sit where text will, in the quiet secondary ink. */
+.happy-document-editor .bn-block-content:has(.ProseMirror-trailingBreak:only-child)::after {
+    color: var(--text-secondary);
+    font-style: normal;
+}
+
+/* ---- Blocks -------------------------------------------------------------- */
+
+.happy-document-editor [data-content-type="quote"] blockquote {
+    border-left: 2px solid var(--divider);
+    color: var(--text-secondary);
+}
+
+.happy-document-editor [data-content-type="divider"] hr {
+    border-top: 1px solid var(--divider);
+}
+
+.happy-document-editor .bn-block-content[data-content-type="checkListItem"] > div > input {
+    accent-color: var(--radio-active);
+}
+
+.happy-document-editor
+    .bn-block-content[data-content-type="checkListItem"][data-checked="true"]
+    .bn-inline-content {
+    color: var(--text-secondary);
+}
+
+.happy-document-editor .bn-block-content[data-content-type="codeBlock"] {
+    margin-block: 4px;
+    border-radius: var(--happy-radius-sm);
+    background: var(--surface-pressed);
+    color: var(--text);
+}
+
+.happy-document-editor .bn-block-content[data-content-type="codeBlock"] > pre {
+    padding: 12px 16px;
+    font-family: var(--happy-font-mono);
+    font-size: 12.5px;
+    line-height: 20px;
+}
+
+/* The language picker is a bare native select BlockNote leaves unstyled. */
+.happy-document-editor .bn-block-content[data-content-type="codeBlock"] > div > select {
+    display: none;
+}
+
+.happy-document-editor .bn-block-content.ProseMirror-selectednode > *,
+.happy-document-editor .ProseMirror-selectednode > .bn-block-content > * {
+    outline: 2px solid var(--text-secondary);
+}
+
+.happy-document-editor .bn-drag-preview,
+.happy-document-editor .bn-table-drop-cursor,
+.happy-document-editor .ProseMirror-dropcursor {
+    background-color: var(--radio-active);
+}
+
+/* ---- Other people's carets ----------------------------------------------
+   Each person's caret and name wear their avatar's tone, with its white ink. */
+
+.happy-document-editor .bn-collaboration-cursor__caret,
+.happy-document-editor .bn-collaboration-cursor__label {
+    background: var(--text-secondary);
+}
+
+.happy-document-editor .bn-collaboration-cursor__label,
+.happy-document-editor .bn-collaboration-cursor__base[data-active] .bn-collaboration-cursor__label {
+    color: var(--button-primary-tint);
+    font-family: var(--happy-font-ui);
+}
+
+.happy-document-editor .bn-collaboration-cursor__base[data-active] .bn-collaboration-cursor__label {
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 14px;
+    transition: none;
+}
+
+.happy-document-editor
+    .bn-collaboration-cursor__base[data-tone="violet"]
+    :is(.bn-collaboration-cursor__caret, .bn-collaboration-cursor__label) {
+    background: var(--radio-active);
+}
+
+.happy-document-editor
+    .bn-collaboration-cursor__base[data-tone="ember"]
+    :is(.bn-collaboration-cursor__caret, .bn-collaboration-cursor__label) {
+    background: var(--text-destructive);
+}
+
+.happy-document-editor
+    .bn-collaboration-cursor__base[data-tone="mint"]
+    :is(.bn-collaboration-cursor__caret, .bn-collaboration-cursor__label) {
+    background: var(--success);
+}
+
+.happy-document-editor
+    .bn-collaboration-cursor__base[data-tone="ocean"]
+    :is(.bn-collaboration-cursor__caret, .bn-collaboration-cursor__label) {
+    background: var(--text-link);
+}
+
+.happy-document-editor
+    .bn-collaboration-cursor__base[data-tone="rose"]
+    :is(.bn-collaboration-cursor__caret, .bn-collaboration-cursor__label) {
+    background: var(--delete-action);
+}
+
+.happy-document-editor
+    .bn-collaboration-cursor__base[data-tone="amber"]
+    :is(.bn-collaboration-cursor__caret, .bn-collaboration-cursor__label) {
+    background: var(--box-warning-border);
+}
+
+.happy-document-editor
+    .bn-collaboration-cursor__base[data-tone="brand"]
+    :is(.bn-collaboration-cursor__caret, .bn-collaboration-cursor__label) {
+    background: var(--button-primary-background);
+}
+
+/* ---- Menus and bars ------------------------------------------------------ */
+
+/* The slash menu: the shared menu card, its rows scrolling inside it. */
+.happy-document-editor__menu {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 220px;
+    max-height: 320px;
+    overflow: hidden;
+    border: 1px solid var(--modal-border);
+    border-radius: var(--happy-radius-md);
+    background: var(--surface);
+    box-shadow: 0 2px 8px var(--shadow-color);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.happy-document-editor__menu-list {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.happy-document-editor__menu-rows {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    padding: 4px;
+}
+
+.happy-document-editor__menu-item {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 28px;
+    margin: 0;
+    padding: 0 8px;
+    border: none;
+    /* 10px card radius minus the 5px border-box inset, as the shared menu. */
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-size: 13px;
+    line-height: 18px;
+    text-align: left;
+    appearance: none;
+    cursor: pointer;
+}
+
+.happy-document-editor__menu-item:hover,
+.happy-document-editor__menu-item[data-selected] {
+    background: var(--surface-ripple);
+}
+
+.happy-document-editor__menu-icon {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--text-secondary);
+}
+
+.happy-document-editor__menu-label {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* A floating bar over the text: square icon buttons on one card. */
+.happy-document-editor__bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px;
+    border: 1px solid var(--modal-border);
+    border-radius: var(--happy-radius-md);
+    background: var(--surface);
+    box-shadow: 0 2px 8px var(--shadow-color);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-document-editor__bar-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    /* 10px card radius minus the 5px border-box inset (1px border + 4px padding). */
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.happy-document-editor__bar-button:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-document-editor__bar-button[aria-pressed="true"] {
+    background: var(--surface-selected);
+    color: var(--text);
+}
+
+.happy-document-editor__bar-button:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: -2px;
+}
+
+.happy-document-editor__bar-rule {
+    flex: none;
+    width: 1px;
+    height: 16px;
+    margin: 0 4px;
+    background: var(--divider);
+}
+
+.happy-document-editor__bar-url {
+    flex: 0 1 auto;
+    max-width: 240px;
+    padding: 0 6px;
+    overflow: hidden;
+    color: var(--text-link);
+    font-size: 13px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-document-editor__link-form {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0;
+}
+
+.happy-document-editor__link-field {
+    box-sizing: border-box;
+    width: 240px;
+    height: 28px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 5px;
+    outline: none;
+    background: var(--input-background);
+    color: var(--input-text);
+    font-family: var(--happy-font-ui);
+    font-size: 13px;
+}
+
+.happy-document-editor__link-field::placeholder {
+    color: var(--input-placeholder);
+}
+
+/* Beside the block under the pointer: + and the drag handle. */
+.happy-document-editor__side-menu {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding-right: 4px;
+}
+
+.happy-document-editor__side-button {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.happy-document-editor__side-button:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-document-editor__side-button[draggable="true"] {
+    cursor: grab;
+}

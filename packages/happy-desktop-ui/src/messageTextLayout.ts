@@ -10,9 +10,18 @@ import {
 import {
     measureRichInlineStats,
     prepareRichInline,
+    walkRichInlineLineRanges,
     type PreparedRichInline,
     type RichInlineItem,
 } from "@chenglou/pretext/rich-inline";
+import {
+    mathDisplayHeightMeasure,
+    mathFontsSubscribe,
+    mathFormulaRender,
+    mathInlineBoxMeasure,
+    mathLayoutClear,
+    type MathInlineBox,
+} from "./mathFormulaRender";
 import {
     MERMAID_DIAGRAM_BORDER,
     mermaidDiagramMeasure,
@@ -164,11 +173,15 @@ function watchFonts() {
     void Promise.all([
         document.fonts.load(`16px ${UI_FAMILY}`),
         document.fonts.load(`14px ${MONO_FAMILY}`),
-    ]).then(() => {
-        fontGeneration += 1;
-        clearCache();
-        for (const listener of fontListeners) listener();
-    });
+    ]).then(fontGenerationAdvance);
+    /* KaTeX's faces are requested the first time a formula is measured. */
+    mathFontsSubscribe(fontGenerationAdvance);
+}
+function fontGenerationAdvance() {
+    fontGeneration += 1;
+    clearCache();
+    mathLayoutClear();
+    for (const listener of fontListeners) listener();
 }
 /** Current generation of the faces every text estimate was resolved against. */
 export function messageTextLayoutFontGenerationGet(): number {
@@ -311,6 +324,14 @@ function runHeight(
     return height;
 }
 
+/**
+ * One rich-inline item of a Markdown run. A typeset formula is a single atomic
+ * item whose advance is its measured width and which carries its line-box
+ * extents, so the line it lands on grows to fit it exactly as CSS does.
+ */
+type MarkdownInlineItem = RichInlineItem & { math?: MathInlineBox };
+/** Stand-in glyph for a formula item; its own advance is subtracted again. */
+const MATH_PLACEHOLDER = "x";
 function preparedRichItems(
     items: readonly RichInlineItem[],
     cache: MessageTextLayoutCache,
@@ -332,7 +353,7 @@ function preparedRichItems(
     return value;
 }
 function richItemsHeight(
-    items: readonly RichInlineItem[],
+    items: readonly MarkdownInlineItem[],
     lineHeight: number,
     measure: number,
     cache: MessageTextLayoutCache,
@@ -344,11 +365,26 @@ function richItemsHeight(
     /* Pretext can hang a token slightly beyond its supplied measure. Keep the
        one-layout-unit tolerance only when the resulting line also stays inside
        that contract; otherwise resolve the real, unrelaxed line break. */
-    const stats =
-        relaxed.maxLineWidth <= relaxedMeasure
-            ? relaxed
-            : measureRichInlineStats(measured, measure);
-    return Math.max(1, stats.lineCount) * lineHeight;
+    const fits = relaxed.maxLineWidth <= relaxedMeasure;
+    const stats = fits ? relaxed : measureRichInlineStats(measured, measure);
+    if (!items.some((item) => item.math !== undefined))
+        return Math.max(1, stats.lineCount) * lineHeight;
+    /* A line holding a formula is as tall as the highest ascent plus the
+       deepest descent on it; each extent was measured with the line's own
+       strut, so a formula that fits the line leaves it at `lineHeight`. */
+    let height = 0;
+    walkRichInlineLineRanges(measured, fits ? relaxedMeasure : measure, (line) => {
+        let ascent = 0;
+        let descent = 0;
+        for (const fragment of line.fragments) {
+            const box = items[fragment.itemIndex]?.math;
+            if (box === undefined) continue;
+            ascent = Math.max(ascent, box.ascent);
+            descent = Math.max(descent, box.descent);
+        }
+        height += Math.max(lineHeight, ascent + descent);
+    });
+    return Math.max(lineHeight, height);
 }
 function richItemsNaturalWidth(
     items: readonly RichInlineItem[],
@@ -372,6 +408,8 @@ type MarkdownInlineStyle = {
     readonly italic: boolean;
     readonly size: number;
     readonly weight: number;
+    /** CSS line height of the block this run sets in; formulas are measured on it. */
+    readonly line: number;
 };
 function markdownInlineFont(style: MarkdownInlineStyle): string {
     return `${style.italic ? "italic " : ""}${style.weight === 400 ? "" : `${String(style.weight)} `}${String(style.size)}px ${UI_FAMILY}`;
@@ -384,7 +422,7 @@ function markdownImageLabel(node: Extract<MarkdownPhrasing, { type: "image" }>):
  * that preceding word; it cannot start a new line independently just because
  * Markdown represented the two fonts as separate nodes. */
 function markdownInlineLeadingTokenAttach(
-    items: RichInlineItem[],
+    items: MarkdownInlineItem[],
     text: string,
     font: string,
     cache: MessageTextLayoutCache,
@@ -421,7 +459,7 @@ function markdownInlineFragmentItems(
     endExtraWidth: number,
     cache: MessageTextLayoutCache,
     decoratedFlow = false,
-): RichInlineItem[] {
+): MarkdownInlineItem[] {
     /* `overflow-wrap: break-word` emergency-breaks the glyph run, not an intact
        word whose text fits and whose inline start/end decoration alone hangs
        beyond the measure. Keep that word atomic and let its box chrome occupy
@@ -440,7 +478,7 @@ function markdownInlineFragmentItems(
             },
         ];
     const graphemes = [...GRAPHEME_SEGMENTER.segment(text)].map((part) => part.segment);
-    const items: RichInlineItem[] = [];
+    const items: MarkdownInlineItem[] = [];
     let graphemeIndex = 0;
     let first = true;
     while (graphemeIndex < graphemes.length) {
@@ -498,7 +536,7 @@ function markdownInlineFragmentItems(
 function markdownInlineItemsAppend(
     node: MarkdownPhrasing,
     style: MarkdownInlineStyle,
-    runs: RichInlineItem[][],
+    runs: MarkdownInlineItem[][],
     cache: MessageTextLayoutCache,
     footnotes: MarkdownFootnotes,
     measure: number,
@@ -644,6 +682,56 @@ function markdownInlineItemsAppend(
         });
         return;
     }
+    if (node.type === "inlineMath") {
+        const rendered = mathFormulaRender(node.value, false);
+        /* An unparseable formula renders as inline code of its source. */
+        if (rendered.kind === "failed") {
+            markdownInlineItemsAppend(
+                { type: "inlineCode", value: node.value },
+                style,
+                runs,
+                cache,
+                footnotes,
+                measure,
+                bindDecoratedPunctuation,
+                fragmentLong,
+                atomic,
+            );
+            return;
+        }
+        const font = markdownInlineFont(style);
+        const box = mathInlineBoxMeasure(node.value, rendered.html, {
+            family: UI_FAMILY,
+            lineHeight: style.line,
+            size: style.size,
+        });
+        /* Blink may break between a word and a formula that touches it; Gecko
+           keeps that word on the formula's line. Either way the text after a
+           formula stays with it (`$n$-th`, `$x$,`), which the leading-token
+           attachment of the next text node already models. */
+        const previous = current().at(-1);
+        let attached = 0;
+        if (
+            GECKO_INLINE_SLICE &&
+            previous !== undefined &&
+            previous.break !== "never" &&
+            (previous.extraWidth ?? 0) === 0
+        ) {
+            const word = /\S+$/u.exec(previous.text)?.[0];
+            if (word !== undefined) {
+                attached = naturalTextWidth(word, previous.font, cache);
+                previous.text = previous.text.slice(0, -word.length);
+            }
+        }
+        current().push({
+            break: "never",
+            extraWidth: attached + box.width - naturalTextWidth(MATH_PLACEHOLDER, font, cache),
+            font,
+            math: box,
+            text: MATH_PLACEHOLDER,
+        });
+        return;
+    }
     if (node.type === "html") return;
     const nestedStyle: MarkdownInlineStyle =
         node.type === "strong"
@@ -668,7 +756,7 @@ function markdownInlineItemsAppend(
         );
 }
 function markdownTrailingInlineApply(
-    runs: RichInlineItem[][],
+    runs: MarkdownInlineItem[][],
     lastChildStart: { readonly item: number; readonly run: number },
     lastChild: MarkdownPhrasing,
     trailingExtraWidth: number,
@@ -707,10 +795,20 @@ function markdownTrailingInlineApply(
     if (childItems.length === 0) return;
     const childWidth = richItemsNaturalWidth(childItems, cache);
     const spaceWidth = naturalTextWidth("\u00a0", baseFont, cache);
+    /* The run becomes one item; a formula in it still sets its line's height. */
+    let math: MathInlineBox | undefined;
+    for (const item of childItems)
+        if (item.math !== undefined)
+            math = {
+                ascent: Math.max(math?.ascent ?? 0, item.math.ascent),
+                descent: Math.max(math?.descent ?? 0, item.math.descent),
+                width: 0,
+            };
     finalRun.push({
         break: "never",
         extraWidth: Math.max(0, childWidth + trailingExtraWidth - spaceWidth),
         font: baseFont,
+        ...(math === undefined ? {} : { math }),
         text: "\u00a0",
     });
 }
@@ -723,9 +821,9 @@ function markdownInlineRuns(
     trailingExtraWidth: number,
     task: boolean,
     suffixText: string,
-): readonly RichInlineItem[][] {
+): readonly MarkdownInlineItem[][] {
     const baseFont = markdownInlineFont(style);
-    const runs: RichInlineItem[][] = [[]];
+    const runs: MarkdownInlineItem[][] = [[]];
     if (task) {
         runs[0]!.push({
             break: "never",
@@ -813,6 +911,7 @@ function markdownInlineHasLineBox(children: readonly MarkdownPhrasing[]): boolea
         if (node.type === "text") return /[^\t\n\r ]/u.test(node.value);
         if (
             node.type === "inlineCode" ||
+            node.type === "inlineMath" ||
             node.type === "break" ||
             node.type === "image" ||
             node.type === "imageReference" ||
@@ -897,6 +996,7 @@ function markdownFootnoteReferenceCollect(
     if (
         node.type === "text" ||
         node.type === "inlineCode" ||
+        node.type === "inlineMath" ||
         node.type === "break" ||
         node.type === "image" ||
         node.type === "imageReference" ||
@@ -1040,11 +1140,15 @@ function markdownListHeight(
                siblings of a following nested list, and the 6px child-block
                gap paints. Spread items keep `<p>` and always take the gap. */
             const previous = item.children[index - 1];
+            const tight = !list.spread && !item.spread;
+            /* An unwrapped paragraph after a block (a display formula lifted
+               out of its text) is bare inline content: a vertical margin on
+               its inline elements does not apply, so no gap paints either. */
             const gap =
-                previous?.type === "paragraph" &&
-                !list.spread &&
-                !item.spread &&
-                !markdownPhrasingPaintsElement(previous.children)
+                tight &&
+                ((previous?.type === "paragraph" &&
+                    !markdownPhrasingPaintsElement(previous.children)) ||
+                    item.children[index]?.type === "paragraph")
                     ? 0
                     : LIST_ITEM_GAP;
             itemHeight += gap + blocks[index]!.height;
@@ -1075,6 +1179,15 @@ function mermaidBlockHeight(
     return dimensions === null ? sourceHeight : mermaidDiagramNaturalHeight(dimensions, measure);
 }
 
+/** A fenced code block of `value`: one 20px line per source line inside 16px padding. */
+function codeBlock(value: string, codeMargins: boolean): Block {
+    const lines = Math.max(1, value.split("\n").length);
+    return {
+        height: CODE_PADDING * 2 + lines * CODE_LINE,
+        marginTop: codeMargins ? CODE_GAP : 0,
+        marginBottom: codeMargins ? CODE_GAP : 0,
+    };
+}
 /** Measures one actual remark/GFM block node with the same type ramp as its renderer. */
 function markdownBlockHeight(
     node: MarkdownRootContent,
@@ -1095,7 +1208,7 @@ function markdownBlockHeight(
         return flow(
             markdownInlineHeight(
                 node.children,
-                { italic: false, size: PARAGRAPH_SIZE, weight: 400 },
+                { italic: false, size: PARAGRAPH_SIZE, weight: 400, line: PARAGRAPH_LINE },
                 PARAGRAPH_LINE,
                 measure,
                 cache,
@@ -1111,7 +1224,7 @@ function markdownBlockHeight(
         return flow(
             markdownInlineHeight(
                 node.children,
-                { italic: false, size: ramp.size, weight: ramp.weight },
+                { italic: false, size: ramp.size, weight: ramp.weight, line: ramp.line },
                 ramp.line,
                 measure,
                 cache,
@@ -1126,12 +1239,19 @@ function markdownBlockHeight(
                 marginTop: codeMargins ? CODE_GAP : 0,
                 marginBottom: codeMargins ? CODE_GAP : 0,
             };
-        const lines = Math.max(1, node.value.split("\n").length);
-        return {
-            height: CODE_PADDING * 2 + lines * CODE_LINE,
-            marginTop: codeMargins ? CODE_GAP : 0,
-            marginBottom: codeMargins ? CODE_GAP : 0,
-        };
+        return codeBlock(node.value, codeMargins);
+    }
+    if (node.type === "math") {
+        const rendered = mathFormulaRender(node.value, true);
+        /* An unparseable display formula renders as a code block of its source. */
+        if (rendered.kind === "failed") return codeBlock(node.value, codeMargins);
+        return flow(
+            mathDisplayHeightMeasure(node.value, rendered.html, {
+                family: UI_FAMILY,
+                lineHeight: PARAGRAPH_LINE,
+                size: PARAGRAPH_SIZE,
+            }),
+        );
     }
     if (node.type === "table")
         return flow(markdownTableLayout(node, measure, cache, footnotes).height);
@@ -1183,10 +1303,16 @@ export type MarkdownTableLayout = {
 };
 const TABLE_HEADER_STYLE: MarkdownInlineStyle = {
     italic: false,
+    line: PARAGRAPH_LINE,
     size: PARAGRAPH_SIZE,
     weight: 600,
 };
-const TABLE_BODY_STYLE: MarkdownInlineStyle = { italic: false, size: PARAGRAPH_SIZE, weight: 400 };
+const TABLE_BODY_STYLE: MarkdownInlineStyle = {
+    italic: false,
+    line: PARAGRAPH_LINE,
+    size: PARAGRAPH_SIZE,
+    weight: 400,
+};
 /**
  * Measured cells outlive any one Markdown source. A streamed reply is laid out
  * from a scratch cache on every update, so without this each update would
@@ -1268,7 +1394,10 @@ function tableCellLines(
     if (entry.extent.max <= content + INLINE_MEASURE_EPSILON) return entry.extent.lines;
     const hit = entry.lines.get(content);
     if (hit !== undefined) return hit;
-    const lines = markdownInlineHeight(cell.children, style, 1, content, cache, footnotes);
+    /* Lines in units of the body line: a formula can make one taller. */
+    const lines =
+        markdownInlineHeight(cell.children, style, PARAGRAPH_LINE, content, cache, footnotes) /
+        PARAGRAPH_LINE;
     if (entry.lines.size >= TABLE_CELL_WIDTHS) entry.lines.delete(entry.lines.keys().next().value!);
     entry.lines.set(content, lines);
     return lines;
@@ -1336,7 +1465,16 @@ function markdownTableCellExtent(
         }
         wordEnd();
     }
-    return { min, max, lines: runs.length };
+    const lines = runs.reduce(
+        (total, items) =>
+            total +
+            (items.some((item) => item.math !== undefined)
+                ? richItemsHeight(items, PARAGRAPH_LINE, Number.MAX_SAFE_INTEGER, cache) /
+                  PARAGRAPH_LINE
+                : 1),
+        0,
+    );
+    return { min, max, lines };
 }
 /** Adds `extra` whole pixels to `base` in proportion to `weights`, handing the
  * rounding remainder to the largest fractions so the sum stays exact. */

@@ -1,0 +1,900 @@
+/*
+ * P-020 Happy Agent Calendar: one shared calendar Surface, as a month of days
+ * or a week of hours, and the popover an event is made and changed in.
+ *
+ * The page is the shared Surface header over a 48px section toolbar and the
+ * calendar itself, on the plain surface: a dense grid of times reads best
+ * without a picture behind it. Rows, toolbars, and the popover are flexbox.
+ * The days of a week and the occurrences in them are placed absolutely,
+ * because an event spans columns and lanes that flexbox cannot keep aligned
+ * across siblings; each such rule says so.
+ *
+ * Colors, radii, and type come only from theme roles; an event's tints are
+ * the `--happy-calendar-*` roles in theme.css.
+ */
+
+.happy-agent-calendar-surface {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    background: var(--surface);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+/* ---- Toolbar ------------------------------------------------------------ */
+
+.happy-agent-calendar-surface__toolbar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    height: 48px;
+    padding: 0 16px;
+}
+
+.happy-agent-calendar-surface__steps {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0;
+}
+
+/* The period takes the free space, and pushes the view switch to the edge. */
+.happy-agent-calendar-surface__period {
+    flex: 1 1 0%;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-calendar-surface__note {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-agent-calendar-surface__notice {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    padding: 0 16px 8px;
+}
+
+/* A size container, so the popover inside it can be no taller than the body. */
+.happy-agent-calendar-surface__body {
+    position: relative;
+    container-type: size;
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-height: 0;
+    border-top: 1px solid var(--divider);
+}
+
+.happy-agent-calendar-surface__missing {
+    margin: auto;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+/* Over the calendar while the popover is open, so a click beside it closes it. */
+.happy-agent-calendar-surface__dismiss {
+    /* Absolute: a transparent catcher covers the whole calendar body under the popover. */
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+}
+
+.happy-agent-calendar-surface__popover {
+    /* Absolute: the popover stands beside the day or event it was opened from, at coordinates set when it opens. */
+    position: absolute;
+    top: 16px;
+    left: calc(50% - 180px);
+    z-index: 3;
+}
+
+/* ---- Month -------------------------------------------------------------- */
+
+.happy-calendar-month {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-height: 0;
+    user-select: none;
+}
+
+.happy-calendar-month[data-gesture="move"],
+.happy-calendar-week[data-gesture="move"] {
+    cursor: grabbing;
+}
+
+.happy-calendar-month__weekdays {
+    display: flex;
+    flex: none;
+    height: 24px;
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-calendar-month__weekday {
+    display: flex;
+    flex: 1 1 0%;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.happy-calendar-month__weeks {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.happy-calendar-month__week {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow: hidden;
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-calendar-month__week:last-child {
+    border-bottom: none;
+}
+
+.happy-calendar-month__days {
+    display: flex;
+    flex: 1 1 0%;
+}
+
+.happy-calendar-month__day {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    padding-top: 4px;
+    border-right: 1px solid var(--divider);
+    cursor: default;
+}
+
+.happy-calendar-month__day:last-child {
+    border-right: none;
+}
+
+.happy-calendar-month__day[data-outside] {
+    background: var(--groupped-background);
+}
+
+.happy-calendar-month__day[data-selected] {
+    background: var(--happy-calendar-selection);
+}
+
+.happy-calendar-month__date {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border: none;
+    border-radius: var(--happy-radius-pill);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.happy-calendar-month__date:hover {
+    background: var(--surface-ripple);
+}
+
+.happy-calendar-month__day[data-outside] .happy-calendar-month__date {
+    color: var(--text-secondary);
+}
+
+.happy-calendar-month__day[data-today] .happy-calendar-month__date {
+    background: var(--happy-calendar-today);
+    color: var(--text-inverse);
+}
+
+.happy-calendar-month__more {
+    /* Absolute: sits in the cell's last lane, at the same row as the lines placed beside it. */
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 20px;
+    padding: 0 6px;
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    cursor: pointer;
+}
+
+.happy-calendar-month__more:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+/* ---- One occurrence in a week row --------------------------------------- */
+
+.happy-calendar-line {
+    /* Absolute: an occurrence spans whole day columns at a lane shared across the row's sibling days. */
+    position: absolute;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+    height: 20px;
+    min-width: 0;
+    padding: 0 6px;
+    overflow: hidden;
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.happy-calendar-line:hover {
+    background: var(--surface-ripple);
+}
+
+.happy-calendar-line[data-bar] {
+    background: var(--happy-calendar-event);
+    color: var(--happy-calendar-event-ink);
+}
+
+.happy-calendar-line[data-bar]:hover {
+    background: var(--happy-calendar-event-hover);
+}
+
+.happy-calendar-line[data-continues-before] {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+.happy-calendar-line[data-continues-after] {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.happy-calendar-line[data-selected],
+.happy-calendar-line[data-selected]:hover {
+    background: var(--happy-calendar-event-chosen);
+    color: var(--text-inverse);
+}
+
+.happy-calendar-line[data-moving] {
+    z-index: 2;
+    box-shadow: 0 4px 12px var(--shadow-color);
+}
+
+.happy-calendar-line__dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--happy-radius-pill);
+    background: var(--happy-calendar-event-chosen);
+}
+
+.happy-calendar-line[data-selected] .happy-calendar-line__dot {
+    background: var(--text-inverse);
+}
+
+.happy-calendar-line__time {
+    flex: none;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.happy-calendar-line[data-selected] .happy-calendar-line__time {
+    color: var(--text-inverse);
+}
+
+.happy-calendar-line__title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.happy-calendar-line[data-untitled] .happy-calendar-line__title,
+.happy-calendar-event[data-untitled] .happy-calendar-event__title {
+    font-style: italic;
+}
+
+/* Beside the pointer while an occurrence of a series is dragged. */
+.happy-calendar-series-note {
+    /* Absolute: the note follows the pointer, at its coordinates within the view. */
+    position: absolute;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: var(--happy-radius-sm);
+    background: var(--surface-inverse);
+    box-shadow: 0 4px 12px var(--shadow-color);
+    color: var(--text-inverse);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* ---- Week --------------------------------------------------------------- */
+
+.happy-calendar-week {
+    --happy-calendar-gutter: 56px;
+
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-height: 0;
+    user-select: none;
+}
+
+.happy-calendar-week__head,
+.happy-calendar-week__all-day {
+    display: flex;
+    flex: none;
+    /* The time grid's track overlays its edge, so these rows keep its width clear too. */
+    padding-right: var(--happy-scrollbar-track);
+}
+
+.happy-calendar-week__all-day {
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-calendar-week__gutter {
+    display: flex;
+    flex: none;
+    width: var(--happy-calendar-gutter);
+}
+
+.happy-calendar-week__gutter-label {
+    align-items: flex-start;
+    justify-content: flex-end;
+    box-sizing: border-box;
+    padding: 6px 8px 0 0;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 12px;
+}
+
+.happy-calendar-week__dates {
+    display: flex;
+    flex: 1 1 0%;
+}
+
+.happy-calendar-week__date {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    padding: 6px 0;
+}
+
+.happy-calendar-week__weekday {
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.happy-calendar-week__day {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--happy-radius-pill);
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 24px;
+    font-variant-numeric: tabular-nums;
+}
+
+.happy-calendar-week__date[data-today] .happy-calendar-week__weekday {
+    color: var(--happy-calendar-today);
+}
+
+.happy-calendar-week__date[data-today] .happy-calendar-week__day {
+    background: var(--happy-calendar-today);
+    color: var(--text-inverse);
+}
+
+.happy-calendar-week__all-day-lanes {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    min-height: 28px;
+    border-left: 1px solid var(--divider);
+}
+
+.happy-calendar-week__all-day-cell {
+    flex: 1 1 0%;
+    border-right: 1px solid var(--divider);
+}
+
+.happy-calendar-week__all-day-cell:last-child {
+    border-right: none;
+}
+
+.happy-calendar-week__all-day-cell[data-selected] {
+    background: var(--happy-calendar-selection);
+}
+
+.happy-calendar-week__all-day-more {
+    /* Absolute: the count stands in the row's last lane, under the day it counts for. */
+    position: absolute;
+    display: flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.happy-calendar-week__scroll {
+    flex: 1 1 0%;
+    min-height: 0;
+    width: 100%;
+}
+
+.happy-calendar-week__scroll-viewport {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.happy-calendar-week__grid {
+    display: flex;
+    flex: none;
+    box-sizing: border-box;
+    padding-right: var(--happy-scrollbar-track);
+}
+
+.happy-calendar-week__hours {
+    position: relative;
+    flex: none;
+    width: var(--happy-calendar-gutter);
+}
+
+.happy-calendar-week__hour {
+    /* Absolute: each hour's label stands on its hour line, half above it, at a time-derived offset. */
+    position: absolute;
+    right: 8px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 12px;
+    font-variant-numeric: tabular-nums;
+    transform: translateY(-6px);
+}
+
+.happy-calendar-week__columns {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    border-left: 1px solid var(--divider);
+    /* A hairline on every hour, and a fainter one on every half hour. */
+    background-image:
+        linear-gradient(to bottom, var(--divider) 1px, transparent 1px),
+        linear-gradient(
+            to bottom,
+            transparent 23.5px,
+            color-mix(in srgb, var(--divider) 50%, transparent) 23.5px,
+            color-mix(in srgb, var(--divider) 50%, transparent) 24px,
+            transparent 24px
+        );
+    background-size: 100% 48px;
+}
+
+.happy-calendar-week__column {
+    flex: 1 1 0%;
+    border-right: 1px solid var(--divider);
+}
+
+.happy-calendar-week__column:last-child {
+    border-right: none;
+}
+
+.happy-calendar-week__column[data-today] {
+    background: color-mix(in srgb, var(--text-link) 4%, transparent);
+}
+
+.happy-calendar-week__selection {
+    /* Absolute: the time being dragged over is drawn at its own offset and length in the day's column. */
+    position: absolute;
+    z-index: 1;
+    display: flex;
+    align-items: flex-start;
+    box-sizing: border-box;
+    padding: 2px 6px;
+    overflow: hidden;
+    border-radius: var(--happy-radius-sm);
+    background: var(--happy-calendar-event-chosen);
+    color: var(--text-inverse);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    white-space: nowrap;
+}
+
+.happy-calendar-event {
+    /* Absolute: a timed event sits at its start time with its length, beside the events it overlaps, inside the day's column. */
+    position: absolute;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 2px 6px;
+    overflow: hidden;
+    border-left: 3px solid var(--happy-calendar-event-chosen);
+    border-radius: var(--happy-radius-sm);
+    background: var(--happy-calendar-event);
+    color: var(--happy-calendar-event-ink);
+    font-size: 12px;
+    line-height: 16px;
+    cursor: pointer;
+    touch-action: none;
+}
+
+.happy-calendar-event:hover {
+    background: var(--happy-calendar-event-hover);
+}
+
+.happy-calendar-event:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 1px;
+}
+
+.happy-calendar-event[data-selected],
+.happy-calendar-event[data-selected]:hover {
+    background: var(--happy-calendar-event-chosen);
+    color: var(--text-inverse);
+}
+
+.happy-calendar-event[data-moving] {
+    z-index: 2;
+    box-shadow: 0 4px 12px var(--shadow-color);
+}
+
+/* Short events keep to one line: the title, then the time beside it. */
+.happy-calendar-event[data-compact] {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.happy-calendar-event__title {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+    font-weight: 600;
+}
+
+/*
+ * The title is the last thing a short event gives up its width for: it never
+ * shrinks beside the time, which would cost it a fraction of a pixel and an
+ * ellipsis, and only ellipsizes once it alone is wider than the event.
+ */
+.happy-calendar-event[data-compact] .happy-calendar-event__title {
+    flex: none;
+    max-width: 100%;
+}
+
+.happy-calendar-event__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-calendar-event__time,
+.happy-calendar-event__location {
+    flex: none;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.happy-calendar-event[data-compact] .happy-calendar-event__time {
+    flex: 0 1000 auto;
+}
+
+.happy-calendar-event[data-compact] .happy-calendar-event__location {
+    display: none;
+}
+
+/* Dragged to change when the event ends. */
+.happy-calendar-event__resize {
+    /* Absolute: the resize handle is the event's bottom edge, over its content. */
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 6px;
+    cursor: ns-resize;
+}
+
+.happy-calendar-week__now {
+    /* Absolute: the current time is a line across today's column at a time-derived offset. */
+    position: absolute;
+    z-index: 2;
+    height: 2px;
+    margin-top: -1px;
+    background: var(--warning-critical);
+    pointer-events: none;
+}
+
+.happy-calendar-week__now::before {
+    /* Absolute: the dot marks where the now line begins, on its left end. */
+    position: absolute;
+    top: -4px;
+    left: -5px;
+    width: 10px;
+    height: 10px;
+    border-radius: var(--happy-radius-pill);
+    background: var(--warning-critical);
+    content: "";
+}
+
+/* ---- Popover ------------------------------------------------------------ */
+
+.happy-calendar-popover {
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 360px;
+    max-height: min(560px, calc(100cqh - 32px));
+    overflow: hidden;
+    border: 1px solid var(--modal-border);
+    border-radius: var(--happy-radius-md);
+    background: var(--surface);
+    box-shadow: 0 12px 32px var(--shadow-floating);
+    color: var(--text);
+}
+
+.happy-calendar-popover__head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 12px 8px 16px;
+}
+
+.happy-calendar-popover__title {
+    flex: 1 1 0%;
+    min-width: 0;
+}
+
+.happy-calendar-popover__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+
+.happy-calendar-popover__scroll-viewport {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.happy-calendar-popover__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 4px 16px 12px;
+}
+
+.happy-calendar-popover__series {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: var(--happy-radius-sm);
+    background: var(--happy-calendar-selection);
+    color: var(--happy-calendar-event-ink);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+/* Labels down the left, their controls beside them: two real aligned tracks. */
+.happy-calendar-popover__when {
+    /* eslint-disable-next-line happy-layout/use-flex-layout -- Two-column form: every label shares one column width and every control starts on one line beside it. */
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px 8px;
+}
+
+/* On the first line of its control, which is 28px: its text centred on that line. */
+.happy-calendar-popover__label {
+    align-self: start;
+    padding-top: 6px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.happy-calendar-popover__row,
+.happy-calendar-popover__ends {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-calendar-popover__ends {
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.happy-calendar-popover__unit {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 16px;
+}
+
+.happy-calendar-popover__weekdays {
+    display: flex;
+    gap: 4px;
+}
+
+.happy-calendar-popover__weekday {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-pill);
+    background: var(--input-background);
+    color: var(--text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+    cursor: pointer;
+}
+
+.happy-calendar-popover__weekday[aria-pressed="true"] {
+    border-color: var(--happy-calendar-event-chosen);
+    background: var(--happy-calendar-event-chosen);
+    color: var(--text-inverse);
+}
+
+.happy-calendar-popover__weekday:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 1px;
+}
+
+.happy-calendar-popover__foot {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--divider);
+}
+
+.happy-calendar-popover__spacer {
+    flex: 1 1 0%;
+}
+
+.happy-calendar-popover__problem {
+    flex: 1 1 0%;
+    min-width: 0;
+    color: var(--box-error-text);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/* A date, a time, or a number on the house field's inset well. */
+.happy-calendar-field {
+    display: flex;
+    flex: 1 1 0%;
+    align-items: center;
+    box-sizing: border-box;
+    min-width: 0;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-sm);
+    background: var(--input-background);
+}
+
+.happy-calendar-field[data-width="number"] {
+    flex: none;
+    width: 72px;
+}
+
+.happy-calendar-field:focus-within {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 1px;
+}
+
+.happy-calendar-field__input {
+    flex: 1 1 0%;
+    min-width: 0;
+    height: 26px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--input-text);
+    color-scheme: inherit;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 26px;
+    font-variant-numeric: tabular-nums;
+}

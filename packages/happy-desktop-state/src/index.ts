@@ -49,6 +49,7 @@ export * from "./happyAgent/happyAgentCloudStore.js";
 export * from "./happyAgent/happyAgentTeamsStore.js";
 export * from "./happyAgent/happyAgentInboxStore.js";
 export * from "./artifacts/artifactTypes.js";
+export { happyAgentArtifactBackground } from "./artifacts/artifactProject.js";
 export {
     happyAgentArtifactFilterMatches,
     happyAgentArtifactSourceId,
@@ -102,12 +103,35 @@ export {
     type HappyAgentTodoListSnapshot,
     type HappyAgentTodoListStore,
 } from "./surfaces/surfaceTodoListStore.js";
-export {
-    HAPPY_AGENT_SURFACE_DOCUMENT_TEXT_LIMIT,
-    type HappyAgentSurfaceDocumentConflict,
-    type HappyAgentSurfaceDocumentSnapshot,
-    type HappyAgentSurfaceDocumentStore,
+export type {
+    HappyAgentSurfaceDocumentPresence,
+    HappyAgentSurfaceDocumentPresencePayload,
+    HappyAgentSurfaceDocumentSnapshot,
+    HappyAgentSurfaceDocumentStore,
+    HappyAgentSurfaceDocumentSync,
 } from "./surfaces/surfaceDocumentStore.js";
+export {
+    happyAgentSurfaceSupportStoreNone,
+    type HappyAgentSurfaceSupport,
+    type HappyAgentSurfaceSupportSnapshot,
+    type HappyAgentSurfaceSupportStore,
+} from "./surfaces/surfaceSupportStore.js";
+export {
+    happyAgentCalendarRangeOf,
+    HAPPY_AGENT_CALENDAR_COUNT_LIMIT,
+    HAPPY_AGENT_CALENDAR_INTERVAL_LIMIT,
+    HAPPY_AGENT_CALENDAR_LOCATION_LIMIT,
+    HAPPY_AGENT_CALENDAR_NOTES_LIMIT,
+    HAPPY_AGENT_CALENDAR_TITLE_LIMIT,
+    type HappyAgentCalendarDraft,
+    type HappyAgentCalendarEditor,
+    type HappyAgentCalendarEditorTarget,
+    type HappyAgentCalendarRange,
+    type HappyAgentCalendarSnapshot,
+    type HappyAgentCalendarStore,
+    type HappyAgentCalendarView,
+} from "./surfaces/surfaceCalendarStore.js";
+export * from "./surfaces/calendarTime.js";
 export type { HappyAgentSurfaces } from "./surfaces/surfaces.js";
 export type {
     HappyAgentArtifactTitle,

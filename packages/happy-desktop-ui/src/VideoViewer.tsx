@@ -37,6 +37,14 @@ export type VideoViewerProps = {
      */
     actions?: ReactNode;
     /**
+     * `panel` (default) paints the viewer's own room: a grouped frame that is
+     * also what letterboxing looks like. `immersive` paints no surface under
+     * the recording, for a viewer set on something that is already the room —
+     * an artifact's slot, whose own colour is the letterbox. The control panel
+     * keeps its surface either way, since it floats over the picture.
+     */
+    tone?: "panel" | "immersive";
+    /**
      * Takes keyboard focus on mount. For a surface that is only this recording —
      * a window of its own — so its transport keys work without a click first.
      */
@@ -266,6 +274,7 @@ export function VideoViewer(props: VideoViewerProps) {
         "content",
         "name",
         "actions",
+        "tone",
         "autoFocus",
         "onNaturalSize",
     ]);
@@ -618,6 +627,7 @@ export function VideoViewer(props: VideoViewerProps) {
             data-happy-desktop-ui="video-viewer"
             data-idle={idle ? "" : undefined}
             data-testid={local["data-testid"]}
+            data-tone={local.tone === "immersive" ? "immersive" : undefined}
             // The pointer is watched here, around the whole viewer, rather than
             // on the picture alone. The control panel floats over the picture but
             // is a sibling of it, so a hand reaching down from the picture to the

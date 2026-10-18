@@ -15,12 +15,18 @@ import type {
 
 declare const happyAgentSurfaceIdBrand: unique symbol;
 declare const happyAgentSurfaceTodoIdBrand: unique symbol;
+declare const happyAgentCalendarEventIdBrand: unique symbol;
 
 /** Branded Surface identifier (CUID2 on the wire). */
 export type HappyAgentSurfaceId = string & { readonly [happyAgentSurfaceIdBrand]: true };
 
 /** Branded todo identifier (CUID2 on the wire). */
 export type HappyAgentSurfaceTodoId = string & { readonly [happyAgentSurfaceTodoIdBrand]: true };
+
+/** Branded calendar event identifier (CUID2 on the wire). */
+export type HappyAgentCalendarEventId = string & {
+    readonly [happyAgentCalendarEventIdBrand]: true;
+};
 
 /**
  * What a Surface is, which decides only what its content view shows. The
@@ -33,8 +39,8 @@ export type HappyAgentSurfaceType =
     | { readonly kind: "todo" }
     /** One shared Markdown document, kept with every version it has had. */
     | { readonly kind: "document" }
-    /** A name and nothing else, that heads the Surfaces after it in a sidebar. */
-    | { readonly kind: "separator" }
+    /** One shared set of calendar events, kept with every version each has had. */
+    | { readonly kind: "calendar" }
     /** One artifact, bot, or task, kept among the Surfaces; opening it opens that. */
     | { readonly kind: HappyAgentSurfaceReferenceKind }
     | { readonly kind: "unsupported"; readonly type: string };
@@ -43,18 +49,18 @@ export type HappyAgentSurfaceType =
 export type HappyAgentSurfaceReferenceKind = "artifact" | "bot" | "task";
 
 /**
- * Whether a Surface of this type can have a shared chat. A separator has no
- * content to talk about, and a type this build cannot show is not offered one.
+ * Whether a Surface of this type can have a shared chat. A type this build
+ * cannot show is not offered one.
  */
 export function happyAgentSurfaceChatSupported(type: HappyAgentSurfaceType): boolean {
     switch (type.kind) {
         case "todo":
         case "document":
+        case "calendar":
         case "artifact":
         case "bot":
         case "task":
             return true;
-        case "separator":
         case "unsupported":
             return false;
     }
@@ -239,4 +245,105 @@ export interface HappyAgentSurfaceDocument {
     readonly updatedAt: number;
     /** The document's own version, which a change must name. */
     readonly version: string;
+}
+
+/**
+ * When a calendar event or one of its occurrences happens. A timed one is two
+ * instants, read on the wall clock of its own IANA time zone; an all-day one is
+ * `YYYY-MM-DD` dates, the end exclusive, that cover the same days wherever they
+ * are viewed.
+ */
+export type HappyAgentCalendarTiming =
+    | {
+          readonly kind: "timed";
+          /** Epoch milliseconds. */
+          readonly start: number;
+          /** Epoch milliseconds, after `start`. */
+          readonly end: number;
+          readonly timeZone: string;
+      }
+    | {
+          readonly kind: "allDay";
+          readonly startDate: string;
+          /** The day after the last day it covers. */
+          readonly endDate: string;
+      };
+
+export type HappyAgentCalendarWeekday =
+    | "monday"
+    | "tuesday"
+    | "wednesday"
+    | "thursday"
+    | "friday"
+    | "saturday"
+    | "sunday";
+
+/** Monday first, the order the daemon keeps them in and the order a week is shown in. */
+export const HAPPY_AGENT_CALENDAR_WEEKDAYS: readonly HappyAgentCalendarWeekday[] = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+];
+
+export type HappyAgentCalendarFrequency = "daily" | "weekly" | "monthly" | "yearly";
+
+/** How a series ends: never, after an inclusive date, or after so many occurrences. */
+export type HappyAgentCalendarRecurrenceEnd =
+    | { readonly kind: "never" }
+    | { readonly kind: "until"; readonly date: string }
+    | { readonly kind: "count"; readonly count: number };
+
+/**
+ * How an event repeats. The daemon expands it; this client never does. The
+ * event's own timing is always its first occurrence.
+ */
+export interface HappyAgentCalendarRecurrence {
+    readonly frequency: HappyAgentCalendarFrequency;
+    /** Every `interval` days, weeks, months, or years. */
+    readonly interval: number;
+    /**
+     * The days a weekly series falls on, Monday first. `null` on every other
+     * frequency, and on a weekly series that follows its start's weekday.
+     */
+    readonly weekdays: readonly HappyAgentCalendarWeekday[] | null;
+    readonly end: HappyAgentCalendarRecurrenceEnd;
+}
+
+/**
+ * One calendar event: a one-off, or a whole series. A deleted one is a
+ * tombstone that keeps every other field.
+ */
+export interface HappyAgentCalendarEvent {
+    readonly id: HappyAgentCalendarEventId;
+    readonly surfaceId: HappyAgentSurfaceId;
+    /** Who made it, or `null` when it credits nobody, as a todo's author. */
+    readonly authorUserId: string | null;
+    /** May be blank; it is shown as "(No title)". */
+    readonly title: string;
+    readonly notes: string | null;
+    readonly location: string | null;
+    readonly timing: HappyAgentCalendarTiming;
+    readonly recurrence: HappyAgentCalendarRecurrence | null;
+    readonly status: "active" | "deleted";
+    readonly deletedAt: number | null;
+    readonly createdAt: number;
+    readonly updatedAt: number;
+    /** The resource version a change must name. */
+    readonly version: string;
+}
+
+/**
+ * One occurrence of an event in the range being shown, as the daemon expanded
+ * it. Its identity is the event with its index, and it holds only for the
+ * event version it was read at.
+ */
+export interface HappyAgentCalendarOccurrence {
+    readonly eventId: HappyAgentCalendarEventId;
+    /** Zero-based within the series; a one-off event has only 0. */
+    readonly index: number;
+    readonly timing: HappyAgentCalendarTiming;
 }

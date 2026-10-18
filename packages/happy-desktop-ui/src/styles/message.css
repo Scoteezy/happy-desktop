@@ -800,6 +800,17 @@
     overflow-y: hidden;
 }
 
+/* A display formula: a centred line of its own that scrolls sideways, like a
+   code block, instead of overflowing the body. */
+.happy-message__math-block {
+    max-width: 100%;
+}
+
+.happy-message__math-block-viewport {
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
 .happy-message__body--markdown pre {
     margin: 0;
     max-width: 100%;

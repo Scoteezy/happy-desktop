@@ -33,6 +33,8 @@ import {
     happyAgentOwnerAuthor,
 } from "./happyAgentConversationAuthors.js";
 import { happyAgentCompactionSubject } from "./happyAgentTokenFormat.js";
+import { happyAgentConfigurationChanges } from "./happyAgentConfigurationChanges.js";
+import type { HappyAgentModel } from "./happyAgentTypes.js";
 
 type HappyAgentProfile = NonNullable<Extract<ChatElement, { kind: "user_message" }>["profile"]>;
 
@@ -65,6 +67,7 @@ interface ConversationGroupCache {
  * cached turn may be reused at all — no turn has to track them itself.
  */
 interface ConversationContext {
+    readonly models?: readonly HappyAgentModel[];
     readonly sessionId: string;
     readonly showReasoning: boolean;
     readonly ephemeral: readonly ConversationEntry[];
@@ -93,6 +96,7 @@ export function happyAgentConversationCacheCreate(): HappyAgentConversationCache
 }
 
 export interface HappyAgentConversationInput {
+    readonly models?: readonly HappyAgentModel[];
     readonly elements: readonly ChatElement[];
     readonly sessionId: string;
     readonly showReasoning: boolean;
@@ -167,6 +171,7 @@ export function happyAgentConversationProject(
 ): readonly ConversationEntry[] {
     const cache = input.cache;
     const context: ConversationContext = {
+        ...(input.models === undefined ? {} : { models: input.models }),
         sessionId: input.sessionId,
         showReasoning: input.showReasoning,
         ephemeral: input.ephemeral,
@@ -334,6 +339,7 @@ function senderOf(
 function conversationContextEqual(left: ConversationContext, right: ConversationContext): boolean {
     return (
         left.sessionId === right.sessionId &&
+        left.models === right.models &&
         left.showReasoning === right.showReasoning &&
         left.sentImages === right.sentImages &&
         left.agentIdentities === right.agentIdentities &&
@@ -856,7 +862,24 @@ function happyAgentConnectGroupProject(
                         });
                 }
                 break;
-            case "failure":
+            case "configuration":
+                for (const { field, text } of happyAgentConfigurationChanges(
+                    element.configuration,
+                    input.models ?? [],
+                ))
+                    entries.push({
+                        kind: "notice",
+                        id: `${element.id}:change:${field}`,
+                        variant: "configuration",
+                        level: "info",
+                        text,
+                        sequence: sequenceOf(entries.length),
+                    });
+                break;
+            case "failure": {
+                const modelName = input.models?.find(
+                    (model) => model.id === element.error?.mode?.modelId,
+                )?.name;
                 entries.push({
                     kind: "notice",
                     id: element.id,
@@ -869,10 +892,22 @@ function happyAgentConnectGroupProject(
                     ...(element.messageId === undefined
                         ? {}
                         : { source: { messageId: element.messageId, runId: element.runId } }),
-                    text: happyAgentConversationFailureText(element.reason),
+                    text:
+                        element.error === undefined
+                            ? happyAgentConversationFailureText(element.reason)
+                            : element.reason,
+                    ...(element.error === undefined
+                        ? {}
+                        : {
+                              error: {
+                                  ...element.error,
+                                  ...(modelName === undefined ? {} : { modelName }),
+                              },
+                          }),
                     sequence,
                 });
                 break;
+            }
             case "compaction":
                 entries.push({
                     kind: "agentActivity",

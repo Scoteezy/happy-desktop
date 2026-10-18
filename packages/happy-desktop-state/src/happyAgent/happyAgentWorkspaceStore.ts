@@ -2256,11 +2256,14 @@ export function happyAgentWorkspaceStoreCreate(
     let attachmentSequence = 0;
 
     let conversation: Loadable<HappyAgentConversationSnapshot> = { type: "unloaded" };
-    // A handoff only writes a draft, so it is safe to repeat; what is kept per
-    // error is just the write in flight or the reason the last one failed.
+    // One confirmed handoff per error for this surface lifetime. Across reloads
+    // the complete diagnostic block is compared against the authoritative draft.
     const errorAssistanceAttempts = new Map<
         HappyAgentSessionId,
-        Map<string, Extract<ConversationErrorAssistance, { status: "pending" | "failed" }>>
+        Map<
+            string,
+            Extract<ConversationErrorAssistance, { status: "pending" | "failed" | "prepared" }>
+        >
     >();
     // An addressed group with nothing in it yet: its composer is live, and the
     // first thing sent into it is what creates the conversation.
@@ -2769,12 +2772,16 @@ export function happyAgentWorkspaceStoreCreate(
         for (const entry of chat.entries) {
             if (entry.kind !== "notice" || entry.variant !== "notice" || entry.level !== "error")
                 continue;
+            if (entry.error !== undefined && !entry.error.recovery.actions.includes("ask_chief"))
+                continue;
             const attempt = attempts?.get(entry.id);
             const refusal = !chief
                 ? "Chief of Staff is not available on this Happy Agent."
-                : chief.conversation.id === chat.sessionId
-                  ? "This is already the Chief of Staff conversation. Use the composer for follow-up."
-                  : list.groupConversationRefusal(chief.workspaceId);
+                : chat.connection !== "live"
+                  ? "This Happy Agent is offline or reconnecting. Try again when it is available."
+                  : chief.conversation.id === chat.sessionId
+                    ? "This is already the Chief of Staff conversation. Use the composer for follow-up."
+                    : list.groupConversationRefusal(chief.workspaceId);
             projected.push({
                 entryId: entry.id,
                 assistance:
@@ -6401,13 +6408,18 @@ export function happyAgentWorkspaceStoreCreate(
         }
     };
 
-    const draftAppendRun = (sessionId: HappyAgentSessionId, message: string): Promise<void> =>
+    const draftAppendRun = (
+        sessionId: HappyAgentSessionId,
+        message: string,
+        confirmed = false,
+    ): Promise<void> =>
         writeGuard(sessionConversationRefusal(sessionId), () =>
             withAddressedChat(sessionId, (store) =>
                 happyAgentChatDraftAppend(store, message, {
                     updatedAt: nextDraftUpdatedAt,
                     origin: draftOrigin,
                     closed: () => disposed,
+                    confirmed,
                 }),
             ),
         );
@@ -6817,6 +6829,7 @@ export function happyAgentWorkspaceStoreCreate(
                 !availability ||
                 availability.status === "unavailable" ||
                 availability.status === "pending" ||
+                availability.status === "prepared" ||
                 entry?.kind !== "notice" ||
                 entry.variant !== "notice"
             )
@@ -6838,18 +6851,12 @@ export function happyAgentWorkspaceStoreCreate(
                 sessionId: chief.conversation.id as HappyAgentSessionId,
                 groupId: chief.workspaceId,
             };
-            const menus = conversation.value.menus;
             // Only the words travel. The draft keeps the Chief of Staff's own
             // model, effort, speed, and access mode: the failing session's are
             // often the very thing that is unavailable.
             const text = happyAgentErrorAssistanceText({
                 sessionId: sourceSessionId,
-                ...(conversation.value.title === undefined
-                    ? {}
-                    : { sessionTitle: conversation.value.title }),
-                ...(menus === undefined
-                    ? {}
-                    : { providerId: menus.currentProviderId, modelId: menus.currentModelId }),
+                ...(entry.error === undefined ? {} : { error: entry.error }),
                 ...(entry.source
                     ? { messageId: entry.source.messageId, runId: entry.source.runId }
                     : {}),
@@ -6858,10 +6865,10 @@ export function happyAgentWorkspaceStoreCreate(
             const generation = acquisitionGeneration;
             pending.set(entryId, { status: "pending" });
             recompute();
-            void draftAppendRun(location.sessionId, text).then(
+            void draftAppendRun(location.sessionId, text, true).then(
                 () => {
                     if (disposed) return;
-                    pending.delete(entryId);
+                    pending.set(entryId, { status: "prepared" });
                     recompute();
                     // A late write must not take the reader away from a
                     // conversation they deliberately opened while it ran.

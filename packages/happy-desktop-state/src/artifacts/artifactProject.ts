@@ -121,9 +121,26 @@ export function happyAgentArtifactProject(artifact: Artifact): HappyAgentArtifac
     };
 }
 
+/** `#rgb`, `#rgba`, `#rrggbb`, or `#rrggbbaa`: the only colours a version may name. */
+const ARTIFACT_BACKGROUND = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu;
+
+/**
+ * The colour a version asks to be shown on, when it is one a slot may paint.
+ * It comes from whoever published the version, so anything that is not a plain
+ * hex colour — `null`, a missing field, or anything else — is no colour.
+ */
+export function happyAgentArtifactBackground(value: unknown): string | undefined {
+    return typeof value === "string" && ARTIFACT_BACKGROUND.test(value) ? value : undefined;
+}
+
 export function happyAgentArtifactVersionProject(
     version: ArtifactVersion,
 ): HappyAgentArtifactVersion {
+    // The pinned client predates `background`; it hands the daemon's JSON over
+    // unparsed, so the field is read from the object as the daemon sent it.
+    const background = happyAgentArtifactBackground(
+        "background" in version ? version.background : undefined,
+    );
     return {
         artifactId: version.artifactId as HappyAgentArtifactId,
         number: version.number,
@@ -133,5 +150,6 @@ export function happyAgentArtifactVersionProject(
         createdBy: happyAgentArtifactAuthorProject(version.createdBy),
         source: happyAgentArtifactSourceProject(version.source),
         createdAt: version.createdAt,
+        ...(background === undefined ? {} : { background }),
     };
 }

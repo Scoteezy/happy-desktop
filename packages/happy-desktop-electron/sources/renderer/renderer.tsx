@@ -185,11 +185,16 @@ const desktopBrowserContentRender: BrowserContentRenderer = (props) => (
 );
 
 const desktopHtmlPreviewRender: HtmlPreviewRenderer = (props) => (
-    <DesktopHtmlPreviewView {...props} partition={happyHtmlPreviewPartition} popups={false} />
+    <DesktopHtmlPreviewView
+        {...props}
+        canvas="paper"
+        partition={happyHtmlPreviewPartition}
+        popups={false}
+    />
 );
 
 const desktopArtifactPageRender: HtmlPreviewRenderer = (props) => (
-    <DesktopHtmlPreviewView {...props} partition={happyArtifactPartition} popups />
+    <DesktopHtmlPreviewView {...props} canvas="none" partition={happyArtifactPartition} popups />
 );
 
 function desktopAction(operation: Promise<void>): void {

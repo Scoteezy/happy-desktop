@@ -24,21 +24,20 @@ function imageSignatureAccepted(bytes: Uint8Array): boolean {
 }
 
 /** The kinds of Surface this dialog makes. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document" | "separator";
+export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar";
 
-/**
- * What the dialog asks for, by kind: a todo list or a document may have a
- * picture, a separator is only a name.
- */
-export type HappyAgentSurfaceCreateInput =
-    | { readonly kind: "todo" | "document"; readonly name: string; readonly image?: File }
-    | { readonly kind: "separator"; readonly name: string };
+/** What the dialog asks for: a name, and a picture if the reader chose one. */
+export interface HappyAgentSurfaceCreateInput {
+    readonly kind: HappyAgentSurfaceCreateKind;
+    readonly name: string;
+    readonly image?: File;
+}
 
 /** Each kind's title, glyph, and the example its name field suggests. */
 const KINDS = {
     todo: { title: "New todo list", icon: "tasks", placeholder: "Groceries" },
     document: { title: "New document", icon: "doc", placeholder: "House rules" },
-    separator: { title: "New separator", icon: "hash", placeholder: "Home" },
+    calendar: { title: "New calendar", icon: "calendar", placeholder: "Team" },
 } as const satisfies Record<
     HappyAgentSurfaceCreateKind,
     { title: string; icon: IconName; placeholder: string }
@@ -60,9 +59,8 @@ interface Picture {
 }
 
 /**
- * C-298 HappyAgentSurfaceCreateDialog — names a new todo list or document
- * and, if the reader wants, gives it a picture; or names a new separator,
- * which is only a name.
+ * C-298 HappyAgentSurfaceCreateDialog — names a new todo list, document, or calendar
+ * and, if the reader wants, gives it a picture.
  *
  * The form is the dialog's own until it is submitted: the name typed, the
  * picture chosen and its preview. The owner hears only the finished request;
@@ -80,15 +78,11 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
     const ready = name.trim().length > 0;
     const submit = () => {
         if (!ready) return;
-        props.onSubmit(
-            props.kind === "separator"
-                ? { kind: "separator", name: name.trim() }
-                : {
-                      kind: props.kind,
-                      name: name.trim(),
-                      ...(picture ? { image: picture.file } : {}),
-                  },
-        );
+        props.onSubmit({
+            kind: props.kind,
+            name: name.trim(),
+            ...(picture ? { image: picture.file } : {}),
+        });
     };
     const choose = (file: File | undefined) => {
         if (!file) return;
@@ -173,59 +167,57 @@ export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDial
                         placeholder={KINDS[props.kind].placeholder}
                         value={name}
                     />
-                    {props.kind === "separator" ? null : (
-                        <div className="happy-agent-surface-create-dialog__picture">
-                            <span
-                                className="happy-agent-surface-create-dialog__preview"
-                                data-happy-desktop-ui="happy-agent-surface-create-dialog-preview"
-                            >
-                                {picture ? (
-                                    <img alt="" draggable={false} src={picture.preview} />
-                                ) : (
-                                    <Icon name="image" size={20} />
-                                )}
-                            </span>
-                            <span className="happy-agent-surface-create-dialog__picture-text">
-                                <span className="happy-agent-surface-create-dialog__picture-label">
-                                    Picture
-                                </span>
-                                <span
-                                    className="happy-agent-surface-create-dialog__picture-hint"
-                                    data-invalid={pictureError ? "" : undefined}
-                                >
-                                    {pictureError ?? "Optional, up to 8 MB."}
-                                </span>
-                            </span>
+                    <div className="happy-agent-surface-create-dialog__picture">
+                        <span
+                            className="happy-agent-surface-create-dialog__preview"
+                            data-happy-desktop-ui="happy-agent-surface-create-dialog-preview"
+                        >
                             {picture ? (
-                                <Button
-                                    onClick={() => setPicture(undefined)}
-                                    size="small"
-                                    variant="ghost"
-                                >
-                                    Remove
-                                </Button>
-                            ) : null}
-                            <Button
-                                onClick={() => fileInput.current?.click()}
-                                size="small"
-                                variant="secondary"
+                                <img alt="" draggable={false} src={picture.preview} />
+                            ) : (
+                                <Icon name="image" size={20} />
+                            )}
+                        </span>
+                        <span className="happy-agent-surface-create-dialog__picture-text">
+                            <span className="happy-agent-surface-create-dialog__picture-label">
+                                Picture
+                            </span>
+                            <span
+                                className="happy-agent-surface-create-dialog__picture-hint"
+                                data-invalid={pictureError ? "" : undefined}
                             >
-                                {picture ? "Change…" : "Choose…"}
+                                {pictureError ?? "Optional, up to 8 MB."}
+                            </span>
+                        </span>
+                        {picture ? (
+                            <Button
+                                onClick={() => setPicture(undefined)}
+                                size="small"
+                                variant="ghost"
+                            >
+                                Remove
                             </Button>
-                            <input
-                                accept={IMAGE_TYPES.join(",")}
-                                className="happy-agent-surface-create-dialog__file"
-                                data-testid="happy-agent-surface-create-file"
-                                hidden
-                                onChange={(event) => {
-                                    choose(event.currentTarget.files?.[0]);
-                                    event.currentTarget.value = "";
-                                }}
-                                ref={fileInput}
-                                type="file"
-                            />
-                        </div>
-                    )}
+                        ) : null}
+                        <Button
+                            onClick={() => fileInput.current?.click()}
+                            size="small"
+                            variant="secondary"
+                        >
+                            {picture ? "Change…" : "Choose…"}
+                        </Button>
+                        <input
+                            accept={IMAGE_TYPES.join(",")}
+                            className="happy-agent-surface-create-dialog__file"
+                            data-testid="happy-agent-surface-create-file"
+                            hidden
+                            onChange={(event) => {
+                                choose(event.currentTarget.files?.[0]);
+                                event.currentTarget.value = "";
+                            }}
+                            ref={fileInput}
+                            type="file"
+                        />
+                    </div>
                 </div>
             </Modal>
         </ModalOverlay>

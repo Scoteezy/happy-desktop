@@ -239,6 +239,7 @@ export {
     type FileOpenHandler,
     type FileReference,
 } from "./fileReference";
+export { MathFormula, type MathFormulaProps } from "./MathFormula";
 export { MermaidDiagram, type MermaidDiagramProps } from "./MermaidDiagram";
 export { Icon, type IconName, iconNames, type IconProps } from "./Icon";
 export {
@@ -547,10 +548,13 @@ export {
 } from "./CommandPaletteResults";
 export { FormRow, type FormRowAlign, type FormRowLayout, type FormRowProps } from "./FormRow";
 export {
-    DocumentSurface,
-    type DocumentSurfaceParticipant,
-    type DocumentSurfaceProps,
-} from "./DocumentSurface";
+    DocumentEditor,
+    documentFragmentName,
+    type DocumentEditorPresence,
+    type DocumentEditorPresencePayload,
+    type DocumentEditorProps,
+    type DocumentEditorUser,
+} from "./DocumentEditor";
 export {
     DataTable,
     type DataTableAlign,
@@ -727,7 +731,9 @@ export {
 } from "./pages/surfaces/HappyAgentTodoSurfacePage";
 export {
     HappyAgentDocumentSurfacePage,
+    type HappyAgentDocumentSurfaceContent,
     type HappyAgentDocumentSurfacePageProps,
+    type HappyAgentDocumentSync,
 } from "./pages/surfaces/HappyAgentDocumentSurfacePage";
 export {
     HappyAgentSurfaceNotMadePage,
@@ -744,6 +750,24 @@ export {
     type HappyAgentSurfaceChatPanelState,
 } from "./pages/surfaces/HappyAgentSurfaceChatPanel";
 export type { HappyAgentSurfaceChatToggle } from "./pages/surfaces/HappyAgentSurfaceHeader";
+export {
+    HappyAgentCalendarSurfacePage,
+    type HappyAgentCalendarSurfacePageProps,
+} from "./pages/surfaces/HappyAgentCalendarSurfacePage";
+export {
+    HappyAgentCalendarEventPopover,
+    type HappyAgentCalendarEditorHandlers,
+    type HappyAgentCalendarEventPopoverProps,
+} from "./pages/surfaces/HappyAgentCalendarEventPopover";
+export {
+    HappyAgentCalendarMonthView,
+    type HappyAgentCalendarMonthViewProps,
+} from "./pages/surfaces/HappyAgentCalendarMonthView";
+export { CalendarSeriesNote } from "./pages/surfaces/CalendarSeriesNote";
+export {
+    HappyAgentCalendarWeekView,
+    type HappyAgentCalendarWeekViewProps,
+} from "./pages/surfaces/HappyAgentCalendarWeekView";
 export {
     HappyAgentSurfaceUnsupportedPage,
     type HappyAgentSurfaceUnsupportedPageProps,

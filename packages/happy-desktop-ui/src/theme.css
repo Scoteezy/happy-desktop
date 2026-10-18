@@ -177,6 +177,16 @@
     --activity-elevated-line: color-mix(in srgb, var(--review-accent) 40%, var(--text));
     --activity-failed-line: color-mix(in srgb, var(--status-error) 40%, var(--text));
 
+    /* A calendar event wears a tint of Happy teal on the surface it sits on,
+       mixed from the ink each theme already defines; chosen and today are the
+       full colour. Declared in every theme block so each mixes its own. */
+    --happy-calendar-event: color-mix(in srgb, var(--text-link) 16%, var(--surface));
+    --happy-calendar-event-hover: color-mix(in srgb, var(--text-link) 24%, var(--surface));
+    --happy-calendar-event-ink: color-mix(in srgb, var(--text-link) 55%, var(--text));
+    --happy-calendar-event-chosen: var(--text-link);
+    --happy-calendar-selection: color-mix(in srgb, var(--text-link) 12%, transparent);
+    --happy-calendar-today: var(--text-link);
+
     --status-connected: #34c759;
     --status-connecting: #007aff;
     --status-disconnected: #999999;
@@ -489,6 +499,15 @@
         --terminal-stderr: #ffb86c;
         --terminal-error: #ff6b6b;
         --terminal-empty-output: #7b7b93;
+        /* A calendar event wears a tint of Happy teal on the surface it sits on,
+           mixed from the ink each theme already defines; chosen and today are the
+           full colour. Declared in every theme block so each mixes its own. */
+        --happy-calendar-event: color-mix(in srgb, var(--text-link) 16%, var(--surface));
+        --happy-calendar-event-hover: color-mix(in srgb, var(--text-link) 24%, var(--surface));
+        --happy-calendar-event-ink: color-mix(in srgb, var(--text-link) 55%, var(--text));
+        --happy-calendar-event-chosen: var(--text-link);
+        --happy-calendar-selection: color-mix(in srgb, var(--text-link) 12%, transparent);
+        --happy-calendar-today: var(--text-link);
     }
 }
 
@@ -663,6 +682,16 @@
     --terminal-stderr: #ffb86c;
     --terminal-error: #ff6b6b;
     --terminal-empty-output: #7b7b93;
+
+    /* A calendar event wears a tint of Happy teal on the surface it sits on,
+       mixed from the ink each theme already defines; chosen and today are the
+       full colour. Declared in every theme block so each mixes its own. */
+    --happy-calendar-event: color-mix(in srgb, var(--text-link) 16%, var(--surface));
+    --happy-calendar-event-hover: color-mix(in srgb, var(--text-link) 24%, var(--surface));
+    --happy-calendar-event-ink: color-mix(in srgb, var(--text-link) 55%, var(--text));
+    --happy-calendar-event-chosen: var(--text-link);
+    --happy-calendar-selection: color-mix(in srgb, var(--text-link) 12%, transparent);
+    --happy-calendar-today: var(--text-link);
 }
 
 /* ThemeScope intentionally has no layout box. */

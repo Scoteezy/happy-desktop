@@ -134,6 +134,7 @@ void app.whenReady().then(async () => {
     });
     const webview = renderToStaticMarkup(
         createElement(DesktopHtmlPreviewView, {
+            canvas: "none",
             partition: happyArtifactPartition,
             popups: true,
             previewFailed: () => undefined,

@@ -17,6 +17,8 @@
     color: var(--text);
     font-family: var(--happy-font-ui);
     font-synthesis: none;
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 /* A turn that failed before it did anything else puts its first notice inside
@@ -84,6 +86,24 @@
 }
 
 .happy-conversation-error-card__assistance {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.happy-conversation-error-card__detail {
+    min-width: 0;
+    min-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+}
+
+.happy-conversation-error-card__command {
     display: flex;
     flex-direction: column;
     gap: 4px;
