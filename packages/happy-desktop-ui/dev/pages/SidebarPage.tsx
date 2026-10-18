@@ -1248,7 +1248,7 @@ export function SidebarPage() {
             title="Sidebar"
         >
             <Specimen
-                detail="Right-click a label and choose Rename. The text keeps its position and weight. Enter or blur saves; Escape cancels."
+                detail="Choose Rename, or focus a row and press Enter. The label itself becomes editable without moving. Enter or blur saves; Escape cancels."
                 label="Rename in place"
                 number="00"
                 stage="app"

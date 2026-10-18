@@ -1011,7 +1011,8 @@ function SidebarRow({
     /** The pointer has crossed the drag threshold and is still holding this row. */
     grabbed?: boolean;
     item: SidebarItem;
-    rename?: { onSubmit: (name: string) => void; onCancel: () => void };
+    rename?: { initialValue: string; onSubmit: (name: string) => void; onCancel: () => void };
+    onRenameRequest?: () => boolean;
     /** Which end of the row reports work. See `SidebarProps.activityPlacement`. */
     activityPlacement?: SidebarActivityPlacement;
     onContextMenu?: (item: SidebarItem, event: MouseEvent<HTMLElement>) => void;
@@ -1041,11 +1042,15 @@ function SidebarRow({
     const renameFinished = useRef(false);
     const renameRestoreFocus = useRef(false);
     // Stable ref identity keeps store renders from selecting the draft again.
-    const [renameInputRef] = useState(() => (node: HTMLInputElement | null) => {
+    const [renameLabelRef] = useState(() => (node: HTMLSpanElement | null) => {
         if (!node) return;
         renameFinished.current = false;
         node.focus({ preventScroll: true });
-        node.select();
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
         node.scrollLeft = 0;
     });
     const renameFinish = (name: string | undefined) => {
@@ -1055,7 +1060,7 @@ function SidebarRow({
             props.rename?.onCancel();
         else props.rename?.onSubmit(name.trim());
     };
-    // An editing row hosts a real textbox, so it must not be a native button.
+    // An editing row hosts an editable label, so it must not be a native button.
     const Row = props.rename ? "div" : "button";
     const unread = () => item().unread === true;
     // A muted row keeps the unread weight on its name and gives up only the dot.
@@ -1313,7 +1318,24 @@ function SidebarRow({
                 if (!props.rename) props.onSelect(item().id);
             }}
             onContextMenu={(event) => props.onContextMenu?.(item(), event)}
-            onKeyDown={props.onKeyDown}
+            onKeyDown={(event) => {
+                if (
+                    event.key === "Enter" &&
+                    event.target === event.currentTarget &&
+                    !event.ctrlKey &&
+                    !event.metaKey &&
+                    !event.altKey &&
+                    !event.shiftKey &&
+                    !event.repeat &&
+                    !event.nativeEvent.isComposing &&
+                    props.onRenameRequest?.()
+                ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    return;
+                }
+                props.onKeyDown?.(event);
+            }}
             onPointerDown={props.onPointerDown}
             onPointerMove={props.onPointerMove}
             onPointerCancel={props.onPointerCancel}
@@ -1436,7 +1458,62 @@ function SidebarRow({
                     {foldControl()}
                 </span>
             ) : null}
-            <span className="happy-sidebar__item-label" data-happy-desktop-ui="sidebar-item-label">
+            <span
+                aria-label={props.rename ? `Rename ${props.rename.initialValue}` : undefined}
+                aria-multiline={props.rename ? false : undefined}
+                className={
+                    props.rename
+                        ? "happy-sidebar__item-label happy-sidebar__item-rename"
+                        : "happy-sidebar__item-label"
+                }
+                contentEditable={props.rename ? "plaintext-only" : undefined}
+                data-happy-desktop-ui="sidebar-item-label"
+                onBlur={
+                    props.rename
+                        ? (event) => renameFinish(event.currentTarget.textContent ?? "")
+                        : undefined
+                }
+                onClick={props.rename ? (event) => event.stopPropagation() : undefined}
+                onContextMenu={props.rename ? (event) => event.stopPropagation() : undefined}
+                onPointerDown={props.rename ? (event) => event.stopPropagation() : undefined}
+                onPaste={
+                    props.rename
+                        ? (event) => {
+                              event.preventDefault();
+                              // insertText preserves the browser's undo history for single-line paste.
+                              document.execCommand(
+                                  "insertText",
+                                  false,
+                                  event.clipboardData
+                                      .getData("text/plain")
+                                      .replace(/[\r\n]+/g, " "),
+                              );
+                          }
+                        : undefined
+                }
+                onKeyDown={
+                    props.rename
+                        ? (event) => {
+                              event.stopPropagation();
+                              if (event.nativeEvent.isComposing) return;
+                              if (event.key === "Enter" || event.key === "Escape") {
+                                  event.preventDefault();
+                                  if (event.repeat) return;
+                                  renameRestoreFocus.current = true;
+                                  renameFinish(
+                                      event.key === "Enter"
+                                          ? (event.currentTarget.textContent ?? "")
+                                          : undefined,
+                                  );
+                              }
+                          }
+                        : undefined
+                }
+                ref={props.rename ? renameLabelRef : undefined}
+                role={props.rename ? "textbox" : undefined}
+                suppressContentEditableWarning={props.rename !== undefined}
+                tabIndex={props.rename ? 0 : undefined}
+            >
                 {/* The row's own colour, with a near-white band wiping through
                         it. Busy is a passing state, so it may not restyle the name:
                         an unread row is already heavier and darker than its
@@ -1444,28 +1521,7 @@ function SidebarRow({
                         second emphasis on top of one the row had already earned.
                         Only the travelling band is new. */}
                 {props.rename ? (
-                    <input
-                        aria-label={`Rename ${item().label}`}
-                        className="happy-sidebar__item-rename"
-                        defaultValue={item().label}
-                        onBlur={(event) => renameFinish(event.currentTarget.value)}
-                        onClick={(event) => event.stopPropagation()}
-                        onContextMenu={(event) => event.stopPropagation()}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => {
-                            event.stopPropagation();
-                            if (event.nativeEvent.isComposing) return;
-                            if (event.key === "Enter" || event.key === "Escape") {
-                                event.preventDefault();
-                                renameRestoreFocus.current = true;
-                                renameFinish(
-                                    event.key === "Enter" ? event.currentTarget.value : undefined,
-                                );
-                            }
-                        }}
-                        ref={renameInputRef}
-                        type="text"
-                    />
+                    props.rename.initialValue
                 ) : shimmerLabel() ? (
                     <ShimmerText sweep="sheen" tone="inherit">
                         {item().label}
@@ -1648,7 +1704,22 @@ export function Sidebar(props: SidebarProps) {
         "title",
     ]);
     const menuRoot = useRef<HTMLDivElement>(null);
-    const [renamingId, setRenamingId] = useState<string>();
+    const [renaming, setRenaming] = useState<{ id: string; initialValue: string }>();
+    const renameStart = (item: SidebarItem): boolean => {
+        const actionId = local.itemRename?.actionId;
+        if (
+            !actionId ||
+            !local
+                .itemMenuItems?.(item)
+                .some(
+                    (action) =>
+                        action.kind === "item" && action.id === actionId && !action.disabled,
+                )
+        )
+            return false;
+        setRenaming({ id: item.id, initialValue: item.label });
+        return true;
+    };
     // One menu at a time, opened either from a row or from a heading control.
     const [itemMenu, setItemMenu] = useState<{
         target:
@@ -2623,12 +2694,14 @@ export function Sidebar(props: SidebarProps) {
                                             return (
                                                 <SidebarRow
                                                     rename={
-                                                        renamingId === item.id
+                                                        renaming?.id === item.id
                                                             ? {
+                                                                  initialValue:
+                                                                      renaming.initialValue,
                                                                   onCancel: () =>
-                                                                      setRenamingId(undefined),
+                                                                      setRenaming(undefined),
                                                                   onSubmit: (name) => {
-                                                                      setRenamingId(undefined);
+                                                                      setRenaming(undefined);
                                                                       local.itemRename?.onSubmit(
                                                                           item,
                                                                           name,
@@ -2646,6 +2719,11 @@ export function Sidebar(props: SidebarProps) {
                                                     grabbed={held}
                                                     key={item.id}
                                                     item={item}
+                                                    onRenameRequest={
+                                                        local.itemRename
+                                                            ? () => renameStart(item)
+                                                            : undefined
+                                                    }
                                                     onContextMenu={openItemMenu}
                                                     onKeyDown={
                                                         reorderable
@@ -2796,7 +2874,7 @@ export function Sidebar(props: SidebarProps) {
                             const target = itemMenu.target;
                             setItemMenu(undefined);
                             if (target.kind === "item" && actionId === local.itemRename?.actionId) {
-                                setRenamingId(target.item.id);
+                                renameStart(target.item);
                                 return;
                             }
                             if (target.kind === "item")

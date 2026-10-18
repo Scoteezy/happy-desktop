@@ -507,12 +507,12 @@ it("renames a task from its context menu on a Happy Agent that renames them", ()
             '[data-happy-desktop-ui="sidebar-item-menu"] [data-item-id="rename"]',
         )!,
     );
-    const input = container.querySelector<HTMLInputElement>(".happy-sidebar__item-rename")!;
+    const input = container.querySelector<HTMLElement>(".happy-sidebar__item-rename")!;
     expect(document.activeElement).toBe(input);
-    expect(input.value).toBe("Fix invoice rounding");
-    expect(input.selectionStart).toBe(0);
-    expect(input.selectionEnd).toBe(input.value.length);
-    fireEvent.change(input, { target: { value: "Fix rounding" } });
+    expect(input.textContent).toBe("Fix invoice rounding");
+    expect(window.getSelection()?.toString()).toBe("Fix invoice rounding");
+    input.textContent = "Fix rounding";
+    fireEvent.input(input);
     fireEvent.keyDown(input, { key: "Enter" });
     expect(actions.taskRename).toHaveBeenCalledWith("billing", "Fix rounding");
     expect(actions.taskLeave).not.toHaveBeenCalled();
