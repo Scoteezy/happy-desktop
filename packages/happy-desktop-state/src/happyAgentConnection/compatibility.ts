@@ -1,9 +1,11 @@
 declare const __HAPPY_ALLOW_SOURCE_AGENT__: boolean | undefined;
 
-import { HAPPY_AGENT_PROTOCOL_VERSION, type DaemonVersion } from "@slopus/happy-agent-client";
+import type { DaemonVersion } from "@slopus/happy-agent-client";
 import type { ServerCompatibility } from "./types.js";
 
-export const MINIMUM_HAPPY_AGENT_PROTOCOL_VERSION = HAPPY_AGENT_PROTOCOL_VERSION;
+// Desktop requires runners (protocol 26). Keep this product minimum independent
+// of the SDK's newest protocol: additive features must not raise the global gate.
+export const MINIMUM_HAPPY_AGENT_PROTOCOL_VERSION = 26;
 
 /**
  * The oldest Happy Agent this build works with, as the daemon's own product
