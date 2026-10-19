@@ -5,6 +5,7 @@ import {
     desktopIpc,
     mediaPreviewArgument,
     liveWindowArgument,
+    type DesktopBrowserNetworkMissing,
     type DesktopBrowserPopup,
     type DesktopBrowserStatus,
     type DesktopBrowserTunnelFailure,
@@ -93,6 +94,14 @@ const bridge: HappyDesktopBridge = {
             listener(popup);
         ipcRenderer.on(desktopIpc.browserNetworkPopupRequested, receive);
         return () => ipcRenderer.removeListener(desktopIpc.browserNetworkPopupRequested, receive);
+    },
+    browserNetworkMissingSubscribe(listener: (missing: DesktopBrowserNetworkMissing) => void) {
+        const receive = (
+            _event: Electron.IpcRendererEvent,
+            missing: DesktopBrowserNetworkMissing,
+        ) => listener(missing);
+        ipcRenderer.on(desktopIpc.browserNetworkMissing, receive);
+        return () => ipcRenderer.removeListener(desktopIpc.browserNetworkMissing, receive);
     },
     browserOpenSubscribe(listener: (url: string) => void) {
         const receive = (_event: Electron.IpcRendererEvent, url: string) => listener(url);

@@ -11,6 +11,7 @@ interface BrowserWebViewEvent extends Event {
     readonly canGoForward?: boolean;
     readonly errorCode?: number;
     readonly errorDescription?: string;
+    readonly isInPlace?: boolean;
     readonly isMainFrame?: boolean;
     readonly title?: string;
     readonly url?: string;
@@ -31,6 +32,7 @@ const browserEvents = [
     "did-fail-load",
     "did-navigate",
     "did-navigate-in-page",
+    "did-start-navigation",
     "did-start-loading",
     "did-stop-loading",
     "dom-ready",
@@ -63,6 +65,23 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
     private statusUnsubscribe?: () => void;
     private tunnelFailureUnsubscribe?: () => void;
     private popupUnsubscribe?: () => void;
+    private networkMissingUnsubscribe?: () => void;
+    /**
+     * Counts main-frame navigations, the page's own links and forms included;
+     * the retry a recovery issues is not one. A recovery belongs to the
+     * navigation it started in.
+     */
+    private navigation = 0;
+    /** Where the newest main-frame navigation went, committed or not. */
+    private navigationUrl?: string;
+    /** The address a recovery retried, until its navigation starts. */
+    private recoveryRetryUrl?: string;
+    /**
+     * Whether this tab has already asked its agent again during the current
+     * navigation. One question per navigation keeps a network that stays
+     * missing from retrying forever.
+     */
+    private networkRecoveryUsed = false;
     /**
      * A recent tunnel failure main reported for the current navigation's
      * address. It and the engine's failure event arrive in either order, so
@@ -77,19 +96,23 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
 
     private readonly controller: BrowserController = {
         browserBack: () => {
+            this.navigationStart();
             this.requested = undefined;
             this.command({ action: "back" });
         },
         browserForward: () => {
+            this.navigationStart();
             this.requested = undefined;
             this.command({ action: "forward" });
         },
         browserLoad: (url) => {
+            this.navigationStart();
             this.status = undefined;
             this.requested = url;
             this.command({ action: "load", url });
         },
         browserReload: () => {
+            this.navigationStart();
             if (this.element?.getURL() === "about:blank" && this.requested)
                 this.controller.browserLoad(this.requested);
             else this.command({ action: "reload" });
@@ -100,6 +123,12 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         },
     };
 
+    private navigationStart(): void {
+        this.navigation += 1;
+        this.networkRecoveryUsed = false;
+        this.recoveryRetryUrl = undefined;
+    }
+
     private command(command: DesktopBrowserCommand): void {
         const desktop = window.happyDesktop;
         const partition = this.state.partition;
@@ -109,15 +138,19 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         void desktop
             .browserNetworkCommand(partition, view.getWebContentsId(), command)
             .catch((error: unknown) => {
+                const described = browserErrorDescribe(error);
+                // ERR_ABORTED: the navigation was stopped or replaced, as when
+                // a recovered network retries it.
                 if (
                     generation !== this.proxyGeneration ||
+                    described.code === -3 ||
                     (command.action === "load" && this.requested !== command.url)
                 )
                     return;
                 const url = command.action === "load" ? command.url : view.getURL();
                 this.props.browserFailed({
                     url,
-                    ...browserErrorDescribe(error),
+                    ...described,
                     ...this.tunnelFailureMessage(url),
                 });
             });
@@ -136,6 +169,16 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
                 return;
             }
             if (!["crashed", "render-process-gone", "did-fail-load"].includes(event.type)) return;
+        }
+        if (event.type === "did-start-navigation") {
+            if (event.isMainFrame === false || event.isInPlace || !event.url) return;
+            this.navigationUrl = event.url;
+            const retry = this.recoveryRetryUrl;
+            this.recoveryRetryUrl = undefined;
+            // The recovery's own retry keeps the navigation it recovers.
+            if (retry !== undefined && browserSameAddress(retry, event.url)) return;
+            this.navigationStart();
+            return;
         }
         if (event.type === "did-start-loading") {
             this.status = undefined;
@@ -209,6 +252,14 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             if (popup.guestId !== this.element?.getWebContentsId()) return;
             this.props.browserPopupRequested?.(popup.url);
         });
+        this.networkMissingUnsubscribe = window.happyDesktop?.browserNetworkMissingSubscribe?.(
+            (missing) => {
+                if (!this.initialized || this.networkRecoveryUsed) return;
+                if (missing.partition !== this.state.partition) return;
+                this.networkRecoveryUsed = true;
+                this.networkRecover();
+            },
+        );
         this.statusUnsubscribe = window.happyDesktop?.browserStatusSubscribe((status) => {
             if (!this.initialized) return;
             if (status.guestId !== this.element?.getWebContentsId()) return;
@@ -236,6 +287,8 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         this.tunnelFailureUnsubscribe = undefined;
         this.popupUnsubscribe?.();
         this.popupUnsubscribe = undefined;
+        this.networkMissingUnsubscribe?.();
+        this.networkMissingUnsubscribe = undefined;
         this.elementApply(undefined);
     }
 
@@ -331,6 +384,61 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             }, failed);
     }
 
+    /**
+     * Happy Agent no longer knows this tab's network. A network can be missing
+     * only until its agent is asked for it again, so ask the tab's own agent
+     * once: the same network is retried in the same profile; any other one is
+     * a different network, which this tab never moves to.
+     */
+    private networkRecover(): void {
+        const desktop = window.happyDesktop;
+        const target = this.props.target;
+        const partition = this.state.partition;
+        if (!desktop?.browserNetworkResolve || !target?.networkId || !partition) return;
+        const bound = target.networkId;
+        const generation = this.proxyGeneration;
+        const navigation = this.navigation;
+        // An answer that arrives after the reader navigated, or after the view
+        // moved to another tab, belongs to nothing on screen.
+        const current = () =>
+            generation === this.proxyGeneration &&
+            navigation === this.navigation &&
+            partition === this.state.partition;
+        void desktop
+            .browserNetworkResolve({
+                connectionId: target.connectionId,
+                workspaceId: target.workspaceId,
+                agentId: target.agentId,
+            })
+            .then(
+                (networkId) => {
+                    const view = this.element;
+                    if (!current() || !view) return;
+                    const url = this.navigationUrl ?? view.getURL();
+                    if (networkId !== bound) {
+                        this.props.browserFailed({
+                            message:
+                                "This tab's network has ended, and its agent now uses another one. Open a new tab to continue.",
+                            ...(url ? { url } : {}),
+                        });
+                        return;
+                    }
+                    const retry = url && url !== "about:blank" ? url : undefined;
+                    this.recoveryRetryUrl = retry ?? view.getURL();
+                    this.command(retry ? { action: "load", url: retry } : { action: "reload" });
+                },
+                (error: unknown) => {
+                    if (!current()) return;
+                    this.props.browserFailed({
+                        message:
+                            error instanceof Error
+                                ? error.message
+                                : "This tab's network could not be found again.",
+                    });
+                },
+            );
+    }
+
     /** The tunnel's own reason, when main reported one for this address. */
     private tunnelFailureMessage(url: string): { message?: string } {
         const failure = this.tunnelFailure;
@@ -372,12 +480,13 @@ function browserSameAddress(first: string, second: string): boolean {
 
 /**
  * Recover the engine failure from a rejected `loadURL`. Electron formats these
- * as `ERR_NAME_NOT_RESOLVED (-105) loading 'https://…'`, so the panel can show
- * the same page it shows for the event-reported failure instead of a raw string.
+ * as `ERR_NAME_NOT_RESOLVED (-105) loading 'https://…'`, behind the IPC error's
+ * own prefix, and sometimes without the name, so the panel can show the same
+ * page it shows for the event-reported failure instead of a raw string.
  */
 function browserErrorDescribe(error: unknown): { code?: number; description?: string } {
     const message = error instanceof Error ? error.message : String(error);
-    const parsed = /^(ERR_[A-Z0-9_]+)\s+\((-?\d+)\)/u.exec(message);
+    const parsed = /(ERR_[A-Z0-9_]+)?\s*\((-?\d+)\) loading '/u.exec(message);
     if (!parsed) return { description: message };
-    return { code: Number(parsed[2]), description: parsed[1] };
+    return { code: Number(parsed[2]), ...(parsed[1] ? { description: parsed[1] } : {}) };
 }

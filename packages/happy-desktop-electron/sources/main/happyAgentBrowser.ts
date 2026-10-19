@@ -6,6 +6,7 @@ import {
     type HappyAgentBrowserProxyHandle,
 } from "./happyAgentBrowserProxy";
 import type { DesktopRuntime } from "./desktopRuntime";
+import { HappyAgentDaemonHttpError } from "./happyAgentDaemonClient";
 
 /**
  * Chromium stays local; all network traffic exits through one compute network.
@@ -26,11 +27,20 @@ export class HappyAgentBrowser {
         session: Session,
         network: DesktopBrowserNetwork,
         runtime: DesktopRuntime,
+        /** Happy Agent does not know the network (404); its tabs may ask their agent again. */
+        networkMissing: () => void,
     ): Promise<HappyAgentBrowser> {
         const proxy = await happyAgentBrowserProxyCreate({
             // Resolve the current connection on each request so reconnecting does
             // not replace the profile or its guests. An ended network rejects.
-            openHttpProxy: (signal) => runtime.openHttpProxy(network, signal),
+            openHttpProxy: (signal) =>
+                runtime.openHttpProxy(network, signal).catch((error: unknown) => {
+                    // Every refusal is reported; each tab asks at most once per
+                    // navigation, however many of its tunnels were refused.
+                    if (error instanceof HappyAgentDaemonHttpError && error.statusCode === 404)
+                        networkMissing();
+                    throw error;
+                }),
         });
         const browser = new HappyAgentBrowser(session, proxy);
         try {

@@ -664,6 +664,15 @@ export interface DesktopBrowserNetwork {
     readonly networkId: string;
 }
 
+/**
+ * Happy Agent refused a profile's network as not found (404). A network can be
+ * missing only until its agent is asked for it again, as a container's is after
+ * a restart, so the tabs on this partition may ask once and retry.
+ */
+export interface DesktopBrowserNetworkMissing {
+    readonly partition: string;
+}
+
 /** A page a workspace browser guest asked to open, for the guest's own tab to place. */
 export interface DesktopBrowserPopup {
     readonly guestId: number;
@@ -802,6 +811,10 @@ export interface HappyDesktopBridge {
     ): Promise<void>;
     /** Pages a workspace browser guest opened, for the guest's own tab to place. */
     browserNetworkPopupSubscribe?(listener: (popup: DesktopBrowserPopup) => void): () => void;
+    /** Absent on native hosts that do not report a network Happy Agent no longer knows. */
+    browserNetworkMissingSubscribe?(
+        listener: (missing: DesktopBrowserNetworkMissing) => void,
+    ): () => void;
     /** Web links Happy itself was asked to open, outside any workspace browser. */
     browserOpenSubscribe(listener: (url: string) => void): () => void;
     browserStatusSubscribe(listener: (status: DesktopBrowserStatus) => void): () => void;
@@ -974,6 +987,7 @@ export const desktopIpc = {
     browserNetworkProfileOpen: "happy:browser:network-profile-open",
     browserNetworkPopupRequested: "happy:browser:network-popup-requested",
     browserNetworkCommand: "happy:browser:network-command",
+    browserNetworkMissing: "happy:browser:network-missing",
     browserOpenRequested: "happy:browser:open-requested",
     browserStatusChanged: "happy:browser:status-changed",
     browserTunnelFailed: "happy:browser:tunnel-failed",

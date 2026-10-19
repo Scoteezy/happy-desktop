@@ -48,6 +48,7 @@ import {
     mediaPreviewView,
     type DesktopBrowserPopup,
     type DesktopBrowserNetwork,
+    type DesktopBrowserNetworkMissing,
     type DesktopBrowserStatus,
     type DesktopBrowserTunnelFailure,
     type DesktopCloudAuthConfiguration,
@@ -598,7 +599,13 @@ function browserProxyApply(network: DesktopBrowserNetwork): Promise<string> {
         await browserSessionConfigure(browserSession);
         let candidate: HappyAgentBrowser | undefined;
         try {
-            candidate = await HappyAgentBrowser.create(browserSession, network, runtime);
+            candidate = await HappyAgentBrowser.create(browserSession, network, runtime, () => {
+                const window = windowLifecycle.get();
+                if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
+                window.webContents.send(desktopIpc.browserNetworkMissing, {
+                    partition,
+                } satisfies DesktopBrowserNetworkMissing);
+            });
             browserProxies.set(partition, candidate);
             return partition;
         } catch (error) {
