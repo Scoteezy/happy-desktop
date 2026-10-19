@@ -83,6 +83,10 @@ const REPLACEMENT_RECONNECT_WINDOW_MS = 2 * 60_000;
 const DEFAULT_HISTORY_LIMIT = 100;
 /** Sessions loaded ahead of an open and never opened that stay cached; older ones are dropped. */
 const PREFETCHED_SESSION_LIMIT = 6;
+/** How long after a snapshot lands the read-ahead waits, so the first paint and opens come first. */
+const PRELOAD_DELAY_MS = 1_500;
+/** How often the read-ahead looks again while another session is loading. */
+const PRELOAD_BUSY_WAIT_MS = 100;
 const GIT_WATCH_RENEW_MS = 2 * 60 * 1000;
 const RECENT_EVENT_RETENTION_MS = 60_000;
 const SNAPSHOT_RESPONSE_TIMEOUT_MS = 60_000;
@@ -1192,6 +1196,77 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     /** Sessions loaded ahead of an open by `prefetchSession` and not opened since, oldest first. */
     const prefetchedSessions = new Set<string>();
 
+    /** Sessions read ahead by `preloadRecentSessions` and not opened since. */
+    const preloadedSessions = new Set<string>();
+    let preloading = false;
+
+    /**
+     * The sessions a reader most likely opens next: every active agent the sidebar can show,
+     * running ones first, then the most recently updated.
+     */
+    const recentAgents = (limit: number): Agent[] => {
+        const { bots, projects, tasks, workspaces } = groupsStore.getState();
+        // A workspace's agents are listed under its project too.
+        const found = new Map<string, Agent>();
+        const visit = (agent: Agent): void => {
+            if (agent.archivedAt === null) found.set(agent.id, agent);
+            for (const child of agent.subtasks ?? []) visit(child);
+        };
+        for (const bot of bots) visit(bot.agent);
+        for (const task of tasks) visit(task.agent);
+        for (const owner of [...workspaces, ...projects])
+            for (const root of owner.agents) visit(root);
+        const running = (agent: Agent) => (agent.status === "idle" ? 0 : 1);
+        return [...found.values()]
+            .sort(
+                (left, right) => running(right) - running(left) || right.updatedAt - left.updatedAt,
+            )
+            .slice(0, limit);
+    };
+
+    /**
+     * Reads ahead, one at a time, the newest page of the sessions a reader most likely opens,
+     * once nothing else is loading: an open or a prefetch always goes first. A session read this
+     * way is an ordinary cached one, which the update feed keeps current; one that drops out of
+     * the recent set and is not open is let go.
+     */
+    const preloadRecentSessions = async (): Promise<void> => {
+        const limit = options.preloadedSessions ?? 0;
+        if (limit <= 0 || preloading) return;
+        preloading = true;
+        try {
+            const recent = recentAgents(limit);
+            const wanted = new Set(recent.map((agent) => agent.id));
+            for (const id of preloadedSessions) {
+                if (wanted.has(id)) continue;
+                preloadedSessions.delete(id);
+                const stale = sessions.get(id);
+                if (
+                    stale !== undefined &&
+                    stale.subscribers.size === 0 &&
+                    stale.loading === undefined
+                ) {
+                    clearUserIndex(stale);
+                    sessions.delete(id);
+                }
+            }
+            for (const agent of recent) {
+                for (;;) {
+                    if (closed || rootController.signal.aborted) return;
+                    if (![...sessions.values()].some((entry) => entry.loading !== undefined)) break;
+                    await wait(PRELOAD_BUSY_WAIT_MS, rootController.signal);
+                }
+                const known = sessions.get(agent.id);
+                if (known !== undefined && known.historyLoaded) continue;
+                const entry = known ?? sessionEntryCreate(agent.id);
+                if (known === undefined) preloadedSessions.add(agent.id);
+                await ensureSessionLoaded(entry);
+            }
+        } finally {
+            preloading = false;
+        }
+    };
+
     const sessionEntryCreate = (sessionId: string): SessionEntry => {
         const entry: SessionEntry = {
             id: sessionId,
@@ -1383,6 +1458,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 message: "State reconciliation completed",
                 source: "sync",
             });
+            if ((options.preloadedSessions ?? 0) > 0) {
+                background(
+                    wait(PRELOAD_DELAY_MS, rootController.signal).then(preloadRecentSessions),
+                );
+            }
         })();
         const tracked = running.finally(() => {
             if (resyncTask === tracked) resyncTask = undefined;
@@ -3048,6 +3128,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         connectSession(subscription) {
             if (closed) throw new Error("This Happy Agent connection is closed.");
             prefetchedSessions.delete(subscription.sessionId);
+            preloadedSessions.delete(subscription.sessionId);
             const entry =
                 sessions.get(subscription.sessionId) ?? sessionEntryCreate(subscription.sessionId);
             const wasInactive = entry.subscribers.size === 0;

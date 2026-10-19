@@ -43,7 +43,7 @@ afterEach(() => {
 
 function harnessOpen(
     daemon = fakeHappyAgentDaemonCreate(),
-    options: { readonly memberProfileRequired?: boolean } = {},
+    options: { readonly memberProfileRequired?: boolean; readonly preloadedSessions?: number } = {},
 ): Harness {
     const waits: number[] = [];
     const rejections: MutationRejectedDelta[] = [];
@@ -1268,6 +1268,36 @@ it("opens a prefetched session with its transcript already there, reading histor
     expect(userMessages(reopened.elements).map((element) => element.text)).toEqual(["earlier"]);
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(daemon.callCount("getMessages")).toBe(1);
+});
+
+it("reads the most recent sessions ahead once the sidebar is live, so opening one shows its transcript", async () => {
+    const { connection, daemon } = harnessOpen(undefined, { preloadedSessions: 2 });
+    const project = daemon.projectSeed({ id: "project-a" });
+    const old = daemon.agentSeed(project.id, { id: "agent-old", updatedAt: 1 });
+    const recent = daemon.agentSeed(project.id, { id: "agent-recent", updatedAt: 3 });
+    const newest = daemon.agentSeed(project.id, { id: "agent-newest", updatedAt: 4 });
+    daemon.historySet(recent.id, [
+        fakeRun({
+            id: "r1",
+            status: "completed",
+            endedAt: 2,
+            messages: [fakeUserMessage({ id: "m1", content: [{ type: "text", text: "earlier" }] })],
+        }),
+    ]);
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(2));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const reopened = sessionWatch(connection, recent.id);
+    expect(reopened.session?.historyLoading).not.toBe(true);
+    expect(userMessages(reopened.elements).map((element) => element.text)).toEqual(["earlier"]);
+    sessionWatch(connection, newest.id);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(daemon.callCount("getMessages")).toBe(2);
+    // An older session was not read ahead, so opening it reads it.
+    sessionWatch(connection, old.id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(3));
 });
 
 it("keeps only the newest few prefetched sessions that were never opened", async () => {

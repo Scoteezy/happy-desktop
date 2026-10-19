@@ -956,6 +956,12 @@ export interface ConnectHappyAgentOptions {
      * asks for one. Defaults to true.
      */
     memberProfileRequired?: boolean;
+    /**
+     * How many of the most recently active sessions to read ahead once the sidebar is known and
+     * no session is loading, so opening one shows its transcript at once. The live update feed
+     * keeps them current from then on. Defaults to none.
+     */
+    preloadedSessions?: number;
 }
 
 export interface HappyAgentConnection {

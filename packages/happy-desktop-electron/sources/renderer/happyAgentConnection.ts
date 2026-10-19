@@ -78,6 +78,7 @@ function protocolMismatchOf(
 
 const WORKSPACE_MEMORY_PREFIX = "happy.happy-agent.workspace-memory.v1:";
 const RETRY_MS = 1_000;
+const PRELOADED_SESSIONS = 12;
 
 function workspaceMemoryPersistence(happyAgentId: string): HappyAgentWorkspaceMemoryPersistence {
     const key = `${WORKSPACE_MEMORY_PREFIX}${happyAgentId}`;
@@ -377,6 +378,9 @@ export function happyAgentConnectionOpen(input: {
         endpoint: input.happyAgentHttpUrl,
         token: "happy-local-capability",
         memberProfileRequired: input.memberProfileRequired,
+        // Read ahead the sessions most likely opened next, so a first open, of a remote's
+        // session above all, shows its transcript instead of a loading line.
+        preloadedSessions: PRELOADED_SESSIONS,
         onDebugEntry: debugEntry,
         onMutationRejected: (rejection) => {
             for (const listener of mutationListeners) listener(rejection);
