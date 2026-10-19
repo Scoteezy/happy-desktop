@@ -260,6 +260,56 @@ const usageUnread: readonly HappyAgentProviderUsageEntry[] = [
     { providerId: "work_codex" },
 ];
 
+/**
+ * Each account at a different point of a refresh: one just read, one being
+ * read now, one whose latest refresh failed beside the reading it keeps, and
+ * one whose only read failed.
+ */
+const usageFreshness: readonly HappyAgentProviderUsageEntry[] = [
+    {
+        providerId: "claude",
+        checkedAt: 1_700_000_000_000,
+        refreshedAt: 1_700_000_000_000,
+        usage: {
+            capturedAt: 1_700_000_000_000,
+            planName: "Max 20×",
+            exhausted: false,
+            fiveHour: { usedPercent: 42, resetsAt: 1_700_007_200_000 },
+            weekly: { usedPercent: 81, resetsAt: 1_700_400_000_000 },
+        },
+    },
+    {
+        providerId: "claude_extra",
+        checkedAt: 1_699_999_400_000,
+        refreshedAt: 1_699_999_400_000,
+        refreshing: true,
+        usage: {
+            capturedAt: 1_699_999_400_000,
+            exhausted: false,
+            fiveHour: { usedPercent: 67, resetsAt: 1_700_003_000_000 },
+            weekly: { usedPercent: 23, resetsAt: 1_700_400_000_000 },
+        },
+    },
+    {
+        providerId: "work_codex",
+        checkedAt: 1_700_000_000_000,
+        refreshedAt: 1_699_999_400_000,
+        refreshError: "Codex did not answer the usage request in time.",
+        usage: {
+            capturedAt: 1_699_999_400_000,
+            planName: "Pro",
+            exhausted: false,
+            fiveHour: { usedPercent: 12, resetsAt: 1_700_003_000_000 },
+            weekly: { usedPercent: 54 },
+        },
+    },
+    {
+        providerId: "grok",
+        checkedAt: 1_700_000_000_000,
+        refreshError: "The Grok account could not be read: the assistant is signed out.",
+    },
+];
+
 const usageReadingTime = (capturedAt: number) =>
     capturedAt >= 1_700_000_000_000 ? "just now" : "10 minutes ago";
 
@@ -1310,6 +1360,26 @@ export function HappyAgentSettingsBlueprintPage() {
                             message: "The Happy Agent stopped reporting usage.",
                         }}
                         providers={usageUnread}
+                        readingTime={usageReadingTime}
+                    />
+                </HappyAgentSettingsShell>
+            </FullScreenSpecimen>
+            <FullScreenSpecimen
+                detail="Each account says when it was last read: one just now, one being read again, one whose refresh failed beside the reading it keeps, and one whose only read failed"
+                label="Happy Agent settings — usage freshness"
+                number="08e"
+            >
+                <HappyAgentSettingsShell
+                    activeCategoryId="usage"
+                    categories={categories}
+                    description={usageDescription}
+                    onCategorySelect={noop}
+                    onClose={noop}
+                    title="Usage"
+                >
+                    <HappyAgentUsageSettings
+                        currentTime={1_700_000_000_000}
+                        providers={usageFreshness}
                         readingTime={usageReadingTime}
                     />
                 </HappyAgentSettingsShell>

@@ -5,6 +5,7 @@ import {
     type HappyAgentMenusSnapshot,
     type HappyAgentModelOption,
     type HappyAgentModelSelection,
+    type HappyAgentProviderUsageReading,
     type HappyAgentProviderUsageSnapshot,
     type HappyAgentProviderUsageStore,
     type HappyAgentProviderUsageWindow,
@@ -18,6 +19,7 @@ import type {
     ComposerModelChoice,
     ComposerModelControlProps,
     ComposerModelService,
+    ComposerModelUsage,
     ComposerModelUsageWatch,
     ComposerModelUsageWindow,
 } from "./ComposerModelControl";
@@ -166,6 +168,7 @@ function usageWindow(
         label,
         ...(window === undefined ? {} : { usedPercent: window.usedPercent }),
         ...(window?.resetsAt === undefined ? {} : { resets: resets(new Date(window.resetsAt)) }),
+        ...(window?.capturedAt === undefined ? {} : { capturedAt: window.capturedAt }),
     };
 }
 
@@ -173,55 +176,132 @@ function clockTime(at: Date): string {
     return at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-/** Plan windows per provider account; an account with no plan reading is left unknown. */
-function usageProject(
+/** A moment today reads as its time alone; any other day leads with the weekday. */
+function dayTime(at: Date, now: Date): string {
+    return at.toDateString() === now.toDateString()
+        ? clockTime(at)
+        : `${at.toLocaleDateString([], { weekday: "short" })} ${clockTime(at)}`;
+}
+
+/**
+ * When a spent account can be used again: the latest reset among the windows
+ * that are full, since the account stays blocked until every one of them has
+ * started over. An account the vendor blocked with no full window waits on
+ * its fullest one.
+ */
+function limitResetsAt(reading: HappyAgentProviderUsageReading): number | undefined {
+    const windows = [reading.fiveHour, reading.weekly, reading.monthly].filter(
+        (window): window is HappyAgentProviderUsageWindow => window !== undefined,
+    );
+    const full = windows.filter((window) => window.usedPercent >= 100);
+    const blocking =
+        full.length > 0
+            ? full
+            : [...windows].sort((left, right) => right.usedPercent - left.usedPercent).slice(0, 1);
+    const resets = blocking.flatMap((window) =>
+        window.resetsAt === undefined ? [] : [window.resetsAt],
+    );
+    return resets.length === 0 ? undefined : Math.max(...resets);
+}
+
+/**
+ * Plan windows and their freshness per provider account. An account with no
+ * plan reading is left unknown, unless it is being read or its read failed,
+ * which the picker says beneath the unknown bar.
+ */
+export function happyAgentComposerModelUsageProject(
     snapshot: HappyAgentProviderUsageSnapshot,
+    now: number,
 ): ReadonlyMap<string, ComposerModelAccountUsage> {
+    const today = new Date(now);
     const usage = new Map<string, ComposerModelAccountUsage>();
     for (const entry of snapshot.providers) {
         const reading = entry.usage;
-        if (
-            reading === undefined ||
-            (reading.fiveHour === undefined &&
-                reading.weekly === undefined &&
-                reading.planName === undefined)
-        )
-            continue;
+        const hasPlan =
+            reading !== undefined &&
+            (reading.fiveHour !== undefined ||
+                reading.weekly !== undefined ||
+                reading.planName !== undefined);
+        // A daemon before protocol 29 says when its reading was taken, not
+        // when the account was last read; that is the closest it can tell.
+        const updatedAt = entry.refreshedAt ?? (hasPlan ? reading.capturedAt : undefined);
+        // Before protocol 29 the daemon's own failed read is the only failure there is.
+        const refreshError = entry.refreshError ?? entry.error;
+        if (!hasPlan && !entry.refreshing && refreshError === undefined) continue;
+        const limitResets =
+            hasPlan && reading.exhausted === true ? limitResetsAt(reading) : undefined;
         usage.set(entry.providerId, {
-            ...(reading.planName === undefined ? {} : { plan: reading.planName }),
-            windows: [
-                usageWindow("fiveHour", "5h", reading.fiveHour, (at) => `resets ${clockTime(at)}`),
-                usageWindow(
-                    "weekly",
-                    "Weekly",
-                    reading.weekly,
-                    (at) =>
-                        `resets ${at.toLocaleDateString([], { weekday: "short" })} ${clockTime(at)}`,
-                ),
-            ],
+            ...(reading?.planName === undefined ? {} : { plan: reading.planName }),
+            windows: hasPlan
+                ? [
+                      usageWindow(
+                          "fiveHour",
+                          "5h",
+                          reading.fiveHour,
+                          (at) => `resets ${clockTime(at)}`,
+                      ),
+                      usageWindow(
+                          "weekly",
+                          "Weekly",
+                          reading.weekly,
+                          (at) =>
+                              `resets ${at.toLocaleDateString([], { weekday: "short" })} ${clockTime(at)}`,
+                      ),
+                  ]
+                : [],
+            ...(updatedAt === undefined ? {} : { updatedAt }),
+            ...(entry.refreshing ? { refreshing: true } : {}),
+            ...(refreshError === undefined ? {} : { refreshError }),
+            ...(hasPlan && reading.exhausted === true
+                ? {
+                      limit:
+                          limitResets === undefined
+                              ? {}
+                              : { resets: dayTime(new Date(limitResets), today) },
+                  }
+                : {}),
         });
     }
     return usage;
 }
 
+/** Ages are told again this often while the menu is open, so "3 min ago" keeps counting. */
+const USAGE_AGE_TICK_MS = 15_000;
+
 /**
  * Feeds the picker's accounts from the provider-usage store. The picker holds
  * the subscription while its menu is open: the store answers at once with the
- * reading it already holds and re-reads the daemon only once that is stale.
+ * reading it already holds, follows the daemon's changes, and passes the
+ * picker's refresh requests on to the daemon.
  */
 export function happyAgentComposerModelUsageWatch(
     store: HappyAgentProviderUsageStore,
 ): ComposerModelUsageWatch {
-    return (listener) => {
-        let last: HappyAgentProviderUsageSnapshot | undefined;
-        const emit = () => {
-            const snapshot = store.get();
-            if (snapshot === last) return;
-            last = snapshot;
-            listener(usageProject(snapshot));
-        };
-        const unsubscribe = store.subscribe(emit);
-        emit();
-        return unsubscribe;
+    return {
+        subscribe(listener) {
+            let last: HappyAgentProviderUsageSnapshot | undefined;
+            let usage: ComposerModelUsage | undefined;
+            const emit = () => {
+                const snapshot = store.get();
+                if (snapshot === last) return;
+                last = snapshot;
+                const now = Date.now();
+                usage = { accounts: happyAgentComposerModelUsageProject(snapshot, now), now };
+                listener(usage);
+            };
+            const tick = () => {
+                if (usage === undefined) return;
+                usage = { accounts: usage.accounts, now: Date.now() };
+                listener(usage);
+            };
+            const unsubscribe = store.subscribe(emit);
+            emit();
+            const timer = setInterval(tick, USAGE_AGE_TICK_MS);
+            return () => {
+                clearInterval(timer);
+                unsubscribe();
+            };
+        },
+        refresh: (accounts) => store.usageRefresh(accounts),
     };
 }

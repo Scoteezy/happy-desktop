@@ -175,11 +175,13 @@ export {
     type ComposerModelEffort,
     type ComposerModelSelection,
     type ComposerModelService,
+    type ComposerModelUsage,
     type ComposerModelUsageWatch,
     type ComposerModelUsageWindow,
 } from "./ComposerModelControl";
 export {
     happyAgentComposerModelControlProps,
+    happyAgentComposerModelUsageProject,
     happyAgentComposerModelUsageWatch,
 } from "./happyAgentComposerModelControl";
 export {

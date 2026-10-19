@@ -1,4 +1,9 @@
 import {
+    PROVIDER_USAGE_UPDATED,
+    happyAgentSyncRead,
+    providerUsageRefresh,
+    providerUsageUpdatedOf,
+    type DaemonUsageResponseWire,
     type HappyAgentClient,
     type HappyAgentProviderModelTokenUsage,
     type HappyAgentProviderTokenCounts,
@@ -6,42 +11,137 @@ import {
     type HappyAgentProviderUsageReading,
     type HappyAgentProviderUsageSource,
     type HappyAgentProviderUsageWindow,
+    type HappyAgentSync,
+    type ProviderAccountUsageWire,
+    type ProviderUsageEntryWire,
+    type ProviderUsageUpdatedPayload,
+    type ProviderUsageWindowWire,
     type happyAgentProtocol,
 } from "happy-desktop-state";
 
-const POLL_MS = 5_000;
+/** A daemon older than protocol 29 announces no usage changes, so it is read this often. */
+const LEGACY_POLL_MS = 60_000;
+/** Token counts move with every finished run; they are read again at most this often. */
+const TOKENS_READ_MS = 10_000;
+/** An account the daemon read more recently than this is not read again on request. */
+const REFRESH_OLDER_THAN_MS = 300_000;
+
+/**
+ * What can change the usage surface: an account's reading, the configured
+ * accounts themselves, and the token counts a finished run adds to.
+ */
+const USAGE_EVENTS: readonly happyAgentProtocol.HappyAgentEvent["type"][] = [
+    PROVIDER_USAGE_UPDATED,
+    "config.updated",
+    "run.finished",
+];
 
 type UsageWindow = "hour" | "day" | "week" | "month";
 
 const WINDOWS: readonly UsageWindow[] = ["hour", "day", "week", "month"];
 
-/** Reads daemon token usage only while the Usage settings category is observed. */
+/**
+ * Follows daemon usage for as long as a surface observes it.
+ *
+ * Subscribing reads every account once, then applies each account's
+ * `provider.usage.updated` as it arrives: every change to an account is one
+ * complete replacement of its entry, so the latest one wins. The whole list is
+ * read again whenever what was followed may have been missed — a new
+ * bootstrap, a journal gap, a reconnect — and when the configured accounts
+ * change. Finished runs are what move the token counts, which no account event
+ * carries, so they prompt a read too, at most once per `TOKENS_READ_MS`.
+ *
+ * A daemon older than protocol 29 sends no such events and leaves the
+ * freshness fields off its entries; while one is answering, the list is read
+ * every `LEGACY_POLL_MS` instead.
+ */
 export function happyAgentUsageSourceCreate(
     client: HappyAgentClient,
+    sync: HappyAgentSync,
 ): HappyAgentProviderUsageSource {
+    /** The last read came from a daemon without account events or the refresh route. */
+    let legacy = false;
     return {
+        refresh(providerIds) {
+            if (legacy) return;
+            // Progress and results arrive as account events. A daemon that
+            // cannot refresh, or a request that fails, leaves the readings as
+            // they are, which is all there is to say about it.
+            void providerUsageRefresh(client, {
+                providerIds: [...providerIds],
+                olderThanMs: REFRESH_OLDER_THAN_MS,
+            })?.catch(() => undefined);
+        },
         subscribe(listener) {
-            let closed = false;
-            let loading = false;
-            let request: AbortController | undefined;
-            let providers: readonly HappyAgentProviderUsageEntry[] = [];
+            const controller = new AbortController();
+            const signal = controller.signal;
+            /** The token windows and the account order of the last read. */
+            let read: DaemonUsageResponseWire | undefined;
+            const entries = new Map<string, ProviderUsageEntryWire>();
+            /**
+             * Each account's latest event, numbered in arrival order. A read
+             * keeps any account an event changed after the read was sent: that
+             * event is at least as new as what the read reports.
+             */
+            const changes = new Map<
+                string,
+                { readonly payload: ProviderUsageUpdatedPayload; readonly order: number }
+            >();
+            let applied = 0;
             let loadedAt: number | undefined;
+            let providers: readonly HappyAgentProviderUsageEntry[] = [];
+            let reading = false;
+            let readAgain = false;
+            let lastReadAt = 0;
+            let tokensTimer: ReturnType<typeof setTimeout> | undefined;
+            let pollTimer: ReturnType<typeof setInterval> | undefined;
 
-            const load = (): void => {
-                if (closed || loading) return;
-                loading = true;
-                request = new AbortController();
-                void client.getUsage({ signal: request.signal }).then(
-                    (usage) => {
-                        loading = false;
-                        if (closed) return;
-                        loadedAt = Date.now();
-                        providers = usageProject(usage, loadedAt);
-                        listener({ loadedAt, loading: false, providers });
-                    },
-                    (error: unknown) => {
-                        loading = false;
-                        if (closed || request?.signal.aborted) return;
+            const publish = (): void => {
+                if (read === undefined || loadedAt === undefined) return;
+                providers = usageProject(read, entries, loadedAt);
+                listener({ loadedAt, loading: false, providers });
+            };
+
+            const adopt = (usage: DaemonUsageResponseWire, sentAt: number): void => {
+                read = usage;
+                entries.clear();
+                for (const entry of usage.providers ?? []) {
+                    const change = changes.get(entry.providerId);
+                    entries.set(
+                        entry.providerId,
+                        change !== undefined && change.order > sentAt
+                            ? { ...entry, ...change.payload }
+                            : entry,
+                    );
+                }
+                legacy =
+                    usage.providers === undefined ||
+                    usage.providers.some((entry) => !("refreshedAt" in entry));
+                if (legacy && pollTimer === undefined)
+                    pollTimer = setInterval(usageRead, LEGACY_POLL_MS);
+                else if (!legacy && pollTimer !== undefined) {
+                    clearInterval(pollTimer);
+                    pollTimer = undefined;
+                }
+                loadedAt = Date.now();
+                publish();
+            };
+
+            /** Reads every account, retrying until it lands; one read at a time. */
+            const usageRead = (): void => {
+                if (signal.aborted) return;
+                if (reading) {
+                    readAgain = true;
+                    return;
+                }
+                reading = true;
+                const sentAt = applied;
+                lastReadAt = Date.now();
+                void happyAgentSyncRead(
+                    signal,
+                    (): Promise<DaemonUsageResponseWire> => client.getUsage({ signal }),
+                    (error) => {
+                        if (signal.aborted) return;
                         listener({
                             error: error instanceof Error ? error.message : String(error),
                             loading: false,
@@ -49,35 +149,97 @@ export function happyAgentUsageSourceCreate(
                             ...(loadedAt === undefined ? {} : { loadedAt }),
                         });
                     },
-                );
+                )
+                    .then((usage) => {
+                        if (!signal.aborted) adopt(usage, sentAt);
+                    })
+                    .catch(() => undefined)
+                    .finally(() => {
+                        reading = false;
+                        if (!readAgain) return;
+                        readAgain = false;
+                        usageRead();
+                    });
+            };
+
+            const tokensRead = (): void => {
+                if (tokensTimer !== undefined) return;
+                const wait = lastReadAt + TOKENS_READ_MS - Date.now();
+                if (wait <= 0) {
+                    usageRead();
+                    return;
+                }
+                tokensTimer = setTimeout(() => {
+                    tokensTimer = undefined;
+                    usageRead();
+                }, wait);
+            };
+
+            const changeApply = (payload: ProviderUsageUpdatedPayload): void => {
+                changes.set(payload.providerId, { payload, order: (applied += 1) });
+                // Before the first read lands it takes this change into account.
+                if (read === undefined) return;
+                const held = entries.get(payload.providerId);
+                // An account the last read did not list was configured since.
+                if (held === undefined) {
+                    usageRead();
+                    return;
+                }
+                entries.set(payload.providerId, { ...held, ...payload });
+                publish();
+            };
+
+            const follow = async (): Promise<void> => {
+                /** The feed broke since the last read, so changes may have been missed. */
+                let dropped = false;
+                for await (const input of sync.follow({ signal, events: USAGE_EVENTS })) {
+                    if (input.kind === "error") {
+                        dropped = true;
+                        continue;
+                    }
+                    if (input.kind === "bootstrap" || input.kind === "reconcile") {
+                        dropped = false;
+                        usageRead();
+                        continue;
+                    }
+                    const update = input.update;
+                    if (update.kind === "disconnected" || update.kind === "state_lost") {
+                        dropped = true;
+                    } else if (update.kind === "connected") {
+                        if (dropped) usageRead();
+                        dropped = false;
+                    } else if (update.kind === "event") {
+                        const change = providerUsageUpdatedOf(update);
+                        if (change !== undefined) changeApply(change);
+                        else if (update.event.type === "config.updated") usageRead();
+                        else if (update.event.type === "run.finished") tokensRead();
+                    }
+                }
             };
 
             listener({ loading: true, providers });
-            load();
-            const timer = setInterval(load, POLL_MS);
+            void follow().catch(() => undefined);
             return () => {
-                if (closed) return;
-                closed = true;
-                clearInterval(timer);
-                request?.abort();
+                if (signal.aborted) return;
+                controller.abort();
+                clearTimeout(tokensTimer);
+                clearInterval(pollTimer);
             };
         },
     };
 }
 
 function usageProject(
-    usage: happyAgentProtocol.DaemonUsageResponse,
+    usage: DaemonUsageResponseWire,
+    entries: ReadonlyMap<string, ProviderUsageEntryWire>,
     capturedAt: number,
 ): readonly HappyAgentProviderUsageEntry[] {
-    const providersById = new Map(
-        (usage.providers ?? []).map((provider) => [provider.providerId, provider]),
-    );
-    const providerIds = new Set(providersById.keys());
+    const providerIds = new Set(entries.keys());
     for (const window of WINDOWS)
         for (const providerId of Object.keys(usage[window])) providerIds.add(providerId);
 
     return [...providerIds].map((providerId) => {
-        const provider = providersById.get(providerId);
+        const provider = entries.get(providerId);
         const models = modelsProject(
             usage,
             providerId,
@@ -92,13 +254,17 @@ function usageProject(
             providerId,
             ...(provider?.checkedAt == null ? {} : { checkedAt: provider.checkedAt }),
             ...(provider?.error == null ? {} : { error: provider.error }),
+            ...(provider?.refreshedAt == null ? {} : { refreshedAt: provider.refreshedAt }),
+            ...(provider?.refreshError == null ? {} : { refreshError: provider.refreshError }),
+            ...(provider?.retryAt == null ? {} : { retryAt: provider.retryAt }),
+            ...(provider?.refreshing ? { refreshing: true } : {}),
             ...(reading === undefined ? {} : { usage: reading }),
         };
     });
 }
 
 function accountUsageProject(
-    usage: happyAgentProtocol.ProviderAccountUsage,
+    usage: ProviderAccountUsageWire,
     models: readonly HappyAgentProviderModelTokenUsage[],
 ): HappyAgentProviderUsageReading {
     const fiveHour = windowProject(usage.windows.fiveHour);
@@ -130,7 +296,7 @@ function accountUsageProject(
 }
 
 function windowProject(
-    window: happyAgentProtocol.ProviderAccountUsageWindow | null,
+    window: ProviderUsageWindowWire | null,
 ): HappyAgentProviderUsageWindow | undefined {
     if (window === null) return undefined;
     return {
@@ -138,11 +304,12 @@ function windowProject(
         ...(window.resetsAt === null ? {} : { resetsAt: window.resetsAt }),
         ...(window.startsAt === null ? {} : { startsAt: window.startsAt }),
         ...(window.durationMs === null ? {} : { durationMs: window.durationMs }),
+        ...(window.capturedAt === undefined ? {} : { capturedAt: window.capturedAt }),
     };
 }
 
 function modelsProject(
-    usage: happyAgentProtocol.DaemonUsageResponse,
+    usage: DaemonUsageResponseWire,
     providerId: string,
     configuredModelIds: readonly string[],
 ): readonly HappyAgentProviderModelTokenUsage[] {

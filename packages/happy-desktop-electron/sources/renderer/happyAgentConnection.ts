@@ -428,7 +428,7 @@ export function happyAgentConnectionOpen(input: {
         profileActions: profile.actions,
         profilePhotoCodec: { open: imageCropOpen },
         profileSource: profile.source,
-        providerUsageSource: happyAgentUsageSourceCreate(directClient),
+        providerUsageSource: happyAgentUsageSourceCreate(directClient, agentConnection.sync),
         transcriptConnect: happyAgentTranscriptConnectCreate(agentConnection),
         connectMutationSubscribe: (listener) => {
             mutationListeners.add(listener);

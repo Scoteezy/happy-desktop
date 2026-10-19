@@ -196,6 +196,7 @@ export * from "./happyAgent/happyAgentProjectRegistration.js";
 export * from "./happyAgent/happyAgentProfilePhoto.js";
 export * from "./happyAgent/happyAgentProfileStore.js";
 export * from "./happyAgent/happyAgentProviderUsageStore.js";
+export * from "./happyAgent/happyAgentProviderUsageProtocol.js";
 export * from "./happyAgent/happyAgentProvidersStore.js";
 export * from "./happyAgent/happyAgentVoiceSettingsStore.js";
 export * from "./happyAgent/happyAgentSecurityPolicyStore.js";

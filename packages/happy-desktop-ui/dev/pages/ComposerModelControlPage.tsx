@@ -121,6 +121,10 @@ const ASTRA: ComposerModelSelection = {
     effort: "xhigh",
 };
 
+/** The moment the fixtures' ages are told from: 3:00 PM today, wherever the page is open. */
+const NOW = new Date(new Date().setHours(15, 0, 0, 0)).getTime();
+const MINUTE = 60_000;
+
 /*
  * Usage as the provider-usage feed reports it. A full login (codex, claude)
  * reports its plan; claude_extra runs on a `claude setup-token` token, which
@@ -137,6 +141,7 @@ const USAGE: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
                 { id: "fiveHour", label: "5h", usedPercent: 42, resets: "resets 4:10 PM" },
                 { id: "weekly", label: "Weekly", usedPercent: 18, resets: "resets Mon 9:00 AM" },
             ],
+            updatedAt: NOW - 3 * MINUTE,
         },
     ],
     [
@@ -147,6 +152,7 @@ const USAGE: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
                 { id: "fiveHour", label: "5h", usedPercent: 12, resets: "resets 5:50 PM" },
                 { id: "weekly", label: "Weekly", usedPercent: 64, resets: "resets Thu 8:00 PM" },
             ],
+            updatedAt: NOW - 3 * MINUTE,
         },
     ],
     [
@@ -156,23 +162,64 @@ const USAGE: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
                 { id: "fiveHour", label: "5h", usedPercent: 91, resets: "resets 2:35 PM" },
                 { id: "weekly", label: "Weekly", usedPercent: 37, resets: "resets Fri 6:00 AM" },
             ],
+            updatedAt: NOW - 40 * 1_000,
         },
     ],
 ]);
 
 /**
  * A usage feed holding a reading from earlier in the session: it answers at
- * once, as the provider-usage store does with its held reading, and holds
- * nothing open.
+ * once, as the provider-usage store does with its held reading, holds nothing
+ * open, and has nobody to ask for a refresh.
  */
 function heldUsage(usage: ReadonlyMap<string, ComposerModelAccountUsage>): ComposerModelUsageWatch {
-    return (listener) => {
-        listener(usage);
-        return () => undefined;
+    return {
+        subscribe(listener) {
+            listener({ accounts: usage, now: NOW });
+            return () => undefined;
+        },
+        refresh: () => undefined,
     };
 }
 
 const usageWatch = heldUsage(USAGE);
+
+/** The fixture usage with one account's reading replaced. */
+function usageWith(account: string, reading: ComposerModelAccountUsage): ComposerModelUsageWatch {
+    return heldUsage(new Map([...USAGE, [account, reading]]));
+}
+
+const CLAUDE_WINDOWS = USAGE.get("claude")!.windows;
+
+/* The default Claude account at each point of a refresh, and a spent one. */
+const claudeUpdating = usageWith("claude", {
+    plan: "Max",
+    windows: CLAUDE_WINDOWS,
+    updatedAt: NOW - 47 * MINUTE,
+    refreshing: true,
+});
+const claudeRefreshFailed = usageWith("claude", {
+    plan: "Max",
+    windows: CLAUDE_WINDOWS,
+    updatedAt: NOW - 19 * MINUTE,
+    refreshError: "Claude did not answer the usage request in time.",
+});
+const claudeWeeklyBehind = usageWith("claude", {
+    plan: "Max",
+    windows: [
+        { ...CLAUDE_WINDOWS[0]!, capturedAt: NOW - 2 * MINUTE },
+        { ...CLAUDE_WINDOWS[1]!, capturedAt: NOW - 108 * MINUTE },
+    ],
+    updatedAt: NOW - 2 * MINUTE,
+});
+const claudeExtraSpent = usageWith("claude_extra", {
+    windows: [
+        { id: "fiveHour", label: "5h", usedPercent: 100, resets: "resets 3:05 PM" },
+        { id: "weekly", label: "Weekly", usedPercent: 41, resets: "resets Fri 6:00 AM" },
+    ],
+    updatedAt: NOW - 6 * MINUTE,
+    limit: { resets: "3:05 PM" },
+});
 
 const LONG_SERVICES: readonly ComposerModelService[] = [
     ...SERVICES,
@@ -687,6 +734,70 @@ export function ComposerModelControlPage() {
                     selection={ON_HIDDEN}
                     selectionModel={OPUS_5_5}
                     services={HIDDEN_SERVICES}
+                />
+            </Specimen>
+            <Specimen
+                number="22"
+                label="Usage freshness"
+                detail="Under the bars, a quiet line says how long ago the account was read. It counts on while the menu stays open; opening the menu asks for a fresh reading of every account it lists."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: "claude" }}
+                    selection={OPUS_MEDIUM}
+                    width={1140}
+                />
+            </Specimen>
+            <Specimen
+                number="23"
+                label="Usage updating"
+                detail="The reading is 47 minutes old and the daemon is reading the account now. The old numbers stay in place until the new ones arrive."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: "claude" }}
+                    selection={OPUS_MEDIUM}
+                    usageWatch={claudeUpdating}
+                    width={1140}
+                />
+            </Specimen>
+            <Specimen
+                number="24"
+                label="Usage refresh failed"
+                detail="The latest read failed, so the line names the time of the reading still shown and says the refresh did not work. Hovering it shows why."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: "claude" }}
+                    selection={OPUS_MEDIUM}
+                    usageWatch={claudeRefreshFailed}
+                    width={1140}
+                />
+            </Specimen>
+            <Specimen
+                number="25"
+                label="Window from an earlier reading"
+                detail="The 5h window was just read, but the weekly one is from nearly two hours ago, so it is named with its own time."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: "claude" }}
+                    selection={OPUS_MEDIUM}
+                    usageWatch={claudeWeeklyBehind}
+                    width={1140}
+                />
+            </Specimen>
+            <Specimen
+                number="26"
+                label="Spent account"
+                detail="claude_extra has used its whole 5h window. The line leads with when the limit lifts; once the daemon reads the account again after that, the line goes without anyone asking."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: "claude_extra" }}
+                    selection={OPUS_EXTRA}
+                    usageWatch={claudeExtraSpent}
+                    width={1140}
                 />
             </Specimen>
         </ComponentPage>

@@ -389,7 +389,7 @@ export interface HappyAgentWorkspaceClientDeps {
      */
     readonly artifactDocumentInline?: (mimeType: string) => boolean;
     /**
-     * Repeating read of each provider account's plan usage. Omitted leaves usage
+     * Live feed of each provider account's plan usage. Omitted leaves usage
      * unavailable rather than empty.
      */
     readonly providerUsageSource?: HappyAgentProviderUsageSource;

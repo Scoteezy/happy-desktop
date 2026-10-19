@@ -35,11 +35,34 @@ export type ComposerModelUsageWindow = {
     usedPercent?: number;
     /** Already-formatted reset moment, such as "resets 4:10 PM". */
     resets?: string;
+    /**
+     * When the service last reported this window, in milliseconds. A window
+     * much older than the rest of the account's reading says when it is from.
+     */
+    capturedAt?: number;
 };
 export type ComposerModelAccountUsage = {
     /** The plan the service reports for the account, such as "Max". */
     plan?: string;
     windows: readonly ComposerModelUsageWindow[];
+    /** When the account was last read successfully, in milliseconds. */
+    updatedAt?: number;
+    /** The account is being read now. */
+    refreshing?: boolean;
+    /** Why the last read failed; whatever the windows show is from an earlier one. */
+    refreshError?: string;
+    /**
+     * The account has spent its limit. `resets` is the already-formatted moment
+     * it is usable again, such as "3:05 PM", when the service says.
+     */
+    limit?: { resets?: string };
+};
+/** Every account's usage, and the moment its ages are told from. */
+export type ComposerModelUsage = {
+    /** Keyed by account id; an account missing here has no reading. */
+    accounts: ReadonlyMap<string, ComposerModelAccountUsage>;
+    /** Now, in milliseconds. It moves on while the menu stays open, so ages keep counting. */
+    now: number;
 };
 export type ComposerModelAccount = {
     id: string;
@@ -80,14 +103,16 @@ export type ComposerModelAccountNotice =
           onAsk(): Promise<void>;
       };
 /**
- * Streams live account usage, keyed by account id, for as long as the menu is
- * open. The control calls it when the menu appears and calls the returned
- * release when it goes, so nothing is read while nobody looks. An account
- * missing from the map has no reading and shows its usage as unknown.
+ * Live account usage for the menu. The control subscribes when the menu
+ * appears and releases when it goes, so nothing is followed while nobody
+ * looks. Opening the menu asks for a refresh of every account it lists, and
+ * moving the selection onto another account asks for that one; the owner
+ * decides what is actually worth reading again.
  */
-export type ComposerModelUsageWatch = (
-    listener: (usage: ReadonlyMap<string, ComposerModelAccountUsage>) => void,
-) => () => void;
+export type ComposerModelUsageWatch = {
+    subscribe(listener: (usage: ComposerModelUsage) => void): () => void;
+    refresh(accounts: readonly string[]): void;
+};
 /** The menu's own two rows, and the list each of them opens beside it. */
 export type ComposerModelPanel = "main" | "model" | "effort";
 /**
@@ -351,6 +376,89 @@ function UsageWindow(props: { window: ComposerModelUsageWindow }) {
     );
 }
 
+/** A reading this much older than its account's newest window says when it is from. */
+const USAGE_WINDOW_STALE_MS = 10 * 60_000;
+
+function clockTime(at: number, now: number) {
+    const date = new Date(at);
+    const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return now - at < 20 * 60 * 60_000
+        ? time
+        : `${date.toLocaleDateString([], { weekday: "short" })} ${time}`;
+}
+
+function usageAge(at: number, now: number) {
+    const minutes = Math.floor((now - at) / 60_000);
+    if (minutes < 1) return "just now";
+    if (minutes < 60) return `${String(minutes)} min ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 20) return `${String(hours)} hr ago`;
+    return `at ${clockTime(at, now)}`;
+}
+
+/**
+ * How current an account's numbers are, in one quiet line under its bars: how
+ * long ago it was read, that it is being read now, or when it was last read
+ * and that the latest attempt failed. A window left behind from an earlier
+ * reading than the rest is named with its own time, so an old number is never
+ * read as a new one. A spent account leads with when its limit lifts.
+ */
+function UsageFreshness(props: { usage: ComposerModelAccountUsage; now: number }) {
+    const { usage, now } = props;
+    const newest = Math.max(
+        usage.updatedAt ?? 0,
+        ...usage.windows.map((window) => window.capturedAt ?? 0),
+    );
+    const behind = usage.windows.filter(
+        (window) =>
+            window.capturedAt !== undefined && newest - window.capturedAt > USAGE_WINDOW_STALE_MS,
+    );
+    const updated = usage.refreshing
+        ? "Updating…"
+        : usage.refreshError !== undefined
+          ? usage.updatedAt === undefined
+              ? "Couldn't refresh"
+              : `Updated ${clockTime(usage.updatedAt, now)} · couldn't refresh`
+          : usage.updatedAt === undefined
+            ? undefined
+            : `Updated ${usageAge(usage.updatedAt, now)}`;
+    if (updated === undefined && behind.length === 0 && usage.limit === undefined) return null;
+    return (
+        <div
+            className="happy-composer-model-control__usage-freshness"
+            data-happy-desktop-ui="composer-model-control-usage-freshness"
+        >
+            {usage.limit ? (
+                <span
+                    className="happy-composer-model-control__usage-limit"
+                    data-happy-desktop-ui="composer-model-control-usage-limit"
+                >
+                    {usage.limit.resets ? `Limit resets ${usage.limit.resets}` : "Limit reached"}
+                </span>
+            ) : null}
+            {updated === undefined ? null : (
+                <span
+                    className="happy-composer-model-control__usage-updated"
+                    data-failed={usage.refreshError === undefined ? undefined : ""}
+                    data-refreshing={usage.refreshing ? "" : undefined}
+                    title={usage.refreshError}
+                >
+                    {updated}
+                </span>
+            )}
+            {behind.map((window) => (
+                <span
+                    className="happy-composer-model-control__usage-updated"
+                    data-happy-desktop-ui="composer-model-control-usage-window-age"
+                    key={window.id}
+                >
+                    {`${window.label} as of ${clockTime(window.capturedAt ?? 0, now)}`}
+                </span>
+            ))}
+        </div>
+    );
+}
+
 function failureMessage(error: unknown, fallback: string) {
     return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -499,10 +607,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     /** The service whose account panel is open. */
     const [accounts, setAccounts] = useState<string | null>(preview?.accounts ?? null);
     const [accountHover, setAccountHover] = useState<string | null>(preview?.accountHover ?? null);
-    const [liveUsage, setLiveUsage] = useState<ReadonlyMap<
-        string,
-        ComposerModelAccountUsage
-    > | null>(null);
+    const [liveUsage, setLiveUsage] = useState<ComposerModelUsage | null>(null);
     const [remembered, setRemembered] = useState<ReadonlyMap<string, string>>(() => new Map());
     const gesture = useRef({ target: "", scrolled: 0, last: 0, cooldownUntil: 0 });
     const hasModels =
@@ -518,7 +623,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     const usageLease = useCallback(
         (node: HTMLDivElement | null) => {
             if (node === null || usageWatch === undefined) return;
-            const release = usageWatch(setLiveUsage);
+            const release = usageWatch.subscribe(setLiveUsage);
             return () => {
                 release();
                 setLiveUsage(null);
@@ -603,6 +708,20 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         setPanel(null);
         setAccounts(null);
     };
+    /** Opening the menu is the moment to ask for current usage of every account it lists. */
+    const menuOpen = () => {
+        setPanel("main");
+        const listed = new Set(
+            props.services.flatMap((service) => service.accounts.map((account) => account.id)),
+        );
+        if (selection) listed.add(selection.account);
+        props.usageWatch?.refresh([...listed]);
+    };
+    /** A selection moved onto another account asks for that account's current usage. */
+    const select = (next: ComposerModelSelection) => {
+        if (next.account !== selection?.account) props.usageWatch?.refresh([next.account]);
+        props.onSelect?.(next);
+    };
     /** A row of the menu toggles its own list; the menu itself stays open. */
     const panelToggle = (next: "model" | "effort") => {
         setAccounts(null);
@@ -614,7 +733,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         if (effort === undefined || row.model.disabled) return;
         setRemembered((current) => new Map(current).set(row.key, effort.id));
         if (row.selected && effort.id === selection?.effort) return;
-        props.onSelect?.({
+        select({
             service: row.service,
             account: row.account,
             model: row.model.id,
@@ -628,7 +747,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     const modelPick = (row: Row) => {
         if (row.model.disabled) return;
         if (!row.selected)
-            props.onSelect?.({
+            select({
                 service: row.service,
                 account: row.account,
                 model: row.model.id,
@@ -662,7 +781,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
             model.effort,
             efforts[0],
         ].find((candidate) => candidate !== undefined && efforts.includes(candidate));
-        props.onSelect?.({ service: service.id, account: account.id, model: model.id, effort });
+        select({ service: service.id, account: account.id, model: model.id, effort });
     };
     /** Steps to the neighbouring account, stopping at either end. */
     const accountStep = (service: ComposerModelService, direction: number) => {
@@ -711,7 +830,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         items[Math.max(0, Math.min(items.length - 1, next))]?.focus();
     };
 
-    const usageOf = (account: ComposerModelAccount) => liveUsage?.get(account.id);
+    const usageOf = (account: ComposerModelAccount) => liveUsage?.accounts.get(account.id);
     /** An account says that it is one: the service's own is its default, any other is its id. */
     const accountName = (account: ComposerModelAccount) =>
         account.default ? "Default account" : account.label;
@@ -810,6 +929,9 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                 <UsageWindow key={window.id} window={window} />
                             ))
                         )}
+                        {shownUsage && liveUsage ? (
+                            <UsageFreshness now={liveUsage.now} usage={shownUsage} />
+                        ) : null}
                     </div>
                 ) : null}
             </div>
@@ -886,7 +1008,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                 data-happy-desktop-ui="composer-model-control-trigger"
                 data-empty={hasModels ? undefined : ""}
                 disabled={props.disabled || !hasModels}
-                onClick={() => (open ? close() : setPanel("main"))}
+                onClick={() => (open ? close() : menuOpen())}
                 ref={trigger}
                 type="button"
             >

@@ -12,6 +12,12 @@ export interface HappyAgentProviderUsageWindow {
     readonly startsAt?: number;
     /** How long one window lasts, in milliseconds. */
     readonly durationMs?: number;
+    /**
+     * When the vendor last reported this window, in milliseconds. A refresh can
+     * update one window and keep another from an earlier reading, so a window
+     * may be older than the reading it belongs to.
+     */
+    readonly capturedAt?: number;
 }
 
 /** Money the account can still spend once its rate-limit window is used up. */
@@ -71,16 +77,28 @@ export interface HappyAgentProviderUsageEntry {
     readonly checkedAt?: number;
     /** Why the daemon's own last read of this provider failed. */
     readonly error?: string;
+    /**
+     * When the daemon last read this account successfully, in milliseconds.
+     * Absent from a daemon older than protocol 29, which dates the reading only
+     * by `usage.capturedAt`.
+     */
+    readonly refreshedAt?: number;
+    /** Why the last refresh failed, even while an older reading is still kept. */
+    readonly refreshError?: string;
+    /** The daemon will not read this account again before this moment, in milliseconds. */
+    readonly retryAt?: number;
+    /** True while the daemon is reading this account now. */
+    readonly refreshing?: boolean;
 }
 
 /**
  * One reading of every provider account, with how that read went.
  *
- * The daemon reports usage on request rather than pushing it, so the source
- * repeats the read for as long as something is watching. State says where that
- * cycle is: `loading` is only true before the first answer, and a later failure
- * leaves the readings already held in place, because a read that could not reach
- * the daemon does not make what we last saw untrue.
+ * The source reads every account once and then follows the daemon's change
+ * events for as long as something is watching. State says where that is:
+ * `loading` is only true before the first answer, and a later failure leaves
+ * the readings already held in place, because a read that could not reach the
+ * daemon does not make what we last saw untrue.
  */
 export interface HappyAgentProviderUsageSourceReading {
     readonly providers: readonly HappyAgentProviderUsageEntry[];
@@ -92,15 +110,21 @@ export interface HappyAgentProviderUsageSourceReading {
 }
 
 /**
- * The provider-usage feed for one Happy Agent. Subscribing starts the reading cycle and
- * releasing the last subscriber stops it, so a machine nobody is looking at is
- * not polled.
+ * The provider-usage feed for one Happy Agent. Subscribing reads every account and
+ * follows their changes; releasing the last subscriber stops both, so a
+ * machine nobody is looking at is not read.
  */
 export interface HappyAgentProviderUsageSource {
     subscribe(
         listener: (reading: HappyAgentProviderUsageSourceReading) => void,
         onError: (error: unknown) => void,
     ): () => void;
+    /**
+     * Asks the daemon to read these accounts again where its reading is older
+     * than a few minutes. The daemon decides what is actually stale; the outcome
+     * arrives through `subscribe`, never as an answer here.
+     */
+    refresh(providerIds: readonly string[]): void;
 }
 
 export interface HappyAgentProviderUsageSnapshot {
@@ -116,6 +140,12 @@ export interface HappyAgentProviderUsageSnapshot {
 
 export interface HappyAgentProviderUsageStore {
     get(): HappyAgentProviderUsageSnapshot;
+    /**
+     * Someone is about to look at these accounts' usage. Asks the daemon to read
+     * again the ones it last read a while ago; fresh readings arrive as ordinary
+     * snapshots, and nothing here claims they are already on the way.
+     */
+    usageRefresh(providerIds: readonly string[]): void;
     subscribe(listener: () => void): () => void;
     [Symbol.dispose](): void;
 }
@@ -124,24 +154,22 @@ export interface HappyAgentProviderUsageStoreDeps {
     readonly source: HappyAgentProviderUsageSource;
 }
 
-/** A reading younger than this is shown as it is; a new subscriber does not re-read it. */
-const USAGE_FRESH_MS = 60_000;
-
 /**
  * How much of each provider account's plan this Happy Agent has spent, as one surface.
  *
- * The store owns no schedule of its own: the source repeats the daemon read
- * while anything is subscribed, and every successful reading it reports
- * replaces the list wholesale.
+ * The store owns no schedule of its own: the source reads the daemon and
+ * follows its change events while anything is subscribed, and every reading it
+ * reports replaces the list wholesale.
  *
  * The last successful reading outlives its subscribers for the life of the
- * store, so a surface that reopens shows it at once instead of waiting for the
- * daemon. A new source cycle does not blank it: its opening "loading" report
+ * store, so a surface that reopens shows it at once while the source reads
+ * again. A new source cycle does not blank it: its opening "loading" report
  * says nothing about the accounts, so only a successful reading replaces them.
- * While the held reading is under a minute old the cycle is not started at
- * all; it starts the moment the reading turns stale. There is nothing to act on here — usage is read, never changed — so
- * the store has no actions and emits no output, and the first subscriber
- * starting the cycle is what keeps a closed screen from polling a machine.
+ * The source starts with the first subscriber however recent the held reading
+ * is: a refresh asked for on opening reports its progress and result only as
+ * events, which a source that is not following would miss. Usage is read,
+ * never changed, so the one action only asks the daemon to read again and
+ * emits no output.
  */
 export function happyAgentProviderUsageStoreCreate(
     deps: HappyAgentProviderUsageStoreDeps,
@@ -153,20 +181,10 @@ export function happyAgentProviderUsageStoreCreate(
 
     const listeners = new Set<() => void>();
     let unsubscribeSource: (() => void) | undefined;
-    let staleTimer: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
 
     const start = (): void => {
-        if (disposed || unsubscribeSource || staleTimer !== undefined) return;
-        const loadedAt = store.getState().loadedAt;
-        const age = loadedAt === undefined ? Infinity : Date.now() - loadedAt;
-        if (age < USAGE_FRESH_MS) {
-            staleTimer = setTimeout(() => {
-                staleTimer = undefined;
-                if (listeners.size > 0) start();
-            }, USAGE_FRESH_MS - age);
-            return;
-        }
+        if (disposed || unsubscribeSource) return;
         unsubscribeSource = deps.source.subscribe(
             (incoming) => {
                 if (disposed) return;
@@ -215,14 +233,16 @@ export function happyAgentProviderUsageStoreCreate(
     };
 
     const stop = (): void => {
-        clearTimeout(staleTimer);
-        staleTimer = undefined;
         unsubscribeSource?.();
         unsubscribeSource = undefined;
     };
 
     return {
         get: () => store.getState(),
+        usageRefresh(providerIds) {
+            if (disposed || providerIds.length === 0) return;
+            deps.source.refresh(providerIds);
+        },
         subscribe(listener) {
             if (disposed) return () => undefined;
             listeners.add(listener);
@@ -255,6 +275,7 @@ const INERT_SNAPSHOT: HappyAgentProviderUsageSnapshot = { providers: [], loading
  */
 export const happyAgentProviderUsageStoreNoop: HappyAgentProviderUsageStore = {
     get: () => INERT_SNAPSHOT,
+    usageRefresh: () => undefined,
     subscribe: () => () => undefined,
     [Symbol.dispose]: () => undefined,
 };

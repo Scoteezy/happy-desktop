@@ -142,11 +142,23 @@ function ProviderSection(props: {
     const { provider } = props;
     const usage = provider.usage;
     const tone = providerTone(provider);
-    // A failed read still has an attempt behind it, and when that attempt
-    // happened is the whole difference between "signed out a minute ago" and
-    // "signed out since yesterday".
-    const stamp = usage ? usage.capturedAt : provider.checkedAt;
-    const taken = stamp === undefined ? undefined : props.readingTime?.(stamp);
+    // A reading is dated by the last time the account was read successfully;
+    // a daemon before protocol 29 only dates the reading itself. A failed read
+    // still has an attempt behind it, and when that attempt happened is the
+    // whole difference between "signed out a minute ago" and "signed out since
+    // yesterday".
+    const stamp = usage ? (provider.refreshedAt ?? usage.capturedAt) : provider.checkedAt;
+    const time = stamp === undefined ? undefined : props.readingTime?.(stamp);
+    // An account whose last refresh failed keeps its earlier reading, and says
+    // both: when that reading is from, and that it could not be renewed.
+    const stale = usage !== undefined && provider.refreshError !== undefined;
+    const taken = provider.refreshing
+        ? "Updating…"
+        : time === undefined
+          ? undefined
+          : usage === undefined
+            ? `Checked ${time}`
+            : `Updated ${time}${stale ? " · couldn't refresh" : ""}`;
     return (
         <section
             className="happy-agent-usage-settings__provider"
@@ -179,7 +191,12 @@ function ProviderSection(props: {
                         </span>
                     ) : null}
                     {taken ? (
-                        <span className="happy-agent-usage-settings__taken">{taken}</span>
+                        <span
+                            className="happy-agent-usage-settings__taken"
+                            data-happy-desktop-ui="happy-agent-usage-settings-taken"
+                        >
+                            {taken}
+                        </span>
                     ) : null}
                 </span>
             </header>
@@ -199,8 +216,27 @@ function ProviderSection(props: {
                 </p>
             ) : null}
 
+            {provider.refreshError !== undefined && provider.refreshError !== provider.error ? (
+                <p
+                    className="happy-agent-usage-settings__note"
+                    data-happy-desktop-ui="happy-agent-usage-settings-refresh-error"
+                    data-note="error"
+                >
+                    <Ionicon
+                        className="happy-agent-usage-settings__note-icon"
+                        name="alert-circle-outline"
+                        size={16}
+                    />
+                    <span>
+                        {usage === undefined
+                            ? provider.refreshError
+                            : `Couldn't refresh: ${provider.refreshError}`}
+                    </span>
+                </p>
+            ) : null}
+
             {usage === undefined ? (
-                provider.error === undefined ? (
+                provider.error === undefined && provider.refreshError === undefined ? (
                     <p className="happy-agent-usage-settings__note" data-note="unread">
                         <Ionicon
                             className="happy-agent-usage-settings__note-icon"
@@ -431,7 +467,8 @@ function hasWindows(provider: HappyAgentProviderUsageEntry): boolean {
 function providerTone(provider: HappyAgentProviderUsageEntry): UsageTone {
     if (provider.error !== undefined) return "error";
     const usage = provider.usage;
-    if (usage === undefined) return "unread";
+    // A failed refresh beside a kept reading still answers from that reading.
+    if (usage === undefined) return provider.refreshError === undefined ? "unread" : "error";
     if (usage.exhausted) return "spent";
     const windows = [usage.fiveHour, usage.weekly, usage.monthly].filter(
         (window): window is HappyAgentProviderUsageWindow => window !== undefined,
