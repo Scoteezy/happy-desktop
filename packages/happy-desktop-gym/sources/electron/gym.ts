@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { HAPPY_AGENT_PROTOCOL_VERSION } from "@slopus/happy-agent-client";
 
 import { catalogSnapshotRead, durableHistorySeed } from "./history.js";
 import { gymInferenceServerCreate } from "./inferenceServer.js";
@@ -156,6 +157,33 @@ export async function gymRun(options: {
     try {
         await inference.start();
         runtime = await happyAgentRuntimeCreate(paths, inference);
+        const expectedAgentVersion = process.env.HAPPY_DESKTOP_GYM_EXPECTED_AGENT_VERSION;
+        if (expectedAgentVersion !== undefined) {
+            const health = await runtime.client.health();
+            const observed = {
+                healthy: health.healthy,
+                ready: health.ready,
+                status: health.status,
+                version: health.version,
+            };
+            await writeFile(
+                join(paths.artifacts, "agent-health.json"),
+                `${JSON.stringify(observed, null, 2)}\n`,
+                "utf8",
+            );
+            console.info(`Released Happy Agent health: ${JSON.stringify(observed)}`);
+            if (
+                !health.healthy ||
+                !health.ready ||
+                health.status !== "ready" ||
+                health.version.protocol !== HAPPY_AGENT_PROTOCOL_VERSION ||
+                health.version.daemon !== expectedAgentVersion
+            ) {
+                throw new Error(
+                    `Released Happy Agent must be ready with protocol ${String(HAPPY_AGENT_PROTOCOL_VERSION)} and version ${expectedAgentVersion}.`,
+                );
+            }
+        }
         electron = await electronWorkloadsRun({
             paths,
             manifest: state.manifest,
