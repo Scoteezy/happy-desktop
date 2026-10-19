@@ -38,6 +38,10 @@ export interface GptLiveSnapshot {
     readonly transcripts: readonly GptLiveTranscriptFragment[];
     readonly actionStatus?: string;
     readonly error?: string;
+    /** Successful prompt revision captured when this call started, published once it is active. */
+    readonly promptRevision?: number;
+    /** A failed restart stays visible until the next explicit Start or End. */
+    readonly restartStatus?: "closing" | "connecting" | "failed";
     /**
      * What the call is pointing at, separate from the window's own selection.
      * It lasts until the call points elsewhere, the call ends, or
@@ -60,6 +64,8 @@ export interface GptLiveStore {
     /** A deliberate human Start action; restoring a preference never starts recording. */
     callStart(): void;
     callEnd(): void;
+    /** Explicitly replaces an established call, after its normal close confirms completion. */
+    callRestart(): void;
     panelOpen(): void;
     panelClose(): void;
     microphoneMutedUpdate(muted: boolean): void;
@@ -84,6 +90,7 @@ export function gptLiveStoreCreate(
     persistence?: GptLivePersistence,
     runtime?: GptLiveRuntime,
     experiments?: Pick<ExperimentsStore, "get">,
+    promptRevisionRead: () => number = () => 0,
 ): GptLiveStore {
     const allowed = () => experiments?.get().experimentalFeaturesEnabled ?? true;
     let snapshot = DISABLED;
@@ -114,6 +121,10 @@ export function gptLiveStoreCreate(
     let availabilityController: AbortController | undefined;
     let callController: AbortController | undefined;
     let call: GptLiveCall | undefined;
+    let opening: Promise<void> | undefined;
+    let activeEpoch: number | undefined;
+    let cleanup: Promise<void> = Promise.resolve();
+    let cleanupPending = false;
     let startAfterAvailability = false;
     let focusTimer: ReturnType<typeof setTimeout> | undefined;
     const publish = (next: GptLiveSnapshot) => {
@@ -139,17 +150,35 @@ export function gptLiveStoreCreate(
             publish(remaining);
         }, GPT_LIVE_VOICE_FOCUS_MS);
     };
-    const stop = () => {
+    const stop = (): Promise<void> => {
         startAfterAvailability = false;
         focusTimerClear();
         generation++;
         availabilityController?.abort();
         availabilityController = undefined;
         const previous = call;
+        const previousOpening = opening;
         call = undefined;
-        previous?.close();
+        opening = undefined;
+        activeEpoch = undefined;
+        if (previous || previousOpening) {
+            cleanupPending = true;
+            cleanup = previous ? Promise.resolve(previous.close()) : previousOpening!;
+            // Track confirmed closure for an owned call, or a pending open's
+            // late handle cleanup. Aborted uncertain creates retain the runtime's
+            // existing background cleanup and do not become restart candidates.
+            void cleanup.then(
+                () => {
+                    cleanupPending = false;
+                },
+                () => {
+                    cleanupPending = false;
+                },
+            );
+        }
         callController?.abort();
         callController = undefined;
+        return cleanup;
     };
     const idle = (error?: string) => {
         const {
@@ -162,14 +191,29 @@ export function gptLiveStoreCreate(
             ...rest,
             status: snapshot.gptLiveEnabled ? (error ? "error" : "idle") : "disabled",
             microphoneMuted: false,
+            restartStatus: error && snapshot.restartStatus ? "failed" : undefined,
+            ...(error && snapshot.restartStatus
+                ? { microphoneMuted: snapshot.microphoneMuted }
+                : {}),
             ...(error ? { error } : {}),
         });
     };
-    const receive = (epoch: number, event: GptLiveRuntimeEvent) => {
+    const receive = (epoch: number, promptRevision: number, event: GptLiveRuntimeEvent) => {
         if (disposed || epoch !== generation || !snapshot.gptLiveEnabled) return;
         switch (event.type) {
             case "callActive":
-                publish({ ...snapshot, status: "active" });
+                // Provider readiness can precede the callOpen continuation.
+                // Expose an active call only once its close handle is owned.
+                if (!call) {
+                    activeEpoch = epoch;
+                    return;
+                }
+                publish({
+                    ...snapshot,
+                    status: "active",
+                    promptRevision,
+                    restartStatus: undefined,
+                });
                 break;
             case "callClosed":
                 stop();
@@ -228,7 +272,14 @@ export function gptLiveStoreCreate(
             publish(next);
         },
         availabilityRead() {
-            if (disposed || !allowed() || availabilityController || callController) return;
+            if (
+                disposed ||
+                !allowed() ||
+                availabilityController ||
+                callController ||
+                cleanupPending
+            )
+                return;
             if (!runtime) {
                 publish({
                     ...snapshot,
@@ -281,6 +332,9 @@ export function gptLiveStoreCreate(
             if (
                 disposed ||
                 callController ||
+                cleanupPending ||
+                snapshot.restartStatus === "closing" ||
+                snapshot.restartStatus === "connecting" ||
                 !snapshot.availability?.accounts.some((item) => item.id === id)
             )
                 return;
@@ -296,15 +350,13 @@ export function gptLiveStoreCreate(
                 !snapshot.gptLiveEnabled ||
                 !runtime ||
                 callController ||
-                availabilityController
+                availabilityController ||
+                cleanupPending ||
+                snapshot.restartStatus === "closing"
             )
                 return;
             if (!snapshot.accountId) {
-                publish({
-                    ...snapshot,
-                    status: "error",
-                    error: "Choose a voice account in Voice settings.",
-                });
+                idle("Choose a voice account in Voice settings.");
                 return;
             }
             if (!snapshot.availability || snapshot.status === "unavailable") {
@@ -317,33 +369,40 @@ export function gptLiveStoreCreate(
                 (item) => item.id === snapshot.accountId,
             );
             if (!account) {
-                publish({
-                    ...snapshot,
-                    status: "error",
-                    error: "Choose a voice account in Voice settings.",
-                });
+                idle("Choose a voice account in Voice settings.");
                 return;
             }
             const abort = new AbortController();
+            // A normal explicit Start also retains the existing recovery behavior
+            // after an earlier close failed. Restart itself must confirm cleanup.
+            cleanup = Promise.resolve();
             callController = abort;
             const epoch = ++generation;
+            const promptRevision = promptRevisionRead();
+            const restarting = snapshot.restartStatus !== undefined;
             publish({
                 ...snapshot,
                 status: "connecting",
                 transcripts: [],
                 error: undefined,
-                microphoneMuted: false,
+                microphoneMuted: restarting ? snapshot.microphoneMuted : false,
+                restartStatus: restarting ? "connecting" : undefined,
             });
-            void runtime
-                .callOpen({ account }, (event) => receive(epoch, event), abort.signal)
+            const pendingOpen = runtime
+                .callOpen(
+                    { account, microphoneMuted: snapshot.microphoneMuted },
+                    (event) => receive(epoch, promptRevision, event),
+                    abort.signal,
+                )
                 .then(
                     (opened) => {
                         if (disposed || abort.signal.aborted || epoch !== generation) {
-                            opened.close();
-                            return;
+                            return opened.close();
                         }
                         call = opened;
                         opened.microphoneMutedUpdate(snapshot.microphoneMuted);
+                        if (activeEpoch === epoch)
+                            receive(epoch, promptRevision, { type: "callActive" });
                     },
                     (error: unknown) => {
                         if (disposed || abort.signal.aborted || epoch !== generation) return;
@@ -355,11 +414,57 @@ export function gptLiveStoreCreate(
                         );
                     },
                 );
+            opening = pendingOpen;
+            void pendingOpen.then(
+                () => {
+                    if (opening === pendingOpen) opening = undefined;
+                },
+                () => {
+                    if (opening === pendingOpen) opening = undefined;
+                },
+            );
         },
         callEnd() {
             if (disposed) return;
             stop();
             idle();
+        },
+        callRestart() {
+            // Pending microphone grants/uncertain creates keep their existing
+            // cancellation path; only an established active call offers Restart.
+            if (
+                disposed ||
+                !snapshot.gptLiveEnabled ||
+                snapshot.restartStatus === "closing" ||
+                snapshot.restartStatus === "connecting" ||
+                snapshot.status !== "active" ||
+                !call
+            )
+                return;
+            const muted = snapshot.microphoneMuted;
+            const closing = stop();
+            const epoch = generation;
+            publish({
+                ...snapshot,
+                status: "connecting",
+                restartStatus: "closing",
+                error: undefined,
+            });
+            void closing.then(
+                () => {
+                    if (disposed || epoch !== generation || !snapshot.gptLiveEnabled) return;
+                    publish({ ...snapshot, restartStatus: "connecting", microphoneMuted: muted });
+                    store.callStart();
+                },
+                (error: unknown) => {
+                    if (disposed || epoch !== generation || !snapshot.gptLiveEnabled) return;
+                    idle(
+                        error instanceof UserError
+                            ? error.message
+                            : "The previous voice call could not be confirmed closed.",
+                    );
+                },
+            );
         },
         panelOpen() {
             if (disposed || !allowed() || !snapshot.gptLiveEnabled) return;
@@ -405,6 +510,7 @@ export const gptLiveStoreNoop: GptLiveStore = {
     accountSelect: () => {},
     callStart: () => {},
     callEnd: () => {},
+    callRestart: () => {},
     panelOpen: () => {},
     panelClose: () => {},
     microphoneMutedUpdate: () => {},

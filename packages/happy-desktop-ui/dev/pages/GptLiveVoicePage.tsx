@@ -140,7 +140,11 @@ const DEFAULT_PROMPT = [
     "Never send a message for the reader: stage it in the composer and let them send it.",
 ].join("\n");
 
-function VoiceSettings(props: { custom: boolean }) {
+function VoiceSettings(props: {
+    custom: boolean;
+    restart?: "available" | "restarting";
+    restartError?: string;
+}) {
     const [modelId, setModelId] = useState(props.custom ? "opus-5-5" : "gpt-6.1-sol");
     const [fastMode, setFastMode] = useState(false);
     const [draft, setDraft] = useState<string | undefined>(
@@ -167,6 +171,9 @@ function VoiceSettings(props: { custom: boolean }) {
             onPromptCancel={() => setDraft(undefined)}
             onPromptReset={() => setDraft(undefined)}
             onPromptDefaultCopy={() => undefined}
+            promptRestart={props.restart}
+            promptRestartError={props.restartError}
+            onPromptRestart={() => undefined}
         />
     );
 }
@@ -215,6 +222,36 @@ export function GptLiveVoicePage() {
                         <VoiceSettings custom />
                     </Box>
                 </div>
+            </Specimen>
+            <Specimen
+                label="Saved prompt during an active call"
+                number="05"
+                detail="A successful Save or Reset offers an explicit restart through the normal call path."
+            >
+                <Box width={680}>
+                    <VoiceSettings custom={false} restart="available" />
+                </Box>
+            </Specimen>
+            <Specimen
+                label="Restarting the current call"
+                number="06"
+                detail="The action stays busy until the replacement call becomes active."
+            >
+                <Box width={680}>
+                    <VoiceSettings custom={false} restart="restarting" />
+                </Box>
+            </Specimen>
+            <Specimen
+                label="Restart could not complete"
+                number="07"
+                detail="The error stays visible; the saved prompt applies when a new call starts."
+            >
+                <Box width={680}>
+                    <VoiceSettings
+                        custom={false}
+                        restartError="The previous voice call could not be confirmed closed."
+                    />
+                </Box>
             </Specimen>
         </ComponentPage>
     );

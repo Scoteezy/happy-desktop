@@ -53,6 +53,8 @@ export interface HappyAgentVoiceSettingsSnapshot {
     readonly promptDraft?: string;
     /** A change has been asked for and the machine has not answered yet. */
     readonly saving: boolean;
+    /** Window-local bookkeeping: advances only after a prompt Save or Reset succeeds. */
+    readonly promptRevision: number;
     /** Why the settings could not be read; a reading already shown stays beneath it. */
     readonly error?: UserError;
     /** Why the last change was refused. Cleared by the next attempt. */
@@ -105,6 +107,7 @@ const EMPTY: HappyAgentVoiceSettingsSnapshot = {
     loading: true,
     fastModeAvailable: false,
     saving: false,
+    promptRevision: 0,
 };
 
 /**
@@ -223,7 +226,15 @@ export function happyAgentVoiceSettingsStoreCreate(
                     pending--;
                     saved?.();
                     settle(response.config);
-                    store.setState({ saving: pending > 0 }, false);
+                    store.setState(
+                        {
+                            saving: pending > 0,
+                            promptRevision:
+                                store.getState().promptRevision +
+                                (voice.systemPrompt === undefined ? 0 : 1),
+                        },
+                        false,
+                    );
                     schedule();
                 },
                 (error: unknown) => {
@@ -294,7 +305,9 @@ export function happyAgentVoiceSettingsStoreCreate(
             });
         },
         promptReset() {
+            const draft = store.getState().promptDraft;
             write({ systemPrompt: null }, () => {
+                if (store.getState().promptDraft !== draft) return;
                 const { promptDraft: _dropped, ...rest } = store.getState();
                 store.setState(rest, true);
             });
@@ -314,6 +327,7 @@ const INERT_SNAPSHOT: HappyAgentVoiceSettingsSnapshot = {
     loading: false,
     fastModeAvailable: false,
     saving: false,
+    promptRevision: 0,
 };
 
 /** A host with no voice settings: nothing to read and nothing to write. */

@@ -132,6 +132,8 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
             const lifetime = new AbortController();
             let phase: "opening" | "ready" | "closing" | "ended" = "opening";
             let permissionRequested = false;
+            let permissionRevoked = false;
+            let permissionRevocation: Promise<void> = Promise.resolve();
             let client: HappyAgentClient | undefined;
             let resourceId: string | undefined;
             let creationAttempted = false;
@@ -157,18 +159,44 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
             const stopped = new Promise<never>((_resolve, reject) => {
                 stoppedReject = reject;
             });
+            let closedResolve!: () => void;
+            let closedReject!: (error: UserError) => void;
+            const closed = new Promise<void>((resolve, reject) => {
+                closedResolve = resolve;
+                closedReject = reject;
+            });
             // Both can end before a pending browser permission resolves and before a waiter is attached.
             void ready.catch(() => undefined);
             void stopped.catch(() => undefined);
+            void closed.catch(() => undefined);
             const wait = <T>(operation: Promise<T>): Promise<T> =>
                 Promise.race([operation, stopped]);
-            const permissionRevoke = () => {
-                if (!permissionRequested) return;
+            const permissionRevoke = (): Promise<void> => {
+                if (!permissionRequested || permissionRevoked) return permissionRevocation;
+                permissionRevoked = true;
                 try {
-                    void Promise.resolve(options.permissionRevoke()).catch(() => undefined);
+                    let timer: ReturnType<typeof setTimeout>;
+                    permissionRevocation = Promise.race([
+                        Promise.resolve(options.permissionRevoke()),
+                        new Promise<never>((_resolve, reject) => {
+                            timer = setTimeout(
+                                () =>
+                                    reject(
+                                        new UserError(
+                                            "The microphone could not be released in time.",
+                                        ),
+                                    ),
+                                CLOSE_MS,
+                            );
+                        }),
+                    ]).finally(() => clearTimeout(timer));
                 } catch {
-                    /* The native window may already have gone. */
+                    permissionRevocation = Promise.reject(
+                        new UserError("The previous microphone permission could not be revoked."),
+                    );
                 }
+                void permissionRevocation.catch(() => undefined);
+                return permissionRevocation;
             };
             const identityMatches = (response: LiveSessionResponse): boolean =>
                 Value.Check(liveSessionResponseSchema, response) &&
@@ -218,6 +246,14 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                 socket?.close();
                 readyReject(error);
                 stoppedReject(error);
+                void permissionRevoke().then(
+                    () => {
+                        if (event?.type === "callClosed") closedResolve();
+                        else closedReject(error);
+                    },
+                    (failure: unknown) =>
+                        closedReject(userError(failure, "The microphone could not be released.")),
+                );
                 if (event) receive(event);
             };
             const fail = (message: string) => {
@@ -249,8 +285,8 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                     fail(error ?? "The voice call failed. Start a new call to reconnect.");
                 else finish(cancelled(), { type: "callClosed" });
             };
-            const close = () => {
-                if (phase === "ended" || phase === "closing") return;
+            const close = (): Promise<void> => {
+                if (phase === "ended" || phase === "closing") return closed;
                 phase = "closing";
                 active = false;
                 // The store aborts its opening signal immediately after close(). Keep the RTC/DC
@@ -267,7 +303,7 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                 );
                 if (!client || !resourceId || !creationAttempted) {
                     finish(cancelled());
-                    return;
+                    return closed;
                 }
                 const id = resourceId;
                 try {
@@ -297,6 +333,7 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                 } catch {
                     fail("The voice close command could not reach Happy Agent.");
                 }
+                return closed;
             };
             const send = (frame: LiveControlClientMessage) => {
                 if (phase === "ended" || phase === "closing") return;
@@ -451,6 +488,8 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                         )
                         .then(() => {
                             if (phase === "ended") {
+                                // A permission request can resolve after cancellation revoked it.
+                                permissionRevoked = false;
                                 permissionRevoke();
                                 throw cancelled();
                             }
@@ -464,6 +503,7 @@ export function gptLiveRuntimeCreate(options: GptLiveRuntimeCreateOptions): GptL
                         throw cancelled();
                     }
                     media = value;
+                    value.microphoneMutedUpdate(input.microphoneMuted ?? false);
                     void value.ready.then(
                         () => {
                             mediaReady = true;

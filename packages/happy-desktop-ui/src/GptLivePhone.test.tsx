@@ -12,7 +12,7 @@ it("starts only on trusted click and keeps the existing composer without a draft
     const open = vi.fn(async (_input, listener) => {
         receive = listener;
         return {
-            close: () => {},
+            close: async () => {},
             microphoneMutedUpdate: () => {},
         };
     });

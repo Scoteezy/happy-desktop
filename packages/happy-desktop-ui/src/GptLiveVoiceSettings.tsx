@@ -32,6 +32,10 @@ export interface GptLiveVoiceSettingsProps {
     onPromptSave(): void;
     onPromptCancel(): void;
     onPromptReset(): void;
+    /** An established call can explicitly reload a successfully saved prompt. */
+    promptRestart?: "available" | "restarting";
+    onPromptRestart?(): void;
+    promptRestartError?: string;
     /** Copies the shipped prompt; nothing is saved. */
     onPromptDefaultCopy(): void;
     /** A change is on its way to the machine. */
@@ -142,6 +146,26 @@ export function GptLiveVoiceSettings(props: GptLiveVoiceSettingsProps) {
                         <Banner tone="danger" title="Not saved">
                             {props.saveError}
                         </Banner>
+                    ) : null}
+                    {props.promptRestartError ? (
+                        <Banner tone="danger" title="Call not restarted">
+                            {props.promptRestartError}
+                        </Banner>
+                    ) : null}
+                    {props.promptRestart ? (
+                        <div className="happy-gpt-live-voice-settings__prompt-actions">
+                            <Button
+                                disabled={props.saving || props.saveError !== undefined}
+                                loading={props.promptRestart === "restarting"}
+                                onClick={props.onPromptRestart}
+                                size="small"
+                                variant="secondary"
+                            >
+                                {props.promptRestart === "restarting"
+                                    ? "Restarting call…"
+                                    : "Restart call to apply changes"}
+                            </Button>
+                        </div>
                     ) : null}
                     {props.promptEditing ? (
                         <div className="happy-gpt-live-voice-settings__prompt-actions">

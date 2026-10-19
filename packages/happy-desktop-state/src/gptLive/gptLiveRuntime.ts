@@ -45,8 +45,8 @@ export type GptLiveRuntimeEvent =
     | { readonly type: "voiceFocusUpdated"; readonly focus: GptLiveVoiceFocus | null };
 
 export interface GptLiveCall {
-    /** Stops recording/actions synchronously; bounded transport finalization may finish asynchronously. Never aborts tasks. */
-    close(): void;
+    /** Stops recording/actions synchronously; resolves after confirmed closure and transport cleanup. Never aborts tasks. */
+    close(): Promise<void>;
     microphoneMutedUpdate(muted: boolean): void;
 }
 
@@ -59,7 +59,7 @@ export interface GptLiveCall {
 export interface GptLiveRuntime {
     availabilityRead(signal: AbortSignal): Promise<GptLiveAvailability>;
     callOpen(
-        input: { readonly account: GptLiveAccount },
+        input: { readonly account: GptLiveAccount; readonly microphoneMuted?: boolean },
         receive: (event: GptLiveRuntimeEvent) => void,
         signal: AbortSignal,
     ): Promise<GptLiveCall>;

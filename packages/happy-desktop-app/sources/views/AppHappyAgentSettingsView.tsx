@@ -702,6 +702,31 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                                 onPromptReset={() => {
                                     if (happyAgentOnline()) voiceSettingsStore.promptReset();
                                 }}
+                                promptRestart={
+                                    voiceSettings.promptRevision !==
+                                        (gptLive.promptRevision ?? 0) &&
+                                    (gptLive.status === "active" ||
+                                        gptLive.restartStatus === "closing" ||
+                                        gptLive.restartStatus === "connecting")
+                                        ? gptLive.restartStatus === "closing" ||
+                                          gptLive.restartStatus === "connecting"
+                                            ? "restarting"
+                                            : "available"
+                                        : undefined
+                                }
+                                onPromptRestart={() => {
+                                    // Both this settings surface and the window's voice runtime
+                                    // use the host. A changed host/store invalidates this click.
+                                    if (
+                                        happyAgentOnline() &&
+                                        hostHappyAgent(props.happyAgents.get())?.session
+                                            ?.voiceSettings === voiceSettingsStore
+                                    )
+                                        gptLiveStore.callRestart();
+                                }}
+                                promptRestartError={
+                                    gptLive.restartStatus === "failed" ? gptLive.error : undefined
+                                }
                                 onPromptDefaultCopy={() => {
                                     const text = voiceSettings.settings?.defaultSystemPrompt;
                                     if (text !== undefined)

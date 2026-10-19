@@ -31,7 +31,7 @@ function fixture() {
     let signal: AbortSignal | undefined;
     let receive: (event: GptLiveRuntimeEvent) => void = () => {};
     const call: GptLiveCall = {
-        close: vi.fn(),
+        close: vi.fn(async () => {}),
         microphoneMutedUpdate: vi.fn(),
     };
     const runtime: GptLiveRuntime = {
@@ -109,7 +109,9 @@ describe("GPT-Live call lifetime", () => {
         await f.start();
         f.opening.resolve(f.call);
         await Promise.resolve();
-        vi.mocked(f.call.close).mockImplementation(() => expect(f.signal()?.aborted).toBe(false));
+        vi.mocked(f.call.close).mockImplementation(async () =>
+            expect(f.signal()?.aborted).toBe(false),
+        );
         f.store.callEnd();
         expect(f.call.close).toHaveBeenCalledTimes(1);
         expect(f.signal()?.aborted).toBe(true);
