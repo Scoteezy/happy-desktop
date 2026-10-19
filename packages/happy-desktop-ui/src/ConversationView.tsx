@@ -796,7 +796,13 @@ export function ConversationView(props: ConversationViewProps) {
                     data-happy-desktop-ui="conversation-loading"
                     viewportClassName="happy-conversation__empty-viewport"
                 >
-                    <Spinner label="Loading conversation" size={20} tone="muted" variant="line" />
+                    <Spinner
+                        className="happy-conversation__loading-spinner"
+                        label="Loading conversation"
+                        size={20}
+                        tone="muted"
+                        variant="line"
+                    />
                     {activityFallback}
                 </ScrollArea>
             ) : props.entries.length === 0 ? (
