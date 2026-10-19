@@ -168,3 +168,10 @@ more explicit — just not show these in the side bar.
 ## Icons
 
 Generated icons (soft clay style) — honestly I like the current set the most.
+
+## Sidebar diff
+
+We probably want some sort of diff way to show what's moving where between two
+different versions of the sidebar (e.g. after the sidebar manager tidies it
+up). You can probably see that in the sidebar manager, and later maybe in the
+spaces switcher.
