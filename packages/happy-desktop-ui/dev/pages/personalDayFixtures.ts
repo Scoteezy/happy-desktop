@@ -519,7 +519,7 @@ export function daySections(
             {
                 id: "kirill-preview",
                 label: "Kirill",
-                context: dayRecentFocus("kirill", frame),
+                recentFocus: dayRecentFocus("kirill", frame),
                 navigationLabel: "Open Kirill's space",
                 items: rows(kirillPreview).map((row) => ({ ...row, reorderable: false })),
                 collapsed: true,
@@ -565,7 +565,7 @@ export function daySections(
         {
             id: "steve-preview",
             label: "Steve",
-            context: dayRecentFocus("steve", frame),
+            recentFocus: dayRecentFocus("steve", frame),
             navigationLabel: "Open Steve's space",
             attentionCount: dayWaiting(frame) ? 1 : undefined,
             items: rows(nativePreview).map((row) => ({ ...row, reorderable: false })),

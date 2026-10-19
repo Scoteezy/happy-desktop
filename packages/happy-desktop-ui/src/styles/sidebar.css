@@ -424,6 +424,10 @@
     overflow-wrap: anywhere;
 }
 
+.happy-sidebar__section-context-text[data-reserve-lines="2"] {
+    height: 32px;
+}
+
 .happy-sidebar__section-tail {
     display: flex;
     flex: none;

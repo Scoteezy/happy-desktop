@@ -33,13 +33,15 @@ name sits beside Back to my space in the top band. Foreign headings have no
 total count. An unresolved dependency adds only its waiting mark in the trailing
 lane, beside a separate hover/focus disclosure button. Plain muted recent-focus
 text stays below the heading, including when preview rows are open. It is not
-clickable, contains no icons, and wraps to at most two lines.
+clickable, contains no icons, and always reserves a fixed 32 px text slot for up
+to two lines. Shared context keeps its own compact line.
 There is no footer switcher. The existing top header band hosts Back to my space,
 leaving personal Make Stuff and Happy in place. Every specimen uses AppShell's
 existing toggle and search control at the round-10 coordinates.
 
 The staged 09:18 pairing question asks whether to keep the existing response and
-defer the attachment field. The normal composer accepts Kirill's answer, updates
+defer the attachment field. Only Kirill sees that question; Steve sees his own
+one-line waiting summary. The normal composer accepts Kirill's answer, updates
 the same summary and clears both sidebar waits without moving work. 12j compares
 the resolved projections at 09:20; the connector continues. K4/K5/S4 occur after
 that reply. Browse and return start from K5, including the completed release

@@ -1,13 +1,18 @@
-export type SidebarSectionContextProps = { text: string };
+export type SidebarSectionContextProps = { text: string; reserveTwoLines?: boolean };
 
 /** Plain, non-interactive section context, capped at two wrapped text lines. */
-export function SidebarSectionContext({ text }: SidebarSectionContextProps) {
+export function SidebarSectionContext({ text, reserveTwoLines }: SidebarSectionContextProps) {
     return (
         <span
             className="happy-sidebar__section-context"
             data-happy-desktop-ui="sidebar-section-context"
         >
-            <span className="happy-sidebar__section-context-text">{text}</span>
+            <span
+                className="happy-sidebar__section-context-text"
+                data-reserve-lines={reserveTwoLines ? 2 : undefined}
+            >
+                {text}
+            </span>
         </span>
     );
 }

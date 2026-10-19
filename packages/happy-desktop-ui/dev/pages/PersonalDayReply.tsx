@@ -90,7 +90,7 @@ export function PersonalDayReply() {
                     >
                         <WorkTranscript
                             rows={[
-                                dayCoordination(true, () => undefined),
+                                dayCoordination("kirill", true, () => undefined),
                                 {
                                     id: "pairing-answer",
                                     kind: "message",

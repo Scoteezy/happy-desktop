@@ -292,8 +292,10 @@ export type SidebarSectionActionSource = "heading" | "secondary" | "empty";
 export type SidebarSection = {
     /** Open a colleague's projection from its section label. */
     navigationLabel?: string;
-    /** Plain context or recent focus; visible below open and folded headings. */
+    /** Plain context, visible below open and folded headings. */
     context?: string;
+    /** Recent focus occupies a fixed two-line slot, including while folded. */
+    recentFocus?: string;
     /** A controlled disclosure of a section's ordered tail. */
     tail?: { visibleCount: number; expanded: boolean };
     /** Input needed from the reader, visible even while the section is folded. */
@@ -3198,6 +3200,12 @@ export function Sidebar(props: SidebarProps) {
                                 ) : null}
                                 {section.context ? (
                                     <SidebarSectionContext text={section.context} />
+                                ) : null}
+                                {section.recentFocus ? (
+                                    <SidebarSectionContext
+                                        text={section.recentFocus}
+                                        reserveTwoLines
+                                    />
                                 ) : null}
                                 {section.error !== undefined ? (
                                     <p

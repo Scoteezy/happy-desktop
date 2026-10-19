@@ -78,7 +78,7 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
         imageMark: dayHappyImage,
         text,
     });
-    const coordination = dayCoordination(pairingResolved, () => open("backend"));
+    const coordination = dayCoordination(person, pairingResolved, () => open("backend"));
     const replyRows: WorkTranscriptRow[] =
         pairingReply === null
             ? []
