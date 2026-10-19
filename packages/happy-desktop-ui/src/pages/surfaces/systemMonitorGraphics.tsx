@@ -101,12 +101,17 @@ export function SystemMonitorProcessSpark(props: {
 
 export function SystemMonitorAsciiCores(props: { values: readonly number[] | null }) {
     return (
-        <div className="system-monitor__cores" aria-label="Usage per logical core">
+        <div className="system-monitor__cores" role="group" aria-label="Usage per logical core">
             {props.values?.map((usage, index) => (
                 <span
                     className="system-monitor__core"
                     data-level={systemMonitorLevel(usage)}
                     key={index}
+                    role="meter"
+                    aria-label={`Core ${index + 1}`}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={usage}
                     title={`Core ${index + 1}: ${usage.toFixed(1)}%`}
                 >
                     {BLOCKS[Math.max(0, Math.min(8, Math.ceil((usage / 100) * 8)))]}

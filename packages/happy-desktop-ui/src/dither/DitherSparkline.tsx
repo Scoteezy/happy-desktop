@@ -3,6 +3,7 @@
  * sparkline.tsx adapted to nullable measurements and Happy's shared controller. */
 import { DitherChart } from "./DitherChart";
 import type { DitherColor } from "./ditherTypes";
+/** A percentage history shares a fixed scale across rows, including a first sample. */
 export function DitherSparkline(props: {
     values: readonly (number | null)[];
     color: DitherColor;
@@ -13,6 +14,7 @@ export function DitherSparkline(props: {
             className="happy-dither-sparkline"
             label={props.label}
             interactive={false}
+            maximum={100}
             series={[
                 {
                     id: "value",

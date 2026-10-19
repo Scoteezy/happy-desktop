@@ -280,15 +280,16 @@ export function HappyAgentSystemMonitorSurfacePage(props: HappyAgentSystemMonito
                                 label="Available"
                                 value={bytes(sample?.memory.availableBytes ?? null)}
                             />
-                            <Detail
-                                label="Cached"
-                                value={bytes(sample?.memory.cachedBytes ?? null)}
-                                meter={
-                                    sample?.memory.cachedBytes == null
-                                        ? null
-                                        : ratio(sample.memory.cachedBytes, sample.memory.totalBytes)
-                                }
-                            />
+                            {sample && sample.memory.cachedBytes !== null ? (
+                                <Detail
+                                    label="Cached"
+                                    value={bytes(sample.memory.cachedBytes)}
+                                    meter={ratio(
+                                        sample.memory.cachedBytes,
+                                        sample.memory.totalBytes,
+                                    )}
+                                />
+                            ) : null}
                             <Detail
                                 label="Swap"
                                 meter={
