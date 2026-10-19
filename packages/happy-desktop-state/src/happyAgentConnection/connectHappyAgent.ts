@@ -75,6 +75,11 @@ import type {
 
 const INITIAL_RECONNECT_MS = 250;
 const MAXIMUM_RECONNECT_MS = 5_000;
+/**
+ * How long after a daemon announces it is draining a replacement is expected. Reconnection keeps
+ * its first interval meanwhile, so the window is back within moments of the new process.
+ */
+const REPLACEMENT_RECONNECT_WINDOW_MS = 2 * 60_000;
 const DEFAULT_HISTORY_LIMIT = 100;
 const GIT_WATCH_RENEW_MS = 2 * 60 * 1000;
 const RECENT_EVENT_RETENTION_MS = 60_000;
@@ -383,6 +388,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     // admitted this connection. Until its own health is read and found
     // compatible and ready, nothing is taken from it: no bootstrap, no feed.
     let daemonVerify = false;
+    // Until when a drained daemon's replacement is expected; see REPLACEMENT_RECONNECT_WINDOW_MS.
+    let replacementExpectedUntil = 0;
 
     const reportMutationFailure = (
         action: MutationAction,
@@ -2368,8 +2375,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             message: "Waiting before the next connection attempt",
                             source: "connection",
                         });
-                        await reconnectPause(reconnectMs);
-                        reconnectMs = Math.min(reconnectMs * 2, MAXIMUM_RECONNECT_MS);
+                        // The replacement of a daemon that just drained answers while it is
+                        // still starting and is ready in moments, so it is asked again at the
+                        // first interval, but only within that window.
+                        const starting =
+                            nextCompatibility.status === "compatible" &&
+                            now() < replacementExpectedUntil;
+                        await reconnectPause(starting ? INITIAL_RECONNECT_MS : reconnectMs);
+                        if (!starting) reconnectMs = Math.min(reconnectMs * 2, MAXIMUM_RECONNECT_MS);
                         continue;
                     }
                 }
@@ -2489,6 +2502,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         // the feed says so itself when it finally stops. It no
                         // longer admits writes, so routine ones are held.
                         admittingSet(false);
+                        replacementExpectedUntil = now() + REPLACEMENT_RECONNECT_WINDOW_MS;
                         reportDebug({
                             detail: debugDetail({
                                 cursor: update.cursor,
@@ -2573,9 +2587,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     });
                 }
                 await reconnectPause(immediate ? 0 : reconnectMs);
-                reconnectMs = immediate
-                    ? INITIAL_RECONNECT_MS
-                    : Math.min(reconnectMs * 2, MAXIMUM_RECONNECT_MS);
+                reconnectMs =
+                    immediate || now() < replacementExpectedUntil
+                        ? INITIAL_RECONNECT_MS
+                        : Math.min(reconnectMs * 2, MAXIMUM_RECONNECT_MS);
             }
         }
     };
