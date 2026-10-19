@@ -120,11 +120,12 @@ export interface HappyAgentProviderUsageSource {
         onError: (error: unknown) => void,
     ): () => void;
     /**
-     * Asks the daemon to read these accounts again where its reading is older
-     * than a few minutes. The daemon decides what is actually stale; the outcome
-     * arrives through `subscribe`, never as an answer here.
+     * Asks the daemon to read these accounts again, or every account when none
+     * are named, where its reading is older than a few minutes. The daemon
+     * decides what is actually stale; the outcome arrives through `subscribe`,
+     * never as an answer here.
      */
-    refresh(providerIds: readonly string[]): void;
+    refresh(providerIds?: readonly string[]): void;
 }
 
 export interface HappyAgentProviderUsageSnapshot {
@@ -141,11 +142,12 @@ export interface HappyAgentProviderUsageSnapshot {
 export interface HappyAgentProviderUsageStore {
     get(): HappyAgentProviderUsageSnapshot;
     /**
-     * Someone is about to look at these accounts' usage. Asks the daemon to read
-     * again the ones it last read a while ago; fresh readings arrive as ordinary
-     * snapshots, and nothing here claims they are already on the way.
+     * Someone is about to look at these accounts' usage, or at every account's
+     * when none are named. Asks the daemon to read again the ones it last read a
+     * while ago; fresh readings arrive as ordinary snapshots, and nothing here
+     * claims they are already on the way.
      */
-    usageRefresh(providerIds: readonly string[]): void;
+    usageRefresh(providerIds?: readonly string[]): void;
     subscribe(listener: () => void): () => void;
     [Symbol.dispose](): void;
 }
@@ -240,7 +242,7 @@ export function happyAgentProviderUsageStoreCreate(
     return {
         get: () => store.getState(),
         usageRefresh(providerIds) {
-            if (disposed || providerIds.length === 0) return;
+            if (disposed || providerIds?.length === 0) return;
             deps.source.refresh(providerIds);
         },
         subscribe(listener) {

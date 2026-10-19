@@ -45,6 +45,7 @@ import {
     HAPPY_AGENT_COMPUTER_REMOVAL_VERSION,
     happyAgentProfileStoreNoop,
     happyAgentProviderUsageStoreNoop,
+    type HappyAgentProviderUsageStore,
     happyAgentProvidersStoreNoop,
     happyAgentSecretsStoreNoop,
     happyAgentVoiceSettingsStoreNoop,
@@ -547,7 +548,11 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
     const usageStore =
         (usageOpen || stateOpen ? host?.session?.providerUsage : undefined) ??
         happyAgentProviderUsageStoreNoop;
-    const usage = useSyncExternalStore(usageStore.subscribe, usageStore.get, usageStore.get);
+    const usage = useSyncExternalStore(
+        usageOpen ? usageOpenSubscribe(usageStore) : usageStore.subscribe,
+        usageStore.get,
+        usageStore.get,
+    );
     // The clock is not part of raw state: nothing there counts down, and a
     // ticking second would republish every snapshot on the page for nothing.
     const clockStore = usageOpen ? host?.session?.clock : undefined;
@@ -1403,6 +1408,32 @@ const daemonStoreNoop: AppHappyAgentDaemonStore = {
     get: () => daemonUnavailable,
     subscribe: noSubscribe,
 };
+
+const usageOpenSubscribes = new WeakMap<
+    HappyAgentProviderUsageStore,
+    (listener: () => void) => () => void
+>();
+
+/**
+ * Subscribes the Usage category to the store and asks the daemon to read again
+ * every account it last read a while ago, once each time the category opens.
+ * Identity contract: one function per store, so React keeps the subscription
+ * (and sends no second request) for as long as the category stays open.
+ */
+function usageOpenSubscribe(
+    store: HappyAgentProviderUsageStore,
+): (listener: () => void) => () => void {
+    let subscribe = usageOpenSubscribes.get(store);
+    if (subscribe === undefined) {
+        subscribe = (listener) => {
+            const release = store.subscribe(listener);
+            store.usageRefresh();
+            return release;
+        };
+        usageOpenSubscribes.set(store, subscribe);
+    }
+    return subscribe;
+}
 
 /**
  * When a usage reading was taken, as an absolute local time. A reading is only

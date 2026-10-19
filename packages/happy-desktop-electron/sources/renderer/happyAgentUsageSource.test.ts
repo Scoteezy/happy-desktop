@@ -3,9 +3,7 @@ import {
     connectHappyAgent,
     type HappyAgentConnection,
     type HappyAgentProviderUsageSourceReading,
-    type ProviderAccountUsageWire,
-    type ProviderUsageEntryWire,
-    type ProviderUsageUpdatedPayload,
+    type happyAgentProtocol,
 } from "happy-desktop-state";
 import {
     fakeHappyAgentDaemonCreate,
@@ -29,7 +27,10 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
-function accountUsage(fiveHour: number, capturedAt: number): ProviderAccountUsageWire {
+function accountUsage(
+    fiveHour: number,
+    capturedAt: number,
+): happyAgentProtocol.ProviderAccountUsage {
     return {
         providerId: "claude",
         vendor: "claude",
@@ -58,8 +59,8 @@ function accountUsage(fiveHour: number, capturedAt: number): ProviderAccountUsag
 }
 
 function entry(
-    overrides: Partial<ProviderUsageEntryWire> & { providerId: string },
-): ProviderUsageEntryWire {
+    overrides: Partial<happyAgentProtocol.ProviderUsageEntry> & { providerId: string },
+): happyAgentProtocol.ProviderUsageEntry {
     return {
         type: "claude",
         enabled: true,
@@ -76,8 +77,8 @@ function entry(
 }
 
 function change(
-    overrides: Partial<ProviderUsageUpdatedPayload> & { providerId: string },
-): ProviderUsageUpdatedPayload {
+    overrides: Partial<happyAgentProtocol.ProviderUsageUpdatedPayload> & { providerId: string },
+): happyAgentProtocol.ProviderUsageUpdatedPayload {
     return {
         usage: null,
         checkedAt: null,
@@ -90,7 +91,10 @@ function change(
     };
 }
 
-function usageSet(daemon: FakeHappyAgentDaemon, providers: ProviderUsageEntryWire[]): void {
+function usageSet(
+    daemon: FakeHappyAgentDaemon,
+    providers: happyAgentProtocol.ProviderUsageEntry[],
+): void {
     daemon.usageSet({ providers, hour: {}, day: {}, week: {}, month: {} });
 }
 
@@ -128,7 +132,8 @@ it("reads once, then applies each account change without reading again", async (
     await vi.waitFor(() => expect(h.claude()?.usage?.fiveHour?.usedPercent).toBe(20));
     expect(h.claude()?.usage?.weekly?.capturedAt).toBe(1_700_000_000_000 - 3_600_000);
 
-    daemon.providerUsageEmit(
+    daemon.eventEmit(
+        "provider.usage.updated",
         change({
             providerId: "claude",
             usage: accountUsage(20, 1_700_000_000_000),
@@ -138,7 +143,8 @@ it("reads once, then applies each account change without reading again", async (
     );
     await vi.waitFor(() => expect(h.claude()?.refreshing).toBe(true));
 
-    daemon.providerUsageEmit(
+    daemon.eventEmit(
+        "provider.usage.updated",
         change({
             providerId: "claude",
             usage: accountUsage(57, 1_700_000_300_000),
@@ -151,7 +157,8 @@ it("reads once, then applies each account change without reading again", async (
     expect(h.claude()?.refreshing).toBeUndefined();
 
     // A failed refresh keeps the reading it had and says why.
-    daemon.providerUsageEmit(
+    daemon.eventEmit(
+        "provider.usage.updated",
         change({
             providerId: "claude",
             usage: accountUsage(57, 1_700_000_300_000),
@@ -180,7 +187,8 @@ it("keeps a change that arrives while the first read is still on its way", async
     const h = harness(daemon);
     await vi.waitFor(() => expect(daemon.callCount("getUsage")).toBe(1));
 
-    daemon.providerUsageEmit(
+    daemon.eventEmit(
+        "provider.usage.updated",
         change({
             providerId: "claude",
             usage: accountUsage(64, 1_700_000_100_000),
@@ -249,7 +257,10 @@ it("reads again when the accounts change, and for an account it has not seen", a
         entry({ providerId: "claude_extra", refreshedAt: 1_700_000_000_000 }),
         entry({ providerId: "work", refreshedAt: 1_700_000_000_000 }),
     ]);
-    daemon.providerUsageEmit(change({ providerId: "work", refreshedAt: 1_700_000_000_000 }));
+    daemon.eventEmit(
+        "provider.usage.updated",
+        change({ providerId: "work", refreshedAt: 1_700_000_000_000 }),
+    );
     await vi.waitFor(() => expect(h.seen.at(-1)?.providers).toHaveLength(3));
     expect(daemon.callCount("getUsage")).toBe(3);
 });
@@ -333,6 +344,12 @@ it("asks the daemon to refresh accounts older than five minutes and ignores a re
         olderThanMs: 300_000,
     });
 
+    // Naming no account asks about every one.
+    h.source.refresh();
+    expect(
+        daemon.calls.filter((call) => call.method === "refreshProviderUsage")[1]?.args[0],
+    ).toEqual({ olderThanMs: 300_000 });
+
     daemon.usageRefreshSupportedSet(false);
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
@@ -340,5 +357,5 @@ it("asks the daemon to refresh accounts older than five minutes and ignores a re
     await new Promise((resolve) => setTimeout(resolve, 10));
     process.off("unhandledRejection", unhandled);
     expect(unhandled).not.toHaveBeenCalled();
-    expect(daemon.callCount("refreshProviderUsage")).toBe(2);
+    expect(daemon.callCount("refreshProviderUsage")).toBe(3);
 });

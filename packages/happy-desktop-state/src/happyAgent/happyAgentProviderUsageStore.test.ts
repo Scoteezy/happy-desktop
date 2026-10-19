@@ -93,9 +93,12 @@ it("passes a refresh on to the source without claiming anything itself", () => {
 
     store.usageRefresh([]);
     expect(fake.refresh).toHaveBeenCalledTimes(1);
+    // Naming no account asks about every one.
+    store.usageRefresh();
+    expect(fake.refresh).toHaveBeenLastCalledWith(undefined);
     release();
 
     store[Symbol.dispose]();
     store.usageRefresh(["claude"]);
-    expect(fake.refresh).toHaveBeenCalledTimes(1);
+    expect(fake.refresh).toHaveBeenCalledTimes(2);
 });

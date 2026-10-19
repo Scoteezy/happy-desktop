@@ -6,6 +6,7 @@ import {
     type AgentContextUsage,
     type AgentDraftSnapshot,
     type CompactionMessage,
+    type DaemonUsageResponse,
     type DaemonConfig,
     type CreateLiveSessionRequest,
     type CloseLiveSessionRequest,
@@ -18,6 +19,7 @@ import {
     type MessageHistoryQuery,
     type MessageMode,
     type Profile,
+    type ProviderUsageRefreshRequest,
     type Project,
     type Question,
     type Run,
@@ -31,12 +33,6 @@ import {
     type Workspace,
 } from "@slopus/happy-agent-client";
 import { MINIMUM_HAPPY_AGENT_VERSION } from "../happyAgentConnection/compatibility.js";
-import {
-    PROVIDER_USAGE_UPDATED,
-    type DaemonUsageResponseWire,
-    type ProviderUsageRefreshRequest,
-    type ProviderUsageUpdatedPayload,
-} from "../happyAgent/happyAgentProviderUsageProtocol.js";
 import { generateKeyBetween } from "../utils/fractionalIndexing.js";
 
 /**
@@ -179,14 +175,12 @@ export interface FakeHappyAgentDaemon {
     /** Replace the effective configuration; announcing it is up to the test. */
     configSet(config: DaemonConfig): void;
     /** Replace what `getUsage` answers; announcing a change is up to the test. */
-    usageSet(usage: DaemonUsageResponseWire): void;
+    usageSet(usage: DaemonUsageResponse): void;
     /**
      * Whether this daemon speaks protocol 29's usage refresh. Turned off,
      * `refreshProviderUsage` answers `404` as an older daemon's would.
      */
     usageRefreshSupportedSet(supported: boolean): void;
-    /** Journal one account's `provider.usage.updated` and deliver it to every live stream. */
-    providerUsageEmit(payload: ProviderUsageUpdatedPayload): HappyAgentEvent;
     /**
      * Replace the daemon process behind the same client: every live stream
      * ends, the next hello names a new daemon whose journal does not hold the
@@ -376,7 +370,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             throw new HappyAgentApiError(404, "Not found.", "not_found", null);
     };
 
-    let usage: DaemonUsageResponseWire = { hour: {}, day: {}, week: {}, month: {} };
+    let usage: DaemonUsageResponse = { hour: {}, day: {}, week: {}, month: {} };
     let usageRefreshSupported = true;
 
     const calls: FakeDaemonCall[] = [];
@@ -1378,20 +1372,6 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         usageRefreshSupportedSet(supported) {
             usageRefreshSupported = supported;
-        },
-        providerUsageEmit(payload) {
-            // The published client does not name this event yet, so the
-            // envelope is built here rather than through the typed `emit`.
-            latestCursor = cursorOf((cursorCounter += 1));
-            const event = {
-                cursor: latestCursor,
-                type: PROVIDER_USAGE_UPDATED,
-                occurredAt: 1,
-                payload,
-            } as unknown as HappyAgentEvent;
-            for (const stream of streams)
-                stream.push({ kind: "event", event, cursor: event.cursor });
-            return event;
         },
         daemonReplace(options = {}) {
             daemonGeneration += 1;
