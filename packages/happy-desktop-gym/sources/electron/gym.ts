@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { HAPPY_AGENT_PROTOCOL_VERSION } from "@slopus/happy-agent-client";
+import { serverCompatibility } from "happy-desktop-state";
 
 import { catalogSnapshotRead, durableHistorySeed } from "./history.js";
 import { gymInferenceServerCreate } from "./inferenceServer.js";
@@ -172,15 +172,18 @@ export async function gymRun(options: {
                 "utf8",
             );
             console.info(`Released Happy Agent health: ${JSON.stringify(observed)}`);
+            // The released daemon may lag the client by additive protocols, as it
+            // does for installed users; Desktop's own compatibility policy decides.
+            const compatibility = serverCompatibility(health.version);
             if (
                 !health.healthy ||
                 !health.ready ||
                 health.status !== "ready" ||
-                health.version.protocol !== HAPPY_AGENT_PROTOCOL_VERSION ||
+                compatibility.status !== "compatible" ||
                 health.version.daemon !== expectedAgentVersion
             ) {
                 throw new Error(
-                    `Released Happy Agent must be ready with protocol ${String(HAPPY_AGENT_PROTOCOL_VERSION)} and version ${expectedAgentVersion}.`,
+                    `Released Happy Agent must be ready, compatible with this Happy (protocol ${String(compatibility.minimumSupportedProtocolVersion)} or newer, version ${compatibility.minimumSupportedVersion} or newer), and version ${expectedAgentVersion}.`,
                 );
             }
         }

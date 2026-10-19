@@ -253,6 +253,9 @@ importers:
       '@slopus/happy-agent-client':
         specifier: 0.0.99-preview.1
         version: 0.0.99-preview.1
+      happy-desktop-state:
+        specifier: workspace:*
+        version: link:../happy-desktop-state
     devDependencies:
       '@fontsource-variable/jetbrains-mono':
         specifier: ^5.2.8
