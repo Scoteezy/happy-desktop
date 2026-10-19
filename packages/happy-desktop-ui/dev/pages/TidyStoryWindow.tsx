@@ -30,7 +30,7 @@ const marks: Partial<Record<TidyIconSlug, { src: string }>> = {
     "shared-chat-sync": redesignMarks.sync.imageMark,
 };
 
-function projectRow(row: TidyRow, index: number, diff: boolean): SidebarItem {
+function projectRow(row: TidyRow): SidebarItem {
     const before = beforeById.get(row.id);
     if (!before) throw new Error(`Tidy fixture has no original row for ${row.id}`);
     // The supplied before sections explicitly state each entity's type.
@@ -40,10 +40,6 @@ function projectRow(row: TidyRow, index: number, diff: boolean): SidebarItem {
             : before.row.section === "Tasks"
               ? "tasks"
               : "agents";
-    const changed =
-        before.index !== index ||
-        before.row.section !== row.section ||
-        before.row.depth !== row.depth;
     return {
         id: row.id,
         label: row.iconSlug === "stemCell" && row.visibility === "shown" ? "placing…" : row.title,
@@ -63,13 +59,6 @@ function projectRow(row: TidyRow, index: number, diff: boolean): SidebarItem {
                   : undefined,
         activityIndicator: "glyph",
         labelShimmer: false,
-        placementChange: diff
-            ? row.visibility === "folded"
-                ? "older"
-                : changed
-                  ? "moved"
-                  : undefined
-            : undefined,
     };
 }
 
@@ -92,18 +81,17 @@ export function TidyStoryWindow({ scene }: { scene: "before" | "after" | "diff" 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [draft, setDraft] = useState("");
     const before = scene === "before";
-    const diff = scene === "diff";
     const rows = before ? tidyBefore : tidyAfter;
-    const shown = rows.flatMap((row, index) =>
-        row.visibility === "shown" ? [{ row, item: projectRow(row, index, diff) }] : [],
+    const shown = rows.flatMap((row) =>
+        row.visibility === "shown" ? [{ row, item: projectRow(row) }] : [],
     );
     const sections: SidebarSection[] = (before ? beforeSections : afterSections).map((section) => ({
         id: section.id,
         label: section.label,
         items: shown.filter(({ row }) => row.section === section.label).map(({ item }) => item),
     }));
-    const older = tidyAfter.flatMap((row, index) =>
-        row.visibility === "folded" ? [projectRow(row, index, diff)] : [],
+    const older = tidyAfter.flatMap((row) =>
+        row.visibility === "folded" ? [projectRow(row)] : [],
     );
     return (
         <ThemeScope mode="light">

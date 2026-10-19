@@ -323,6 +323,16 @@ export {
     type SidebarSection,
 } from "./Sidebar";
 export {
+    SidebarSectionContext,
+    SidebarSectionTail,
+    type SidebarSectionContextProps,
+    type SidebarSectionTailProps,
+} from "./SidebarSectionDetails";
+export {
+    WorkCoordinationSummary,
+    type WorkCoordinationSummaryProps,
+} from "./WorkCoordinationSummary";
+export {
     SidebarFooter,
     type SidebarFooterConnection,
     type SidebarFooterProps,

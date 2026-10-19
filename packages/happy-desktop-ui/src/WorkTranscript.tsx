@@ -10,8 +10,13 @@ import {
 import { Message, MessageList } from "./Message";
 import { Icon } from "./Icon";
 import type { StemCellMark } from "./StemCell";
+import {
+    WorkCoordinationSummary,
+    type WorkCoordinationSummaryProps,
+} from "./WorkCoordinationSummary";
 
 export type WorkTranscriptRow = { id: string } & (
+    | ({ kind: "coordination" } & WorkCoordinationSummaryProps)
     | {
           kind: "message" | "leased";
           author: string;
@@ -50,6 +55,8 @@ export function WorkTranscript(props: WorkTranscriptProps) {
                 <MessageList>
                     {props.rows.map((row) => {
                         switch (row.kind) {
+                            case "coordination":
+                                return <WorkCoordinationSummary key={row.id} {...row} />;
                             case "message":
                             case "leased":
                                 return (

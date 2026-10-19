@@ -407,6 +407,102 @@
     padding: 0 var(--happy-panel-row-padding);
 }
 
+.happy-sidebar__section-context {
+    display: flex;
+    align-items: center;
+    min-height: 16px;
+    padding: 0 var(--happy-panel-row-padding) 4px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 16px;
+}
+
+.happy-sidebar__section-tail {
+    display: flex;
+    flex: none;
+    align-items: center;
+    align-self: stretch;
+    height: 24px;
+    padding: 0 calc(var(--happy-panel-row-padding) + 28px);
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.happy-sidebar__section-tail:hover {
+    background: var(--surface-ripple);
+    color: var(--text);
+}
+
+.happy-sidebar__section-tail:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: -2px;
+}
+
+.happy-sidebar__section-attention {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--box-warning-text);
+    font-size: 11px;
+}
+
+.happy-sidebar__section-trailing,
+.happy-sidebar__section-marks {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 20px;
+    height: 20px;
+}
+
+.happy-sidebar__section-trailing {
+    position: relative;
+    margin-left: auto;
+}
+
+/* The disclosure overlays the resting status lane, just like a row's controls. */
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__section-trailing
+    .happy-sidebar__section-fold {
+    position: absolute;
+    right: 0;
+    top: 0;
+}
+
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__section-head:hover
+    .happy-sidebar__section-marks,
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__section-head:has(:focus-visible)
+    .happy-sidebar__section-marks {
+    opacity: 0;
+}
+
+.happy-sidebar__section-open {
+    display: flex;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+}
+
+.happy-sidebar__section-open:hover {
+    color: var(--text);
+}
+
+.happy-sidebar__section-open:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: 2px;
+}
+
 .happy-sidebar__space-head {
     display: flex;
     flex: none;
@@ -1506,16 +1602,6 @@
     display: flex;
     flex: 1;
     min-height: 0;
-}
-
-.happy-sidebar__item-placement-change {
-    display: flex;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    color: var(--text-secondary);
 }
 
 .happy-sidebar__footer {

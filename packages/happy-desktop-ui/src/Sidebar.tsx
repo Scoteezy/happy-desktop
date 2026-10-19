@@ -33,6 +33,7 @@ import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
 import { StemCell, type StemCellMark } from "./StemCell";
 import { ScrollArea } from "./Scrollbar";
+import { SidebarSectionContext, SidebarSectionTail } from "./SidebarSectionDetails";
 import { TextField } from "./TextField";
 import { sidebarSectionsReuser } from "./sidebarSectionsReuser";
 import { Octicon } from "./vectorIcons/VectorIcon";
@@ -106,8 +107,6 @@ export type SidebarItem = {
     imageMark?: { src: string; alt?: string };
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
-    /** Quiet annotation supplied by a sidebar placement diff. */
-    placementChange?: "moved" | "older";
     initials?: string;
     kind: "view" | "channel" | "workspace" | "project" | "person" | "agent" | "folder" | "action";
     label: string;
@@ -287,6 +286,16 @@ export type SidebarSearch = {
 export type SidebarSectionActionSource = "heading" | "secondary" | "empty";
 
 export type SidebarSection = {
+    /** Open a colleague's projection from its section label. */
+    navigationLabel?: string;
+    /** Uses the same trailing count treatment as an ordinary work row. */
+    count?: number;
+    /** Owner or shared context; omit when the section belongs to the current reader. */
+    context?: string;
+    /** A controlled disclosure of a section's ordered tail. */
+    tail?: { visibleCount: number; expanded: boolean };
+    /** Input needed from the reader, visible even while the section is folded. */
+    attentionCount?: number;
     action?: SidebarSectionAction;
     /**
      * A second heading control, drawn just before `action` and reported as
@@ -385,6 +394,8 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     /** Hide tree ribbons while retaining ordinary indentation. Defaults to true. */
     treeConnectors?: boolean;
     onSectionCollapseToggle?: (sectionId: string) => void;
+    onSectionTailToggle?: (sectionId: string) => void;
+    onSectionSelect?: (sectionId: string) => void;
     activeItemId: string;
     /** Which end of a row reports work. Defaults to `trailing`. */
     activityPlacement?: SidebarActivityPlacement;
@@ -591,11 +602,12 @@ const NUMBER_SHORTCUTS = Array.from({ length: 9 }, (_, index) =>
 function shortcutRowsOf(
     sections: readonly SidebarSection[],
     targets?: readonly SidebarNumberShortcutTarget[],
+    activeItemId?: string,
 ): readonly SidebarShortcutRow[] {
     const rows = sections.flatMap((section) =>
         section.headingOnly || section.collapsed
             ? []
-            : visibleRows(section.items).map((row) => ({
+            : sectionRows(section, activeItemId).map((row) => ({
                   item: row.item,
                   sectionId: section.id,
               })),
@@ -611,6 +623,14 @@ function shortcutRowsOf(
             return [row];
         })
         .slice(0, 9);
+}
+
+function sectionRows(section: SidebarSection, activeItemId?: string) {
+    const rows = visibleRows(section.items);
+    const tail = section.tail;
+    if (!tail || tail.expanded) return rows;
+    // Keep a focused destination mounted even if an updated tail boundary passes it.
+    return rows.filter((row, index) => index < tail.visibleCount || row.item.id === activeItemId);
 }
 
 /** Pointer travel, in px, before a press becomes a drag instead of a selection. */
@@ -1852,7 +1872,7 @@ function SidebarRow({
                    controls are laid over the lane rather than placed in it, so
                    arriving and leaving costs no reflow: what they cover is
                    hidden where it stands. */
-                state || controls || stats || count !== undefined || item().placementChange ? (
+                state || controls || stats || count !== undefined ? (
                     <span
                         className="happy-sidebar__item-trailing"
                         data-happy-desktop-ui="sidebar-item-trailing"
@@ -1894,26 +1914,6 @@ function SidebarRow({
                                 <span className="happy-visually-hidden">
                                     {changeCountLabel(stats.added, stats.deleted)}
                                 </span>
-                            </span>
-                        ) : null}
-                        {item().placementChange ? (
-                            <span
-                                aria-label={
-                                    item().placementChange === "older" ? "Moved to Older" : "Moved"
-                                }
-                                className="happy-sidebar__item-placement-change"
-                                data-happy-desktop-ui="sidebar-item-placement-change"
-                                data-change={item().placementChange}
-                                role="img"
-                            >
-                                <Octicon
-                                    name={
-                                        item().placementChange === "older"
-                                            ? "arrow-down"
-                                            : "arrow-up"
-                                    }
-                                    size={12}
-                                />
                             </span>
                         ) : null}
                         {state ? activityMark() : null}
@@ -1974,6 +1974,8 @@ export function Sidebar(props: SidebarProps) {
         "numberShortcutTargets",
         "onSectionAction",
         "onSectionCollapseToggle",
+        "onSectionTailToggle",
+        "onSectionSelect",
         "search",
         "onSectionMenuSelect",
         "sections",
@@ -2124,7 +2126,7 @@ export function Sidebar(props: SidebarProps) {
     const sections = sectionsReuse(local.sections);
     const onItemSelect = local.onItemSelect;
     const shortcutRows = numberShortcuts
-        ? shortcutRowsOf(sections, local.numberShortcutTargets)
+        ? shortcutRowsOf(sections, local.numberShortcutTargets, local.activeItemId)
         : [];
     const shortcutNavigate = useEffectEvent((event: KeyboardEvent) => {
         const index = NUMBER_SHORTCUTS.findIndex((shortcut) =>
@@ -2901,7 +2903,18 @@ export function Sidebar(props: SidebarProps) {
                         // is stated against these rather than against the rows
                         // the caller gave, so a row folded away can neither be
                         // dragged past nor counted as a neighbour of anything.
-                        const shown = section.collapsed ? [] : visibleRows(section.items);
+                        const shown = section.collapsed
+                            ? []
+                            : sectionRows(section, local.activeItemId);
+                        const tailCount = section.tail
+                            ? Math.max(
+                                  0,
+                                  visibleRows(section.items).length -
+                                      (section.tail.expanded
+                                          ? section.tail.visibleCount
+                                          : shown.length),
+                              )
+                            : 0;
                         const shownItems = shown.map((row) => row.item);
                         const sectionDrag = dragOf(section.id);
                         // The lift belongs to the live gesture while there is one
@@ -2967,12 +2980,24 @@ export function Sidebar(props: SidebarProps) {
                                         className="happy-sidebar__section-head"
                                         data-happy-desktop-ui="sidebar-section-head"
                                     >
-                                        <span
-                                            className="happy-sidebar__section-label"
-                                            data-happy-desktop-ui="sidebar-section-label"
-                                        >
-                                            {section.label}
-                                        </span>
+                                        {section.navigationLabel ? (
+                                            <button
+                                                className="happy-sidebar__section-label happy-sidebar__section-open"
+                                                data-happy-desktop-ui="sidebar-section-label"
+                                                aria-label={section.navigationLabel}
+                                                onClick={() => local.onSectionSelect?.(section.id)}
+                                                type="button"
+                                            >
+                                                {section.label}
+                                            </button>
+                                        ) : (
+                                            <span
+                                                className="happy-sidebar__section-label"
+                                                data-happy-desktop-ui="sidebar-section-label"
+                                            >
+                                                {section.label}
+                                            </span>
+                                        )}
                                         {section.voiceFocus ? (
                                             <span
                                                 aria-label="Voice focus inside"
@@ -2983,7 +3008,49 @@ export function Sidebar(props: SidebarProps) {
                                                 <Icon name="mic" size={12} />
                                             </span>
                                         ) : null}
-                                        {section.collapsed !== undefined ? (
+                                        {section.count !== undefined || section.attentionCount ? (
+                                            <span className="happy-sidebar__section-trailing">
+                                                <span className="happy-sidebar__section-marks">
+                                                    {section.count !== undefined ? (
+                                                        <span className="happy-sidebar__item-count">
+                                                            {section.count}
+                                                        </span>
+                                                    ) : null}
+                                                    {section.attentionCount ? (
+                                                        <span
+                                                            className="happy-sidebar__section-attention"
+                                                            aria-label={`${section.attentionCount} waiting on you`}
+                                                            role="status"
+                                                        >
+                                                            <Icon name="question" size={12} />
+                                                            {section.attentionCount}
+                                                        </span>
+                                                    ) : null}
+                                                </span>
+                                                {section.collapsed !== undefined ? (
+                                                    <button
+                                                        aria-expanded={!section.collapsed}
+                                                        aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.label}`}
+                                                        className="happy-sidebar__section-fold"
+                                                        onClick={() =>
+                                                            local.onSectionCollapseToggle?.(
+                                                                section.id,
+                                                            )
+                                                        }
+                                                        type="button"
+                                                    >
+                                                        <Icon
+                                                            name={
+                                                                section.collapsed
+                                                                    ? "chevron-right"
+                                                                    : "chevron-down"
+                                                            }
+                                                            size={12}
+                                                        />
+                                                    </button>
+                                                ) : null}
+                                            </span>
+                                        ) : section.collapsed !== undefined ? (
                                             <button
                                                 aria-expanded={!section.collapsed}
                                                 aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.label}`}
@@ -3097,6 +3164,9 @@ export function Sidebar(props: SidebarProps) {
                                             </span>
                                         ) : null}
                                     </div>
+                                ) : null}
+                                {!section.collapsed && section.context ? (
+                                    <SidebarSectionContext text={section.context} />
                                 ) : null}
                                 {section.error !== undefined ? (
                                     <p
@@ -3224,6 +3294,17 @@ export function Sidebar(props: SidebarProps) {
                                             );
                                         })}
                                     </div>
+                                ) : null}
+                                {!section.headingOnly &&
+                                !section.collapsed &&
+                                section.tail &&
+                                tailCount > 0 ? (
+                                    <SidebarSectionTail
+                                        expanded={section.tail.expanded}
+                                        hiddenCount={tailCount}
+                                        sectionLabel={section.label ?? section.id}
+                                        onToggle={() => local.onSectionTailToggle?.(section.id)}
+                                    />
                                 ) : null}
                                 {!section.headingOnly &&
                                 !section.collapsed &&

@@ -19,6 +19,10 @@ import { WorkTranscript, type WorkTranscriptRow } from "../../src/WorkTranscript
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
 import { TidyStoryWindow } from "./TidyStoryWindow";
+import { DayTimeline } from "./DayTimeline";
+import { PersonalDayWindow } from "./PersonalDayWindow";
+import { dayFrameDetails } from "./personalDayFixtures";
+import { TidyDiffAnnotations } from "./TidyDiffAnnotations";
 import {
     redesignActive,
     redesignCode,
@@ -956,10 +960,31 @@ export function WindowRedesignPage() {
         <ComponentPage
             contract="Props only"
             number={componentNumber}
-            title="Window redesign · a day of work"
+            title="Window redesign · personal work through the day"
             width={1536}
-            summary="Real work and shortened conversation excerpts, organized into a proposed end-to-end workflow. Crew roles, future creation/release steps and movie content are storyboard fixtures."
+            summary="Two personal views of real work, with staged focus, manager batches and coordination clearly captioned. Earlier creation, release, movie and tidy rounds remain below."
         >
+            <FullScreenSpecimen
+                number="12"
+                label="Day timeline · Kirill and Steve"
+                detail="Real work and observed activity; staged interactions. Move ticks stay in workbench gutters. No annotation inside a sidebar."
+                screen="12-day-timeline-1440x2016"
+                window={{ width: 1440, height: 2016 }}
+            >
+                <DayTimeline />
+            </FullScreenSpecimen>
+            {dayFrameDetails.map((frame) => (
+                <FullScreenSpecimen
+                    key={frame.id}
+                    number={frame.id.split("-")[0]!}
+                    label={frame.label}
+                    detail={frame.detail}
+                    screen={`${frame.id}-1440x900`}
+                    window={{ width: 1440, height: 900 }}
+                >
+                    <PersonalDayWindow frame={frame.scene} />
+                </FullScreenSpecimen>
+            ))}
             {frames.flatMap((frame) =>
                 [
                     ...desktopWindows,
@@ -992,16 +1017,21 @@ export function WindowRedesignPage() {
                     { id: "11c-tidy-diff", scene: "diff", label: "Tidy diff · every changed row" },
                 ] as const
             ).map((frame) => (
-                <FullScreenSpecimen
-                    key={frame.id}
-                    number={frame.id.split("-")[0]!}
-                    label={frame.label}
-                    detail="1440 × 900 · real supplied snapshot · flat topic sections"
-                    screen={`${frame.id}-1440x900`}
-                    window={{ width: 1440, height: 900 }}
-                >
-                    <TidyStoryWindow scene={frame.scene} />
-                </FullScreenSpecimen>
+                <TidyDiffAnnotations key={frame.id} enabled={frame.scene === "diff"}>
+                    <FullScreenSpecimen
+                        number={frame.id.split("-")[0]!}
+                        label={frame.label}
+                        detail={
+                            frame.scene === "diff"
+                                ? "1440 × 900 · real supplied snapshot · move ticks in the workbench gutter; sidebar unmarked"
+                                : "1440 × 900 · real supplied snapshot · flat topic sections"
+                        }
+                        screen={`${frame.id}-1440x900`}
+                        window={{ width: 1440, height: 900 }}
+                    >
+                        <TidyStoryWindow scene={frame.scene} />
+                    </FullScreenSpecimen>
+                </TidyDiffAnnotations>
             ))}
         </ComponentPage>
     );
