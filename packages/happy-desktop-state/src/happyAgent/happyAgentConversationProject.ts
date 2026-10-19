@@ -438,6 +438,16 @@ type ProjectableUserInput =
     | { readonly state: "answered"; readonly request: HappyAgentAnsweredUserInput };
 
 /**
+ * What another agent said, without the line Happy Agent puts ahead of it for
+ * the receiving model: "Message from agent <id>:" names the sender by ID, and
+ * the row already names it by its title.
+ */
+function inboundAgentText(text: string, agentId: string): string {
+    const lead = `Message from agent ${agentId}:`;
+    return text.startsWith(lead) ? text.slice(lead.length).trimStart() : text;
+}
+
+/**
  * Claude keeps oversized images in the conversation context, so this specific
  * provider failure can often be recovered without abandoning the session.
  */
@@ -621,6 +631,7 @@ function happyAgentConnectGroupProject(
                  */
                 const sender = senderOf(input, element.agentId);
                 const name = sender.agentName;
+                const text = inboundAgentText(element.text, element.agentId);
                 if (element.relation === "parent") {
                     entries.push({
                         kind: "message",
@@ -630,7 +641,7 @@ function happyAgentConnectGroupProject(
                             id: element.messageId,
                             sessionId: input.sessionId,
                             sequence,
-                            text: element.text,
+                            text,
                             createdAt: element.createdAt,
                             author: {
                                 ...happyAgentInboundAuthor,
@@ -651,7 +662,7 @@ function happyAgentConnectGroupProject(
                         kind: "agentMessage",
                         agentId: element.agentId,
                         ...sender,
-                        text: element.text,
+                        text,
                     },
                 });
                 break;

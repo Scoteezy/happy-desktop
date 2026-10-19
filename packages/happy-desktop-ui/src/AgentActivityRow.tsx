@@ -737,8 +737,23 @@ function AgentToolActivity(props: {
         primaryText = explorationSummary(presentation);
     } else if (presentation?.type === "fileDiff") {
         const first = presentation.files[0];
-        verb = first ? diffVerb(first.kind) : toolVerb(tool.toolName, tool.status, presentation);
-        primaryText = first ? fileName(first.path) : humanizeToolName(tool.toolName);
+        // The counts are the whole operation's, so a row that names one file
+        // must be about one file; more than one reads as how many.
+        const fileCount =
+            new Set(presentation.files.map((file) => file.path)).size +
+            (presentation.omittedFiles ?? 0);
+        verb =
+            fileCount > 1
+                ? "Edited"
+                : first
+                  ? diffVerb(first.kind)
+                  : toolVerb(tool.toolName, tool.status, presentation);
+        primaryText =
+            fileCount > 1
+                ? `${String(fileCount)} files`
+                : first
+                  ? fileName(first.path)
+                  : humanizeToolName(tool.toolName);
         stats = presentation.files.reduce(
             (total, file) => {
                 const counts = diffCounts(file);
