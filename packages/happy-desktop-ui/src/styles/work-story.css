@@ -180,3 +180,31 @@
     background: var(--surface-ripple);
     color: var(--text);
 }
+
+/* A sidebar batch in Happy's chat: the note on one line, the moves one click away. */
+.happy-conversation-summary[data-kind="batch"] {
+    padding: 0;
+}
+
+.happy-conversation-summary[data-kind="batch"] .happy-conversation-summary__details {
+    padding: 0 8px 8px 30px;
+    gap: 2px;
+}
+
+/* A note in the transcript keeps the conversation's content inset, and opens in place. */
+.happy-conversation-summary-entry {
+    padding: 0 20px 0 22px;
+}
+
+/* A batch reads as one line however narrow the chat; its moves are one click away. */
+.happy-conversation-summary[data-kind="batch"] .happy-conversation-summary__toggle {
+    max-width: 100%;
+    min-width: 0;
+}
+
+.happy-conversation-summary[data-kind="batch"] .happy-conversation-summary__toggle > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

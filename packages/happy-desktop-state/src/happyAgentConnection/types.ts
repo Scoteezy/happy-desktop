@@ -193,6 +193,8 @@ export interface InferenceElement extends BaseChatElement {
 
 export interface AgentTextElement extends BaseChatElement {
     kind: "agent_text";
+    /** The durable message this text block belongs to. */
+    messageId: string;
     text: string;
     complete: boolean;
 }

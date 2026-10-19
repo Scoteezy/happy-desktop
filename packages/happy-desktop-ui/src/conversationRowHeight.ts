@@ -339,6 +339,10 @@ const ACTIVITY_LEAD_CHROME = 36;
 const ACTIVITY_LEAD_RUN_SEPARATION = 6;
 /** One delegated agent row: 20px call + 20px metadata + 4px vertical inset. */
 const DELEGATION_HEIGHT = 44;
+/** A summary row's toggle, and each detail line it opens onto. */
+const SUMMARY_HEIGHT = 36;
+const SUMMARY_DETAIL_HEIGHT = 22;
+const SUMMARY_DETAILS_PADDING = 6;
 /** `.happy-day-divider` — 20px padding around a 20px label that never wraps. */
 export const DIVIDER_HEIGHT = 60;
 /** Centered `.happy-system-notice`: 16px padding above and below. */
@@ -1096,6 +1100,17 @@ export function conversationRowHeight(
                           context.expanded ?? false,
                           cache?.text,
                       ),
+        );
+    if (entry.kind === "summary")
+        return rowHeightCached(
+            cache,
+            entry,
+            `summary:${context.expanded ? "expanded" : "collapsed"}`,
+            () =>
+                SUMMARY_HEIGHT +
+                (context.expanded && entry.details.length > 0
+                    ? entry.details.length * SUMMARY_DETAIL_HEIGHT + SUMMARY_DETAILS_PADDING
+                    : 0),
         );
     const message = entry.message;
     const agent = message.sender?.kind === "agent";

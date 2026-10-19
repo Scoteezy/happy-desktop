@@ -4,6 +4,7 @@ import { HappyAgentSystemMonitorSurfacePage } from "happy-desktop-ui";
 import {
     conversationFileChanges,
     conversationFileDiff,
+    conversationNotesFold,
     gptLiveStoreNoop,
     happyAgentBotSubtasks,
     happyAgentClockStoreCreate,
@@ -11,6 +12,7 @@ import {
     happyAgentTabsOrdered,
     happyAgentTodoHeading,
     type ConversationFileDiff,
+    type ConversationNote,
     type GptLiveVoiceFocus,
     type HappyAgentSidebarProject,
 } from "happy-desktop-state";
@@ -318,6 +320,7 @@ import {
     happyAgentSpaceHappyIs,
     happyAgentSpaceLabel,
     happyAgentSpaceMark,
+    happyAgentSpacesNotes,
     happyAgentSpacesStemCellIntro,
     HappyAgentSpacesSidebar,
     type HappyAgentSpacesNavigation,
@@ -3645,7 +3648,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // stem cell and its empty chat are one thing, so there is nothing to show
     // before the daemon has made it.
     const makeStuff = (sectionId: HappyAgentSpaceSectionId | null): void => {
-        if (!active || !activeHappyAgentOnline()) return;
+        if (!experimental.stemCells || !active || !activeHappyAgentOnline()) return;
         void spacesStore
             .stemCellCreate(sectionId)
             .then((cell) => {
@@ -3746,7 +3749,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 {...(props.sidebarCollapse
                     ? { onRowCollapseToggle: sidebarCollapseStore.rowCollapseToggle }
                     : {})}
-                onSectionCreate={(sectionId) => makeStuff(sectionId)}
+                {...(experimental.stemCells
+                    ? {
+                          onSectionCreate: (sectionId: HappyAgentSpaceSectionId) =>
+                              makeStuff(sectionId),
+                      }
+                    : {})}
                 onChatAside={(agentId, label) =>
                     active?.session?.workspace.panel.chatTabOpen(
                         agentId as HappyAgentSessionId,
@@ -3766,6 +3774,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         ) : undefined;
     const spaceOfChat = (sessionId: string) =>
         happyAgentSpaceFocused(spaces, { chatId: sessionId });
+    const happySpace = [...spaces.spaces.values()].find((space) =>
+        happyAgentSpaceHappyIs(space, spacesPlaces),
+    );
     const workspaceSpaces: HappyAgentWorkspaceSpaces = {
         chatMark: (sessionId) => {
             const space = spaceOfChat(sessionId);
@@ -3778,6 +3789,12 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         },
         floatyKey: (sessionId) => spaceOfChat(sessionId)?.id,
         chatEmpty: (sessionId) => happyAgentSpacesStemCellIntro(spaceOfChat(sessionId)),
+        chatNotes: (sessionId) =>
+            experimental.batchNotes &&
+            happySpace !== undefined &&
+            happySpace.target.agentId === sessionId
+                ? happyAgentSpacesNotes(spaces.batches)
+                : undefined,
     };
     const sidebar = (
         <Sidebar
@@ -4665,7 +4682,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           },
                       }
                     : {})}
-                {...(spacesSidebar
+                {...(spacesSidebar && experimental.stemCells
                     ? {
                           sidebarCollapsedAction: {
                               label: "New work (⌘N or ⌘T)",
@@ -4706,7 +4723,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 the reader is, as the Tasks heading's + makes one. Bound only
                 while the machine on screen can make one, so an older Happy
                 Agent leaves the chord to do nothing at all. */}
-            {spacesSidebar ? (
+            {spacesSidebar && experimental.stemCells ? (
                 <WindowShortcuts
                     actions={[
                         { run: () => makeStuff(null), shortcut: APP_SHORTCUTS.taskCreate },
@@ -6349,6 +6366,8 @@ interface HappyAgentWorkspaceSpaces {
     floatyKey(sessionId: string): string | undefined;
     /** What an empty conversation says instead of the default, such as new work's stem cell. */
     chatEmpty(sessionId: string): ReactNode | undefined;
+    /** Bookkeeping a conversation reads as one-line summaries, such as Happy's sidebar batches. */
+    chatNotes(sessionId: string): ReadonlyMap<string, ConversationNote> | undefined;
 }
 
 /**
@@ -7142,6 +7161,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                               </Banner>
                           ),
                       })}
+                {...(props.spaces && props.chatId
+                    ? { notes: props.spaces.chatNotes(props.chatId) }
+                    : {})}
                 emptyContent={
                     props.spaces && props.chatId && props.spaces.chatEmpty(props.chatId) ? (
                         props.spaces.chatEmpty(props.chatId)
@@ -8564,6 +8586,8 @@ function HappyAgentConversationBody(props: {
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentWorkspaceSnapshot["conversation"];
     emptyContent?: ReactNode;
+    /** Messages that are bookkeeping, by message ID, each read as one summary row. */
+    notes?: ReadonlyMap<string, ConversationNote> | undefined;
     focusOnType: boolean;
     groupId: string;
     groupName: string;
@@ -8623,6 +8647,7 @@ function HappyAgentConversationBody(props: {
                 modelUsageWatch={props.modelUsageWatch}
                 conversation={conversation.value}
                 emptyContent={props.emptyContent}
+                notes={props.notes}
                 focusOnType={props.focusOnType}
                 groupId={props.groupId}
                 groupName={props.groupName}
@@ -9010,6 +9035,7 @@ function HappyAgentConversationSurface(props: {
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentConversationSnapshot;
     emptyContent?: ReactNode;
+    notes?: ReadonlyMap<string, ConversationNote> | undefined;
     focusOnType: boolean;
     groupId: string;
     groupName: string;
@@ -9194,7 +9220,11 @@ function HappyAgentConversationSurface(props: {
                         composerPlaceholder(undefined)
             }
             conversationId={conversation.conversationId}
-            entries={conversation.entries}
+            entries={
+                props.notes === undefined
+                    ? conversation.entries
+                    : conversationNotesFold(conversation.entries, props.notes)
+            }
             errorAssistance={conversation.errorAssistance}
             errorAssistanceUnavailable={props.unavailable}
             onErrorAssistanceRequest={(entryId) => {

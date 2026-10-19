@@ -5,6 +5,60 @@ import { happyAgentSpacesStoreCreate } from "./spacesStore.js";
 
 afterEach(() => vi.useRealTimers());
 
+it("holds incoming sidebar versions and attention through the saved drop", async () => {
+    vi.useFakeTimers();
+    const daemon = fakeHappyAgentDaemonCreate();
+    const attention = vi.fn(async (_report: { state: "interacting" | "calm" }) => ({
+        batch: null,
+    }));
+    daemon.client.reportSpaceAttention = attention;
+    let finish = () => {};
+    daemon.client.updateSpaceSidebar = vi.fn(
+        () =>
+            new Promise<Awaited<ReturnType<typeof daemon.client.updateSpaceSidebar>>>((resolve) => {
+                finish = () =>
+                    resolve({
+                        artifactId: "sidebar",
+                        version: 2,
+                        html: "<nav>\n</nav>",
+                        spaces: [],
+                    });
+            }),
+    );
+    const sync = happyAgentSyncCreate();
+    sync.writer.bootstrapReceived(await daemon.client.getDesktopBootstrap());
+    const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync: sync.source });
+    const unsubscribe = store.subscribe(() => {});
+    try {
+        await vi.advanceTimersByTimeAsync(0);
+        store.sidebarDragUpdate(true);
+        await vi.advanceTimersByTimeAsync(0);
+        const reads = daemon.callCount("getSpaceSidebar");
+        const event = daemon.eventEmit("space.removed", { spaceId: "elsewhere" });
+        sync.writer.updateReceived({ kind: "event", cursor: event.cursor, event });
+        await vi.advanceTimersByTimeAsync(0);
+        expect(daemon.callCount("getSpaceSidebar")).toBe(reads);
+        store.sidebarWrite("<nav>\n</nav>");
+        store.sidebarDragUpdate(false);
+        store.attentionUpdate("calm");
+        await vi.advanceTimersByTimeAsync(0);
+        expect(attention.mock.calls.map(([report]) => report)).toEqual([{ state: "interacting" }]);
+        expect(store.get().sidebar?.html).toBe("<nav>\n</nav>");
+        finish();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(attention.mock.calls.map(([report]) => report)).toEqual([
+            { state: "interacting" },
+            { state: "calm" },
+        ]);
+        expect(store.get().sidebar?.html).toBe("<nav>\n</nav>");
+        expect(store.get().sidebar?.version).toBe(2);
+    } finally {
+        unsubscribe();
+        store[Symbol.dispose]();
+        sync.writer.close();
+    }
+});
+
 it("aborts offline read retries on last unsubscribe and reads again on resubscribe", async () => {
     vi.useFakeTimers();
     const daemon = fakeHappyAgentDaemonCreate();

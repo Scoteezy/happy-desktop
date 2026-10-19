@@ -4,7 +4,7 @@ import { MarkdownDocument } from "./MarkdownDocument";
 import { ScrollArea } from "./Scrollbar";
 
 export type ConversationSummaryRowProps = {
-    kind: "tools" | "handoff";
+    kind: "tools" | "handoff" | "batch";
     label: string;
     details: readonly string[];
     /** The complete supplied report behind this summary. */
@@ -32,8 +32,17 @@ export function ConversationSummaryRow(props: ConversationSummaryRowProps) {
                 }}
                 type="button"
             >
-                <Icon name={props.kind === "handoff" ? "chat" : "terminal"} size={14} />
-                <span>{props.label}</span>
+                <Icon
+                    name={
+                        props.kind === "handoff"
+                            ? "chat"
+                            : props.kind === "batch"
+                              ? "list"
+                              : "terminal"
+                    }
+                    size={14}
+                />
+                <span title={props.label}>{props.label}</span>
                 <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
             </button>
             {expanded && props.details.length > 0 ? (

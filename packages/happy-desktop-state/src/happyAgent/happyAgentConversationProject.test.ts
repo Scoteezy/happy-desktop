@@ -270,7 +270,14 @@ it("keeps a completed file edit visible while command traces are folded", () => 
                 ],
             },
         },
-        { ...base, id: "answer", kind: "agent_text", text: "Created lol.txt.", complete: true },
+        {
+            ...base,
+            id: "answer",
+            kind: "agent_text",
+            messageId: "answer",
+            text: "Created lol.txt.",
+            complete: true,
+        },
         {
             ...base,
             id: "end",

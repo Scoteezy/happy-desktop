@@ -28,6 +28,7 @@ import {
     type ConversationFailureActions,
 } from "./ConversationFailureCard";
 import type { ConversationFailureClock } from "./conversationFailureText";
+import { ConversationSummaryRow } from "./ConversationSummaryRow";
 import { conversationErrorTitle } from "./conversationErrorTitle";
 import { DelegatedAgentActivity } from "./DelegatedAgentActivity";
 import { TurnSummary } from "./TurnSummary";
@@ -472,6 +473,24 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                 request={entry.request}
                 style={props.style}
             />
+        );
+    if (entry.kind === "summary")
+        return (
+            <div
+                className={["happy-conversation-summary-entry", props.className]
+                    .filter(Boolean)
+                    .join(" ")}
+                data-testid={props["data-testid"]}
+                style={props.style}
+            >
+                <ConversationSummaryRow
+                    details={entry.details}
+                    expanded={props.rowExpanded ?? false}
+                    kind="batch"
+                    label={entry.label}
+                    onExpandedChange={props.onRowExpandedChange}
+                />
+            </div>
         );
 
     const message = entry.message;

@@ -9,12 +9,14 @@ import {
     type SidebarDocumentView,
     type HappyAgentBot,
     type HappyAgentSpace,
+    type HappyAgentSpaceBatch,
     type HappyAgentSpaceId,
     type HappyAgentSpaceTarget,
     type HappyAgentSpaceSectionId,
     type HappyAgentSpacesSnapshot,
     type HappyAgentSpacesStore,
     type HappyAgentTask,
+    type ConversationNote,
 } from "happy-desktop-state";
 import {
     clayIconMark,
@@ -248,7 +250,7 @@ export interface HappyAgentSpacesSidebarProps {
     /** The first row opens the window's search. */
     readonly searchRow?: SidebarProps["searchRow"];
     /** Makes new work at the top of one section. */
-    readonly onSectionCreate: (sectionId: HappyAgentSpaceSectionId) => void;
+    readonly onSectionCreate?: (sectionId: HappyAgentSpaceSectionId) => void;
     readonly now: number;
     readonly visible?: boolean;
     /** Whether a working row shimmers its title, as the reader set it. */
@@ -341,7 +343,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         label: section.label,
         headingDisclosure: true,
         collapsed: section.collapsed,
-        ...(section.id === DOCUMENT_OLDER
+        ...(section.id === DOCUMENT_OLDER || !props.onSectionCreate
             ? {}
             : {
                   action: {
@@ -397,11 +399,15 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         ...(section.visibleCount === null
             ? {}
             : { tail: { visibleCount: section.visibleCount, expanded: section.tailExpanded } }),
-        action: {
-            icon: "plus" as const,
-            label: `New in ${section.name}`,
-            reveal: "hover" as const,
-        },
+        ...(props.onSectionCreate
+            ? {
+                  action: {
+                      icon: "plus" as const,
+                      label: `New in ${section.name}`,
+                      reveal: "hover" as const,
+                  },
+              }
+            : {}),
         items: rowsOf(happyAgentSpacesIn(snapshot.spaces, section.id)),
     }));
     const spaceOf = (id: string) => snapshot.spaces.get(id as HappyAgentSpaceId);
@@ -453,6 +459,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             onInteractionChange={(interacting) =>
                 props.store.attentionUpdate(interacting ? "interacting" : "calm")
             }
+            onDragChange={props.store.sidebarDragUpdate}
             footer={props.footer}
             headerAccessory={props.headerAccessory}
             foldControlPlacement="trailing"
@@ -538,7 +545,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             }}
             onSectionAction={(sectionId, source) => {
                 if (source === "heading")
-                    props.onSectionCreate(sectionId as HappyAgentSpaceSectionId);
+                    props.onSectionCreate?.(sectionId as HappyAgentSpaceSectionId);
             }}
             onSectionCollapseToggle={(sectionId) => {
                 if (view && sidebarDoc) {
@@ -577,6 +584,34 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             }
         />
     );
+}
+
+/** Where a row stood, in words, for one side of a batch's diff. */
+function positionLabel(position: HappyAgentSpaceBatch["changes"][number]["from"]): string {
+    if (position.visibility === "folded") return "Older";
+    if (position.visibility === "hidden") return "hidden";
+    return position.sectionName ?? "under Happy";
+}
+
+/** Each batch's note in Happy's chat, by its message, read as one row that opens onto its moves. */
+export function happyAgentSpacesNotes(
+    batches: readonly HappyAgentSpaceBatch[],
+): ReadonlyMap<string, ConversationNote> {
+    const notes = new Map<string, ConversationNote>();
+    for (const batch of batches) {
+        if (batch.noteMessageId === null) continue;
+        notes.set(batch.noteMessageId, {
+            label: batch.note,
+            details: batch.changes.map((change) => {
+                const from = positionLabel(change.from);
+                const to = positionLabel(change.to);
+                return from === to
+                    ? `${change.title}: ${from}, row ${change.from.index + 1} → ${change.to.index + 1}`
+                    : `${change.title}: ${from} → ${to}`;
+            }),
+        });
+    }
+    return notes;
 }
 
 /** New work before its first message: its stem cell, centred above the composer. */

@@ -1128,6 +1128,7 @@ function messageElementsProject(
                     ...base,
                     id,
                     kind: "agent_text",
+                    messageId: message.id,
                     text: block.text,
                     complete: runStatus !== "running",
                 });

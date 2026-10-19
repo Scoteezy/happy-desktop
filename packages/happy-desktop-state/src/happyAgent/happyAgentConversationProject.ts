@@ -734,6 +734,8 @@ function happyAgentConnectGroupProject(
                         author: agentAuthor,
                         generationStatus: element.complete ? "complete" : "streaming",
                     }),
+                    messageId: element.messageId,
+                    runId: element.runId,
                 });
                 break;
             }
@@ -973,6 +975,7 @@ function happyAgentConnectGroupProject(
                 entries.push({
                     kind: "turnStatus",
                     id: `${element.id}:status`,
+                    runId: element.runId,
                     sequence: sequenceOf(entries.length),
                     status:
                         element.reason === "steering"

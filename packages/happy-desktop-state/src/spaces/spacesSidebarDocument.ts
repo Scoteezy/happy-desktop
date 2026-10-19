@@ -201,6 +201,25 @@ export function sidebarDocumentMove(
     });
 }
 
+/** Names new work in its section before the document read catches up. */
+export function sidebarDocumentInsert(
+    html: string,
+    ref: string,
+    sectionId: string | null,
+): string | undefined {
+    return edit(html, (nav) => {
+        if (spaceNode(nav, ref)) return false;
+        const parent = sectionId === null ? nav : sectionNode(nav, sectionId);
+        if (!parent) return false;
+        const node = nav.ownerDocument.createElement("happy-space");
+        node.setAttribute("ref", ref);
+        node.setAttribute("tree", "");
+        const after = sectionId === null ? nav.querySelector(":scope > happy-space") : null;
+        attach(parent, node, after);
+        return true;
+    });
+}
+
 /** Folds or unfolds a space's tree. */
 export function sidebarDocumentSpaceFold(html: string, ref: string): string | undefined {
     return edit(html, (nav) => {

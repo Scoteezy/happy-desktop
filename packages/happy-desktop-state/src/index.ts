@@ -9,6 +9,7 @@ export * from "./conversation/conversationAuthor.js";
 export * from "./conversation/conversationEntries.js";
 export * from "./conversation/conversationEntry.js";
 export * from "./conversation/conversationFileChanges.js";
+export * from "./conversation/conversationNotes.js";
 export * from "./conversation/conversationSummary.js";
 export * from "./conversation/inlineImageSize.js";
 export * from "./conversation/loadable.js";

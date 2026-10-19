@@ -521,6 +521,10 @@ export interface ConversationMessageEntry {
      * never a wire value.
      */
     readonly contextNote?: string;
+    /** The durable message an agent's text came from, when the Happy Agent served it. */
+    readonly messageId?: string;
+    /** The run that produced it, when the Happy Agent served it. */
+    readonly runId?: string;
 }
 
 export interface ConversationActivityEntry {
@@ -888,6 +892,21 @@ export interface ConversationTurnStatusEntry {
     /** Conversation context measured when the run settled. */
     readonly finalContextTokens?: number;
     readonly tools?: number;
+    /** The run this footer settles. */
+    readonly runId?: string;
+}
+
+/**
+ * Bookkeeping told in one line, its details one click away: a note Happy
+ * writes when the sidebar is reorganised, which is a record rather than a
+ * reply and so has no author, footer, or duration.
+ */
+export interface ConversationSummaryEntry {
+    readonly kind: "summary";
+    readonly id: string;
+    readonly sequence: string;
+    readonly label: string;
+    readonly details: readonly string[];
 }
 
 /**
@@ -900,7 +919,8 @@ export type ConversationEntry =
     | ConversationNoticeEntry
     | ConversationRequestEntry
     | ConversationDelegationEntry
-    | ConversationTurnStatusEntry;
+    | ConversationTurnStatusEntry
+    | ConversationSummaryEntry;
 
 /** The stable render identity of an entry; the row key React must keep. */
 export function entryKey(entry: ConversationEntry): string {

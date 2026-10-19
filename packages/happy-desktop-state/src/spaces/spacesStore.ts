@@ -11,6 +11,7 @@ import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import type { UserError } from "../types.js";
+import { sidebarDocumentInsert } from "./spacesSidebarDocument.js";
 import { cuid2Create } from "../utils/cuid2Create.js";
 import { orderKeyDecimalBetween, stringCompare } from "../utils/orderKeyDecimal.js";
 import type {
@@ -153,6 +154,8 @@ export interface HappyAgentSpacesStore {
      * and reports the refusal, without merging.
      */
     sidebarWrite(html: string): void;
+    /** Holds the document and daemon edits through the gesture and its saved drop. */
+    sidebarDragUpdate(active: boolean): void;
     /** Which spaces the reader can see, reported at most once a second. */
     sidebarObserve(visibleSpaceIds: readonly string[]): void;
     [Symbol.dispose](): void;
@@ -236,6 +239,9 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     let held: SpaceEvent[] | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const life = new AbortController();
+    // Authored document sections need not have a legacy SpaceSection row.
+    // Keep the requested placement until both the creation event and reply agree.
+    const creating = new Map<string, HappyAgentSpaceSectionId | null>();
 
     const publish = (next: Partial<HappyAgentSpacesSnapshot>): void => {
         snapshot = { ...snapshot, ...next };
@@ -287,18 +293,24 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
 
     /** Writes in flight; while any is, a read could only show an older document. */
     let sidebarWrites = 0;
+    let sidebarDragging = false;
     let sidebarStale = false;
     const sidebarLoad = (): void => {
-        if (sidebarWrites > 0) {
+        if (sidebarWrites > 0 || sidebarDragging || creating.size > 0) {
             sidebarStale = true;
             return;
         }
         void deps.client
             .getSpaceSidebar({ signal: life.signal })
             .then((answer) => {
-                if (disposed || sidebarWrites > 0) return;
+                if (disposed) return;
+                if (sidebarWrites > 0 || sidebarDragging || creating.size > 0) {
+                    sidebarStale = true;
+                    return;
+                }
                 const current = snapshot.sidebar;
                 if (current && current.version > answer.version) return;
+                if (current?.version === answer.version && current.html === answer.html) return;
                 publish({
                     sidebar: {
                         artifactId: answer.artifactId,
@@ -372,6 +384,19 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             case "space.updated": {
                 const spaces = new Map(snapshot.spaces);
                 if (spaceAdopt(spaces, spaceOf(event.payload.space))) next.spaces = spaces;
+                if (
+                    event.type === "space.created" &&
+                    snapshot.sidebar &&
+                    creating.has(event.payload.space.id)
+                ) {
+                    const space = event.payload.space;
+                    const html = sidebarDocumentInsert(
+                        snapshot.sidebar.html,
+                        space.id,
+                        creating.get(space.id) ?? null,
+                    );
+                    if (html !== undefined) next.sidebar = { ...snapshot.sidebar, html };
+                }
                 // New work is written into the document where it was made.
                 if (event.type === "space.created" && snapshot.sidebar !== undefined) sidebarLoad();
                 break;
@@ -551,6 +576,31 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     };
 
     let attention: { state: HappyAgentSpacesAttention; at: number } | undefined;
+    let attentionQueue: Promise<void> = Promise.resolve();
+    const attentionSend = (state: HappyAgentSpacesAttention): void => {
+        if (snapshot.availability !== "available") return;
+        if (state === "calm" && (sidebarDragging || sidebarWrites > 0)) return;
+        const at = (deps.now ?? Date.now)();
+        if (
+            attention?.state === state &&
+            (state === "calm" || at - attention.at < ATTENTION_RENEW_MS)
+        )
+            return;
+        attention = { state, at };
+        attentionQueue = attentionQueue.then(async () => {
+            await deps.client
+                .reportSpaceAttention({ state }, { signal: life.signal })
+                .catch(() => undefined);
+        });
+    };
+    const sidebarReleased = (): void => {
+        if (sidebarDragging || sidebarWrites > 0) return;
+        attentionSend("calm");
+        if (sidebarStale) {
+            sidebarStale = false;
+            sidebarLoad();
+        }
+    };
 
     return {
         get: () => snapshot,
@@ -565,6 +615,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
         async stemCellCreate(sectionId) {
             const id = idCreate();
             const mutationId = idCreate();
+            creating.set(id, sectionId);
             try {
                 const response = await happyAgentSyncRead(
                     life.signal,
@@ -586,8 +637,12 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 const space = spaceOf(response.space);
                 const spaces = new Map(snapshot.spaces);
                 spaceAdopt(spaces, space);
+                const html =
+                    snapshot.sidebar &&
+                    sidebarDocumentInsert(snapshot.sidebar.html, space.id, sectionId);
                 publish({
                     spaces,
+                    ...(html && snapshot.sidebar ? { sidebar: { ...snapshot.sidebar, html } } : {}),
                     agentWorkspaces: new Map(snapshot.agentWorkspaces).set(
                         response.agent.id,
                         response.agent.workspaceId,
@@ -600,6 +655,9 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 };
             } catch (error) {
                 throw happyAgentUserError(error);
+            } finally {
+                creating.delete(id);
+                if (creating.size === 0 && sidebarStale) sidebarLoad();
             }
         },
         spaceMove(spaceId, sectionId, afterId) {
@@ -654,19 +712,12 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             if (focused && snapshot.noteUnread) publish({ noteUnread: false });
         },
         attentionUpdate(state) {
-            if (snapshot.availability !== "available") return;
-            const at = (deps.now ?? Date.now)();
-            // The daemon holds an "interacting" report for minutes, so a
-            // repeat only needs to renew it, not echo every pointer event.
-            if (
-                attention?.state === state &&
-                (state === "calm" || at - attention.at < ATTENTION_RENEW_MS)
-            )
-                return;
-            attention = { state, at };
-            void deps.client
-                .reportSpaceAttention({ state }, { signal: life.signal })
-                .catch(() => undefined);
+            attentionSend(state);
+        },
+        sidebarDragUpdate(active) {
+            sidebarDragging = active;
+            if (active) attentionSend("interacting");
+            else queueMicrotask(sidebarReleased);
         },
         tidyRequest() {
             send(
@@ -680,6 +731,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             publish({ sidebar: { ...current, html } });
             sidebarWrites += 1;
             sidebarQueue = sidebarQueue.then(async () => {
+                await attentionQueue;
                 const base = snapshot.sidebar;
                 try {
                     if (disposed || base === undefined) return;
@@ -708,10 +760,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                         publish({ sidebar: { ...snapshot.sidebar, version: -1 } });
                 } finally {
                     sidebarWrites -= 1;
-                    if (sidebarWrites === 0 && sidebarStale) {
-                        sidebarStale = false;
-                        sidebarLoad();
-                    }
+                    sidebarReleased();
                 }
             });
         },
@@ -786,6 +835,7 @@ export const happyAgentSpacesStoreNoop: HappyAgentSpacesStore = {
     tidyRequest: () => undefined,
     stemCellDiscard: () => undefined,
     sidebarWrite: () => undefined,
+    sidebarDragUpdate: () => undefined,
     sidebarObserve: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
