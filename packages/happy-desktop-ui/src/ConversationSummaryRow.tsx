@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { Icon } from "./Icon";
+import { MarkdownDocument } from "./MarkdownDocument";
+import { ScrollArea } from "./Scrollbar";
 
 export type ConversationSummaryRowProps = {
     kind: "tools" | "handoff";
     label: string;
     details: readonly string[];
+    /** The complete supplied report behind this summary. */
+    document?: string;
     expanded?: boolean;
     onExpandedChange?: (expanded: boolean) => void;
 };
@@ -32,12 +36,17 @@ export function ConversationSummaryRow(props: ConversationSummaryRowProps) {
                 <span>{props.label}</span>
                 <Icon name={expanded ? "chevron-down" : "chevron-right"} size={12} />
             </button>
-            {expanded ? (
+            {expanded && props.details.length > 0 ? (
                 <ul className="happy-conversation-summary__details">
                     {props.details.map((detail) => (
                         <li key={detail}>{detail}</li>
                     ))}
                 </ul>
+            ) : null}
+            {expanded && props.document ? (
+                <ScrollArea className="happy-conversation-summary__document">
+                    <MarkdownDocument text={props.document} />
+                </ScrollArea>
             ) : null}
         </div>
     );

@@ -18,6 +18,7 @@ import { WorkFloaty, type WorkFloatyItem } from "../../src/WorkFloaty";
 import { WorkTranscript, type WorkTranscriptRow } from "../../src/WorkTranscript";
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
+import { TidyStoryWindow } from "./TidyStoryWindow";
 import {
     redesignActive,
     redesignCode,
@@ -976,6 +977,32 @@ export function WindowRedesignPage() {
                     </FullScreenSpecimen>
                 )),
             )}
+            {(
+                [
+                    {
+                        id: "11a-tidy-before",
+                        scene: "before",
+                        label: "Before tidy · 109 real rows",
+                    },
+                    {
+                        id: "11b-tidy-after",
+                        scene: "after",
+                        label: "After tidy · grouped by topic",
+                    },
+                    { id: "11c-tidy-diff", scene: "diff", label: "Tidy diff · every changed row" },
+                ] as const
+            ).map((frame) => (
+                <FullScreenSpecimen
+                    key={frame.id}
+                    number={frame.id.split("-")[0]!}
+                    label={frame.label}
+                    detail="1440 × 900 · real supplied snapshot · flat topic sections"
+                    screen={`${frame.id}-1440x900`}
+                    window={{ width: 1440, height: 900 }}
+                >
+                    <TidyStoryWindow scene={frame.scene} />
+                </FullScreenSpecimen>
+            ))}
         </ComponentPage>
     );
 }

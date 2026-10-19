@@ -1491,6 +1491,33 @@
 
 /* ---- Footer ------------------------------------------------------------ */
 
+.happy-sidebar__bottom-section {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    max-height: 50%;
+    padding: var(--happy-panel-inset);
+    border-top: 1px solid var(--divider);
+}
+
+.happy-sidebar__bottom-content {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+}
+
+.happy-sidebar__item-placement-change {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: var(--text-secondary);
+}
+
 .happy-sidebar__footer {
     display: flex;
     flex: none;

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { ConversationDock, type ConversationDockProps } from "./ConversationDock";
-import { ConversationSummaryRow } from "./ConversationSummaryRow";
+import { ConversationSummaryRow, type ConversationSummaryRowProps } from "./ConversationSummaryRow";
 import {
     HappyAgentUserInputPrompt,
     type HappyAgentUserInputPromptProps,
@@ -37,6 +37,8 @@ export type WorkTranscriptProps = {
     rows: readonly WorkTranscriptRow[];
     composer: ConversationDockProps;
     floating?: ReactNode;
+    /** A manager's report stays above the chat while its details remain folded. */
+    summary?: Pick<ConversationSummaryRowProps, "label" | "details" | "document">;
 };
 
 /** A short curated transcript, composed from the same message/list/composer primitives. */
@@ -44,6 +46,7 @@ export function WorkTranscript(props: WorkTranscriptProps) {
     return (
         <div className="happy-work-transcript" data-happy-desktop-ui="work-transcript">
             <div className="happy-work-transcript__conversation">
+                {props.summary ? <ConversationSummaryRow kind="tools" {...props.summary} /> : null}
                 <MessageList>
                     {props.rows.map((row) => {
                         switch (row.kind) {

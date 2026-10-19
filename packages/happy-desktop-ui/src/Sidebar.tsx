@@ -35,6 +35,7 @@ import { StemCell, type StemCellMark } from "./StemCell";
 import { ScrollArea } from "./Scrollbar";
 import { TextField } from "./TextField";
 import { sidebarSectionsReuser } from "./sidebarSectionsReuser";
+import { Octicon } from "./vectorIcons/VectorIcon";
 /** One control on a row: its glyph, what it does, and when it shows. */
 export type SidebarItemAction = {
     icon: IconName;
@@ -105,6 +106,8 @@ export type SidebarItem = {
     imageMark?: { src: string; alt?: string };
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
+    /** Quiet annotation supplied by a sidebar placement diff. */
+    placementChange?: "moved" | "older";
     initials?: string;
     kind: "view" | "channel" | "workspace" | "project" | "person" | "agent" | "folder" | "action";
     label: string;
@@ -394,6 +397,13 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     actions?: SidebarItem[];
     /** Join global rows at the normal 2px rhythm, then separate them from sections. */
     actionsDivider?: boolean;
+    /** A folded collection that remains below the scrolling topic sections. */
+    bottomSection?: {
+        id: string;
+        label: string;
+        collapsed: boolean;
+        items: SidebarItem[];
+    };
     /** Agent-authored menu content between the pinned actions and project sections. */
     bodyAccessory?: ReactNode;
     /**
@@ -1842,7 +1852,7 @@ function SidebarRow({
                    controls are laid over the lane rather than placed in it, so
                    arriving and leaving costs no reflow: what they cover is
                    hidden where it stands. */
-                state || controls || stats || count !== undefined ? (
+                state || controls || stats || count !== undefined || item().placementChange ? (
                     <span
                         className="happy-sidebar__item-trailing"
                         data-happy-desktop-ui="sidebar-item-trailing"
@@ -1886,6 +1896,26 @@ function SidebarRow({
                                 </span>
                             </span>
                         ) : null}
+                        {item().placementChange ? (
+                            <span
+                                aria-label={
+                                    item().placementChange === "older" ? "Moved to Older" : "Moved"
+                                }
+                                className="happy-sidebar__item-placement-change"
+                                data-happy-desktop-ui="sidebar-item-placement-change"
+                                data-change={item().placementChange}
+                                role="img"
+                            >
+                                <Octicon
+                                    name={
+                                        item().placementChange === "older"
+                                            ? "arrow-down"
+                                            : "arrow-up"
+                                    }
+                                    size={12}
+                                />
+                            </span>
+                        ) : null}
                         {state ? activityMark() : null}
                         {controls ? trailingLane() : null}
                     </span>
@@ -1913,6 +1943,7 @@ export function Sidebar(props: SidebarProps) {
         "activityPlacement",
         "brand",
         "bodyAccessory",
+        "bottomSection",
         "className",
         "composeActive",
         "composeLabel",
@@ -3246,6 +3277,44 @@ export function Sidebar(props: SidebarProps) {
                     {text}
                 </span>
             ))}
+            {local.bottomSection ? (
+                <section
+                    className="happy-sidebar__bottom-section"
+                    data-happy-desktop-ui="sidebar-bottom-section"
+                    data-section-id={local.bottomSection.id}
+                >
+                    <SidebarRow
+                        active={false}
+                        item={{
+                            id: local.bottomSection.id,
+                            label: local.bottomSection.label,
+                            kind: "folder",
+                            count: local.bottomSection.items.length,
+                            collapsed: local.bottomSection.collapsed,
+                        }}
+                        onSelect={() => local.onSectionCollapseToggle?.(local.bottomSection!.id)}
+                        onCollapseToggle={() =>
+                            local.onSectionCollapseToggle?.(local.bottomSection!.id)
+                        }
+                        foldControlPlacement={local.foldControlPlacement}
+                    />
+                    {!local.bottomSection.collapsed ? (
+                        <ScrollArea className="happy-sidebar__bottom-content">
+                            <div className="happy-sidebar__tree">
+                                {local.bottomSection.items.map((item) => (
+                                    <SidebarRow
+                                        key={item.id}
+                                        item={item}
+                                        active={local.activeItemId === item.id}
+                                        onSelect={local.onItemSelect}
+                                        itemMarkPresentation={local.itemMarkPresentation}
+                                    />
+                                ))}
+                            </div>
+                        </ScrollArea>
+                    ) : null}
+                </section>
+            ) : null}
             {local.footer ? (
                 <footer className="happy-sidebar__footer" data-happy-desktop-ui="sidebar-footer">
                     {local.footer}
