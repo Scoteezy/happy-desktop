@@ -2,23 +2,34 @@ import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import { UserError } from "../types.js";
 import { happyAgentUserError } from "./happyAgentSupport.js";
 
+/**
+ * How a presented file is read for its preview: `document` as bytes for the
+ * host's own viewer, `text` as characters for the Markdown and source views.
+ */
+export type HappyAgentToolMediaDocumentView = "document" | "text";
+
 /** One document a tool call presented: the call, and the item's media position. */
 export interface HappyAgentToolMediaDocumentRef {
     readonly agentId: string;
     readonly toolCallId: string;
     readonly index: number;
     readonly mimeType: string;
+    readonly view: HappyAgentToolMediaDocumentView;
+    /** Size of the presented bytes, which decides whether text is read at all. */
+    readonly size: number;
 }
 
 /**
  * What the open document can be shown as. `ready` holds an object URL of its
- * bytes for the host's own viewer; `external` is a type this host shows no
- * viewer for, which the reader can still save.
+ * bytes for the host's own viewer; `text` holds a text file's characters;
+ * `external` is a type this host shows no viewer for, or bytes that turned out
+ * not to be text, which the reader can still save.
  */
 export type HappyAgentToolMediaDocumentContent =
     | { readonly type: "idle" }
     | { readonly type: "loading" }
     | { readonly type: "ready"; readonly url: string }
+    | { readonly type: "text"; readonly text: string }
     | { readonly type: "external" }
     | { readonly type: "failed"; readonly error: UserError };
 
@@ -31,7 +42,8 @@ export interface HappyAgentToolMediaDocumentSnapshot {
  * The document a presented-file preview is showing. A document is read whole
  * into memory and handed to the host's viewer as an object URL, because the
  * viewer runs in a frame that has no authenticated route to the daemon of its
- * own. Pictures and recordings never come here: they load by address.
+ * own; a text file is read whole and decoded for the Markdown and source
+ * views. Pictures and recordings never come here: they load by address.
  */
 export interface HappyAgentToolMediaDocumentStore {
     get(): HappyAgentToolMediaDocumentSnapshot;
@@ -49,6 +61,27 @@ export interface HappyAgentToolMediaDocumentDeps {
 
 const IDLE: HappyAgentToolMediaDocumentSnapshot = { content: { type: "idle" } };
 
+/**
+ * The largest text file read for its preview. Past this the highlighter and
+ * the Markdown renderer stop being a quick look, and saving the file is the
+ * better way to read it.
+ */
+const HAPPY_AGENT_TOOL_MEDIA_TEXT_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * The bytes as characters, or `undefined` when they are not text. The daemon
+ * types a presented file by its extension alone, so the bytes are the only
+ * evidence: invalid UTF-8 or a NUL byte means binary.
+ */
+function textDecode(data: ArrayBuffer): string | undefined {
+    try {
+        const text = new TextDecoder("utf-8", { fatal: true }).decode(data);
+        return text.includes("\u0000") ? undefined : text;
+    } catch {
+        return undefined;
+    }
+}
+
 function refEqual(
     left: HappyAgentToolMediaDocumentRef | undefined,
     right: HappyAgentToolMediaDocumentRef | undefined,
@@ -58,7 +91,9 @@ function refEqual(
         left.agentId === right.agentId &&
         left.toolCallId === right.toolCallId &&
         left.index === right.index &&
-        left.mimeType === right.mimeType
+        left.mimeType === right.mimeType &&
+        left.view === right.view &&
+        left.size === right.size
     );
 }
 
@@ -94,6 +129,10 @@ export function happyAgentToolMediaDocumentStoreCreate(
                 { signal },
             );
             if (media === null) throw new UserError("The document could not be read.");
+            if (document.view === "text") {
+                const text = textDecode(media.data);
+                return text === undefined ? { type: "external" } : { type: "text", text };
+            }
             const url = URL.createObjectURL(new Blob([media.data], { type: document.mimeType }));
             if (signal.aborted) {
                 URL.revokeObjectURL(url);
@@ -119,9 +158,22 @@ export function happyAgentToolMediaDocumentStoreCreate(
                 publish(IDLE);
                 return;
             }
+            if (document.view === "text" && document.size > HAPPY_AGENT_TOOL_MEDIA_TEXT_MAX_BYTES) {
+                publish({
+                    document,
+                    content: {
+                        type: "failed",
+                        error: new UserError(
+                            "This file is too large to preview. Download it to read it.",
+                        ),
+                    },
+                });
+                return;
+            }
             if (
-                deps.documentInline?.(document.mimeType) !== true ||
-                typeof URL.createObjectURL !== "function"
+                document.view === "document" &&
+                (deps.documentInline?.(document.mimeType) !== true ||
+                    typeof URL.createObjectURL !== "function")
             ) {
                 publish({ document, content: { type: "external" } });
                 return;

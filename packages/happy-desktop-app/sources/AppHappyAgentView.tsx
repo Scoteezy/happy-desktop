@@ -35,7 +35,6 @@ import type {
     ComposerSnapshot,
     ExperimentsStore,
     GptLiveStore,
-    ConversationMediaItem,
     ConversationToolCall,
     HappyAgentClockStore,
     HappyAgentToolMediaDocumentStore,
@@ -212,7 +211,6 @@ import {
     FileBrowser,
     FileEditor,
     FilePreview,
-    type FilePreviewContent,
     FormRow,
     type FilePreviewKind,
     filePreviewKind,
@@ -321,6 +319,11 @@ import { fileDownload } from "./fileDownload";
 import { imageCopy } from "./imageCopy";
 import { reactFrameInputUpdate, reactFrameSubscribe } from "./reactFrameSubscribe";
 import { useDisposableLease } from "./useDisposableLease";
+import {
+    fileSizeFormat,
+    HappyAgentToolMediaPreview,
+    type HappyAgentPreviewMedia,
+} from "./views/HappyAgentToolMediaPreview";
 import { BlueprintView } from "./views/BlueprintView";
 import type {
     AppHappyAgentDaemonSnapshot,
@@ -1523,14 +1526,6 @@ function previewToolFind(
     return entry?.kind === "agentActivity" && entry.activity.kind === "tool"
         ? entry.activity.tool
         : undefined;
-}
-
-/** One file a previewed tool call presented, with the call it is read through. */
-interface HappyAgentPreviewMedia {
-    readonly agentId: string;
-    readonly toolCallId: string;
-    readonly index: number;
-    readonly item: ConversationMediaItem;
 }
 
 /** The presented file the Preview tab names, when it names one that is still there. */
@@ -8112,84 +8107,6 @@ function HappyAgentFilePreview(props: {
             updating={props.revalidating}
         />
     );
-}
-
-/**
- * One file a tool call presented, in the same preview every other file opens
- * in. Pictures and recordings load from their address; a document is read
- * whole for the host's viewer, held by this preview for as long as it shows
- * that document; any other file states its facts and can be saved.
- */
-function HappyAgentToolMediaPreview(props: {
-    media: HappyAgentPreviewMedia;
-    documents: HappyAgentToolMediaDocumentStore;
-    onClose(): void;
-}) {
-    const { agentId, toolCallId, index, item } = props.media;
-    const documentKey =
-        item.kind === "document" ? `${agentId}/${toolCallId}/${String(index)}` : undefined;
-    useDisposableLease(documentKey, () => {
-        props.documents.documentOpen({ agentId, toolCallId, index, mimeType: item.mimeType });
-        return { [Symbol.dispose]: () => props.documents.documentOpen(undefined) };
-    });
-    const documents = useSyncExternalStore(
-        props.documents.subscribe,
-        props.documents.get,
-        props.documents.get,
-    );
-    const document =
-        documentKey !== undefined &&
-        documents.document?.toolCallId === toolCallId &&
-        documents.document.index === index
-            ? documents.content
-            : undefined;
-    const kind =
-        item.kind === "image"
-            ? "image"
-            : item.kind === "video"
-              ? "video"
-              : item.kind === "document"
-                ? document?.type === "external"
-                    ? "binary"
-                    : "pdf"
-                : "binary";
-    const content: FilePreviewContent =
-        item.kind === "image" || item.kind === "video"
-            ? { type: "url", url: item.url }
-            : item.kind !== "document" || document === undefined || document.type === "idle"
-              ? item.kind === "document"
-                  ? { type: "loading" }
-                  : { type: "unavailable" }
-              : document.type === "ready"
-                ? { type: "url", url: document.url }
-                : document.type === "failed"
-                  ? { type: "error", message: document.error.message }
-                  : document.type === "loading"
-                    ? { type: "loading" }
-                    : { type: "unavailable" };
-    return (
-        <FilePreview
-            closeLabel="Close preview"
-            content={content}
-            {...(item.width !== undefined && item.height !== undefined
-                ? { dimensions: `${String(item.width)} × ${String(item.height)}` }
-                : {})}
-            kind={kind}
-            onClose={props.onClose}
-            onDownload={() =>
-                void fileDownload(item.name, { type: "url", url: item.url }).catch(() => undefined)
-            }
-            path={item.name}
-            size={fileSizeFormat(item.size)}
-        />
-    );
-}
-
-/** A byte count as a person reads it. */
-function fileSizeFormat(size: number): string {
-    if (size < 1024) return `${String(size)} B`;
-    if (size < 1024 * 1024) return `${String(Math.round(size / 102.4) / 10)} KB`;
-    return `${String(Math.round(size / (102.4 * 1024)) / 10)} MB`;
 }
 
 /**
