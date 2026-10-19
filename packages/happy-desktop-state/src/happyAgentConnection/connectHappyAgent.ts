@@ -3030,13 +3030,18 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             const entry = sessionEntryCreate(sessionId);
             prefetchedSessions.add(sessionId);
             // Keep only the newest few that were never opened; one that is still
-            // loading stays until its read lands rather than being read twice.
+            // loading, this one included, stays until its read lands rather than
+            // being read twice.
             for (const oldest of prefetchedSessions) {
                 if (prefetchedSessions.size <= PREFETCHED_SESSION_LIMIT) break;
+                if (oldest === sessionId) continue;
                 const stale = sessions.get(oldest);
                 if (stale !== undefined && stale.loading !== undefined) continue;
                 prefetchedSessions.delete(oldest);
-                if (stale !== undefined && stale.subscribers.size === 0) sessions.delete(oldest);
+                if (stale !== undefined && stale.subscribers.size === 0) {
+                    clearUserIndex(stale);
+                    sessions.delete(oldest);
+                }
             }
             void ensureSessionLoaded(entry);
         },

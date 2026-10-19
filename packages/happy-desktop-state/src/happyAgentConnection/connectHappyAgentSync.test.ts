@@ -1293,6 +1293,26 @@ it("keeps only the newest few prefetched sessions that were never opened", async
     expect(daemon.callCount("getMessages")).toBe(ids.length + 1);
 });
 
+it("keeps a prefetched session whose read is still loading when older ones are loading too", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const ids = Array.from(
+        { length: 7 },
+        (_, index) => daemon.agentSeed(project.id, { id: `agent-${String(index)}` }).id,
+    );
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    const releaseHistory = daemon.pause("getMessages");
+
+    for (const id of ids) connection.prefetchSession(id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(ids.length));
+    // Opening the newest joins its read instead of starting another.
+    sessionWatch(connection, ids.at(-1)!);
+    releaseHistory();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(daemon.callCount("getMessages")).toBe(ids.length);
+});
+
 // --- lost cursor and full resync -------------------------------------------
 
 it("resyncs the catalog and every open chat when the hello reports a cursor gap", async () => {
