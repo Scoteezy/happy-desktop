@@ -2,13 +2,12 @@
  * C-046 Lightbox — full image or video preview inside a web modal.
  *
  * Not a card: hosted on ModalOverlay's `fill` placement it takes the whole app
- * window and paints one flat dark over it. The root .happy-lightbox declares
+ * window and paints one flat surface over it. The root .happy-lightbox declares
  * no scrim and no fixed position of its own — it fills whatever box it is given,
  * so it still renders as a screenshot-safe specimen — and the measured surface
  * is the inner .happy-lightbox__dialog: a chrome-less caption/actions header
- * floating on the dark above the shared ImageViewer in its immersive tone. The
- * dark is the theme's own dark surface, pinned in either appearance by the
- * ThemeScope the component wraps itself in. Its frame hosts the product's
+ * floating above the shared ImageViewer in its immersive tone. The surface and
+ * controls inherit the app's resolved light or dark theme. Its frame hosts the
  * shared ImageViewer or VideoViewer rather than drawing either medium itself.
  */
 
@@ -39,7 +38,7 @@
     font-synthesis: none;
 }
 
-/* One flat dark room, edge to edge: no radius, no hairline, and no shadow,
+/* One flat room, edge to edge: no radius, no hairline, and no shadow,
    because there is nothing for it to be raised above — everything the app was
    showing is behind this surface, not beside it. */
 .happy-lightbox__dialog {
@@ -57,7 +56,7 @@
 /* ---- Header ---------------------------------------------------------- */
 
 /* Chrome-less: the name of the picture and the controls for it float on the
-   dark with no bar and no rule under them, so the room stays one surface. */
+   surface with no bar and no rule under them, so the room stays one surface. */
 .happy-lightbox__header {
     display: flex;
     flex: none;

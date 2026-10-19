@@ -7,7 +7,6 @@ import {
 } from "react";
 import { Button } from "./Button";
 import { ImageViewer, type ImageViewerProps } from "./ImageViewer";
-import { ThemeScope } from "./ThemeScope";
 import { VideoViewer } from "./VideoViewer";
 import { thumbhashDataUrl } from "./thumbhashDataUrl";
 import { Ionicon } from "./vectorIcons/VectorIcon";
@@ -52,7 +51,7 @@ export type LightboxProps = LightboxSharedProps &
 /**
  * C-046 Lightbox — full image or video preview shown inside a web modal (never
  * a new browser tab). It is not a card on a dim: hosted on `ModalOverlay`'s
- * `fill` placement it takes the whole app window and paints one flat dark over
+ * `fill` placement it takes the whole app window and paints one flat surface over
  * it, so looking at media is a mode the window enters rather than a panel that
  * floats above a half-legible copy of the app. The root `.happy-lightbox`
  * still declares no scrim and no fixed position of its own, so it renders as a
@@ -60,11 +59,9 @@ export type LightboxProps = LightboxSharedProps &
  * is the inner `data-happy-desktop-ui="lightbox-dialog"`: an optional
  * caption/detail + actions header above the shared viewer.
  *
- * The dark is the picture's own, not the appearance's: the surface is scoped to
- * the dark theme in either appearance, because a photograph is read against
- * black everywhere it is read seriously, and a white room around one is a lamp
- * pointed at the reader. Everything inside — the caption, the controls, the
- * viewer — takes its colours from that scope rather than from bespoke values.
+ * The surface, caption, controls, and viewer inherit the surrounding app's
+ * resolved appearance. Theme tokens keep them current when the app or system
+ * changes between light and dark while a picture is open.
  *
  * The media inside uses the same image and video viewers as file preview and
  * the separate preview window. Images keep the `immersive` tone because the
@@ -106,7 +103,7 @@ export function Lightbox(props: LightboxProps) {
     const hasHeader = () =>
         Boolean(local.caption || local.detail || local.actions || local.onClose || stepping);
     /**
-     * The dark around the picture is the way out, as it is in every viewer that
+     * The space around the picture is the way out, as it is in every viewer that
      * takes the window: with the overlay's gutter gone, this surface is what a
      * click outside the card used to land on. Only the viewer's own frame counts
      * — the picture, the caption, and the controls are not "outside" — and only
@@ -136,120 +133,118 @@ export function Lightbox(props: LightboxProps) {
             data-happy-desktop-ui="lightbox"
             style={local.style}
         >
-            <ThemeScope mode="dark">
-                <div
-                    aria-label={local.caption ?? local.alt ?? `${mediaName} preview`}
-                    aria-modal="true"
-                    className="happy-lightbox__dialog"
-                    data-happy-desktop-ui="lightbox-dialog"
-                    onClick={click}
-                    onKeyDown={keyDown}
-                    role="dialog"
-                >
-                    {hasHeader() ? (
-                        <header
-                            className="happy-lightbox__header"
-                            data-happy-desktop-ui="lightbox-header"
+            <div
+                aria-label={local.caption ?? local.alt ?? `${mediaName} preview`}
+                aria-modal="true"
+                className="happy-lightbox__dialog"
+                data-happy-desktop-ui="lightbox-dialog"
+                onClick={click}
+                onKeyDown={keyDown}
+                role="dialog"
+            >
+                {hasHeader() ? (
+                    <header
+                        className="happy-lightbox__header"
+                        data-happy-desktop-ui="lightbox-header"
+                    >
+                        <div
+                            className="happy-lightbox__caption"
+                            data-happy-desktop-ui="lightbox-caption"
                         >
-                            <div
-                                className="happy-lightbox__caption"
-                                data-happy-desktop-ui="lightbox-caption"
-                            >
-                                {local.caption ? (
-                                    <span
-                                        className="happy-lightbox__caption-title"
-                                        data-happy-desktop-ui="lightbox-caption-title"
-                                    >
-                                        {local.caption}
-                                    </span>
-                                ) : null}
-                                {local.detail ? (
-                                    <span
-                                        className="happy-lightbox__caption-detail"
-                                        data-happy-desktop-ui="lightbox-caption-detail"
-                                    >
-                                        {local.detail}
-                                    </span>
-                                ) : null}
-                            </div>
-                            <div
-                                className="happy-lightbox__tools"
-                                data-happy-desktop-ui="lightbox-tools"
-                            >
-                                {stepping ? (
-                                    <Button
-                                        aria-label={`Previous ${navigationLabel}`}
-                                        iconOnly
-                                        onClick={() => local.onPrevious?.()}
-                                        size="small"
-                                        variant="ghost"
-                                    >
-                                        <Ionicon name="chevron-back-outline" size={14} />
-                                    </Button>
-                                ) : null}
-                                {stepping && local.position ? (
-                                    <span
-                                        className="happy-lightbox__position"
-                                        data-happy-desktop-ui="lightbox-position"
-                                    >
-                                        {`${String(local.position.index + 1)} of ${String(local.position.total)}`}
-                                    </span>
-                                ) : null}
-                                {stepping ? (
-                                    <Button
-                                        aria-label={`Next ${navigationLabel}`}
-                                        iconOnly
-                                        onClick={() => local.onNext?.()}
-                                        size="small"
-                                        variant="ghost"
-                                    >
-                                        <Ionicon name="chevron-forward-outline" size={14} />
-                                    </Button>
-                                ) : null}
-                                {local.actions}
-                                {local.onClose ? (
-                                    <Button
-                                        aria-label={local.closeLabel ?? "Close"}
-                                        icon="close"
-                                        iconOnly
-                                        onClick={() => local.onClose?.()}
-                                        size="small"
-                                        variant="ghost"
-                                    />
-                                ) : null}
-                            </div>
-                        </header>
+                            {local.caption ? (
+                                <span
+                                    className="happy-lightbox__caption-title"
+                                    data-happy-desktop-ui="lightbox-caption-title"
+                                >
+                                    {local.caption}
+                                </span>
+                            ) : null}
+                            {local.detail ? (
+                                <span
+                                    className="happy-lightbox__caption-detail"
+                                    data-happy-desktop-ui="lightbox-caption-detail"
+                                >
+                                    {local.detail}
+                                </span>
+                            ) : null}
+                        </div>
+                        <div
+                            className="happy-lightbox__tools"
+                            data-happy-desktop-ui="lightbox-tools"
+                        >
+                            {stepping ? (
+                                <Button
+                                    aria-label={`Previous ${navigationLabel}`}
+                                    iconOnly
+                                    onClick={() => local.onPrevious?.()}
+                                    size="small"
+                                    variant="ghost"
+                                >
+                                    <Ionicon name="chevron-back-outline" size={14} />
+                                </Button>
+                            ) : null}
+                            {stepping && local.position ? (
+                                <span
+                                    className="happy-lightbox__position"
+                                    data-happy-desktop-ui="lightbox-position"
+                                >
+                                    {`${String(local.position.index + 1)} of ${String(local.position.total)}`}
+                                </span>
+                            ) : null}
+                            {stepping ? (
+                                <Button
+                                    aria-label={`Next ${navigationLabel}`}
+                                    iconOnly
+                                    onClick={() => local.onNext?.()}
+                                    size="small"
+                                    variant="ghost"
+                                >
+                                    <Ionicon name="chevron-forward-outline" size={14} />
+                                </Button>
+                            ) : null}
+                            {local.actions}
+                            {local.onClose ? (
+                                <Button
+                                    aria-label={local.closeLabel ?? "Close"}
+                                    icon="close"
+                                    iconOnly
+                                    onClick={() => local.onClose?.()}
+                                    size="small"
+                                    variant="ghost"
+                                />
+                            ) : null}
+                        </div>
+                    </header>
+                ) : null}
+                <div className="happy-lightbox__frame" data-happy-desktop-ui="lightbox-frame">
+                    {local.videoUrl ? (
+                        <VideoViewer
+                            autoFocus
+                            content={{ type: "url", url: local.videoUrl }}
+                            name={mediaName}
+                        />
+                    ) : local.imageUrl !== undefined ? (
+                        <ImageViewer
+                            adjacentImages={local.adjacentImages}
+                            autoFocus
+                            content={{ type: "url", url: local.imageUrl }}
+                            loadedImage={local.loadedImage}
+                            deferLoading
+                            name={mediaName}
+                            thumbnail={
+                                thumbnailUrl
+                                    ? {
+                                          url: thumbnailUrl,
+                                          width: local.imageThumbnail?.width,
+                                          height: local.imageThumbnail?.height,
+                                      }
+                                    : undefined
+                            }
+                            tone="immersive"
+                        />
                     ) : null}
-                    <div className="happy-lightbox__frame" data-happy-desktop-ui="lightbox-frame">
-                        {local.videoUrl ? (
-                            <VideoViewer
-                                autoFocus
-                                content={{ type: "url", url: local.videoUrl }}
-                                name={mediaName}
-                            />
-                        ) : local.imageUrl !== undefined ? (
-                            <ImageViewer
-                                adjacentImages={local.adjacentImages}
-                                autoFocus
-                                content={{ type: "url", url: local.imageUrl }}
-                                loadedImage={local.loadedImage}
-                                deferLoading
-                                name={mediaName}
-                                thumbnail={
-                                    thumbnailUrl
-                                        ? {
-                                              url: thumbnailUrl,
-                                              width: local.imageThumbnail?.width,
-                                              height: local.imageThumbnail?.height,
-                                          }
-                                        : undefined
-                                }
-                                tone="immersive"
-                            />
-                        ) : null}
-                    </div>
                 </div>
-            </ThemeScope>
+            </div>
         </div>
     );
 }

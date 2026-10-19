@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Button } from "../../src/Button";
 import { Lightbox } from "../../src/Lightbox";
-import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import { ThemeScope } from "../../src/ThemeScope";
+import { ComponentPage, DimensionRule, FullScreenSpecimen, Specimen } from "../kit";
 import { videoClipWide } from "./videoClips";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
@@ -48,11 +49,11 @@ export function LightboxPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Full image or video preview inside a web modal (never a new browser tab). Hosted on ModalOverlay's fill placement it takes the whole app window and paints one flat dark over it, with a chrome-less caption/actions header above the same ImageViewer and VideoViewer used by Files."
+            summary="Full image or video preview inside a web modal. Its surface, caption, and controls follow the app's light or dark appearance, with the same ImageViewer and VideoViewer used by Files."
             title="Lightbox"
         >
             <Specimen
-                detail="caption + detail + download action + close · one flat dark edge to edge, no card"
+                detail="caption + detail + download action + close · one themed surface edge to edge, no card"
                 label="Lightbox — full"
                 number="01"
                 stage="surface"
@@ -144,6 +145,31 @@ export function LightboxPage() {
                     />
                 </div>
             </Specimen>
+
+            {(["light", "dark"] as const).flatMap((mode, modeIndex) =>
+                [
+                    { width: 1100, height: 760 },
+                    { width: 720, height: 640 },
+                ].map((window, sizeIndex) => (
+                    <FullScreenSpecimen
+                        detail="Surface, caption, and controls inherit the surrounding appearance"
+                        key={`${mode}-${String(window.width)}`}
+                        label={`${mode === "light" ? "Light" : "Dark"} appearance`}
+                        number={String(5 + modeIndex * 2 + sizeIndex).padStart(2, "0")}
+                        screen={`${mode}-${String(window.width)}x${String(window.height)}`}
+                        window={window}
+                    >
+                        <ThemeScope mode={mode}>
+                            <Lightbox
+                                caption="device-farm-green.png"
+                                detail="640 × 400 · 412 KB"
+                                imageUrl={demoImage(640, 400, "#8b7cf7", "#f472b6")}
+                                onClose={() => {}}
+                            />
+                        </ThemeScope>
+                    </FullScreenSpecimen>
+                )),
+            )}
         </ComponentPage>
     );
 }
