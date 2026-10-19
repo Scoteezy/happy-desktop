@@ -10,7 +10,6 @@ import type { ConnectionShellItem } from "../../src/ConnectionShell";
 import type { IconName } from "../../src/Icon";
 import type { SidebarItem, SidebarSection } from "../../src/Sidebar";
 import type { TabItem } from "../../src/Tabs";
-import type { WorkFloatyItem } from "../../src/WorkFloaty";
 import type { WorkTranscriptRow } from "../../src/WorkTranscript";
 import happyMark from "../../src/assets/sidebar-icons/happy@40.png";
 import releaseMark from "../../src/assets/sidebar-icons/release-coordinator@40.png";
@@ -409,7 +408,17 @@ export const redesignRelease: readonly WorkTranscriptRow[] = [
     { id: "release-4", kind: "question", request: redesignReleaseQuestion },
 ];
 
-export const redesignActive: readonly WorkFloatyItem[] = [
+/** One helper or output in the redesign scenes, before it becomes a floaty row. */
+export type RedesignFloatyItem = {
+    id: string;
+    label: string;
+    detail?: string;
+} & (
+    | { kind: "helper"; status: "running" | "waiting" | "complete" | "replaced" | "failed" }
+    | { kind: "artifact" }
+);
+
+export const redesignActive: readonly RedesignFloatyItem[] = [
     {
         id: "blueprints",
         kind: "helper",
@@ -430,7 +439,7 @@ export const redesignActive: readonly WorkFloatyItem[] = [
     { id: "feedback", kind: "artifact", label: "Backlog & feedback", ...redesignMarks.feedback },
 ];
 
-export const redesignHistory: readonly WorkFloatyItem[] = [
+export const redesignHistory: readonly RedesignFloatyItem[] = [
     {
         id: "previous-blueprints",
         kind: "helper",

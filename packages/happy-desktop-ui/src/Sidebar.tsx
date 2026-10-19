@@ -14,7 +14,7 @@ import {
 } from "react";
 import { Avatar, type ToneName } from "./Avatar";
 import { AvatarBrutalist } from "./AvatarBrutalist";
-import { compactCount, changeCountLabel } from "./countText";
+import { ChangeStats } from "./ChangeStats";
 import { haptic } from "./haptics";
 import { CountBadge, KeyCap } from "./Badge";
 import { Button } from "./Button";
@@ -1917,30 +1917,12 @@ function SidebarRow({
                             </span>
                         ) : null}
                         {stats ? (
-                            /* Abbreviated for the column, exact for the reader
-                               who is listening rather than looking. */
-                            <span
+                            <ChangeStats
+                                added={stats.added}
                                 className="happy-sidebar__item-change-stats"
                                 data-happy-desktop-ui="sidebar-item-change-stats"
-                            >
-                                {stats.added > 0 ? (
-                                    <span aria-hidden="true" data-tone="added">
-                                        +{compactCount(stats.added)}
-                                    </span>
-                                ) : null}
-                                {stats.deleted > 0 ? (
-                                    <span aria-hidden="true" data-tone="deleted">
-                                        −{compactCount(stats.deleted)}
-                                    </span>
-                                ) : null}
-                                {/* Out of flow, so the row's flex gap still
-                                    falls between the two visible marks alone,
-                                    and so the count stays readable to assistive
-                                    technology while the marks are covered. */}
-                                <span className="happy-visually-hidden">
-                                    {changeCountLabel(stats.added, stats.deleted)}
-                                </span>
-                            </span>
+                                deleted={stats.deleted}
+                            />
                         ) : null}
                         {state ? activityMark() : null}
                         {controls ? trailingLane() : null}

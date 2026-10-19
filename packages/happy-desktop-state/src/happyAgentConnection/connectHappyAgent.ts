@@ -861,13 +861,25 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         for (const parent of sessions.values()) {
             const activity = parent.activity;
             if (activity === undefined) continue;
-            const known = activity.subagents.some((candidate) => candidate.id === agent.id);
-            if (!known && agent.parentAgentId !== parent.id) continue;
+            const previous = activity.subagents.find((candidate) => candidate.id === agent.id);
+            if (previous === undefined && agent.parentAgentId !== parent.id) continue;
+            // An agent event does not carry the activity's token total, so the one
+            // already known stays; a child that has just finished is read again for
+            // the total its last run recorded. The field is additive over published
+            // client 0.0.98, hence the reads through `unknown`.
+            const known = (previous as { totalTokens?: unknown } | undefined)?.totalTokens;
             setActivity(parent, {
                 ...activity,
-                subagents: [...replaceResource(activity.subagents, agent)],
+                subagents: [
+                    ...replaceResource(
+                        activity.subagents,
+                        typeof known === "number" ? { ...agent, totalTokens: known } : agent,
+                    ),
+                ],
             });
             publishSession(parent);
+            if (previous !== undefined && previous.status !== "idle" && agent.status === "idle")
+                recoverActivity(parent);
         }
     };
 

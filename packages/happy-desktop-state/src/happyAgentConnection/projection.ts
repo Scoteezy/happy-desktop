@@ -929,6 +929,9 @@ function projectSubagents(
     activity: AgentActivityResponse | undefined,
 ): SessionState["subagents"] {
     return (activity?.subagents ?? []).map((agent) => {
+        // The non-experimental desktop still builds against published client
+        // 0.0.98. Validate this additive activity field at that wire boundary.
+        const totalTokens = (agent as { totalTokens?: unknown }).totalTokens;
         return {
             id: agent.id,
             parentSessionId: parent.id,
@@ -943,6 +946,7 @@ function projectSubagents(
             // time the child reports anything, which would restart the clock a
             // reader is watching count up.
             ...(agent.status === "idle" ? {} : { activeSince: agent.createdAt }),
+            ...(typeof totalTokens === "number" ? { totalTokens } : {}),
         };
     });
 }

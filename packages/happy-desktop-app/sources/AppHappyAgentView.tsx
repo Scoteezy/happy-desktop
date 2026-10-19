@@ -2,12 +2,15 @@ import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } fr
 import type { HappyAgentSystemMonitorStore } from "happy-desktop-state";
 import { HappyAgentSystemMonitorSurfacePage } from "happy-desktop-ui";
 import {
+    conversationFileChanges,
+    conversationFileDiff,
     gptLiveStoreNoop,
     happyAgentBotSubtasks,
     happyAgentClockStoreCreate,
     happyAgentSidebarTree,
     happyAgentTabsOrdered,
     happyAgentTodoHeading,
+    type ConversationFileDiff,
     type GptLiveVoiceFocus,
     type HappyAgentSidebarProject,
 } from "happy-desktop-state";
@@ -77,6 +80,7 @@ import type {
     HappyAgentPanelTabId,
     HappyAgentPanelTabSnapshot,
     HappyAgentBrowserNetworkId,
+    HappyAgentPanelChatStore,
     HappyAgentPermissionMode,
     HappyAgentProfileStore,
     HappyAgentInboxItem,
@@ -104,6 +108,7 @@ import type {
     HappyAgentChangeTiersSnapshot,
     HappyAgentChangeTiersStore,
     HappyAgentProjectGroup,
+    HappyAgentWorktreeGroup,
     HappyAgentProjectId,
     HappyAgentServiceTier,
     HappyAgentSessionCreateInput,
@@ -133,6 +138,7 @@ import {
     happyAgentChangeTiersAssign,
     happyAgentArtifactAuthorLabel,
     happyAgentArtifactCatalogStoreNoop,
+    type HappyAgentArtifactCatalogSnapshot,
     happyAgentArtifactChatContext,
     happyAgentSurfaceCatalogStoreNoop,
     happyAgentSurfaceSupportStoreNone,
@@ -142,7 +148,6 @@ import {
     type HappyAgentSurfaceReference,
     happyAgentArtifactNames,
     happyAgentArtifactSourceLabel,
-    happyAgentDeviceBridgeSupportStoreNone,
     commandPaletteStoreNoop,
     experimentsStoreNoop,
     projectsVisibilityStoreNoop,
@@ -188,12 +193,13 @@ import {
     BrowserPanel,
     DevBuildMenu,
     type BrowserContentRenderer,
+    type BrowserPanelProps,
+    type BrowserStartTool,
     HtmlPreviewFrame,
     type HtmlPreviewRenderer,
     type LivePerformanceStore,
     type MediaWindowOpener,
     Button,
-    ChannelHeader,
     CommandPalette,
     CommandPaletteResults,
     type CommandPaletteResultsRow,
@@ -201,6 +207,7 @@ import {
     commandPaletteResultsRows,
     ContextMeter,
     ChangedFileDiff,
+    FileChangeDiff,
     CodeEditor,
     ComposerFooterBar,
     ComposerModelControl,
@@ -216,13 +223,11 @@ import {
     filePreviewKind,
     Lightbox,
     MarkdownDocument,
-    MenuButton,
     Modal,
     ModalOverlay,
     ReviewStream,
     HappyAgentActivityControl,
     HappyAgentActivityPanel,
-    HappyAgentControlMenu,
     fileTreeBuild,
     fileTreeExpanded,
     fileTreeFlatten,
@@ -260,7 +265,6 @@ import {
     type HappyAgentUserInputAnswerMap,
     HappyAgentUsagePanel,
     HappyAgentDevicesPanel,
-    PanelHeader,
     QuickActionsCard,
     type QuickActionsCardItem,
     SegmentedControl,
@@ -298,6 +302,9 @@ import {
     WindowShortcuts,
     WorkspaceLifecycleLane,
     WorkspaceLifecycleNotice,
+    WorkFloaty,
+    type WorkFloatyRow,
+    WorkTabControls,
     type WorkspaceLifecyclePhase,
 } from "happy-desktop-ui";
 import { APP_SHORTCUTS } from "./appShortcuts";
@@ -899,12 +906,6 @@ const settingsStoreNone = happyAgentSettingsStoreCreate();
  */
 const keepAwakeStoreNone = keepAwakeStoreCreate({ mode: "off" });
 
-const PANEL_TOGGLE_HINT = {
-    aria: `${APP_SHORTCUTS.panelToggle.aria} ${APP_SHORTCUTS.panelToggleAlternate.aria}`,
-    caps: APP_SHORTCUTS.panelToggle.caps,
-} as const;
-const HISTORY_SESSION_PREFIX = "session:";
-
 /**
  * The rows one project contributes: the project itself, then a nested row per
  * worktree that has work in it. A row is the project's name and its picture,
@@ -1404,6 +1405,23 @@ function toolTabsPlaced(
     return panel.tabs.filter((tab) => tab.placement === placement);
 }
 
+/**
+ * What Command-W closes: the right pane's tab while the keyboard is in the
+ * pane, or the pane itself when nothing in it is closable; otherwise the main
+ * content's tab, exactly as before the pane had tabs of its own.
+ */
+export function workspaceCloseTargetFind(
+    focusedPane: AppShellFocusedPane,
+    panel: HappyAgentPanelSnapshot,
+    checkoutClosed: boolean,
+): { type: "view"; viewId: string } | { type: "pane" } | { type: "main" } {
+    if (focusedPane !== "panel" || !panel.open || checkoutClosed) return { type: "main" };
+    const viewId =
+        panelCloseTargetFind(panel) ??
+        (panel.activeViewId === "files" && panel.filesViewOpen ? "files" : undefined);
+    return viewId === undefined ? { type: "pane" } : { type: "view", viewId };
+}
+
 function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefined {
     if (!panel.open || panel.activeViewId === "files" || panel.activeViewId === "artifacts")
         return undefined;
@@ -1411,6 +1429,7 @@ function panelCloseTargetFind(panel: HappyAgentPanelSnapshot): string | undefine
     if (panel.activeViewId === "usage") return "usage";
     if (panel.activeViewId === "devices") return "devices";
     if (panel.activeViewId === "preview") return panel.previewEntryId ? "preview" : undefined;
+    if (panel.activeViewId === "change") return panel.changeViewPath ? "change" : undefined;
     if (panel.activeViewId === "file") return panel.fileViewOpen ? "file" : undefined;
     if (panel.activeViewId === "artifact") return panel.artifactView ? "artifact" : undefined;
     const tab = panel.tabs.find(
@@ -1436,7 +1455,9 @@ function toolTabItems(
                 ? ("terminal" as const)
                 : tab.kind === "artifact"
                   ? ("package" as const)
-                  : ("globe" as const),
+                  : tab.kind === "chat"
+                    ? ("agents" as const)
+                    : ("globe" as const),
     }));
 }
 
@@ -3784,6 +3805,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     return;
                 }
                 const destination = rowDestination(happyAgent, row.id);
+                workspaceChangesShowOnOpen(
+                    happyAgent.session?.workspace,
+                    happyAgent.projects.flatMap((project) => [project, ...project.worktrees]).find((group) => group.id === row.id),
+                );
                 if (destination)
                     props.onChatSelect(happyAgent.id, destination.groupId, destination.chatId);
             }}
@@ -6285,8 +6310,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
     // work they can see, cannot write to, and cannot stop either.
     const conversationCanAbort =
         availability.online && detachedConversationId === undefined && access.canAbort;
-    const singleChat =
-        openGroup?.singleConversationId !== undefined || detachedConversationId !== undefined;
     // Child agents expose one chat, even when they share a checkout. Files and
     // tools can still sit beside that pinned conversation.
     const groupTabs: TabItem[] = [
@@ -6320,58 +6343,94 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             detachedConversationId ?? openGroup?.singleConversationId,
         ),
     ];
-    const historyMenuItems = (): readonly MenuItem[] => {
-        if (!openGroup) return [];
-        // One list in one order: every session this workspace has, open or
-        // closed, most recently active first. It is the session list as the
-        // host keeps it — the open rows are the strip's sessions, the closed
-        // ones are the archived rows the list still remembers — so the menu
-        // answers "what was I just working on here" by time, the way Xcode's
-        // recents do, rather than replaying local clicks.
-        const openSessionIds = new Set(openGroup.conversations.map((summary) => summary.id));
-        const rows = [
-            ...openGroup.conversations.map((summary) => ({
-                sessionId: summary.id as HappyAgentSessionId,
-                title: summary.title,
-                updatedAt: summary.updatedAt,
-                open: true,
-            })),
-            ...workspace.list.archivedSessions
-                .filter(
-                    (session) =>
-                        session.parentSessionId === undefined &&
-                        happyAgentSessionGroupIdOf(session) === openGroup.id &&
-                        !openSessionIds.has(session.id),
-                )
-                .map((session) => ({
-                    sessionId: session.id,
-                    title: session.title?.trim() || `Session ${session.id.slice(0, 8)}`,
-                    updatedAt: session.lastMessageAt ?? session.updatedAt,
-                    open: false,
-                })),
-        ].sort((left, right) => right.updatedAt - left.updatedAt);
-        if (rows.length === 0)
-            return [
-                {
-                    disabled: true,
-                    icon: "history",
-                    id: "empty",
-                    kind: "item",
-                    label: "No sessions yet",
-                },
-            ];
-        return rows.map(
-            (row): MenuItem => ({
-                // Selecting an open session is local navigation and works
-                // offline; reopening a closed one asks the host.
-                disabled: !row.open && !availability.online,
-                icon: row.open ? "chat" : "history",
-                id: `${HISTORY_SESSION_PREFIX}${row.sessionId}`,
-                kind: "item",
-                label: row.title,
-            }),
+    // The floaty's agents: what this conversation has delegated, by the names
+    // they were started under, with what is over one level down.
+    const floatyAgents = workFloatyAgents(
+        conversation.type === "ready" ? conversation.value.subagents : [],
+    );
+    // What the work changed: the checkout's own diff where Git keeps one, and
+    // the conversation's edits where it does not, such as a task's folder.
+    const floatyFromGit = (openGroup?.changes.length ?? 0) > 0;
+    const floatyEdits =
+        floatyFromGit || conversation.type !== "ready"
+            ? []
+            : conversationFileChanges(conversation.value.entries);
+    const changeDiff =
+        panel.changeViewPath === undefined || conversation.type !== "ready"
+            ? undefined
+            : conversationFileDiff(conversation.value.entries, panel.changeViewPath);
+    // The listing Changes shows: the checkout's own where Git keeps one, the
+    // conversation's edits where it does not.
+    const panelChanges: readonly HappyAgentPanelChange[] = floatyFromGit
+        ? (openGroup?.changes ?? [])
+        : floatyEdits.map((change) => ({
+              path: change.path,
+              addedLines: change.added,
+              deletedLines: change.deleted,
+          }));
+    // The places this chat changed files, its own first.
+    const floatyOwnPlace =
+        openGroup === undefined
+            ? undefined
+            : workFloatyOwnPlace(openGroup, rows, panelChanges, floatyFromGit);
+    // A workspace the card names opens the way its sidebar row does: where it
+    // was left, or on its newest chat, with its changes beside it.
+    const workspaceOpen = (groupId: HappyAgentGroupId) => {
+        const group = rows
+            .flatMap((project) => [project, ...project.worktrees])
+            .find((candidate) => candidate.id === groupId);
+        workspaceChangesShowOnOpen(props.workspace, group);
+        props.onChatSelect(
+            groupId,
+            props.workspace.get().groupResume?.get(groupId) ?? group?.conversations[0]?.id,
         );
     };
+    const floatyPlaces: readonly WorkFloatyPlace[] = floatyOwnPlace ? [floatyOwnPlace] : [];
+    // What this chat has published. Read while the chat is open, since the
+    // floaty opens on its own once there is any.
+    const floatyArtifacts = props.onArtifactOpen ? props.artifacts : undefined;
+    const floatyArtifactStore = floatyArtifacts?.panel() ?? happyAgentArtifactCatalogStoreNoop;
+    const floatyArtifactContext = happyAgentArtifactChatContext(
+        artifactPlaces,
+        props.groupId,
+        props.chatId,
+    );
+    useDisposableLease(
+        floatyArtifacts ? artifactChatContextKey(floatyArtifactContext) : undefined,
+        () => {
+            floatyArtifactStore.contextApply(floatyArtifactContext);
+            return { [Symbol.dispose]: () => undefined };
+        },
+    );
+    const floatyCatalog = useSyncExternalStore(
+        floatyArtifactStore.subscribe,
+        floatyArtifactStore.get,
+        floatyArtifactStore.get,
+    );
+    const floatyOutputs = workFloatyOutputs(floatyCatalog.artifacts, props.chatId);
+    // The floaty opens on its own wherever there is work to show, and stays
+    // folded where the reader folded it by hand until they open it again.
+    const floatyKey = conversation.type === "ready" ? conversation.value.conversationId : undefined;
+    const floatyShown =
+        floatyKey !== undefined &&
+        !panel.floatyCollapsed.has(floatyKey) &&
+        (floatyPlaces.length > 0 ||
+            floatyOutputs.length > 0 ||
+            floatyAgents.current.length > 0 ||
+            floatyAgents.history.length > 0);
+    // The row whose tab the pane beside the chat is showing.
+    const floatyActiveTab = panel.open
+        ? panel.tabs.find((tab) => tab.id === panel.activeViewId)
+        : undefined;
+    const floatySelectedId = !panel.open
+        ? undefined
+        : panel.activeViewId === "files"
+          ? floatyPlaces.find((place) => place.workspaceId === undefined)?.row.id
+          : panel.activeViewId === "artifact" && panel.artifactView
+            ? `${FLOATY_ARTIFACT_PREFIX}${panel.artifactView.artifactId}`
+            : floatyActiveTab?.kind === "chat"
+              ? floatyActiveTab.agentId
+              : undefined;
     // Closing a tab archives the session behind it, while a file tab simply
     // closes. The close control and every context-menu sweep funnel through
     // this one routine, so a sweep behaves exactly like closing each tab by
@@ -6475,22 +6534,28 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         groupTabsClose([tabId]);
     };
     const panelViewClose = (viewId: string) => {
-        if (viewId === "activity") props.workspace.activityPanelClose();
+        if (viewId === "files") props.workspace.panel.filesClose();
+        else if (viewId === "activity") props.workspace.activityPanelClose();
         else if (viewId === "usage") props.workspace.usagePanelClose();
         else if (viewId === "devices") props.workspace.panel.devicesClose();
         else if (viewId === "preview") props.workspace.panel.previewClose();
+        else if (viewId === "change") props.workspace.panel.changeViewClose();
         else if (viewId === "file") props.workspace.filePanelClose();
         else if (viewId === "artifact") props.workspace.panel.artifactViewClose();
         else props.workspace.panel.tabClose(viewId as HappyAgentPanelTabId);
     };
     const activeTabClose = () => {
-        const panelNow = props.workspace.panel.get();
-        const panelTarget = checkoutClosed ? undefined : panelCloseTargetFind(panelNow);
-        if (workspaceFocusedPane.current === "panel" && panelNow.open && !checkoutClosed) {
-            if (panelTarget) panelViewClose(panelTarget);
-            else {
-                // Files is permanent. Closing from that focused tab dismisses
-                // its pane and returns the keyboard to the selected main tab.
+        const target = workspaceCloseTargetFind(
+            workspaceFocusedPane.current,
+            props.workspace.panel.get(),
+            checkoutClosed,
+        );
+        if (target.type !== "main") {
+            if (target.type === "view") panelViewClose(target.viewId);
+            else props.workspace.panel.panelToggle();
+            // The last tab closed takes the pane with it, and the keyboard
+            // returns to the selected main tab.
+            if (!props.workspace.panel.get().open) {
                 const shell = [
                     ...document.querySelectorAll<HTMLElement>(
                         '[data-happy-desktop-ui="app-shell"][data-embedded]',
@@ -6501,7 +6566,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 );
                 mainTab?.focus();
                 workspaceFocusedPane.current = "workspace";
-                props.workspace.panel.panelToggle();
             }
             return;
         }
@@ -6854,6 +6918,18 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         <AppShell
             embedded
             panelResizable
+            // A chat narrower than this yields to the pane. The activity card
+            // overlays the chat and never changes the width it needs.
+            workspaceReadableWidth={420}
+            {...(checkoutClosed
+                ? {}
+                : {
+                      panelToggleAction: {
+                          open: panel.open,
+                          onClick: () => props.workspace.panel.panelToggle(),
+                      },
+                  })}
+            panelAnimated
             // The width this checkout was last left at, or the shell's own
             // default where nobody has sized it. Passed on every render rather
             // than seeded once, so moving to another project shows that
@@ -6887,13 +6963,30 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                   },
                               }
                             : {})}
+                        {...(props.artifacts && props.chatId
+                            ? {
+                                  onArtifactNew: (replacing: HappyAgentPanelTabId) => {
+                                      const panelStore = props.workspace.panel;
+                                      void props
+                                          .artifacts!.artifactCreate(
+                                              props.chatId as HappyAgentSessionId,
+                                          )
+                                          .then(
+                                              (artifactId) => {
+                                                  panelStore.artifactViewOpen(artifactId);
+                                                  panelStore.tabClose(replacing);
+                                              },
+                                              () => undefined,
+                                          );
+                                  },
+                              }
+                            : {})}
                         activity={conversation.type === "ready" ? conversation.value : undefined}
                         canStartBrowser={
                             availability.online &&
                             openGroup !== undefined &&
                             props.chatId !== undefined
                         }
-                        canStartTerminal={availability.online && props.chatId !== undefined}
                         {...(deviceBridgeSupport && deviceBridges && openGroup
                             ? {
                                   devices: {
@@ -6907,8 +7000,8 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         browserConnectionId={props.browserConnectionId}
                         htmlPreview={props.htmlPreview}
                         mediaWindow={props.mediaWindow}
-                        changes={openGroup?.changes ?? []}
-                        {...(openGroup?.changesStatus === undefined
+                        changes={panelChanges}
+                        {...(openGroup?.changesStatus === undefined || !floatyFromGit
                             ? {}
                             : { changesStatus: openGroup.changesStatus })}
                         {...(props.changeTiers === undefined
@@ -6918,7 +7011,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         collapsed={workspace.fileTreeCollapsed}
                         layout={workspace.fileLayout}
                         onFileSelect={(path) => {
-                            if (openGroup && happyAgentOnline())
+                            // A file the conversation edited outside a checkout
+                            // opens as everything those edits did to it.
+                            if (!floatyFromGit && workspace.fileScope === "changed")
+                                props.workspace.panel.changeViewOpen(path);
+                            else if (openGroup && happyAgentOnline())
                                 props.onFileSelect(
                                     openGroup.id,
                                     props.chatId,
@@ -6927,7 +7024,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 );
                         }}
                         onFileOpen={(path) => {
-                            if (openGroup && happyAgentOnline()) {
+                            if (!floatyFromGit && workspace.fileScope === "changed")
+                                props.workspace.panel.changeViewOpen(path);
+                            else if (openGroup && happyAgentOnline()) {
                                 const kind = fileTabKind(path);
                                 // A double click pins the preview; the address
                                 // is unchanged when the first click already
@@ -6970,7 +7069,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                   },
                               }
                             : {})}
-                        onPanelClose={() => props.workspace.panel.panelToggle()}
                         {...(workspace.panelFile ? { panelFile: workspace.panelFile } : {})}
                         fileBody={mainFileBody}
                         onPanelFileClose={() => props.workspace.filePanelClose()}
@@ -7020,6 +7118,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 );
                         }}
                         panel={panel}
+                        {...(changeDiff === undefined ? {} : { changeDiff })}
                         previewTool={previewTool}
                         {...(previewMedia
                             ? {
@@ -7049,106 +7148,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         >
             {openGroup ? (
                 <>
-                    {/* The heading names the project, not the session: every tab
-                        beneath it is another session in this one project, so it
-                        stays put as they are switched. */}
-                    <ChannelHeader
-                        // The panel toggle is the mirror of the sidebar's: the same
-                        // act at the other edge of the window, so it wears the same
-                        // glyph flipped and sits in the header rather than down in
-                        // the tab strip. It only appears once the project has a
-                        // session, because a panel with no conversation behind it has
-                        // nowhere to run a terminal and the control would do nothing.
-                        //
-                        // Both of them address the checkout, so a workspace
-                        // still being prepared carries neither: handing a folder
-                        // that does not exist to an editor, or opening a panel
-                        // onto it, are the two things this header could offer
-                        // that would fail on arrival.
-                        actions={
-                            checkoutClosed ? undefined : (
-                                <>
-                                    {/* Hands this project's directory to another
-                                    application, or puts its path on the
-                                    clipboard. The path is no longer spelled out
-                                    in the header — it said nothing the project's
-                                    name did not — so copying it is how it is
-                                    still reachable when it is genuinely needed. */}
-                                    <HappyAgentControlMenu
-                                        items={[
-                                            ...workspace.openInTargets.map((target) => ({
-                                                id: target.id,
-                                                kind: "item" as const,
-                                                label: target.label,
-                                                disabled: !availability.online,
-                                                ...(target.iconUrl
-                                                    ? { iconUrl: target.iconUrl }
-                                                    : {}),
-                                            })),
-                                            ...(workspace.openInTargets.length > 0
-                                                ? [{ kind: "separator" as const }]
-                                                : []),
-                                            {
-                                                id: "copy-path",
-                                                kind: "item" as const,
-                                                label: "Copy path",
-                                                icon: "doc" as const,
-                                            },
-                                        ]}
-                                        label="Open in"
-                                        // The control wears whatever was opened last,
-                                        // so the answer to "again, please" is already
-                                        // on screen instead of one menu away — and
-                                        // once it is worn, the label side hands the
-                                        // project straight back to that application
-                                        // while only the chevron opens the list.
-                                        leadingIconUrl={openInRecent?.iconUrl}
-                                        menuAlign="end"
-                                        {...(openInRecent && availability.online && openGroup.create
-                                            ? {
-                                                  onPrimary: () => {
-                                                      if (happyAgentOnline())
-                                                          void props.workspace.openIn(
-                                                              openGroup.id,
-                                                              openInRecent,
-                                                          );
-                                                  },
-                                                  primaryLabel: `Open in ${openInRecent.label}`,
-                                              }
-                                            : {})}
-                                        onSelect={(id: string) => {
-                                            if (id === "copy-path") {
-                                                if (openGroup.create)
-                                                    void navigator.clipboard?.writeText(
-                                                        openGroup.create.cwd,
-                                                    );
-                                                return;
-                                            }
-                                            const target = workspace.openInTargets.find(
-                                                (candidate) => candidate.id === id,
-                                            );
-                                            if (target && happyAgentOnline() && openGroup.create)
-                                                void props.workspace.openIn(openGroup.id, target);
-                                        }}
-                                    />
-                                    {!panel.open ? (
-                                        <Button
-                                            aria-label="Show panel"
-                                            aria-pressed={false}
-                                            icon="panel-expand"
-                                            iconOnly
-                                            onClick={() => props.workspace.panel.panelToggle()}
-                                            shortcut={PANEL_TOGGLE_HINT}
-                                            size="small"
-                                            variant="ghost"
-                                        />
-                                    ) : null}
-                                </>
-                            )
-                        }
-                        icon={openGroup.home ? "home" : "inbox"}
-                        title={openGroup.name}
-                    />
                     {/* No banner for an unreachable Happy Agent. The sidebar footer says
                         that once, and repeating it here
                         pushed the transcript down for something the reader was
@@ -7248,51 +7247,18 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     ) : (
                         <TabbedPane
                             trailing={
-                                /* The strip's own control, not the next thing
-                                   after the last tab: it offers everything this
-                                   workspace has closed, however many tabs are
-                                   open. So it holds the bar's far edge, in the
-                                   same column as the header control above it,
-                                   instead of sliding along with the tabs. */
-                                singleChat ? null : (
-                                    <MenuButton
-                                        align="end"
-                                        icon="history"
-                                        iconSize={12}
-                                        items={historyMenuItems}
-                                        label="Show recent sessions"
-                                        menuMaxHeight={420}
-                                        menuLabel="Recent sessions"
-                                        menuPageSize={100}
-                                        menuWidth={300}
-                                        onSelect={(id) => {
-                                            if (!id.startsWith(HISTORY_SESSION_PREFIX)) return;
-                                            const sessionId = id.slice(
-                                                HISTORY_SESSION_PREFIX.length,
-                                            ) as HappyAgentSessionId;
-                                            // A session still in the strip is a
-                                            // plain selection. A closed one is asked
-                                            // of the host by id: it stopped listing
-                                            // the agent when it was archived, so
-                                            // there is no catalog entry left to
-                                            // check the request against first.
-                                            if (
-                                                openGroup.conversations.some(
-                                                    (summary) => summary.id === sessionId,
-                                                )
-                                            ) {
-                                                props.onChatSelect(openGroup.id, sessionId);
-                                                return;
-                                            }
-                                            void props.workspace
-                                                .conversationRestore(sessionId)
-                                                .then(() =>
-                                                    props.onChatSelect(openGroup.id, sessionId),
-                                                )
-                                                .catch(() => undefined);
-                                        }}
-                                    />
-                                )
+                                /* The strip's own controls hold the bar's far
+                                   edge instead of sliding along with the tabs. */
+                                <WorkTabControls
+                                    floatyOpen={floatyShown}
+                                    onFloatyOpenChange={(open) => {
+                                        if (floatyKey !== undefined)
+                                            props.workspace.panel.floatyCollapsedUpdate(
+                                                floatyKey,
+                                                !open,
+                                            );
+                                    }}
+                                />
                             }
                             activeId={workspace.activeMainViewId ?? props.chatId ?? ""}
                             tabSizing="content"
@@ -7432,6 +7398,59 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                             }}
                             tabs={groupTabs}
                         >
+                            <WorkFloaty
+                                agents={floatyAgents.current}
+                                artifacts={floatyOutputs.slice(0, FLOATY_ARTIFACTS)}
+                                changes={floatyPlaces.map((place) => place.row)}
+                                history={[
+                                    ...floatyAgents.history,
+                                    ...floatyOutputs.slice(FLOATY_ARTIFACTS),
+                                ]}
+                                historyExpanded={panel.floatyHistoryExpanded}
+                                onHistoryExpandedChange={
+                                    props.workspace.panel.floatyHistoryExpandedUpdate
+                                }
+                                // Every row opens beside the chat, which stays
+                                // where it was: a place as its changes, an
+                                // artifact as itself, an agent as its chat. A
+                                // tab already showing it is selected again.
+                                onRowOpen={(id) => {
+                                    const place = floatyPlaces.find(
+                                        (candidate) => candidate.row.id === id,
+                                    );
+                                    if (place?.workspaceId !== undefined)
+                                        workspaceOpen(place.workspaceId);
+                                    else if (place) {
+                                        if (openGroup)
+                                            props.workspace.fileScopeUpdate(
+                                                openGroup.id,
+                                                "changed",
+                                            );
+                                        props.workspace.panel.filesSelect();
+                                    } else if (id.startsWith(FLOATY_ARTIFACT_PREFIX))
+                                        props.workspace.panel.artifactViewOpen(
+                                            id.slice(
+                                                FLOATY_ARTIFACT_PREFIX.length,
+                                            ) as HappyAgentArtifactId,
+                                        );
+                                    else {
+                                        const agent = [
+                                            ...floatyAgents.current,
+                                            ...floatyAgents.history,
+                                        ].find((candidate) => candidate.id === id);
+                                        if (agent)
+                                            props.workspace.panel.chatTabOpen(
+                                                id as HappyAgentSessionId,
+                                                agent.label,
+                                            );
+                                    }
+                                }}
+                                open={floatyShown}
+                                placement="overlay"
+                                {...(floatySelectedId === undefined
+                                    ? {}
+                                    : { selectedId: floatySelectedId })}
+                            />
                             {/* The whole content area accepts a tab dragged out
                                 of the panel, so the reader aims at where the
                                 thing will be rather than at a stripe. */}
@@ -8429,6 +8448,156 @@ function HappyAgentConversationViews(props: {
             views={views}
         />
     );
+}
+
+/** How many of a chat's artifacts and agents the floaty lists before its history. */
+const FLOATY_ARTIFACTS = 4;
+const FLOATY_AGENTS = 3;
+
+/**
+ * Readies a workspace about to be opened to show its work: with uncommitted
+ * changes, the panel opens on its Changes listing when the workspace arrives.
+ * Without any it opens as it always does.
+ */
+function workspaceChangesShowOnOpen(
+    workspace: HappyAgentWorkspaceStore | undefined,
+    group: { readonly id: string; readonly changes?: readonly unknown[] } | undefined,
+): void {
+    if (!workspace || !group || (group.changes?.length ?? 0) === 0) return;
+    workspace.fileScopeUpdate(group.id as HappyAgentGroupId, "changed");
+    workspace.panel.filesSelectOnArrival(group.id as HappyAgentGroupId);
+}
+
+/**
+ * One place a chat changed files, as the floaty lists it. `workspaceId` is a
+ * workspace of its own, which the row opens in place of this chat; absent, the
+ * place is this chat's own, whose changes the panel beside it lists.
+ */
+interface WorkFloatyPlace {
+    readonly row: WorkFloatyRow;
+    readonly workspaceId?: HappyAgentGroupId;
+}
+
+/** A project or worktree, by its project's picture and its own name, as its sidebar row reads. */
+function workFloatyProjectPlace(
+    project: HappyAgentProjectGroup,
+    worktree: HappyAgentWorktreeGroup | undefined,
+    added: number,
+    deleted: number,
+): WorkFloatyRow {
+    return {
+        id: `place:${worktree?.id ?? project.id}`,
+        label: worktree ? worktree.name : project.name,
+        mark: {
+            type: "project",
+            label: `Project: ${project.name}`,
+            initials: project.name.slice(0, 1).toUpperCase(),
+            ...(project.avatar ? { imageUrl: project.avatar.url } : {}),
+        },
+        trailing: { type: "changes", added, deleted },
+    };
+}
+
+/**
+ * Where the open group itself changed files: its checkout, as its project and
+ * name, when Git keeps a diff of it, and otherwise the folder the
+ * conversation's edits went to.
+ */
+function workFloatyOwnPlace(
+    group: OpenGroup,
+    projects: readonly HappyAgentProjectGroup[],
+    changes: readonly HappyAgentPanelChange[],
+    fromGit: boolean,
+): WorkFloatyPlace | undefined {
+    if (changes.length === 0) return undefined;
+    const added = changes.reduce((sum, change) => sum + (change.addedLines ?? 0), 0);
+    const deleted = changes.reduce((sum, change) => sum + (change.deletedLines ?? 0), 0);
+    const project = fromGit
+        ? projects.find(
+              (candidate) =>
+                  candidate.id === group.id ||
+                  candidate.worktrees.some((worktree) => worktree.id === group.id),
+          )
+        : undefined;
+    if (project)
+        return {
+            row: workFloatyProjectPlace(
+                project,
+                project.worktrees.find((worktree) => worktree.id === group.id),
+                added,
+                deleted,
+            ),
+        };
+    const path = group.path.replace(/\/+$/u, "");
+    return {
+        row: {
+            id: `place:${group.id}`,
+            label: path.slice(path.lastIndexOf("/") + 1) || group.name,
+            mark: { type: "folder" },
+            trailing: { type: "changes", added, deleted },
+        },
+    };
+}
+
+/** A floaty row that opens an artifact rather than an agent's chat. */
+const FLOATY_ARTIFACT_PREFIX = "artifact:";
+
+/**
+ * What one chat has published, newest change first. The list beside a chat
+ * may have been widened, so the floaty narrows it back to this conversation.
+ */
+function workFloatyOutputs(
+    artifacts: HappyAgentArtifactCatalogSnapshot["artifacts"],
+    chatId: string | undefined,
+): readonly WorkFloatyRow[] {
+    return [...artifacts]
+        .filter(
+            (artifact) =>
+                artifact.status === "active" &&
+                (chatId === undefined ||
+                    artifact.source?.agentId === chatId ||
+                    artifact.updatedSource?.agentId === chatId),
+        )
+        .sort((left, right) => right.updatedAt - left.updatedAt)
+        .map(
+            (artifact): WorkFloatyRow => ({
+                id: `${FLOATY_ARTIFACT_PREFIX}${artifact.id}`,
+                label: artifact.title,
+                mark: { type: "icon", icon: "package" },
+            }),
+        );
+}
+
+/**
+ * One conversation's delegated agents as the floaty lists them: every one
+ * still working, then the newest finished ones up to the list's length, and
+ * the rest under History.
+ */
+function workFloatyAgents(subagents: readonly SubagentSummary[]): {
+    readonly current: readonly WorkFloatyRow[];
+    readonly history: readonly WorkFloatyRow[];
+} {
+    const row = (subagent: SubagentSummary): WorkFloatyRow => {
+        const label = subagent.taskName?.trim() || subagent.description.trim() || "Agent";
+        return {
+            id: subagent.id,
+            label,
+            mark: { type: "icon", icon: "agents" },
+            ...(happyAgentSubagentActive(subagent)
+                ? { trailing: { type: "working", label: `${label} is working` } }
+                : subagent.totalTokens !== undefined && subagent.totalTokens > 0
+                  ? { trailing: { type: "tokens", count: subagent.totalTokens } }
+                  : {}),
+        };
+    };
+    const newestFirst = [...subagents].sort((left, right) => right.updatedAt - left.updatedAt);
+    const working = newestFirst.filter(happyAgentSubagentActive);
+    const finished = newestFirst.filter((subagent) => !happyAgentSubagentActive(subagent));
+    const shown = Math.max(0, FLOATY_AGENTS - working.length);
+    return {
+        current: [...working, ...finished.slice(0, shown)].map(row),
+        history: finished.slice(shown).map(row),
+    };
 }
 
 /** A delegated agent that is still working, or about to be. */
@@ -9582,14 +9751,23 @@ function HappyAgentCreateTaskSurface(props: {
 }
 
 /**
+ * One file Changes lists: a checkout's Git change, or a file the conversation's
+ * edits touched where the work has no checkout, which Git gave no status.
+ */
+type HappyAgentPanelChange = Pick<
+    OpenGroup["changes"][number],
+    "path" | "addedLines" | "deletedLines"
+> & { readonly status?: OpenGroup["changes"][number]["status"] };
+
+/**
  * One changed file as a listing entry. Under "All files" the changed ones keep
  * their status marks, so the work in progress stays findable inside the whole
  * tree rather than becoming indistinguishable from everything around it.
  */
-function changeEntry(change: OpenGroup["changes"][number]): FileTreeBuildEntry {
+function changeEntry(change: HappyAgentPanelChange): FileTreeBuildEntry {
     return {
         path: change.path,
-        gitStatus: change.status,
+        ...(change.status === undefined ? {} : { gitStatus: change.status }),
         ...(change.addedLines === undefined ? {} : { addedLines: change.addedLines }),
         ...(change.deletedLines === undefined ? {} : { deletedLines: change.deletedLines }),
     };
@@ -9600,7 +9778,7 @@ function workspaceFileTreeNodes(
     files: HappyAgentWorkspaceFiles | undefined,
     directoryPath: string,
     expansion: FileTreeExpansion,
-    changesByPath: ReadonlyMap<string, OpenGroup["changes"][number]>,
+    changesByPath: ReadonlyMap<string, HappyAgentPanelChange>,
     depth = 0,
 ): FileTreeNode[] {
     const directory = files?.directories.get(directoryPath);
@@ -9723,7 +9901,8 @@ function HappyAgentPanelBody(props: {
     htmlPreview?: HtmlPreviewRenderer;
     mediaWindow?: MediaWindowOpener;
     canStartBrowser: boolean;
-    canStartTerminal: boolean;
+    /** Turns a new tab into a new artifact, where this Happy Agent keeps them. */
+    onArtifactNew?: (replacing: HappyAgentPanelTabId) => void;
     /**
      * The open workspace's local bridges, where the host can bridge to its
      * machine. Its Happy Agent says whether Devices is offered at all.
@@ -9733,7 +9912,7 @@ function HappyAgentPanelBody(props: {
         readonly support: HappyAgentDeviceBridgeSupportStore;
         readonly bridges: HappyAgentDeviceBridgesStore;
     };
-    changes: OpenGroup["changes"];
+    changes: readonly HappyAgentPanelChange[];
     changesStatus?: OpenGroup["changesStatus"];
     /**
      * The tiers Changes lists secondary files under. Read here rather than by
@@ -9762,7 +9941,6 @@ function HappyAgentPanelBody(props: {
     onLayoutChange: (layout: HappyAgentFileLayout) => void;
     /** Opens every change in this checkout as one stream. */
     onReviewOpen: () => void;
-    onPanelClose: () => void;
     /** The file the viewer tab is on, read out of the transcript beside it. */
     panelFile?: HappyAgentFileTabSnapshot;
     /**
@@ -9782,6 +9960,8 @@ function HappyAgentPanelBody(props: {
     /** Closes one panel view through the same route used by Cmd-W. */
     onViewClose: (viewId: string) => void;
     panel: HappyAgentPanelSnapshot;
+    /** Everything the conversation did to the file the change tab is showing. */
+    changeDiff?: ConversationFileDiff;
     previewTool?: ConversationToolCall;
     /** The presented file the Preview tab shows instead of its call, when it names one. */
     previewMedia?: HappyAgentPreviewMedia;
@@ -9879,13 +10059,6 @@ function HappyAgentPanelBody(props: {
     // reference itself reads as.
     const titlesStore = props.artifacts?.artifacts.titles() ?? artifactTitlesStoreNoop;
     const titles = useSyncExternalStore(titlesStore.subscribe, titlesStore.get, titlesStore.get);
-    const deviceSupportStore = props.devices?.support ?? happyAgentDeviceBridgeSupportStoreNone;
-    const deviceSupport = useSyncExternalStore(
-        deviceSupportStore.subscribe,
-        deviceSupportStore.get,
-        deviceSupportStore.get,
-    );
-    const devicesOffered = props.devices !== undefined && deviceSupport.status === "supported";
     const artifactView = props.panel.artifactView;
     const artifactTabLabel =
         artifactView === undefined
@@ -9905,7 +10078,9 @@ function HappyAgentPanelBody(props: {
               "Happy Agent must reconnect before loading all files.")
             : undefined;
     const baseTabs: TabItem[] = [
-        { closable: false, icon: "files", id: "files", label: "Files" },
+        ...(props.panel.filesViewOpen
+            ? [{ closable: true, icon: "files" as const, id: "files", label: "Files" }]
+            : []),
         ...(props.artifacts
             ? [{ closable: false, icon: "package" as const, id: "artifacts", label: "Artifacts" }]
             : []),
@@ -9961,24 +10136,31 @@ function HappyAgentPanelBody(props: {
                   },
               ]
             : []),
+        ...(props.panel.changeViewPath
+            ? [
+                  {
+                      closable: true,
+                      icon: "doc" as const,
+                      id: "change",
+                      label: props.panel.changeViewPath.slice(
+                          props.panel.changeViewPath.lastIndexOf("/") + 1,
+                      ),
+                      preview: true,
+                  } satisfies TabItem,
+              ]
+            : []),
         ...toolTabItems(panelTools),
     ];
-    const tabs = baseTabs;
+    // The strip holds what can be opened, not the panel's listings.
+    const tabs = baseTabs.filter(
+        (tab) =>
+            tab.id !== "artifacts" &&
+            tab.id !== "activity" &&
+            tab.id !== "usage" &&
+            tab.id !== "devices",
+    );
     return (
         <>
-            {/* The panel's own chrome control, at its leading edge. */}
-            <PanelHeader edgeControl>
-                <Button
-                    aria-label="Hide panel"
-                    aria-pressed
-                    icon="panel-collapse"
-                    iconOnly
-                    onClick={props.onPanelClose}
-                    shortcut={PANEL_TOGGLE_HINT}
-                    size="small"
-                    variant="ghost"
-                />
-            </PanelHeader>
             {/* The whole panel accepts a tab dragged out of the main strip,
                 rather than a target inside it: the reader is aiming at this
                 side of the window, not at a stripe within it. */}
@@ -9989,53 +10171,22 @@ function HappyAgentPanelBody(props: {
             >
                 <TabbedPane
                     actions={
-                        props.canStartTerminal ||
-                        devicesOffered ||
-                        (props.browserContent && props.canStartBrowser) ? (
-                            <>
-                                {props.browserContent && props.canStartBrowser ? (
-                                    <Button
-                                        aria-label="New browser"
-                                        icon="globe"
-                                        iconOnly
-                                        onClick={() => props.store.browserAdd()}
-                                        size="small"
-                                        variant="ghost"
-                                    />
-                                ) : null}
-                                {/* A shell runs in the checkout, so a checkout
-                                that cannot take work cannot host one. The
-                                panel carries the reason with its scope. */}
-                                {props.canStartTerminal ? (
-                                    <Button
-                                        aria-label="New terminal"
-                                        disabled={props.panel.terminalRefusal !== undefined}
-                                        icon="terminal"
-                                        iconOnly
-                                        onClick={() => props.store.terminalAdd()}
-                                        size="small"
-                                        title={props.panel.terminalRefusal ?? "New terminal"}
-                                        variant="ghost"
-                                    />
-                                ) : null}
-                                {/* Offered only where the workspace's Happy
-                                Agent says it can take this Mac's devices and
-                                ports. */}
-                                {devicesOffered ? (
-                                    <Button
-                                        aria-label="Devices"
-                                        icon="link"
-                                        iconOnly
-                                        onClick={() => props.store.devicesSelect()}
-                                        size="small"
-                                        title="Devices and ports"
-                                        variant="ghost"
-                                    />
-                                ) : null}
-                            </>
+                        props.canStartBrowser ? (
+                            <Button
+                                aria-label="New tab"
+                                icon="plus"
+                                iconOnly
+                                onClick={() => props.store.browserAdd()}
+                                size="small"
+                                variant="ghost"
+                            />
                         ) : undefined
                     }
                     activeId={props.panel.activeViewId}
+                    tabSizing="content"
+                    closePresentation="overlay"
+                    overflowFade
+                    size="medium"
                     closeLabel="Close tab"
                     {...(props.closeShortcut ? { closeShortcut: props.closeShortcut } : {})}
                     onClose={props.onViewClose}
@@ -10047,6 +10198,8 @@ function HappyAgentPanelBody(props: {
                         else if (tabId === "devices") props.store.devicesSelect();
                         else if (tabId === "preview" && props.panel.previewEntryId)
                             props.store.previewOpen(props.panel.previewEntryId);
+                        else if (tabId === "change" && props.panel.changeViewPath)
+                            props.store.changeViewOpen(props.panel.changeViewPath);
                         else if (tabId === HAPPY_AGENT_PANEL_FILE_VIEW_ID)
                             props.store.fileViewOpen();
                         else if (tabId === "artifact" && props.panel.artifactView)
@@ -10072,12 +10225,42 @@ function HappyAgentPanelBody(props: {
                         tab.id !== "usage" &&
                         tab.id !== "devices" &&
                         tab.id !== "preview" &&
-                        !(tab.id === HAPPY_AGENT_PANEL_FILE_VIEW_ID && panelFile?.linked)
+                        tab.id !== "change" &&
+                        !(tab.id === HAPPY_AGENT_PANEL_FILE_VIEW_ID && panelFile?.linked) &&
+                        // Another chat and another checkout's changes are read
+                        // beside this conversation, not opened in its place.
+                        !panelTools.some((tool) => tool.id === tab.id && tool.kind === "chat")
                     }
                     transferTargets={PANEL_TRANSFER_TARGETS}
                 >
                     <HappyAgentToolBodies
                         activeId={props.panel.activeViewId}
+                        browserStart={(tabId) => ({
+                            tools: [
+                                ...(props.canStartBrowser &&
+                                props.panel.terminalRefusal === undefined
+                                    ? [
+                                          {
+                                              id: "terminal",
+                                              icon: "terminal",
+                                              label: "Terminal",
+                                              onSelect: () => props.store.terminalAdd(tabId),
+                                          } satisfies BrowserStartTool,
+                                      ]
+                                    : []),
+                                ...(props.onArtifactNew
+                                    ? [
+                                          {
+                                              id: "artifact",
+                                              icon: "package",
+                                              label: "New artifact",
+                                              onSelect: () => props.onArtifactNew?.(tabId),
+                                          } satisfies BrowserStartTool,
+                                      ]
+                                    : []),
+                            ],
+                            recent: props.panel.browserRecent,
+                        })}
                         browserConnectionId={props.browserConnectionId}
                         {...(props.browserContent ? { browserContent: props.browserContent } : {})}
                         store={props.store}
@@ -10272,6 +10455,17 @@ function HappyAgentPanelBody(props: {
                                 title="Preview unavailable"
                             />
                         )
+                    ) : props.panel.activeViewId === "change" ? (
+                        props.changeDiff ? (
+                            <FileChangeDiff file={props.changeDiff} />
+                        ) : (
+                            <EmptyState
+                                description="This conversation no longer shows that file's edits."
+                                icon="doc"
+                                size="panel"
+                                title="No changes"
+                            />
+                        )
                     ) : props.panel.activeViewId === HAPPY_AGENT_PANEL_FILE_VIEW_ID ? (
                         panelFile ? (
                             props.fileBody(panelFile)
@@ -10331,6 +10525,44 @@ function mediaWindowShowable(kind: FilePreviewKind): boolean {
  * changes sides loads again, from the address the store kept for it, which is
  * why the address lives in the store and not in the frame.
  */
+/** Another conversation read in a panel tab: its transcript, without a composer. */
+function HappyAgentPanelChatSurface(props: {
+    readonly store: HappyAgentPanelStore;
+    readonly tabId: HappyAgentPanelTabId;
+}) {
+    const chat = props.store.chat(props.tabId) ?? happyAgentPanelChatNone;
+    const snapshot = useSyncExternalStore(chat.subscribe, chat.get, chat.get);
+    if (snapshot.type === "error")
+        return (
+            <EmptyState
+                description={snapshot.message}
+                icon="alert"
+                size="panel"
+                title="This chat could not be opened"
+            />
+        );
+    const chatSnapshot = snapshot.type === "ready" ? snapshot.chat : undefined;
+    return (
+        <ConversationView
+            {...(chatSnapshot ? { conversationId: chatSnapshot.sessionId } : {})}
+            entries={chatSnapshot?.entries ?? []}
+            {...(chatSnapshot ? { expandedTurnIds: chatSnapshot.expandedTurnIds } : {})}
+            loading={chatSnapshot === undefined}
+            onComposerSend={() => undefined}
+            onComposerValueChange={() => undefined}
+            onTraceToggle={chat.turnTraceToggle}
+            running={chatSnapshot?.runStatus === "running"}
+        />
+    );
+}
+
+/** What a chat tab reads when its store is already gone: nothing, loading. */
+const happyAgentPanelChatNone: HappyAgentPanelChatStore = {
+    get: () => ({ type: "loading" }),
+    subscribe: () => () => undefined,
+    turnTraceToggle: () => undefined,
+};
+
 function HappyAgentToolBodies(props: {
     tabs: readonly HappyAgentPanelTabSnapshot[];
     activeId: string | undefined;
@@ -10343,6 +10575,8 @@ function HappyAgentToolBodies(props: {
     };
     browserContent?: BrowserContentRenderer;
     browserConnectionId: string | null;
+    /** What a page that has not been anywhere offers instead of itself. */
+    browserStart?: (tabId: HappyAgentPanelTabId) => BrowserPanelProps["start"];
     /** Owning Happy Agent availability applied to retained terminal tabs. */
     happyAgentAvailability?: "reconnecting" | "unavailable";
     happyAgentAvailabilityReason?: string;
@@ -10359,6 +10593,7 @@ function HappyAgentToolBodies(props: {
                         key={tab.id}
                         onLocationChange={(url) => props.store.browserUpdate(tab.id, { url })}
                         onTitleChange={(title) => props.store.browserUpdate(tab.id, { title })}
+                        {...(props.browserStart ? { start: props.browserStart(tab.id) } : {})}
                         {...(props.happyAgentAvailability === undefined
                             ? {}
                             : {
@@ -10417,6 +10652,9 @@ function HappyAgentToolBodies(props: {
                         title="No artifacts"
                     />
                 )
+            ) : null}
+            {active?.kind === "chat" ? (
+                <HappyAgentPanelChatSurface key={active.id} store={props.store} tabId={active.id} />
             ) : null}
             {active?.kind === "terminal" ? (
                 <HappyAgentTerminalTab

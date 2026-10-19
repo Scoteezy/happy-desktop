@@ -4,7 +4,7 @@ import type {
     HappyAgentGroupId,
     HappyAgentSessionId,
 } from "./happyAgentTypes.js";
-import type { HappyAgentViewPlacement } from "./happyAgentPanelStore.js";
+import type { HappyAgentBrowserRecent, HappyAgentViewPlacement } from "./happyAgentPanelStore.js";
 
 /** One file tab remembered for a group, enough to reopen it as it was left. */
 export interface HappyAgentFileTabMemory {
@@ -68,6 +68,8 @@ export interface HappyAgentPanelMemory {
     readonly open: boolean;
     readonly browsers: readonly HappyAgentPanelBrowserMemory[];
     readonly active: HappyAgentPanelViewMemory;
+    /** Pages the group's browser visited, most recent first. */
+    readonly recent?: readonly HappyAgentBrowserRecent[];
 }
 
 /**
@@ -123,6 +125,8 @@ export interface HappyAgentWorkspaceMemoryDocument {
     readonly groups: { readonly [groupId: string]: HappyAgentGroupTabMemory | undefined };
     /** Restorable session and file destinations, most recently visited first. */
     readonly recentTabs?: readonly HappyAgentRecentTabMemory[];
+    /** The work floaties the reader folded by hand, by chat or space, oldest first. */
+    readonly floatyCollapsed?: readonly string[];
 }
 
 /**
@@ -173,12 +177,17 @@ export interface HappyAgentWorkspaceMemoryStore {
     recentTabsRead(): readonly HappyAgentRecentTabMemory[];
     /** Moves one destination to the front, replacing an older visit to the same tab. */
     recentTabRemember(tab: HappyAgentRecentTabMemory): void;
+    /** The work floaties the reader folded by hand, by chat or space. */
+    floatyCollapsedRead(): readonly string[];
+    floatyCollapsedWrite(keys: readonly string[]): void;
 }
 
 const FILE_KINDS: readonly HappyAgentFileTabKind[] = ["file", "diff", "document", "media"];
 /** Per-group budgets keep one busy workspace from erasing every other workspace's history. */
 const RECENT_SESSION_LIMIT_PER_GROUP = 200;
 const RECENT_FILE_LIMIT_PER_GROUP = 80;
+/** Folded floaties remembered; the oldest fold is forgotten first. */
+const FLOATY_COLLAPSED_LIMIT = 500;
 
 function recentTabsBound(
     tabs: readonly HappyAgentRecentTabMemory[],
@@ -295,14 +304,31 @@ function panelParse(value: unknown): HappyAgentPanelMemory | undefined {
     }
     const active: HappyAgentPanelViewMemory =
         activeIndex === undefined ? { type: "files" } : { type: "browser", index: activeIndex };
+    const recent = (Array.isArray(record.recent) ? record.recent : []).flatMap(
+        (entry): HappyAgentBrowserRecent[] => {
+            if (typeof entry !== "object" || entry === null) return [];
+            const page = entry as Record<string, unknown>;
+            if (typeof page.url !== "string") return [];
+            return [
+                { url: page.url, label: typeof page.label === "string" ? page.label : page.url },
+            ];
+        },
+    );
     const panel: HappyAgentPanelMemory = {
         open: record.open === true,
         browsers,
         active,
+        ...(recent.length === 0 ? {} : { recent }),
     };
-    // A closed panel with nothing in it is the default, and writing it down for
-    // every group anyone ever opened would only grow the document.
-    return !panel.open && browsers.length === 0 ? undefined : panel;
+    return panelMemoryEmpty(panel) ? undefined : panel;
+}
+
+/**
+ * A closed panel with nothing in it is the default, and writing it down for
+ * every group anyone ever opened would only grow the document.
+ */
+function panelMemoryEmpty(panel: HappyAgentPanelMemory): boolean {
+    return !panel.open && panel.browsers.length === 0 && !panel.recent?.length;
 }
 
 function groupParse(value: unknown): HappyAgentGroupTabMemory | undefined {
@@ -364,6 +390,7 @@ export function happyAgentWorkspaceMemoryStoreCreate(
 ): HappyAgentWorkspaceMemoryStore {
     const groups = new Map<string, HappyAgentGroupTabMemory>();
     let recentTabs: readonly HappyAgentRecentTabMemory[] = [];
+    let floatyCollapsed: readonly string[] = [];
     const stored = (() => {
         try {
             return persistence?.read();
@@ -392,12 +419,24 @@ export function happyAgentWorkspaceMemoryStoreCreate(
                 }),
             );
         }
+        if (Array.isArray(document.floatyCollapsed))
+            floatyCollapsed = [
+                ...new Set(
+                    document.floatyCollapsed.filter(
+                        (key): key is string => typeof key === "string" && key.length > 0,
+                    ),
+                ),
+            ].slice(-FLOATY_COLLAPSED_LIMIT);
     }
 
     const flush = (): void => {
         if (!persistence) return;
         try {
-            persistence.write({ groups: Object.fromEntries(groups), recentTabs });
+            persistence.write({
+                groups: Object.fromEntries(groups),
+                recentTabs,
+                ...(floatyCollapsed.length === 0 ? {} : { floatyCollapsed }),
+            });
         } catch {
             // Storage the host refused still keeps this client's memory alive.
         }
@@ -441,7 +480,7 @@ export function happyAgentWorkspaceMemoryStoreCreate(
             const { panel: _dropped, ...rest } = previous;
             // The default arrangement is not worth a record: a panel nobody has
             // opened must not keep a group alive in this document.
-            merge(groupId, !panel.open && panel.browsers.length === 0 ? rest : { ...rest, panel });
+            merge(groupId, panelMemoryEmpty(panel) ? rest : { ...rest, panel });
         },
         groupForget(groupId) {
             const groupRemoved = groups.delete(groupId);
@@ -472,6 +511,11 @@ export function happyAgentWorkspaceMemoryStoreCreate(
                 tab,
                 ...recentTabs.filter((entry) => recentTabKey(entry) !== key),
             ]);
+            flush();
+        },
+        floatyCollapsedRead: () => floatyCollapsed,
+        floatyCollapsedWrite(keys) {
+            floatyCollapsed = [...new Set(keys)].slice(-FLOATY_COLLAPSED_LIMIT);
             flush();
         },
     };

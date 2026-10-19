@@ -1,3 +1,4 @@
+import { happyAgentPanelChatOpen } from "./happyAgentPanelChat.js";
 import type { HappyAgentDeviceBridgesStore } from "./happyAgentDeviceBridgesStore.js";
 import type { HappyAgentDeviceBridgeSupportStore } from "./happyAgentDeviceBridgeSupportStore.js";
 import type { HappyAgentToolMediaDocumentStore } from "./happyAgentToolMediaDocumentStore.js";
@@ -2270,8 +2271,11 @@ export function happyAgentWorkspaceStoreCreate(
     };
     const panel: HappyAgentPanelStore = happyAgentPanelStoreCreate({
         terminalOpen: (sessionId) => client.terminalOpen(sessionId),
+        chatOpen: (agentId) => happyAgentPanelChatOpen(() => client.chat(agentId)),
         memoryRead: (groupId) => client.memory.groupRead(groupId)?.panel,
         memoryWrite: (groupId, memory) => client.memory.groupPanelWrite(groupId, memory),
+        floatyMemoryRead: () => client.memory.floatyCollapsedRead(),
+        floatyMemoryWrite: (keys) => client.memory.floatyCollapsedWrite(keys),
     });
 
     const listeners = new Set<() => void>();

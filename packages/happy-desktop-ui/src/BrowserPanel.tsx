@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "./Button";
 import { EmptyState } from "./EmptyState";
-import type { IconName } from "./Icon";
+import { Icon, type IconName } from "./Icon";
 import { Ionicon } from "./vectorIcons/VectorIcon";
 import type { InlinePageFit } from "./inlinePageFit";
 import { TextField } from "./TextField";
@@ -69,6 +69,20 @@ export interface BrowserContentProps {
 /** Native browser-content adapter supplied by the host (Electron in production). */
 export type BrowserContentRenderer = (props: BrowserContentProps) => ReactNode;
 
+/** One thing a new tab can become instead of a page. */
+export interface BrowserStartTool {
+    readonly id: string;
+    readonly icon: IconName;
+    readonly label: string;
+    onSelect(): void;
+}
+
+/** A page this browser visited, offered again on a new tab. */
+export interface BrowserStartPage {
+    readonly url: string;
+    readonly label: string;
+}
+
 export interface BrowserPanelProps {
     /** Keeps inactive browser guests mounted so page/history state survives tab switches. */
     active: boolean;
@@ -78,6 +92,14 @@ export interface BrowserPanelProps {
     onTitleChange?(title: string): void;
     /** Why Happy Agent-bound browser navigation is unavailable while the guest remains mounted. */
     unavailable?: string;
+    /**
+     * What a tab that has not been anywhere yet shows under its address: the
+     * tools it can become, then the pages this browser visited.
+     */
+    start?: {
+        readonly tools: readonly BrowserStartTool[];
+        readonly recent: readonly BrowserStartPage[];
+    };
 }
 
 interface BrowserViewState {
@@ -93,6 +115,20 @@ interface BrowserViewState {
     readonly canGoForward: boolean;
     readonly failure?: BrowserFailure;
     readonly loading: boolean;
+    /** Whether the tab has not navigated anywhere yet, so it is still a new tab. */
+    readonly fresh: boolean;
+}
+
+/**
+ * The page history of a tab drawn without a host renderer, where an iframe
+ * stands in for the guest. A frame does not report a cross-origin page's own
+ * navigations, so this history holds the addresses the reader loaded.
+ */
+interface BrowserFrameHistory {
+    readonly entries: readonly string[];
+    readonly index: number;
+    /** Bumped to load the current entry again. */
+    readonly reloads: number;
 }
 
 /**
@@ -119,7 +155,16 @@ export function BrowserPanel(props: BrowserPanelProps) {
         canGoBack: false,
         canGoForward: false,
         loading: !blank,
+        fresh: blank,
     });
+    const [frame, frameSet] = useState<BrowserFrameHistory>({
+        entries: blank ? [] : [props.initialUrl],
+        index: blank ? -1 : 0,
+        reloads: 0,
+    });
+    const framed = props.renderContent === undefined;
+    const canGoBack = framed ? frame.index > 0 : view.canGoBack;
+    const canGoForward = framed ? frame.index < frame.entries.length - 1 : view.canGoForward;
 
     const load = (url: string) => {
         if (props.unavailable !== undefined) return;
@@ -129,8 +174,26 @@ export function BrowserPanel(props: BrowserPanelProps) {
             editing: false,
             failure: undefined,
             loading: true,
+            fresh: false,
         }));
-        controller?.browserLoad(url);
+        if (!framed) {
+            controller?.browserLoad(url);
+            return;
+        }
+        frameSet((current) => ({
+            entries: [...current.entries.slice(0, current.index + 1), url],
+            index: current.index + 1,
+            reloads: current.reloads,
+        }));
+        props.onLocationChange?.(url);
+    };
+
+    const frameStep = (step: number) => {
+        const url = frame.entries[frame.index + step];
+        if (url === undefined) return;
+        frameSet((current) => ({ ...current, index: current.index + step }));
+        viewSet((current) => ({ ...current, address: url, editing: false, loading: true }));
+        props.onLocationChange?.(url);
     };
 
     const navigate = () => {
@@ -153,9 +216,9 @@ export function BrowserPanel(props: BrowserPanelProps) {
             <div className="happy-browser-panel__toolbar" data-happy-desktop-ui="browser-toolbar">
                 <Button
                     aria-label="Back"
-                    disabled={props.unavailable !== undefined || !view.canGoBack}
+                    disabled={props.unavailable !== undefined || !canGoBack}
                     iconOnly
-                    onClick={() => controller?.browserBack()}
+                    onClick={() => (framed ? frameStep(-1) : controller?.browserBack())}
                     size="small"
                     variant="ghost"
                 >
@@ -163,9 +226,9 @@ export function BrowserPanel(props: BrowserPanelProps) {
                 </Button>
                 <Button
                     aria-label="Forward"
-                    disabled={props.unavailable !== undefined || !view.canGoForward}
+                    disabled={props.unavailable !== undefined || !canGoForward}
                     iconOnly
-                    onClick={() => controller?.browserForward()}
+                    onClick={() => (framed ? frameStep(1) : controller?.browserForward())}
                     size="small"
                     variant="ghost"
                 >
@@ -176,7 +239,17 @@ export function BrowserPanel(props: BrowserPanelProps) {
                     disabled={props.unavailable !== undefined}
                     iconOnly
                     onClick={() => {
-                        if (view.loading) controller?.browserStop();
+                        if (framed) {
+                            if (view.loading)
+                                viewSet((current) => ({ ...current, loading: false }));
+                            else if (frame.index >= 0) {
+                                frameSet((current) => ({
+                                    ...current,
+                                    reloads: current.reloads + 1,
+                                }));
+                                viewSet((current) => ({ ...current, loading: true }));
+                            }
+                        } else if (view.loading) controller?.browserStop();
                         // A failed navigation may never have committed, so its
                         // history entry cannot be reloaded — load the address again.
                         else if (view.failure) retry();
@@ -198,7 +271,7 @@ export function BrowserPanel(props: BrowserPanelProps) {
                     onValueChange={(address) =>
                         viewSet((current) => ({ ...current, address, editing: true }))
                     }
-                    placeholder="Search or enter address"
+                    placeholder="Search or enter a URL"
                     size="small"
                     value={view.address}
                 />
@@ -263,14 +336,26 @@ export function BrowserPanel(props: BrowserPanelProps) {
                             }));
                         },
                     })
-                ) : (
-                    <EmptyState
-                        description="The browser content renderer is not connected."
-                        icon="globe"
-                        size="panel"
-                        title="Browser unavailable"
+                ) : frame.entries[frame.index] !== undefined ? (
+                    // Without the host's guest the page is framed instead, which
+                    // a site may refuse; the frame then stays blank.
+                    <iframe
+                        className="happy-browser-panel__frame"
+                        key={`${String(frame.index)}:${String(frame.reloads)}`}
+                        onLoad={() => viewSet((current) => ({ ...current, loading: false }))}
+                        referrerPolicy="no-referrer"
+                        sandbox="allow-forms allow-popups allow-scripts"
+                        src={frame.entries[frame.index]}
+                        title={view.address}
                     />
-                )}
+                ) : null}
+                {props.start && view.fresh && !view.failure ? (
+                    <BrowserStart
+                        onPageOpen={load}
+                        recent={props.start.recent}
+                        tools={props.start.tools}
+                    />
+                ) : null}
                 {view.failure
                     ? ((page) => (
                           <div
@@ -301,6 +386,53 @@ export function BrowserPanel(props: BrowserPanelProps) {
                     : null}
             </div>
         </section>
+    );
+}
+
+function BrowserStart(props: {
+    tools: readonly BrowserStartTool[];
+    recent: readonly BrowserStartPage[];
+    onPageOpen: (url: string) => void;
+}) {
+    return (
+        <nav className="happy-browser-panel__start" data-happy-desktop-ui="browser-start">
+            <div className="happy-browser-panel__start-list">
+                {props.tools.map((tool) => (
+                    <button
+                        className="happy-browser-panel__start-row"
+                        key={tool.id}
+                        onClick={tool.onSelect}
+                        type="button"
+                    >
+                        <span className="happy-browser-panel__start-icon">
+                            <Icon name={tool.icon} size={16} />
+                        </span>
+                        <span className="happy-browser-panel__start-label">{tool.label}</span>
+                    </button>
+                ))}
+                {props.recent.length > 0 ? (
+                    <>
+                        <h3 className="happy-browser-panel__start-heading">Recent</h3>
+                        {props.recent.map((page) => (
+                            <button
+                                className="happy-browser-panel__start-row"
+                                key={page.url}
+                                onClick={() => props.onPageOpen(page.url)}
+                                title={page.url}
+                                type="button"
+                            >
+                                <span className="happy-browser-panel__start-icon">
+                                    <Icon name="globe" size={16} />
+                                </span>
+                                <span className="happy-browser-panel__start-label">
+                                    {page.label}
+                                </span>
+                            </button>
+                        ))}
+                    </>
+                ) : null}
+            </div>
+        </nav>
     );
 }
 

@@ -223,8 +223,11 @@ export type ConversationViewProps = {
     expandedTurnIds?: ReadonlySet<string>;
     /** @deprecated Pending steering now renders as an ordered transcript message. */
     queued?: readonly { readonly id: string; readonly text: string }[];
-    /** The composer surface snapshot; the draft never lives in this component. */
-    composer: ComposerSnapshot;
+    /**
+     * The composer surface snapshot; the draft never lives in this component.
+     * Absent, the conversation is only read here and has no composer.
+     */
+    composer?: ComposerSnapshot;
     /** Keeps the conversation readable while disabling every composer action. */
     composerDisabled?: boolean;
     /** Keeps the local draft editable while disabling submission to the Happy Agent. */
@@ -1081,6 +1084,7 @@ export function ConversationView(props: ConversationViewProps) {
                 </MarkdownLayoutCacheContext.Provider>
             )}
 
+            {composer ? (
             <ConversationDock
                 composer={composer}
                 composerAboveControl={props.composerAboveControl}
@@ -1103,6 +1107,7 @@ export function ConversationView(props: ConversationViewProps) {
                 onComposerValueChange={props.onComposerValueChange}
                 running={props.running}
             />
+            ) : null}
 
             {props.overlay ? <WindowOverlay>{props.overlay}</WindowOverlay> : null}
         </section>

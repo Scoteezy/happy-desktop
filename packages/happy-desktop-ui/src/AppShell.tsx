@@ -30,6 +30,8 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     embedded?: boolean;
     panel?: ReactNode;
     panelWidth?: number;
+    /** One persistent header control at the window's right edge. */
+    panelToggleAction?: { open: boolean; onClick: () => void };
     /** Optional 64px feature rail. When omitted the content spans the full body. */
     rail?: ReactNode;
     sidebar?: ReactNode;
@@ -87,6 +89,14 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      */
     sidebarCollapsed?: boolean;
     onSidebarCollapsedChange?: (collapsed: boolean) => void;
+    /**
+     * The narrowest the workspace may be beside the panel, in CSS pixels, so
+     * after zoom. Where the window cannot hold both at their minimums the
+     * panel takes the workspace's width, laid over it rather than squeezing
+     * it: the workspace keeps its layout, draft, and scroll underneath, and
+     * closing the panel brings it back as it was.
+     */
+    workspaceReadableWidth?: number;
     sidebarCollapseLabel?: string;
     sidebarExpandLabel?: string;
     sidebarResizeLabel?: string;
@@ -146,6 +156,11 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      */
     panelFooterFloating?: boolean;
     panelResizeLabel?: string;
+    /**
+     * The panel opens and closes by its width, so whatever sits on the
+     * workspace's far edge travels with it.
+     */
+    panelAnimated?: boolean;
     /** Reports pointer or DOM-focus ownership for this exact shell instance. */
     onFocusedPaneChange?: (pane: AppShellFocusedPane) => void;
 };
@@ -202,10 +217,15 @@ const WORKSPACE_MIN_WIDTH = 140;
  * middle refusing to shrink. A lane cannot be sized against the window alone;
  * it has to be sized against what is left of it.
  */
-function laneMaxWidthOf(cap: number, min: number, occupied: number): number {
+function laneMaxWidthOf(
+    cap: number,
+    min: number,
+    occupied: number,
+    workspaceMin = WORKSPACE_MIN_WIDTH,
+): number {
     const viewport = typeof window === "undefined" ? 0 : window.innerWidth;
     if (!(viewport > 0)) return cap;
-    return Math.max(min, Math.min(cap, viewport - occupied - WORKSPACE_MIN_WIDTH));
+    return Math.max(min, Math.min(cap, viewport - occupied - workspaceMin));
 }
 const SHORTCUT_HINT_DELAY_MS = 500;
 const SIDEBAR_SHORTCUT = commandShortcut("b");
@@ -337,6 +357,8 @@ function ResizeHandle(props: {
 export function AppShell(props: AppShellProps) {
     const shell = useRef<HTMLDivElement>(null);
     const [linkMenu, setLinkMenu] = useState<{ x: number; y: number; href: string }>();
+    const lastFocus = useRef<HTMLElement | null>(null);
+    const takeoverFocus = useRef<{ element: HTMLElement | null } | undefined>(undefined);
     const [panelNode, setPanelNode] = useState<HTMLElement | null>(null);
     const [focusedPaneOwner, setFocusedPaneOwner] = useState<HTMLElement | null>(null);
     // The overlay lane below, held as state rather than in a ref because the
@@ -353,6 +375,7 @@ export function AppShell(props: AppShellProps) {
         "embedded",
         "panel",
         "panelWidth",
+        "panelToggleAction",
         "rail",
         "sidebar",
         "style",
@@ -373,6 +396,7 @@ export function AppShell(props: AppShellProps) {
         "sidebarCollapsed",
         "onSidebarCollapsedChange",
         "sidebarCollapseLabel",
+        "workspaceReadableWidth",
         "sidebarExpandLabel",
         "sidebarResizeLabel",
         "shortcutHints",
@@ -385,9 +409,11 @@ export function AppShell(props: AppShellProps) {
         "panelFooter",
         "panelFooterFloating",
         "panelResizeLabel",
+        "panelAnimated",
         "onFocusedPaneChange",
     ]);
     const onFocusedPaneChange = local.onFocusedPaneChange;
+    const workspaceReadableWidth = local.workspaceReadableWidth;
     // Ref identity is a measured lifetime contract: a changed callback ref is
     // cleared on every render, while this reset must mean the panel itself left.
     const panelRef = useCallback(
@@ -397,7 +423,20 @@ export function AppShell(props: AppShellProps) {
         },
         [onFocusedPaneChange],
     );
+    const [contentWidth, setContentWidth] = useState(0);
+    // The region the workspace and panel share, measured so the panel can tell
+    // when the two no longer fit side by side. React Compiler keeps this
+    // callback's identity, so the observer lives as long as the node.
+    const contentRef = (node: HTMLDivElement | null) => {
+        if (node === null) return;
+        const observer = new ResizeObserver(([entry]) => {
+            if (entry) setContentWidth(Math.round(entry.contentRect.width));
+        });
+        observer.observe(node);
+        return () => observer.disconnect();
+    };
     const sidebarMin = local.sidebarMinWidth ?? SIDEBAR_MIN_WIDTH;
+    const workspaceMin = workspaceReadableWidth ?? WORKSPACE_MIN_WIDTH;
     const panelMin = local.panelMinWidth ?? PANEL_MIN_WIDTH;
     // The caps a lane answers to on its own. What is actually left for it is
     // worked out below, once the lane opposite has a width to be measured by.
@@ -430,6 +469,11 @@ export function AppShell(props: AppShellProps) {
         ),
     );
     const [panelDragWidth, setPanelDragWidth] = useState<number>();
+    // Whether the panel last finished opening or closing. While it differs
+    // from whether a panel is given, the panel is on its way in or out.
+    const [panelSettled, setPanelSettled] = useState(
+        local.panel !== undefined && local.panel !== null,
+    );
     /*
      * What each lane may grow to, given the other. A lane's own cap is only half
      * the answer: the two share one window with the rail and the workspace, so
@@ -453,7 +497,8 @@ export function AppShell(props: AppShellProps) {
         local.sidebarMaxWidth ??
         laneMaxWidthOf(sidebarCap, sidebarMin, railFootprint + panelOccupied);
     const panelMax =
-        local.panelMaxWidth ?? laneMaxWidthOf(panelCap, panelMin, railFootprint + sidebarOccupied);
+        local.panelMaxWidth ??
+        laneMaxWidthOf(panelCap, panelMin, railFootprint + sidebarOccupied, workspaceMin);
     const [shortcutHintsHeld, setShortcutHintsHeld] = useState(false);
     const sidebarInteractive = local.sidebarCollapsible === true;
     const sidebarSized = sidebarInteractive || local.sidebarDefaultWidth !== undefined;
@@ -552,6 +597,33 @@ export function AppShell(props: AppShellProps) {
         : panelWidthState;
     const panelWidth = panelWidthControlled ? (panelDragWidth ?? panelWidthBase) : panelWidthState;
     const panelPresent = local.panel !== undefined && local.panel !== null;
+    const panelMotion = local.panelAnimated === true && panelSettled !== panelPresent;
+    // A panel just taken away stays as an empty lane until it has closed.
+    const panelClosing = panelMotion && !panelPresent;
+    const panelTakeover =
+        (panelPresent || panelClosing) &&
+        workspaceReadableWidth !== undefined &&
+        contentWidth > 0 &&
+        contentWidth < sidebarOccupied + panelMin + workspaceReadableWidth;
+    // eslint-disable-next-line happy-react/no-layout-effect -- takeover changes real browser focus after inert commits; the prior focused node is recorded by focus events before that commit so the mounted draft and selection can be restored
+    useLayoutEffect(() => {
+        if (panelTakeover) {
+            takeoverFocus.current ??= { element: lastFocus.current };
+            if (panelNode && !panelNode.contains(document.activeElement)) {
+                const control = Array.from(
+                    panelNode.querySelectorAll<HTMLElement>(
+                        'button:not([disabled]), input:not([disabled], [type="hidden"]), textarea:not([disabled]), select:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+                    ),
+                ).find((element) => element.checkVisibility() && !element.closest("[inert]"));
+                (control ?? panelNode).focus({ preventScroll: true });
+            }
+            return;
+        }
+        const restore = takeoverFocus.current?.element;
+        takeoverFocus.current = undefined;
+        if (restore?.isConnected && !restore.closest("[inert]"))
+            restore.focus({ preventScroll: true });
+    }, [panelTakeover, panelNode]);
     const focusedPane: AppShellFocusedPane =
         panelPresent && panelNode !== null && focusedPaneOwner === panelNode
             ? "panel"
@@ -613,12 +685,17 @@ export function AppShell(props: AppShellProps) {
               // that named a width means that width.
               maxWidth:
                   local.panelMaxWidth === undefined
-                      ? `min(${panelMax}px, ${String(PANEL_MAX_FRACTION * 100)}vw, calc(100vw - ${String(railFootprint + sidebarOccupied + WORKSPACE_MIN_WIDTH)}px))`
+                      ? `min(${panelMax}px, ${String(PANEL_MAX_FRACTION * 100)}vw, calc(100vw - ${String(railFootprint + sidebarOccupied + workspaceMin)}px))`
                       : `${panelMax}px`,
           }
         : local.panelWidth === undefined
           ? undefined
           : { width: `${local.panelWidth}px` };
+    // The width the panel's box resolves to, which its contents hold while
+    // the box opens or closes around them.
+    const panelEdge = panelResizable
+        ? `clamp(${String(panelMin)}px, ${String(panelWidth)}px, ${String(panelStyle?.maxWidth ?? `${String(panelMax)}px`)})`
+        : `${String(local.panelWidth ?? PANEL_DEFAULT_WIDTH)}px`;
     const sidebarHidden = sidebarInteractive && sidebarCollapsed;
     // The integrated header owns its controls across both sidebar states.
     const sidebarTravel =
@@ -796,7 +873,11 @@ export function AppShell(props: AppShellProps) {
                     setLinkMenu({ x: event.clientX, y: event.clientY, href });
                 }}
                 data-navigation-chrome={local.navigationChrome}
+                data-panel-toggle={local.panelToggleAction ? "" : undefined}
+                data-panel-open={panelPresent ? "" : undefined}
                 onFocusCapture={(event) => {
+                    if (!panelTakeover && event.target instanceof HTMLElement)
+                        lastFocus.current = event.target;
                     rest.onFocusCapture?.(event);
                     paneFocusRead(event.currentTarget, event.target);
                 }}
@@ -849,6 +930,8 @@ export function AppShell(props: AppShellProps) {
                     <div
                         className="happy-desktop-app-shell__content"
                         data-happy-desktop-ui="app-shell-content"
+                        data-panel-takeover={panelTakeover ? "" : undefined}
+                        ref={contentRef}
                     >
                         <main
                             className="happy-desktop-app-shell__main"
@@ -926,6 +1009,7 @@ export function AppShell(props: AppShellProps) {
                                 className="happy-desktop-app-shell__workspace"
                                 data-app-shell-pane="workspace"
                                 data-happy-desktop-ui="app-shell-workspace"
+                                inert={panelTakeover}
                             >
                                 {local.children}
                             </div>
@@ -938,9 +1022,21 @@ export function AppShell(props: AppShellProps) {
                                 className="happy-desktop-app-shell__panel"
                                 data-app-shell-pane="panel"
                                 data-happy-desktop-ui="app-shell-panel"
+                                data-motion={panelMotion ? "open" : undefined}
                                 data-resizable={panelResizable ? "" : undefined}
+                                onAnimationEnd={(event) => {
+                                    if (event.target === event.currentTarget) setPanelSettled(true);
+                                }}
                                 ref={panelRef}
-                                style={panelStyle}
+                                tabIndex={-1}
+                                style={
+                                    panelTakeover
+                                        ? { left: `${String(sidebarOccupied)}px` }
+                                        : ({
+                                              ...panelStyle,
+                                              "--happy-app-shell-panel-width": panelEdge,
+                                          } as CSSProperties)
+                                }
                             >
                                 {panelResizable ? (
                                     <ResizeHandle
@@ -969,9 +1065,50 @@ export function AppShell(props: AppShellProps) {
                                     </div>
                                 ) : null}
                             </aside>
+                        ) : panelClosing ? (
+                            <aside
+                                aria-hidden="true"
+                                className="happy-desktop-app-shell__panel"
+                                data-motion="close"
+                                data-resizable={panelResizable ? "" : undefined}
+                                onAnimationEnd={(event) => {
+                                    if (event.target === event.currentTarget)
+                                        setPanelSettled(false);
+                                }}
+                                style={
+                                    panelTakeover
+                                        ? { left: `${String(sidebarOccupied)}px` }
+                                        : panelStyle
+                                }
+                            />
                         ) : null}
                     </div>
                 </div>
+                {local.panelToggleAction ? (
+                    <div
+                        className="happy-desktop-app-shell__panel-controls"
+                        data-happy-desktop-ui="app-shell-panel-controls"
+                    >
+                        <button
+                            aria-label={
+                                local.panelToggleAction.open
+                                    ? "Hide secondary pane"
+                                    : "Show secondary pane"
+                            }
+                            aria-pressed={local.panelToggleAction.open}
+                            className="happy-desktop-app-shell__panel-toggle"
+                            onClick={local.panelToggleAction.onClick}
+                            type="button"
+                        >
+                            <Icon
+                                name={
+                                    local.panelToggleAction.open ? "panel-collapse" : "panel-expand"
+                                }
+                                size={16}
+                            />
+                        </button>
+                    </div>
+                ) : null}
                 {/* Last, after every drag surface in the body. Native draggable
                 regions are collected in tree order and later rectangles win, so
                 a control that punches a hole in one has to come after it — the

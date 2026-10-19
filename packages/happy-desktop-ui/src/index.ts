@@ -733,6 +733,8 @@ export {
     type BrowserController,
     type BrowserFailure,
     type BrowserPanelProps,
+    type BrowserStartPage,
+    type BrowserStartTool,
 } from "./BrowserPanel";
 export {
     QuickActionsCard,
@@ -969,7 +971,16 @@ export {
 export { providerAccountName } from "./pages/settings/providerAccountName";
 export { ConnectionShell, type ConnectionShellItem } from "./ConnectionShell";
 export { ConnectionSurface } from "./ConnectionSurface";
-export { WorkFloaty, type WorkFloatyItem, type WorkFloatyProps } from "./WorkFloaty";
+export {
+    WorkFloaty,
+    type WorkFloatyMark,
+    type WorkFloatyProps,
+    type WorkFloatyRow,
+    type WorkFloatyTrailing,
+} from "./WorkFloaty";
+export { ChangeStats, type ChangeStatsProps } from "./ChangeStats";
+export { FileChangeDiff, type FileChangeDiffProps } from "./FileChangeDiff";
+export { WorkTabControls, type WorkTabControlsProps } from "./WorkTabControls";
 export { ConversationSummaryRow, type ConversationSummaryRowProps } from "./ConversationSummaryRow";
 export { MakeStuffView, type MakeStuffStage, type MakeStuffViewProps } from "./MakeStuffView";
 export { WorkTranscript, type WorkTranscriptRow, type WorkTranscriptProps } from "./WorkTranscript";

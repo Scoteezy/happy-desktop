@@ -237,7 +237,8 @@
     pointer-events: none;
 }
 
-.happy-desktop-app-shell__sidebar-controls > button {
+.happy-desktop-app-shell__sidebar-controls > button,
+.happy-desktop-app-shell__panel-toggle {
     box-sizing: border-box;
     display: flex;
     flex: none;
@@ -256,12 +257,14 @@
     app-region: no-drag;
 }
 
-.happy-desktop-app-shell__sidebar-controls > button:hover {
+.happy-desktop-app-shell__sidebar-controls > button:hover,
+.happy-desktop-app-shell__panel-toggle:hover {
     background: var(--surface-pressed);
     color: var(--text);
 }
 
-.happy-desktop-app-shell__sidebar-controls > button:focus-visible {
+.happy-desktop-app-shell__sidebar-controls > button:focus-visible,
+.happy-desktop-app-shell__panel-toggle:focus-visible {
     outline: 2px solid var(--surface-selected);
     outline-offset: 1px;
 }
@@ -270,7 +273,8 @@
     width: calc(var(--happy-integrated-leading-inset) + 60px + 56px);
 }
 
-.happy-desktop-app-shell__sidebar-toggle[aria-pressed="true"] {
+.happy-desktop-app-shell__sidebar-toggle[aria-pressed="true"],
+.happy-desktop-app-shell__panel-toggle[aria-pressed="true"] {
     background: var(--surface-pressed);
     color: var(--text);
 }
@@ -973,6 +977,91 @@
     border-left: 1px solid var(--divider);
     border-radius: 0;
     overflow: hidden;
+}
+
+/* Too narrow for two readable panes: the panel lies over the workspace, which
+   keeps its own layout underneath until the panel is closed. */
+.happy-desktop-app-shell__content[data-panel-takeover] > .happy-desktop-app-shell__main {
+    /* Chat overlays stay below the pane taking over this region. */
+    isolation: isolate;
+}
+
+.happy-desktop-app-shell__content[data-panel-takeover] > .happy-desktop-app-shell__panel {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+}
+
+.happy-desktop-app-shell__content[data-panel-takeover]
+    > .happy-desktop-app-shell__panel
+    > [data-happy-desktop-ui="app-shell-resize-handle"] {
+    display: none;
+}
+
+/* The panel opens and closes by its width, its contents held at their final
+   width against its outer edge so they slide in rather than reflow. Laid over
+   the workspace instead, it fades. */
+.happy-desktop-app-shell__panel[data-motion] {
+    animation: happy-app-shell-panel-open var(--happy-app-shell-motion-duration)
+        var(--happy-app-shell-motion-easing);
+}
+
+.happy-desktop-app-shell__content:not([data-panel-takeover])
+    > .happy-desktop-app-shell__panel[data-motion] {
+    align-items: flex-end;
+}
+
+.happy-desktop-app-shell__panel[data-motion="close"] {
+    animation: happy-app-shell-panel-close var(--happy-app-shell-motion-duration)
+        var(--happy-app-shell-motion-easing) forwards;
+}
+
+.happy-desktop-app-shell__content:not([data-panel-takeover])
+    > .happy-desktop-app-shell__panel[data-motion]
+    > .happy-desktop-app-shell__panel-content {
+    flex: none;
+    width: var(--happy-app-shell-panel-width);
+}
+
+.happy-desktop-app-shell__content[data-panel-takeover]
+    > .happy-desktop-app-shell__panel[data-motion] {
+    animation-name: happy-app-shell-panel-fade-in;
+}
+
+.happy-desktop-app-shell__content[data-panel-takeover]
+    > .happy-desktop-app-shell__panel[data-motion="close"] {
+    animation-name: happy-app-shell-panel-fade-out;
+}
+
+@keyframes happy-app-shell-panel-open {
+    from {
+        width: 0;
+        min-width: 0;
+    }
+}
+
+@keyframes happy-app-shell-panel-close {
+    to {
+        width: 0;
+        min-width: 0;
+    }
+}
+
+@keyframes happy-app-shell-panel-fade-in {
+    from {
+        opacity: 0;
+    }
+}
+
+@keyframes happy-app-shell-panel-fade-out {
+    to {
+        opacity: 0;
+    }
 }
 
 /* A selected tab is always legible, while AppShell's one focus owner says which

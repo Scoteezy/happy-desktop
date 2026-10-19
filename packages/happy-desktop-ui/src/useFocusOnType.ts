@@ -33,6 +33,7 @@ const WRITING_TARGETS =
  * a list that opens while they type in the search, leaves them where they are.
  */
 export function focusUnlessWritingElsewhere(control: HTMLElement): void {
+    if (control.closest("[inert]")) return;
     const active = document.activeElement;
     if (active !== control && active instanceof Element && active.closest(WRITING_TARGETS)) return;
     control.focus();
@@ -82,7 +83,7 @@ function typingIsUnclaimed(event: KeyboardEvent, control: HTMLElement): boolean 
     }
     if (document.querySelector('[data-happy-desktop-ui="modal-overlay"], [role="dialog"]'))
         return false;
-    return control.isConnected && control.checkVisibility();
+    return control.isConnected && !control.closest("[inert]") && control.checkVisibility();
 }
 
 /**

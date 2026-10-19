@@ -1,0 +1,14 @@
+/* A row's Git line totals: muted at rest, in their own tones once the row is
+   selected or focused. The row says which; see the owning row's styles. */
+.happy-change-stats {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    line-height: 16px;
+    color: var(--text-secondary);
+}

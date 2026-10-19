@@ -71,80 +71,6 @@
     white-space: nowrap;
 }
 
-.happy-work-floaty {
-    box-sizing: border-box;
-    display: flex;
-    flex: none;
-    align-self: flex-start;
-    width: 272px;
-    max-height: 100%;
-    overflow: hidden;
-    border: 1px solid var(--divider);
-    border-radius: var(--happy-radius-md);
-    background: var(--surface);
-    box-shadow: 0 4px 16px var(--shadow-elevated);
-}
-
-.happy-work-floaty__content,
-.happy-work-floaty__items {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.happy-work-floaty__content {
-    gap: 8px;
-    padding: 12px;
-}
-
-.happy-work-floaty__item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px;
-    border: 0;
-    border-radius: var(--happy-radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    font-family: var(--happy-font-ui);
-    text-align: left;
-    cursor: pointer;
-}
-
-.happy-work-floaty__item:hover {
-    background: var(--surface-pressed);
-}
-
-.happy-work-floaty__identity {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
-}
-
-.happy-work-floaty__name {
-    color: var(--text);
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 16px;
-}
-
-.happy-work-floaty__detail {
-    font-size: 11px;
-    line-height: 16px;
-}
-
-.happy-work-floaty__mark {
-    display: block;
-    flex: none;
-    width: 20px;
-    height: 20px;
-    object-fit: contain;
-}
-
-.happy-work-floaty__history-toggle,
 .happy-conversation-summary__toggle {
     display: flex;
     align-items: center;
@@ -229,4 +155,28 @@
 .happy-tabs__tab-icon:has(> .happy-tabs__image-mark) {
     width: 20px;
     height: 20px;
+}
+
+/* A changed file's diff fills its tab: the tab names the file, so the diff starts at once. */
+.happy-file-change-diff {
+    flex: 1 1 0%;
+    min-width: 0;
+    min-height: 0;
+}
+
+.happy-file-change-diff__viewport {
+    padding: 12px;
+}
+
+.happy-work-tab-controls {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Pressed while the floaty shows, as a hovered ghost button looks. */
+.happy-work-tab-controls__toggle[aria-pressed="true"] {
+    background: var(--surface-ripple);
+    color: var(--text);
 }

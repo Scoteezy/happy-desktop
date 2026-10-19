@@ -1,0 +1,160 @@
+/*
+ * The work floaty: a fixed 280px card of sidebar rows. It never takes its
+ * content's width, so nothing in it moves when a row arrives or a count grows,
+ * and it grows downward with its rows up to its cap before scrolling inside.
+ */
+.happy-work-floaty {
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-self: flex-start;
+    width: 280px;
+    max-height: 60%;
+    overflow: hidden;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-md);
+    background: var(--surface);
+}
+
+.happy-work-floaty[data-placement="overlay"] {
+    position: absolute;
+    z-index: 3;
+    top: 8px;
+    right: 12px;
+    box-shadow: 0 4px 16px var(--shadow-activity-card);
+}
+
+/* The scrollport takes the card's whole width, however short its rows are. */
+.happy-work-floaty > * {
+    flex: 1 1 auto;
+    width: 100%;
+    min-height: 0;
+}
+
+/* Outputs, then work, a half row apart. */
+.happy-work-floaty__content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 4px;
+}
+
+.happy-work-floaty__group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--happy-work-floaty-row-gap);
+}
+
+/* The sidebar row: its height, inset, lane, type, and fills. */
+.happy-work-floaty__row {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: var(--happy-work-floaty-row-height);
+    margin: 0;
+    padding: 0 var(--happy-panel-row-padding);
+    border: none;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+    text-align: left;
+    appearance: none;
+    cursor: pointer;
+    transition:
+        background-color 120ms ease,
+        color 120ms ease;
+}
+
+.happy-work-floaty__row:hover {
+    background: var(--surface-ripple);
+}
+
+.happy-work-floaty__row:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: -2px;
+}
+
+.happy-work-floaty__row[data-active] {
+    background: var(--surface-selected);
+    color: var(--text);
+}
+
+.happy-work-floaty__row[data-active] .happy-change-stats [data-tone="added"],
+.happy-work-floaty__row:focus-visible .happy-change-stats [data-tone="added"] {
+    color: var(--git-added-text);
+}
+
+.happy-work-floaty__row[data-active] .happy-change-stats [data-tone="deleted"],
+.happy-work-floaty__row:focus-visible .happy-change-stats [data-tone="deleted"] {
+    color: var(--git-removed-text);
+}
+
+/* History lists what is over, quieter than what is still going. */
+.happy-work-floaty__row[data-muted]:not([data-active]) .happy-work-floaty__label,
+.happy-work-floaty__row[data-muted]:not([data-active]) .happy-work-floaty__mark {
+    opacity: 0.6;
+}
+
+.happy-work-floaty__mark {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: var(--text-secondary);
+}
+
+.happy-work-floaty__label {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* One column for every row's ending, held against the row's right padding. */
+.happy-work-floaty__trailing {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: flex-end;
+    height: 18px;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.happy-work-floaty__meta {
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    line-height: 16px;
+    color: var(--text-secondary);
+}
+
+.happy-work-floaty__chevron {
+    display: flex;
+    color: var(--text-secondary);
+    transition: transform 120ms ease;
+}
+
+[aria-expanded="true"] > .happy-work-floaty__trailing > .happy-work-floaty__chevron {
+    transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-work-floaty__row,
+    .happy-work-floaty__chevron {
+        transition: none;
+    }
+}

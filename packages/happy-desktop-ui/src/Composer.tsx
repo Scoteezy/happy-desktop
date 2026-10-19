@@ -785,6 +785,10 @@ export function Composer(props: ComposerProps) {
         detectMention(event.currentTarget);
     };
     const onPaste = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
+        if (event.currentTarget.closest("[inert]")) {
+            event.preventDefault();
+            return;
+        }
         // Anything on the clipboard that arrived as a file is an attachment: a
         // screenshot, a PDF copied in Finder, a log someone dragged in. Text
         // pastes carry no files and fall through to the textarea untouched.
@@ -800,6 +804,7 @@ export function Composer(props: ComposerProps) {
      * drag alone rather than accepting it into nothing.
      */
     const dropAccepted = () => Boolean(props.onAttachmentsSelect) && !props.disabled;
+    const dropAvailable = () => dropAccepted() && !composerEl.current?.closest("[inert]");
     const attachDropped = (transfer: DataTransfer | null) => {
         const files = Array.from(transfer?.files ?? []);
         if (files.length > 0) props.onAttachmentsSelect?.(files);
@@ -811,7 +816,7 @@ export function Composer(props: ComposerProps) {
      * over the card, so it is also what raises the card's drop state.
      */
     const dragOverSurface = (event: ReactDragEvent<HTMLDivElement>) => {
-        if (!dropAccepted() || !dragCarriesFiles(event.dataTransfer)) return;
+        if (!dropAvailable() || !dragCarriesFiles(event.dataTransfer)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
         if (!dropActive) setDropActive(true);
@@ -831,7 +836,7 @@ export function Composer(props: ComposerProps) {
         if (!inside) setDropActive(false);
     };
     const dropOnSurface = (event: ReactDragEvent<HTMLDivElement>) => {
-        if (!dropAccepted() || !dragCarriesFiles(event.dataTransfer)) return;
+        if (!dropAvailable() || !dragCarriesFiles(event.dataTransfer)) return;
         event.preventDefault();
         setDropActive(false);
         attachDropped(event.dataTransfer);
@@ -851,7 +856,8 @@ export function Composer(props: ComposerProps) {
     useLayoutEffect(() => {
         if (!props.focusOnType || !dropAccepted()) return;
         const onDragOver = (event: DragEvent) => {
-            if (event.defaultPrevented || !dragCarriesFiles(event.dataTransfer)) return;
+            if (!dropAvailable() || event.defaultPrevented || !dragCarriesFiles(event.dataTransfer))
+                return;
             event.preventDefault();
             if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
             // Whatever the pointer is over, this composer is where the file will
@@ -872,7 +878,8 @@ export function Composer(props: ComposerProps) {
         };
         const onDrop = (event: DragEvent) => {
             setDropActive(false);
-            if (event.defaultPrevented || !dragCarriesFiles(event.dataTransfer)) return;
+            if (!dropAvailable() || event.defaultPrevented || !dragCarriesFiles(event.dataTransfer))
+                return;
             event.preventDefault();
             attachDropped(event.dataTransfer);
         };

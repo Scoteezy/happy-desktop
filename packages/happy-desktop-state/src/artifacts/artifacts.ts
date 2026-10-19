@@ -1,6 +1,9 @@
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import type { HappyAgentArtifactSiteOpening } from "../happyAgent/happyAgentHostServices.js";
+import type { HappyAgentSessionId } from "../happyAgent/happyAgentTypes.js";
+import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
+import { UserError } from "../types.js";
 import type { HappyAgentArtifactId } from "./artifactTypes.js";
 import {
     happyAgentArtifactCatalogStoreCreate,
@@ -54,6 +57,11 @@ export interface HappyAgentArtifacts {
     inline(): HappyAgentInlineArtifactsStore;
     /** The names of the people artifacts credit. */
     people(): HappyAgentArtifactPeopleStore;
+    /**
+     * Creates an empty Markdown artifact made in `agentId`'s conversation and
+     * resolves with its id. Rejects with a displayable `UserError`.
+     */
+    artifactCreate(agentId: HappyAgentSessionId): Promise<HappyAgentArtifactId>;
     [Symbol.dispose](): void;
 }
 
@@ -67,6 +75,7 @@ export interface HappyAgentArtifactsDeps {
         | "getArtifactFile"
         | "artifactFileUrl"
         | "deleteArtifact"
+        | "createArtifact"
         | "getUsers"
     >;
     readonly sync: HappyAgentSync;
@@ -158,6 +167,21 @@ export function happyAgentArtifactsCreate(deps: HappyAgentArtifactsDeps): HappyA
         },
         people() {
             return peopleOf().store;
+        },
+        async artifactCreate(agentId) {
+            if (disposed) throw new UserError("This Happy Agent is no longer connected.");
+            try {
+                const response = await deps.client.createArtifact({
+                    files: [{ path: "index.md", text: "" }],
+                    mutationId: globalThis.crypto.randomUUID(),
+                    source: { kind: "agent", agentId },
+                    title: "Untitled",
+                    type: "markdown",
+                });
+                return response.artifact.id as HappyAgentArtifactId;
+            } catch (error) {
+                throw happyAgentUserError(error);
+            }
         },
         [Symbol.dispose]() {
             if (disposed) return;

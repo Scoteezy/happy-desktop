@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { HappyAgentTodoListSnapshot, HappyAgentSurfaceTodoId } from "happy-desktop-state";
 import { AppShell, APP_SHELL_SIDEBAR_DEFAULT_WIDTH } from "../../src/AppShell";
-import { Button } from "../../src/Button";
 import { CodeBlock } from "../../src/CodeBlock";
 import { CommandPalette } from "../../src/CommandPalette";
 import { CommandPaletteResults } from "../../src/CommandPaletteResults";
@@ -14,7 +13,8 @@ import { Sidebar, type SidebarItem } from "../../src/Sidebar";
 import { TabbedPane } from "../../src/TabbedPane";
 import type { TabItem } from "../../src/Tabs";
 import { ThemeScope } from "../../src/ThemeScope";
-import { WorkFloaty, type WorkFloatyItem } from "../../src/WorkFloaty";
+import { WorkFloaty, type WorkFloatyRow } from "../../src/WorkFloaty";
+import { WorkTabControls } from "../../src/WorkTabControls";
 import { WorkTranscript, type WorkTranscriptRow } from "../../src/WorkTranscript";
 import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
@@ -26,6 +26,7 @@ import { dayFrameDetails } from "./personalDayFixtures";
 import { TidyDiffAnnotations } from "./TidyDiffAnnotations";
 import {
     redesignActive,
+    type RedesignFloatyItem,
     redesignCode,
     redesignComposer,
     redesignConnections,
@@ -434,7 +435,7 @@ function StoryWindow(props: StoryFrame) {
     const tabs = titleTabs
         .filter((tab) => !closedTabs.includes(tab.id))
         .map((tab) => (props.iconsOff ? { id: tab.id, label: tab.label } : tab));
-    const activeItems: readonly WorkFloatyItem[] =
+    const activeItems: readonly RedesignFloatyItem[] =
         scene === "release"
             ? [
                   {
@@ -473,16 +474,26 @@ function StoryWindow(props: StoryFrame) {
                             ? { ...item, detail: "Replying in this conversation" }
                             : item,
                   );
+    const floatyRow = (item: RedesignFloatyItem): WorkFloatyRow => ({
+        id: item.id,
+        label: item.label,
+        mark: { type: "icon", icon: item.kind === "helper" ? "agents" : "doc" },
+        ...(item.kind === "helper" && item.status === "running"
+            ? { trailing: { type: "working" as const, label: `${item.label} is working` } }
+            : {}),
+    });
     const floating = floatyOpen ? (
         <WorkFloaty
             open
-            activeItems={activeItems}
-            historyItems={redesignHistory.filter(
-                (item) => item.id !== "finished-research" || scene === "history",
-            )}
+            changes={[]}
+            artifacts={activeItems.filter((item) => item.kind === "artifact").map(floatyRow)}
+            agents={activeItems.filter((item) => item.kind === "helper").map(floatyRow)}
+            history={redesignHistory
+                .filter((item) => item.id !== "finished-research" || scene === "history")
+                .map(floatyRow)}
             historyExpanded={historyExpanded}
             onHistoryExpandedChange={setHistoryExpanded}
-            onItemOpen={open}
+            onRowOpen={open}
         />
     ) : undefined;
     const movieRows: readonly WorkTranscriptRow[] = [
@@ -734,6 +745,11 @@ function StoryWindow(props: StoryFrame) {
                             onClick: () => setSearchOpen(true),
                         }}
                         sidebarCollapsedAction={{ label: "Make Stuff (⌘N or ⌘T)", onClick: begin }}
+                        panelToggleAction={{
+                            open: panelOpen,
+                            onClick: () => setPanelOpen(!panelOpen),
+                        }}
+                        panelAnimated
                         sidebar={
                             <Sidebar
                                 activeItemId={mainId}
@@ -878,40 +894,10 @@ function StoryWindow(props: StoryFrame) {
                                     setOpenedContent(tabs.find((tab) => tab.id !== id)?.id);
                             }}
                             trailing={
-                                <>
-                                    <Button
-                                        aria-label={
-                                            floatyOpen ? "Hide task activity" : "Show task activity"
-                                        }
-                                        aria-expanded={floatyOpen}
-                                        icon="list"
-                                        iconOnly
-                                        size="small"
-                                        variant="ghost"
-                                        onClick={() => setFloatyOpen(!floatyOpen)}
-                                    />
-                                    <span
-                                        aria-hidden="true"
-                                        style={{
-                                            display: "flex",
-                                            width: 1,
-                                            height: 16,
-                                            background: "var(--divider)",
-                                        }}
-                                    />
-                                    <Button
-                                        aria-label={
-                                            panelOpen
-                                                ? "Hide secondary pane"
-                                                : "Show secondary pane"
-                                        }
-                                        icon={panelOpen ? "panel-collapse" : "panel-expand"}
-                                        iconOnly
-                                        size="small"
-                                        variant="ghost"
-                                        onClick={() => setPanelOpen(!panelOpen)}
-                                    />
-                                </>
+                                <WorkTabControls
+                                    floatyOpen={floatyOpen}
+                                    onFloatyOpenChange={setFloatyOpen}
+                                />
                             }
                         >
                             {content}

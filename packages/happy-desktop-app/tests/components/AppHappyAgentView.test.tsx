@@ -5,7 +5,9 @@ import type {
     HappyAgentConnectionStore,
     HappyAgentHost,
     HappyAgentModelStore,
+    HappyAgentPanelSnapshot,
     HappyAgentPanelStore,
+    HappyAgentPanelTabId,
     HappyAgentWorkspaceStore,
 } from "happy-desktop-state";
 import {
@@ -16,6 +18,7 @@ import {
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
 } from "happy-desktop-state";
 import {
+    workspaceCloseTargetFind,
     AppHappyAgentView,
     type AppHappyAgentDirectorySnapshot,
     type AppHappyAgentDirectoryStore,
@@ -260,4 +263,34 @@ it("lists one row per project and its sessions as tabs", () => {
     const tabs = [...container.querySelectorAll('[data-happy-desktop-ui="tab"]')];
     expect(tabs.map((tab) => tab.getAttribute("data-tab-id"))).toEqual(["ses_one"]);
     expect(tabs[0]?.textContent).toContain("Fix token rotation race");
+});
+
+/* Command-W follows the keyboard: a tab of the right pane while focus is in
+ * the pane, the main content's tab everywhere else. */
+it("routes Command-W to the focused pane", () => {
+    const terminal = "tab_1" as HappyAgentPanelTabId;
+    const pane = {
+        open: true,
+        filesViewOpen: true,
+        activeViewId: terminal,
+        tabs: [{ id: terminal, kind: "terminal", label: "Terminal 1", placement: "panel" }],
+    } as unknown as HappyAgentPanelSnapshot;
+
+    expect(workspaceCloseTargetFind("panel", pane, false)).toEqual({
+        type: "view",
+        viewId: terminal,
+    });
+    expect(workspaceCloseTargetFind("workspace", pane, false)).toEqual({ type: "main" });
+    expect(workspaceCloseTargetFind("panel", { ...pane, activeViewId: "files" }, false)).toEqual({
+        type: "view",
+        viewId: "files",
+    });
+    expect(
+        workspaceCloseTargetFind("panel", { ...pane, activeViewId: "artifacts" }, false),
+    ).toEqual({ type: "pane" });
+    // A closed pane, or one whose checkout is gone, leaves Command-W to the main content.
+    expect(workspaceCloseTargetFind("panel", { ...pane, open: false }, false)).toEqual({
+        type: "main",
+    });
+    expect(workspaceCloseTargetFind("panel", pane, true)).toEqual({ type: "main" });
 });

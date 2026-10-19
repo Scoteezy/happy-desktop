@@ -15,6 +15,7 @@
 @import "./styles/diff-snippet.css";
 @import "./styles/title-bar.css";
 @import "./styles/rail.css";
+@import "./styles/change-stats.css";
 @import "./styles/sidebar.css";
 @import "./styles/sidebar-spaces.css";
 @import "./styles/app-shell.css";
@@ -177,3 +178,4 @@
 @import "./styles/system-monitor.css";
 @import "./styles/dither-chart.css";
 @import "./styles/work-story.css";
+@import "./styles/work-floaty.css";

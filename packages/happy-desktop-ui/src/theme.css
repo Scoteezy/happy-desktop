@@ -130,6 +130,7 @@
     --shadow-rail: rgb(0 0 0 / 28%);
     --shadow-floating: rgb(0 0 0 / 0.45);
     --shadow-elevated: rgb(0 0 0 / 0.5);
+    --shadow-activity-card: rgb(0 0 0 / 0.08);
     --overlay-backdrop: rgb(15 15 15 / 0.75);
     --overlay-panel: rgb(0 0 0 / 0.48);
     --groupped-background: #f5f5f5;
@@ -362,6 +363,7 @@
         --shadow-rail: rgb(0 0 0 / 28%);
         --shadow-floating: rgb(0 0 0 / 0.45);
         --shadow-elevated: rgb(0 0 0 / 0.5);
+        --shadow-activity-card: rgb(0 0 0 / 0.5);
         --overlay-backdrop: rgb(15 15 15 / 0.75);
         --overlay-panel: rgb(0 0 0 / 0.48);
         --groupped-background: #1e1e1e;
@@ -547,6 +549,7 @@
     --shadow-rail: rgb(0 0 0 / 28%);
     --shadow-floating: rgb(0 0 0 / 0.45);
     --shadow-elevated: rgb(0 0 0 / 0.5);
+    --shadow-activity-card: rgb(0 0 0 / 0.5);
     --overlay-backdrop: rgb(15 15 15 / 0.75);
     --overlay-panel: rgb(0 0 0 / 0.48);
     --groupped-background: #1e1e1e;

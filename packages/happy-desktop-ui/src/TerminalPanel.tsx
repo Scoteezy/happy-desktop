@@ -140,13 +140,27 @@ export function TerminalPanel(props: TerminalPanelProps) {
     // Terminal autofocus is a mount/visibility concern, never a response to an
     // unrelated ChatPage render. Otherwise a freshly allocated callback prop
     // would steal the composer's focus whenever its draft changes.
+    //
+    // A terminal opened by the reader starts out connecting, which is read-only,
+    // so the focus it owes them is held until it can take input — unless they
+    // have put the keyboard somewhere else in the meantime.
+    const focusOwed = useRef<"now" | "held" | undefined>("now");
     const inputFocus = useEffectEvent(() => {
-        if (!readOnly) input.current?.focus({ preventScroll: true });
+        if (focusOwed.current === undefined) return;
+        if (readOnly) {
+            focusOwed.current = "held";
+            return;
+        }
+        const held = focusOwed.current === "held";
+        focusOwed.current = undefined;
+        const owner = input.current?.ownerDocument.activeElement;
+        if (held && owner && owner !== owner.ownerDocument.body) return;
+        input.current?.focus({ preventScroll: true });
     });
-    // eslint-disable-next-line happy-react/no-layout-effect -- move real keyboard focus to the capture field on mount
+    // eslint-disable-next-line happy-react/no-layout-effect -- move real keyboard focus to the capture field on mount, or once it first accepts input
     useLayoutEffect(() => {
         if (!collapsed) inputFocus();
-    }, [collapsed]);
+    }, [collapsed, readOnly]);
     // A Happy Agent outage can begin while its terminal owns keyboard capture. Release
     // that invisible field immediately without disturbing selection in the
     // retained grid, and do not steal focus back merely because the route heals.
