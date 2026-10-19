@@ -23,6 +23,11 @@ export interface SplashCoverProps {
      * but a start the person has already been through is not announced again.
      */
     readonly quiet?: boolean;
+    /**
+     * Read once, when the cover mounts: the window has already started, so there
+     * is nothing to cover and no dissolve to play.
+     */
+    readonly uncovered?: boolean;
     readonly children: ReactNode;
 }
 
@@ -49,29 +54,32 @@ export interface SplashCoverProps {
 export function SplashCover(props: SplashCoverProps) {
     // Three states, in the only order they can occur: covering the window,
     // fading off it, and gone. `finished` is what makes this one-way.
-    const [finished, setFinished] = useState(false);
-    if (finished) return <>{props.children}</>;
+    const [finished, setFinished] = useState(props.uncovered === true);
+    // The app keeps the same place in the tree through all three, so removing the
+    // veil never unmounts and remounts the app it has just faded off.
     return (
         <div className="happy-splash-cover" data-happy-desktop-ui="splash-cover">
             {/* Mounted underneath from the first frame of the fade, so the app
                 is already laid out and painted by the time it is visible. */}
-            {props.ready ? props.children : null}
-            <div
-                className="happy-splash-cover__veil"
-                data-happy-desktop-ui="splash-cover-veil"
-                data-leaving={props.ready ? "" : undefined}
-                onAnimationEnd={() => {
-                    if (props.ready) setFinished(true);
-                }}
-            >
-                {props.quiet ? null : (
-                    <SplashScreen
-                        note={props.note}
-                        steps={props.steps}
-                        stepsLabel={props.stepsLabel}
-                    />
-                )}
-            </div>
+            {props.ready || finished ? props.children : null}
+            {finished ? null : (
+                <div
+                    className="happy-splash-cover__veil"
+                    data-happy-desktop-ui="splash-cover-veil"
+                    data-leaving={props.ready ? "" : undefined}
+                    onAnimationEnd={() => {
+                        if (props.ready) setFinished(true);
+                    }}
+                >
+                    {props.quiet ? null : (
+                        <SplashScreen
+                            note={props.note}
+                            steps={props.steps}
+                            stepsLabel={props.stepsLabel}
+                        />
+                    )}
+                </div>
+            )}
         </div>
     );
 }

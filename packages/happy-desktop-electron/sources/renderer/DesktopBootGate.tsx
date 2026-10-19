@@ -149,12 +149,14 @@ export function DesktopBootGate(props: {
         props.onboarding.get,
         props.onboarding.get,
     );
-    if (booted) return <>{props.children}</>;
+    // One element whether or not the window has booted, so latching the boot
+    // never remounts the app below it.
+    const uncovered = booted;
     const local = directory.happyAgents.filter((entry) => entry.id === "local");
-    const ready = bootReady(runtime, local, setup.onboarding);
+    const ready = booted || bootReady(runtime, local, setup.onboarding);
     if (ready) booted = true;
     return (
-        <SplashCover quiet ready={ready}>
+        <SplashCover quiet ready={ready} uncovered={uncovered}>
             {props.children}
         </SplashCover>
     );
