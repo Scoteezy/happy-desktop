@@ -81,6 +81,8 @@ const MAXIMUM_RECONNECT_MS = 5_000;
  */
 const REPLACEMENT_RECONNECT_WINDOW_MS = 2 * 60_000;
 const DEFAULT_HISTORY_LIMIT = 100;
+/** Sessions loaded ahead of an open and never opened that stay cached; older ones are dropped. */
+const PREFETCHED_SESSION_LIMIT = 6;
 const GIT_WATCH_RENEW_MS = 2 * 60 * 1000;
 const RECENT_EVENT_RETENTION_MS = 60_000;
 const SNAPSHOT_RESPONSE_TIMEOUT_MS = 60_000;
@@ -1182,6 +1184,47 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         if (entry.loading !== undefined) return entry.loading;
         if (entry.historyLoaded && !entry.reconcileRequired) return Promise.resolve();
         return requestSessionLoad(entry);
+    };
+
+    /** Sessions loaded ahead of an open by `prefetchSession` and not opened since, oldest first. */
+    const prefetchedSessions = new Set<string>();
+
+    const sessionEntryCreate = (sessionId: string): SessionEntry => {
+        const entry: SessionEntry = {
+            id: sessionId,
+            store: new ChatStore(sessionId),
+            subscribers: new Set(),
+            messages: new Map(),
+            userIds: new Set(),
+            messageBlockOffsets: new Map(),
+            runs: new Map(),
+            runFinalContextTokens: new Map(),
+            hasMore: false,
+            loading: undefined,
+            historyLoaded: false,
+            loadRequestedRevision: 0,
+            loadCompletedRevision: 0,
+            loadRetry: undefined,
+            loadRetryMs: INITIAL_RECONNECT_MS,
+            loadingMore: false,
+            hydrating: false,
+            bufferedEvents: [],
+            activityLoading: undefined,
+            activityRevision: 0,
+            reconcileRequired: false,
+            corruptedMessageIds: new Set(),
+            questionRecovery: undefined,
+            slashCommands: [],
+        };
+        const known = agentOf(sessionId);
+        if (known !== undefined) {
+            entry.agent = known;
+            entry.workspace = workspaceOf(known.workspaceId);
+            entry.draft = agentDrafts.get(sessionId);
+            entry.mode = agentModes.get(sessionId);
+        }
+        sessions.set(sessionId, entry);
+        return entry;
     };
 
     const resync = (reconcileSessions: boolean): Promise<void> => {
@@ -2964,45 +3007,32 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 },
             };
         },
+        prefetchSession(sessionId) {
+            if (closed) return;
+            const known = sessions.get(sessionId);
+            if (known !== undefined) {
+                // Already cached: only a cache a lost cursor made stale is read again.
+                void ensureSessionLoaded(known);
+                return;
+            }
+            const entry = sessionEntryCreate(sessionId);
+            prefetchedSessions.add(sessionId);
+            // Keep only the newest few that were never opened; one that is still
+            // loading stays until its read lands rather than being read twice.
+            for (const oldest of prefetchedSessions) {
+                if (prefetchedSessions.size <= PREFETCHED_SESSION_LIMIT) break;
+                const stale = sessions.get(oldest);
+                if (stale !== undefined && stale.loading !== undefined) continue;
+                prefetchedSessions.delete(oldest);
+                if (stale !== undefined && stale.subscribers.size === 0) sessions.delete(oldest);
+            }
+            void ensureSessionLoaded(entry);
+        },
         connectSession(subscription) {
             if (closed) throw new Error("This Happy Agent connection is closed.");
-            let entry = sessions.get(subscription.sessionId);
-            if (entry === undefined) {
-                entry = {
-                    id: subscription.sessionId,
-                    store: new ChatStore(subscription.sessionId),
-                    subscribers: new Set(),
-                    messages: new Map(),
-                    userIds: new Set(),
-                    messageBlockOffsets: new Map(),
-                    runs: new Map(),
-                    runFinalContextTokens: new Map(),
-                    hasMore: false,
-                    loading: undefined,
-                    historyLoaded: false,
-                    loadRequestedRevision: 0,
-                    loadCompletedRevision: 0,
-                    loadRetry: undefined,
-                    loadRetryMs: INITIAL_RECONNECT_MS,
-                    loadingMore: false,
-                    hydrating: false,
-                    bufferedEvents: [],
-                    activityLoading: undefined,
-                    activityRevision: 0,
-                    reconcileRequired: false,
-                    corruptedMessageIds: new Set(),
-                    questionRecovery: undefined,
-                    slashCommands: [],
-                };
-                const known = agentOf(subscription.sessionId);
-                if (known !== undefined) {
-                    entry.agent = known;
-                    entry.workspace = workspaceOf(known.workspaceId);
-                    entry.draft = agentDrafts.get(subscription.sessionId);
-                    entry.mode = agentModes.get(subscription.sessionId);
-                }
-                sessions.set(subscription.sessionId, entry);
-            }
+            prefetchedSessions.delete(subscription.sessionId);
+            const entry =
+                sessions.get(subscription.sessionId) ?? sessionEntryCreate(subscription.sessionId);
             const wasInactive = entry.subscribers.size === 0;
             const subscriber: SessionSubscriber = { ...subscription, closed: false };
             entry.subscribers.add(subscriber);

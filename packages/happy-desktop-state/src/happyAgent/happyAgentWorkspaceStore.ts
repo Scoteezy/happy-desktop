@@ -1471,6 +1471,11 @@ export interface HappyAgentWorkspaceStore {
      */
     conversationOpen(conversationId: HappyAgentSessionId, groupId?: HappyAgentGroupId): void;
     /**
+     * The reader is likely to open this conversation next, such as by pointing at its row: load
+     * it ahead so that opening it shows it at once. Only a hint; nothing visible changes.
+     */
+    conversationPrefetch(conversationId: HappyAgentSessionId): void;
+    /**
      * Applies an addressed group that holds no conversation, giving it a composer
      * whose first submission starts one. Releases any open conversation, since
      * the URL now names a group rather than a conversation.
@@ -6707,6 +6712,8 @@ export function happyAgentWorkspaceStoreCreate(
                 if (listeners.size === 0) stop();
             };
         },
+
+        conversationPrefetch: (conversationId) => client.chatPrefetch(conversationId),
 
         conversationOpen: (conversationId, groupId) => {
             addressApply(groupId, conversationId);

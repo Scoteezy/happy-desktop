@@ -2665,6 +2665,43 @@ function chatRowParse(rowId: string): string | undefined {
     return rowId.startsWith(CHAT_ROW_PREFIX) ? rowId.slice(CHAT_ROW_PREFIX.length) : undefined;
 }
 
+/**
+ * Where selecting one of a Happy Agent's sidebar rows goes: the group it addresses and the
+ * conversation that opens there, if any. Nothing for a chat filed nowhere any more or a bot still
+ * being made.
+ */
+function rowDestination(
+    happyAgent: AppHappyAgentEntry,
+    rowId: string,
+): { readonly groupId: string; readonly chatId: string | undefined } | undefined {
+    const chatId = chatRowParse(rowId);
+    if (chatId !== undefined) {
+        const groupId = chatGroupFind(happyAgent.projects, chatId);
+        return groupId === undefined ? undefined : { groupId, chatId };
+    }
+    const subtask = happyAgentBotSubtasks([...happyAgent.bots, ...(happyAgent.tasks ?? [])]).find(
+        (task) => task.conversation.id === rowId,
+    );
+    if (subtask) return { groupId: subtask.workspaceId, chatId: subtask.conversation.id };
+    const task = happyAgent.tasks?.find((entry) => entry.workspaceId === rowId);
+    if (task) return { groupId: task.workspaceId, chatId: task.conversation.id };
+    const bot = happyAgent.bots.find((entry) => entry.workspaceId === rowId);
+    if (bot) return { groupId: bot.workspaceId, chatId: bot.conversation.id };
+    // A bot still being made has no conversation to go to yet. The
+    // window follows it on its own the moment the host answers.
+    if (happyAgent.botsCreating?.some((entry) => entry.workspaceId === rowId)) return undefined;
+    return {
+        groupId: rowId,
+        // A workspace that has not recorded where this project was
+        // left falls back to its most recent conversation, which is
+        // also what a workspace without the memory at all does.
+        chatId:
+            happyAgent.session?.workspace.get().groupResume?.get(rowId as HappyAgentGroupId) ??
+            openGroupFind(happyAgent.projects, happyAgent.bots, happyAgent.tasks ?? [], rowId)
+                ?.conversations[0]?.id,
+    };
+}
+
 /** The project or worktree a chat is filed under, by its id. */
 function chatGroupFind(
     projects: readonly HappyAgentProjectGroup[],
@@ -3754,48 +3791,22 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     props.onSurfaceOpen?.(happyAgent.id, surfaceId);
                     return;
                 }
-                const chatId = chatRowParse(row.id);
-                if (chatId !== undefined) {
-                    const groupId = chatGroupFind(happyAgent.projects, chatId);
-                    if (groupId !== undefined) props.onChatSelect(happyAgent.id, groupId, chatId);
+                const destination = rowDestination(happyAgent, row.id);
+                if (destination)
+                    props.onChatSelect(happyAgent.id, destination.groupId, destination.chatId);
+            }}
+            // Pointing at a row loads the conversation it would open, so that
+            // selecting it shows the conversation at once.
+            onItemIntent={(id) => {
+                const row = happyAgentItemParse(id);
+                const happyAgent = happyAgentOf(row.happyAgentId);
+                if (happyAgent?.status !== "connected" || surfaceRowParse(row.id) !== undefined)
                     return;
-                }
-                const groupId = row.id as HappyAgentGroupId;
-                const subtask = happyAgentBotSubtasks([
-                    ...happyAgent.bots,
-                    ...(happyAgent.tasks ?? []),
-                ]).find((task) => task.conversation.id === row.id);
-                if (subtask) {
-                    props.onChatSelect(happyAgent.id, subtask.workspaceId, subtask.conversation.id);
-                    return;
-                }
-                const task = happyAgent.tasks?.find((entry) => entry.workspaceId === row.id);
-                if (task) {
-                    props.onChatSelect(happyAgent.id, task.workspaceId, task.conversation.id);
-                    return;
-                }
-                const bot = happyAgent.bots.find((entry) => entry.workspaceId === row.id);
-                if (bot) {
-                    props.onChatSelect(happyAgent.id, bot.workspaceId, bot.conversation.id);
-                    return;
-                }
-                // A bot still being made has no conversation to go to yet. The
-                // window follows it on its own the moment the host answers.
-                if (happyAgent.botsCreating?.some((entry) => entry.workspaceId === row.id)) return;
-                props.onChatSelect(
-                    happyAgent.id,
-                    row.id,
-                    // A workspace that has not recorded where this project was
-                    // left falls back to its most recent conversation, which is
-                    // also what a workspace without the memory at all does.
-                    happyAgent.session?.workspace.get().groupResume?.get(groupId) ??
-                        openGroupFind(
-                            happyAgent.projects,
-                            happyAgent.bots,
-                            happyAgent.tasks ?? [],
-                            row.id,
-                        )?.conversations[0]?.id,
-                );
+                const chatId = rowDestination(happyAgent, row.id)?.chatId;
+                if (chatId !== undefined)
+                    happyAgent.session?.workspace.conversationPrefetch(
+                        chatId as HappyAgentSessionId,
+                    );
             }}
             onItemAction={(id) => {
                 const row = happyAgentItemParse(id);

@@ -436,6 +436,7 @@ export function happyAgentConnectionOpen(input: {
         profileSource: profile.source,
         providerUsageSource: happyAgentUsageSourceCreate(directClient, agentConnection.sync),
         transcriptConnect: happyAgentTranscriptConnectCreate(agentConnection),
+        transcriptPrefetch: (sessionId) => agentConnection.prefetchSession(sessionId),
         connectMutationSubscribe: (listener) => {
             mutationListeners.add(listener);
             return () => mutationListeners.delete(listener);

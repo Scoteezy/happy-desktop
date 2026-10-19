@@ -965,6 +965,12 @@ export interface HappyAgentConnection {
     /** Interrupts the managed update feed or startup wait so reconnection starts immediately. */
     retry: () => void;
     connectSession: (options: HappyAgentSessionSubscriptionOptions) => HappyAgentSessionConnection;
+    /**
+     * Loads one session ahead of a likely open, so connecting to it then shows its transcript at
+     * once. Only a hint: nothing is marked read and nobody is notified. Sessions loaded this way
+     * and never opened are kept only a few at a time.
+     */
+    prefetchSession: (sessionId: string) => void;
     connectGroups: (options: HappyAgentGroupsSubscriptionOptions) => HappyAgentGroupsConnection;
     projects: {
         add(path: string, options?: ProjectAddOptions): Promise<Project>;

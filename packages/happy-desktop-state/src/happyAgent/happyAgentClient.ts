@@ -343,6 +343,8 @@ export interface HappyAgentWorkspaceClient {
      * recent-chat cache disposes released stores when the live-store limit is exceeded.
      */
     chat(sessionId: HappyAgentSessionId): Promise<HappyAgentChatHandle>;
+    /** Loads a session ahead of a likely `chat` acquisition, so that one opens at once. Only a hint. */
+    chatPrefetch(sessionId: HappyAgentSessionId): void;
     /** Stops background synchronization for an archived chat; its store remains subject to the bounded cache. */
     chatArchive(sessionId: HappyAgentSessionId): void;
     /** Lets a restored chat resume background synchronization when it is acquired again. */
@@ -400,6 +402,8 @@ export interface HappyAgentWorkspaceClientDeps {
     readonly profilePhotoCodec?: HappyAgentProfilePhotoCodec;
     /** Opens the core transcript stream for one materialized chat. */
     readonly transcriptConnect: HappyAgentChatTranscriptConnect;
+    /** Loads one session's transcript ahead of a likely open; see `chatPrefetch`. */
+    readonly transcriptPrefetch?: (sessionId: HappyAgentSessionId) => void;
     /** Maximum number of leased chat stores that may keep a live transcript subscription. */
     readonly maxLiveChatSubscriptions?: number;
     /** Terminal failures emitted by the shared Happy Agent mutation authority. */
@@ -951,6 +955,10 @@ export function happyAgentWorkspaceClientCreate(
                     }
                 },
             };
+        },
+        chatPrefetch(sessionId) {
+            if (disposed || chats.get(sessionId)?.count) return;
+            deps.transcriptPrefetch?.(sessionId);
         },
         chatArchive(sessionId) {
             const binding = chats.get(sessionId);

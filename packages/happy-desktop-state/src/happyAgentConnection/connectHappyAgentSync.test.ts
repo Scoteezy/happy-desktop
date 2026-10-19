@@ -1242,6 +1242,57 @@ it("reopens a session that streamed while unwatched without reading its history 
     expect(daemon.callCount("getMessages")).toBe(loads);
 });
 
+it("opens a prefetched session with its transcript already there, reading history once", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a" });
+    daemon.historySet(agent.id, [
+        fakeRun({
+            id: "r1",
+            status: "completed",
+            endedAt: 2,
+            messages: [fakeUserMessage({ id: "m1", content: [{ type: "text", text: "earlier" }] })],
+        }),
+    ]);
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+
+    connection.prefetchSession(agent.id);
+    connection.prefetchSession(agent.id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    // The first snapshot a reader gets is the loaded transcript, not a loading one.
+    const reopened = sessionWatch(connection, agent.id);
+    expect(reopened.session?.historyLoading).not.toBe(true);
+    expect(userMessages(reopened.elements).map((element) => element.text)).toEqual(["earlier"]);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(daemon.callCount("getMessages")).toBe(1);
+});
+
+it("keeps only the newest few prefetched sessions that were never opened", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const ids = Array.from(
+        { length: 8 },
+        (_, index) => daemon.agentSeed(project.id, { id: `agent-${String(index)}` }).id,
+    );
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+
+    for (const [index, id] of ids.entries()) {
+        connection.prefetchSession(id);
+        await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(index + 1));
+        await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    // The oldest were dropped, so opening one reads it again; a recent one is still cached.
+    sessionWatch(connection, ids[0]!);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(ids.length + 1));
+    sessionWatch(connection, ids.at(-1)!);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(daemon.callCount("getMessages")).toBe(ids.length + 1);
+});
+
 // --- lost cursor and full resync -------------------------------------------
 
 it("resyncs the catalog and every open chat when the hello reports a cursor gap", async () => {

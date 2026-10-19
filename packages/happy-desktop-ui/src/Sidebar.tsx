@@ -411,6 +411,11 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
         onSubmit: (item: SidebarItem, name: string) => void;
     };
     onItemSelect: (id: string) => void;
+    /**
+     * The reader is likely to select this row next: the pointer settled on it or pressed it. Only
+     * a hint, for loading what the row opens ahead of time; nothing visible should change.
+     */
+    onItemIntent?: (id: string) => void;
     /** Invoked when a row's trailing `action` control is used. */
     onItemAction?: (id: string) => void;
     /** Invoked when a row's name-side `secondaryAction` control is used. */
@@ -569,6 +574,11 @@ function shortcutRowsOf(
 
 /** Pointer travel, in px, before a press becomes a drag instead of a selection. */
 const DRAG_THRESHOLD = 4;
+/**
+ * How long the pointer rests on a row before it counts as an intent to open it. Long enough that
+ * sweeping across the list reports nothing, short against the time a reader takes to click.
+ */
+const ROW_INTENT_DWELL_MS = 60;
 
 /**
  * The list the pinned `actions` are arranged in. They are not a section — they
@@ -1072,6 +1082,9 @@ interface SidebarRowHandlers {
     readonly action: (key: string) => void;
     readonly collapseToggle: (key: string) => void;
     readonly contextMenu: (item: SidebarItem, event: MouseEvent<HTMLElement>) => void;
+    /** The pointer entered (`now` false) or pressed (`now` true) a row. */
+    readonly intent: (id: string, now: boolean) => void;
+    readonly intentCancel: () => void;
     readonly keyDown: (key: string, event: ReactKeyboardEvent<HTMLElement>) => void;
     readonly node: (key: string, node: HTMLElement | null) => void;
     readonly pointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -1129,6 +1142,8 @@ const SidebarListRow = memo(function SidebarListRow({
             }
             onRenameRequest={canRename ? () => handlers.renameRequest(rowId) : undefined}
             onContextMenu={handlers.contextMenu}
+            onIntent={(now) => handlers.intent(rest.item.id, now)}
+            onIntentCancel={handlers.intentCancel}
             onKeyDown={rest.reorderable ? (event) => handlers.keyDown(rowId, event) : undefined}
             onPointerDown={
                 rest.reorderable ? (event) => handlers.pointerDown(rowId, event) : undefined
@@ -1163,6 +1178,9 @@ function SidebarRow({
     /** Which end of the row reports work. See `SidebarProps.activityPlacement`. */
     activityPlacement?: SidebarActivityPlacement;
     onContextMenu?: (item: SidebarItem, event: MouseEvent<HTMLElement>) => void;
+    /** See `SidebarRowHandlers.intent`. */
+    onIntent?: (now: boolean) => void;
+    onIntentCancel?: () => void;
     onKeyDown?: (event: ReactKeyboardEvent<HTMLElement>) => void;
     /** The gesture was taken away rather than finished; nothing is reported. */
     onPointerCancel?: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -1483,7 +1501,16 @@ function SidebarRow({
                 }
                 props.onKeyDown?.(event);
             }}
-            onPointerDown={props.onPointerDown}
+            onPointerEnter={props.onIntent ? () => props.onIntent?.(false) : undefined}
+            onPointerLeave={props.onIntentCancel}
+            onPointerDown={
+                props.onIntent || props.onPointerDown
+                    ? (event) => {
+                          props.onIntent?.(true);
+                          props.onPointerDown?.(event);
+                      }
+                    : undefined
+            }
             onPointerMove={props.onPointerMove}
             onPointerCancel={props.onPointerCancel}
             /* The capture is released by the drop itself, so this only fires
@@ -1835,6 +1862,7 @@ export function Sidebar(props: SidebarProps) {
         "onHeaderAction",
         "onCompose",
         "onItemSelect",
+        "onItemIntent",
         "onItemAction",
         "onItemSecondaryAction",
         "onItemMenuSelect",
@@ -1947,6 +1975,7 @@ export function Sidebar(props: SidebarProps) {
     // Set by a drag that actually moved, so the click the browser fires on
     // release rearranges rather than also opening what was dragged.
     const dragClick = useRef(false);
+    const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const [dragPaint, setDragPaint] = useState<{ listId: SidebarListId; drag: SidebarDrag }>();
     const dragSet = (next: { listId: SidebarListId; drag: SidebarDrag } | undefined): void => {
         dragRef.current = next;
@@ -2479,6 +2508,14 @@ export function Sidebar(props: SidebarProps) {
                     latest().local.onItemCollapseToggle?.(item.id),
                 ),
             contextMenu: (item, event) => latest().openItemMenu(item, event),
+            // One row can be pointed at at a time, so one timer serves the list.
+            intent: (id, now) => {
+                clearTimeout(intentTimer.current);
+                const report = () => latest().local.onItemIntent?.(id);
+                if (now) report();
+                else intentTimer.current = setTimeout(report, ROW_INTENT_DWELL_MS);
+            },
+            intentCancel: () => clearTimeout(intentTimer.current),
             keyDown: (key, event) =>
                 void latest().act(key, ({ index, items, listId }) =>
                     latest().moveByKey(event, listId, items, index),
