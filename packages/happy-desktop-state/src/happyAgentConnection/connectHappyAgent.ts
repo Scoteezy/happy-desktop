@@ -79,6 +79,8 @@ const DEFAULT_HISTORY_LIMIT = 100;
 const GIT_WATCH_RENEW_MS = 2 * 60 * 1000;
 const RECENT_EVENT_RETENTION_MS = 60_000;
 const SNAPSHOT_RESPONSE_TIMEOUT_MS = 60_000;
+/** How long a timestamp-only agent version may wait before it is announced. */
+const QUIET_AGENT_PUBLISH_MS = 1_000;
 
 /**
  * The desktop bootstrap as a current daemon serves it: beside the owners and their active
@@ -765,6 +767,13 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     };
 
     const replaceAgent = (agent: Agent): void => {
+        storeAgent(agent);
+        announceAgent(agent);
+        publishGroups();
+    };
+
+    /** Keeps one agent version everywhere this connection holds it, without telling anyone. */
+    const storeAgent = (agent: Agent): void => {
         groupsStore.setState((current) => ({
             workspaces: current.workspaces.map((workspace) => ownerAgentReplace(workspace, agent)),
             projects: current.projects.map((project) => ownerAgentReplace(project, agent)),
@@ -785,8 +794,13 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         if (entry !== undefined) {
             entry.agent = agent;
             entry.workspace = workspaceOf(agent.workspaceId);
-            publishSession(entry);
         }
+    };
+
+    /** Publishes the stored agent to its own session and to every parent that lists it. */
+    const announceAgent = (agent: Agent): void => {
+        const entry = sessions.get(agent.id);
+        if (entry !== undefined) publishSession(entry);
         // Activity is a one-time snapshot followed by the same versioned agent
         // events as the catalog. Keep parent views current from that stream
         // instead of re-reading the entire activity endpoint after child work.
@@ -801,7 +815,36 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             });
             publishSession(parent);
         }
-        publishGroups();
+    };
+
+    /**
+     * Agents stored since their last publication with nothing changed but `updatedAt`.
+     *
+     * While a provider streams, the daemon versions the agent once per delta and the only
+     * field that moves is its timestamp. Each such version is stored at once, so the version
+     * chain and every read stay exact, but announcing it would re-project and re-render every
+     * session row for nothing a reader can see. They are announced together, at most once a
+     * second; any other change to the agent announces it immediately.
+     */
+    const quietAgentIds = new Set<string>();
+    let quietPublishTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const quietAgentStore = (agent: Agent): void => {
+        storeAgent(agent);
+        quietAgentIds.add(agent.id);
+        quietPublishTimer ??= setTimeout(quietAgentsPublish, QUIET_AGENT_PUBLISH_MS);
+    };
+
+    const quietAgentsPublish = (): void => {
+        quietPublishTimer = undefined;
+        if (closed) return;
+        const ids = [...quietAgentIds];
+        quietAgentIds.clear();
+        for (const id of ids) {
+            const agent = agentOf(id);
+            if (agent !== undefined) announceAgent(agent);
+        }
+        if (ids.length > 0) publishGroups();
     };
 
     const adoptAgent = (agent: Agent): boolean => {
@@ -1722,14 +1765,22 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     return;
                 }
                 untrackedAgents.delete(event.payload.agentId);
+                // A redelivery of the version already held, often the one a mutation response
+                // adopted first, is no gap.
+                if (current.version === event.payload.version) return;
                 if (current.version !== event.payload.previousVersion) {
                     refetchAgent(event.payload.agentId);
                     return;
                 }
-                replaceAgent({
+                const next = {
                     ...applyChanges(current, event.payload.changes),
                     version: event.payload.version,
-                });
+                };
+                if (agentChangesOnlyTimestamp(current, event.payload.changes)) {
+                    quietAgentStore(next);
+                    return;
+                }
+                replaceAgent(next);
                 return;
             }
             case "agent.context.updated": {
@@ -4224,6 +4275,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             retryWake = undefined;
             for (const pending of pendingDraftSaves.values()) clearTimeout(pending.timer);
             pendingDraftSaves.clear();
+            if (quietPublishTimer !== undefined) clearTimeout(quietPublishTimer);
             publishConnection("closed");
             groupSubscribers.clear();
             for (const entry of sessions.values()) entry.subscribers.clear();
@@ -4570,6 +4622,13 @@ function taskMembershipsReplace(
     const next = [...memberships];
     next[index] = membership;
     return next;
+}
+
+/** Whether an agent update moves nothing but its `updatedAt`. */
+function agentChangesOnlyTimestamp(agent: Agent, changes: Partial<Agent>): boolean {
+    return Object.entries(changes).every(
+        ([key, value]) => key === "updatedAt" || Object.is(agent[key as keyof Agent], value),
+    );
 }
 
 function agentIdOfEvent(event: HappyAgentEvent): string | undefined {
