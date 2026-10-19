@@ -50,6 +50,18 @@ Also safe space for the traffic lights — should be scaled when zoom in / zoom
 out is done — we don't want stuff to start colliding with the native buttons
 when we are changing zoom.
 
+Also let's add a search icon next to the left side bar close / open toggle.
+
+When collapsed — the + Make Stuff button should move to the right of both the
+side bar toggle and the search — which both visually need to stay exactly in
+place.
+
+```
+Collapsed:  ● ● ●   [=] [⌕] [+]         SPACE - shrink -             │ tabs…
+```
+
+In collapsed the spacing needs to be shrunk.
+
 ## Remove the top level header
 
 One of the goals — remove the top level header — as it's either duplicative or
@@ -89,6 +101,45 @@ Artefacts, other surfaces — can also appear in this hierarchy as top level
 items — not sure if this is currently possible in folders / tasks / bots — but
 the idea is to unify the hierarchy & kinda disconnect it from what is actually
 happening under the hood.
+
+Projects / bots sections? Why? I want more around tasks — sections grouped more
+around tasks, with more realistic content.
+
+Also wondering if the icons / images even make sense in the side bar — they are
+kinda distracting. Icons maybe are ok? To research: how the icons for Muse stuff
+are generated. I want to say it's either a cheap image model that generates the
+same style of icons OR they have a huge library of pre-generated icons and they
+use a decisions API or similar or just a cheap model to classify which icon to
+use. Maybe even combinations of things?
+
+I don't like that the folding ribbon takes over the icon side.
+
+## Principles
+
+- Less is more.
+- 1 primary way to do something.
+- People will not be clicking much in the UI to reconfigure it — it needs to
+  work almost out of the box. Example — when creating new 'stuff' — it can
+  morph into stuff. Like I can say create new list with movies I have
+  downloaded — it should create me an artefact.
+- Some stuff is naturally temporary / other stuff becomes more permanent — like
+  bots (release coordinators (shared with team too), analytics watchers
+  (possibly get pinged by the release coordinator to watch for specific new
+  metrics / regressions etc), growth opportunity seekers, QA testers (a lot of
+  these things, esp. scheduled / low priority things — like QA — need to get
+  allocated budget depending on utilization of team resources too)) / other
+  stuff is more like a task you complete in a couple of hours / yet other stuff
+  is more like a milestone.
+
+## New stuff
+
+When creating new stuff — we should probably spin off a separate agent to find
+related stuff / maybe this happens when gathering context actually — which
+project to connect, what related / conflicting work may already be in the
+works.
+
+But I really like this idea of a single 'new' -> morph into whatever idea. Stem
+cell like.
 
 ## Under the hood primitives
 
