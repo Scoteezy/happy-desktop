@@ -200,6 +200,7 @@ function RedesignWindow(props: RedesignWindowProps) {
                                         activeId={activeSide}
                                         tabs={sideTabs}
                                         tabSizing="content"
+                                        overflowFade
                                         closePresentation="overlay"
                                         size="medium"
                                         onSelect={setActiveSide}
@@ -223,6 +224,7 @@ function RedesignWindow(props: RedesignWindowProps) {
                                 activeId={activeMain}
                                 tabs={mainTabs}
                                 tabSizing="content"
+                                overflowFade
                                 closePresentation="overlay"
                                 closeRevealedId={props.closeFocus ? "workflow-sidebar" : undefined}
                                 size="medium"

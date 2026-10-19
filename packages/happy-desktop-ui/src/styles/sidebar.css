@@ -393,6 +393,16 @@
     padding: 0 var(--happy-panel-row-padding);
 }
 
+.happy-sidebar__space-head {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    padding: 12px var(--happy-panel-row-padding) 4px;
+    border-top: 1px solid var(--divider);
+}
+
 .happy-sidebar__section-label {
     display: block;
     overflow: hidden;

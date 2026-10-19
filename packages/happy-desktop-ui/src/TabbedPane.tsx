@@ -1,5 +1,5 @@
 import { partitionComponentProps } from "./componentProps";
-import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { KeyboardShortcut } from "./keyboardShortcut";
 import { type MenuItem } from "./Menu";
 import { Tabs, type TabItem, type TabsSize } from "./Tabs";
@@ -28,6 +28,8 @@ export type TabbedPaneProps = {
     closeRevealedId?: string;
     /** Full titles scroll at their natural widths instead of sharing equal cells. */
     tabSizing?: "equal" | "content";
+    /** Fade the scroller's trailing edge while more tabs remain out of view. */
+    overflowFade?: boolean;
     /** Commits a drag with the tab ids in their new order; supplying it makes tabs draggable. */
     onReorder?: (ids: readonly string[]) => void;
     /** Returns the context-menu actions available for one tab. Empty means no menu. */
@@ -90,6 +92,7 @@ export function TabbedPane(props: TabbedPaneProps) {
         "onSelect",
         "onTabMenuSelect",
         "onTransfer",
+        "overflowFade",
         "size",
         "style",
         "tabMenuItems",
@@ -100,6 +103,10 @@ export function TabbedPane(props: TabbedPaneProps) {
         "transferable",
     ]);
     const scroller = useRef<HTMLDivElement>(null);
+    const [overflowEnd, setOverflowEnd] = useState(false);
+    const measureOverflow = (viewport: HTMLElement) => {
+        setOverflowEnd(viewport.scrollWidth - viewport.clientWidth - viewport.scrollLeft > 1);
+    };
     // eslint-disable-next-line happy-react/no-layout-effect -- activation must reveal the committed tab before paint by moving its horizontal browser scrollport; depending only on activeId preserves a deliberate manual scroll until another tab is activated
     useLayoutEffect(() => {
         const viewport = scroller.current;
@@ -137,8 +144,24 @@ export function TabbedPane(props: TabbedPaneProps) {
             <div className="happy-tabbed-pane__bar" data-happy-desktop-ui="tabbed-pane-bar">
                 <div
                     className="happy-tabbed-pane__scroller"
+                    data-fade-end={local.overflowFade && overflowEnd ? "" : undefined}
                     data-happy-desktop-ui="tabbed-pane-scroller"
-                    ref={scroller}
+                    onScroll={
+                        local.overflowFade
+                            ? (event) => measureOverflow(event.currentTarget)
+                            : undefined
+                    }
+                    ref={(node) => {
+                        scroller.current = node;
+                        if (!node || !local.overflowFade) return;
+                        measureOverflow(node);
+                        // The viewport and natural strip widths can change
+                        // independently as panes resize or tab titles arrive.
+                        const observer = new ResizeObserver(() => measureOverflow(node));
+                        observer.observe(node);
+                        if (node.firstElementChild) observer.observe(node.firstElementChild);
+                        return () => observer.disconnect();
+                    }}
                 >
                     {/* The strip is only as wide as the tabs. The action follows
                         this shrinkable scrollport outside its clip, so it stays

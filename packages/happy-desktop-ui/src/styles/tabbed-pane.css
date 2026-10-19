@@ -63,6 +63,11 @@
     display: none;
 }
 
+/* Fade tab ink into the bar's surface, like the overlay close affordance. */
+.happy-tabbed-pane__scroller[data-fade-end] {
+    mask-image: linear-gradient(to right, var(--surface) calc(100% - 36px), transparent);
+}
+
 /*
  * The strip fills the scrollport exactly. The scrollport's own basis is the
  * tabs at their full width, so a short strip keeps the following action beside

@@ -98,10 +98,6 @@
     right: auto;
 }
 
-.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-sidebar__section-label {
-    text-transform: none;
-}
-
 .happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-desktop-app-shell__reveal {
     align-items: stretch;
     width: calc(var(--happy-integrated-leading-inset) + 64px + var(--happy-panel-inset));

@@ -305,6 +305,8 @@ export type SidebarSection = {
     headingOnly?: boolean;
     items: SidebarItem[];
     label?: string;
+    /** Static space identity separating global rows from the space's sections. */
+    spaceHeading?: { avatarId: string; label: string };
     /**
      * What went wrong with this section, said under its heading until it
      * clears. It is the section's, not a row's, in both directions: an add that
@@ -2841,6 +2843,23 @@ export function Sidebar(props: SidebarProps) {
                                 data-reordering={sectionDrag ? "" : undefined}
                                 data-section-id={section.id}
                             >
+                                {section.spaceHeading ? (
+                                    <div
+                                        className="happy-sidebar__space-head"
+                                        data-happy-desktop-ui="sidebar-space-head"
+                                    >
+                                        <AvatarBrutalist
+                                            id={section.spaceHeading.avatarId}
+                                            size={20}
+                                        />
+                                        <span
+                                            className="happy-sidebar__title"
+                                            data-happy-desktop-ui="sidebar-space-title"
+                                        >
+                                            {section.spaceHeading.label}
+                                        </span>
+                                    </div>
+                                ) : null}
                                 {section.label ? (
                                     <div
                                         className="happy-sidebar__section-head"

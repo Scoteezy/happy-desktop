@@ -46,7 +46,12 @@ export const redesignSections: SidebarSection[] = [
             { id: "desktop-demo", label: "Desktop Demo", kind: "view", icon: "globe" },
         ],
     },
-    { id: "space", label: "Happy Team", headingOnly: true, items: [] },
+    {
+        id: "space",
+        spaceHeading: { avatarId: "happy-team", label: "Happy Team" },
+        headingOnly: true,
+        items: [],
+    },
     {
         id: "projects",
         label: "Projects",
@@ -143,22 +148,29 @@ export const redesignSideTabs: TabItem[] = [
     },
 ];
 
-function message(id: string, human: boolean, text: string): ConversationMessageEntry {
+function message(
+    id: string,
+    human: boolean,
+    text: string,
+    sessionId: "workflow-sidebar" | "session-sync" = "workflow-sidebar",
+): ConversationMessageEntry {
     return {
         kind: "message",
         source: "server",
         delivery: "sent",
         message: {
             id,
-            chatId: "workflow-sidebar",
+            chatId: sessionId,
             sequence: id,
             changePts: id,
             sender: human
                 ? { id: "kirill", displayName: "Kirill", username: "kirill", kind: "human" }
                 : {
-                      id: "workflow-sidebar",
-                      displayName: "Workflow Sidebar",
-                      username: "workflow-sidebar",
+                      id: sessionId,
+                      displayName:
+                          sessionId === "session-sync" ? "Session Sync Audit" : "Workflow Sidebar",
+                      username: sessionId,
+                      sessionId,
                       kind: "agent",
                       agentRole: "default",
                   },
@@ -199,11 +211,13 @@ export const redesignSideConversation = [
         "side-01",
         true,
         "Steve and I are checking session sync. What happens when the connection comes back?",
+        "session-sync",
     ),
     message(
         "side-02",
         false,
         "The client asks for the missing changes and reconciles them into the current session. The open conversation keeps its scroll position and draft.\n\nI’m checking the reconnect path in the session audit.",
+        "session-sync",
     ),
 ];
 
