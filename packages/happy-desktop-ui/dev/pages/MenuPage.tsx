@@ -58,6 +58,16 @@ const taskRow: MenuItem[] = [
     { kind: "item", id: "archive", label: "Archive task", icon: "archive", danger: true },
 ];
 
+/* Starting something and changing something are two glyphs: the pencil leaving
+   its frame says new, the bare pencil says modify what is already there. */
+const createAndModify: MenuItem[] = [
+    { kind: "item", id: "message", label: "New message", icon: "compose" },
+    { kind: "item", id: "conversation", label: "Start a conversation", icon: "compose" },
+    { kind: "separator" },
+    { kind: "item", id: "rename", label: "Rename conversation", icon: "edit" },
+    { kind: "item", id: "edit", label: "Edit message", icon: "edit" },
+];
+
 const linkPlaces: MenuItem[] = [
     { kind: "item", id: "browser", label: "Open in browser", icon: "open-external" },
     { kind: "item", id: "panel", label: "Open in side panel", icon: "panel-expand" },
@@ -185,6 +195,17 @@ export function MenuPage() {
                 >
                     <div style={{ padding: "28px" }}>
                         <Menu items={taskRow} width={200} />
+                    </div>
+                </Specimen>
+
+                <Specimen
+                    detail="compose starts something new · edit changes what exists — compose centres its frame, the pencil overshoots"
+                    label="Create and modify"
+                    number="M-07"
+                    stage="app"
+                >
+                    <div style={{ padding: "28px" }}>
+                        <Menu items={createAndModify} width={220} />
                     </div>
                 </Specimen>
             </div>

@@ -64,6 +64,7 @@ export type IconName =
     | "globe"
     | "filter"
     | "edit"
+    | "compose"
     | "sun"
     | "moon"
     | "coffee"
@@ -139,6 +140,10 @@ export type IconProps = {
  * sit next to, which is why the hover-revealed 12px row and tab controls hold
  * them at their 16px drawing. The box stays what layout asked for.
  *
+ * An `opticalOffset` name moves its glyph inside the box, for an asymmetric
+ * drawing whose upstream centring puts the part the eye reads off its keyline.
+ * Like the scale, it lives here once per name and never at a call site.
+ *
  * The `drawn` set is the single hand-drawn family, kept to Ionicons' own stroke
  * and box metrics; see `drawnGlyphs.tsx` for why it exists and why nothing else
  * belongs in it.
@@ -147,7 +152,12 @@ type IconGlyph = (
     | { set: "drawn"; name: DrawnGlyphName }
     | { set: "ionicons"; name: IoniconName }
     | { set: "octicons"; name: OcticonName }
-) & { mirrored?: true; opticalScale?: number; minimumSize?: 16 };
+) & {
+    mirrored?: true;
+    opticalScale?: number;
+    minimumSize?: 16;
+    opticalOffset?: { x: number; y: number };
+};
 /* The Octicons 16 grid set inside the Ionicons 14px live area. */
 const OCTICONS_SCALE = 14 / 16;
 const glyphs: Record<IconName, IconGlyph> = {
@@ -244,10 +254,23 @@ const glyphs: Record<IconName, IconGlyph> = {
     terminal: { set: "ionicons", name: "terminal-outline" },
     globe: { set: "ionicons", name: "globe-outline" },
     filter: { set: "ionicons", name: "funnel-outline" },
-    // A plain pencil, symmetric about its diagonal. The Octicon keeps an open
+    // Changing a thing that already exists: renaming it, editing it. Never for
+    // starting something new; `compose` is that. A plain pencil, symmetric
+    // about its diagonal. The Octicon keeps an open
     // outlined body, tip and eraser at 16 where Ionicons' narrow pencil body
     // fills in to one solid bar; the family scale sets it 13px across.
     edit: { set: "octicons", name: "pencil" },
+    // Starting something new — a conversation, a message — as distinct from
+    // `edit`, which changes a thing that already exists. Ionicons centres the
+    // frame and the pencil leaving it together, which sets the frame, the part
+    // the eye reads, 0.75px left of and 1px below the slot centre; the offset
+    // puts the frame back on the centred square keyline, as Lucide's
+    // `square-pen` draws it, and lets the pencil overshoot.
+    compose: {
+        set: "ionicons",
+        name: "create-outline",
+        opticalOffset: { x: 0.5, y: -1 },
+    },
     sun: { set: "ionicons", name: "sunny-outline" },
     moon: { set: "ionicons", name: "moon-outline" },
     // A cup of coffee: the sign every keep-awake utility has used for keeping a
@@ -295,7 +318,8 @@ function glyphContent(glyph: IconGlyph) {
         glyph.set === "ionicons" ? ioniconsGlyphs[glyph.name] : octiconsGlyphs[glyph.name];
     const character = String.fromCodePoint(codepoint);
     const scale = (glyph.opticalScale ?? 1) * (glyph.set === "octicons" ? OCTICONS_SCALE : 1);
-    if (scale === 1 && glyph.minimumSize === undefined) return character;
+    const offset = glyph.opticalOffset;
+    if (scale === 1 && glyph.minimumSize === undefined && offset === undefined) return character;
     /*
      * The glyph is laid out at the box's own font-size, where its baseline lands
      * on the same pixel as every other glyph, and only then scaled about the
@@ -305,12 +329,17 @@ function glyphContent(glyph: IconGlyph) {
      * whole pixels: a 16px line box centred in a 12 or 14px box overhangs it by
      * 2 or 1px. It is resolved in CSS against the font-size the box actually
      * renders at, so a surface that overrides an icon's box is still honoured.
+     * An optical offset is declared in pixels at 16 and applied in em, so it
+     * moves with the box; at 16 it is a whole number of device pixels.
      */
     return (
         <span
             className="happy-icon__glyph"
             style={{
                 ...(scale === 1 ? null : { scale: String(scale) }),
+                ...(offset === undefined
+                    ? null
+                    : { translate: `${offset.x / 16}em ${offset.y / 16}em` }),
                 ...(glyph.minimumSize === undefined
                     ? null
                     : { fontSize: `max(${glyph.minimumSize}px, 1em)` }),

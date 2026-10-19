@@ -45,7 +45,7 @@ export function EmptyStatePage() {
                         <div style={{ width: "440px", height: "320px" }}>
                             <EmptyState
                                 action={{
-                                    icon: "edit",
+                                    icon: "compose",
                                     label: "Start a conversation",
                                     onClick: noop,
                                 }}

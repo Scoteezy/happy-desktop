@@ -654,7 +654,7 @@ the slot, ink included:
 
 | Keyline         | Lucide reference (24 canvas, centrelines)  | Ink / slot | Ink at 16 |
 | --------------- | ------------------------------------------ | ---------- | --------- |
-| Framed shape    | `square` 18 × 18                           | 20/24      | 13–14px   |
+| Framed shape    | `square` 18 × 18; `square-pen` (`compose`) | 20/24      | 13–14px   |
 | Circle          | `circle` r = 10                            | 22/24      | 14px      |
 | Diagonal object | `pencil` about 2–22 on both axes, one body | 20–22/24   | 13px      |
 | Bare plus       | `plus` 5–19                                | 16/24      | 10.5px    |
@@ -664,6 +664,20 @@ A diagonal object such as the pencil is not a bare stroke: it has a body, so it
 runs corner to corner like a framed shape rather than stopping at the cross. The
 `edit` pencil is Octicons' `pencil` at the family scale, 13px across; Ionicons'
 pencils fill their narrow body in to one solid bar at 16 and read as a slash.
+
+`compose` means create and `edit` means modify. Starting a conversation, a
+message, or anything else new wears `compose`, the pencil leaving its frame;
+renaming or editing a thing that already exists wears `edit`, the bare pencil.
+Never swap them to vary a row's look.
+
+Lucide's `square-pen` keeps its frame on the centred `square` keyline and lets
+the pen overshoot the top-right corner. Ionicons' `create-outline` instead
+centres frame and pencil together, which sets the frame — the part the eye
+reads — 0.75px left of and 1px below the slot centre. `compose` declares an
+`opticalOffset` of (+0.5, −1)px at 16, applied in em so it follows the box: the
+frame lands on the slot centre and the pencil tip overshoots, as Lucide draws
+it. An offset is a per-name `Icon` declaration for an asymmetric drawing whose
+upstream centring is off its keyline; a call site never nudges a glyph.
 
 The house stroke is the Ionicons outline stroke: 1px at a 16px box, scaling with
 it. Ionicons' outline drawings already sit on these keylines — outer shapes in a
@@ -694,7 +708,8 @@ Prove a font-icon integration with real ink (non-zero visible pixels, which also
 proves the font actually loaded) and the correct box geometry in the container
 that uses it, across Chromium, Firefox, and WebKit. Where a component or `Icon`
 itself promises a keyline, assert it: the visible ink box against the keyline
-table, the ink box centred in its slot to within 0.25px, and the stroke weight
+table, the ink box centred in its slot to within 0.25px (offset by its declared
+`opticalOffset`, if any), and the stroke weight
 derived from alpha mass. Assert those as ranges or relations (the cross smaller
 than the plus, the 12px plus equal to the 16px plus), because each platform's
 rasterizer quantizes a font glyph's edges differently. Do **not** assert an ink

@@ -136,7 +136,7 @@ it("paints real ink for every curated glyph in its box", async () => {
         },
     );
     await view.ready();
-    expect(iconNames.length).toBe(78);
+    expect(iconNames.length).toBe(79);
     const parts = iconNames.map((name) => view.$(`[data-name="${name}"]`));
     const metrics = await view.visibleMetrics(parts);
     for (const [index, name] of iconNames.entries()) {
@@ -241,4 +241,48 @@ it("holds the plus and cross at their 16px drawing and Octicons in the live area
         expect(bounds.width, `${name} ink width`).toBeLessThanOrEqual(15);
         expect(bounds.height, `${name} ink height`).toBeLessThanOrEqual(15);
     }
+});
+/*
+ * `compose` sits on the framed keyline (DESIGN.md, "Icon slots and optical
+ * size"), with its declared (+0.5, -1)px offset putting the frame, rather than
+ * frame and pencil together, on the slot centre. So its ink box — frame plus the
+ * overshooting tip — is centred on the slot centre moved by that offset.
+ */
+it("sets compose on the framed keyline with its frame centred", async () => {
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div style={{ display: "flex", gap: "12px" }}>
+                <span data-testid="compose" style={{ display: "flex" }}>
+                    <Icon name="compose" />
+                </span>
+                <span data-testid="edit" style={{ display: "flex" }}>
+                    <Icon name="edit" />
+                </span>
+            </div>
+        ),
+        { width: 68, height: 40, padding: 12 },
+    );
+    await view.ready();
+    const compose = view.$('[data-testid="compose"] [data-happy-desktop-ui="icon"]');
+    const edit = view.$('[data-testid="edit"] [data-happy-desktop-ui="icon"]');
+    expect(compose.element.getAttribute("data-set")).toBe("ionicons");
+    expect(edit.element.getAttribute("data-set")).toBe("octicons");
+    const metrics = await view.visibleMetrics([compose, edit]);
+    const { bounds } = metrics.get(compose)!;
+    for (const extent of [bounds.width, bounds.height]) {
+        expect(extent, `compose ink ${JSON.stringify(bounds)}`).toBeGreaterThanOrEqual(13);
+        expect(extent, `compose ink ${JSON.stringify(bounds)}`).toBeLessThanOrEqual(14.5);
+    }
+    expect(
+        Math.abs(bounds.x + bounds.width / 2 - 8.5),
+        "compose ink centre x, offset +0.5",
+    ).toBeLessThanOrEqual(0.25);
+    expect(
+        Math.abs(bounds.y + bounds.height / 2 - 7),
+        "compose ink centre y, offset -1",
+    ).toBeLessThanOrEqual(0.25);
+    // The bare pencil runs corner to corner too, no wider than the framed one.
+    expect(metrics.get(edit)!.pixelCount).toBeGreaterThan(0);
+    expect(metrics.get(edit)!.bounds.width).toBeLessThanOrEqual(bounds.width);
 });

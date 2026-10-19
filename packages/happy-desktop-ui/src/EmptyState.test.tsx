@@ -36,7 +36,7 @@ it("holds panel EmptyState geometry, medallion centering, and typography", async
     view.render(
         () => (
             <EmptyState
-                action={{ icon: "edit", label: "Start a conversation", onClick: noop }}
+                action={{ icon: "compose", label: "Start a conversation", onClick: noop }}
                 data-testid="es-panel-full"
                 description="Messages you send here will show up in this space."
                 icon="inbox"

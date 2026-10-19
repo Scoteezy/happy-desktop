@@ -19,9 +19,11 @@ const OPTICAL_ROW: IconName[] = [
     "terminal",
 ];
 /* One glyph per keyline (DESIGN.md, "Icon slots and optical size"): framed
-   shapes, a circle, the pencil, the plus and cross, and two more Octicons the
-   family scale brings into the Ionicons live area. */
+   shapes (compose with its frame centred), a circle, the pencil, the plus and
+   cross, and two more Octicons the family scale brings into the Ionicons live
+   area. */
 const KEYLINE_ROW: IconName[] = [
+    "compose",
     "edit",
     "archive",
     "check-circle",
@@ -176,7 +178,7 @@ export function IconPage() {
             <Specimen
                 number="03b"
                 label="Keylines"
-                detail="Framed 13–14 · pencil 13 · plus 10.5 · cross 9 px of ink at 16 · the plus and cross keep their 16 drawing in a 12 or 14 box"
+                detail="Framed 13–14 (compose centres its frame) · pencil 13 · plus 10.5 · cross 9 px of ink at 16 · the plus and cross keep their 16 drawing in a 12 or 14 box"
                 stage="surface"
             >
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -204,7 +206,7 @@ export function IconPage() {
                             ))}
                         </div>
                     ))}
-                    <DimensionRule label="edit · archive · check-circle · plus · close · branch · history" />
+                    <DimensionRule label="compose · edit · archive · check-circle · plus · close · branch · history" />
                 </div>
             </Specimen>
 

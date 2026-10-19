@@ -808,7 +808,7 @@ it("renders actionable guidance for empty sections", async () => {
                         label: "Channels",
                     },
                     {
-                        action: { icon: "edit", label: "New message" },
+                        action: { icon: "compose", label: "New message" },
                         empty: {
                             actionLabel: "Start a conversation",
                             description: "Message a teammate to start a direct chat.",
