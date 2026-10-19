@@ -163,7 +163,26 @@ export const redesignSections: SidebarSection[] = [
             work("muse-integration", "Muse integration", "muse"),
         ],
     },
-    { id: "today", label: "Today", collapsed: false, items: [work("inbox", "Inbox", "inbox")] },
+    {
+        id: "today",
+        label: "Today",
+        collapsed: false,
+        items: [
+            work("inbox", "Inbox", "inbox"),
+            {
+                id: "release-note-ideas",
+                label: "Release note ideas",
+                kind: "view",
+                stemCell: { id: "release-note-ideas" },
+            },
+            {
+                id: "shortcut-ideas",
+                label: "Keyboard shortcut ideas",
+                kind: "view",
+                stemCell: { id: "shortcut-ideas" },
+            },
+        ],
+    },
 ];
 
 export const redesignTabs: TabItem[] = [

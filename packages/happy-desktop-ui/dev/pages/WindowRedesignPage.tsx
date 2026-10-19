@@ -52,6 +52,7 @@ type Scene =
     | "request"
     | "context"
     | "landed"
+    | "icon-assigned"
     | "working"
     | "replaced"
     | "leased"
@@ -86,6 +87,7 @@ const frames: readonly StoryFrame[] = [
         scene: "context",
     },
     { id: "02c-task-landed", label: "A task lands in Desktop workflow", scene: "landed" },
+    { id: "02d-icon-assigned", label: "Happy gives the new item its icon", scene: "icon-assigned" },
     {
         id: "03-task-working",
         label: "Work · summarized transcript and active floaty",
@@ -278,7 +280,16 @@ function StoryWindow(props: StoryFrame) {
     const [reply, setReply] = useState("");
     const [releaseAnswer, setReleaseAnswer] = useState<string>();
     const [openedContent, setOpenedContent] = useState<string>();
-    const taskLanded = ["landed", "working", "replaced", "leased", "history"].includes(scene);
+    const taskLanded = [
+        "landed",
+        "icon-assigned",
+        "working",
+        "replaced",
+        "leased",
+        "history",
+    ].includes(scene);
+    const newItemMark =
+        scene === "landed" ? { stemCell: { id: "window-navigation" } } : redesignMarks.redesign;
     const activeTaskId = taskLanded ? "window-navigation" : "redesign";
     const [closedTabs, setClosedTabs] = useState<readonly string[]>([]);
     const mainId =
@@ -318,11 +329,18 @@ function StoryWindow(props: StoryFrame) {
     const taskTab: TabItem = {
         id: activeTaskId,
         label: taskLanded ? "Window navigation" : "Desktop redesign",
-        ...redesignMarks.redesign,
+        ...(taskLanded ? newItemMark : redesignMarks.redesign),
     };
     const titleTabs: TabItem[] =
         mainId === "make-stuff"
-            ? [taskTab, { id: "make-stuff", label: "Make Stuff" }]
+            ? [
+                  taskTab,
+                  {
+                      id: "make-stuff",
+                      label: "Make Stuff",
+                      stemCell: { id: scene === "movie-request" ? "movies" : "window-navigation" },
+                  },
+              ]
             : scene === "movies"
               ? [
                     { id: "happy", label: "Happy", ...redesignMarks.happy },
@@ -354,6 +372,7 @@ function StoryWindow(props: StoryFrame) {
             label: existing?.label ?? "Keyboard drag audit",
             icon: existing?.icon ?? "doc",
             imageMark: existing?.imageMark,
+            stemCell: existing?.stemCell,
         });
     }
     const tabs = titleTabs
@@ -457,7 +476,7 @@ function StoryWindow(props: StoryFrame) {
             id: "landed-answer",
             kind: "message",
             author: "Window navigation",
-            imageMark: redesignMarks.redesign.imageMark,
+            ...newItemMark,
             text: "I’ll keep the sidebar toggle and search in place, then bring the tabs into one shared band. The related redesign work stays linked here.",
         },
     ];
@@ -468,7 +487,7 @@ function StoryWindow(props: StoryFrame) {
               ? redesignReplaced
               : scene === "leased"
                 ? redesignLeased
-                : scene === "landed"
+                : scene === "landed" || scene === "icon-assigned"
                   ? landedRows
                   : scene === "release"
                     ? redesignRelease
@@ -666,7 +685,7 @@ function StoryWindow(props: StoryFrame) {
                                                       label: "Window navigation",
                                                       kind: "view",
                                                       depth: 1,
-                                                      ...redesignMarks.redesign,
+                                                      ...newItemMark,
                                                   },
                                                   ...section.items.slice(1),
                                               ],

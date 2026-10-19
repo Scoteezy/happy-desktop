@@ -17,6 +17,7 @@ import type { KeyboardShortcut } from "./keyboardShortcut";
 import { Menu, type MenuItem } from "./Menu";
 import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
+import { StemCell, type StemCellMark } from "./StemCell";
 import {
     transferFocusClaim,
     transferFocusRequest,
@@ -76,6 +77,8 @@ export type TabItem = {
     avatarId?: string;
     /** Unframed artwork for an explicitly opened entity. */
     imageMark?: { src: string; alt?: string };
+    /** Identity for an item that has not taken shape yet, in the same 20px lane. */
+    stemCell?: StemCellMark;
     /**
      * The tab is what a voice call is pointing at. Its own ring and microphone,
      * never the active or unread treatment.
@@ -107,7 +110,9 @@ function tabHoldsLeadingLane(tab: TabItem): boolean {
  * reader was most likely to be looking for it.
  */
 function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
-    const mark = tab.imageMark ? (
+    const mark = tab.stemCell ? (
+        <StemCell {...tab.stemCell} size={20} />
+    ) : tab.imageMark ? (
         <img
             alt={tab.imageMark.alt ?? ""}
             className="happy-tabs__image-mark"

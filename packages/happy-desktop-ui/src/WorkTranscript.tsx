@@ -8,6 +8,7 @@ import {
     type HappyAgentUserInputPromptProps,
 } from "./HappyAgentUserInputPrompt";
 import { Message, MessageList } from "./Message";
+import type { StemCellMark } from "./StemCell";
 
 export type WorkTranscriptRow = { id: string } & (
     | {
@@ -17,6 +18,7 @@ export type WorkTranscriptRow = { id: string } & (
           own?: boolean;
           imageUrl?: string;
           imageMark?: { src: string; alt?: string };
+          stemCell?: StemCellMark;
           streaming?: boolean;
       }
     | { kind: "summary" | "handoff"; label: string; details: readonly string[] }
@@ -54,6 +56,7 @@ export function WorkTranscript(props: WorkTranscriptProps) {
                                         body={row.text}
                                         imageUrl={row.imageUrl}
                                         imageMark={row.imageMark}
+                                        stemCell={row.stemCell}
                                         generationStatus={row.streaming ? "streaming" : "complete"}
                                         streamingCaret={row.streaming}
                                     />

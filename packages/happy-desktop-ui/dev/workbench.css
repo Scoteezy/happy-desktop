@@ -628,6 +628,11 @@
     animation-play-state: paused;
 }
 
+/* Seeded marks stay on the tuned resting geometry in every capture. */
+.happy-stem-cell[data-wobble] > path {
+    animation-play-state: paused;
+}
+
 /* Two windows on one document, side by side, a hairline between them. */
 .blueprint-document-pair {
     display: flex;

@@ -97,6 +97,8 @@
     --warning-critical: #ff3b30;
     --warning: #8e8e93;
     --success: #34c759;
+    --stem-cell-membrane: #f6cfe3;
+    --stem-cell-core: #ee9fcb;
     --surface: #ffffff;
     --surface-ripple: rgb(0 0 0 / 0.08);
     --surface-pressed: #f0f0f2;
@@ -342,6 +344,8 @@
         --warning-critical: #ff453a;
         --warning: #8e8e93;
         --success: #32d74b;
+        --stem-cell-membrane: #653c53;
+        --stem-cell-core: #ee9fcb;
         --surface: #212121;
         --surface-ripple: rgb(255 255 255 / 0.08);
         --surface-pressed: #2c2c2e;
@@ -525,6 +529,8 @@
     --warning-critical: #ff453a;
     --warning: #8e8e93;
     --success: #32d74b;
+    --stem-cell-membrane: #653c53;
+    --stem-cell-core: #ee9fcb;
     --surface: #212121;
     --surface-ripple: rgb(255 255 255 / 0.08);
     --surface-pressed: #2c2c2e;

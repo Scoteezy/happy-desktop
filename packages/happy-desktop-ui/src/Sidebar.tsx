@@ -31,6 +31,7 @@ import { Menu, type MenuItem } from "./Menu";
 import { MenuButton } from "./MenuButton";
 import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
+import { StemCell, type StemCellMark } from "./StemCell";
 import { ScrollArea } from "./Scrollbar";
 import { TextField } from "./TextField";
 import { sidebarSectionsReuser } from "./sidebarSectionsReuser";
@@ -102,6 +103,8 @@ export type SidebarItem = {
     imageUrl?: string;
     /** Unframed entity artwork in the existing 20px leading lane. */
     imageMark?: { src: string; alt?: string };
+    /** Identity for an item that has not taken shape yet, in the same 20px lane. */
+    stemCell?: StemCellMark;
     initials?: string;
     kind: "view" | "channel" | "workspace" | "project" | "person" | "agent" | "folder" | "action";
     label: string;
@@ -513,6 +516,7 @@ function leadingIcon(item: SidebarItem): IconName {
  * carries it.
  */
 function showsLeadingSlot(item: SidebarItem): boolean {
+    if (item.stemCell) return true;
     if (item.contextAvatars?.length) return true;
     if ((item.depth ?? 0) === 0) return true;
     if (item.kind === "person" || item.kind === "agent" || item.kind === "project") return true;
@@ -1585,6 +1589,7 @@ function SidebarRow({
             ) : null}
             {(props.itemMarkPresentation !== "none" || item().kind === "action") &&
             (props.itemMarkPresentation === "glyph" ||
+                item().stemCell ||
                 item().imageMark ||
                 showsLeadingSlot(item()) ||
                 activityLeading()) ? (
@@ -1606,7 +1611,9 @@ function SidebarRow({
                         none when it folds: the branch line beside it already says
                         what it is, and opening the lane for the chevron must not
                         put back the glyph that line replaced. */}
-                    {item().imageMark ? (
+                    {item().stemCell ? (
+                        <StemCell {...item().stemCell!} size={20} />
+                    ) : item().imageMark ? (
                         <img
                             alt={item().imageMark?.alt ?? ""}
                             className="happy-sidebar__image-mark"

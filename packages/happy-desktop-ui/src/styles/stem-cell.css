@@ -1,0 +1,36 @@
+.happy-stem-cell {
+    display: block;
+    flex: 0 0 auto;
+}
+
+.happy-stem-cell__membrane {
+    fill: var(--stem-cell-membrane);
+}
+
+.happy-stem-cell__core {
+    fill: var(--stem-cell-core);
+}
+
+.happy-stem-cell[data-wobble] > path {
+    animation: happy-stem-cell-drift 32s ease-in-out infinite;
+}
+
+@keyframes happy-stem-cell-drift {
+    0%,
+    50%,
+    100% {
+        d: var(--happy-stem-cell-rest);
+    }
+    25% {
+        d: var(--happy-stem-cell-forward);
+    }
+    75% {
+        d: var(--happy-stem-cell-backward);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-stem-cell[data-wobble] > path {
+        animation: none;
+    }
+}

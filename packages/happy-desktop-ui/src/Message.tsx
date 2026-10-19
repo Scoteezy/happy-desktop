@@ -45,6 +45,7 @@ import {
     type MessageGenerationStatus,
 } from "./MessageMarkdown";
 import { ScrollArea } from "./Scrollbar";
+import { StemCell, type StemCellMark } from "./StemCell";
 export type MessageSegment =
     | {
           kind: "text";
@@ -197,6 +198,8 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     imageUrl?: string;
     /** Unframed entity artwork, shared with its sidebar row and tab. */
     imageMark?: { src: string; alt?: string };
+    /** Unformed item identity, retained until its artwork is assigned. */
+    stemCell?: StemCellMark;
     /**
      * A session this message speaks for rather than a person: the avatar becomes
      * that session's generated mark instead of initials. It is what separates a
@@ -347,6 +350,7 @@ export function Message(props: MessageProps) {
         "gutterTime",
         "imageUrl",
         "imageMark",
+        "stemCell",
         "images",
         "onImageOpen",
         "onFileOpen",
@@ -380,7 +384,9 @@ export function Message(props: MessageProps) {
     const authorActionLabel = () => `View ${local.author}’s profile`;
     const happyAgent = () => local.agent && local.author.trim().toLocaleLowerCase() === "happy";
     const renderAvatar = (size: AvatarSize) =>
-        local.imageMark ? (
+        local.stemCell ? (
+            <StemCell {...local.stemCell} size={16} />
+        ) : local.imageMark ? (
             <img
                 alt={local.imageMark.alt ?? ""}
                 className="happy-message__image-mark"
