@@ -7348,6 +7348,14 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 }
                                 props.onChatSelect(openGroup.id, tabId);
                             }}
+                            // Pointing at a session tab loads its conversation, so that
+                            // selecting it shows the conversation at once.
+                            onIntent={(tabId) => {
+                                if (openReview?.id === tabId) return;
+                                if (groupFileTabs.some((tab) => tab.id === tabId)) return;
+                                if (mainTools.some((tab) => tab.id === tabId)) return;
+                                props.workspace.conversationPrefetch(tabId as HappyAgentSessionId);
+                            }}
                             onTransfer={(tabId) => {
                                 const artifact = mainTools.find(
                                     (tab) => tab.id === tabId && tab.kind === "artifact",

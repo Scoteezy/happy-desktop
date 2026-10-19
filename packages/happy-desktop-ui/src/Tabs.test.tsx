@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { server } from "vitest/browser";
+import { server, userEvent } from "vitest/browser";
 import "./theme.css";
 import "./styles/tabs.css";
 import "./styles/icon.css";
@@ -424,4 +424,31 @@ it("fires onSelect with the tab id when a tab is clicked", async () => {
     (view.$('[data-tab-id="unread"]').element as HTMLButtonElement).click();
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(onSelect).toHaveBeenCalledWith("unread");
+});
+
+it("reports the intent to select a tab the pointer rests on, and none for one it only passes", async () => {
+    const onIntent = vi.fn();
+    const view = createRenderer();
+    view.render(
+        () => (
+            <Tabs
+                activeId="all"
+                onIntent={onIntent}
+                onSelect={() => {}}
+                tabs={[
+                    { id: "all", label: "All" },
+                    { id: "unread", label: "Unread" },
+                    { id: "mentions", label: "Mentions" },
+                ]}
+            />
+        ),
+        { width: 420, height: 72, padding: 16 },
+    );
+    await view.ready();
+
+    await userEvent.hover(view.$('[data-tab-id="unread"]').element);
+    await userEvent.hover(view.$('[data-tab-id="mentions"]').element);
+    await expect.poll(() => onIntent.mock.calls).toEqual([["mentions"]]);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(onIntent).toHaveBeenCalledTimes(1);
 });

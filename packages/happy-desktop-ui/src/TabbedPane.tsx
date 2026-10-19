@@ -14,6 +14,8 @@ export type TabbedPaneProps = {
     tabs: TabItem[];
     activeId: string;
     onSelect: (id: string) => void;
+    /** The reader is likely to select this tab next; see `Tabs`. */
+    onIntent?: (id: string) => void;
     /** Reports a tab activated with a double click, such as pinning a preview. */
     onDoubleClick?: (id: string) => void;
     /** Closes a tab; supplying it gives every tab a hover-revealed close control. */
@@ -77,6 +79,7 @@ export function TabbedPane(props: TabbedPaneProps) {
         "closeShortcut",
         "onClose",
         "onDoubleClick",
+        "onIntent",
         "onReorder",
         "onSelect",
         "onTabMenuSelect",
@@ -139,6 +142,7 @@ export function TabbedPane(props: TabbedPaneProps) {
                             closeShortcut={local.closeShortcut}
                             onClose={local.onClose}
                             onDoubleClick={local.onDoubleClick}
+                            onIntent={local.onIntent}
                             onReorder={local.onReorder}
                             onSelect={local.onSelect}
                             onTabMenuSelect={local.onTabMenuSelect}

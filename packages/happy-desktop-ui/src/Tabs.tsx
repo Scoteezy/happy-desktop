@@ -176,6 +176,11 @@ export type TabsProps = {
     style?: CSSProperties;
     activeId: string;
     onSelect: (id: string) => void;
+    /**
+     * The reader is likely to select this tab next: the pointer settled on it or pressed it. Only
+     * a hint, for loading what the tab shows ahead of time; nothing visible should change.
+     */
+    onIntent?: (id: string) => void;
     /** Reports a tab activated with a double click, such as pinning a preview. */
     onDoubleClick?: (id: string) => void;
     tabs: TabItem[];
@@ -222,6 +227,9 @@ const iconSizes: Record<TabsSize, 14 | 16 | 18> = {
     medium: 16,
     large: 18,
 };
+
+/** How long the pointer rests on a tab before the tab is reported as likely to be selected. */
+const TAB_INTENT_DWELL_MS = 60;
 
 /** Pointer travel that separates a click on a tab from a drag of it. */
 const DRAG_THRESHOLD = 4;
@@ -320,6 +328,7 @@ export function Tabs(props: TabsProps) {
         "activeId",
         "onClose",
         "onDoubleClick",
+        "onIntent",
         "onReorder",
         "onSelect",
         "onTabMenuSelect",
@@ -331,6 +340,16 @@ export function Tabs(props: TabsProps) {
         "transferable",
     ]);
     const size = () => local.size ?? "medium";
+    // A pointer that rests on a tab, or presses it, reports the intent; one only passing over
+    // reports nothing.
+    const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const intent = (id: string, now: boolean): void => {
+        clearTimeout(intentTimer.current);
+        const onIntent = local.onIntent;
+        if (onIntent === undefined) return;
+        if (now) onIntent(id);
+        else intentTimer.current = setTimeout(() => onIntent(id), TAB_INTENT_DWELL_MS);
+    };
     // The context menu is local UI state: it exists between the right click
     // that opened it and the dismissal or selection that closes it, and never
     // becomes product state.
@@ -668,7 +687,12 @@ export function Tabs(props: TabsProps) {
                         onDoubleClick={() => local.onDoubleClick?.(tab.id)}
                         onKeyDown={(event) => moveByKey(event, tab)}
                         onPointerCancel={dragEnd}
-                        onPointerDown={(event) => dragStart(event, index)}
+                        onPointerDown={(event) => {
+                            if (event.button === 0) intent(tab.id, true);
+                            dragStart(event, index);
+                        }}
+                        onPointerEnter={() => intent(tab.id, false)}
+                        onPointerLeave={() => clearTimeout(intentTimer.current)}
                         onPointerMove={dragMove}
                         onPointerUp={dragEnd}
                         role="tab"
