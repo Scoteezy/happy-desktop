@@ -263,6 +263,13 @@
     height: 12px;
 }
 
+.happy-message__image-mark {
+    display: block;
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+}
+
 /* Clickable identity (opt-in via `onAuthorSelect`): the avatar and the author
  * name become buttons that open the author's profile. Both reset all button
  * chrome so they keep the exact geometry of the plain avatar/name — only the

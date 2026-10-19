@@ -16,6 +16,7 @@ export type WorkTranscriptRow = { id: string } & (
           text: string;
           own?: boolean;
           imageUrl?: string;
+          imageMark?: { src: string; alt?: string };
           streaming?: boolean;
       }
     | { kind: "summary" | "handoff"; label: string; details: readonly string[] }
@@ -52,6 +53,7 @@ export function WorkTranscript(props: WorkTranscriptProps) {
                                         own={row.own}
                                         body={row.text}
                                         imageUrl={row.imageUrl}
+                                        imageMark={row.imageMark}
                                         generationStatus={row.streaming ? "streaming" : "complete"}
                                         streamingCaret={row.streaming}
                                     />

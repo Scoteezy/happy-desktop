@@ -48,6 +48,8 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     navigationChrome?: "integrated";
     /** One create control beside the reveal button while navigation is folded. */
     sidebarCollapsedAction?: { label: string; onClick: () => void };
+    /** Integrated controls occupy the header only when navigation is collapsed. */
+    sidebarCollapsedLayout?: "lane" | "overlay";
     /** Search beside the sidebar toggle in integrated window chrome. */
     sidebarSearchAction?: { label: string; onClick: () => void };
     /**
@@ -356,6 +358,7 @@ export function AppShell(props: AppShellProps) {
         "windowFullScreen",
         "navigationChrome",
         "sidebarCollapsedAction",
+        "sidebarCollapsedLayout",
         "sidebarSearchAction",
         "connectionRail",
         "sidebarCollapsible",
@@ -432,7 +435,9 @@ export function AppShell(props: AppShellProps) {
     const sidebarOccupied = !local.sidebar
         ? 0
         : local.sidebarCollapsible === true && sidebarCollapsed
-          ? REVEAL_WIDTH
+          ? local.sidebarCollapsedLayout === "overlay"
+              ? 0
+              : REVEAL_WIDTH
           : sidebarWidth;
     const panelOccupied = local.panel === undefined || local.panel === null ? 0 : panelWidthState;
     const sidebarMax =
@@ -604,7 +609,7 @@ export function AppShell(props: AppShellProps) {
         sidebarHidden && local.windowControls === true && local.navigationChrome !== "integrated";
     const sidebarLayoutMin = !local.sidebar
         ? 0
-        : revealFloating
+        : revealFloating || (sidebarHidden && local.sidebarCollapsedLayout === "overlay")
           ? 0
           : sidebarHidden
             ? REVEAL_WIDTH
@@ -694,6 +699,7 @@ export function AppShell(props: AppShellProps) {
                 data-happy-desktop-ui="app-shell"
                 data-shortcut-hints={shortcutHintsVisible ? "" : undefined}
                 data-sidebar-collapsed={sidebarHidden ? "" : undefined}
+                data-sidebar-collapsed-layout={local.sidebarCollapsedLayout}
                 data-sidebar-search={local.sidebarSearchAction ? "" : undefined}
                 data-window-controls={local.windowControls ? "" : undefined}
                 data-window-full-screen={local.windowFullScreen ? "" : undefined}

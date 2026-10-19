@@ -195,6 +195,8 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      * Defaults to `time`. */
     gutterTime?: string;
     imageUrl?: string;
+    /** Unframed entity artwork, shared with its sidebar row and tab. */
+    imageMark?: { src: string; alt?: string };
     /**
      * A session this message speaks for rather than a person: the avatar becomes
      * that session's generated mark instead of initials. It is what separates a
@@ -344,6 +346,7 @@ export function Message(props: MessageProps) {
         "grouped",
         "gutterTime",
         "imageUrl",
+        "imageMark",
         "images",
         "onImageOpen",
         "onFileOpen",
@@ -377,7 +380,13 @@ export function Message(props: MessageProps) {
     const authorActionLabel = () => `View ${local.author}’s profile`;
     const happyAgent = () => local.agent && local.author.trim().toLocaleLowerCase() === "happy";
     const renderAvatar = (size: AvatarSize) =>
-        local.avatarSessionId !== undefined && local.imageUrl === undefined && !happyAgent() ? (
+        local.imageMark ? (
+            <img
+                alt={local.imageMark.alt ?? ""}
+                className="happy-message__image-mark"
+                src={local.imageMark.src}
+            />
+        ) : local.avatarSessionId !== undefined && local.imageUrl === undefined && !happyAgent() ? (
             <AvatarBrutalist id={local.avatarSessionId} size={GUTTER_MARK_PIXELS} />
         ) : (
             <Avatar

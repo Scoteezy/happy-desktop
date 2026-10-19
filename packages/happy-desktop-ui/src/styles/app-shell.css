@@ -148,8 +148,29 @@
     width: calc(var(--happy-integrated-leading-inset) + 96px);
 }
 
+/* The collapsed control cluster overlays only the header; the transcript keeps
+   the full width below it, directly beside the connection rail. */
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-sidebar-collapsed-layout="overlay"]
+    .happy-desktop-app-shell__reveal {
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    left: 0;
+    height: var(--happy-integrated-band-height);
+    background: var(--surface);
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-sidebar-collapsed-layout="overlay"][data-sidebar-collapsed]
+    .happy-desktop-app-shell__workspace
+    > .happy-tabbed-pane:first-child
+    .happy-tabbed-pane__bar {
+    padding-left: calc(var(--happy-integrated-leading-inset) + 96px);
+}
+
 /* The collapsed navigation owns a real column, so tabs need no floating-control inset. */
-.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls][data-sidebar-collapsed]
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls][data-sidebar-collapsed]:not(
+        [data-sidebar-collapsed-layout="overlay"]
+    )
     .happy-desktop-app-shell__workspace
     > .happy-tabbed-pane:first-child
     .happy-tabbed-pane__bar {

@@ -37,6 +37,7 @@ import syncMark from "../../src/assets/sidebar-icons/shared-chat-sync@40.png";
 
 export type RedesignIconSlug =
     | "redesign"
+    | "happy"
     | "blueprint"
     | "keyboard"
     | "release"
@@ -62,6 +63,7 @@ export const redesignMarks: Record<
     { icon: IconName; imageMark?: { src: string } }
 > = {
     redesign: { icon: "edit", imageMark: { src: redesignMark } },
+    happy: { icon: "spark", imageMark: { src: happyMark } },
     blueprint: { icon: "edit", imageMark: { src: blueprintMark } },
     keyboard: { icon: "code", imageMark: { src: keyboardMark } },
     release: { icon: "package", imageMark: { src: releaseMark } },
@@ -76,7 +78,7 @@ export const redesignMarks: Record<
     document: { icon: "doc", imageMark: { src: documentMark } },
     movies: { icon: "play", imageMark: { src: moviesMark } },
     inbox: { icon: "inbox", imageMark: { src: inboxMark } },
-    team: { icon: "users", imageMark: { src: happyMark } },
+    team: { icon: "users" },
 };
 
 export const redesignConnections: readonly ConnectionShellItem[] = [
@@ -107,7 +109,7 @@ export const redesignSections: SidebarSection[] = [
     { id: "pinned", label: "Pinned", items: [work("feedback", "Backlog & feedback", "feedback")] },
     {
         id: "space",
-        spaceHeading: { label: "Happy Team", imageMark: redesignMarks.team.imageMark },
+        spaceHeading: { label: "Happy Team", icon: redesignMarks.team.icon },
         headingOnly: true,
         items: [],
     },
@@ -193,10 +195,20 @@ const human = (id: string, text: string): WorkTranscriptRow => ({
     text,
     own: true,
 });
-const agent = (id: string, text: string, author = "Redesign"): WorkTranscriptRow => ({
+const redesignAuthors = {
+    redesign: { name: "Redesign", mark: redesignMarks.redesign.imageMark },
+    happy: { name: "Happy", mark: redesignMarks.happy.imageMark },
+    release: { name: "Release Coordinator", mark: redesignMarks.release.imageMark },
+};
+const agent = (
+    id: string,
+    text: string,
+    author: keyof typeof redesignAuthors = "redesign",
+): WorkTranscriptRow => ({
     id,
     kind: "message",
-    author,
+    author: redesignAuthors[author].name,
+    imageMark: redesignAuthors[author].mark,
     text,
 });
 
@@ -222,7 +234,7 @@ export const redesignMorning: readonly WorkTranscriptRow[] = [
     agent(
         "morning-4",
         "Keep similar reports linked as possible duplicates; leave priority and product decisions to the human.",
-        "Happy",
+        "happy",
     ),
 ];
 
@@ -309,7 +321,7 @@ export const redesignLeased: readonly WorkTranscriptRow[] = [
         author: "Muse icon research",
         streaming: true,
         text: "The available evidence points to a static icon set, not generated icons.\n\nLikely a fixed SVG/icon library and selector; the observed assets are flat two-tone, around 64 px.\n\nRecommendation is to use a static picker unless product identity is confirmed; confidence is limited.",
-        imageUrl: redesignMarks.muse.imageMark?.src,
+        imageMark: redesignMarks.muse.imageMark,
     },
 ];
 
@@ -360,7 +372,7 @@ export const redesignRelease: readonly WorkTranscriptRow[] = [
     agent(
         "release-1",
         "The preview checks are ready. I’ve asked Analytics Watcher to watch startup failures and reconnects on the new build.",
-        "Release Coordinator",
+        "release",
     ),
     {
         id: "release-2",

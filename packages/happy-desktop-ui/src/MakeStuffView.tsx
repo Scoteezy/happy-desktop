@@ -53,10 +53,6 @@ export function MakeStuffView({ stage }: MakeStuffViewProps) {
                                     {related.label}
                                 </div>
                             ))}
-                            <div className="happy-make-stuff__context-line">
-                                <Icon name="check" size={16} />
-                                {stage.placement}
-                            </div>
                         </div>
                         {stage.conflict ? (
                             <div className="happy-make-stuff__conflict" role="status">
@@ -72,6 +68,7 @@ export function MakeStuffView({ stage }: MakeStuffViewProps) {
                             </div>
                         ) : null}
                         <div className="happy-make-stuff__actions">
+                            <p className="happy-make-stuff__placement">{stage.placement}</p>
                             <Button onClick={stage.onStart}>Start</Button>
                         </div>
                     </>

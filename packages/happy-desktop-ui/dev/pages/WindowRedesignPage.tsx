@@ -269,6 +269,7 @@ function StoryWindow(props: StoryFrame) {
     const [query, setQuery] = useState("");
     const [searchIndex, setSearchIndex] = useState(0);
     const [sections, setSections] = useState(redesignSections);
+    const [moviesCreated, setMoviesCreated] = useState(props.scene === "movies");
     const [draft, setDraft] = useState(
         props.scene === "movie-request"
             ? "Make a list of movies I have downloaded."
@@ -324,11 +325,11 @@ function StoryWindow(props: StoryFrame) {
             ? [taskTab, { id: "make-stuff", label: "Make Stuff" }]
             : scene === "movies"
               ? [
-                    { id: "happy", label: "Happy", ...redesignMarks.team },
+                    { id: "happy", label: "Happy", ...redesignMarks.happy },
                     { id: "movies", label: "Downloaded movies", ...redesignMarks.movies },
                 ]
               : scene === "morning" || scene === "search"
-                ? [{ id: "happy", label: "Happy", ...redesignMarks.team }, taskTab]
+                ? [{ id: "happy", label: "Happy", ...redesignMarks.happy }, taskTab]
                 : scene === "release"
                   ? [
                         {
@@ -421,6 +422,7 @@ function StoryWindow(props: StoryFrame) {
             id: "movies-answer",
             kind: "message",
             author: "Happy",
+            imageMark: redesignMarks.happy.imageMark,
             text: "I’ve made the list. You can add to it and check off what you’ve watched.",
         },
         {
@@ -428,6 +430,7 @@ function StoryWindow(props: StoryFrame) {
             kind: "artifact",
             label: "Downloaded movies",
             onOpen: () => {
+                setMoviesCreated(true);
                 setScene("movies");
                 setOpenedContent(undefined);
             },
@@ -454,6 +457,7 @@ function StoryWindow(props: StoryFrame) {
             id: "landed-answer",
             kind: "message",
             author: "Window navigation",
+            imageMark: redesignMarks.redesign.imageMark,
             text: "I’ll keep the sidebar toggle and search in place, then bring the tabs into one shared band. The related redesign work stays linked here.",
         },
     ];
@@ -499,7 +503,7 @@ function StoryWindow(props: StoryFrame) {
                 composer: { ...redesignComposer, text: reply },
                 onComposerSend: () => setReply(""),
                 onComposerValueChange: setReply,
-                composerPlaceholder: `Message ${scene === "release" ? "Release Coordinator" : scene === "morning" ? "Happy" : "Window navigation"}…`,
+                composerPlaceholder: `Message ${titleTabs.find((tab) => tab.id === mainId)?.label ?? "Window navigation"}…`,
                 composerFocusOnType: false,
             }}
         />
@@ -517,7 +521,7 @@ function StoryWindow(props: StoryFrame) {
                                   { id: "desktop-redesign", label: "Desktop redesign" },
                                   { id: "chat-sync", label: "Shared chat sync" },
                               ],
-                              placement: "Desktop workflow · under Desktop redesign",
+                              placement: "Lands in Desktop workflow",
                               conflict: {
                                   label: "Redesign blueprints",
                                   onOpen: () => {
@@ -536,6 +540,7 @@ function StoryWindow(props: StoryFrame) {
                               text: draft,
                               onTextChange: setDraft,
                               onContinue: () => {
+                                  if (scene === "movie-request") setMoviesCreated(true);
                                   setScene(scene === "movie-request" ? "movies" : "context");
                                   setOpenedContent(undefined);
                               },
@@ -607,6 +612,7 @@ function StoryWindow(props: StoryFrame) {
                         windowControls
                         windowFullScreen={!props.windowed}
                         sidebarCollapsible
+                        sidebarCollapsedLayout="overlay"
                         sidebarCollapsed={collapsed}
                         onSidebarCollapsedChange={setCollapsed}
                         sidebarDefaultWidth={APP_SHELL_SIDEBAR_DEFAULT_WIDTH}
@@ -665,7 +671,21 @@ function StoryWindow(props: StoryFrame) {
                                                   ...section.items.slice(1),
                                               ],
                                           }
-                                        : section,
+                                        : section.id === "today" && moviesCreated
+                                          ? {
+                                                ...section,
+                                                collapsed: false,
+                                                items: [
+                                                    {
+                                                        id: "movies",
+                                                        label: "Downloaded movies",
+                                                        kind: "view",
+                                                        ...redesignMarks.movies,
+                                                    },
+                                                    ...section.items,
+                                                ],
+                                            }
+                                          : section,
                                 )}
                             />
                         }

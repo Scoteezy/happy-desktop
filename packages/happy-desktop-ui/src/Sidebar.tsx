@@ -310,6 +310,7 @@ export type SidebarSection = {
     /** Static space identity separating global rows from the space's sections. */
     spaceHeading?: {
         avatarId?: string;
+        icon?: IconName;
         imageMark?: { src: string; alt?: string };
         label: string;
     };
@@ -2904,6 +2905,8 @@ export function Sidebar(props: SidebarProps) {
                                                 id={section.spaceHeading.avatarId}
                                                 size={20}
                                             />
+                                        ) : section.spaceHeading.icon ? (
+                                            <Icon name={section.spaceHeading.icon} size={20} />
                                         ) : null}
                                         <span
                                             className="happy-sidebar__title"
