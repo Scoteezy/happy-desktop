@@ -829,15 +829,18 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
      *
      * While a provider streams, the daemon versions the agent once per delta and the only
      * field that moves is its timestamp. Each such version is stored at once, so the version
-     * chain and every read stay exact, but announcing it would re-project and re-render every
-     * session row for nothing a reader can see. They are announced together, at most once a
-     * second; any other change to the agent announces it immediately.
+     * chain and every read stay exact, and the session itself, when someone has it open, shows
+     * it at once. Announcing it to the catalog would re-project and re-render every session row,
+     * so the catalog and parents hear of it together, at most once a second; any other change
+     * to the agent announces it everywhere immediately.
      */
     const quietAgentIds = new Set<string>();
     let quietPublishTimer: ReturnType<typeof setTimeout> | undefined;
 
     const quietAgentStore = (agent: Agent): void => {
         storeAgent(agent);
+        const entry = sessions.get(agent.id);
+        if (entry !== undefined) publishSession(entry);
         quietAgentIds.add(agent.id);
         quietPublishTimer ??= setTimeout(quietAgentsPublish, QUIET_AGENT_PUBLISH_MS);
     };
