@@ -574,7 +574,7 @@ function shortcutRowsOf(
     targets?: readonly SidebarNumberShortcutTarget[],
 ): readonly SidebarShortcutRow[] {
     const rows = sections.flatMap((section) =>
-        section.headingOnly
+        section.headingOnly || section.collapsed
             ? []
             : visibleRows(section.items).map((row) => ({
                   item: row.item,
@@ -3177,6 +3177,7 @@ export function Sidebar(props: SidebarProps) {
                                     </div>
                                 ) : null}
                                 {!section.headingOnly &&
+                                !section.collapsed &&
                                 (section.items.length === 0 ? section.empty : undefined)
                                     ? ((empty) => (
                                           <div

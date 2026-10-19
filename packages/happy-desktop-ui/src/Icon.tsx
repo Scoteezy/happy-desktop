@@ -9,6 +9,7 @@ export type IconName =
     | "chat"
     | "agents"
     | "tasks"
+    | "list"
     | "files"
     | "search"
     | "settings"
@@ -166,6 +167,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     chat: { set: "ionicons", name: "chatbubble-outline" },
     agents: { set: "ionicons", name: "hardware-chip-outline" },
     tasks: { set: "ionicons", name: "checkbox-outline" },
+    list: { set: "ionicons", name: "list-outline" },
     files: { set: "ionicons", name: "documents-outline" },
     search: { set: "ionicons", name: "search-outline" },
     settings: { set: "ionicons", name: "settings-outline" },

@@ -1,72 +1,140 @@
-import { useState, type CSSProperties } from "react";
-import {
-    AppShell,
-    APP_SHELL_PANEL_DEFAULT_WIDTH,
-    APP_SHELL_SIDEBAR_DEFAULT_WIDTH,
-} from "../../src/AppShell";
+import { useState } from "react";
+import type { HappyAgentTodoListSnapshot, HappyAgentSurfaceTodoId } from "happy-desktop-state";
+import { AppShell, APP_SHELL_SIDEBAR_DEFAULT_WIDTH } from "../../src/AppShell";
 import { Button } from "../../src/Button";
 import { CodeBlock } from "../../src/CodeBlock";
+import { CommandPalette } from "../../src/CommandPalette";
+import { CommandPaletteResults } from "../../src/CommandPaletteResults";
 import { ConnectionShell } from "../../src/ConnectionShell";
-import { ConversationView } from "../../src/ConversationView";
+import { MakeStuffView } from "../../src/MakeStuffView";
+import { MarkdownDocument } from "../../src/MarkdownDocument";
+import { ModalOverlay } from "../../src/ModalOverlay";
 import { ScrollArea } from "../../src/Scrollbar";
 import { Sidebar } from "../../src/Sidebar";
 import { TabbedPane } from "../../src/TabbedPane";
+import type { TabItem } from "../../src/Tabs";
 import { ThemeScope } from "../../src/ThemeScope";
+import { WorkFloaty, type WorkFloatyItem } from "../../src/WorkFloaty";
+import { WorkTranscript, type WorkTranscriptRow } from "../../src/WorkTranscript";
+import { HappyAgentTodoSurfacePage } from "../../src/pages/surfaces/HappyAgentTodoSurfacePage";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
 import {
+    redesignActive,
     redesignCode,
     redesignComposer,
     redesignConnections,
-    redesignConversation,
-    redesignMainTabs,
+    redesignDraft,
+    redesignHistory,
+    redesignLeased,
+    redesignMarks,
+    redesignMorning,
+    redesignMovies,
+    redesignNative,
     redesignPrimary,
+    redesignRelease,
+    redesignReplaced,
+    redesignSearch,
     redesignSections,
-    redesignSideConversation,
-    redesignSideTabs,
+    redesignTabs,
+    redesignWorking,
 } from "./windowRedesignFixtures";
 
 export const componentNumber = "P-021";
 const noop = () => undefined;
 const composeShortcut = { aria: "Meta+N Meta+T", caps: "⌘N" };
-const windows = [
-    { width: 1100, height: 760 },
-    { width: 720, height: 640 },
+const desktopWindows = [
     { width: 1440, height: 900 },
+    { width: 1100, height: 760 },
 ] as const;
 
-const screens: readonly RedesignWindowProps[] = [
-    { id: "01-fullscreen-expanded", label: "Full screen · expanded", fullScreen: true },
-    {
-        id: "02-fullscreen-collapsed",
-        label: "Full screen · collapsed",
-        fullScreen: true,
-        collapsed: true,
-    },
-    { id: "03-macos-expanded", label: "macOS · expanded", phrase: "Build" },
-    { id: "04-macos-collapsed", label: "macOS · collapsed", collapsed: true, phrase: "Build" },
-    { id: "05-macos-80-percent", label: "macOS · 80% renderer zoom", zoom: 0.8 },
-    { id: "06-macos-125-percent", label: "macOS · 125% renderer zoom", zoom: 1.25 },
-    {
-        id: "07-close-focus",
-        label: "Close control · hover overlay",
-        fullScreen: true,
-        closeFocus: true,
-    },
-    { id: "08-fullscreen-dark", label: "Full screen · dark", fullScreen: true, dark: true },
-];
-
-type RedesignWindowProps = {
+type Scene =
+    | "morning"
+    | "request"
+    | "context"
+    | "landed"
+    | "working"
+    | "replaced"
+    | "leased"
+    | "movie-request"
+    | "movies"
+    | "release"
+    | "history"
+    | "search";
+type StoryFrame = {
     id: string;
     label: string;
-    fullScreen?: boolean;
-    collapsed?: boolean;
-    phrase?: string;
-    zoom?: number;
-    closeFocus?: boolean;
+    scene: Scene;
+    iconsOff?: boolean;
     dark?: boolean;
+    floaty?: boolean;
+    collapsed?: boolean;
+    windowed?: boolean;
 };
 
-/** Fixture-only OS decoration: its pixels stay fixed while renderer content zooms. */
+const frames: readonly StoryFrame[] = [
+    { id: "01a-morning-icons-on", label: "Morning · generated icons", scene: "morning" },
+    {
+        id: "01b-morning-icons-off",
+        label: "Morning · no entity icon lanes",
+        scene: "morning",
+        iconsOff: true,
+    },
+    { id: "02a-make-stuff-request", label: "Make Stuff · one request", scene: "request" },
+    {
+        id: "02b-make-stuff-context",
+        label: "Context · related and conflicting work",
+        scene: "context",
+    },
+    { id: "02c-task-landed", label: "A task lands in Desktop workflow", scene: "landed" },
+    {
+        id: "03-task-working",
+        label: "Work · summarized transcript and active floaty",
+        scene: "working",
+        floaty: true,
+    },
+    {
+        id: "04-helper-replaced",
+        label: "A crashed helper is replaced",
+        scene: "replaced",
+        floaty: true,
+    },
+    {
+        id: "05-leased-research",
+        label: "A researcher replies directly",
+        scene: "leased",
+        floaty: true,
+    },
+    { id: "06a-make-movie-list", label: "The same input · a list request", scene: "movie-request" },
+    { id: "06b-movie-list-open", label: "The list opens from the chat", scene: "movies" },
+    {
+        id: "07-release-day",
+        label: "Crew coordinate · one question for you",
+        scene: "release",
+        floaty: true,
+    },
+    {
+        id: "08-floaty-history",
+        label: "History keeps the temporary work",
+        scene: "history",
+        floaty: true,
+    },
+    {
+        id: "09-collapsed-search",
+        label: "Search · windowed and collapsed",
+        scene: "search",
+        collapsed: true,
+        windowed: true,
+    },
+    {
+        id: "10-working-dark",
+        label: "The same work · dark appearance",
+        scene: "working",
+        floaty: true,
+        dark: true,
+    },
+];
+
+/** Fixture-only OS decoration, outside the renderer's native-control safe area. */
 function TrafficLights() {
     return (
         <span
@@ -97,146 +165,566 @@ function TrafficLights() {
     );
 }
 
-function RedesignWindow(props: RedesignWindowProps) {
-    const [collapsed, setCollapsed] = useState(props.collapsed ?? false);
-    const [panelOpen, setPanelOpen] = useState(true);
-    const [sections, setSections] = useState(redesignSections);
-    const [mainTabs, setMainTabs] = useState(redesignMainTabs);
-    const [sideTabs, setSideTabs] = useState(redesignSideTabs);
-    const [activeMain, setActiveMain] = useState("workflow-sidebar");
-    const [activeSide, setActiveSide] = useState("sidebar-file");
-    const [draft, setDraft] = useState("");
-    const zoom = props.zoom ?? 1;
-    const conversation = (side = false) => (
-        <ConversationView
-            composer={{
-                ...redesignComposer,
-                scopeId: side ? "session-sync" : "workflow-sidebar",
-                text: side ? "" : draft,
+function MovieList() {
+    const [list, setList] = useState(redesignMovies);
+    const update = (next: Partial<HappyAgentTodoListSnapshot>) => setList({ ...list, ...next });
+    return (
+        <HappyAgentTodoSurfacePage
+            surface={{ name: "Downloaded movies", type: { kind: "todo" }, members: [] }}
+            list={list}
+            focusOnType={false}
+            onDraftChange={(draft) => update({ draft })}
+            onDraftSubmit={() => {
+                if (!list.draft.trim()) return;
+                const first = redesignMovies.active[0]!;
+                update({
+                    draft: "",
+                    active: [
+                        ...list.active,
+                        {
+                            ...first,
+                            id: `movie-new-${list.active.length}` as HappyAgentSurfaceTodoId,
+                            text: list.draft,
+                            orderKey: String(list.active.length),
+                        },
+                    ],
+                });
             }}
-            composerPlaceholder={
-                side ? "Reply to Session Sync Audit…" : "Message Workflow Sidebar…"
+            onTodoCompletedChange={(id, completed) => {
+                if (completed) {
+                    const todo = list.active.find((entry) => entry.id === id);
+                    if (todo)
+                        update({
+                            active: list.active.filter((entry) => entry.id !== id),
+                            completed: [
+                                ...list.completed,
+                                {
+                                    ...todo,
+                                    status: "completed",
+                                    completedAt: 1_790_000_000_000,
+                                    orderKey: null,
+                                },
+                            ],
+                        });
+                } else {
+                    const todo = list.completed.find((entry) => entry.id === id);
+                    if (todo)
+                        update({
+                            completed: list.completed.filter((entry) => entry.id !== id),
+                            active: [
+                                ...list.active,
+                                {
+                                    ...todo,
+                                    status: "active",
+                                    completedAt: null,
+                                    orderKey: String(list.active.length),
+                                },
+                            ],
+                        });
+                }
+            }}
+            onTodoMove={(id, index) => {
+                const todo = list.active.find((entry) => entry.id === id);
+                if (!todo) return;
+                const active = list.active.filter((entry) => entry.id !== id);
+                active.splice(index, 0, todo);
+                update({ active });
+            }}
+            onTodoDelete={(id) =>
+                update({
+                    active: list.active.filter((entry) => entry.id !== id),
+                    completed: list.completed.filter((entry) => entry.id !== id),
+                })
             }
-            entries={side ? redesignSideConversation : redesignConversation}
-            onComposerSend={noop}
-            onComposerValueChange={side ? noop : setDraft}
-            viewerId="kirill"
+            onTodoEditStart={(id) => {
+                const todo = list.active.find((entry) => entry.id === id);
+                if (todo) update({ editing: { todoId: id, text: todo.text } });
+            }}
+            onTodoEditTextChange={(text) => {
+                if (list.editing) update({ editing: { ...list.editing, text } });
+            }}
+            onTodoEditCommit={() =>
+                update({
+                    active: list.active.map((todo) =>
+                        todo.id === list.editing?.todoId
+                            ? { ...todo, text: list.editing.text }
+                            : todo,
+                    ),
+                    editing: undefined,
+                })
+            }
+            onTodoEditCancel={() => update({ editing: undefined })}
+            onCompletedShownChange={(completedShown) => update({ completedShown })}
         />
     );
-    const file = (name: string) => (
-        <ScrollArea style={{ flex: 1, minHeight: 0 }}>
-            <CodeBlock name={name} text={redesignCode} lineNumbers />
-        </ScrollArea>
+}
+
+function StoryWindow(props: StoryFrame) {
+    const [scene, setScene] = useState(props.scene);
+    const [collapsed, setCollapsed] = useState(props.collapsed ?? false);
+    const [floatyOpen, setFloatyOpen] = useState(props.floaty ?? false);
+    const [historyExpanded, setHistoryExpanded] = useState(props.scene === "history");
+    const [panelOpen, setPanelOpen] = useState(false);
+    const [searchOpen, setSearchOpen] = useState(props.scene === "search");
+    const [query, setQuery] = useState("");
+    const [searchIndex, setSearchIndex] = useState(0);
+    const [sections, setSections] = useState(redesignSections);
+    const [draft, setDraft] = useState(
+        props.scene === "movie-request"
+            ? "Make a list of movies I have downloaded."
+            : "Refine the sidebar search and tabs.",
     );
+    const [reply, setReply] = useState("");
+    const [releaseAnswer, setReleaseAnswer] = useState<string>();
+    const [openedContent, setOpenedContent] = useState<string>();
+    const taskLanded = ["landed", "working", "replaced", "leased", "history"].includes(scene);
+    const activeTaskId = taskLanded ? "window-navigation" : "redesign";
+    const [closedTabs, setClosedTabs] = useState<readonly string[]>([]);
+    const mainId =
+        openedContent ??
+        (scene === "movies"
+            ? "movies"
+            : scene === "morning" || scene === "search"
+              ? "happy"
+              : scene === "release"
+                ? "release-coordinator"
+                : scene === "request" || scene === "context" || scene === "movie-request"
+                  ? "make-stuff"
+                  : activeTaskId);
+
+    const open = (id: string) => {
+        if (id === "muse-research" || id === "finished-research") {
+            setScene("leased");
+            setOpenedContent(undefined);
+            return;
+        }
+        if (id === "blueprints" || id === "previous-blueprints" || id === "round-three") {
+            setScene("replaced");
+            setOpenedContent(undefined);
+            return;
+        }
+        setOpenedContent(id);
+        setClosedTabs(closedTabs.filter((closed) => closed !== id));
+        setSearchOpen(false);
+    };
+    const begin = () => {
+        setScene("request");
+        setOpenedContent(undefined);
+        setDraft("");
+        setFloatyOpen(false);
+    };
+
+    const taskTab: TabItem = {
+        id: activeTaskId,
+        label: taskLanded ? "Window navigation" : "Desktop redesign",
+        ...redesignMarks.redesign,
+    };
+    const titleTabs: TabItem[] =
+        mainId === "make-stuff"
+            ? [taskTab, { id: "make-stuff", label: "Make Stuff" }]
+            : scene === "movies"
+              ? [
+                    { id: "happy", label: "Happy", ...redesignMarks.team },
+                    { id: "movies", label: "Downloaded movies", ...redesignMarks.movies },
+                ]
+              : scene === "morning" || scene === "search"
+                ? [{ id: "happy", label: "Happy", ...redesignMarks.team }, taskTab]
+                : scene === "release"
+                  ? [
+                        {
+                            id: "release-coordinator",
+                            label: "Release Coordinator",
+                            ...redesignMarks.release,
+                        },
+                        {
+                            id: "integration-gates",
+                            label: "Current integration gates",
+                            ...redesignMarks.document,
+                        },
+                    ]
+                  : [taskTab, ...redesignTabs.filter((tab) => tab.id !== "redesign")];
+    if (openedContent && !titleTabs.some((tab) => tab.id === openedContent)) {
+        const existing = [
+            ...redesignTabs,
+            ...redesignSections.flatMap((section) => section.items),
+        ].find((item) => item.id === openedContent);
+        titleTabs.push({
+            id: openedContent,
+            label: existing?.label ?? "Keyboard drag audit",
+            icon: existing?.icon ?? "doc",
+            imageMark: existing?.imageMark,
+        });
+    }
+    const tabs = titleTabs
+        .filter((tab) => !closedTabs.includes(tab.id))
+        .map((tab) => (props.iconsOff ? { id: tab.id, label: tab.label } : tab));
+    const activeItems: readonly WorkFloatyItem[] =
+        scene === "release"
+            ? [
+                  {
+                      id: "analytics-watcher",
+                      kind: "helper",
+                      status: "running",
+                      label: "Analytics Watcher",
+                      detail: "Watching the preview",
+                      ...redesignMarks.analytics,
+                  },
+                  {
+                      id: "qa-tester",
+                      kind: "helper",
+                      status: "waiting",
+                      label: "QA Tester",
+                      detail: "Waiting for team budget",
+                      ...redesignMarks.qa,
+                  },
+                  {
+                      id: "integration-gates",
+                      kind: "artifact",
+                      label: "Current integration gates",
+                      ...redesignMarks.document,
+                  },
+              ]
+            : redesignActive
+                  .filter((item) => !(scene === "history" && item.id === "muse-research"))
+                  .map((item) =>
+                      scene === "replaced" && item.id === "blueprints"
+                          ? {
+                                ...item,
+                                label: "Blueprint replacement",
+                                detail: "Resumed from round 3",
+                            }
+                          : scene === "leased" && item.id === "muse-research"
+                            ? { ...item, detail: "Replying in this conversation" }
+                            : item,
+                  );
+    const floating = floatyOpen ? (
+        <WorkFloaty
+            open
+            activeItems={activeItems}
+            historyItems={redesignHistory.filter(
+                (item) => item.id !== "finished-research" || scene === "history",
+            )}
+            historyExpanded={historyExpanded}
+            onHistoryExpandedChange={setHistoryExpanded}
+            onItemOpen={open}
+        />
+    ) : undefined;
+    const movieRows: readonly WorkTranscriptRow[] = [
+        {
+            id: "movies-request",
+            kind: "message",
+            author: "Kirill",
+            own: true,
+            text: "Make a list of movies I have downloaded.",
+        },
+        {
+            id: "movies-answer",
+            kind: "message",
+            author: "Happy",
+            text: "I’ve made the list. You can add to it and check off what you’ve watched.",
+        },
+        {
+            id: "movies-open",
+            kind: "artifact",
+            label: "Downloaded movies",
+            onOpen: () => {
+                setScene("movies");
+                setOpenedContent(undefined);
+            },
+        },
+    ];
+    const landedRows: readonly WorkTranscriptRow[] = [
+        {
+            id: "landed-request",
+            kind: "message",
+            author: "Kirill",
+            own: true,
+            text: "Refine the sidebar search and tabs.",
+        },
+        {
+            id: "landed-context",
+            kind: "summary",
+            label: "Connected Happy Desktop · added under Desktop workflow",
+            details: [
+                "Related work: Desktop redesign and Shared chat sync.",
+                "Window navigation is scoped under Desktop redesign; the blueprint continuation stays with its existing helper.",
+            ],
+        },
+        {
+            id: "landed-answer",
+            kind: "message",
+            author: "Window navigation",
+            text: "I’ll keep the sidebar toggle and search in place, then bring the tabs into one shared band. The related redesign work stays linked here.",
+        },
+    ];
+    let rows =
+        scene === "morning" || scene === "search"
+            ? redesignMorning
+            : scene === "replaced"
+              ? redesignReplaced
+              : scene === "leased"
+                ? redesignLeased
+                : scene === "landed"
+                  ? landedRows
+                  : scene === "release"
+                    ? redesignRelease
+                    : redesignWorking;
+    if (openedContent === "native-integration") rows = redesignNative;
+    if (openedContent === "feedback") rows = redesignMorning;
+    if (openedContent === "movies-chat") rows = movieRows;
+    if (scene === "movies") rows = movieRows;
+    if (scene === "release")
+        rows = rows.map((row) =>
+            row.kind === "question"
+                ? releaseAnswer
+                    ? {
+                          id: "answered",
+                          kind: "message",
+                          author: "Kirill",
+                          own: true,
+                          text: releaseAnswer,
+                      }
+                    : {
+                          ...row,
+                          onAnswer: (_id, answers) => setReleaseAnswer(answers.window?.join(", ")),
+                      }
+                : row,
+        );
+
+    const conversation = () => (
+        <WorkTranscript
+            rows={rows}
+            floating={floating}
+            composer={{
+                composer: { ...redesignComposer, text: reply },
+                onComposerSend: () => setReply(""),
+                onComposerValueChange: setReply,
+                composerPlaceholder: `Message ${scene === "release" ? "Release Coordinator" : scene === "morning" ? "Happy" : "Window navigation"}…`,
+                composerFocusOnType: false,
+            }}
+        />
+    );
+    const content =
+        mainId === "make-stuff" ? (
+            <MakeStuffView
+                stage={
+                    scene === "context"
+                        ? {
+                              kind: "context",
+                              text: draft,
+                              project: "Happy Desktop",
+                              related: [
+                                  { id: "desktop-redesign", label: "Desktop redesign" },
+                                  { id: "chat-sync", label: "Shared chat sync" },
+                              ],
+                              placement: "Desktop workflow · under Desktop redesign",
+                              conflict: {
+                                  label: "Redesign blueprints",
+                                  onOpen: () => {
+                                      setScene("working");
+                                      setOpenedContent(undefined);
+                                      setFloatyOpen(true);
+                                  },
+                              },
+                              onStart: () => {
+                                  setScene("landed");
+                                  setOpenedContent(undefined);
+                              },
+                          }
+                        : {
+                              kind: "request",
+                              text: draft,
+                              onTextChange: setDraft,
+                              onContinue: () => {
+                                  setScene(scene === "movie-request" ? "movies" : "context");
+                                  setOpenedContent(undefined);
+                              },
+                          }
+                }
+            />
+        ) : mainId === "movies" ? (
+            <MovieList />
+        ) : mainId === "draft" || mainId === "integration-gates" || mainId === "keyboard-audit" ? (
+            <ScrollArea>
+                <MarkdownDocument
+                    text={
+                        mainId === "draft"
+                            ? redesignDraft
+                            : "# Current integration gates\n\nNative iOS f010601a: 208 pass, five fail; hosted compilation blocked.\n\nThe current gate report stays with Native iOS integration. Finished audit reports remain in History."
+                    }
+                />
+            </ScrollArea>
+        ) : mainId === "sidebar-file" ? (
+            <ScrollArea>
+                <CodeBlock name="Sidebar.tsx" text={redesignCode} lineNumbers />
+            </ScrollArea>
+        ) : (
+            conversation()
+        );
+
+    const searchSections = redesignSearch.map((section) => ({
+        ...section,
+        rows: section.rows.filter(
+            (row) =>
+                row.kind === "command" &&
+                `${row.title} ${row.meta ?? ""}`.toLowerCase().includes(query.toLowerCase()),
+        ),
+    }));
+    const searchRows = searchSections.flatMap((section) => section.rows);
     return (
         <ThemeScope mode={props.dark ? "dark" : "light"}>
             <div
+                onKeyDown={(event) => {
+                    if (!event.metaKey || event.altKey || event.shiftKey) return;
+                    if (event.key.toLowerCase() === "n" || event.key.toLowerCase() === "t") {
+                        event.preventDefault();
+                        begin();
+                    } else if (event.key.toLowerCase() === "k") {
+                        event.preventDefault();
+                        setSearchOpen(!searchOpen);
+                    }
+                }}
                 style={{
                     display: "flex",
                     position: "relative",
                     width: "100%",
                     height: "100%",
                     overflow: "hidden",
+                    contain: "layout paint",
                 }}
             >
-                <div
-                    style={
-                        {
-                            display: "flex",
-                            zoom,
-                            width: "100%",
-                            height: "100%",
-                            flex: "none",
-                            "--happy-window-zoom": zoom,
-                        } as CSSProperties
-                    }
+                <ConnectionShell
+                    items={redesignConnections}
+                    onSelect={noop}
+                    selectedId="kirill-mac"
+                    windowControls
+                    windowFullScreen={!props.windowed}
                 >
-                    <ConnectionShell
-                        items={redesignConnections}
-                        onSelect={noop}
-                        selectedId="kirill-mac"
+                    <AppShell
+                        connectionRail
+                        embedded
+                        navigationChrome="integrated"
                         windowControls
-                        windowFullScreen={props.fullScreen}
+                        windowFullScreen={!props.windowed}
+                        sidebarCollapsible
+                        sidebarCollapsed={collapsed}
+                        onSidebarCollapsedChange={setCollapsed}
+                        sidebarDefaultWidth={APP_SHELL_SIDEBAR_DEFAULT_WIDTH}
+                        sidebarSearchAction={{
+                            label: "Search work",
+                            onClick: () => setSearchOpen(true),
+                        }}
+                        sidebarCollapsedAction={{ label: "Make Stuff (⌘N or ⌘T)", onClick: begin }}
+                        sidebar={
+                            <Sidebar
+                                activeItemId={mainId}
+                                actions={redesignPrimary}
+                                composeActive={mainId === "make-stuff"}
+                                composeLabel="Make Stuff"
+                                composeShortcut={composeShortcut}
+                                composeTooltip="New item (⌘N or ⌘T)"
+                                onCompose={begin}
+                                itemMarkPresentation={props.iconsOff ? "none" : "default"}
+                                treeConnectors={false}
+                                foldControlPlacement="trailing"
+                                onItemSelect={open}
+                                onSectionCollapseToggle={(id) =>
+                                    setSections(
+                                        sections.map((section) =>
+                                            section.id === id
+                                                ? { ...section, collapsed: !section.collapsed }
+                                                : section,
+                                        ),
+                                    )
+                                }
+                                onItemCollapseToggle={(id) =>
+                                    setSections(
+                                        sections.map((section) => ({
+                                            ...section,
+                                            items: section.items.map((item) =>
+                                                item.id === id
+                                                    ? { ...item, collapsed: !item.collapsed }
+                                                    : item,
+                                            ),
+                                        })),
+                                    )
+                                }
+                                sections={sections.map((section) =>
+                                    section.id === "desktop-workflow" && taskLanded
+                                        ? {
+                                              ...section,
+                                              items: [
+                                                  section.items[0]!,
+                                                  {
+                                                      id: "window-navigation",
+                                                      label: "Window navigation",
+                                                      kind: "view",
+                                                      depth: 1,
+                                                      ...redesignMarks.redesign,
+                                                  },
+                                                  ...section.items.slice(1),
+                                              ],
+                                          }
+                                        : section,
+                                )}
+                            />
+                        }
+                        panel={
+                            panelOpen ? (
+                                <TabbedPane
+                                    activeId="sidebar-file"
+                                    tabs={redesignTabs.filter((tab) => tab.id === "sidebar-file")}
+                                    onSelect={noop}
+                                    tabSizing="content"
+                                    overflowFade
+                                    size="medium"
+                                >
+                                    <ScrollArea>
+                                        <CodeBlock
+                                            name="Sidebar.tsx"
+                                            text={redesignCode}
+                                            lineNumbers
+                                        />
+                                    </ScrollArea>
+                                </TabbedPane>
+                            ) : undefined
+                        }
                     >
-                        <AppShell
-                            connectionRail
-                            embedded
-                            navigationChrome="integrated"
-                            windowControls
-                            windowFullScreen={props.fullScreen}
-                            sidebarCollapsible
-                            sidebarCollapsed={collapsed}
-                            onSidebarCollapsedChange={setCollapsed}
-                            sidebarDefaultWidth={APP_SHELL_SIDEBAR_DEFAULT_WIDTH}
-                            sidebarCollapsedAction={{ label: "New item (⌘N or ⌘T)", onClick: noop }}
-                            sidebar={
-                                <Sidebar
-                                    activeItemId={activeMain}
-                                    actions={redesignPrimary}
-                                    composeLabel={props.phrase ?? "Make Stuff"}
-                                    composeShortcut={composeShortcut}
-                                    composeTooltip="New item (⌘N or ⌘T)"
-                                    onCompose={noop}
-                                    onItemSelect={setActiveMain}
-                                    onItemCollapseToggle={(id) =>
-                                        setSections(
-                                            sections.map((section) => ({
-                                                ...section,
-                                                items: section.items.map((item) =>
-                                                    item.id === id
-                                                        ? { ...item, collapsed: !item.collapsed }
-                                                        : item,
-                                                ),
-                                            })),
-                                        )
-                                    }
-                                    sections={sections}
-                                />
-                            }
-                            panelWidth={APP_SHELL_PANEL_DEFAULT_WIDTH}
-                            panel={
-                                panelOpen ? (
-                                    <TabbedPane
-                                        activeId={activeSide}
-                                        tabs={sideTabs}
-                                        tabSizing="content"
-                                        overflowFade
-                                        closePresentation="overlay"
-                                        size="medium"
-                                        onSelect={setActiveSide}
-                                        onClose={(id) => {
-                                            setSideTabs(sideTabs.filter((tab) => tab.id !== id));
-                                            if (activeSide === id) setActiveSide("session-sync");
+                        <TabbedPane
+                            activeId={mainId}
+                            tabs={tabs}
+                            tabSizing="content"
+                            overflowFade
+                            closePresentation="overlay"
+                            size="medium"
+                            onSelect={open}
+                            onClose={(id) => {
+                                setClosedTabs([...closedTabs, id]);
+                                if (mainId === id)
+                                    setOpenedContent(tabs.find((tab) => tab.id !== id)?.id);
+                            }}
+                            trailing={
+                                <>
+                                    <Button
+                                        aria-label={
+                                            floatyOpen ? "Hide task activity" : "Show task activity"
+                                        }
+                                        aria-expanded={floatyOpen}
+                                        icon="list"
+                                        iconOnly
+                                        size="small"
+                                        variant="ghost"
+                                        onClick={() => setFloatyOpen(!floatyOpen)}
+                                    />
+                                    <span
+                                        aria-hidden="true"
+                                        style={{
+                                            display: "flex",
+                                            width: 1,
+                                            height: 16,
+                                            background: "var(--divider)",
                                         }}
-                                    >
-                                        {activeSide === "session-sync"
-                                            ? conversation(true)
-                                            : file(
-                                                  activeSide === "tabs-css"
-                                                      ? "tabs.css"
-                                                      : "Sidebar.tsx",
-                                              )}
-                                    </TabbedPane>
-                                ) : undefined
-                            }
-                        >
-                            <TabbedPane
-                                activeId={activeMain}
-                                tabs={mainTabs}
-                                tabSizing="content"
-                                overflowFade
-                                closePresentation="overlay"
-                                closeRevealedId={props.closeFocus ? "workflow-sidebar" : undefined}
-                                size="medium"
-                                onSelect={setActiveMain}
-                                onClose={(id) => {
-                                    setMainTabs(mainTabs.filter((tab) => tab.id !== id));
-                                    if (activeMain === id)
-                                        setActiveMain(
-                                            mainTabs.find((tab) => tab.id !== id)?.id ?? "",
-                                        );
-                                }}
-                                trailing={
+                                    />
                                     <Button
                                         aria-label={
                                             panelOpen
@@ -249,20 +737,46 @@ function RedesignWindow(props: RedesignWindowProps) {
                                         variant="ghost"
                                         onClick={() => setPanelOpen(!panelOpen)}
                                     />
-                                }
-                            >
-                                {activeMain === "workflow-sidebar" ||
-                                !mainTabs.some((tab) => tab.id === activeMain && tab.filePath)
-                                    ? conversation()
-                                    : file(
-                                          mainTabs.find((tab) => tab.id === activeMain)?.label ??
-                                              "ConnectionShell.tsx",
-                                      )}
-                            </TabbedPane>
-                        </AppShell>
-                    </ConnectionShell>
-                </div>
-                {props.fullScreen ? null : <TrafficLights />}
+                                </>
+                            }
+                        >
+                            {content}
+                        </TabbedPane>
+                    </AppShell>
+                </ConnectionShell>
+                {props.windowed ? <TrafficLights /> : null}
+                {searchOpen ? (
+                    <ModalOverlay placement="top" onDismiss={() => setSearchOpen(false)}>
+                        <CommandPalette
+                            query={query}
+                            onQueryChange={(next) => {
+                                setQuery(next);
+                                setSearchIndex(0);
+                            }}
+                            onClose={() => setSearchOpen(false)}
+                            autoFocus={false}
+                            onSelectionMove={(direction) =>
+                                setSearchIndex(
+                                    Math.max(
+                                        0,
+                                        Math.min(searchRows.length - 1, searchIndex + direction),
+                                    ),
+                                )
+                            }
+                            onSelectionCommit={() => {
+                                const selected = searchRows[searchIndex];
+                                if (selected) open(selected.id);
+                            }}
+                        >
+                            <CommandPaletteResults
+                                sections={searchSections}
+                                activeIndex={searchIndex}
+                                onActiveIndexChange={setSearchIndex}
+                                onSelect={open}
+                            />
+                        </CommandPalette>
+                    </ModalOverlay>
+                ) : null}
             </div>
         </ThemeScope>
     );
@@ -273,28 +787,24 @@ export function WindowRedesignPage() {
         <ComponentPage
             contract="Props only"
             number={componentNumber}
-            title="Window redesign"
+            title="Window redesign · a day of work"
             width={1536}
-            summary="One shared tab band, a unified sidebar hierarchy, and native window clearance at every renderer zoom. Blueprint fixtures only."
+            summary="Real work and shortened conversation excerpts, organized into a proposed end-to-end workflow. Crew roles, future creation/release steps and movie content are storyboard fixtures."
         >
-            {windows.map((windowSize) =>
-                screens.map((screen) => (
+            {frames.flatMap((frame) =>
+                [
+                    ...desktopWindows,
+                    ...(frame.scene === "search" ? [{ width: 720, height: 640 }] : []),
+                ].map((windowSize) => (
                     <FullScreenSpecimen
-                        key={`${screen.id}-${windowSize.width}`}
-                        number={screen.id.slice(0, 2)}
-                        label={screen.label}
-                        detail={`${windowSize.width} × ${windowSize.height} · 40px band · 288px sidebar · 340px secondary pane`}
-                        screen={`${screen.id}-${windowSize.width}x${windowSize.height}`}
+                        key={`${frame.id}-${windowSize.width}`}
+                        number={frame.id.split("-")[0]!}
+                        label={frame.label}
+                        detail={`${windowSize.width} × ${windowSize.height} · one space · right-side disclosure · ${frame.iconsOff ? "no icon lanes" : "entity marks"}`}
+                        screen={`${frame.id}-${windowSize.width}x${windowSize.height}`}
                         window={windowSize}
                     >
-                        <RedesignWindow
-                            {...screen}
-                            collapsed={
-                                screen.zoom !== undefined && windowSize.width === 720
-                                    ? true
-                                    : screen.collapsed
-                            }
-                        />
+                        <StoryWindow {...frame} />
                     </FullScreenSpecimen>
                 )),
             )}
