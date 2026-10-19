@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { AppShell, APP_SHELL_SIDEBAR_DEFAULT_WIDTH } from "../../src/AppShell";
 import { ConnectionShell } from "../../src/ConnectionShell";
 import { MakeStuffView } from "../../src/MakeStuffView";
 import { MarkdownDocument } from "../../src/MarkdownDocument";
 import { TabbedPane } from "../../src/TabbedPane";
 import { ThemeScope } from "../../src/ThemeScope";
 import { WorkTranscript, type WorkTranscriptRow } from "../../src/WorkTranscript";
-import { PersonalDaySidebar } from "./PersonalDaySidebar";
+import { PersonalDayShell } from "./PersonalDayShell";
+import { dayCoordination, dayPairingAnswer } from "./dayCoordination";
 import {
+    dayAfterBatch,
     dayFocus,
     dayHappyImage,
     dayPerson,
@@ -23,31 +24,31 @@ const noop = () => undefined;
 const taskCopy: Partial<Record<DayWorkId, { request: string; reply: string }>> = {
     viewer: {
         request: "Check the preview viewer before we move on.",
-        reply: "I'm working through the viewer pass. I'll keep the result here with the release work.",
+        reply: "I'm working through the viewer pass.",
     },
     credentials: {
         request: "Keep credential attachment explicit at the boundary.",
-        reply: "I'm checking which credentials the provider needs and where that attachment is declared. The pairing contract question can stay with Happy while this continues.",
+        reply: "I'm checking which credentials the provider needs and where that attachment is declared.",
     },
     resize: {
         request: "Check what happens when the artifact is resized.",
-        reply: "The resize probe is ready to inspect. I'll keep the report with this task so we can compare the result.",
+        reply: "The resize probe is ready to inspect.",
     },
     redesign: {
-        request: "Keep my desktop work first. Steve is working on native.",
-        reply: "Desktop and agent work stay at the top. Steve's work is folded near the bottom, and nothing moves while you're focused here.",
+        request: "Check the sidebar at its normal desktop width.",
+        reply: "Work rows are 32 px. Long titles truncate before their status.",
     },
     port: {
         request: "Replicate onboarding end to end and finish the native settings pages.",
-        reply: "I'm continuing the UIKit work. The keyboard investigation and connector remain separate work, with their own results.",
+        reply: "I'm continuing the UIKit onboarding and settings pages.",
     },
     keyboard: {
         request: "Investigate the keyboard drag delay and compare it with Telegram.",
-        reply: "The investigation stays with the preview and keyboard task. I haven't confirmed the cause of the drag delay.",
+        reply: "I haven't confirmed the cause of the drag delay.",
     },
     connector: {
         request: "Use the new Tailcat pairing API in the native connector.",
-        reply: "The connector is waiting on Kirill to confirm the server pairing response. The task remains in your space.",
+        reply: "",
     },
 };
 
@@ -62,7 +63,10 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
     const [draft, setDraft] = useState(
         frame === "browse" || frame === "return" ? "Keep the sidebar steady while I work." : "",
     );
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [pairingReply, setPairingReply] = useState<string | null>(
+        frame === "reply" ? dayPairingAnswer : null,
+    );
+    const pairingResolved = pairingReply !== null || !dayWaiting(frame);
     const open = (id: string) => {
         if (dayWorkIdIs(id)) setTaskTab(id);
         setSelected(id);
@@ -74,20 +78,19 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
         imageMark: dayHappyImage,
         text,
     });
-    const coordination: WorkTranscriptRow = {
-        id: "pairing-contract",
-        kind: "coordination",
-        title: "Tailcat pairing contract",
-        participants:
-            person === "kirill"
-                ? "Steve's manager → your manager"
-                : "Your manager → Kirill's manager",
-        text: "Steve's native connector needs the server pairing response confirmed. It's waiting for Kirill's decision on the credential attachment contract.",
-        links: [
-            { id: "backend", label: "Open Surfaces backend", onOpen: () => open("backend") },
-            { id: "connector", label: "View Steve's connector", onOpen: () => open("connector") },
-        ],
-    };
+    const coordination = dayCoordination(pairingResolved, () => open("backend"));
+    const replyRows: WorkTranscriptRow[] =
+        pairingReply === null
+            ? []
+            : [
+                  {
+                      id: "pairing-answer",
+                      kind: "message",
+                      author: "Kirill",
+                      own: true,
+                      text: pairingReply,
+                  },
+              ];
     const happyRows: WorkTranscriptRow[] = [
         happyMessage(
             "initial-batch",
@@ -95,15 +98,10 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
                 ? "Grouped your desktop and agent work; Steve's native work is folded below."
                 : "Kept native work first and folded Kirill's desktop and agent work below.",
         ),
-        ...(frame === "K5"
-            ? [
-                  happyMessage(
-                      "finished-batch",
-                      "Moved Preview viewer release to Older after you finished it.",
-                  ),
-              ]
+        ...(dayAfterBatch(frame)
+            ? [happyMessage("finished-batch", "Moved Preview viewer release to Older.")]
             : []),
-        ...(dayWaiting(frame) ? [coordination] : []),
+        ...(dayWaiting(frame) || frame === "reply" ? [coordination, ...replyRows] : []),
     ];
     const source = dayWorkIdIs(selected) ? dayWork[selected] : undefined;
     const copy = dayWorkIdIs(selected) ? taskCopy[selected] : undefined;
@@ -116,19 +114,24 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
                   own: true,
                   text: copy.request,
               },
-              happyMessage("progress", copy.reply),
-              ...(selected === "connector" ? [coordination] : []),
+              ...(selected === "connector"
+                  ? [coordination, ...replyRows]
+                  : [happyMessage("progress", copy.reply)]),
           ]
-        : [
-              happyMessage(
-                  "context",
-                  "This work stays where you left it. Open its result or continue the conversation here.",
-              ),
-          ];
+        : [happyMessage("context", "Ready to continue.")];
     const composer = {
         composer: { ...redesignComposer, text: draft },
         onComposerValueChange: setDraft,
-        onComposerSend: () => setDraft(""),
+        onComposerSend: () => {
+            if (!draft.trim()) return;
+            if (
+                person === "kirill" &&
+                !pairingResolved &&
+                (selected === "happy" || selected === "connector")
+            )
+                setPairingReply(draft.trim());
+            setDraft("");
+        },
         composerPlaceholder:
             selected === "happy" ? "Message Happy…" : `Message ${source?.label ?? "Happy"}…`,
         composerFocusOnType: false,
@@ -146,19 +149,19 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
         ) : selected === "plans" ? (
             <MarkdownDocument
                 text={
-                    "# Desktop master plans\n\nThe sidebar is a living, personal view of the work. It groups related work into flat sections without making a folder hierarchy.\n\n## Keep the work steady\n\nWorking, unread, and waiting states update in place. Happy can organize a batch when you switch focus or pause, then explain the change in one line.\n\n## See the team\n\nSteve's native work remains visible near the bottom. Browse his space to understand its full context, while keeping your own Happy and drafts."
+                    "# Desktop delivery notes\n\n## Sidebar\n\nUse 280 px at the default width, with 32 px work rows. Check long titles and trailing status at the minimum width.\n\n## Rendering\n\nCapture Chromium, Firefox and WebKit at desktop sizes. Check text, icon geometry and focus retention."
                 }
             />
         ) : selected === "ultralist" ? (
             <MarkdownDocument
                 text={
-                    "# UltraList engine docs\n\nLibrary documentation stays with Steve's native work.\n\n## Keyboard and content movement\n\nThe iOS investigation compares keyboard movement and list behavior. The drag delay remains unconfirmed.\n\n## Related work\n\nNative UIKit integration and the Tailcat connector remain separate tasks. The connector's pairing-contract decision is waiting on Kirill."
+                    "# UltraList engine docs\n\n## Keyboard and content movement\n\nCompare keyboard movement and list behavior with Telegram. The drag delay remains unconfirmed.\n\n## UIKit integration\n\nCheck content offsets during interactive dismissal and restore the visible item anchor after the transition."
                 }
             />
         ) : selected === "native" ? (
             <MarkdownDocument
                 text={
-                    "# iOS & UltraView\n\nB1 remains blocked: 58 regressions against clean main.\n\nThe fallback fix is verified but unshipped. The cause of the keyboard drag delay is still unconfirmed.\n\n## Keep the blockers separate\n\nThis regression investigation belongs to native reliability. The connector's proposed pairing-contract decision is a separate piece of work."
+                    "# iOS & UltraView\n\nB1 remains blocked: 58 regressions against clean main.\n\nThe fallback fix is verified but unshipped. The cause of the keyboard drag delay is still unconfirmed."
                 }
             />
         ) : (
@@ -186,37 +189,18 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
                     windowControls
                     windowFullScreen
                 >
-                    <AppShell
+                    <PersonalDayShell
                         connectionRail
-                        embedded
-                        navigationChrome="integrated"
-                        windowControls
-                        windowFullScreen
-                        sidebarCollapsible
-                        sidebarCollapsedLayout="overlay"
-                        sidebarCollapsed={sidebarCollapsed}
-                        onSidebarCollapsedChange={setSidebarCollapsed}
-                        sidebarDefaultWidth={APP_SHELL_SIDEBAR_DEFAULT_WIDTH}
-                        sidebarCollapsedAction={{
-                            label: "Make Stuff",
-                            onClick: () => {
-                                setSpace(person);
-                                open("new");
-                            },
+                        frame={frame}
+                        activeId={selected}
+                        space={space}
+                        pairingResolved={pairingResolved}
+                        onSpaceChange={setSpace}
+                        onSelect={open}
+                        onOrganize={(label) => {
+                            open("happy");
+                            setDraft(`Organize ${label} with its related work.`);
                         }}
-                        sidebar={
-                            <PersonalDaySidebar
-                                frame={frame}
-                                activeId={selected}
-                                space={space}
-                                onSpaceChange={setSpace}
-                                onSelect={open}
-                                onOrganize={(label) => {
-                                    open("happy");
-                                    setDraft(`Organize ${label} with its related work.`);
-                                }}
-                            />
-                        }
                     >
                         <TabbedPane
                             tabs={[
@@ -236,7 +220,7 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
                         >
                             {content}
                         </TabbedPane>
-                    </AppShell>
+                    </PersonalDayShell>
                 </ConnectionShell>
             </div>
         </ThemeScope>

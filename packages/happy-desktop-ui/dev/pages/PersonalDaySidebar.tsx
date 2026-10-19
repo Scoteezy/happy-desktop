@@ -3,8 +3,11 @@ import { Sidebar, type SidebarSection } from "../../src/Sidebar";
 import { Button } from "../../src/Button";
 import {
     dayHappyImage,
+    dayAfterBatch,
     dayPerson,
+    dayRow,
     daySections,
+    dayWaiting,
     dayWork,
     dayWorkIdIs,
     type DayFrame,
@@ -18,13 +21,14 @@ export type PersonalDaySidebarProps = {
     onSpaceChange: (space: DayPerson) => void;
     onSelect: (id: string) => void;
     onOrganize?: (label: string) => void;
+    pairingResolved?: boolean;
 };
 
 /** The same production sidebar in the full windows and the timeline columns. */
 export function PersonalDaySidebar(props: PersonalDaySidebarProps) {
     const person = dayPerson(props.frame);
     const readOnly = props.space !== person;
-    const scroll = useRef({ kirill: 0, steve: 0 });
+    const scroll = useRef({ kirill: props.frame === "K4" ? 1000 : 0, steve: 0 });
     const [projections, setProjections] = useState<Record<DayPerson, SidebarSection[]>>(() => ({
         kirill: daySections("kirill", props.frame, person !== "kirill"),
         steve: daySections("steve", props.frame, person !== "steve"),
@@ -32,6 +36,16 @@ export function PersonalDaySidebar(props: PersonalDaySidebarProps) {
     const update = (change: (section: SidebarSection) => SidebarSection) => {
         setProjections({ ...projections, [props.space]: projections[props.space].map(change) });
     };
+    const resolved = props.pairingResolved ?? !dayWaiting(props.frame);
+    const sections = projections[props.space].map((section) => ({
+        ...section,
+        attentionCount: section.id === "steve-preview" && !resolved ? 1 : undefined,
+        items: section.items.map((row) =>
+            row.id === "connector"
+                ? { ...row, ...dayRow("connector", props.frame, resolved) }
+                : row,
+        ),
+    }));
     return (
         <div
             data-day-space={props.space}
@@ -54,14 +68,19 @@ export function PersonalDaySidebar(props: PersonalDaySidebarProps) {
                 style={{ width: "100%", "--happy-surface-header-height": "40px" }}
                 headerTrailing={
                     readOnly ? (
-                        <Button
-                            icon="chevron-left"
-                            onClick={() => props.onSpaceChange(person)}
-                            size="small"
-                            variant="ghost"
-                        >
-                            Back to my space
-                        </Button>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                                {props.space === "steve" ? "Steve" : "Kirill"}
+                            </span>
+                            <Button
+                                icon="chevron-left"
+                                onClick={() => props.onSpaceChange(person)}
+                                size="small"
+                                variant="ghost"
+                            >
+                                Back to my space
+                            </Button>
+                        </div>
                     ) : undefined
                 }
                 activeItemId={props.activeId}
@@ -71,7 +90,9 @@ export function PersonalDaySidebar(props: PersonalDaySidebarProps) {
                         label: "Happy",
                         kind: "view",
                         imageMark: dayHappyImage,
-                        unread: props.frame === "K3" || props.frame === "K4",
+                        unread:
+                            props.activeId !== "happy" &&
+                            (dayWaiting(props.frame) || dayAfterBatch(props.frame)),
                     },
                 ]}
                 actionsDivider
@@ -87,7 +108,7 @@ export function PersonalDaySidebar(props: PersonalDaySidebarProps) {
                 foldControlPlacement="trailing"
                 foldControlReveal="hover"
                 onItemSelect={props.onSelect}
-                sections={projections[props.space]}
+                sections={sections}
                 onSectionSelect={(id) => {
                     if (id === "steve-preview") props.onSpaceChange("steve");
                     if (id === "kirill-preview") props.onSpaceChange("kirill");

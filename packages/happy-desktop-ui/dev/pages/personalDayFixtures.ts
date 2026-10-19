@@ -29,7 +29,7 @@ import release from "../../src/assets/sidebar-icons/release-coordinator@40.png";
 
 export type DayPerson = "kirill" | "steve";
 export type DayMoment = "K1" | "K2" | "K3" | "K4" | "K5" | "S1" | "S2" | "S3" | "S4";
-export type DayFrame = DayMoment | "exchange" | "browse" | "return";
+export type DayFrame = DayMoment | "exchange" | "browse" | "return" | "batch-note" | "reply";
 type WorkSource = {
     label: string;
     sourceId: string;
@@ -311,13 +311,19 @@ export const dayFrameDetails = [
         id: "12c-k4",
         scene: "K4",
         label: "Kirill · 10:05 · look further without moving work",
-        detail: "Real: plans activity 10:00; Native blockage in history. Staged: open tails/preview and person-specific wait.",
+        detail: "Inspection branch: user opens Desktop tail and Steve preview, then scrolls down. Other sections retain K3 disclosure. Hover shows the separate disclosure control.",
     },
     {
         id: "12d-k5",
         scene: "K5",
         label: "Kirill · 10:29 · one quiet batch",
-        detail: "Real: icons activity 10:28; redesign 10:29. Staged: completed viewer → Older and one Happy note.",
+        detail: "Staged: user closes the two inspection disclosures. Viewer alone moves to closed Older; Desktop redesign stays focused. Happy has the one-line note.",
+    },
+    {
+        id: "12d2-k5-note",
+        scene: "batch-note",
+        label: "Kirill · opens Happy after the batch",
+        detail: "Separate user navigation from K5 to read the note. The batch itself never selected Happy or opened Older.",
     },
     {
         id: "12e-s1",
@@ -335,13 +341,13 @@ export const dayFrameDetails = [
         id: "12g-exchange",
         scene: "exchange",
         label: "Happy · Tailcat pairing contract",
-        detail: "Real work identities. Staged: titled manager exchange and decision; no recorded author or message time.",
+        detail: "Staged 09:18 question; answer through the normal composer. Source link opens the backend, never the current connector.",
     },
     {
         id: "12h-browse",
         scene: "browse",
-        label: "Kirill browses Steve's space · read-only",
-        detail: "Real attributed work. Staged: space browsing; Kirill keeps his own Happy and draft.",
+        label: "Kirill browses Steve's space · from K5",
+        detail: "K5 continuation: completed viewer remains in Older; Desktop redesign and its draft stay open. Organization controls are scoped to the visited space.",
     },
     {
         id: "12i-return",
@@ -350,6 +356,10 @@ export const dayFrameDetails = [
         detail: "Real attributed work. Staged: return preserves personal disclosure, selection and draft.",
     },
 ] as const;
+
+export function dayAfterBatch(frame: DayFrame) {
+    return frame === "K5" || frame === "batch-note" || frame === "browse" || frame === "return";
+}
 
 export function dayPerson(frame: DayFrame): DayPerson {
     return frame === "S1" || frame === "S2" || frame === "S3" || frame === "S4"
@@ -365,9 +375,11 @@ export function dayFocus(frame: DayFrame): DayWorkId | "happy" {
         case "K3":
             return "credentials";
         case "K4":
-            return "plans";
         case "K5":
+            return "redesign";
         case "exchange":
+        case "reply":
+        case "batch-note":
             return "happy";
         case "S1":
             return "port";
@@ -383,11 +395,26 @@ export function dayFocus(frame: DayFrame): DayWorkId | "happy" {
     }
 }
 export function dayWaiting(frame: DayFrame) {
-    return frame !== "K1" && frame !== "K2" && frame !== "S1" && frame !== "S2";
+    return frame === "K3" || frame === "S3" || frame === "exchange";
 }
 
-export function dayRow(id: DayWorkId, frame: DayFrame): SidebarItem {
-    const waiting = dayWaiting(frame);
+/** Recent focus is explicit storyboard content, never inferred from row status. */
+export function dayRecentFocus(person: DayPerson, frame: DayFrame): string {
+    if (person === "kirill") {
+        if (frame === "S1") return "Desktop redesign, sidebar icons";
+        if (frame === "S2") return "Preview viewer release, desktop redesign";
+        if (frame === "S3") return "Credential helper, artifact resize probe";
+        return "Desktop redesign, sidebar icons, master plans";
+    }
+    if (frame === "K1") return "UIKit onboarding + settings";
+    if (frame === "K2" || frame === "K3" || frame === "exchange" || frame === "reply")
+        return "iOS keyboard + UIKit port, Tailcat pairing";
+    if (frame === "K4") return "iOS regressions, UIKit port, Tailcat pairing";
+    return "iOS keyboard + UIKit port, Tailcat pairing, UltraList docs";
+}
+
+export function dayRow(id: DayWorkId, frame: DayFrame, resolved = !dayWaiting(frame)): SidebarItem {
+    const waiting = !resolved;
     return {
         id,
         label: dayWork[id].label,
@@ -395,12 +422,20 @@ export function dayRow(id: DayWorkId, frame: DayFrame): SidebarItem {
         imageMark: { src: dayWork[id].image },
         activityIndicator: "glyph",
         labelShimmer: false,
+        trailingWidth: id === "connector" ? 112 : id === "native" ? 64 : 18,
+        workingIndicator: "circle",
         status:
             id === "connector" && waiting
                 ? dayPerson(frame) === "kirill"
                     ? "awaitingInput"
                     : "waiting"
-                : id === dayFocus(frame) && id !== "viewer"
+                : (id === "connector" &&
+                        resolved &&
+                        frame !== "K1" &&
+                        frame !== "K2" &&
+                        frame !== "S1" &&
+                        frame !== "S2") ||
+                    (id === dayFocus(frame) && id !== "viewer")
                   ? "working"
                   : undefined,
         meta:
@@ -451,13 +486,12 @@ export function daySections(
 ): SidebarSection[] {
     const rows = (ids: DayWorkId[]) =>
         ids.map((id) => ({ ...dayRow(id, frame), reorderable: !readOnly }));
-    const ownContext = (text: string) => (readOnly ? text : undefined);
     const shared: SidebarSection = {
         id: "shared",
         label: "Shared",
         context: person === "kirill" ? "with Steve" : "with Kirill",
         items: rows(["inbox", "backlog"]),
-        collapsed: frame === "K4" || frame === "K5",
+        collapsed: false,
         tail: { visibleCount: 1, expanded: false },
     };
     if (person === "steve")
@@ -465,7 +499,6 @@ export function daySections(
             {
                 id: "native",
                 label: "Native",
-                context: ownContext("Steve's · native · read-only"),
                 items: rows(["native", "port", "keyboard", "nativeList", "android"]),
                 collapsed: false,
                 tail: { visibleCount: 3, expanded: false },
@@ -473,14 +506,12 @@ export function daySections(
             {
                 id: "libraries",
                 label: "Libraries",
-                context: ownContext("Steve's · Tailcat + UltraList"),
                 items: rows(["connector", "ultralist"]),
                 collapsed: false,
             },
             {
                 id: "release",
                 label: "Release",
-                context: ownContext("Steve's · native"),
                 items: rows(["nativeCi"]),
                 collapsed: false,
             },
@@ -488,9 +519,8 @@ export function daySections(
             {
                 id: "kirill-preview",
                 label: "Kirill",
-                count: 7,
+                context: dayRecentFocus("kirill", frame),
                 navigationLabel: "Open Kirill's space",
-                context: "Kirill's · desktop + agent platform",
                 items: rows(kirillPreview).map((row) => ({ ...row, reorderable: false })),
                 collapsed: true,
                 tail: { visibleCount: 2, expanded: false },
@@ -521,23 +551,22 @@ export function daySections(
             id: "platform",
             label: "Agent platform",
             items: rows(platform),
-            collapsed: frame === "K4" || frame === "K5",
+            collapsed: false,
             tail: { visibleCount: 3, expanded: false },
         },
         {
             id: "release",
             label: "Release",
-            items: rows(frame === "K5" ? ["ci", "release"] : ["viewer", "ci", "release"]),
-            collapsed: frame === "K4",
+            items: rows(dayAfterBatch(frame) ? ["ci", "release"] : ["viewer", "ci", "release"]),
+            collapsed: false,
             tail: { visibleCount: 2, expanded: false },
         },
         shared,
         {
             id: "steve-preview",
             label: "Steve",
-            count: 7,
+            context: dayRecentFocus("steve", frame),
             navigationLabel: "Open Steve's space",
-            context: "Steve's · native + libraries",
             attentionCount: dayWaiting(frame) ? 1 : undefined,
             items: rows(nativePreview).map((row) => ({ ...row, reorderable: false })),
             collapsed: frame !== "K4",
@@ -547,11 +576,11 @@ export function daySections(
             id: "older",
             label: "Older",
             items: rows(
-                frame === "K5"
+                dayAfterBatch(frame)
                     ? ["viewer", "blueprintOld", "muse", "study"]
                     : ["blueprintOld", "muse", "study"],
             ),
-            collapsed: frame !== "K5",
+            collapsed: true,
             tail: { visibleCount: 1, expanded: false },
         },
     ];

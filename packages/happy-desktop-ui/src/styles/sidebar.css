@@ -417,6 +417,13 @@
     line-height: 16px;
 }
 
+.happy-sidebar__section-context-text {
+    min-width: 0;
+    max-height: 32px;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
 .happy-sidebar__section-tail {
     display: flex;
     flex: none;
@@ -449,6 +456,8 @@
     gap: 4px;
     color: var(--box-warning-text);
     font-size: 11px;
+    width: 24px;
+    flex: none;
 }
 
 .happy-sidebar__section-trailing,
@@ -463,26 +472,17 @@
 }
 
 .happy-sidebar__section-trailing {
-    position: relative;
     margin-left: auto;
+    width: 52px;
+    gap: 4px;
 }
 
-/* The disclosure overlays the resting status lane, just like a row's controls. */
-.happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__section-trailing
-    .happy-sidebar__section-fold {
-    position: absolute;
-    right: 0;
-    top: 0;
+.happy-sidebar__section-marks {
+    width: 28px;
 }
 
-.happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__section-head:hover
-    .happy-sidebar__section-marks,
-.happy-sidebar[data-fold-control-reveal="hover"]
-    .happy-sidebar__section-head:has(:focus-visible)
-    .happy-sidebar__section-marks {
-    opacity: 0;
+.happy-sidebar__section-trailing .happy-sidebar__section-fold {
+    margin-left: 0;
 }
 
 .happy-sidebar__section-open {
@@ -1440,6 +1440,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     transform: translateY(var(--happy-sidebar-meta-optical-y, 0px));
+}
+
+.happy-sidebar__item-trailing[data-fixed] .happy-sidebar__item-meta {
+    flex: none;
+    max-width: none;
 }
 
 /* A count of what is open in the row reads as quietly as its meta, in figures

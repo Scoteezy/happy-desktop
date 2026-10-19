@@ -113,6 +113,10 @@ export type SidebarItem = {
     /** Whether a busy or creating row shimmers its label. Defaults to true. */
     labelShimmer?: boolean;
     meta?: string;
+    /** Reserve one stable status lane, including metadata, before truncating the title. */
+    trailingWidth?: number;
+    /** The circular indicator already used by compact agent activity rows. */
+    workingIndicator?: "circle";
     /**
      * How many open things the row holds — a todo list's unfinished todos —
      * as a quiet number at its trailing edge. Absent or zero shows nothing.
@@ -288,9 +292,7 @@ export type SidebarSectionActionSource = "heading" | "secondary" | "empty";
 export type SidebarSection = {
     /** Open a colleague's projection from its section label. */
     navigationLabel?: string;
-    /** Uses the same trailing count treatment as an ordinary work row. */
-    count?: number;
-    /** Owner or shared context; omit when the section belongs to the current reader. */
+    /** Plain context or recent focus; visible below open and folded headings. */
     context?: string;
     /** A controlled disclosure of a section's ordered tail. */
     tail?: { visibleCount: number; expanded: boolean };
@@ -1452,7 +1454,12 @@ function SidebarRow({
                 data-happy-desktop-ui="sidebar-item-activity"
             >
                 {state.kind === "spinner" ? (
-                    <Spinner label={state.label} size={14} tone={state.tone} />
+                    <Spinner
+                        label={state.label}
+                        size={14}
+                        tone={state.tone}
+                        variant={item().workingIndicator}
+                    />
                 ) : (
                     <span aria-label={state.label} role="img">
                         <Icon name={state.icon} size={14} />
@@ -1853,7 +1860,7 @@ function SidebarRow({
                     />
                 </>
             ) : null}
-            {showMeta() ? (
+            {showMeta() && item().trailingWidth === undefined ? (
                 <span
                     className="happy-sidebar__item-meta"
                     data-happy-desktop-ui="sidebar-item-meta"
@@ -1872,16 +1879,32 @@ function SidebarRow({
                    controls are laid over the lane rather than placed in it, so
                    arriving and leaving costs no reflow: what they cover is
                    hidden where it stands. */
-                state || controls || stats || count !== undefined ? (
+                state ||
+                controls ||
+                stats ||
+                count !== undefined ||
+                item().trailingWidth !== undefined ? (
                     <span
                         className="happy-sidebar__item-trailing"
                         data-happy-desktop-ui="sidebar-item-trailing"
+                        data-fixed={item().trailingWidth !== undefined ? "" : undefined}
                         data-swaps={controls && swaps ? "" : undefined}
                         style={{
                             columnGap: SIDEBAR_TRAILING_GAP,
                             minWidth: trailingLaneMinWidth(),
+                            ...(item().trailingWidth !== undefined
+                                ? { width: item().trailingWidth, minWidth: item().trailingWidth }
+                                : {}),
                         }}
                     >
+                        {showMeta() && item().trailingWidth !== undefined ? (
+                            <span
+                                className="happy-sidebar__item-meta"
+                                data-happy-desktop-ui="sidebar-item-meta"
+                            >
+                                {item().meta}
+                            </span>
+                        ) : null}
                         {count !== undefined ? (
                             <span
                                 className="happy-sidebar__item-count"
@@ -3008,27 +3031,11 @@ export function Sidebar(props: SidebarProps) {
                                                 <Icon name="mic" size={12} />
                                             </span>
                                         ) : null}
-                                        {section.count !== undefined || section.attentionCount ? (
+                                        {section.navigationLabel || section.attentionCount ? (
                                             <span className="happy-sidebar__section-trailing">
-                                                <span className="happy-sidebar__section-marks">
-                                                    {section.count !== undefined ? (
-                                                        <span className="happy-sidebar__item-count">
-                                                            {section.count}
-                                                        </span>
-                                                    ) : null}
-                                                    {section.attentionCount ? (
-                                                        <span
-                                                            className="happy-sidebar__section-attention"
-                                                            aria-label={`${section.attentionCount} waiting on you`}
-                                                            role="status"
-                                                        >
-                                                            <Icon name="question" size={12} />
-                                                            {section.attentionCount}
-                                                        </span>
-                                                    ) : null}
-                                                </span>
                                                 {section.collapsed !== undefined ? (
                                                     <button
+                                                        data-happy-desktop-ui="sidebar-section-disclosure"
                                                         aria-expanded={!section.collapsed}
                                                         aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.label}`}
                                                         className="happy-sidebar__section-fold"
@@ -3049,6 +3056,30 @@ export function Sidebar(props: SidebarProps) {
                                                         />
                                                     </button>
                                                 ) : null}
+                                                <span className="happy-sidebar__section-marks">
+                                                    <span
+                                                        className="happy-sidebar__section-attention"
+                                                        aria-label={
+                                                            section.attentionCount
+                                                                ? `${section.attentionCount} waiting on you`
+                                                                : undefined
+                                                        }
+                                                        aria-hidden={!section.attentionCount}
+                                                        role={
+                                                            section.attentionCount
+                                                                ? "status"
+                                                                : undefined
+                                                        }
+                                                        style={{
+                                                            visibility: section.attentionCount
+                                                                ? "visible"
+                                                                : "hidden",
+                                                        }}
+                                                    >
+                                                        <Icon name="question" size={12} />
+                                                        {section.attentionCount ?? 0}
+                                                    </span>
+                                                </span>
                                             </span>
                                         ) : section.collapsed !== undefined ? (
                                             <button
@@ -3165,7 +3196,7 @@ export function Sidebar(props: SidebarProps) {
                                         ) : null}
                                     </div>
                                 ) : null}
-                                {!section.collapsed && section.context ? (
+                                {section.context ? (
                                     <SidebarSectionContext text={section.context} />
                                 ) : null}
                                 {section.error !== undefined ? (

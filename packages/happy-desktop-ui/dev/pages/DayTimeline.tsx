@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ThemeScope } from "../../src/ThemeScope";
-import { PersonalDaySidebar } from "./PersonalDaySidebar";
-import { dayFocus, dayPerson, type DayMoment } from "./personalDayFixtures";
+import { PersonalDayShell } from "./PersonalDayShell";
+import { dayFocus, dayPerson, type DayMoment, type DayPerson } from "./personalDayFixtures";
 
 const checkpoints = [
     {
@@ -28,14 +28,14 @@ const checkpoints = [
     {
         time: "10:05",
         kirill: "K4",
-        kChange: "no change · tails opened by you",
+        kChange: "user: open Desktop tail + Steve; scroll",
         steve: null,
-        sChange: "no change · S3 continues",
+        sChange: "09:20 reply clears wait; connector continues",
     },
     {
         time: "10:29",
         kirill: "K5",
-        kChange: "batch: viewer release → Older",
+        kChange: "user closes both; batch: viewer → Older",
         steve: "S4",
         sChange: "no change · docs focus since 10:27",
     },
@@ -48,49 +48,21 @@ function TimelineSidebar({ frame }: { frame: DayMoment }) {
     return (
         <div
             data-timeline-moment={frame}
-            style={{ display: "flex", width: 288, height: 900, flex: "none" }}
-            ref={(node) => {
-                if (!node || frame !== "K5") return;
-                const marker = node.querySelector<HTMLElement>("[data-move-tick]");
-                const sidebar = node.querySelector<HTMLElement>("[data-day-space]");
-                const update = () => {
-                    const row = sidebar?.querySelector<HTMLElement>('[data-item-id="viewer"]');
-                    if (!marker || !row) return;
-                    marker.style.top = `${row.getBoundingClientRect().top - node.getBoundingClientRect().top + row.getBoundingClientRect().height / 2 - 1}px`;
-                };
-                update();
-                const observer = new ResizeObserver(update);
-                const content = sidebar?.querySelector(".happy-sidebar__body-content");
-                if (content) observer.observe(content);
-                return () => observer.disconnect();
-            }}
+            style={{ display: "flex", width: 288, height: 804, flex: "none" }}
         >
-            <div style={{ display: "flex", flex: "none", width: 8, position: "relative" }}>
-                {frame === "K5" ? (
-                    <span
-                        data-move-tick
-                        title="Preview viewer release moved from Release to Older"
-                        style={{
-                            display: "flex",
-                            position: "absolute",
-                            left: 1,
-                            width: 5,
-                            height: 2,
-                            background: "var(--text-secondary)",
-                            opacity: 0.6,
-                        }}
-                    />
-                ) : null}
-            </div>
+            <div style={{ display: "flex", flex: "none", width: 8 }} />
             <div
                 style={{
                     display: "flex",
                     width: 280,
                     flex: "none",
                     borderRight: "1px solid var(--divider)",
+                    position: "relative",
+                    contain: "layout paint",
                 }}
             >
-                <PersonalDaySidebar
+                <PersonalDayShell
+                    sidebarOnly
                     frame={frame}
                     activeId={selected}
                     space={space}
@@ -103,7 +75,7 @@ function TimelineSidebar({ frame }: { frame: DayMoment }) {
 }
 
 /** Workbench annotations live above/beside the real, unmodified sidebar. */
-export function DayTimeline() {
+export function DayTimeline({ person }: { person: DayPerson }) {
     return (
         <ThemeScope mode="light">
             <div
@@ -122,7 +94,7 @@ export function DayTimeline() {
                         flexDirection: "column",
                         justifyContent: "center",
                         gap: 4,
-                        height: 72,
+                        height: 48,
                         flex: "none",
                         padding: "8px 16px",
                         color: "var(--text-secondary)",
@@ -131,67 +103,64 @@ export function DayTimeline() {
                     }}
                 >
                     <strong style={{ color: "var(--text)", fontSize: 16 }}>
-                        19 October · two personal sidebars
+                        19 October · {person === "kirill" ? "Kirill" : "Steve"}
                     </strong>
                     <span>
-                        Real work + file/artifact activity. Focus, completion, dependency and
-                        batches are staged. 280 px sidebars · 32 px rows · UTC. The single gutter
-                        tick marks the only move between columns.
+                        Real work; staged focus, dependency and batches · 280 px / 32 px · UTC ·
+                        reply at 09:20 in 12j
                     </span>
                 </div>
-                {(["kirill", "steve"] as const).map((person) => (
-                    <div key={person} style={{ display: "flex", flex: "none" }}>
-                        {checkpoints.map((point) => {
-                            const frame = person === "kirill" ? point.kirill : point.steve;
-                            return (
+                <div style={{ display: "flex", flex: "none" }}>
+                    {checkpoints.map((point) => {
+                        const frame = person === "kirill" ? point.kirill : point.steve;
+                        return (
+                            <div
+                                key={point.time}
+                                style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    flex: "none",
+                                    width: 288,
+                                }}
+                            >
                                 <div
-                                    key={point.time}
                                     style={{
                                         display: "flex",
                                         flexDirection: "column",
+                                        justifyContent: "center",
+                                        gap: 4,
+                                        height: 48,
                                         flex: "none",
-                                        width: 288,
+                                        padding: "2px 12px",
+                                        borderTop: "1px solid var(--divider)",
+                                        color: "var(--text-secondary)",
+                                        fontSize: 11,
+                                        lineHeight: "16px",
                                     }}
                                 >
+                                    <strong style={{ fontSize: 14, color: "var(--text)" }}>
+                                        {person === "kirill" ? "Kirill" : "Steve"} · {point.time}{" "}
+                                        {frame ? `· ${frame}` : ""}
+                                    </strong>
+                                    <span>
+                                        {person === "kirill" ? point.kChange : point.sChange}
+                                    </span>
+                                </div>
+                                {frame ? (
+                                    <TimelineSidebar frame={frame} />
+                                ) : (
                                     <div
                                         style={{
                                             display: "flex",
-                                            flexDirection: "column",
-                                            justifyContent: "center",
-                                            gap: 4,
-                                            height: 72,
-                                            flex: "none",
-                                            padding: "8px 12px",
-                                            borderTop: "1px solid var(--divider)",
-                                            color: "var(--text-secondary)",
-                                            fontSize: 11,
-                                            lineHeight: "16px",
+                                            height: 804,
+                                            background: "var(--surface)",
                                         }}
-                                    >
-                                        <strong style={{ fontSize: 14, color: "var(--text)" }}>
-                                            {person === "kirill" ? "Kirill" : "Steve"} ·{" "}
-                                            {point.time} {frame ? `· ${frame}` : ""}
-                                        </strong>
-                                        <span>
-                                            {person === "kirill" ? point.kChange : point.sChange}
-                                        </span>
-                                    </div>
-                                    {frame ? (
-                                        <TimelineSidebar frame={frame} />
-                                    ) : (
-                                        <div
-                                            style={{
-                                                display: "flex",
-                                                height: 900,
-                                                background: "var(--surface)",
-                                            }}
-                                        />
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                ))}
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
         </ThemeScope>
     );

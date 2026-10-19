@@ -1,13 +1,13 @@
 export type SidebarSectionContextProps = { text: string };
 
-/** A section's owner or shared context, without another level of hierarchy. */
+/** Plain, non-interactive section context, capped at two wrapped text lines. */
 export function SidebarSectionContext({ text }: SidebarSectionContextProps) {
     return (
         <span
             className="happy-sidebar__section-context"
             data-happy-desktop-ui="sidebar-section-context"
         >
-            {text}
+            <span className="happy-sidebar__section-context-text">{text}</span>
         </span>
     );
 }

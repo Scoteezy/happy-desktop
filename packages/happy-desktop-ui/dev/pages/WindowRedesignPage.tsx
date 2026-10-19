@@ -21,6 +21,7 @@ import { ComponentPage, FullScreenSpecimen } from "../kit";
 import { TidyStoryWindow } from "./TidyStoryWindow";
 import { DayTimeline } from "./DayTimeline";
 import { PersonalDayWindow } from "./PersonalDayWindow";
+import { PersonalDayReply } from "./PersonalDayReply";
 import { dayFrameDetails } from "./personalDayFixtures";
 import { TidyDiffAnnotations } from "./TidyDiffAnnotations";
 import {
@@ -964,15 +965,18 @@ export function WindowRedesignPage() {
             width={1536}
             summary="Two personal views of real work, with staged focus, manager batches and coordination clearly captioned. Earlier creation, release, movie and tidy rounds remain below."
         >
-            <FullScreenSpecimen
-                number="12"
-                label="Day timeline · Kirill and Steve"
-                detail="Real work and observed activity; staged interactions. Move ticks stay in workbench gutters. No annotation inside a sidebar."
-                screen="12-day-timeline-1440x2016"
-                window={{ width: 1440, height: 2016 }}
-            >
-                <DayTimeline />
-            </FullScreenSpecimen>
+            {(["kirill", "steve"] as const).map((person) => (
+                <FullScreenSpecimen
+                    key={person}
+                    number="12"
+                    label={`Day timeline · ${person}`}
+                    detail="Real work and observed activity; staged interactions. K4 only opens Desktop tail and Steve preview; K5 closes those. All other disclosure stays fixed; Older stays closed."
+                    screen={`12-day-timeline-${person}-1440x900`}
+                    window={{ width: 1440, height: 900 }}
+                >
+                    <DayTimeline person={person} />
+                </FullScreenSpecimen>
+            ))}
             {dayFrameDetails.map((frame) => (
                 <FullScreenSpecimen
                     key={frame.id}
@@ -985,6 +989,15 @@ export function WindowRedesignPage() {
                     <PersonalDayWindow frame={frame.scene} />
                 </FullScreenSpecimen>
             ))}
+            <FullScreenSpecimen
+                number="12j"
+                label="09:20 · Kirill replies, Steve continues"
+                detail="Workbench comparison of both personal sidebars after the normal-composer reply. The summary updates in place, waits clear, ownership/order and Steve's connector focus stay fixed."
+                screen="12j-reply-1440x900"
+                window={{ width: 1440, height: 900 }}
+            >
+                <PersonalDayReply />
+            </FullScreenSpecimen>
             {frames.flatMap((frame) =>
                 [
                     ...desktopWindows,
