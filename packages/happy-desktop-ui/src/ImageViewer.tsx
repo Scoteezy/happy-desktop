@@ -23,11 +23,20 @@ export type ImageViewerContent =
     /** Nothing to show — the bytes are not a picture this surface can render. */
     | { readonly type: "unavailable" };
 
+/** A picture already displayed by the browser, such as a composer thumbnail. */
+export type ImageViewerLoadedImage = {
+    readonly url: string;
+    readonly width: number;
+    readonly height: number;
+};
+
 export type ImageViewerProps = {
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
     content: ImageViewerContent;
+    /** Show this already loaded source immediately when its URL matches the content. */
+    loadedImage?: ImageViewerLoadedImage;
     /** Keep both neighboring pictures fetched and decoded while this viewer is open. */
     adjacentImages?: { readonly previous?: string; readonly next?: string };
     /** Accessible name of the picture — usually the file's name. */
@@ -137,7 +146,14 @@ interface ImageGesture {
 
 const VIEW_FIT: ImageView = { kind: "fit" };
 
-function stateInitial(url: string): ImageViewerState {
+function stateInitial(url: string, loadedImage?: ImageViewerLoadedImage): ImageViewerState {
+    if (loadedImage?.url === url && loadedImage.width > 0 && loadedImage.height > 0)
+        return {
+            url,
+            status: "ready",
+            natural: { width: loadedImage.width, height: loadedImage.height },
+            view: VIEW_FIT,
+        };
     return { url, status: "loading", view: VIEW_FIT };
 }
 
@@ -278,6 +294,7 @@ export function ImageViewer(props: ImageViewerProps) {
         "data-testid",
         "style",
         "content",
+        "loadedImage",
         "adjacentImages",
         "name",
         "actions",
@@ -298,7 +315,7 @@ export function ImageViewer(props: ImageViewerProps) {
     // State from a previous address is not this address's state. Comparing here
     // rather than resetting in an effect keeps the first frame of a new picture
     // correct instead of showing the previous one's magnification for a beat.
-    const live = state.url === url ? state : stateInitial(url);
+    const live = state.url === url ? state : stateInitial(url, local.loadedImage);
     // Keep the last decoded picture in place until its replacement is ready.
     // Its view is fitted immediately: navigation never carries a zoom or pan
     // into the next picture, and a fast load never paints an opening notice.
@@ -347,7 +364,7 @@ export function ImageViewer(props: ImageViewerProps) {
 
     const viewSet = (view: ImageView): void => {
         setState((previous) => ({
-            ...(previous.url === url ? previous : stateInitial(url)),
+            ...(previous.url === url ? previous : live),
             view,
         }));
     };
@@ -411,10 +428,13 @@ export function ImageViewer(props: ImageViewerProps) {
         if (wanted) frameElement.current?.focus({ preventScroll: true });
     }, [wanted]);
 
-    // eslint-disable-next-line happy-react/no-layout-effect -- the frame's live box is what "fit" means and only the browser can report it; the observer is created with the committed element and torn down with it
+    // eslint-disable-next-line happy-react/no-layout-effect -- measure the committed frame before its first paint so an already loaded picture opens fitted, then observe its live box and disconnect on unmount
     useLayoutEffect(() => {
         const element = frameElement.current;
-        if (!element || typeof ResizeObserver === "undefined") return;
+        if (!element) return;
+        const { width, height } = element.getBoundingClientRect();
+        setFrame({ width, height });
+        if (typeof ResizeObserver === "undefined") return;
         const observer = new ResizeObserver(([entry]) => {
             if (!entry) return;
             const box = entry.contentRect;
@@ -451,7 +471,13 @@ export function ImageViewer(props: ImageViewerProps) {
                 // of against the frame React has not committed yet.
                 hold.geometry = geometryPlaced(hold.geometry, view);
                 setState((previous) => ({
-                    ...(previous.url === hold.url ? previous : stateInitial(hold.url)),
+                    ...(previous.url === hold.url
+                        ? previous
+                        : stateInitial(hold.url, {
+                              url: hold.url,
+                              width: hold.geometry.naturalWidth,
+                              height: hold.geometry.naturalHeight,
+                          })),
                     view,
                 }));
                 // A continuous gesture says nothing out loud; only the value it

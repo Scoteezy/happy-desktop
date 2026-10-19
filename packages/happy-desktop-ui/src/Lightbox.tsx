@@ -29,6 +29,7 @@ type LightboxSharedProps = {
      */
     position?: { readonly index: number; readonly total: number };
     adjacentImages?: ImageViewerProps["adjacentImages"];
+    loadedImage?: ImageViewerProps["loadedImage"];
     /** Wire both to step through a set; the header then carries its controls. */
     onPrevious?: () => void;
     onNext?: () => void;
@@ -79,6 +80,7 @@ export function Lightbox(props: LightboxProps) {
         "actions",
         "position",
         "adjacentImages",
+        "loadedImage",
         "onPrevious",
         "onNext",
         "navigationLabel",
@@ -217,6 +219,7 @@ export function Lightbox(props: LightboxProps) {
                                 adjacentImages={local.adjacentImages}
                                 autoFocus
                                 content={{ type: "url", url: local.imageUrl }}
+                                loadedImage={local.loadedImage}
                                 name={mediaName}
                                 tone="immersive"
                             />

@@ -20,6 +20,7 @@ import { Button } from "./Button";
 import {
     ComposerAttachmentPreviews,
     type ComposerAttachmentPreview,
+    type ComposerAttachmentPreviewsProps,
 } from "./ComposerAttachmentPreviews";
 import { EmojiPicker, type EmojiItem } from "./EmojiPicker";
 import { Icon, type IconName } from "./Icon";
@@ -277,7 +278,7 @@ export type ComposerProps = {
     /** Receives files picked, pasted into the draft, or dropped onto the composer. */
     onAttachmentsSelect?: (files: File[]) => void;
     /** Opens one of the draft's media previews in the full-window viewer. */
-    onAttachmentPreviewOpen?: (id: string) => void;
+    onAttachmentPreviewOpen?: ComposerAttachmentPreviewsProps["onOpen"];
     onContextRemove?: (id: string) => void;
     /** Called after an emoji is selected. Unicode emoji are also inserted into the draft. */
     onEmojiSelect?: (emoji: EmojiItem) => void;

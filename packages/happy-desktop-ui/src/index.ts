@@ -210,7 +210,12 @@ export {
     type FilePreviewKind,
     type FilePreviewProps,
 } from "./FilePreview";
-export { ImageViewer, type ImageViewerContent, type ImageViewerProps } from "./ImageViewer";
+export {
+    ImageViewer,
+    type ImageViewerContent,
+    type ImageViewerLoadedImage,
+    type ImageViewerProps,
+} from "./ImageViewer";
 export { VideoViewer, type VideoViewerContent, type VideoViewerProps } from "./VideoViewer";
 export { FileEditor, type FileEditorProps } from "./FileEditor";
 export {

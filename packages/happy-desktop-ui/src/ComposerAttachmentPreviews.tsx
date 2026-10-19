@@ -1,7 +1,8 @@
-import { type CSSProperties } from "react";
+import { useRef, type CSSProperties } from "react";
 import { ComposerAttachmentRemoveButton } from "./ComposerAttachmentRemoveButton";
 import { FilePathLabel } from "./FilePathLabel";
 import { Icon } from "./Icon";
+import type { ImageViewerLoadedImage } from "./ImageViewer";
 import { Octicon } from "./vectorIcons/VectorIcon";
 
 export type ComposerAttachmentPreviewKind = "comments" | "file" | "image" | "video";
@@ -32,7 +33,7 @@ export type ComposerAttachmentPreviewsProps = {
     "data-testid"?: string;
     items: readonly ComposerAttachmentPreview[];
     /** Opens image or video media in the draft's full-window viewer. */
-    onOpen?: (id: string) => void;
+    onOpen?: (id: string, loadedImage?: ImageViewerLoadedImage) => void;
     onRemove?: (id: string) => void;
     readOnly?: boolean;
     style?: CSSProperties;
@@ -45,6 +46,7 @@ export type ComposerAttachmentPreviewsProps = {
  * they take a pill that says how many are going rather than a preview square.
  */
 export function ComposerAttachmentPreviews(props: ComposerAttachmentPreviewsProps) {
+    const images = useRef(new Map<string, HTMLImageElement>());
     return (
         <div
             className={["happy-composer-attachments", props.className].filter(Boolean).join(" ")}
@@ -86,6 +88,13 @@ export function ComposerAttachmentPreviews(props: ComposerAttachmentPreviewsProp
                             className="happy-composer-attachments__media"
                             data-happy-desktop-ui="composer-attachment-image"
                             draggable={false}
+                            ref={(element) => {
+                                if (!element) return;
+                                images.current.set(item.id, element);
+                                return () => {
+                                    images.current.delete(item.id);
+                                };
+                            }}
                             src={item.url}
                         />
                     ) : item.kind === "video" && item.url ? (
@@ -150,7 +159,21 @@ export function ComposerAttachmentPreviews(props: ComposerAttachmentPreviewsProp
                             aria-label={`Preview ${item.name}`}
                             className="happy-composer-attachments__open"
                             data-happy-desktop-ui="composer-attachment-open"
-                            onClick={() => props.onOpen?.(item.id)}
+                            onClick={() => {
+                                const image = images.current.get(item.id);
+                                const loadedImage =
+                                    item.url &&
+                                    image?.complete &&
+                                    image.naturalWidth > 0 &&
+                                    image.naturalHeight > 0
+                                        ? {
+                                              url: item.url,
+                                              width: image.naturalWidth,
+                                              height: image.naturalHeight,
+                                          }
+                                        : undefined;
+                                props.onOpen?.(item.id, loadedImage);
+                            }}
                             type="button"
                         />
                     ) : null}

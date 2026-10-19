@@ -320,7 +320,7 @@ export function FloatingConversationDockPage() {
                 </Box>
             </Specimen>
             <Specimen
-                detail="56px image, video, and file previews · media opens in the full-window Lightbox"
+                detail="56px image, video, and file previews · loaded images open immediately in the full-window Lightbox"
                 label="Draft attachments"
                 number="05"
                 stage="surface"

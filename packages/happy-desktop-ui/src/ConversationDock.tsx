@@ -6,6 +6,7 @@ import { commandPickerItems } from "./CommandPicker";
 import { Composer, type Mentionable } from "./Composer";
 import type { ComposerAttachmentPreview } from "./ComposerAttachmentPreviews";
 import { Lightbox } from "./Lightbox";
+import type { ImageViewerLoadedImage } from "./ImageViewer";
 import { ModalOverlay } from "./ModalOverlay";
 import { reviewCommentPlace } from "./ReviewComment";
 import { WindowOverlay } from "./WindowOverlay";
@@ -113,7 +114,11 @@ function mentionsOf(composer: ComposerSnapshot): Mentionable[] {
  */
 export function ConversationDock(props: ConversationDockProps) {
     const composer = props.composer;
-    const [previewAttachmentId, setPreviewAttachmentId] = useState<string | null>(null);
+    const [preview, setPreview] = useState<{
+        readonly id: string;
+        readonly loadedImage?: ImageViewerLoadedImage;
+    } | null>(null);
+    const previewAttachmentId = preview?.id;
     /*
      * The draft is the query: the store hands over a command query only while the
      * whole draft is one command word that something still matches, so the list
@@ -146,21 +151,19 @@ export function ConversationDock(props: ConversationDockProps) {
     const previewStep = (direction: 1 | -1) => {
         if (previewIndex < 0 || previewMedia.length < 2) return;
         const index = (previewIndex + direction + previewMedia.length) % previewMedia.length;
-        setPreviewAttachmentId(previewMedia[index]?.id ?? null);
+        const next = previewMedia[index];
+        setPreview(next ? { id: next.id } : null);
     };
     const attachmentRemove = (attachmentId: string) => {
         if (attachmentId === previewAttachmentId) {
             const remaining = previewMedia.filter((item) => item.id !== attachmentId);
-            setPreviewAttachmentId(
-                remaining.length > 0
-                    ? (remaining[previewIndex % remaining.length]?.id ?? null)
-                    : null,
-            );
+            const next = remaining[previewIndex % remaining.length];
+            setPreview(next ? { id: next.id } : null);
         }
         props.onComposerAttachmentRemove?.(attachmentId);
     };
     const composerSend = () => {
-        setPreviewAttachmentId(null);
+        setPreview(null);
         props.onComposerSend();
     };
     const commandSelect = (commandId: string) => {
@@ -177,7 +180,7 @@ export function ConversationDock(props: ConversationDockProps) {
     const attachmentRemoveEnabled =
         !props.disabled && props.onComposerAttachmentRemove !== undefined;
     const mediaOverlay = previewAttachment ? (
-        <ModalOverlay onDismiss={() => setPreviewAttachmentId(null)} placement="fill">
+        <ModalOverlay onDismiss={() => setPreview(null)} placement="fill">
             <Lightbox
                 adjacentImages={{
                     previous:
@@ -199,8 +202,9 @@ export function ConversationDock(props: ConversationDockProps) {
                 alt={previewAttachment.name}
                 caption={previewAttachment.name}
                 detail={previewAttachment.detail}
+                loadedImage={preview?.loadedImage}
                 navigationLabel="attachment"
-                onClose={() => setPreviewAttachmentId(null)}
+                onClose={() => setPreview(null)}
                 {...(previewMedia.length > 1
                     ? {
                           onNext: () => previewStep(1),
@@ -260,7 +264,7 @@ export function ConversationDock(props: ConversationDockProps) {
                         : {})}
                     footerControl={props.composerFooterControl}
                     modelControl={props.composerControls}
-                    onAttachmentPreviewOpen={setPreviewAttachmentId}
+                    onAttachmentPreviewOpen={(id, loadedImage) => setPreview({ id, loadedImage })}
                     onAttachmentsSelect={props.onComposerAttachmentsSelect}
                     onCommandSelect={commandSelect}
                     onContextRemove={attachmentRemoveEnabled ? attachmentRemove : undefined}
