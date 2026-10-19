@@ -144,6 +144,7 @@
 
 .happy-desktop-app-shell[data-navigation-chrome="integrated"][data-sidebar-search]
     .happy-desktop-app-shell__reveal {
+    justify-content: flex-start;
     width: calc(var(--happy-integrated-leading-inset) + 96px);
 }
 
