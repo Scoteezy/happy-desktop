@@ -47,6 +47,26 @@
 .happy-connections__rail[data-window-controls]::after {
     top: var(--happy-window-controls-height);
 }
+
+/* Explicit full-screen fixtures opt into the integrated window arrangement.
+   Existing callers that omit the state keep their original title band. */
+.happy-connections__rail[data-window-controls][data-window-full-screen="true"] {
+    padding-top: 0;
+}
+
+.happy-connections__rail[data-window-controls][data-window-full-screen="true"]::after {
+    top: 0;
+}
+
+.happy-connections:has([data-navigation-chrome="integrated"])
+    .happy-connections__rail[data-window-controls]:not([data-window-full-screen="true"]) {
+    padding-top: calc(var(--happy-window-controls-height) / var(--happy-window-zoom));
+}
+
+.happy-connections:has([data-navigation-chrome="integrated"])
+    .happy-connections__rail[data-window-controls]:not([data-window-full-screen="true"])::after {
+    top: calc(var(--happy-window-controls-height) / var(--happy-window-zoom));
+}
 .happy-connections__rail > .happy-scroll-area {
     /* The tile list takes the height between the title bar and the footer. */
     flex: 1 1 auto;

@@ -3,6 +3,9 @@
    the existing layout. Only the column touching the window's right edge needs
    the reservation; rows below the title bar keep their full width. */
 :root {
+    /* Native controls do not zoom with renderer content. A window-level owner
+       supplies its explicit renderer zoom; every safe-area consumer shares it. */
+    --happy-window-zoom: 1;
     /* The safe area of the macOS traffic lights: the window's top-left corner
        that no header content may enter. The Electron host draws the 14px lights
        at x=14…68, centred in the 40px title band; content starts 16px past them,

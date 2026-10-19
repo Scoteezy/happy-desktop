@@ -61,6 +61,8 @@ export function ConnectionShell(props: {
      * screen as well as windowed, so Home never moves to the window's top edge.
      */
     readonly windowControls?: boolean;
+    /** Relinquishes the native safe area when full screen has no traffic lights. */
+    readonly windowFullScreen?: boolean;
     /** Freeze the working shimmer at a loop fraction for deterministic previews. */
     readonly workingShimmerPhase?: number;
     /**
@@ -109,6 +111,7 @@ export function ConnectionShell(props: {
                     className="happy-connections__rail"
                     aria-label="Connections"
                     data-window-controls={props.windowControls || undefined}
+                    data-window-full-screen={props.windowFullScreen || undefined}
                     data-shimmer-paused={props.workingShimmerPhase !== undefined || undefined}
                     style={
                         props.workingShimmerPhase === undefined

@@ -1034,6 +1034,10 @@
     flex: none;
 }
 
+.happy-sidebar__item[data-shortcut-always] > .happy-sidebar__item-shortcut {
+    display: inline-flex;
+}
+
 [data-shortcut-hints]
     .happy-sidebar__item[data-shortcut-row]:not(:has(> .happy-sidebar__item-trailing:focus-within))
     > .happy-sidebar__item-shortcut {

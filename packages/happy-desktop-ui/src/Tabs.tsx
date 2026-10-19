@@ -11,6 +11,7 @@ import {
 import { AvatarBrutalist } from "./AvatarBrutalist";
 import { CountBadge } from "./Badge";
 import { haptic } from "./haptics";
+import { FileKindIcon } from "./FileKindIcon";
 import { Icon, type IconName } from "./Icon";
 import type { KeyboardShortcut } from "./keyboardShortcut";
 import { Menu, type MenuItem } from "./Menu";
@@ -31,6 +32,8 @@ export type TabItem = {
     /** Whether a busy tab shimmers its label. Defaults to true. */
     labelShimmer?: boolean;
     icon?: IconName;
+    /** A file's explicit path supplies the shared file-kind mark. */
+    filePath?: string;
     badge?: number;
     /** False keeps a permanent tab visible when sibling tabs can be closed. */
     closable?: boolean;
@@ -102,11 +105,14 @@ function tabHoldsLeadingLane(tab: TabItem): boolean {
  * reader was most likely to be looking for it.
  */
 function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
-    const mark = tab.icon ? (
-        <Icon name={tab.icon} size={iconSize} />
-    ) : tab.avatarId !== undefined ? (
-        <AvatarBrutalist id={tab.avatarId} size={iconSize} />
-    ) : null;
+    const mark =
+        tab.filePath !== undefined ? (
+            <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />
+        ) : tab.icon ? (
+            <Icon name={tab.icon} size={iconSize} />
+        ) : tab.avatarId !== undefined ? (
+            <AvatarBrutalist id={tab.avatarId} size={iconSize} />
+        ) : null;
     if (mark === null && !tab.unread && !tabHoldsLeadingLane(tab)) return null;
     return (
         <span
@@ -196,6 +202,10 @@ export type TabsProps = {
     closeLabel?: string;
     /** Non-visual shortcut announced on the active tab's close control. */
     closeShortcut?: KeyboardShortcut;
+    /** Reveal close over the title's trailing edge instead of reserving a lane. */
+    closePresentation?: "trailing" | "overlay";
+    /** Controlled reveal for a tab whose close affordance should stay discoverable. */
+    closeRevealedId?: string;
     /**
      * Commits a drag with the tab ids in their new order. Supplying it makes the
      * tabs draggable; the component only reports the order it was dragged into
@@ -324,6 +334,8 @@ export function Tabs(props: TabsProps) {
         "className",
         "closeLabel",
         "closeShortcut",
+        "closePresentation",
+        "closeRevealedId",
         "style",
         "activeId",
         "onClose",
@@ -657,6 +669,7 @@ export function Tabs(props: TabsProps) {
             className={["happy-tabs", local.className].filter(Boolean).join(" ")}
             data-dragging={drag?.moved ? "" : undefined}
             data-happy-desktop-ui="tabs"
+            data-close-presentation={local.closePresentation}
             data-size={size()}
             ref={list}
             role="tablist"
@@ -672,6 +685,7 @@ export function Tabs(props: TabsProps) {
                         key={tab.id}
                         className="happy-tabs__tab"
                         data-active={active() ? "" : undefined}
+                        data-close-revealed={tab.id === local.closeRevealedId ? "" : undefined}
                         data-carried={dragged() && drag?.carried ? "" : undefined}
                         data-dragged={dragged() ? "" : undefined}
                         data-voice-focus={tab.voiceFocus ? "" : undefined}

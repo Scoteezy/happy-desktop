@@ -136,6 +136,8 @@ export type SidebarItem = {
      * nothing moves until they answer, so it outranks both.
      */
     status?: "ready" | "working" | "waiting" | "awaitingInput";
+    /** Use the shared spinner/question lane for a session or bot row. */
+    activityIndicator?: "glyph";
     /**
      * Where the thing behind this row is in its own life, as distinct from what
      * is happening inside it: `creating` while it is still being made,
@@ -380,6 +382,9 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
      */
     composeActive?: boolean;
     composeLabel?: string;
+    /** Always-visible compose hint. Its aria value may include equivalent chords. */
+    composeShortcut?: KeyboardShortcut;
+    composeTooltip?: string;
     footer?: ReactNode;
     /** Stable product context rendered between the 56px heading and scrollport. */
     headerAccessory?: ReactNode;
@@ -1201,6 +1206,8 @@ function SidebarRow({
     /** The rendered number cap is backed by live Command-number navigation. */
     shortcutActive?: boolean;
     shortcut?: KeyboardShortcut;
+    shortcutAlwaysVisible?: boolean;
+    tooltip?: string;
     shift?: number;
 }) {
     const item = () => props.item;
@@ -1281,6 +1288,7 @@ function SidebarRow({
     const lifecycle = () => item().lifecycle;
     const showStatus = () =>
         item().kind === "agent" &&
+        item().activityIndicator !== "glyph" &&
         item().status !== undefined &&
         lifecycle() === undefined &&
         !unread() &&
@@ -1336,7 +1344,12 @@ function SidebarRow({
                 label: `${item().label}: ${item().lifecycleLabel ?? "unavailable"}`,
                 lifecycle: lifecycle()!,
             };
-        if (item().kind !== "workspace" && item().kind !== "project") return undefined;
+        if (
+            item().kind !== "workspace" &&
+            item().kind !== "project" &&
+            item().activityIndicator !== "glyph"
+        )
+            return undefined;
         if (item().status === "working")
             return { kind: "spinner", tone: "muted", label: `${item().label} is working` };
         if (item().status === "waiting")
@@ -1474,6 +1487,8 @@ function SidebarRow({
             data-lifecycle={lifecycle()}
             data-status={item().status}
             data-shortcut-row={props.shortcut ? "" : undefined}
+            data-shortcut-always={props.shortcutAlwaysVisible ? "" : undefined}
+            title={props.tooltip}
             data-unread={unread() ? "" : undefined}
             data-muted={item().muted ? "" : undefined}
             data-voice-focus={item().voiceFocus ? "" : undefined}
@@ -1850,6 +1865,8 @@ export function Sidebar(props: SidebarProps) {
         "className",
         "composeActive",
         "composeLabel",
+        "composeShortcut",
+        "composeTooltip",
         "footer",
         "headerAccessory",
         "headerAction",
@@ -2706,6 +2723,10 @@ export function Sidebar(props: SidebarProps) {
                                 label: local.composeLabel ?? "Create",
                             }}
                             onSelect={local.onCompose}
+                            shortcut={local.composeShortcut}
+                            shortcutActive={local.composeShortcut !== undefined}
+                            shortcutAlwaysVisible={local.composeShortcut !== undefined}
+                            tooltip={local.composeTooltip}
                         />
                     ) : null}
                     {actions.length > 0 ? (

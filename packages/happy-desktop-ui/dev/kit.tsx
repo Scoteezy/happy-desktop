@@ -79,9 +79,14 @@ export function ComponentPage(props: {
     number: string;
     summary: string;
     title: string;
+    /** A wide desktop specimen needs a card that contains its full capture. */
+    width?: number;
 }) {
     return (
-        <main className="component-page">
+        <main
+            className="component-page"
+            style={props.width === undefined ? undefined : { width: props.width }}
+        >
             <header className="component-title">
                 <div className="component-title-mark">
                     <span className="component-number">{props.number}</span>

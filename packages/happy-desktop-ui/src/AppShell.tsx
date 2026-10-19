@@ -44,6 +44,10 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      * No CSS media query reports this, so the desktop shell supplies it.
      */
     windowFullScreen?: boolean;
+    /** Compact, shared title/tab band, with sidebar controls at its leading edge. */
+    navigationChrome?: "integrated";
+    /** One create control beside the reveal button while navigation is folded. */
+    sidebarCollapsedAction?: { label: string; onClick: () => void };
     /**
      * A connection rail stands between the window's left edge and this shell,
      * holding most of the traffic lights' lane itself. The chrome inset closes
@@ -348,6 +352,8 @@ export function AppShell(props: AppShellProps) {
         "titleBar",
         "windowControls",
         "windowFullScreen",
+        "navigationChrome",
+        "sidebarCollapsedAction",
         "connectionRail",
         "sidebarCollapsible",
         "sidebarDefaultWidth",
@@ -591,7 +597,8 @@ export function AppShell(props: AppShellProps) {
     // Under native window controls a collapsed sidebar leaves no lane behind: the
     // reveal control floats beside the traffic lights, exactly where the collapse
     // control sat, and the workspace takes the whole width.
-    const revealFloating = sidebarHidden && local.windowControls === true;
+    const revealFloating =
+        sidebarHidden && local.windowControls === true && local.navigationChrome !== "integrated";
     const sidebarLayoutMin = !local.sidebar
         ? 0
         : revealFloating
@@ -638,7 +645,24 @@ export function AppShell(props: AppShellProps) {
             data-happy-desktop-ui="app-shell-reveal"
             data-window-controls={local.windowControls ? "" : undefined}
         >
-            {revealButton}
+            {local.navigationChrome === "integrated" ? (
+                <div className="happy-desktop-app-shell__reveal-controls">
+                    {revealButton}
+                    {local.navigationChrome === "integrated" && local.sidebarCollapsedAction ? (
+                        <button
+                            aria-label={local.sidebarCollapsedAction.label}
+                            className="happy-desktop-app-shell__reveal-button"
+                            data-happy-desktop-ui="app-shell-collapsed-action"
+                            onClick={local.sidebarCollapsedAction.onClick}
+                            type="button"
+                        >
+                            <Icon name="plus" size={16} />
+                        </button>
+                    ) : null}
+                </div>
+            ) : (
+                revealButton
+            )}
         </div>
     ) : null;
     const mainStyle: CSSProperties = {
@@ -669,6 +693,7 @@ export function AppShell(props: AppShellProps) {
                     // file against the renderer URL would invent a different target.
                     setLinkMenu({ x: event.clientX, y: event.clientY, href });
                 }}
+                data-navigation-chrome={local.navigationChrome}
                 onFocusCapture={(event) => {
                     rest.onFocusCapture?.(event);
                     paneFocusRead(event.currentTarget, event.target);

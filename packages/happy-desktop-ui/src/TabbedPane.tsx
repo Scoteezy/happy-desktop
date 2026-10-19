@@ -24,6 +24,10 @@ export type TabbedPaneProps = {
     closeLabel?: string;
     /** Non-visual shortcut announced on the active tab's close control. */
     closeShortcut?: KeyboardShortcut;
+    closePresentation?: "trailing" | "overlay";
+    closeRevealedId?: string;
+    /** Full titles scroll at their natural widths instead of sharing equal cells. */
+    tabSizing?: "equal" | "content";
     /** Commits a drag with the tab ids in their new order; supplying it makes tabs draggable. */
     onReorder?: (ids: readonly string[]) => void;
     /** Returns the context-menu actions available for one tab. Empty means no menu. */
@@ -58,7 +62,7 @@ export type TabbedPaneProps = {
  *
  * The bar is the component's reason to exist: it is a fixed row that never
  * grows, so an unbounded number of tabs scrolls horizontally inside it instead
- * of wrapping into a second row that would move the body. Every tab is the same
+ * of wrapping into a second row that would move the body. By default every tab is the same
  * width, the way a browser's are: labels truncate inside it, a long title never
  * widens its tab, and when the bar runs short the tabs shrink together down to
  * a minimum before the strip starts to scroll. The body owns its own
@@ -77,6 +81,8 @@ export function TabbedPane(props: TabbedPaneProps) {
         "className",
         "closeLabel",
         "closeShortcut",
+        "closePresentation",
+        "closeRevealedId",
         "onClose",
         "onDoubleClick",
         "onIntent",
@@ -88,6 +94,7 @@ export function TabbedPane(props: TabbedPaneProps) {
         "style",
         "tabMenuItems",
         "tabs",
+        "tabSizing",
         "trailing",
         "transferTargets",
         "transferable",
@@ -103,7 +110,11 @@ export function TabbedPane(props: TabbedPaneProps) {
         const viewportBounds = viewport.getBoundingClientRect();
         const activeBounds = active.getBoundingClientRect();
         let left = viewport.scrollLeft;
-        if (activeBounds.right > viewportBounds.right) {
+        if (local.tabSizing === "content" && activeBounds.width > viewportBounds.width) {
+            // A full title may exceed the viewport. Start at its leading edge
+            // so the name remains identifiable while the reader scrolls it.
+            left += activeBounds.left - viewportBounds.left;
+        } else if (activeBounds.right > viewportBounds.right) {
             // A newly appended tab lands against the trailing edge, like the
             // document and terminal strips in desktop editors.
             left += activeBounds.right - viewportBounds.right;
@@ -113,13 +124,14 @@ export function TabbedPane(props: TabbedPaneProps) {
             return;
         }
         viewport.scrollTo({ behavior: "auto", left });
-    }, [local.activeId]);
+    }, [local.activeId, local.tabSizing]);
     return (
         <div
             {...rest}
             className={["happy-tabbed-pane", local.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="tabbed-pane"
             data-size={local.size ?? "small"}
+            data-tab-sizing={local.tabSizing ?? "equal"}
             style={local.style}
         >
             <div className="happy-tabbed-pane__bar" data-happy-desktop-ui="tabbed-pane-bar">
@@ -140,6 +152,8 @@ export function TabbedPane(props: TabbedPaneProps) {
                             className="happy-tabbed-pane__tabs"
                             closeLabel={local.closeLabel}
                             closeShortcut={local.closeShortcut}
+                            closePresentation={local.closePresentation}
+                            closeRevealedId={local.closeRevealedId}
                             onClose={local.onClose}
                             onDoubleClick={local.onDoubleClick}
                             onIntent={local.onIntent}

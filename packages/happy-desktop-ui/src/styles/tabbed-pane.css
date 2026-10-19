@@ -167,3 +167,32 @@
     min-width: 0;
     min-height: 0;
 }
+
+/* Editor-style strips retain the complete title and scroll instead of
+   shrinking every document to the equal-cell default. */
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabbed-pane__strip,
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabbed-pane__tabs {
+    flex: none;
+    min-width: max-content;
+}
+
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab {
+    flex: none;
+    width: auto;
+    min-width: 0;
+    padding-left: var(--happy-panel-row-padding);
+    padding-right: var(--happy-panel-row-padding);
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab-label {
+    flex: none;
+    overflow: visible;
+    text-overflow: clip;
+}
+
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabbed-pane__trailing {
+    padding: 0 var(--happy-panel-inset);
+}

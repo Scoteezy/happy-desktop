@@ -37,6 +37,94 @@
     min-height: 0;
 }
 
+/* Integrated window chrome shares a single band with the pane's tabs. Native
+   geometry is divided by the renderer zoom because the OS buttons stay fixed. */
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] {
+    --happy-integrated-leading-inset: var(--happy-panel-inset);
+    --happy-integrated-band-height: 40px;
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls]:not(
+    [data-window-full-screen]
+) {
+    --happy-integrated-leading-inset: calc(
+        var(--happy-window-controls-width) / var(--happy-window-zoom)
+    );
+    --happy-integrated-band-height: max(
+        40px,
+        calc(var(--happy-window-controls-height) / var(--happy-window-zoom))
+    );
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls][data-connection-rail]:not(
+    [data-window-full-screen]
+) {
+    --happy-integrated-leading-inset: max(
+        var(--happy-panel-inset),
+        calc(
+            var(--happy-window-controls-width) / var(--happy-window-zoom) -
+                var(--happy-connections-rail-width)
+        )
+    );
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-sidebar__header,
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls]
+    .happy-sidebar__header {
+    height: var(--happy-integrated-band-height);
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane__bar {
+    height: var(--happy-integrated-band-height);
+    align-items: center;
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane__scroller,
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane__strip,
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane__tabs {
+    height: 100%;
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabs__tab {
+    height: 100%;
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"]
+    .happy-desktop-app-shell__sidebar-collapse,
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls]
+    .happy-desktop-app-shell__sidebar-collapse {
+    top: calc((var(--happy-integrated-band-height) - 28px) / 2);
+    left: var(--happy-integrated-leading-inset);
+    right: auto;
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-sidebar__section-label {
+    text-transform: none;
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-desktop-app-shell__reveal {
+    align-items: stretch;
+    width: calc(var(--happy-integrated-leading-inset) + 64px + var(--happy-panel-inset));
+    padding: 0;
+}
+
+.happy-desktop-app-shell__reveal-controls {
+    display: flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 4px;
+    height: var(--happy-integrated-band-height);
+    padding-left: var(--happy-integrated-leading-inset);
+}
+
+/* The collapsed navigation owns a real column, so tabs need no floating-control inset. */
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls][data-sidebar-collapsed]
+    .happy-desktop-app-shell__workspace
+    > .happy-tabbed-pane:first-child
+    .happy-tabbed-pane__bar {
+    padding-left: 0;
+}
+
 .happy-desktop-app-shell__window-controls {
     position: absolute;
     z-index: 3;
