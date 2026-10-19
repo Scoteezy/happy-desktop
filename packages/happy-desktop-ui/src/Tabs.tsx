@@ -341,14 +341,17 @@ export function Tabs(props: TabsProps) {
     ]);
     const size = () => local.size ?? "medium";
     // A pointer that rests on a tab, or presses it, reports the intent; one only passing over
-    // reports nothing.
+    // reports nothing, and neither does a tab taken off the screen while the pointer rested.
     const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-    const intent = (id: string, now: boolean): void => {
+    const intent = (tab: HTMLElement, id: string, now: boolean): void => {
         clearTimeout(intentTimer.current);
         const onIntent = local.onIntent;
         if (onIntent === undefined) return;
         if (now) onIntent(id);
-        else intentTimer.current = setTimeout(() => onIntent(id), TAB_INTENT_DWELL_MS);
+        else
+            intentTimer.current = setTimeout(() => {
+                if (tab.isConnected) onIntent(id);
+            }, TAB_INTENT_DWELL_MS);
     };
     // The context menu is local UI state: it exists between the right click
     // that opened it and the dismissal or selection that closes it, and never
@@ -688,10 +691,10 @@ export function Tabs(props: TabsProps) {
                         onKeyDown={(event) => moveByKey(event, tab)}
                         onPointerCancel={dragEnd}
                         onPointerDown={(event) => {
-                            if (event.button === 0) intent(tab.id, true);
+                            if (event.button === 0) intent(event.currentTarget, tab.id, true);
                             dragStart(event, index);
                         }}
-                        onPointerEnter={() => intent(tab.id, false)}
+                        onPointerEnter={(event) => intent(event.currentTarget, tab.id, false)}
                         onPointerLeave={() => clearTimeout(intentTimer.current)}
                         onPointerMove={dragMove}
                         onPointerUp={dragEnd}

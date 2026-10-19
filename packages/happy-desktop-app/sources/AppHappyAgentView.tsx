@@ -4727,9 +4727,12 @@ function HappyAgentCommandPalette(
     const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const highlightIntent = () => {
         clearTimeout(intentTimer.current);
+        // The palette never lets focus leave its input, so the card holding focus is this one. A
+        // palette closed, or closed and opened again, before the timer fires is a different card.
+        const card = document.activeElement?.closest('[data-happy-desktop-ui="command-palette"]');
         intentTimer.current = setTimeout(() => {
             const row = highlighted.current;
-            if (!props.store.get().open || row?.kind === "setting") return;
+            if (card?.isConnected !== true || row?.kind === "setting") return;
             const command = row?.command;
             if (command?.kind !== "chatOpen" || command.archived) return;
             if (command.happyAgentId !== props.happyAgentId) return;

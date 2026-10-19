@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { flushSync } from "react-dom";
 import { expect, it, vi } from "vitest";
 import { server, userEvent } from "vitest/browser";
 import "./theme.css";
@@ -428,27 +430,34 @@ it("fires onSelect with the tab id when a tab is clicked", async () => {
 
 it("reports the intent to select a tab the pointer rests on, and none for one it only passes", async () => {
     const onIntent = vi.fn();
+    const all: TabItem[] = [
+        { id: "all", label: "All" },
+        { id: "unread", label: "Unread" },
+        { id: "mentions", label: "Mentions" },
+    ];
+    let tabsUpdate: (tabs: TabItem[]) => void = () => {};
+    function Strip() {
+        const [tabs, setTabs] = useState(all);
+        tabsUpdate = setTabs;
+        return <Tabs activeId="all" onIntent={onIntent} onSelect={() => {}} tabs={tabs} />;
+    }
     const view = createRenderer();
-    view.render(
-        () => (
-            <Tabs
-                activeId="all"
-                onIntent={onIntent}
-                onSelect={() => {}}
-                tabs={[
-                    { id: "all", label: "All" },
-                    { id: "unread", label: "Unread" },
-                    { id: "mentions", label: "Mentions" },
-                ]}
-            />
-        ),
-        { width: 420, height: 72, padding: 16 },
-    );
+    view.render(() => <Strip />, { width: 420, height: 72, padding: 16 });
     await view.ready();
 
-    await userEvent.hover(view.$('[data-tab-id="unread"]').element);
-    await userEvent.hover(view.$('[data-tab-id="mentions"]').element);
-    await expect.poll(() => onIntent.mock.calls).toEqual([["mentions"]]);
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    expect(onIntent).toHaveBeenCalledTimes(1);
+    vi.useFakeTimers();
+    try {
+        await userEvent.hover(view.$('[data-tab-id="unread"]').element);
+        await userEvent.hover(view.$('[data-tab-id="mentions"]').element);
+        vi.advanceTimersByTime(60);
+        expect(onIntent.mock.calls).toEqual([["mentions"]]);
+
+        // A tab taken away while the pointer rests on it reports nothing afterwards.
+        await userEvent.hover(view.$('[data-tab-id="unread"]').element);
+        flushSync(() => tabsUpdate(all.filter((tab) => tab.id !== "unread")));
+        vi.advanceTimersByTime(60);
+        expect(onIntent.mock.calls).toEqual([["mentions"]]);
+    } finally {
+        vi.useRealTimers();
+    }
 });
