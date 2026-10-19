@@ -1,4 +1,11 @@
 import "./styles.css";
+export { DitherChart, type DitherChartProps } from "./dither/DitherChart";
+export { DitherSparkline } from "./dither/DitherSparkline";
+export type { DitherSeries, DitherPoint, DitherColor } from "./dither/ditherTypes";
+export {
+    HappyAgentSystemMonitorProcessesPanel,
+    type HappyAgentSystemMonitorProcessesPanelProps,
+} from "./pages/surfaces/HappyAgentSystemMonitorProcessesPanel";
 
 export { happyLogoBlackUrl, happyLogoWhiteUrl } from "./assets";
 export {
@@ -914,3 +921,7 @@ export {
     type DataDisclosureGroup,
     type DataDisclosureProps,
 } from "./DataDisclosure";
+export {
+    HappyAgentSystemMonitorSurfacePage,
+    type HappyAgentSystemMonitorSurfacePageProps,
+} from "./pages/surfaces/HappyAgentSystemMonitorSurfacePage";

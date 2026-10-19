@@ -133,6 +133,23 @@ export {
     type HappyAgentCalendarView,
 } from "./surfaces/surfaceCalendarStore.js";
 export * from "./surfaces/calendarTime.js";
+export type { HappyAgentSystemMonitorStore } from "./surfaces/surfaceSystemMonitorStore.js";
+export {
+    HAPPY_AGENT_SYSTEM_MONITOR_PROCESS_SORT,
+    happyAgentSystemMonitorProcessesFilter,
+    happyAgentSystemMonitorProcessesSort,
+} from "./surfaces/surfaceSystemMonitorProcesses.js";
+export type {
+    HappyAgentSystemMonitorProcess,
+    HappyAgentSystemMonitorProcessState,
+    HappyAgentSystemMonitorProcessColumn,
+    HappyAgentSystemMonitorProcessRow,
+    HappyAgentSystemMonitorProcessSort,
+} from "./surfaces/surfaceSystemMonitorTypes.js";
+export type {
+    HappyAgentSystemMonitorSample,
+    HappyAgentSystemMonitorSnapshot,
+} from "./surfaces/surfaceSystemMonitorTypes.js";
 export type { HappyAgentSurfaces } from "./surfaces/surfaces.js";
 export type {
     HappyAgentArtifactTitle,

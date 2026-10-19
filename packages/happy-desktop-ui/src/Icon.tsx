@@ -81,7 +81,8 @@ export type IconName =
     | "calendar"
     | "repeat"
     | "location"
-    | "dot";
+    | "dot"
+    | "pulse";
 export type IconProps = {
     name: IconName;
     /*
@@ -256,6 +257,7 @@ const glyphs: Record<IconName, IconGlyph> = {
     // Chance, asked for: rolling a new set of faces for a bot.
     dice: { set: "ionicons", name: "dice-outline" },
     dot: { set: "ionicons", name: "ellipse" },
+    pulse: { set: "ionicons", name: "pulse-outline" },
 };
 export const iconNames = Object.keys(glyphs) as IconName[];
 function glyphContent(glyph: IconGlyph) {

@@ -133,7 +133,7 @@ const NAME_FORBIDDEN = /[\u0000-\u001f\u007f]/gu;
 export type HappyAgentSurfaceMembershipAction = "join" | "leave" | "reorder";
 
 /** The kinds of Surface the reader can make here. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar";
+export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar" | "system_monitor";
 
 /**
  * Whether the form that makes a new Surface is open, and for which kind.
@@ -219,7 +219,7 @@ export interface HappyAgentSurfaceCatalogSnapshot {
 /** What a new Surface is made from, by kind. */
 export type HappyAgentSurfaceCreateInput =
     | {
-          /** A todo list, a document, or a calendar, which starts empty. */
+          /** A new content Surface; system monitors show their machine immediately. */
           readonly kind: HappyAgentSurfaceCreateKind;
           readonly name: string;
           /**
@@ -403,6 +403,7 @@ const CREATE_NOUNS = {
     todo: "todo lists",
     document: "documents",
     calendar: "calendars",
+    system_monitor: "System Monitors",
     artifact: "Surfaces for artifacts",
     bot: "Surfaces for bots",
     task: "Surfaces for tasks",

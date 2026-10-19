@@ -43,6 +43,8 @@ export function surfaceTypeIcon(type: HappyAgentSurfaceType): IconName {
             return "doc";
         case "calendar":
             return "calendar";
+        case "system_monitor":
+            return "pulse";
         case "artifact":
             return "package";
         case "bot":
@@ -63,6 +65,8 @@ export function surfaceTypeLabel(type: HappyAgentSurfaceType): string {
             return "Document";
         case "calendar":
             return "Calendar";
+        case "system_monitor":
+            return "System Monitor";
         case "artifact":
             return "Artifact";
         case "bot":

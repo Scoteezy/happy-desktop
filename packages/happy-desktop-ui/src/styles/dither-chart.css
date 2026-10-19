@@ -1,0 +1,79 @@
+.happy-dither-chart {
+    display: flex;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: 72px;
+}
+.happy-dither-chart__canvas {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    image-rendering: pixelated;
+}
+.happy-dither-chart:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+.happy-dither-chart__tooltip {
+    /* The scrub tooltip overlays the plot so it never changes card geometry. */
+    position: absolute;
+    bottom: calc(100% + 8px);
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: none;
+    z-index: 2;
+    padding: 8px 12px;
+    border: 1px solid var(--divider);
+    border-radius: 6px;
+    color: var(--text);
+    background: var(--surface);
+    font-family: var(--happy-font-mono);
+    font-size: 10px;
+    line-height: 16px;
+    white-space: nowrap;
+}
+.happy-dither-chart__tooltip > span {
+    color: var(--text-secondary);
+}
+.happy-dither-chart__tooltip > div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.happy-dither-chart__tooltip strong {
+    font-weight: 500;
+}
+.happy-dither-chart__key {
+    display: flex;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+}
+.happy-dither-chart [data-color="blue"] {
+    color: var(--text-link);
+}
+.happy-dither-chart [data-color="green"] {
+    color: var(--status-connected);
+}
+.happy-dither-chart [data-color="orange"] {
+    color: var(--box-warning-text);
+}
+.happy-dither-chart [data-color="red"] {
+    color: var(--text-destructive);
+}
+.happy-dither-chart [data-color="grey"] {
+    color: var(--text-secondary);
+}
+.happy-dither-sparkline {
+    width: 100%;
+    height: 20px;
+}

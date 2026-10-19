@@ -6,11 +6,12 @@ export type HappyAgentSurfaceSupport = "checking" | "supported" | "unsupported";
 
 /**
  * Which Surfaces a Happy Agent can make that an older one cannot, as its
- * health says: collaborative documents, and calendars.
+ * health says: collaborative documents, calendars, and system monitors.
  */
 export interface HappyAgentSurfaceSupportSnapshot {
     readonly documents: HappyAgentSurfaceSupport;
     readonly calendars: HappyAgentSurfaceSupport;
+    readonly systemMonitors: HappyAgentSurfaceSupport;
 }
 
 export interface HappyAgentSurfaceSupportStore {
@@ -24,10 +25,15 @@ export interface HappyAgentSurfaceSupportDeps {
     readonly sync: HappyAgentSync;
 }
 
-const CHECKING: HappyAgentSurfaceSupportSnapshot = { documents: "checking", calendars: "checking" };
+const CHECKING: HappyAgentSurfaceSupportSnapshot = {
+    documents: "checking",
+    calendars: "checking",
+    systemMonitors: "checking",
+};
 const UNSUPPORTED: HappyAgentSurfaceSupportSnapshot = {
     documents: "unsupported",
     calendars: "unsupported",
+    systemMonitors: "unsupported",
 };
 const RETRY_MS = 5_000;
 
@@ -51,7 +57,12 @@ export function happyAgentSurfaceSupportStoreCreate(
     let retry: ReturnType<typeof setTimeout> | undefined;
 
     const set = (next: HappyAgentSurfaceSupportSnapshot): void => {
-        if (next.documents === snapshot.documents && next.calendars === snapshot.calendars) return;
+        if (
+            next.documents === snapshot.documents &&
+            next.calendars === snapshot.calendars &&
+            next.systemMonitors === snapshot.systemMonitors
+        )
+            return;
         snapshot = next;
         for (const listener of listeners) listener();
     };
@@ -69,6 +80,7 @@ export function happyAgentSurfaceSupportStoreCreate(
                 set({
                     documents: supportOf(health.capabilities?.collaborativeDocuments === true),
                     calendars: supportOf(health.capabilities?.calendarSurfaces === true),
+                    systemMonitors: supportOf(health.capabilities?.systemMonitorSurfaces === true),
                 });
             },
             () => {

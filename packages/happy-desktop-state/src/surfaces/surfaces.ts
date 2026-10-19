@@ -25,6 +25,11 @@ import {
     type HappyAgentTodoListStore,
 } from "./surfaceTodoListStore.js";
 import type { HappyAgentSurfaceId } from "./surfaceTypes.js";
+import {
+    happyAgentSystemMonitorStoreCreate,
+    type HappyAgentSystemMonitorStore,
+    type HappyAgentSystemMonitorDeps,
+} from "./surfaceSystemMonitorStore.js";
 
 /**
  * One Happy Agent's Surfaces. Each store is materialized on first access and
@@ -52,7 +57,8 @@ export interface HappyAgentSurfaces {
      * month or week last shown is where the calendar opens again.
      */
     calendar(surfaceId: HappyAgentSurfaceId): HappyAgentCalendarStore;
-    /** Whether documents and calendars can be made here, as this Happy Agent says. */
+    systemMonitor(surfaceId: HappyAgentSurfaceId): HappyAgentSystemMonitorStore;
+    /** Which newer Surface types this Happy Agent serves. */
     support(): HappyAgentSurfaceSupportStore;
     [Symbol.dispose](): void;
 }
@@ -62,6 +68,7 @@ export interface HappyAgentSurfacesDeps {
         HappyAgentTodoListDeps["client"] &
         HappyAgentSurfaceDocumentDeps["client"] &
         HappyAgentCalendarDeps["client"] &
+        HappyAgentSystemMonitorDeps["client"] &
         HappyAgentSurfaceSupportDeps["client"];
     readonly sync: HappyAgentSync;
     /** Told of the workspace each Surface chat is held in, once the daemon has said. */
@@ -73,6 +80,7 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
     const todoLists = new Map<HappyAgentSurfaceId, HappyAgentTodoListStore>();
     const documents = new Map<HappyAgentSurfaceId, HappyAgentSurfaceDocumentStore>();
     const calendars = new Map<HappyAgentSurfaceId, HappyAgentCalendarStore>();
+    const monitors = new Map<HappyAgentSurfaceId, HappyAgentSystemMonitorStore>();
     let support: HappyAgentSurfaceSupportStore | undefined;
     /** Lists this connection is making, until the daemon answers, for their todo stores to wait on. */
     const creating = new Map<HappyAgentSurfaceId, Promise<void>>();
@@ -152,6 +160,21 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             }
             return store;
         },
+        systemMonitor(surfaceId) {
+            let store = monitors.get(surfaceId);
+            if (store === undefined) {
+                const created = creating.get(surfaceId);
+                store = inert(
+                    happyAgentSystemMonitorStoreCreate({
+                        client: deps.client,
+                        surfaceId,
+                        ...(created === undefined ? {} : { surfaceCreated: created }),
+                    }),
+                );
+                if (!disposed) monitors.set(surfaceId, store);
+            }
+            return store;
+        },
         support() {
             return (support ??= inert(
                 happyAgentSurfaceSupportStoreCreate({
@@ -171,6 +194,8 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             documents.clear();
             for (const store of calendars.values()) store[Symbol.dispose]();
             calendars.clear();
+            for (const store of monitors.values()) store[Symbol.dispose]();
+            monitors.clear();
         },
     };
 }

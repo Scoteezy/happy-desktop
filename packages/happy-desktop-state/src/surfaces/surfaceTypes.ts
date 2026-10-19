@@ -41,6 +41,7 @@ export type HappyAgentSurfaceType =
     | { readonly kind: "document" }
     /** One shared set of calendar events, kept with every version each has had. */
     | { readonly kind: "calendar" }
+    | { readonly kind: "system_monitor" }
     /** One artifact, bot, or task, kept among the Surfaces; opening it opens that. */
     | { readonly kind: HappyAgentSurfaceReferenceKind }
     | { readonly kind: "unsupported"; readonly type: string };
@@ -57,6 +58,7 @@ export function happyAgentSurfaceChatSupported(type: HappyAgentSurfaceType): boo
         case "todo":
         case "document":
         case "calendar":
+        case "system_monitor":
         case "artifact":
         case "bot":
         case "task":

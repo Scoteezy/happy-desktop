@@ -160,6 +160,7 @@ export function happyAgentSurfaceTypeProject(type: string): HappyAgentSurfaceTyp
         case "todo":
         case "document":
         case "calendar":
+        case "system_monitor":
         case "artifact":
         case "bot":
         case "task":

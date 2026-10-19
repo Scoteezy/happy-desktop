@@ -24,7 +24,7 @@ function imageSignatureAccepted(bytes: Uint8Array): boolean {
 }
 
 /** The kinds of Surface this dialog makes. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar";
+export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar" | "system_monitor";
 
 /** What the dialog asks for: a name, and a picture if the reader chose one. */
 export interface HappyAgentSurfaceCreateInput {
@@ -38,6 +38,7 @@ const KINDS = {
     todo: { title: "New todo list", icon: "tasks", placeholder: "Groceries" },
     document: { title: "New document", icon: "doc", placeholder: "House rules" },
     calendar: { title: "New calendar", icon: "calendar", placeholder: "Team" },
+    system_monitor: { title: "New system monitor", icon: "pulse", placeholder: "System Monitor" },
 } as const satisfies Record<
     HappyAgentSurfaceCreateKind,
     { title: string; icon: IconName; placeholder: string }
@@ -59,7 +60,7 @@ interface Picture {
 }
 
 /**
- * C-298 HappyAgentSurfaceCreateDialog — names a new todo list, document, or calendar
+ * C-298 HappyAgentSurfaceCreateDialog — names a new Surface
  * and, if the reader wants, gives it a picture.
  *
  * The form is the dialog's own until it is submitted: the name typed, the
@@ -71,7 +72,7 @@ interface Picture {
  * refused would vanish from the sidebar.
  */
 export function HappyAgentSurfaceCreateDialog(props: HappyAgentSurfaceCreateDialogProps) {
-    const [name, setName] = useState("");
+    const [name, setName] = useState(props.kind === "system_monitor" ? "System Monitor" : "");
     const [picture, setPicture] = useState<Picture>();
     const [pictureError, setPictureError] = useState<string>();
     const fileInput = useRef<HTMLInputElement>(null);

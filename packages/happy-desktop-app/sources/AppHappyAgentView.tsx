@@ -1,4 +1,6 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
+import type { HappyAgentSystemMonitorStore } from "happy-desktop-state";
+import { HappyAgentSystemMonitorSurfacePage } from "happy-desktop-ui";
 import {
     gptLiveStoreNoop,
     happyAgentBotSubtasks,
@@ -2340,6 +2342,7 @@ const SURFACE_CREATE_OFFERS: readonly {
     { kind: "todo", icon: "tasks", label: "New todo list" },
     { kind: "document", icon: "doc", label: "New document" },
     { kind: "calendar", icon: "calendar", label: "New calendar" },
+    { kind: "system_monitor", icon: "pulse", label: "New system monitor" },
 ];
 
 /**
@@ -2351,7 +2354,8 @@ function surfaceCreateMenu(support: HappyAgentSurfaceSupportSnapshot): MenuItem[
     return SURFACE_CREATE_OFFERS.filter(
         (offer) =>
             (offer.kind !== "document" || support.documents === "supported") &&
-            (offer.kind !== "calendar" || support.calendars === "supported"),
+            (offer.kind !== "calendar" || support.calendars === "supported") &&
+            (offer.kind !== "system_monitor" || support.systemMonitors === "supported"),
     ).map((offer) => ({ kind: "item", id: offer.kind, icon: offer.icon, label: offer.label }));
 }
 
@@ -4090,6 +4094,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             return (
                 <HappyAgentSurfaceContent
                     key={props.surfaceId}
+                    support={surfaceSupport}
                     {...(props.surfaceChat ? { chat: props.surfaceChat } : {})}
                     chatConversation={(chat, surfaceName) => (
                         <HappyAgentSurfaceChat
@@ -5219,6 +5224,7 @@ const SURFACE_CHAT_PANEL_WIDTH = 420;
 function HappyAgentSurfaceContent(props: {
     surfaces: HappyAgentSurfaces;
     surfaceId: HappyAgentSurfaceId;
+    support: HappyAgentSurfaceSupportSnapshot;
     /** The connection's clock, which a calendar's line across today follows. */
     clock: HappyAgentClockStore;
     places: SurfacePlaces;
@@ -5235,6 +5241,7 @@ function HappyAgentSurfaceContent(props: {
     ) => ReactNode;
 }) {
     const catalogStore = props.surfaces.catalog();
+    const support = props.support;
     const catalog = useSyncExternalStore(
         catalogStore.subscribe,
         catalogStore.get,
@@ -5258,7 +5265,11 @@ function HappyAgentSurfaceContent(props: {
             />
         );
     }
-    const view = surfaceViewOf(catalog, surface);
+    const presented = surfaceViewOf(catalog, surface);
+    const view: HappyAgentSurfaceView =
+        surface.type.kind === "system_monitor" && support.systemMonitors !== "supported"
+            ? { ...presented, type: { kind: "unsupported", type: "system_monitor" } }
+            : presented;
     const opening = catalog.chatsOpening.get(surface.id);
     // Shown from the moment it is asked for, so the reader sees it being made.
     const chatShown = props.chat !== undefined || opening !== undefined;
@@ -5269,7 +5280,7 @@ function HappyAgentSurfaceContent(props: {
     // A reference whose target the reader cannot see has no chat they may
     // read either: the daemon guards it by the target's own access.
     const chat: HappyAgentSurfaceChatToggle | undefined =
-        happyAgentSurfaceChatSupported(surface.type) && surface.target?.state !== "unavailable"
+        happyAgentSurfaceChatSupported(view.type) && surface.target?.state !== "unavailable"
             ? {
                   open: chatShown,
                   onToggle: () => {
@@ -5315,6 +5326,19 @@ function HappyAgentSurfaceContent(props: {
                     store={props.surfaces.document(surface.id)}
                     surface={view}
                     user={documentUserOf(catalog)}
+                />
+            );
+        if (surface.type.kind === "system_monitor")
+            return support.systemMonitors !== "unsupported" ? (
+                <HappyAgentSystemMonitorSurface
+                    {...(chat ? { chat } : {})}
+                    enabled={support.systemMonitors === "supported"}
+                    store={props.surfaces.systemMonitor(surface.id)}
+                    surface={view}
+                />
+            ) : (
+                <HappyAgentSurfaceUnsupportedPage
+                    surface={{ ...view, type: { kind: "unsupported", type: "system_monitor" } }}
                 />
             );
         if (surface.type.kind === "calendar")
@@ -5534,6 +5558,50 @@ function HappyAgentDocumentSurface(props: {
                 : {})}
             focusOnType={props.focusOnType}
             surface={props.surface}
+        />
+    );
+}
+
+/** One visibility-scoped subscription owns the machine's telemetry polling. */
+function HappyAgentSystemMonitorSurface(props: {
+    store: HappyAgentSystemMonitorStore;
+    surface: HappyAgentSurfaceView;
+    enabled: boolean;
+    chat?: HappyAgentSurfaceChatToggle;
+}) {
+    const store = props.store;
+    // Subscription identity must survive samples: changing it would abort and
+    // restart polling on every render. Hidden windows release the subscription.
+    const subscribe = useCallback(
+        (listener: () => void) => {
+            if (!props.enabled) return () => undefined;
+            let release: (() => void) | undefined;
+            const visibilityChange = () => {
+                if (document.visibilityState === "visible") {
+                    release ??= store.subscribe(listener);
+                    listener();
+                } else {
+                    release?.();
+                    release = undefined;
+                }
+            };
+            document.addEventListener("visibilitychange", visibilityChange);
+            visibilityChange();
+            return () => {
+                document.removeEventListener("visibilitychange", visibilityChange);
+                release?.();
+            };
+        },
+        [store, props.enabled],
+    );
+    const monitor = useSyncExternalStore(subscribe, store.get, store.get);
+    return (
+        <HappyAgentSystemMonitorSurfacePage
+            surface={props.surface}
+            monitor={monitor}
+            onProcessFilterChange={store.processFilterUpdate}
+            onProcessSortChange={store.processSortUpdate}
+            {...(props.chat ? { chat: props.chat } : {})}
         />
     );
 }
