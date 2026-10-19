@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ThemeScope } from "../../src/ThemeScope";
 import { PersonalDayShell } from "./PersonalDayShell";
-import { dayFocus, dayPerson, type DayMoment, type DayPerson } from "./personalDayFixtures";
+import { dayFocus, type DayMoment, type DayPerson } from "./personalDayFixtures";
 
 const checkpoints = [
     {
@@ -28,7 +28,7 @@ const checkpoints = [
     {
         time: "10:05",
         kirill: "K4",
-        kChange: "user: open Desktop tail + Steve; scroll",
+        kChange: "user: Desktop tail + Steve inline; scroll",
         steve: null,
         sChange: "09:20 reply clears wait; connector continues",
     },
@@ -42,8 +42,6 @@ const checkpoints = [
 ] as const;
 
 function TimelineSidebar({ frame }: { frame: DayMoment }) {
-    const person = dayPerson(frame);
-    const [space, setSpace] = useState(person);
     const [selected, setSelected] = useState<string>(dayFocus(frame));
     return (
         <div
@@ -65,8 +63,6 @@ function TimelineSidebar({ frame }: { frame: DayMoment }) {
                     sidebarOnly
                     frame={frame}
                     activeId={selected}
-                    space={space}
-                    onSpaceChange={setSpace}
                     onSelect={setSelected}
                 />
             </div>

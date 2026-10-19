@@ -4,7 +4,7 @@ import { CommandPalette } from "../../src/CommandPalette";
 import { CommandPaletteResults } from "../../src/CommandPaletteResults";
 import { ModalOverlay } from "../../src/ModalOverlay";
 import { PersonalDaySidebar, type PersonalDaySidebarProps } from "./PersonalDaySidebar";
-import { dayPerson, dayWork } from "./personalDayFixtures";
+import { dayWork } from "./personalDayFixtures";
 
 /** Every day specimen uses the existing app-shell toggle and search geometry. */
 export function PersonalDayShell(
@@ -43,10 +43,7 @@ export function PersonalDayShell(
                 sidebarSearchAction={{ label: "Search", onClick: () => setSearchOpen(true) }}
                 sidebarCollapsedAction={{
                     label: "Make Stuff",
-                    onClick: () => {
-                        props.onSpaceChange(dayPerson(props.frame));
-                        props.onSelect("new");
-                    },
+                    onClick: () => props.onSelect("new"),
                 }}
                 sidebar={<PersonalDaySidebar {...props} />}
             >

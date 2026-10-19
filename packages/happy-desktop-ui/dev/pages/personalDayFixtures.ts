@@ -29,7 +29,7 @@ import release from "../../src/assets/sidebar-icons/release-coordinator@40.png";
 
 export type DayPerson = "kirill" | "steve";
 export type DayMoment = "K1" | "K2" | "K3" | "K4" | "K5" | "S1" | "S2" | "S3" | "S4";
-export type DayFrame = DayMoment | "exchange" | "browse" | "return" | "batch-note" | "reply";
+export type DayFrame = DayMoment | "exchange" | "inline" | "batch-note" | "reply";
 type WorkSource = {
     label: string;
     sourceId: string;
@@ -311,7 +311,7 @@ export const dayFrameDetails = [
         id: "12c-k4",
         scene: "K4",
         label: "Kirill · 10:05 · look further without moving work",
-        detail: "Inspection branch: user opens Desktop tail and Steve preview, then scrolls down. Other sections retain K3 disclosure. Hover shows the separate disclosure control.",
+        detail: "Inspection branch: user opens Desktop tail and Steve inline, then scrolls down. Only the connector and keyboard work are shown; other sections retain K3 disclosure.",
     },
     {
         id: "12d-k5",
@@ -344,21 +344,15 @@ export const dayFrameDetails = [
         detail: "Staged 09:18 question; answer through the normal composer. Source link opens the backend, never the current connector.",
     },
     {
-        id: "12h-browse",
-        scene: "browse",
-        label: "Kirill browses Steve's space · from K5",
-        detail: "K5 continuation: completed viewer remains in Older; Desktop redesign and its draft stay open. Organization controls are scoped to the visited space.",
-    },
-    {
-        id: "12i-return",
-        scene: "return",
-        label: "Back in Kirill's space",
-        detail: "Real attributed work. Staged: return preserves personal disclosure, selection and draft.",
+        id: "12h-inline",
+        scene: "inline",
+        label: "Kirill · Steve expanded inline",
+        detail: "09:18 inspection branch: the user opens Steve's two relevant items. Credential helper, its draft and the rest of Kirill's sidebar remain in place. No foreign tail or separate browse view.",
     },
 ] as const;
 
 export function dayAfterBatch(frame: DayFrame) {
-    return frame === "K5" || frame === "batch-note" || frame === "browse" || frame === "return";
+    return frame === "K5" || frame === "batch-note";
 }
 
 export function dayPerson(frame: DayFrame): DayPerson {
@@ -373,6 +367,7 @@ export function dayFocus(frame: DayFrame): DayWorkId | "happy" {
         case "K2":
             return "resize";
         case "K3":
+        case "inline":
             return "credentials";
         case "K4":
         case "K5":
@@ -389,13 +384,10 @@ export function dayFocus(frame: DayFrame): DayWorkId | "happy" {
             return "connector";
         case "S4":
             return "ultralist";
-        case "browse":
-        case "return":
-            return "redesign";
     }
 }
 export function dayWaiting(frame: DayFrame) {
-    return frame === "K3" || frame === "S3" || frame === "exchange";
+    return frame === "K3" || frame === "S3" || frame === "exchange" || frame === "inline";
 }
 
 /** Recent focus is explicit storyboard content, never inferred from row status. */
@@ -407,7 +399,13 @@ export function dayRecentFocus(person: DayPerson, frame: DayFrame): string {
         return "Desktop redesign, sidebar icons, master plans";
     }
     if (frame === "K1") return "UIKit onboarding + settings";
-    if (frame === "K2" || frame === "K3" || frame === "exchange" || frame === "reply")
+    if (
+        frame === "K2" ||
+        frame === "K3" ||
+        frame === "inline" ||
+        frame === "exchange" ||
+        frame === "reply"
+    )
         return "iOS keyboard + UIKit port, Tailcat pairing";
     if (frame === "K4") return "iOS regressions, UIKit port, Tailcat pairing";
     return "iOS keyboard + UIKit port, Tailcat pairing, UltraList docs";
@@ -460,32 +458,12 @@ const desktop: DayWorkId[] = [
     "theme",
 ];
 const platform: DayWorkId[] = ["credentials", "backend", "resume", "browser", "peers"];
-const nativePreview: DayWorkId[] = [
-    "native",
-    "connector",
-    "port",
-    "keyboard",
-    "ultralist",
-    "nativeList",
-    "android",
-];
-const kirillPreview: DayWorkId[] = [
-    "redesign",
-    "icons",
-    "plans",
-    "credentials",
-    "backend",
-    "viewer",
-    "ci",
-];
+// Cross-area relevance, not a second copy of the colleague's own sidebar.
+const steveRelevant: DayWorkId[] = ["connector", "keyboard"];
+const kirillRelevant: DayWorkId[] = ["backend", "credentials"];
 
-export function daySections(
-    person: DayPerson,
-    frame: DayFrame,
-    readOnly = false,
-): SidebarSection[] {
-    const rows = (ids: DayWorkId[]) =>
-        ids.map((id) => ({ ...dayRow(id, frame), reorderable: !readOnly }));
+export function daySections(person: DayPerson, frame: DayFrame): SidebarSection[] {
+    const rows = (ids: DayWorkId[]) => ids.map((id) => dayRow(id, frame));
     const shared: SidebarSection = {
         id: "shared",
         label: "Shared",
@@ -520,10 +498,9 @@ export function daySections(
                 id: "kirill-preview",
                 label: "Kirill",
                 recentFocus: dayRecentFocus("kirill", frame),
-                navigationLabel: "Open Kirill's space",
-                items: rows(kirillPreview).map((row) => ({ ...row, reorderable: false })),
+                headingDisclosure: true,
+                items: rows(kirillRelevant).map((row) => ({ ...row, reorderable: false })),
                 collapsed: true,
-                tail: { visibleCount: 2, expanded: false },
             },
             {
                 id: "older",
@@ -566,11 +543,10 @@ export function daySections(
             id: "steve-preview",
             label: "Steve",
             recentFocus: dayRecentFocus("steve", frame),
-            navigationLabel: "Open Steve's space",
+            headingDisclosure: true,
             attentionCount: dayWaiting(frame) ? 1 : undefined,
-            items: rows(nativePreview).map((row) => ({ ...row, reorderable: false })),
-            collapsed: frame !== "K4",
-            tail: { visibleCount: 3, expanded: false },
+            items: rows(steveRelevant).map((row) => ({ ...row, reorderable: false })),
+            collapsed: frame !== "K4" && frame !== "inline",
         },
         {
             id: "older",

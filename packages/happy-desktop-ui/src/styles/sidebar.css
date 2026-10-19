@@ -477,32 +477,33 @@
 
 .happy-sidebar__section-trailing {
     margin-left: auto;
-    width: 52px;
-    gap: 4px;
+    width: 28px;
 }
 
 .happy-sidebar__section-marks {
     width: 28px;
 }
 
-.happy-sidebar__section-trailing .happy-sidebar__section-fold {
-    margin-left: 0;
-}
-
-.happy-sidebar__section-open {
+.happy-sidebar__section-disclosure {
     display: flex;
+    flex: 1;
+    align-items: center;
+    min-width: 0;
+    height: 24px;
     padding: 0;
     border: 0;
     background: transparent;
+    color: inherit;
+    font: inherit;
     cursor: pointer;
     text-align: left;
 }
 
-.happy-sidebar__section-open:hover {
+.happy-sidebar__section-disclosure:hover .happy-sidebar__section-label {
     color: var(--text);
 }
 
-.happy-sidebar__section-open:focus-visible {
+.happy-sidebar__section-disclosure:focus-visible {
     outline: 2px solid var(--text-link);
     outline-offset: 2px;
 }

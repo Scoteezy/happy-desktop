@@ -4,13 +4,11 @@ import { ThemeScope } from "../../src/ThemeScope";
 import { WorkTranscript } from "../../src/WorkTranscript";
 import { PersonalDayShell } from "./PersonalDayShell";
 import { dayCoordination, dayPairingAnswer } from "./dayCoordination";
-import { dayHappyImage, type DayPerson } from "./personalDayFixtures";
+import { dayHappyImage } from "./personalDayFixtures";
 import { redesignComposer } from "./windowRedesignFixtures";
 
 /** A workbench comparison, not a proposed two-sidebar application layout. */
 export function PersonalDayReply() {
-    const [kirillSpace, setKirillSpace] = useState<DayPerson>("kirill");
-    const [steveSpace, setSteveSpace] = useState<DayPerson>("steve");
     const [draft, setDraft] = useState("");
     return (
         <ThemeScope mode="light">
@@ -58,8 +56,6 @@ export function PersonalDayReply() {
                                 sidebarOnly
                                 frame={person === "kirill" ? "K3" : "S3"}
                                 activeId={person === "kirill" ? "happy" : "connector"}
-                                space={person === "kirill" ? kirillSpace : steveSpace}
-                                onSpaceChange={person === "kirill" ? setKirillSpace : setSteveSpace}
                                 onSelect={() => undefined}
                                 pairingResolved
                             />

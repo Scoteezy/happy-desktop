@@ -55,13 +55,12 @@ const taskCopy: Partial<Record<DayWorkId, { request: string; reply: string }>> =
 export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
     const person = dayPerson(frame);
     const initialFocus = dayFocus(frame);
-    const [space, setSpace] = useState(frame === "browse" ? ("steve" as const) : person);
     const [selected, setSelected] = useState<string>(dayFocus(frame));
     const [taskTab, setTaskTab] = useState<DayWorkId>(
         dayWorkIdIs(initialFocus) ? initialFocus : person === "steve" ? "port" : "redesign",
     );
     const [draft, setDraft] = useState(
-        frame === "browse" || frame === "return" ? "Keep the sidebar steady while I work." : "",
+        frame === "inline" ? "Check attachment ownership at the provider boundary." : "",
     );
     const [pairingReply, setPairingReply] = useState<string | null>(
         frame === "reply" ? dayPairingAnswer : null,
@@ -193,9 +192,7 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
                         connectionRail
                         frame={frame}
                         activeId={selected}
-                        space={space}
                         pairingResolved={pairingResolved}
-                        onSpaceChange={setSpace}
                         onSelect={open}
                         onOrganize={(label) => {
                             open("happy");

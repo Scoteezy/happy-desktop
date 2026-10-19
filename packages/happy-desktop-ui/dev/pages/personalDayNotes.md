@@ -1,6 +1,6 @@
 # Personal day storyboard
 
-Rounds 12–13 project the supplied 109-row tidy fixture into Kirill's and Steve's
+Rounds 12–14 project the supplied 109-row tidy fixture into Kirill's and Steve's
 personal views. Kirill's confirmed work is Desktop, sidebar, icons and agent
 platform; Native, iOS, Android, UltraView, Tailcat and UltraList are Steve's.
 Inbox membership is shared. Untitled entries without attribution evidence stay
@@ -27,25 +27,29 @@ platform, Release, Shared and Older retain their disclosure across K3–K5.
 12d2 is a separate user navigation into Happy to read the one-line batch note.
 The 11c tidy diff follows the same rule.
 
-Foreign section labels open the colleague's projection. Organization controls
-are disabled there; opened work keeps its own content permissions. A single
-name sits beside Back to my space in the top band. Foreign headings have no
-total count. An unresolved dependency adds only its waiting mark in the trailing
-lane, beside a separate hover/focus disclosure button. Plain muted recent-focus
-text stays below the heading, including when preview rows are open. It is not
-clickable, contains no icons, and always reserves a fixed 32 px text slot for up
-to two lines. Shared context keeps its own compact line.
-There is no footer switcher. The existing top header band hosts Back to my space,
-leaving personal Make Stuff and Happy in place. Every specimen uses AppShell's
-existing toggle and search control at the round-10 coordinates.
+Foreign sections expand inline in the reader's personal sidebar. Each name and
+chevron share one disclosure button. Kirill sees Steve's connector and keyboard
+work; Steve sees Kirill's backend and credential helper. These two-item selections
+reflect cross-area relevance, not a copy of the colleague's entire sidebar.
+There is no foreign tail, full-space browse view, return action, header identity
+or footer switcher. The remaining work is for later search/agent discovery;
+round 14 does not redesign search.
+
+An unresolved dependency adds only its waiting mark in the trailing lane.
+Plain muted recent-focus text stays above the inline items, including while
+folded. It is not clickable, contains no icons, and always reserves a fixed
+32 px text slot for up to two lines. Shared context keeps its own compact line.
+Personal Make Stuff, Happy and AppShell's round-10 toggle/search coordinates stay
+in place. 12h replaces the earlier browse/return pair: at 09:18 Kirill expands
+Steve while his credential helper and draft remain focused.
 
 The staged 09:18 pairing question asks whether to keep the existing response and
 defer the attachment field. Only Kirill sees that question; Steve sees his own
 one-line waiting summary. The normal composer accepts Kirill's answer, updates
 the same summary and clears both sidebar waits without moving work. 12j compares
 the resolved projections at 09:20; the connector continues. K4/K5/S4 occur after
-that reply. Browse and return start from K5, including the completed release
-placement, disclosure, selection and existing draft.
+that reply. Opening a foreign section changes only that section's local
+disclosure; the rest of the personal projection, focused work and draft survive.
 
 These are Blueprint interactions. Production batching must wait until a completed
 navigation gesture and must not run during drag, menus or continuing sidebar

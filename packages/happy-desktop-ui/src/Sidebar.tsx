@@ -290,8 +290,8 @@ export type SidebarSearch = {
 export type SidebarSectionActionSource = "heading" | "secondary" | "empty";
 
 export type SidebarSection = {
-    /** Open a colleague's projection from its section label. */
-    navigationLabel?: string;
+    /** Make the label and trailing chevron one disclosure button. */
+    headingDisclosure?: boolean;
     /** Plain context, visible below open and folded headings. */
     context?: string;
     /** Recent focus occupies a fixed two-line slot, including while folded. */
@@ -399,7 +399,6 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     treeConnectors?: boolean;
     onSectionCollapseToggle?: (sectionId: string) => void;
     onSectionTailToggle?: (sectionId: string) => void;
-    onSectionSelect?: (sectionId: string) => void;
     activeItemId: string;
     /** Which end of a row reports work. Defaults to `trailing`. */
     activityPlacement?: SidebarActivityPlacement;
@@ -2000,7 +1999,6 @@ export function Sidebar(props: SidebarProps) {
         "onSectionAction",
         "onSectionCollapseToggle",
         "onSectionTailToggle",
-        "onSectionSelect",
         "search",
         "onSectionMenuSelect",
         "sections",
@@ -3005,15 +3003,36 @@ export function Sidebar(props: SidebarProps) {
                                         className="happy-sidebar__section-head"
                                         data-happy-desktop-ui="sidebar-section-head"
                                     >
-                                        {section.navigationLabel ? (
+                                        {section.headingDisclosure ? (
                                             <button
-                                                className="happy-sidebar__section-label happy-sidebar__section-open"
-                                                data-happy-desktop-ui="sidebar-section-label"
-                                                aria-label={section.navigationLabel}
-                                                onClick={() => local.onSectionSelect?.(section.id)}
+                                                className="happy-sidebar__section-disclosure"
+                                                data-happy-desktop-ui="sidebar-section-disclosure"
+                                                aria-expanded={!section.collapsed}
+                                                aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.label}`}
+                                                onClick={() =>
+                                                    local.onSectionCollapseToggle?.(section.id)
+                                                }
                                                 type="button"
                                             >
-                                                {section.label}
+                                                <span
+                                                    className="happy-sidebar__section-label"
+                                                    data-happy-desktop-ui="sidebar-section-label"
+                                                >
+                                                    {section.label}
+                                                </span>
+                                                <span
+                                                    className="happy-sidebar__section-fold"
+                                                    aria-hidden="true"
+                                                >
+                                                    <Icon
+                                                        name={
+                                                            section.collapsed
+                                                                ? "chevron-right"
+                                                                : "chevron-down"
+                                                        }
+                                                        size={12}
+                                                    />
+                                                </span>
                                             </button>
                                         ) : (
                                             <span
@@ -3033,31 +3052,8 @@ export function Sidebar(props: SidebarProps) {
                                                 <Icon name="mic" size={12} />
                                             </span>
                                         ) : null}
-                                        {section.navigationLabel || section.attentionCount ? (
+                                        {section.headingDisclosure || section.attentionCount ? (
                                             <span className="happy-sidebar__section-trailing">
-                                                {section.collapsed !== undefined ? (
-                                                    <button
-                                                        data-happy-desktop-ui="sidebar-section-disclosure"
-                                                        aria-expanded={!section.collapsed}
-                                                        aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.label}`}
-                                                        className="happy-sidebar__section-fold"
-                                                        onClick={() =>
-                                                            local.onSectionCollapseToggle?.(
-                                                                section.id,
-                                                            )
-                                                        }
-                                                        type="button"
-                                                    >
-                                                        <Icon
-                                                            name={
-                                                                section.collapsed
-                                                                    ? "chevron-right"
-                                                                    : "chevron-down"
-                                                            }
-                                                            size={12}
-                                                        />
-                                                    </button>
-                                                ) : null}
                                                 <span className="happy-sidebar__section-marks">
                                                     <span
                                                         className="happy-sidebar__section-attention"
@@ -3083,7 +3079,9 @@ export function Sidebar(props: SidebarProps) {
                                                     </span>
                                                 </span>
                                             </span>
-                                        ) : section.collapsed !== undefined ? (
+                                        ) : null}
+                                        {!section.headingDisclosure &&
+                                        section.collapsed !== undefined ? (
                                             <button
                                                 aria-expanded={!section.collapsed}
                                                 aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.label}`}
