@@ -185,11 +185,17 @@
     flex: none;
     width: auto;
     min-width: 0;
+    border-radius: 0;
     padding-left: var(--happy-panel-row-padding);
     padding-right: var(--happy-panel-row-padding);
     gap: 6px;
     font-size: 13px;
     font-weight: 500;
+}
+
+/* Editor tabs mark selection at the band's edge without painting a tab box. */
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab-underline {
+    background: var(--text);
 }
 
 .happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab-label {
@@ -200,4 +206,17 @@
 
 .happy-tabbed-pane[data-tab-sizing="content"] .happy-tabbed-pane__trailing {
     padding: 0 var(--happy-panel-inset);
+}
+
+/* A long title stops short of the pane's own controls: the tab keeps its close
+   inside its bounds, and the title ends in an ellipsis rather than under them. */
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab {
+    max-width: 240px;
+}
+
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }

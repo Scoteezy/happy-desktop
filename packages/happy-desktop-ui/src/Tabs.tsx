@@ -778,7 +778,7 @@ export function Tabs(props: TabsProps) {
                                closable. The close control wins whenever it is
                                revealed, so reaching for it is never a race
                                against a spinner appearing under the pointer. */
-                            closable || activity ? (
+                            local.onClose !== undefined || tab.busy !== undefined || activity ? (
                                 <span
                                     className="happy-tabs__tab-trailing"
                                     data-happy-desktop-ui="tab-trailing"

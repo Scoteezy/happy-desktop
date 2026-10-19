@@ -1698,15 +1698,6 @@ function fileTabItem(tab: HappyAgentFileTabSnapshot): TabItem {
     };
 }
 
-/** The whole change, as one tab. It names the checkout's change, not a file. */
-function reviewTabItem(review: HappyAgentReview): TabItem {
-    return {
-        id: review.id,
-        label: "All changes",
-        icon: "file-diff",
-    };
-}
-
 /**
  * How opening one file should show it.
  *
@@ -6320,11 +6311,8 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                       ? { ...tab, voiceFocus: true }
                                       : tab,
                               ),
-                          ...(openReview ? [reviewTabItem(openReview)] : []),
+                          // The strip holds only chats and files.
                           ...groupFileTabs.map(fileTabItem),
-                          ...toolTabItems(mainTools, (artifactId) =>
-                              artifactTabLabelOf(artifactTitles, artifactTitlesStore, artifactId),
-                          ),
                       ]
                     : [],
                 workspace.tabOrder,
@@ -6545,6 +6533,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         <HappyAgentFileBody
             appearance={appearance.appearance}
             file={file}
+            tabNamed
             {...(props.htmlPreview ? { htmlPreview: props.htmlPreview } : {})}
             key={`${file.id}:${file.kind}`}
             {...(props.mediaWindow ? { mediaWindow: props.mediaWindow } : {})}
@@ -7258,36 +7247,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         />
                     ) : (
                         <TabbedPane
-                            actions={
-                                /* A tab is a session, so adding one creates it
-                                   directly in the addressed project or worktree
-                                   instead of opening the task form. It follows
-                                   the last tab, the way an editor's "new tab"
-                                   does. A workspace that cannot host one keeps
-                                   the control and disables it: the strip is the
-                                   same strip throughout a checkout being
-                                   prepared, so the button goes grey for a moment
-                                   rather than appearing out of nowhere when it
-                                   arrives.
-
-                                   A bot is the exception, and it is not left
-                                   grey: a checkout is only briefly unable to
-                                   take a session, while a bot can never take a
-                                   second one at all, and a control that will
-                                   never come back is a control to leave out. */
-                                singleChat ? null : (
-                                    <Button
-                                        aria-label="Create a session in this project"
-                                        disabled={!sessionCreateAvailable}
-                                        icon="plus"
-                                        iconOnly
-                                        onClick={() => groupConversationCreate(openGroup)}
-                                        shortcut={APP_SHORTCUTS.sessionCreate}
-                                        size="small"
-                                        variant="ghost"
-                                    />
-                                )
-                            }
                             trailing={
                                 /* The strip's own control, not the next thing
                                    after the last tab: it offers everything this
@@ -7336,6 +7295,10 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                 )
                             }
                             activeId={workspace.activeMainViewId ?? props.chatId ?? ""}
+                            tabSizing="content"
+                            closePresentation="overlay"
+                            overflowFade
+                            size="medium"
                             closeLabel="Close tab"
                             closeShortcut={APP_SHORTCUTS.tabClose}
                             onClose={groupTabClose}
@@ -7670,6 +7633,8 @@ function happyAgentFileNotices(file: HappyAgentFileTabSnapshot): ReactNode {
 function HappyAgentFileBody(props: {
     appearance: "dark" | "light";
     file: HappyAgentFileTabSnapshot;
+    /** The file's tab names it, so its content does not name it again. */
+    tabNamed?: boolean;
     htmlPreview?: HtmlPreviewRenderer;
     mediaWindow?: MediaWindowOpener;
     mode: HappyAgentFileViewMode;
@@ -7817,6 +7782,7 @@ function HappyAgentFileBody(props: {
                 onValueChange={(value) => workspace.fileDraftUpdate(file.id, value)}
                 onWrapChange={(wrap) => workspace.fileViewWrapUpdate(wrap)}
                 path={file.path}
+                pathShown={props.tabNamed !== true}
                 readOnly={file.saving || !writable}
                 {...(file.reveal === undefined ? {} : { reveal: file.reveal })}
                 saveDisabled={saveDisabled}
@@ -7964,6 +7930,7 @@ function HappyAgentFileBody(props: {
                               ),
                           })}
                     path={file.path}
+                    pathShown={props.tabNamed !== true}
                     saving={file.saving}
                 />
             </>
@@ -8721,7 +8688,8 @@ function HappyAgentConversationSurface(props: {
                     ? (props.readOnlyReason ?? composerPlaceholder(props.groupName))
                     : modelsNotConfigured
                       ? "Configure models to start messaging…"
-                      : composerPlaceholder(props.groupName)
+                      : // The tab already names the chat.
+                        composerPlaceholder(undefined)
             }
             conversationId={conversation.conversationId}
             entries={conversation.entries}

@@ -17,6 +17,11 @@ export type FileEditorProps = {
     style?: CSSProperties;
     /** Full workspace path — split into a file name and a directory subtitle. */
     path: string;
+    /**
+     * Whether the header names the file. A tab that already names it leaves
+     * the header to the file's controls. Defaults to naming it.
+     */
+    pathShown?: boolean;
     /** Editor content. */
     value: string;
     /** Stable loaded-document identity used by the editor's bounded state cache. */
@@ -84,6 +89,7 @@ export function FileEditor(props: FileEditorProps) {
         "data-testid",
         "style",
         "path",
+        "pathShown",
         "value",
         "documentKey",
         "onValueChange",
@@ -142,14 +148,18 @@ export function FileEditor(props: FileEditorProps) {
                 className="happy-file-editor__header"
                 data-happy-desktop-ui="file-editor-header"
             >
-                <span
-                    className="happy-file-editor__glyph happy-file-family-glyph"
-                    data-family={family}
-                    data-happy-desktop-ui="file-editor-glyph"
-                >
-                    <FileTreeFamilyIcon family={family} size={16} />
-                </span>
-                <FilePathLabel className="happy-file-editor__heading" path={local.path} />
+                {local.pathShown === false ? null : (
+                    <>
+                        <span
+                            className="happy-file-editor__glyph happy-file-family-glyph"
+                            data-family={family}
+                            data-happy-desktop-ui="file-editor-glyph"
+                        >
+                            <FileTreeFamilyIcon family={family} size={16} />
+                        </span>
+                        <FilePathLabel className="happy-file-editor__heading" path={local.path} />
+                    </>
+                )}
                 <span
                     className="happy-file-editor__actions"
                     data-happy-desktop-ui="file-editor-actions"

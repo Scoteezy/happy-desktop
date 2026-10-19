@@ -997,6 +997,14 @@
     opacity: 1;
 }
 
+/* Both integrated strips retain a solid selection mark across pane focus. */
+.happy-desktop-app-shell[data-navigation-chrome="integrated"]
+    .happy-tabbed-pane[data-tab-sizing="content"]
+    .happy-tabs__tab[data-active]
+    .happy-tabs__tab-underline {
+    opacity: 1;
+}
+
 /* Resizable panels take the divider line from the drag handle to their left. */
 .happy-desktop-app-shell__panel[data-resizable] {
     border-left: 0;

@@ -6,6 +6,7 @@ import { AppShell } from "./AppShell";
 import { Button } from "./Button";
 import { ChannelHeader } from "./ChannelHeader";
 import { Sidebar } from "./Sidebar";
+import { TabbedPane } from "./TabbedPane";
 import { createRenderer } from "./testing";
 
 function slot(id: string, style: CSSProperties) {
@@ -16,6 +17,91 @@ function appRegion(element: Element): string {
     const style = getComputedStyle(element);
     return style.getPropertyValue("app-region") || style.getPropertyValue("-webkit-app-region");
 }
+
+it("keeps both integrated tab strips underlined across pane focus in light and dark", async () => {
+    const pane = (id: string) => (
+        <TabbedPane
+            data-testid={id}
+            tabs={[
+                { id: "active", label: "File" },
+                { id: "inactive", label: "Longer document title" },
+            ]}
+            activeId="active"
+            onSelect={() => undefined}
+            onClose={() => undefined}
+            closePresentation="overlay"
+            tabSizing="content"
+        >
+            <button data-testid={`${id}-body`}>Focus {id}</button>
+        </TabbedPane>
+    );
+    for (const theme of ["light", "dark"]) {
+        const view = createRenderer().render(
+            () => (
+                <AppShell
+                    className={`happy-theme-${theme}`}
+                    navigationChrome="integrated"
+                    panel={pane("panel")}
+                >
+                    {pane("main")}
+                </AppShell>
+            ),
+            { height: 800, width: 1280 },
+        );
+        await view.ready();
+        for (const focus of ["panel", "main"]) {
+            await userEvent.click(view.$(`[data-testid="${focus}-body"]`).element);
+            await expect
+                .poll(() =>
+                    view.$(".happy-desktop-app-shell").element.getAttribute("data-focused-pane"),
+                )
+                .toBe(focus === "panel" ? "panel" : "workspace");
+            for (const id of ["main", "panel"]) {
+                const root = `[data-testid="${id}"]`;
+                const tab = view.$(`${root} [data-tab-id="active"]`);
+                const inactive = view.$(`${root} [data-tab-id="inactive"]`);
+                const underline = view.$(`${root} [data-happy-desktop-ui="tab-underline"]`);
+                const band = view.$(`${root} .happy-tabbed-pane__bar`).bounds();
+                const mark = underline.bounds();
+                expect(mark.height).toBe(2);
+                expect(mark.y + mark.height).toBe(band.y + band.height);
+                expect(mark.width).toBe(tab.bounds().width);
+                expect(mark.x).toBe(band.x);
+                expect(underline.computedStyle("background-color")).toBe(
+                    theme === "light" ? "rgb(0, 0, 0)" : "rgb(255, 255, 255)",
+                );
+                await expect.poll(() => underline.computedStyle("opacity")).toBe("1");
+                expect(
+                    tab.computedStyles([
+                        "background-color",
+                        "border-width",
+                        "border-radius",
+                        "box-shadow",
+                        "color",
+                    ]),
+                ).toEqual({
+                    "background-color": "rgba(0, 0, 0, 0)",
+                    "border-width": "0px",
+                    "border-radius": "0px",
+                    "box-shadow": "none",
+                    color: theme === "light" ? "rgb(0, 0, 0)" : "rgb(255, 255, 255)",
+                });
+                expect(inactive.bounds().width).toBeGreaterThan(tab.bounds().width);
+                expect(inactive.computedStyle("color")).toBe(
+                    theme === "light" ? "rgb(73, 69, 79)" : "rgb(202, 196, 208)",
+                );
+                const before = inactive.bounds();
+                await userEvent.hover(inactive.element);
+                await expect
+                    .poll(() => inactive.computedStyle("color"))
+                    .toBe(tab.computedStyle("color"));
+                expect(inactive.computedStyle("background-color")).toBe("rgba(0, 0, 0, 0)");
+                expect(inactive.bounds()).toEqual(before);
+            }
+        }
+        view.destroy();
+    }
+});
 
 it("composes Happy's flat desktop shell with clamped navigation and inspector surfaces", async () => {
     const view = createRenderer().render(

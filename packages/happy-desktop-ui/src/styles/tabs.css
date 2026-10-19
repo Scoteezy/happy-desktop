@@ -263,6 +263,7 @@
 }
 
 .happy-tabs__tab:hover .happy-tabs__tab-close,
+.happy-tabs__tab[data-active]:not(:has(.happy-tabs__tab-activity)) .happy-tabs__tab-close,
 .happy-tabs__tab[data-close-revealed] .happy-tabs__tab-close,
 .happy-tabs__tab-close:focus-visible {
     opacity: 1;
@@ -416,19 +417,11 @@
 }
 
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-trailing {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 36px;
-    height: 100%;
+    position: relative;
+    width: 24px;
+    height: 24px;
     margin: 0;
-    justify-content: flex-end;
-    padding-right: 4px;
     box-sizing: border-box;
-    background: linear-gradient(to right, transparent, var(--surface) 40%);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 120ms ease;
 }
 
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab:hover .happy-tabs__tab-trailing,
@@ -437,6 +430,9 @@
     .happy-tabs__tab-trailing,
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-trailing:focus-within,
 .happy-tabs[data-close-presentation="overlay"]
+    .happy-tabs__tab:focus-visible
+    .happy-tabs__tab-trailing,
+.happy-tabs[data-close-presentation="overlay"]
     .happy-tabs__tab-trailing:has(.happy-tabs__tab-activity) {
     opacity: 1;
 }
@@ -444,15 +440,22 @@
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-close {
     width: 24px;
     height: 24px;
+    color: var(--text);
     pointer-events: auto;
 }
 
-.happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-activity {
-    left: auto;
-    right: 4px;
-    width: 24px;
+/* A keyboard reader on the tab sees the same close the pointer does. */
+.happy-tabs[data-close-presentation="overlay"]
+    .happy-tabs__tab:focus-visible
+    .happy-tabs__tab-close {
+    opacity: 1;
 }
 
-.happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab:has(.happy-tabs__tab-activity) {
-    padding-right: 30px;
+.happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-close:hover {
+    background: var(--surface-pressed);
+}
+
+.happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-activity {
+    inset: 0;
+    width: 24px;
 }

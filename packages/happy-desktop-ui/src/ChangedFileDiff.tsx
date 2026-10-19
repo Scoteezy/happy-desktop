@@ -44,6 +44,11 @@ export type ChangedFileDiffProps = {
     /** Stable identity for the saved/base side of the diff, when known. */
     oldCacheKey?: string;
     path: string;
+    /**
+     * Whether the diff's header names the file. A tab that already names it
+     * leaves the header to the change's counts. Defaults to naming it.
+     */
+    pathShown?: boolean;
     /** Stable loaded-document identity used by the edit mode's bounded state cache. */
     documentKey?: string;
     /** Stable identity for the working-tree side of the diff, when clean. */
@@ -437,14 +442,16 @@ export function ChangedFileDiff(props: ChangedFileDiffProps) {
                         // The whole header name, ours, through the slot the
                         // renderer leaves ahead of its own. The renderer's mark
                         // and title stand down in `PIERRE_DIFF_HEADER_CSS`.
-                        renderHeaderPrefix={() => (
-                            <DiffFileTitle
-                                path={props.path}
-                                {...(props.oldPath === undefined || props.oldPath === props.path
-                                    ? {}
-                                    : { previousPath: props.oldPath })}
-                            />
-                        )}
+                        renderHeaderPrefix={() =>
+                            props.pathShown === false ? null : (
+                                <DiffFileTitle
+                                    path={props.path}
+                                    {...(props.oldPath === undefined || props.oldPath === props.path
+                                        ? {}
+                                        : { previousPath: props.oldPath })}
+                                />
+                            )
+                        }
                         {...(lineAnnotations === undefined ? {} : { lineAnnotations })}
                         {...(commenting
                             ? {
