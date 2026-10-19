@@ -14,6 +14,12 @@ export interface HappyAgentBrowserProxyHandle {
     readonly password: string;
     readonly port: number;
     readonly username: string;
+    /**
+     * The most recent failure of a tunnel to `url`'s host and port in this
+     * profile since `since`, in the daemon's or the agent's own words. Chromium
+     * reports every refused tunnel as the same bare engine error.
+     */
+    tunnelFailure(url: string, since: number): string | undefined;
     connectionsClose(): void;
     close(): void;
 }
@@ -34,6 +40,16 @@ export function happyAgentBrowserProxyCreate(
     const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
     const sockets = new Set<Duplex>();
     const operations = new Set<AbortController>();
+    const failures = new Map<string, { readonly at: number; readonly message: string }>();
+    const failureRecord: TunnelFailureRecord = (authority, startedAt, message) => {
+        failures.delete(authority);
+        failures.set(authority, { at: startedAt, message });
+        // The newest few are what a failed page can ask about.
+        for (const key of failures.keys()) {
+            if (failures.size <= 64) break;
+            failures.delete(key);
+        }
+    };
     let closed = false;
     let generation = 0;
     const connectionsClose = () => {
@@ -91,7 +107,7 @@ export function happyAgentBrowserProxyCreate(
             );
             return;
         }
-        void proxyConnect(openHttpProxy, request, client, head, sockets);
+        void proxyConnect(openHttpProxy, request, client, head, sockets, failureRecord);
     });
     server.on("connection", (socket) => {
         sockets.add(socket);
@@ -108,6 +124,11 @@ export function happyAgentBrowserProxyCreate(
                 password,
                 port: address.port,
                 username,
+                tunnelFailure(url, since) {
+                    const authority = tunnelAuthority(url);
+                    const failure = authority === undefined ? undefined : failures.get(authority);
+                    return failure && failure.at >= since ? failure.message : undefined;
+                },
                 connectionsClose,
                 close() {
                     closed = true;
@@ -176,8 +197,15 @@ async function proxyConnect(
     client: Duplex,
     head: Buffer,
     sockets: Set<Duplex>,
+    failureRecord: TunnelFailureRecord,
 ): Promise<void> {
     const controller = new AbortController();
+    const authority = request.url ?? "";
+    const startedAt = Date.now();
+    const refuse = (status: number, message: string) => {
+        failureRecord(authority, startedAt, message);
+        client.end(`HTTP/1.1 ${String(status)} Bad Gateway\r\nConnection: close\r\n\r\n`);
+    };
     let tunnel: Duplex | undefined;
     client.once("close", () => {
         controller.abort();
@@ -197,8 +225,9 @@ async function proxyConnect(
         nested.once("connect", (proxyResponse, upstream, proxyHead) => {
             if (proxyResponse.statusCode !== 200) {
                 upstream.destroy();
-                client.end(
-                    `HTTP/1.1 ${String(proxyResponse.statusCode ?? 502)} Bad Gateway\r\nConnection: close\r\n\r\n`,
+                refuse(
+                    proxyResponse.statusCode ?? 502,
+                    `The agent's network could not open ${authority} (${String(proxyResponse.statusCode)}${proxyResponse.statusMessage ? ` ${proxyResponse.statusMessage}` : ""}).`,
                 );
                 return;
             }
@@ -215,17 +244,42 @@ async function proxyConnect(
         });
         nested.once("response", (proxyResponse) => {
             proxyResponse.resume();
-            client.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+            refuse(
+                502,
+                `The agent's network answered ${authority} without opening it (${String(proxyResponse.statusCode)}).`,
+            );
             tunnel?.destroy();
         });
-        nested.once("error", () => {
-            client.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+        nested.once("error", (error) => {
+            refuse(
+                502,
+                `The agent's network closed before opening ${authority} (${error.message}).`,
+            );
             tunnel?.destroy();
         });
         nested.end();
-    } catch {
+    } catch (error) {
         tunnel?.destroy();
-        client.end("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n");
+        refuse(
+            502,
+            error instanceof Error ? error.message : "The Happy Agent browser tunnel failed.",
+        );
+    }
+}
+
+/** Notes why one tunnel to `authority` failed, stamped with when it was asked for. */
+type TunnelFailureRecord = (authority: string, startedAt: number, message: string) => void;
+
+/** `host:port` as Chromium names a tunnel target, from a page address. */
+function tunnelAuthority(url: string): string | undefined {
+    try {
+        const parsed = new URL(url);
+        const port =
+            parsed.port ||
+            (parsed.protocol === "https:" || parsed.protocol === "wss:" ? "443" : "80");
+        return `${parsed.hostname}:${port}`;
+    } catch {
+        return undefined;
     }
 }
 

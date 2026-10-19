@@ -7,6 +7,7 @@ import {
     liveWindowArgument,
     type DesktopBrowserPopup,
     type DesktopBrowserStatus,
+    type DesktopBrowserTunnelFailure,
     type DesktopNavigationStep,
     type DesktopPreviewNavigation,
     type DesktopBuildIdentity,
@@ -102,6 +103,12 @@ const bridge: HappyDesktopBridge = {
             listener(status);
         ipcRenderer.on(desktopIpc.browserStatusChanged, receive);
         return () => ipcRenderer.removeListener(desktopIpc.browserStatusChanged, receive);
+    },
+    browserTunnelFailureSubscribe(listener: (failure: DesktopBrowserTunnelFailure) => void) {
+        const receive = (_event: Electron.IpcRendererEvent, failure: DesktopBrowserTunnelFailure) =>
+            listener(failure);
+        ipcRenderer.on(desktopIpc.browserTunnelFailed, receive);
+        return () => ipcRenderer.removeListener(desktopIpc.browserTunnelFailed, receive);
     },
     cloudAuthCallbackSubscribe(listener: () => void) {
         const receive = () => listener();

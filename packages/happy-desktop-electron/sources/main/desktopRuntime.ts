@@ -29,7 +29,9 @@ import {
 import { HappyAgentClient } from "@slopus/happy-agent-client";
 import type { LocalHappyAgentOnboardingState } from "./localOnboarding";
 import {
+    HappyAgentDaemonHttpError,
     happyAgentDaemonConnectionUnavailable,
+    type HappyAgentDaemonClient,
     type HappyAgentDaemonInspectorResponse,
     type HappyAgentDaemonInspectorStopResponse,
 } from "./happyAgentDaemonClient";
@@ -271,23 +273,52 @@ export class DesktopRuntime implements AsyncDisposable {
     }
 
     /** Opens a browser tunnel to the target agent's machine through its owning connection. */
-    openHttpProxy(target: DesktopBrowserProxyTarget, signal?: AbortSignal): Promise<Duplex> {
-        return this.browserClient(target).openWorkspaceAgentHttpProxy(
-            target.workspaceId,
-            target.agentId,
-            signal,
-        );
+    async openHttpProxy(target: DesktopBrowserProxyTarget, signal?: AbortSignal): Promise<Duplex> {
+        const host = this.browserHost();
+        const client = target.connectionId === null ? host : host.connection(target.connectionId);
+        try {
+            return await client.openWorkspaceAgentHttpProxy(
+                target.workspaceId,
+                target.agentId,
+                signal,
+            );
+        } catch (error) {
+            // The browser proxy gives a tunnel a deadline; running out of it is
+            // the daemon not answering, unlike the page or profile going away.
+            const timedOut =
+                signal?.reason instanceof DOMException && signal.reason.name === "TimeoutError";
+            const refused = error instanceof HappyAgentDaemonHttpError && !signal?.aborted;
+            if (!refused && !timedOut) throw error;
+            // A failure reads better beside the versions that gave it. Through
+            // a remote connection both the local daemon that forwards the tunnel
+            // and the remote one that opens it can be at fault, so name both.
+            const [local, remote] = await Promise.all([
+                daemonVersion(host),
+                client === host ? undefined : daemonVersion(client),
+            ]);
+            const detail =
+                client === host
+                    ? local && ` Happy Agent ${local}.`
+                    : (local || remote) &&
+                      ` Forwarding Happy Agent ${local ?? "unknown"}; target Happy Agent ${remote ?? "unknown"}.`;
+            if (refused)
+                throw detail
+                    ? new HappyAgentDaemonHttpError(error.statusCode, `${error.message}${detail}`)
+                    : error;
+            throw new Error(`Happy Agent did not open the tunnel in time.${detail || ""}`, {
+                cause: error,
+            });
+        }
     }
 
-    private browserClient(target: DesktopBrowserProxyTarget) {
+    private browserHost() {
         if (
             this.snapshotValue.phase !== "ready" ||
             this.snapshotValue.mode !== "local" ||
             !this.happyAgentConnection
         )
             throw new Error("The local Happy Agent daemon is unavailable.");
-        const host = this.happyAgentConnection.client;
-        return target.connectionId === null ? host : host.connection(target.connectionId);
+        return this.happyAgentConnection.client;
     }
 
     start(request: DesktopStartRequest): Promise<void> {
@@ -617,3 +648,11 @@ function happyAgentUnreachableState(error: unknown): LocalHappyAgentOnboardingSt
 }
 
 export { happyAgentDaemonConnectionUnavailable };
+
+/** A daemon's version for an error message, or nothing when it does not answer quickly. */
+function daemonVersion(client: HappyAgentDaemonClient): Promise<string | undefined> {
+    return client
+        .health(AbortSignal.timeout(2_000))
+        .then(({ version }) => `${version.daemon}, protocol ${String(version.protocol)}`)
+        .catch(() => undefined);
+}

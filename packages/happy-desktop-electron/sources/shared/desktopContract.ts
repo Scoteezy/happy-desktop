@@ -659,6 +659,17 @@ export interface DesktopBrowserPopup {
     readonly opener: DesktopBrowserProxyTarget;
 }
 
+/**
+ * A recent tunnel failure for the address a workspace browser guest's main
+ * frame failed to load, in the daemon's or the agent's own words. Chromium
+ * itself only says ERR_TUNNEL_CONNECTION_FAILED.
+ */
+export interface DesktopBrowserTunnelFailure {
+    readonly guestId: number;
+    readonly url: string;
+    readonly message: string;
+}
+
 /** User-initiated navigation; guest pages never receive this bridge. */
 export type DesktopBrowserCommand =
     | { readonly action: "load"; readonly url: string }
@@ -779,6 +790,10 @@ export interface HappyDesktopBridge {
     /** Web links Happy itself was asked to open, outside any workspace browser. */
     browserOpenSubscribe(listener: (url: string) => void): () => void;
     browserStatusSubscribe(listener: (status: DesktopBrowserStatus) => void): () => void;
+    /** Absent on native hosts that do not report why a browser tunnel failed. */
+    browserTunnelFailureSubscribe?(
+        listener: (failure: DesktopBrowserTunnelFailure) => void,
+    ): () => void;
     /** Announces that the shell received a WorkOS OAuth callback. */
     cloudAuthCallbackSubscribe(listener: () => void): () => void;
     /** Whether a callback is waiting, without consuming its one-shot URL. */
@@ -945,6 +960,7 @@ export const desktopIpc = {
     browserAgentCommand: "happy:browser:agent-command",
     browserOpenRequested: "happy:browser:open-requested",
     browserStatusChanged: "happy:browser:status-changed",
+    browserTunnelFailed: "happy:browser:tunnel-failed",
     cloudAuthCallbackReceived: "happy:cloud-auth:callback-received",
     cloudAuthCallbackPending: "happy:cloud-auth:callback-pending",
     cloudAuthCallbackTake: "happy:cloud-auth:callback-take",

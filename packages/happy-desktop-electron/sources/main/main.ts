@@ -49,6 +49,7 @@ import {
     type DesktopBrowserPopup,
     type DesktopBrowserProxyTarget,
     type DesktopBrowserStatus,
+    type DesktopBrowserTunnelFailure,
     type DesktopCloudAuthConfiguration,
     type DesktopDebugSnapshot,
     type DesktopGuestKeyEvent,
@@ -903,6 +904,24 @@ function browserGuestAttach(window: BrowserWindow): void {
                 status,
                 statusText,
             } satisfies DesktopBrowserStatus);
+        });
+        // A refused tunnel reaches the page as one bare engine code. Show the
+        // profile's most recent failure for the same address since this
+        // navigation started.
+        let navigationStartedAt = Date.now();
+        guest.on("did-start-navigation", (navigation) => {
+            if (navigation.isMainFrame && !navigation.isSameDocument)
+                navigationStartedAt = Date.now();
+        });
+        guest.on("did-fail-load", (_failure, errorCode, _description, url, isMainFrame) => {
+            if (!isMainFrame || errorCode !== -111 || window.isDestroyed()) return;
+            const message = browser.proxy.tunnelFailure(url, navigationStartedAt);
+            if (!message) return;
+            window.webContents.send(desktopIpc.browserTunnelFailed, {
+                guestId: guest.id,
+                url,
+                message,
+            } satisfies DesktopBrowserTunnelFailure);
         });
     });
 }

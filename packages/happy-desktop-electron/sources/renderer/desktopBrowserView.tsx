@@ -1,6 +1,10 @@
 import { Component, createElement } from "react";
 import type { BrowserContentProps, BrowserController } from "happy-desktop-ui";
-import type { DesktopBrowserCommand, DesktopBrowserStatus } from "../shared/desktopContract";
+import type {
+    DesktopBrowserCommand,
+    DesktopBrowserStatus,
+    DesktopBrowserTunnelFailure,
+} from "../shared/desktopContract";
 
 interface BrowserWebViewEvent extends Event {
     readonly canGoBack?: boolean;
@@ -57,6 +61,13 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
     private element?: BrowserWebViewElement;
     private proxyGeneration = 0;
     private statusUnsubscribe?: () => void;
+    private tunnelFailureUnsubscribe?: () => void;
+    /**
+     * A recent tunnel failure main reported for the current navigation's
+     * address. It and the engine's failure event arrive in either order, so
+     * the later one shows the page with both.
+     */
+    private tunnelFailure?: DesktopBrowserTunnelFailure;
     private initialized = false;
     /** Response of the navigation that is loading or has just committed. */
     private status?: DesktopBrowserStatus;
@@ -102,9 +113,11 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
                     (command.action === "load" && this.requested !== command.url)
                 )
                     return;
+                const url = command.action === "load" ? command.url : view.getURL();
                 this.props.browserFailed({
-                    url: command.action === "load" ? command.url : view.getURL(),
+                    url,
                     ...browserErrorDescribe(error),
+                    ...this.tunnelFailureMessage(url),
                 });
             });
     }
@@ -125,6 +138,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         }
         if (event.type === "did-start-loading") {
             this.status = undefined;
+            this.tunnelFailure = undefined;
             this.props.browserLoadingChanged(true);
             return;
         }
@@ -144,12 +158,15 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         }
         if (event.type === "did-fail-load") {
             // Chromium reports an intentional stop/replacement as ERR_ABORTED.
-            if (event.errorCode !== -3 && event.isMainFrame !== false)
+            if (event.errorCode !== -3 && event.isMainFrame !== false) {
+                const url = event.validatedURL || this.requested || view.getURL();
                 this.props.browserFailed({
                     ...(event.errorCode === undefined ? {} : { code: event.errorCode }),
                     ...(event.errorDescription ? { description: event.errorDescription } : {}),
-                    url: event.validatedURL || this.requested || view.getURL(),
+                    url,
+                    ...this.tunnelFailureMessage(url),
                 });
+            }
             return;
         }
         if (event.type === "crashed" || event.type === "render-process-gone") {
@@ -173,6 +190,19 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
     };
 
     componentDidMount(): void {
+        this.tunnelFailureUnsubscribe = window.happyDesktop?.browserTunnelFailureSubscribe?.(
+            (failure) => {
+                if (!this.initialized) return;
+                if (failure.guestId !== this.element?.getWebContentsId()) return;
+                this.tunnelFailure = failure;
+                this.props.browserFailed({
+                    code: -111,
+                    description: "ERR_TUNNEL_CONNECTION_FAILED",
+                    url: failure.url,
+                    message: failure.message,
+                });
+            },
+        );
         this.statusUnsubscribe = window.happyDesktop?.browserStatusSubscribe((status) => {
             if (!this.initialized) return;
             if (status.guestId !== this.element?.getWebContentsId()) return;
@@ -195,6 +225,8 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         this.proxyGeneration += 1;
         this.statusUnsubscribe?.();
         this.statusUnsubscribe = undefined;
+        this.tunnelFailureUnsubscribe?.();
+        this.tunnelFailureUnsubscribe = undefined;
         this.elementApply(undefined);
     }
 
@@ -266,6 +298,12 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         );
     }
 
+    /** The tunnel's own reason, when main reported one for this address. */
+    private tunnelFailureMessage(url: string): { message?: string } {
+        const failure = this.tunnelFailure;
+        return failure && browserSameAddress(failure.url, url) ? { message: failure.message } : {};
+    }
+
     private locationPublish(candidate?: string): void {
         const view = this.element;
         if (!view) return;
@@ -288,6 +326,14 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             src: "about:blank",
             webpreferences: "contextIsolation=yes,nodeIntegration=no,sandbox=yes",
         });
+    }
+}
+
+function browserSameAddress(first: string, second: string): boolean {
+    try {
+        return new URL(first).href === new URL(second).href;
+    } catch {
+        return first === second;
     }
 }
 

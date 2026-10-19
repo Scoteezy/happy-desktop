@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from "node:http";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
-import type { Duplex } from "node:stream";
+import type { Duplex, Readable } from "node:stream";
 import {
     HappyAgentApiError,
     HappyAgentClient,
@@ -380,22 +380,19 @@ export class HappyAgentDaemonClient {
             signal?.addEventListener("abort", abort, { once: true });
             request.once("close", cleanup);
             let settled = false;
-            const fail = (statusCode: number | undefined): void => {
+            // A refusal keeps the daemon's own explanation, so whoever shows the
+            // failure can say why instead of only that the tunnel failed.
+            const fail = (statusCode: number | undefined, body: Readable, head?: Buffer): void => {
                 if (settled) return;
                 settled = true;
                 cleanup();
-                const status = statusCode ?? 500;
-                reject(
-                    new HappyAgentDaemonHttpError(
-                        status,
-                        `Happy Agent browser proxy returned ${String(status)}.`,
-                    ),
+                void refusalBodyRead(body, head).then((text) =>
+                    reject(happyAgentProxyRefusal(statusCode ?? 500, text)),
                 );
             };
             request.once("connect", (response, socket, head) => {
                 if (response.statusCode !== 200) {
-                    socket.destroy();
-                    fail(response.statusCode);
+                    fail(response.statusCode, socket, head);
                     return;
                 }
                 if (settled) {
@@ -407,14 +404,19 @@ export class HappyAgentDaemonClient {
                 if (head.length > 0) socket.unshift(head);
                 resolvePromise(socket);
             });
-            request.once("response", (response) => {
-                response.resume();
-                fail(response.statusCode);
-            });
+            request.once("response", (response) => fail(response.statusCode, response));
             request.once("error", (error) => {
                 if (settled) return;
                 settled = true;
-                reject(error);
+                cleanup();
+                reject(
+                    signal?.aborted
+                        ? error
+                        : new Error(
+                              `Happy Agent closed the proxy tunnel without answering (${error.message}).`,
+                              { cause: error },
+                          ),
+                );
             });
             request.end();
         });
@@ -646,6 +648,74 @@ function happyAgentBridgeRefusal(statusCode: number, body: string): HappyAgentBr
         // Not every refusal on the way to the daemon is Happy Agent's own JSON.
     }
     return new HappyAgentBridgeRefusedError(statusCode, code, message);
+}
+
+/** The most of a refused proxy tunnel's body that is read, and for how long. */
+const PROXY_REFUSAL_MAX_BYTES = 16 * 1024;
+const PROXY_REFUSAL_READ_MS = 2_000;
+
+/** Collects what a refusing daemon wrote after its status line, then lets go of it. */
+function refusalBodyRead(body: Readable, head?: Buffer): Promise<string> {
+    return new Promise((resolveBody) => {
+        const chunks: Buffer[] = head && head.length > 0 ? [head] : [];
+        let size = chunks[0]?.length ?? 0;
+        let timer: NodeJS.Timeout | undefined;
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            body.removeListener("data", receive);
+            body.removeListener("end", finish);
+            body.removeListener("close", finish);
+            body.removeListener("error", finish);
+            if (!body.destroyed) body.destroy();
+            resolveBody(
+                Buffer.concat(chunks).subarray(0, PROXY_REFUSAL_MAX_BYTES).toString("utf8"),
+            );
+        };
+        const receive = (chunk: Buffer) => {
+            chunks.push(chunk);
+            size += chunk.length;
+            if (size >= PROXY_REFUSAL_MAX_BYTES) finish();
+        };
+        if (size >= PROXY_REFUSAL_MAX_BYTES || body.destroyed || body.readableEnded) {
+            finish();
+            return;
+        }
+        timer = setTimeout(finish, PROXY_REFUSAL_READ_MS);
+        body.on("data", receive);
+        body.on("end", finish);
+        body.on("close", finish);
+        body.on("error", finish);
+    });
+}
+
+/**
+ * The daemon's refusal of a proxy tunnel, in its own words when it gave any.
+ * Only its status and its error text are kept; nothing of the request is.
+ */
+function happyAgentProxyRefusal(statusCode: number, body: string): HappyAgentDaemonHttpError {
+    let detail: string | undefined;
+    try {
+        const value = JSON.parse(body) as {
+            readonly error?: unknown;
+            readonly reason?: { readonly message?: unknown } | null;
+        };
+        if (typeof value.reason?.message === "string") detail = value.reason.message;
+        else if (typeof value.error === "string") detail = value.error;
+    } catch {
+        // Not every refusal on the way to the daemon is Happy Agent's own JSON.
+        detail = body;
+    }
+    detail = detail
+        ?.replace(/[\u0000-\u001f\u007f]+/gu, " ")
+        .trim()
+        .slice(0, 300);
+    return new HappyAgentDaemonHttpError(
+        statusCode,
+        `Happy Agent refused the proxy tunnel (${String(statusCode)})${detail ? `: ${detail}` : "."}`,
+    );
 }
 
 /**
