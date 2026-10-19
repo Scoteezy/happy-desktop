@@ -1,5 +1,6 @@
 import {
     happyAgentChiefOfStaffRequestText,
+    happyAgentProviderName,
     happyAgentServiceName,
     type HappyAgentChiefOfStaffRequest,
     type HappyAgentMenusSnapshot,
@@ -53,12 +54,13 @@ function accountNoticeOf(
         reason: menus.currentAccount,
         ...(sessionId === undefined ? {} : { sessionId }),
     };
+    const accountName = happyAgentProviderName(menus.currentProviderId);
     return {
         kind: "unavailable",
         explanation:
             menus.currentAccount === "disabled"
-                ? `The ${menus.currentProviderId} account is switched off, so nothing is sent to it.`
-                : `The ${menus.currentProviderId} account is no longer configured on this Happy Agent.`,
+                ? `The ${accountName} account is switched off, so nothing is sent to it.`
+                : `The ${accountName} account is no longer configured on this Happy Agent.`,
         request: happyAgentChiefOfStaffRequestText(request),
         onAsk: () => ask(request),
     };
@@ -101,11 +103,14 @@ export function happyAgentComposerModelControlProps(
         }
         let account = service.accounts.find((candidate) => candidate.id === option.providerId);
         if (account === undefined) {
+            const label = happyAgentProviderName(option.providerId);
             account = {
                 id: option.providerId,
-                label: option.providerId,
-                // The provider configured under its type's own id is that service's default account.
-                ...(option.providerId === option.providerType ? { default: true } : {}),
+                label,
+                // A built-in CLI's product name must remain visible in the account list and header.
+                ...(option.providerId === option.providerType && label === option.providerId
+                    ? { default: true }
+                    : {}),
                 models: [],
             };
             service.accounts.push(account);

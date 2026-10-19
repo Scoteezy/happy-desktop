@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { HappyAgentProviderUsageEntry } from "happy-desktop-state";
+import { happyAgentProviderName, type HappyAgentProviderUsageEntry } from "happy-desktop-state";
 import {
     DesktopMobileSetup,
     HappyAgentAccountSettings,
@@ -323,10 +323,16 @@ Ask before touching anything outside the working directory.
 `;
 
 const modelOptions = [
-    { label: "Codex · GPT-5.6 Sol", value: "codex:openai/gpt-5.6-sol" },
-    { label: "Codex · GPT-5.6 Terra", value: "codex:openai/gpt-5.6-terra" },
-    { label: "Claude · Opus 5 1M", value: "claude:anthropic/opus-5" },
-    { label: "Claude · Sonnet 5", value: "claude:anthropic/sonnet-5" },
+    {
+        label: `${happyAgentProviderName("codex")} · GPT-5.6 Sol`,
+        value: "codex:openai/gpt-5.6-sol",
+    },
+    {
+        label: `${happyAgentProviderName("codex")} · GPT-5.6 Terra`,
+        value: "codex:openai/gpt-5.6-terra",
+    },
+    { label: `${happyAgentProviderName("claude")} · Opus 5 1M`, value: "claude:anthropic/opus-5" },
+    { label: `${happyAgentProviderName("claude")} · Sonnet 5`, value: "claude:anthropic/sonnet-5" },
 ];
 
 const effortOptions = [
@@ -374,7 +380,7 @@ const providers: readonly HappyAgentProviderRow[] = [
                 name: "GPT-5.6 Luna",
             },
         ],
-        name: "Codex",
+        name: happyAgentProviderName("codex"),
         serviceTiers: ["Fast"],
         status: "ready",
     },
@@ -401,7 +407,7 @@ const providers: readonly HappyAgentProviderRow[] = [
                 name: "Sonnet 5",
             },
         ],
-        name: "Claude",
+        name: happyAgentProviderName("claude"),
         serviceTiers: [],
         status: "ready",
     },

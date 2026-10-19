@@ -1,9 +1,10 @@
 import type { CSSProperties } from "react";
-import type {
-    HappyAgentSessionUsage,
-    HappyAgentUsageGroup,
-    HappyAgentUsageQuota,
-    HappyAgentUsageQuotaWindow,
+import {
+    happyAgentProviderName,
+    type HappyAgentSessionUsage,
+    type HappyAgentUsageGroup,
+    type HappyAgentUsageQuota,
+    type HappyAgentUsageQuotaWindow,
 } from "happy-desktop-state";
 import { USAGE_CRITICAL_PERCENT, usagePercentClamp, usageWindowTone } from "./usageTone";
 
@@ -83,7 +84,9 @@ function QuotaRow(props: { quota: HappyAgentUsageQuota }) {
     const { quota } = props;
     return (
         <div className="happy-agent-usage__quota" data-happy-desktop-ui="happy-agent-usage-quota">
-            <span className="happy-agent-usage__quota-provider">{quota.providerId}</span>
+            <span className="happy-agent-usage__quota-provider">
+                {happyAgentProviderName(quota.providerId)}
+            </span>
             {quota.windows.length === 0 ? (
                 <span className="happy-agent-usage__quota-empty">No limits reported</span>
             ) : (

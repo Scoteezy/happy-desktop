@@ -1,16 +1,9 @@
-/**
- * What to call one provider account.
- *
- * The daemon knows an account by its configured id and by nothing else: two
- * accounts may sit behind the same vendor, so the id is the only thing that
- * tells `kirill_claude` from `claude`. Titling its words is the whole
- * transformation — nothing here guesses a vendor from the spelling, because a
- * guess would put two different accounts under one name.
- *
- * Every surface that names an account uses this, so the Providers category and
- * the Usage category call the same account the same thing.
- */
+import { happyAgentProviderName } from "happy-desktop-state";
+
+/** Settings share the built-in CLI names and retain custom account title casing. */
 export function providerAccountName(providerId: string): string {
+    const name = happyAgentProviderName(providerId);
+    if (name !== providerId) return name;
     return (
         providerId
             .split(/[_-]/u)
