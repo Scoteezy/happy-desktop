@@ -958,6 +958,10 @@ export {
 export { providerAccountName } from "./pages/settings/providerAccountName";
 export { ConnectionShell, type ConnectionShellItem } from "./ConnectionShell";
 export { ConnectionSurface } from "./ConnectionSurface";
+export { WorkFloaty, type WorkFloatyItem, type WorkFloatyProps } from "./WorkFloaty";
+export { ConversationSummaryRow, type ConversationSummaryRowProps } from "./ConversationSummaryRow";
+export { MakeStuffView, type MakeStuffStage, type MakeStuffViewProps } from "./MakeStuffView";
+export { WorkTranscript, type WorkTranscriptRow, type WorkTranscriptProps } from "./WorkTranscript";
 export {
     DataDisclosure,
     type DataDisclosureGroup,

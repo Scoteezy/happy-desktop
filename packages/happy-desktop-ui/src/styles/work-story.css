@@ -1,0 +1,204 @@
+.happy-work-transcript {
+    box-sizing: border-box;
+    display: flex;
+    flex: 1;
+    gap: 16px;
+    min-width: 0;
+    min-height: 0;
+    padding: 16px;
+    background: var(--surface);
+}
+
+.happy-work-transcript__conversation {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}
+
+.happy-work-transcript__artifact {
+    display: flex;
+    padding: 8px 0 16px 36px;
+}
+
+.happy-work-floaty {
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    align-self: flex-start;
+    width: 272px;
+    max-height: 100%;
+    overflow: hidden;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-lg);
+    background: var(--surface);
+    box-shadow: 0 4px 16px var(--shadow-elevated);
+}
+
+.happy-work-floaty__content,
+.happy-work-floaty__items {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.happy-work-floaty__content {
+    gap: 8px;
+    padding: 8px;
+}
+
+.happy-work-floaty__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    text-align: left;
+    cursor: pointer;
+}
+
+.happy-work-floaty__item:hover {
+    background: var(--surface-pressed);
+}
+
+.happy-work-floaty__identity {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.happy-work-floaty__name {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.happy-work-floaty__detail {
+    font-size: 11px;
+    line-height: 16px;
+}
+
+.happy-work-floaty__mark {
+    display: block;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.happy-work-floaty__history-toggle,
+.happy-conversation-summary__toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 12px;
+    line-height: 20px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.happy-conversation-summary {
+    display: flex;
+    flex-direction: column;
+    padding: 4px 0 4px 28px;
+}
+
+.happy-conversation-summary__details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 16px 16px 32px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 20px;
+}
+
+.happy-make-stuff {
+    box-sizing: border-box;
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    padding: 32px;
+    background: var(--surface);
+}
+
+.happy-make-stuff__measure {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    width: 100%;
+    max-width: 760px;
+    min-width: 0;
+}
+
+.happy-make-stuff__title {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 32px;
+    letter-spacing: -0.02em;
+}
+
+.happy-make-stuff__request {
+    margin: 0;
+    color: var(--text);
+    font-size: 16px;
+    line-height: 24px;
+}
+
+.happy-make-stuff__context {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-md);
+}
+
+.happy-make-stuff__context-line {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.happy-make-stuff__conflict {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+}
+
+.happy-make-stuff__actions {
+    display: flex;
+}
+
+.happy-tabs__tab-icon:has(> .happy-tabs__image-mark) {
+    width: 20px;
+    height: 20px;
+}
