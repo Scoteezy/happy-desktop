@@ -175,3 +175,15 @@ We probably want some sort of diff way to show what's moving where between two
 different versions of the sidebar (e.g. after the sidebar manager tidies it
 up). You can probably see that in the sidebar manager, and later maybe in the
 spaces switcher.
+
+## Activity floaty
+
+Activity button stays. The floaty is expanded by default. It should probably
+also show the changed lines, with a quick jump to the changes on the right-hand
+side.
+
+## [after] The sitter
+
+For now we don't really need the sitter in this iteration. In the future we do
+anticipate the sitter creating summaries, titles, pinging for attention (the
+main agent that figures out what to notify about / what not?).
