@@ -4674,6 +4674,9 @@ function HappyAgentQuickActions(
  * live snapshots on every render, so a session that finishes or a setting
  * changed from its own row moves under the reader without being asked to.
  */
+/** How long a chat stays highlighted in the palette before it is loaded ahead of Enter. */
+const PALETTE_INTENT_DWELL_MS = 60;
+
 function HappyAgentCommandPalette(
     props: HappyAgentPaletteSubject & HappyAgentPaletteActions & { facts: HappyAgentPaletteFacts },
 ) {
@@ -4717,6 +4720,22 @@ function HappyAgentCommandPalette(
     // The list's own flat order, so the index the reader arrows through and the
     // order they are looking at cannot come apart.
     const length = commandPaletteResultsRows(sections).length;
+    // A chat that stays highlighted for a moment is loaded ahead of Enter, as one whose sidebar
+    // row the pointer rests on is, so committing it shows the conversation at once.
+    const highlighted = useRef<CommandPaletteRow | undefined>(undefined);
+    highlighted.current = commandPaletteRowAt(results, palette.activeIndex);
+    const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+    const highlightIntent = () => {
+        clearTimeout(intentTimer.current);
+        intentTimer.current = setTimeout(() => {
+            const row = highlighted.current;
+            if (!props.store.get().open || row?.kind === "setting") return;
+            const command = row?.command;
+            if (command?.kind !== "chatOpen" || command.archived) return;
+            if (command.happyAgentId !== props.happyAgentId) return;
+            props.workspace?.conversationPrefetch(command.chatId as HappyAgentSessionId);
+        }, PALETTE_INTENT_DWELL_MS);
+    };
 
     /** Runs one row. A settings row answers in place; anything else is a departure. */
     const rowCommit = (index: number) => {
@@ -4737,13 +4756,17 @@ function HappyAgentCommandPalette(
         <ModalOverlay onDismiss={() => props.store.paletteClose()} placement="top">
             <CommandPalette
                 onClose={() => props.store.paletteClose()}
-                onQueryChange={(value) => props.store.queryUpdate(value)}
+                onQueryChange={(value) => {
+                    props.store.queryUpdate(value);
+                    highlightIntent();
+                }}
                 onSelectionCommit={() => rowCommit(palette.activeIndex)}
-                onSelectionMove={(direction) =>
+                onSelectionMove={(direction) => {
                     props.store.activeIndexUpdate(
                         commandPaletteIndexMove(palette.activeIndex, direction, length),
-                    )
-                }
+                    );
+                    highlightIntent();
+                }}
                 placeholder="Search chats, workspaces, and settings…"
                 query={palette.query}
             >
@@ -4752,7 +4775,10 @@ function HappyAgentCommandPalette(
                     emptyDescription="Try a different search."
                     emptyLabel="No results"
                     label="Command palette results"
-                    onActiveIndexChange={(index) => props.store.activeIndexUpdate(index)}
+                    onActiveIndexChange={(index) => {
+                        props.store.activeIndexUpdate(index);
+                        highlightIntent();
+                    }}
                     onSelect={(_id, index) => rowCommit(index)}
                     sections={sections}
                 />
