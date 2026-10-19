@@ -22,6 +22,18 @@
     padding: 8px 0 16px 36px;
 }
 
+.happy-work-transcript__conflict {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0 4px 36px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 20px;
+    white-space: nowrap;
+}
+
 .happy-work-floaty {
     box-sizing: border-box;
     display: flex;
@@ -132,28 +144,12 @@
     box-sizing: border-box;
     display: flex;
     flex: 1;
-    align-items: center;
-    justify-content: center;
-    min-width: 0;
-    min-height: 0;
-    padding: 32px;
-    background: var(--surface);
-}
-
-.happy-make-stuff__measure {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-    width: 100%;
-    max-width: 760px;
-    min-width: 0;
-}
-
-.happy-make-stuff[data-stage="request"] {
     flex-direction: column;
     align-items: stretch;
-    justify-content: flex-start;
+    min-width: 0;
+    min-height: 0;
     padding: 16px;
+    background: var(--surface);
 }
 
 .happy-make-stuff__empty {
@@ -183,65 +179,6 @@
 
 .happy-make-stuff__explanation p + p {
     color: var(--text-secondary);
-}
-
-.happy-make-stuff__title {
-    margin: 0;
-    color: var(--text);
-    font-family: var(--happy-font-ui);
-    font-size: 24px;
-    font-weight: 700;
-    line-height: 32px;
-    letter-spacing: -0.02em;
-}
-
-.happy-make-stuff__request {
-    margin: 0;
-    color: var(--text);
-    font-size: 16px;
-    line-height: 24px;
-}
-
-.happy-make-stuff__context {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 20px;
-    border: 1px solid var(--divider);
-    border-radius: var(--happy-radius-md);
-}
-
-.happy-make-stuff__context-line {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    color: var(--text-secondary);
-    font-size: 14px;
-    line-height: 20px;
-}
-
-.happy-make-stuff__conflict {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--text-secondary);
-    font-size: 12px;
-    line-height: 20px;
-    white-space: nowrap;
-}
-
-.happy-make-stuff__actions {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-}
-
-.happy-make-stuff__placement {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: 13px;
-    line-height: 20px;
 }
 
 .happy-tabs__tab-icon:has(> .happy-tabs__image-mark) {

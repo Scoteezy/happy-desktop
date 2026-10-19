@@ -542,6 +542,46 @@ function StoryWindow(props: StoryFrame) {
                     : "I’ll keep the sidebar toggle and search in place, then bring the tabs into one shared band. The related redesign work stays linked here.",
         },
     ];
+    const contextRows: readonly WorkTranscriptRow[] = [
+        { id: "context-request", kind: "message", author: "Kirill", own: true, text: draft },
+        {
+            id: "context-summary",
+            kind: "summary",
+            label:
+                creationSection === "release-readiness"
+                    ? "Connected Happy Desktop · related: Current integration gates"
+                    : "Connected Happy Desktop · related: Desktop redesign, Shared chat sync",
+            details: [
+                creationSection === "release-readiness"
+                    ? "The new item stays under Release readiness."
+                    : "The new item is placed under Desktop workflow beside the related redesign work.",
+            ],
+        },
+        ...(creationSection === "desktop-workflow"
+            ? [
+                  {
+                      id: "context-conflict",
+                      kind: "conflict" as const,
+                      label: "Redesign blueprints",
+                      onOpen: () => {
+                          setScene("working");
+                          setOpenedContent(undefined);
+                          setFloatyOpen(true);
+                      },
+                  },
+              ]
+            : []),
+        {
+            id: "context-placed",
+            kind: "message",
+            author: "Happy",
+            imageMark: redesignMarks.happy.imageMark,
+            text:
+                creationSection === "release-readiness"
+                    ? "Moved it under Release readiness."
+                    : "Moved it under Desktop workflow.",
+        },
+    ];
     let rows =
         scene === "morning" || scene === "search"
             ? redesignMorning
@@ -576,18 +616,15 @@ function StoryWindow(props: StoryFrame) {
                 : row,
         );
 
+    const chatComposer = {
+        composer: { ...redesignComposer, text: reply },
+        onComposerSend: () => setReply(""),
+        onComposerValueChange: setReply,
+        composerPlaceholder: `Message ${titleTabs.find((tab) => tab.id === mainId)?.label ?? "Window navigation"}…`,
+        composerFocusOnType: false,
+    };
     const conversation = () => (
-        <WorkTranscript
-            rows={rows}
-            floating={floating}
-            composer={{
-                composer: { ...redesignComposer, text: reply },
-                onComposerSend: () => setReply(""),
-                onComposerValueChange: setReply,
-                composerPlaceholder: `Message ${titleTabs.find((tab) => tab.id === mainId)?.label ?? "Window navigation"}…`,
-                composerFocusOnType: false,
-            }}
-        />
+        <WorkTranscript rows={rows} floating={floating} composer={chatComposer} />
     );
     const content = creationShown ? (
         <MakeStuffView
@@ -595,39 +632,8 @@ function StoryWindow(props: StoryFrame) {
                 scene === "context"
                     ? {
                           kind: "context",
-                          text: draft,
-                          project: "Happy Desktop",
-                          related:
-                              creationSection === "release-readiness"
-                                  ? [
-                                        {
-                                            id: "integration-gates",
-                                            label: "Current integration gates",
-                                        },
-                                    ]
-                                  : [
-                                        { id: "desktop-redesign", label: "Desktop redesign" },
-                                        { id: "chat-sync", label: "Shared chat sync" },
-                                    ],
-                          placement:
-                              creationSection === "release-readiness"
-                                  ? "Lands in Release readiness"
-                                  : "Lands in Desktop workflow",
-                          conflict:
-                              creationSection === "release-readiness"
-                                  ? undefined
-                                  : {
-                                        label: "Redesign blueprints",
-                                        onOpen: () => {
-                                            setScene("working");
-                                            setOpenedContent(undefined);
-                                            setFloatyOpen(true);
-                                        },
-                                    },
-                          onStart: () => {
-                              setScene("landed");
-                              setOpenedContent(undefined);
-                          },
+                          rows: contextRows,
+                          composer: chatComposer,
                       }
                     : {
                           kind: "request",

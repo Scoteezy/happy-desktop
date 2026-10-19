@@ -8,6 +8,7 @@ import {
     type HappyAgentUserInputPromptProps,
 } from "./HappyAgentUserInputPrompt";
 import { Message, MessageList } from "./Message";
+import { Icon } from "./Icon";
 import type { StemCellMark } from "./StemCell";
 
 export type WorkTranscriptRow = { id: string } & (
@@ -23,6 +24,7 @@ export type WorkTranscriptRow = { id: string } & (
       }
     | { kind: "summary" | "handoff"; label: string; details: readonly string[] }
     | { kind: "warning"; text: string }
+    | { kind: "conflict"; label: string; onOpen: () => void }
     | {
           kind: "question";
           request: HappyAgentUserInputPromptProps["request"];
@@ -84,6 +86,21 @@ export function WorkTranscript(props: WorkTranscriptProps) {
                                         request={row.request}
                                         onAnswer={row.onAnswer}
                                     />
+                                );
+                            case "conflict":
+                                return (
+                                    <div
+                                        key={row.id}
+                                        className="happy-work-transcript__conflict"
+                                        role="status"
+                                    >
+                                        <Icon name="alert" size={14} />
+                                        <span>Similar work already running: {row.label}</span>
+                                        <span aria-hidden="true">·</span>
+                                        <Button onClick={row.onOpen} size="small" variant="ghost">
+                                            Open existing
+                                        </Button>
+                                    </div>
                                 );
                             case "artifact":
                                 return (
