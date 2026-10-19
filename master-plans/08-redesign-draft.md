@@ -152,3 +152,19 @@ cell like.
 - Projects — known repositories / folders etc. where we make changes.
 - Artefacts.
 - Calendar — and other 'surfaces'.
+
+## Happy as the gatekeeper
+
+I think the subagent (the one sorting / placing / prioritizing new stuff) needs
+to be a single one — in Happy — the main agent — as a subagent.
+
+- So Happy becomes kind of a god chat for CORE things you want 'single
+  threaded' essentially.
+- And it essentially is the gatekeeper of the side bar.
+
+So we have the 'baby sitters' idea — some of them hidden, or we can make it
+more explicit — just not show these in the side bar.
+
+## Icons
+
+Generated icons (soft clay style) — honestly I like the current set the most.
