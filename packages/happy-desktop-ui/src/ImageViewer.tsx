@@ -305,7 +305,9 @@ export function ImageViewer(props: ImageViewerProps) {
     const frameElement = useRef<HTMLDivElement>(null);
     const decodedImages = useRef(new Map<string, DecodedImage>());
     const [frame, setFrame] = useState<ImageSize>();
-    const [state, setState] = useState<ImageViewerState>(() => stateInitial(""));
+    const [state, setState] = useState<ImageViewerState>(() =>
+        stateInitial(local.content.type === "url" ? local.content.url : "", local.loadedImage),
+    );
     // The magnification a deliberate command settled on, said out loud once. The
     // percentage on the bar is not itself a live region: under a pinch it changes
     // dozens of times a second, and announcing every one of them would leave a
