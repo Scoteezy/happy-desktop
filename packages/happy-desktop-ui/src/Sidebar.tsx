@@ -1355,7 +1355,7 @@ function SidebarRow({
                 ...(depth() > 0
                     ? { paddingLeft: SIDEBAR_ROW_PADDING_X + depth() * SIDEBAR_ROW_INDENT }
                     : {}),
-                ...(props.shift ? { transform: `translateY(${String(props.shift)}px)` } : {}),
+                ...(props.shift ? { top: props.shift } : {}),
             }}
             type={props.rename ? undefined : "button"}
         >
@@ -1915,11 +1915,13 @@ export function Sidebar(props: SidebarProps) {
                 '[data-happy-desktop-ui="sidebar-item"]',
             ) ?? []),
         ];
-        const top = (blockIndex: number): number =>
-            rows[blocks[blockIndex]?.[0] ?? -1]?.offsetTop ?? 0;
+        // Keep pointer travel, peer distances, and the drop capture in the same
+        // fractional CSS coordinates. offsetTop/offsetHeight round these values
+        // and make displaced neighbours land short at fractional browser zoom.
+        const bounds = rows.map((row) => row.getBoundingClientRect());
+        const top = (blockIndex: number): number => bounds[blocks[blockIndex]?.[0] ?? -1]?.top ?? 0;
         const bottom = (block: readonly number[]): number => {
-            const last = rows[block[block.length - 1] ?? -1];
-            return last ? last.offsetTop + last.offsetHeight : 0;
+            return bounds[block[block.length - 1] ?? -1]?.bottom ?? 0;
         };
         const gap = blocks.length > 1 ? Math.max(0, top(1) - bottom(blocks[0]!)) : 0;
         const heights = blocks.map((block, index) =>
@@ -2029,7 +2031,7 @@ export function Sidebar(props: SidebarProps) {
         }
         dragClick.current = true;
         const movedId = drag.peers[drag.from];
-        if (!reducedMotion() && drag.from !== drag.to && movedId !== undefined)
+        if (!reducedMotion() && movedId !== undefined)
             settleCapture({
                 carried: true,
                 expected: orderAfterMove(drag.peers, drag.from, drag.to),
@@ -2171,15 +2173,14 @@ export function Sidebar(props: SidebarProps) {
             const node = rowNodes.get(key);
             if (!node) continue;
             const delta = first - node.getBoundingClientRect().top;
-            if (Math.abs(delta) < 0.5) continue;
+            // Even a fraction of a CSS pixel can cross a backing-pixel boundary
+            // at browser zoom. Settle it rather than snapping on pointer-up.
+            if (delta === 0) continue;
             played.push(
-                node.animate(
-                    [
-                        { transform: `translateY(${String(delta)}px)` },
-                        { transform: "translateY(0)" },
-                    ],
-                    { duration: SETTLE_MS, easing: SETTLE_EASING },
-                ),
+                node.animate([{ top: `${String(delta)}px` }, { top: "0px" }], {
+                    duration: SETTLE_MS,
+                    easing: SETTLE_EASING,
+                }),
             );
         }
         if (connectorFirsts) {
@@ -2188,15 +2189,16 @@ export function Sidebar(props: SidebarProps) {
                 if (!node) continue;
                 const bounds = node.getBoundingClientRect();
                 const delta = first.top - bounds.top;
-                const scale = bounds.height > 0 ? first.height / bounds.height : 1;
-                if (Math.abs(delta) < 0.5 && Math.abs(scale - 1) < 0.01) continue;
+                if (delta === 0 && first.height === bounds.height) continue;
+                const top = Number.parseFloat(getComputedStyle(node).top);
                 played.push(
                     node.animate(
                         [
                             {
-                                transform: `translateY(${String(delta)}px) scaleY(${String(scale)})`,
+                                top: `${String(top + delta)}px`,
+                                height: `${String(first.height)}px`,
                             },
-                            { transform: "translateY(0) scaleY(1)" },
+                            { top: `${String(top)}px`, height: `${String(bounds.height)}px` },
                         ],
                         { duration: SETTLE_MS, easing: SETTLE_EASING },
                     ),

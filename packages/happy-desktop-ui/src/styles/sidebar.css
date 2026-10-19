@@ -576,7 +576,6 @@
     background: var(--text-secondary);
     opacity: 0.28;
     transition: none;
-    transform-origin: top center;
 }
 
 .happy-sidebar__empty {
@@ -609,6 +608,12 @@
 /* ---- Rows ------------------------------------------------------------- */
 
 .happy-sidebar__item {
+    /* Relative offsets keep moving text in its resting paint path. A transform
+       can cache glyphs on a compositor layer at a different pixel phase, then
+       rerasterize them when the drop removes that layer. Repainting during
+       motion makes the final frame paint the same way as normal layout. */
+    position: relative;
+    top: 0;
     display: flex;
     flex: none;
     align-items: center;
@@ -635,8 +640,8 @@
         color 120ms ease;
 }
 
-/* Rows only animate their transform while a reorder is in flight. Once the move
-   is reported the list is rearranged and every transform drops to none in the
+/* Rows only animate their offset while a reorder is in flight. Once the move
+   is reported the list is rearranged and every offset drops to zero in the
    same commit; if that drop were transitioned, each row would glide in from
    wherever it had been pushed to — the dropped row appearing to fly in from
    above — instead of simply being where the new order puts it. */
@@ -645,14 +650,14 @@
     transition:
         background-color 120ms ease,
         color 120ms ease,
-        transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+        top 160ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* The row under the pointer rides above its neighbours and drops the transition
    on its position, so it tracks the pointer exactly while the rows it displaces
    still glide. The shadow is what lifts it off the column: a row being carried is
    the one thing in the sidebar that is not lying flat in the list — so it comes
-   up over the same moment it takes anywhere else, while `transform`, left out of
+   up over the same moment it takes anywhere else, while `top`, left out of
    the list on purpose, stays under the hand. */
 .happy-sidebar__item[data-dragging] {
     z-index: 1;
@@ -671,7 +676,7 @@
 /* A tree drag paints one surface around the complete held subtree, so no row in
    it paints a lift of its own — for the whole of the move, including the travel
    after the surface has gone. Its rows keep this attribute only so every
-   transform tracks the pointer without lag. */
+   offset tracks the pointer without lag. */
 .happy-sidebar__tree[data-connector-dragging] > .happy-sidebar__item[data-dragging] {
     background: transparent;
     box-shadow: none;
