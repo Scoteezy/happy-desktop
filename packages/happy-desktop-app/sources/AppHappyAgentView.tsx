@@ -8589,6 +8589,7 @@ function HappyAgentConversationSurface(props: {
                                 next: conversation.openImage.nextUrl,
                             }}
                             alt={conversation.openImage.alt}
+                            imageThumbnail={conversation.openImage.thumbnail}
                             imageUrl={conversation.openImage.url}
                             onClose={() => workspace.imageClose()}
                             {...(conversation.openImage.total > 1

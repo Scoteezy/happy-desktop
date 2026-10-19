@@ -9,6 +9,7 @@ import { Button } from "./Button";
 import { ImageViewer, type ImageViewerProps } from "./ImageViewer";
 import { ThemeScope } from "./ThemeScope";
 import { VideoViewer } from "./VideoViewer";
+import { thumbhashDataUrl } from "./thumbhashDataUrl";
 import { Ionicon } from "./vectorIcons/VectorIcon";
 
 type LightboxSharedProps = {
@@ -30,6 +31,13 @@ type LightboxSharedProps = {
     position?: { readonly index: number; readonly total: number };
     adjacentImages?: ImageViewerProps["adjacentImages"];
     loadedImage?: ImageViewerProps["loadedImage"];
+    /** The selected image's existing thumbnail and intrinsic dimensions. */
+    imageThumbnail?: {
+        readonly url?: string;
+        readonly thumbhash?: string;
+        readonly width?: number;
+        readonly height?: number;
+    };
     /** Wire both to step through a set; the header then carries its controls. */
     onPrevious?: () => void;
     onNext?: () => void;
@@ -81,6 +89,7 @@ export function Lightbox(props: LightboxProps) {
         "position",
         "adjacentImages",
         "loadedImage",
+        "imageThumbnail",
         "onPrevious",
         "onNext",
         "navigationLabel",
@@ -89,6 +98,10 @@ export function Lightbox(props: LightboxProps) {
     ]);
     const stepping = Boolean(local.onPrevious && local.onNext);
     const navigationLabel = local.navigationLabel ?? "image";
+    const thumbnailUrl =
+        (local.imageThumbnail?.thumbhash
+            ? thumbhashDataUrl(local.imageThumbnail.thumbhash)
+            : undefined) ?? local.imageThumbnail?.url;
     const mediaName = local.alt ?? local.caption ?? (local.videoUrl ? "Video" : "Image");
     const hasHeader = () =>
         Boolean(local.caption || local.detail || local.actions || local.onClose || stepping);
@@ -220,7 +233,17 @@ export function Lightbox(props: LightboxProps) {
                                 autoFocus
                                 content={{ type: "url", url: local.imageUrl }}
                                 loadedImage={local.loadedImage}
+                                deferLoading
                                 name={mediaName}
+                                thumbnail={
+                                    thumbnailUrl
+                                        ? {
+                                              url: thumbnailUrl,
+                                              width: local.imageThumbnail?.width,
+                                              height: local.imageThumbnail?.height,
+                                          }
+                                        : undefined
+                                }
                                 tone="immersive"
                             />
                         ) : null}

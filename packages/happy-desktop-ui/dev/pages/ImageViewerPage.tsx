@@ -175,6 +175,22 @@ export function ImageViewerPage() {
                     )}
                 </div>
             </Specimen>
+
+            <Specimen
+                detail="The selected thumbnail fills the image's known dimensions until its full decode completes; it has no spinner or minimum hold"
+                label="Thumbnail while opening"
+                number="07"
+                stage="surface"
+            >
+                {frame(
+                    <ImageViewer
+                        content={{ type: "loading" }}
+                        deferLoading
+                        name="relay-field.svg"
+                        thumbnail={{ url: wide, width: 1600, height: 1000 }}
+                    />,
+                )}
+            </Specimen>
         </ComponentPage>
     );
 }

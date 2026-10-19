@@ -128,3 +128,10 @@
     min-width: 0;
     min-height: 0;
 }
+
+/* The full-window picture owns focus for pan/zoom and set navigation. Its
+   enclosing frame is not a control to outline when an arrow key is pressed;
+   the lightbox's buttons retain their own visible keyboard focus rings. */
+.happy-lightbox .happy-image-viewer__frame:focus-visible {
+    outline: none;
+}

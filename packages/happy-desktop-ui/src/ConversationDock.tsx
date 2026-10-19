@@ -204,6 +204,9 @@ export function ConversationDock(props: ConversationDockProps) {
                 detail={previewAttachment.detail}
                 loadedImage={preview?.loadedImage}
                 navigationLabel="attachment"
+                imageThumbnail={
+                    previewAttachment.kind === "image" ? { url: previewAttachment.url } : undefined
+                }
                 onClose={() => setPreview(null)}
                 {...(previewMedia.length > 1
                     ? {

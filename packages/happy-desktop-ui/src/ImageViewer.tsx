@@ -1,5 +1,6 @@
 import { partitionComponentProps } from "./componentProps";
 import {
+    useCallback,
     useLayoutEffect,
     useRef,
     useState,
@@ -8,6 +9,7 @@ import {
     type MouseEvent as ReactMouseEvent,
     type PointerEvent as ReactPointerEvent,
     type ReactNode,
+    type RefCallback,
 } from "react";
 import { Button } from "./Button";
 import { Icon } from "./Icon";
@@ -57,6 +59,10 @@ export type ImageViewerProps = {
      * window of its own — so its zoom and pan keys work without a click first.
      */
     autoFocus?: boolean;
+    /** Delay decode feedback by 500ms, then keep it visible for at least 500ms. */
+    deferLoading?: boolean;
+    /** Already available thumbnail for this content, shown until full decode. */
+    thumbnail?: { readonly url: string; readonly width?: number; readonly height?: number };
     /** Reported once the picture decodes, so the caller can state its real size. */
     onNaturalSize?: (size: { readonly width: number; readonly height: number }) => void;
 };
@@ -79,6 +85,8 @@ const PAN_STEP = 48;
 const WHEEL_ZOOM_DIVISOR = 320;
 /** Below this, two magnifications are the same rung and not worth telling apart. */
 const SCALE_EPSILON = 0.0001;
+const LOADING_DELAY_MS = 500;
+const LOADING_MINIMUM_MS = 500;
 
 interface ImageSize {
     readonly width: number;
@@ -300,6 +308,8 @@ export function ImageViewer(props: ImageViewerProps) {
         "actions",
         "tone",
         "autoFocus",
+        "deferLoading",
+        "thumbnail",
         "onNaturalSize",
     ]);
     const frameElement = useRef<HTMLDivElement>(null);
@@ -308,21 +318,45 @@ export function ImageViewer(props: ImageViewerProps) {
     const [state, setState] = useState<ImageViewerState>(() =>
         stateInitial(local.content.type === "url" ? local.content.url : "", local.loadedImage),
     );
+    const [loadingVisible, setLoadingVisible] = useState(false);
+    const url = local.content.type === "url" ? local.content.url : "";
+    const alreadyLoaded =
+        local.loadedImage?.url === url &&
+        local.loadedImage.width > 0 &&
+        local.loadedImage.height > 0;
+    const [failedThumbnail, setFailedThumbnail] = useState<{
+        imageUrl: string;
+        thumbnailUrl: string;
+    }>();
+    const thumbnail =
+        failedThumbnail?.imageUrl === url && failedThumbnail.thumbnailUrl === local.thumbnail?.url
+            ? undefined
+            : local.thumbnail;
+    const thumbnailUrl = thumbnail?.url;
+    // Shared across URL lifetimes so navigation cannot cut a visible notice short.
+    const loadingShownAt = useRef<number | undefined>(undefined);
+    // Stable ref identity measures the notice's DOM mount once, rather than
+    // restarting its minimum duration on unrelated viewer renders.
+    const loadingMounted = useCallback((element: HTMLDivElement | null): void => {
+        if (element) loadingShownAt.current = performance.now();
+    }, []);
     // The magnification a deliberate command settled on, said out loud once. The
     // percentage on the bar is not itself a live region: under a pinch it changes
     // dozens of times a second, and announcing every one of them would leave a
     // screen reader still talking long after the hand stopped.
     const [spoken, setSpoken] = useState("");
-    const url = local.content.type === "url" ? local.content.url : "";
+    if ((!url || thumbnailUrl || alreadyLoaded) && loadingVisible) setLoadingVisible(false);
     // State from a previous address is not this address's state. Comparing here
     // rather than resetting in an effect keeps the first frame of a new picture
     // correct instead of showing the previous one's magnification for a beat.
     const live = state.url === url ? state : stateInitial(url, local.loadedImage);
-    // Keep the last decoded picture in place until its replacement is ready.
-    // Its view is fitted immediately: navigation never carries a zoom or pan
-    // into the next picture, and a fast load never paints an opening notice.
+    // Deferred viewers show only the selected picture or its thumbnail. Panel
+    // viewers keep the last decoded picture until its replacement is ready.
     const displayed =
-        local.content.type === "url" && live.status === "loading" && state.status === "ready"
+        !local.deferLoading &&
+        local.content.type === "url" &&
+        live.status === "loading" &&
+        state.status === "ready"
             ? { ...state, view: VIEW_FIT }
             : live;
     const natural = displayed.natural;
@@ -380,6 +414,7 @@ export function ImageViewer(props: ImageViewerProps) {
     const wanted = local.autoFocus === true;
     const previousUrl = local.adjacentImages?.previous;
     const nextUrl = local.adjacentImages?.next;
+    const deferLoading = local.deferLoading === true;
     // eslint-disable-next-line happy-react/no-layout-effect -- retain browser image resources for the current picture and its neighbors; a decoded neighbor becomes visible before paint and cleanup discards late results after navigation
     useLayoutEffect(() => {
         const images = decodedImages.current;
@@ -393,28 +428,76 @@ export function ImageViewer(props: ImageViewerProps) {
         for (const address of [url, previousUrl, nextUrl]) {
             if (address && !images.has(address)) images.set(address, imageDecode(address));
         }
-        const entry = images.get(url);
+    }, [url, previousUrl, nextUrl]);
+
+    // eslint-disable-next-line happy-react/no-layout-effect -- browser decode and feedback timers belong to the committed address; cleanup cancels timers and ignores late decode results on navigation or close
+    useLayoutEffect(() => {
+        if (!url) {
+            loadingShownAt.current = undefined;
+            return;
+        }
+        const entry = decodedImages.current.get(url);
         if (!entry) return;
+        if (thumbnailUrl || alreadyLoaded) loadingShownAt.current = undefined;
         const image = entry.image;
         let active = true;
-        const ready = (): void => {
+        let showTimer: ReturnType<typeof setTimeout> | undefined;
+        let settleTimer: ReturnType<typeof setTimeout> | undefined;
+        const settle = (publish: () => void): void => {
             if (!active) return;
-            setState((previous) => ({
-                ...(previous.url === url ? previous : stateInitial(url)),
-                natural: { width: image.naturalWidth, height: image.naturalHeight },
-                status: "ready",
-            }));
+            clearTimeout(showTimer);
+            const finish = (): void => {
+                if (!active) return;
+                const remaining =
+                    deferLoading &&
+                    !thumbnailUrl &&
+                    !alreadyLoaded &&
+                    loadingShownAt.current !== undefined
+                        ? LOADING_MINIMUM_MS - (performance.now() - loadingShownAt.current)
+                        : 0;
+                if (remaining > 0) {
+                    settleTimer = setTimeout(finish, Math.ceil(remaining));
+                    return;
+                }
+                loadingShownAt.current = undefined;
+                setLoadingVisible(false);
+                publish();
+            };
+            finish();
+        };
+        const ready = (): void => {
+            settle(() => {
+                setState((previous) => ({
+                    ...(previous.url === url ? previous : stateInitial(url)),
+                    natural: { width: image.naturalWidth, height: image.naturalHeight },
+                    status: "ready",
+                }));
+            });
         };
         const failed = (): void => {
-            if (!active) return;
-            setState({ ...stateInitial(url), status: "error" });
+            settle(() => setState({ ...stateInitial(url), status: "error" }));
         };
         if (entry.ready) ready();
-        else void entry.decoded.then(ready, failed);
+        else {
+            if (
+                deferLoading &&
+                !thumbnailUrl &&
+                !alreadyLoaded &&
+                loadingShownAt.current === undefined
+            ) {
+                showTimer = setTimeout(() => {
+                    loadingShownAt.current = performance.now();
+                    setLoadingVisible(true);
+                }, LOADING_DELAY_MS);
+            }
+            void entry.decoded.then(ready, failed);
+        }
         return () => {
             active = false;
+            clearTimeout(showTimer);
+            clearTimeout(settleTimer);
         };
-    }, [url, previousUrl, nextUrl]);
+    }, [url, deferLoading, thumbnailUrl, alreadyLoaded]);
 
     // eslint-disable-next-line happy-react/no-layout-effect -- release the retained decoded browser resources when the viewer closes
     useLayoutEffect(() => {
@@ -628,7 +711,16 @@ export function ImageViewer(props: ImageViewerProps) {
             >
                 <ImageViewerStage
                     content={local.content}
+                    frame={frame}
+                    deferLoading={deferLoading}
+                    loadingVisible={loadingVisible}
+                    loadingMounted={loadingMounted}
                     name={local.name}
+                    onThumbnailError={() => {
+                        if (thumbnail)
+                            setFailedThumbnail({ imageUrl: url, thumbnailUrl: thumbnail.url });
+                    }}
+                    thumbnail={thumbnail}
                     offsetX={offsetX}
                     offsetY={offsetY}
                     onError={() => {
@@ -721,7 +813,13 @@ export function ImageViewer(props: ImageViewerProps) {
  */
 function ImageViewerStage(props: {
     content: ImageViewerContent;
+    frame: ImageSize | undefined;
+    deferLoading: boolean;
+    loadingVisible: boolean;
+    loadingMounted: RefCallback<HTMLDivElement>;
     name: string;
+    onThumbnailError: () => void;
+    thumbnail: ImageViewerProps["thumbnail"];
     offsetX: number;
     offsetY: number;
     onError: () => void;
@@ -746,10 +844,25 @@ function ImageViewerStage(props: {
                 </span>
             </div>
         );
-    if (props.content.type === "loading") return <ImageViewerOpening name={props.name} />;
     const { natural, status } = props.state;
     if (status === "error")
         return <ImageViewerFailure detail="The picture could not be decoded." name={props.name} />;
+    if ((props.content.type === "loading" || status === "loading") && props.thumbnail)
+        return (
+            <ImageViewerThumbnail
+                frame={props.frame}
+                key={props.thumbnail.url}
+                name={props.name}
+                onError={props.onThumbnailError}
+                thumbnail={props.thumbnail}
+            />
+        );
+    if (props.content.type === "loading") return <ImageViewerOpening name={props.name} />;
+    if (props.deferLoading && props.loadingVisible)
+        return <ImageViewerOpening name={props.name} noticeRef={props.loadingMounted} />;
+    // The retained decoder owns readiness/failure. A second pending <img> would
+    // let its error event bypass the minimum feedback duration.
+    if (props.deferLoading && status === "loading") return null;
     return (
         <>
             {status === "loading" ? <ImageViewerOpening name={props.name} /> : null}
@@ -789,11 +902,57 @@ function ImageViewerStage(props: {
     );
 }
 
-function ImageViewerOpening(props: { name: string }) {
+function ImageViewerThumbnail(props: {
+    frame: ImageSize | undefined;
+    name: string;
+    onError: () => void;
+    thumbnail: NonNullable<ImageViewerProps["thumbnail"]>;
+}) {
+    const [decodedSize, setDecodedSize] = useState<ImageSize>();
+    const { width, height } = props.thumbnail;
+    const size = width && height ? { width, height } : decodedSize;
+    const scale = fitScaleOf(size, props.frame);
     return (
-        <div className="happy-image-viewer__notice" data-happy-desktop-ui="image-viewer-loading">
+        <img
+            alt={props.name}
+            className="happy-image-viewer__thumbnail"
+            data-happy-desktop-ui="image-viewer-thumbnail"
+            draggable={false}
+            onError={props.onError}
+            onLoad={(event) =>
+                setDecodedSize({
+                    width: event.currentTarget.naturalWidth,
+                    height: event.currentTarget.naturalHeight,
+                })
+            }
+            src={props.thumbnail.url}
+            style={
+                size
+                    ? {
+                          width: `${String(size.width * scale)}px`,
+                          height: `${String(size.height * scale)}px`,
+                      }
+                    : undefined
+            }
+        />
+    );
+}
+
+function ImageViewerOpening({
+    name,
+    noticeRef,
+}: {
+    name: string;
+    noticeRef?: RefCallback<HTMLDivElement>;
+}) {
+    return (
+        <div
+            className="happy-image-viewer__notice"
+            data-happy-desktop-ui="image-viewer-loading"
+            ref={noticeRef}
+        >
             <Spinner size={16} />
-            <span className="happy-image-viewer__notice-title">Opening {props.name}…</span>
+            <span className="happy-image-viewer__notice-title">Opening {name}…</span>
         </div>
     );
 }

@@ -100,6 +100,16 @@
     -webkit-user-drag: none;
 }
 
+.happy-image-viewer__thumbnail {
+    display: block;
+    flex: none;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
 /* ---- Notices ----------------------------------------------------------- */
 
 .happy-image-viewer__notice {

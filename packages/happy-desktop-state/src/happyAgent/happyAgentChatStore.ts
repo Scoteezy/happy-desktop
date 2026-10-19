@@ -374,6 +374,7 @@ interface HappyAgentGalleryImage {
     readonly id: string;
     readonly url: string;
     readonly alt: string;
+    readonly thumbnail?: HappyAgentOpenImage["thumbnail"];
 }
 
 function imageRefEqual(left: HappyAgentImageRef, right: HappyAgentImageRef): boolean {
@@ -390,14 +391,28 @@ function imageRefEqual(left: HappyAgentImageRef, right: HappyAgentImageRef): boo
 
 function imageSourceOf(
     attachment: ConversationAttachment,
-): { readonly url: string; readonly alt: string } | undefined {
+): Pick<HappyAgentGalleryImage, "url" | "alt" | "thumbnail"> | undefined {
     if (attachment.kind === "inlineImage")
         return {
             url: `data:${attachment.mediaType};base64,${attachment.data}`,
             alt: "Attached image",
+            thumbnail: {
+                url: `data:${attachment.mediaType};base64,${attachment.data}`,
+                width: attachment.width,
+                height: attachment.height,
+            },
         };
     if (attachment.attachmentKind === "image" && attachment.openUrl)
-        return { url: attachment.openUrl, alt: attachment.name };
+        return {
+            url: attachment.openUrl,
+            alt: attachment.name,
+            thumbnail: {
+                url: attachment.thumbnailUrl ?? attachment.openUrl,
+                thumbhash: attachment.thumbhash,
+                width: attachment.width,
+                height: attachment.height,
+            },
+        };
     return undefined;
 }
 
@@ -435,6 +450,12 @@ function imageGalleryOf(entries: readonly ConversationEntry[]): readonly HappyAg
                     id: `${entry.id}:${String(index)}`,
                     url: item.url,
                     alt: item.name,
+                    thumbnail: {
+                        url: item.url,
+                        thumbhash: item.thumbhash,
+                        width: item.width,
+                        height: item.height,
+                    },
                 });
         });
     }
@@ -445,6 +466,13 @@ export interface HappyAgentOpenImage {
     readonly id: string;
     readonly url: string;
     readonly alt: string;
+    /** The selected transcript thumbnail, available while its full image decodes. */
+    readonly thumbnail?: {
+        readonly url?: string;
+        readonly thumbhash?: string;
+        readonly width?: number;
+        readonly height?: number;
+    };
     readonly index: number;
     readonly total: number;
     /** Immediate neighbors in arrow navigation order, including wraparound. */
@@ -465,6 +493,7 @@ function openImageProject(
         id: found.id,
         url: found.url,
         alt: found.alt,
+        thumbnail: found.thumbnail,
         index,
         total: gallery.length,
         ...(gallery.length > 1

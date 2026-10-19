@@ -96,7 +96,7 @@ export function LightboxPage() {
             </Specimen>
 
             <Specimen
-                detail="Both neighbors are fetched and decoded ahead of navigation · zoom the portrait to pan vertically while horizontal keys still change pictures"
+                detail="The selected thumbnail shows until full decode · without a thumbnail, loading appears after 500ms and stays at least 500ms · arrow keys navigate without outlining the frame"
                 label="Lightbox — in a set"
                 number="03"
                 stage="surface"
@@ -113,6 +113,7 @@ export function LightboxPage() {
                             caption={`device-farm-0${String(imageIndex + 1)}.png`}
                             detail={image.detail}
                             imageUrl={image.url}
+                            imageThumbnail={{ url: image.url }}
                             onClose={() => {}}
                             onNext={() => setImageIndex((index) => (index + 1) % images.length)}
                             onPrevious={() =>
