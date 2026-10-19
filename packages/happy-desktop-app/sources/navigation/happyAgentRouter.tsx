@@ -855,8 +855,13 @@ export function happyAgentRouterCreate(history: HappyAgentRouterHistory = defaul
         history,
         routeTree,
         // The application owns scrolling inside its own scrollports; letting the
-        // router restore or reset window scroll would fight them.
-        scrollRestoration: () => false,
+        // router restore or reset window scroll would fight them. `false`, not a
+        // function answering false: any function turns on the router's tracking
+        // of every element that scrolls anywhere in the document, which only that
+        // router's own navigation clears. Each connection has its own router, so
+        // one not on screen kept every scrolled transcript alive after it closed.
+        // What `false` leaves is a reset of the window, which never scrolls.
+        scrollRestoration: false,
         scrollToTopSelectors: [],
     });
 }
