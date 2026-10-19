@@ -10,7 +10,7 @@ import { MakeStuffView } from "../../src/MakeStuffView";
 import { MarkdownDocument } from "../../src/MarkdownDocument";
 import { ModalOverlay } from "../../src/ModalOverlay";
 import { ScrollArea } from "../../src/Scrollbar";
-import { Sidebar } from "../../src/Sidebar";
+import { Sidebar, type SidebarItem } from "../../src/Sidebar";
 import { TabbedPane } from "../../src/TabbedPane";
 import type { TabItem } from "../../src/Tabs";
 import { ThemeScope } from "../../src/ThemeScope";
@@ -307,8 +307,31 @@ function StoryWindow(props: StoryFrame) {
         "history",
     ].includes(scene);
     const newItemId =
-        creationSection === "release-readiness" ? "new-release-item" : "window-navigation";
-    const newItemLabel = creationSection === "release-readiness" ? "New item" : "Window navigation";
+        scene === "movie-request"
+            ? "movies"
+            : creationSection === "release-readiness"
+              ? "new-release-item"
+              : "window-navigation";
+    const newItemLabel = creationSection === "release-readiness" ? "New" : "Window navigation";
+    const itemUnderHappy = scene === "request" || scene === "movie-request";
+    const itemInContext = scene === "context";
+    const itemBeingShaped = itemUnderHappy || itemInContext || scene === "section-plus";
+    const primaryRows = itemUnderHappy
+        ? redesignPrimary.flatMap((item): SidebarItem[] =>
+              item.id === "happy"
+                  ? [
+                        item,
+                        {
+                            id: newItemId,
+                            label: "New",
+                            kind: "view",
+                            depth: 1,
+                            stemCell: { id: newItemId },
+                        },
+                    ]
+                  : [item],
+          )
+        : redesignPrimary;
     const newItemMark =
         scene === "request" || scene === "context" || scene === "landed" || scene === "section-plus"
             ? { stemCell: { id: newItemId } }
@@ -321,15 +344,14 @@ function StoryWindow(props: StoryFrame) {
         openedContent ??
         (scene === "movies"
             ? "movies"
-            : scene === "section-plus"
+            : itemBeingShaped
               ? newItemId
               : scene === "morning" || scene === "search"
                 ? "happy"
                 : scene === "release"
                   ? "release-coordinator"
-                  : scene === "request" || scene === "context" || scene === "movie-request"
-                    ? "make-stuff"
-                    : activeTaskId);
+                  : activeTaskId);
+    const creationShown = itemBeingShaped && mainId === newItemId;
 
     const open = (id: string) => {
         if (id === "muse-research" || id === "finished-research") {
@@ -359,41 +381,40 @@ function StoryWindow(props: StoryFrame) {
         label: taskLanded ? newItemLabel : "Desktop redesign",
         ...(taskLanded ? newItemMark : redesignMarks.redesign),
     };
-    const titleTabs: TabItem[] =
-        mainId === "make-stuff" || scene === "section-plus"
-            ? [
-                  taskTab,
-                  {
-                      id: scene === "section-plus" ? newItemId : "make-stuff",
-                      label: scene === "section-plus" ? "New item" : "Make Stuff",
-                      stemCell: { id: scene === "movie-request" ? "movies" : newItemId },
-                  },
-              ]
-            : scene === "movies"
+    const titleTabs: TabItem[] = creationShown
+        ? [
+              taskTab,
+              {
+                  id: newItemId,
+                  label: "New",
+                  stemCell: { id: newItemId },
+              },
+          ]
+        : scene === "movies"
+          ? [
+                { id: "happy", label: "Happy", ...redesignMarks.happy },
+                { id: "movies", label: "Downloaded movies", ...redesignMarks.movies },
+            ]
+          : scene === "morning" || scene === "search"
+            ? [{ id: "happy", label: "Happy", ...redesignMarks.happy }, taskTab]
+            : scene === "release"
               ? [
-                    { id: "happy", label: "Happy", ...redesignMarks.happy },
-                    { id: "movies", label: "Downloaded movies", ...redesignMarks.movies },
+                    {
+                        id: "release-coordinator",
+                        label: "Release Coordinator",
+                        ...redesignMarks.release,
+                    },
+                    {
+                        id: "integration-gates",
+                        label: "Current integration gates",
+                        ...redesignMarks.document,
+                    },
                 ]
-              : scene === "morning" || scene === "search"
-                ? [{ id: "happy", label: "Happy", ...redesignMarks.happy }, taskTab]
-                : scene === "release"
-                  ? [
-                        {
-                            id: "release-coordinator",
-                            label: "Release Coordinator",
-                            ...redesignMarks.release,
-                        },
-                        {
-                            id: "integration-gates",
-                            label: "Current integration gates",
-                            ...redesignMarks.document,
-                        },
-                    ]
-                  : [taskTab, ...redesignTabs.filter((tab) => tab.id !== "redesign")];
+              : [taskTab, ...redesignTabs.filter((tab) => tab.id !== "redesign")];
     if (openedContent && !titleTabs.some((tab) => tab.id === openedContent)) {
         const existing = [
             ...redesignTabs,
-            ...redesignPrimary,
+            ...primaryRows,
             ...redesignSections.flatMap((section) => section.items),
         ].find((item) => item.id === openedContent);
         titleTabs.push({
@@ -568,83 +589,84 @@ function StoryWindow(props: StoryFrame) {
             }}
         />
     );
-    const content =
-        mainId === "make-stuff" || (scene === "section-plus" && mainId === newItemId) ? (
-            <MakeStuffView
-                stage={
-                    scene === "context"
-                        ? {
-                              kind: "context",
-                              text: draft,
-                              project: "Happy Desktop",
-                              related:
-                                  creationSection === "release-readiness"
-                                      ? [
-                                            {
-                                                id: "integration-gates",
-                                                label: "Current integration gates",
-                                            },
-                                        ]
-                                      : [
-                                            { id: "desktop-redesign", label: "Desktop redesign" },
-                                            { id: "chat-sync", label: "Shared chat sync" },
-                                        ],
-                              placement:
-                                  creationSection === "release-readiness"
-                                      ? "Lands in Release readiness"
-                                      : "Lands in Desktop workflow",
-                              conflict:
-                                  creationSection === "release-readiness"
-                                      ? undefined
-                                      : {
-                                            label: "Redesign blueprints",
-                                            onOpen: () => {
-                                                setScene("working");
-                                                setOpenedContent(undefined);
-                                                setFloatyOpen(true);
-                                            },
+    const content = creationShown ? (
+        <MakeStuffView
+            stage={
+                scene === "context"
+                    ? {
+                          kind: "context",
+                          text: draft,
+                          project: "Happy Desktop",
+                          related:
+                              creationSection === "release-readiness"
+                                  ? [
+                                        {
+                                            id: "integration-gates",
+                                            label: "Current integration gates",
                                         },
-                              onStart: () => {
-                                  setScene("landed");
+                                    ]
+                                  : [
+                                        { id: "desktop-redesign", label: "Desktop redesign" },
+                                        { id: "chat-sync", label: "Shared chat sync" },
+                                    ],
+                          placement:
+                              creationSection === "release-readiness"
+                                  ? "Lands in Release readiness"
+                                  : "Lands in Desktop workflow",
+                          conflict:
+                              creationSection === "release-readiness"
+                                  ? undefined
+                                  : {
+                                        label: "Redesign blueprints",
+                                        onOpen: () => {
+                                            setScene("working");
+                                            setOpenedContent(undefined);
+                                            setFloatyOpen(true);
+                                        },
+                                    },
+                          onStart: () => {
+                              setScene("landed");
+                              setOpenedContent(undefined);
+                          },
+                      }
+                    : {
+                          kind: "request",
+                          id: scene === "movie-request" ? "movies" : newItemId,
+                          placement:
+                              creationSection === "release-readiness" ? "section" : "automatic",
+                          composer: {
+                              composer: { ...redesignComposer, text: draft },
+                              composerPlaceholder: "Say what this is…",
+                              composerFocusOnType: false,
+                              onComposerValueChange: setDraft,
+                              onComposerSend: () => {
+                                  if (scene === "movie-request") setMoviesCreated(true);
+                                  setScene(scene === "movie-request" ? "movies" : "context");
                                   setOpenedContent(undefined);
                               },
-                          }
-                        : {
-                              kind: "request",
-                              id: scene === "movie-request" ? "movies" : newItemId,
-                              composer: {
-                                  composer: { ...redesignComposer, text: draft },
-                                  composerPlaceholder: "Say what this is…",
-                                  composerFocusOnType: false,
-                                  onComposerValueChange: setDraft,
-                                  onComposerSend: () => {
-                                      if (scene === "movie-request") setMoviesCreated(true);
-                                      setScene(scene === "movie-request" ? "movies" : "context");
-                                      setOpenedContent(undefined);
-                                  },
-                              },
-                          }
+                          },
+                      }
+            }
+        />
+    ) : mainId === "movies" ? (
+        <MovieList />
+    ) : mainId === "draft" || mainId === "integration-gates" || mainId === "keyboard-audit" ? (
+        <ScrollArea>
+            <MarkdownDocument
+                text={
+                    mainId === "draft"
+                        ? redesignDraft
+                        : "# Current integration gates\n\nNative iOS f010601a: 208 pass, five fail; hosted compilation blocked.\n\nThe current gate report stays with Native iOS integration. Finished audit reports remain in History."
                 }
             />
-        ) : mainId === "movies" ? (
-            <MovieList />
-        ) : mainId === "draft" || mainId === "integration-gates" || mainId === "keyboard-audit" ? (
-            <ScrollArea>
-                <MarkdownDocument
-                    text={
-                        mainId === "draft"
-                            ? redesignDraft
-                            : "# Current integration gates\n\nNative iOS f010601a: 208 pass, five fail; hosted compilation blocked.\n\nThe current gate report stays with Native iOS integration. Finished audit reports remain in History."
-                    }
-                />
-            </ScrollArea>
-        ) : mainId === "sidebar-file" ? (
-            <ScrollArea>
-                <CodeBlock name="Sidebar.tsx" text={redesignCode} lineNumbers />
-            </ScrollArea>
-        ) : (
-            conversation()
-        );
+        </ScrollArea>
+    ) : mainId === "sidebar-file" ? (
+        <ScrollArea>
+            <CodeBlock name="Sidebar.tsx" text={redesignCode} lineNumbers />
+        </ScrollArea>
+    ) : (
+        conversation()
+    );
 
     const searchSections = redesignSearch.map((section) => ({
         ...section,
@@ -703,9 +725,8 @@ function StoryWindow(props: StoryFrame) {
                         sidebar={
                             <Sidebar
                                 activeItemId={mainId}
-                                actions={redesignPrimary}
+                                actions={primaryRows}
                                 actionsDivider
-                                composeActive={mainId === "make-stuff"}
                                 composeLabel="Make Stuff"
                                 composeShortcut={composeShortcut}
                                 composeTooltip="New item (⌘N or ⌘T)"
@@ -754,7 +775,7 @@ function StoryWindow(props: StoryFrame) {
                                 }
                                 sections={sections.map((section) =>
                                     section.id === "desktop-workflow" &&
-                                    taskLanded &&
+                                    (taskLanded || itemInContext) &&
                                     creationSection === "desktop-workflow"
                                         ? {
                                               ...section,
@@ -762,7 +783,9 @@ function StoryWindow(props: StoryFrame) {
                                                   section.items[0]!,
                                                   {
                                                       id: "window-navigation",
-                                                      label: "Window navigation",
+                                                      label: itemInContext
+                                                          ? "New"
+                                                          : "Window navigation",
                                                       kind: "view",
                                                       depth: 1,
                                                       ...newItemMark,
@@ -776,7 +799,7 @@ function StoryWindow(props: StoryFrame) {
                                                 items: [
                                                     {
                                                         id: "new-release-item",
-                                                        label: "New item",
+                                                        label: "New",
                                                         kind: "view",
                                                         ...(creationSection ===
                                                             "release-readiness" && taskLanded

@@ -7,6 +7,7 @@ export type MakeStuffStage =
     | {
           kind: "request";
           id: string;
+          placement: "automatic" | "section";
           composer: ConversationDockProps;
       }
     | {
@@ -33,8 +34,14 @@ export function MakeStuffView({ stage }: MakeStuffViewProps) {
                 <div className="happy-make-stuff__empty">
                     <StemCell id={stage.id} size={64} />
                     <div className="happy-make-stuff__explanation">
-                        <p>Say what this is — I&apos;ll shape it and put it where it belongs.</p>
-                        <p>Want it somewhere specific? Just say “under Release Readiness”.</p>
+                        <p>
+                            {stage.placement === "section"
+                                ? "Say what this is — I'll shape it."
+                                : "Say what this is — I'll shape it and put it where it belongs."}
+                        </p>
+                        {stage.placement === "automatic" ? (
+                            <p>Want it somewhere specific? Just say “under Release Readiness”.</p>
+                        ) : null}
                     </div>
                 </div>
                 <ConversationDock {...stage.composer} />
