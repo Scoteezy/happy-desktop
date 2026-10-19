@@ -187,3 +187,15 @@ side.
 For now we don't really need the sitter in this iteration. In the future we do
 anticipate the sitter creating summaries, titles, pinging for attention (the
 main agent that figures out what to notify about / what not?).
+
+## Teammates in the sidebar
+
+Back to my space — I don't love that it's in the header. It should stay in the
+side bar. Honestly — let's not have a separate side bar: we can just expand
+what's likely relevant for us from what Steve is working on when we click their
+name. Agents / smart search will be able to discover the rest. The goal is to
+show less than more — show the most important stuff only.
+
+## [later] Search
+
+Search also needs to be redesigned, later.
