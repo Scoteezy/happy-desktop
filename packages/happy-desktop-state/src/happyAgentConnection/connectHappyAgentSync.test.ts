@@ -1346,6 +1346,54 @@ it("keeps an open session's question current while another loads in the backgrou
     await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(3));
 });
 
+it("lets held question updates through once the session that held them is closed mid-load", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const open = daemon.agentSeed(project.id, { id: "agent-open", pendingQuestionId: "q1" });
+    const other = daemon.agentSeed(project.id, { id: "agent-other" });
+    daemon.questionSet(open.id, {
+        id: "q1",
+        agentId: open.id,
+        runId: "r1",
+        status: "pending",
+        questions: [],
+        autoResolveAt: null,
+        answers: null,
+        version: daemon.versionNext(),
+        createdAt: 1,
+        answeredAt: null,
+    });
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    const watched = sessionWatch(connection, open.id);
+    await vi.waitFor(() => expect(watched.session?.historyLoading).not.toBe(true));
+    const openQuestionReads = () =>
+        daemon.calls.filter(
+            (call) => call.method === "getPendingQuestion" && call.args[0] === open.id,
+        ).length;
+    const questionReads = openQuestionReads();
+
+    const releaseHistory = daemon.pause("getMessages");
+    const otherSession = connection.connectSession({
+        sessionId: other.id,
+        onChange: () => undefined,
+    });
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(2));
+    daemon.eventEmit("question.updated", {
+        questionId: "q1",
+        previousVersion: daemon.versionNext(),
+        version: daemon.versionNext(),
+        changes: { updatedAt: 2 } as never,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    // Held while someone reads the loading session.
+    expect(openQuestionReads()).toBe(questionReads);
+
+    otherSession.close();
+    await vi.waitFor(() => expect(openQuestionReads()).toBe(questionReads + 1));
+    releaseHistory();
+});
+
 it("keeps only the newest few prefetched sessions that were never opened", async () => {
     const { connection, daemon } = harnessOpen();
     const project = daemon.projectSeed({ id: "project-a" });

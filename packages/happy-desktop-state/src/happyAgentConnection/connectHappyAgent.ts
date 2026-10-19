@@ -3183,6 +3183,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 close: () => {
                     subscriber.closed = true;
                     connectedEntry.subscribers.delete(subscriber);
+                    // A load nobody reads any more holds no one else's updates back; whatever it
+                    // held is applied now and marks it to reconcile once it lands.
+                    if (connectedEntry.hydrating) drainHydrationBroadcastEvents();
                     settleSessionIfIdle(connectedEntry);
                 },
             };
