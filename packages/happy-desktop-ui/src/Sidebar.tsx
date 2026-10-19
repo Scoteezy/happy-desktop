@@ -1,5 +1,6 @@
 import { partitionComponentProps } from "./componentProps";
 import {
+    memo,
     useEffectEvent,
     useLayoutEffect,
     useRef,
@@ -1050,6 +1051,101 @@ function SidebarRowAction(props: { action: SidebarItemAction; onAction: () => vo
         </span>
     );
 }
+
+/** Where one listed row is, as of the render that drew it. */
+interface SidebarRowTarget {
+    readonly item: SidebarItem;
+    readonly listId: SidebarListId;
+    /** The section's rows as they stand on screen, and this row's place among them. */
+    readonly items: readonly SidebarItem[];
+    readonly index: number;
+}
+
+/**
+ * Everything a listed row can do, keyed by its row key and shared by every row of one sidebar.
+ *
+ * The functions never change, and each finds its row in the sidebar's latest render when it
+ * runs. A row's props therefore change only when what it shows does, and the other rows skip
+ * rendering on a selection or one session's status change.
+ */
+interface SidebarRowHandlers {
+    readonly action: (key: string) => void;
+    readonly collapseToggle: (key: string) => void;
+    readonly contextMenu: (item: SidebarItem, event: MouseEvent<HTMLElement>) => void;
+    readonly keyDown: (key: string, event: ReactKeyboardEvent<HTMLElement>) => void;
+    readonly node: (key: string, node: HTMLElement | null) => void;
+    readonly pointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+    readonly pointerDown: (key: string, event: ReactPointerEvent<HTMLElement>) => void;
+    readonly pointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
+    readonly pointerUp: (key: string, event: ReactPointerEvent<HTMLElement>) => void;
+    readonly renameCancel: () => void;
+    readonly renameRequest: (key: string) => boolean;
+    readonly renameSubmit: (key: string, name: string) => void;
+    readonly secondaryAction: (key: string) => void;
+    readonly select: (id: string) => void;
+}
+
+/** One section row, rendered again only when its own props change. */
+const SidebarListRow = memo(function SidebarListRow({
+    handlers,
+    rowId,
+    renameInitialValue,
+    canAction,
+    canCollapse,
+    canRename,
+    canSecondaryAction,
+    ...rest
+}: {
+    handlers: SidebarRowHandlers;
+    /** The row key; see `rowKey`. */
+    rowId: string;
+    /** Present while this row's name is being edited. */
+    renameInitialValue?: string;
+    canAction: boolean;
+    canCollapse: boolean;
+    canRename: boolean;
+    canSecondaryAction: boolean;
+    active: boolean;
+    activityPlacement?: SidebarActivityPlacement;
+    dragging: boolean;
+    grabbed: boolean;
+    item: SidebarItem;
+    reorderable: boolean;
+    shift?: number;
+    shortcut?: KeyboardShortcut;
+    shortcutActive: boolean;
+}) {
+    return (
+        <SidebarRow
+            {...rest}
+            rename={
+                renameInitialValue === undefined
+                    ? undefined
+                    : {
+                          initialValue: renameInitialValue,
+                          onCancel: handlers.renameCancel,
+                          onSubmit: (name) => handlers.renameSubmit(rowId, name),
+                      }
+            }
+            onRenameRequest={canRename ? () => handlers.renameRequest(rowId) : undefined}
+            onContextMenu={handlers.contextMenu}
+            onKeyDown={rest.reorderable ? (event) => handlers.keyDown(rowId, event) : undefined}
+            onPointerDown={
+                rest.reorderable ? (event) => handlers.pointerDown(rowId, event) : undefined
+            }
+            onPointerCancel={rest.reorderable ? handlers.pointerCancel : undefined}
+            onPointerMove={rest.reorderable ? handlers.pointerMove : undefined}
+            onPointerUp={rest.reorderable ? (event) => handlers.pointerUp(rowId, event) : undefined}
+            onCollapseToggle={canCollapse ? () => handlers.collapseToggle(rowId) : undefined}
+            onAction={canAction ? () => handlers.action(rowId) : undefined}
+            onSecondaryAction={
+                canSecondaryAction ? () => handlers.secondaryAction(rowId) : undefined
+            }
+            nodeRef={(node) => handlers.node(rowId, node)}
+            onSelect={handlers.select}
+        />
+    );
+});
 
 function SidebarRow({
     nodeRef,
@@ -2342,6 +2438,84 @@ export function Sidebar(props: SidebarProps) {
             y: event.clientY,
         });
     };
+    // Filled while the sections render below, and handed to the row handlers after commit.
+    const rowTargets = new Map<string, SidebarRowTarget>();
+    const rowAct = (key: string, act: (target: SidebarRowTarget) => unknown): unknown => {
+        const target = rowTargets.get(key);
+        return target === undefined ? undefined : act(target);
+    };
+    const rowLatest = useRef<{
+        readonly act: typeof rowAct;
+        readonly dragCancel: typeof dragCancel;
+        readonly dragEnd: typeof dragEnd;
+        readonly dragMove: typeof dragMove;
+        readonly dragStart: typeof dragStart;
+        readonly moveByKey: typeof moveByKey;
+        readonly openItemMenu: typeof openItemMenu;
+        readonly renameStart: typeof renameStart;
+        readonly local: typeof local;
+    }>(undefined);
+    // eslint-disable-next-line happy-react/no-layout-effect -- row handlers must see this render before any input reaches the rows it drew
+    useLayoutEffect(() => {
+        rowLatest.current = {
+            act: rowAct,
+            dragCancel,
+            dragEnd,
+            dragMove,
+            dragStart,
+            local,
+            moveByKey,
+            openItemMenu,
+            renameStart,
+        };
+    });
+    const [rowHandlers] = useState((): SidebarRowHandlers => {
+        const latest = () => rowLatest.current!;
+        return {
+            action: (key) =>
+                void latest().act(key, ({ item }) => latest().local.onItemAction?.(item.id)),
+            collapseToggle: (key) =>
+                void latest().act(key, ({ item }) =>
+                    latest().local.onItemCollapseToggle?.(item.id),
+                ),
+            contextMenu: (item, event) => latest().openItemMenu(item, event),
+            keyDown: (key, event) =>
+                void latest().act(key, ({ index, items, listId }) =>
+                    latest().moveByKey(event, listId, items, index),
+                ),
+            node: (key, node) => {
+                if (node) rowNodes.set(key, node);
+                else rowNodes.delete(key);
+            },
+            pointerCancel: (event) => latest().dragCancel(event),
+            pointerDown: (key, event) =>
+                void latest().act(key, ({ index, items, listId }) =>
+                    latest().dragStart(event, listId, items, index),
+                ),
+            pointerMove: (event) => latest().dragMove(event),
+            pointerUp: (key, event) =>
+                void latest().act(key, ({ items }) => latest().dragEnd(event, items)),
+            renameCancel: () => setRenaming(undefined),
+            renameRequest: (key) =>
+                latest().act(key, ({ item }) => latest().renameStart(item)) === true,
+            renameSubmit: (key, name) =>
+                void latest().act(key, ({ item }) => {
+                    setRenaming(undefined);
+                    latest().local.itemRename?.onSubmit(item, name);
+                }),
+            secondaryAction: (key) =>
+                void latest().act(key, ({ item }) =>
+                    latest().local.onItemSecondaryAction?.(item.id),
+                ),
+            select: (id) => {
+                if (dragClick.current) {
+                    dragClick.current = false;
+                    return;
+                }
+                latest().local.onItemSelect(id);
+            },
+        };
+    });
     return (
         <nav
             {...rest}
@@ -2791,24 +2965,34 @@ export function Sidebar(props: SidebarProps) {
                                                   )
                                                 : -1;
                                             const held = dragging && unitIndex === drag.from;
+                                            const key = rowKey(section.id, item.id);
+                                            rowTargets.set(key, {
+                                                index,
+                                                item,
+                                                items: shownItems,
+                                                listId: section.id,
+                                            });
                                             return (
-                                                <SidebarRow
-                                                    rename={
+                                                <SidebarListRow
+                                                    handlers={rowHandlers}
+                                                    rowId={key}
+                                                    renameInitialValue={
                                                         renaming?.id === item.id
-                                                            ? {
-                                                                  initialValue:
-                                                                      renaming.initialValue,
-                                                                  onCancel: () =>
-                                                                      setRenaming(undefined),
-                                                                  onSubmit: (name) => {
-                                                                      setRenaming(undefined);
-                                                                      local.itemRename?.onSubmit(
-                                                                          item,
-                                                                          name,
-                                                                      );
-                                                                  },
-                                                              }
+                                                            ? renaming.initialValue
                                                             : undefined
+                                                    }
+                                                    canAction={
+                                                        local.onItemAction !== undefined &&
+                                                        item.action !== undefined
+                                                    }
+                                                    canCollapse={
+                                                        local.onItemCollapseToggle !== undefined &&
+                                                        foldable
+                                                    }
+                                                    canRename={local.itemRename !== undefined}
+                                                    canSecondaryAction={
+                                                        local.onItemSecondaryAction !== undefined &&
+                                                        item.secondaryAction !== undefined
                                                     }
                                                     active={item.id === local.activeItemId}
                                                     activityPlacement={local.activityPlacement}
@@ -2817,88 +3001,15 @@ export function Sidebar(props: SidebarProps) {
                                                         (dropped?.listId === section.id &&
                                                             (dropped.carried
                                                                 ? dropped.itemIds.includes(item.id)
-                                                                : rowKey(section.id, item.id) ===
+                                                                : key ===
                                                                   dropped.key))
                                                     }
                                                     grabbed={held}
                                                     key={item.id}
                                                     item={item}
-                                                    onRenameRequest={
-                                                        local.itemRename
-                                                            ? () => renameStart(item)
-                                                            : undefined
-                                                    }
-                                                    onContextMenu={openItemMenu}
-                                                    onKeyDown={
-                                                        reorderable
-                                                            ? (event) =>
-                                                                  moveByKey(
-                                                                      event,
-                                                                      section.id,
-                                                                      shownItems,
-                                                                      index,
-                                                                  )
-                                                            : undefined
-                                                    }
-                                                    onPointerDown={
-                                                        reorderable
-                                                            ? (event) =>
-                                                                  dragStart(
-                                                                      event,
-                                                                      section.id,
-                                                                      shownItems,
-                                                                      index,
-                                                                  )
-                                                            : undefined
-                                                    }
-                                                    onPointerCancel={
-                                                        reorderable ? dragCancel : undefined
-                                                    }
-                                                    onPointerMove={
-                                                        reorderable ? dragMove : undefined
-                                                    }
-                                                    onPointerUp={
-                                                        reorderable
-                                                            ? (event) => dragEnd(event, shownItems)
-                                                            : undefined
-                                                    }
                                                     reorderable={reorderable}
                                                     shortcutActive={numberShortcutNavigation}
                                                     shortcut={shortcut}
-                                                    onCollapseToggle={
-                                                        local.onItemCollapseToggle && foldable
-                                                            ? () =>
-                                                                  local.onItemCollapseToggle?.(
-                                                                      item.id,
-                                                                  )
-                                                            : undefined
-                                                    }
-                                                    onAction={
-                                                        local.onItemAction && item.action
-                                                            ? () => local.onItemAction?.(item.id)
-                                                            : undefined
-                                                    }
-                                                    onSecondaryAction={
-                                                        local.onItemSecondaryAction &&
-                                                        item.secondaryAction
-                                                            ? () =>
-                                                                  local.onItemSecondaryAction?.(
-                                                                      item.id,
-                                                                  )
-                                                            : undefined
-                                                    }
-                                                    nodeRef={(node) => {
-                                                        const key = rowKey(section.id, item.id);
-                                                        if (node) rowNodes.set(key, node);
-                                                        else rowNodes.delete(key);
-                                                    }}
-                                                    onSelect={(id) => {
-                                                        if (dragClick.current) {
-                                                            dragClick.current = false;
-                                                            return;
-                                                        }
-                                                        local.onItemSelect(id);
-                                                    }}
                                                     shift={
                                                         dragging && unitIndex >= 0
                                                             ? rowDragShift(drag, index)
