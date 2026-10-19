@@ -3430,10 +3430,65 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
               ]
             : [];
     const pinned = pinnedArrange(pinnedOffered, navigationOrder.order);
+    // Search heads the open sidebar, and opens the same palette as ⌘K.
+    const sidebarSearchRow = props.commandPalette
+        ? {
+              label: "Search",
+              shortcut: APP_SHORTCUTS.paletteOpen,
+              onOpen: () => commandPaletteStore.paletteOpen(),
+          }
+        : undefined;
+    const sidebarFooter = (
+        <SidebarFooter
+            voice={
+                props.gptLive ? (
+                    <AppGptLivePhone store={props.gptLive} experiments={props.experiments} />
+                ) : undefined
+            }
+            actions={sidebarUpdate}
+            devMenu={
+                props.buildIdentity ? (
+                    <DevBuildMenu
+                        branch={props.buildIdentity.branch}
+                        label={props.buildIdentity.label}
+                        onBlueprintOpen={props.onBlueprintOpen}
+                        onCopyPath={() =>
+                            void navigator.clipboard
+                                .writeText(props.buildIdentity!.path)
+                                .catch(() => undefined)
+                        }
+                        performance={props.performance}
+                        path={props.buildIdentity.path}
+                    />
+                ) : undefined
+            }
+            {...(statusBar.themeShown
+                ? {
+                      theme: {
+                          appearance: appearance.appearance,
+                          mode: appearance.mode,
+                          onModeSelect: (mode: ThemeMode) =>
+                              props.appearance.appearanceSelect(mode),
+                      },
+                  }
+                : {})}
+            {...(props.keepAwake && statusBar.keepAwakeShown
+                ? {
+                      keepAwake: {
+                          active: keepAwake.active,
+                          mode: keepAwake.mode,
+                          onModeSelect: (mode: KeepAwakeMode) => props.keepAwake?.modeSelect(mode),
+                      },
+                  }
+                : {})}
+            onSettingsOpen={props.onSettingsOpen}
+        />
+    );
     const sidebar = (
         <Sidebar
             // A search replaces everything below the field, pinned rows too.
             actions={searching ? [] : pinned}
+            {...(sidebarSearchRow ? { searchRow: sidebarSearchRow } : {})}
             // A todo list is made from the sidebar's own heading, beside the
             // control that hides it. A Happy Agent without Surfaces offers none.
             {...(surfaceCatalog.availability === "available"
@@ -3484,64 +3539,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             )
                           : ""
             }
-            // The desktop window puts the traffic lights and the sidebar
-            // toggle in this heading, so the product mark stands down and the
-            // row becomes the window's drag lane. Full screen takes the lights
-            // away, and the whole lockup heads the sidebar there — on the same
-            // lane as the rows beneath it — rather than leaving the window's
-            // top-left corner empty. Beside a connection rail the mark stands
-            // down again: the rail's tiles already identify the window.
-            brand={desktop ? windowState.fullScreen && !windowState.connectionRail : true}
-            footer={
-                <SidebarFooter
-                    voice={
-                        props.gptLive ? (
-                            <AppGptLivePhone
-                                store={props.gptLive}
-                                experiments={props.experiments}
-                            />
-                        ) : undefined
-                    }
-                    actions={sidebarUpdate}
-                    devMenu={
-                        props.buildIdentity ? (
-                            <DevBuildMenu
-                                branch={props.buildIdentity.branch}
-                                label={props.buildIdentity.label}
-                                onBlueprintOpen={props.onBlueprintOpen}
-                                onCopyPath={() =>
-                                    void navigator.clipboard
-                                        .writeText(props.buildIdentity!.path)
-                                        .catch(() => undefined)
-                                }
-                                performance={props.performance}
-                                path={props.buildIdentity.path}
-                            />
-                        ) : undefined
-                    }
-                    {...(statusBar.themeShown
-                        ? {
-                              theme: {
-                                  appearance: appearance.appearance,
-                                  mode: appearance.mode,
-                                  onModeSelect: (mode: ThemeMode) =>
-                                      props.appearance.appearanceSelect(mode),
-                              },
-                          }
-                        : {})}
-                    {...(props.keepAwake && statusBar.keepAwakeShown
-                        ? {
-                              keepAwake: {
-                                  active: keepAwake.active,
-                                  mode: keepAwake.mode,
-                                  onModeSelect: (mode: KeepAwakeMode) =>
-                                      props.keepAwake?.modeSelect(mode),
-                              },
-                          }
-                        : {})}
-                    onSettingsOpen={props.onSettingsOpen}
-                />
-            }
+            // The integrated band holds the toggle and search in this lane, so
+            // the product mark stands down.
+            brand={false}
+            footer={sidebarFooter}
             headerAccessory={
                 // Reachability is the footer's line, not this heading's. What
                 // stays here is what only this list can
@@ -4348,6 +4349,26 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 windowFullScreen={windowState.fullScreen}
                 connectionRail={windowState.connectionRail}
                 sidebar={sidebar}
+                // One band holds the sidebar toggle, search, and the tabs; the
+                // surface header is gone.
+                navigationChrome="integrated"
+                sidebarCollapsedLayout="overlay"
+                {...(props.commandPalette
+                    ? {
+                          sidebarSearchAction: {
+                              label: "Search",
+                              onClick: () => commandPaletteStore.paletteOpen(),
+                          },
+                      }
+                    : {})}
+                {...(taskCreateTarget !== undefined
+                    ? {
+                          sidebarCollapsedAction: {
+                              label: "New task (⌘N)",
+                              onClick: () => props.onTaskCreateOpen?.(taskCreateTarget),
+                          },
+                      }
+                    : {})}
             >
                 {routeContent()}
             </AppShell>
@@ -4756,7 +4777,7 @@ function HappyAgentCommandPalette(
     };
 
     return (
-        <ModalOverlay onDismiss={() => props.store.paletteClose()} placement="top">
+        <ModalOverlay onDismiss={() => props.store.paletteClose()} placement="center">
             <CommandPalette
                 onClose={() => props.store.paletteClose()}
                 onQueryChange={(value) => {

@@ -46,11 +46,14 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     windowFullScreen?: boolean;
     /** Compact, shared title/tab band, with sidebar controls at its leading edge. */
     navigationChrome?: "integrated";
-    /** One create control beside the reveal button while navigation is folded. */
+    /** Create control beside the sidebar toggle in the integrated header. */
     sidebarCollapsedAction?: { label: string; onClick: () => void };
     /** Integrated controls occupy the header only when navigation is collapsed. */
     sidebarCollapsedLayout?: "lane" | "overlay";
-    /** Search beside the sidebar toggle in integrated window chrome. */
+    /**
+     * Search beside the sidebar toggle in integrated window chrome. With an
+     * overlay fold it is not shown: the sidebar offers search as a row.
+     */
     sidebarSearchAction?: { label: string; onClick: () => void };
     /**
      * A connection rail stands between the window's left edge and this shell,
@@ -410,6 +413,12 @@ export function AppShell(props: AppShellProps) {
         if (!sidebarCollapsedControlled) setSidebarCollapsedLocal(collapsed);
         onSidebarCollapsedChange?.(collapsed);
     };
+    // The fold the sidebar last finished moving to. While it differs from the
+    // fold asked for, the sidebar and its controls are on their way, and only
+    // then do they animate: a drag of the edge must follow the pointer.
+    const [sidebarSettled, setSidebarSettled] = useState(
+        local.sidebarCollapsible === true && sidebarCollapsed,
+    );
     const [sidebarWidth, setSidebarWidth] = useState(() =>
         clamp(local.sidebarDefaultWidth ?? SIDEBAR_DEFAULT_WIDTH, sidebarMin, sidebarCap),
     );
@@ -574,13 +583,22 @@ export function AppShell(props: AppShellProps) {
         setPanelDragWidth(undefined);
     }
     const showSidebarHandle = sidebarInteractive && !sidebarCollapsed;
-    const sidebarStyle: CSSProperties | undefined = sidebarSized
-        ? {
-              width: `${sidebarWidth}px`,
-              minWidth: `${sidebarMin}px`,
-              maxWidth: `${sidebarMax}px`,
-          }
-        : undefined;
+    // A travelling fold closes the sidebar to nothing rather than taking it
+    // out of layout, so its width can carry the toggle along.
+    const sidebarFolded =
+        local.navigationChrome === "integrated" &&
+        local.sidebarCollapsedLayout === "overlay" &&
+        sidebarInteractive &&
+        sidebarCollapsed;
+    const sidebarStyle: CSSProperties | undefined = sidebarFolded
+        ? { width: "0px", minWidth: "0px", maxWidth: `${sidebarMax}px` }
+        : sidebarSized
+          ? {
+                width: `${sidebarWidth}px`,
+                minWidth: `${sidebarMin}px`,
+                maxWidth: `${sidebarMax}px`,
+            }
+          : undefined;
     const panelStyle: CSSProperties | undefined = panelResizable
         ? {
               width: `${panelWidth}px`,
@@ -602,6 +620,12 @@ export function AppShell(props: AppShellProps) {
           ? undefined
           : { width: `${local.panelWidth}px` };
     const sidebarHidden = sidebarInteractive && sidebarCollapsed;
+    // The integrated header owns its controls across both sidebar states.
+    const sidebarTravel =
+        local.navigationChrome === "integrated" &&
+        sidebarInteractive &&
+        local.sidebarCollapsedLayout === "overlay";
+    const sidebarMotion = sidebarTravel && sidebarSettled !== sidebarHidden;
     // Under native window controls a collapsed sidebar leaves no lane behind: the
     // reveal control floats beside the traffic lights, exactly where the collapse
     // control sat, and the workspace takes the whole width.
@@ -686,8 +710,61 @@ export function AppShell(props: AppShellProps) {
             )}
         </div>
     ) : null;
+    const sidebarControls = sidebarTravel ? (
+        <div
+            className="happy-desktop-app-shell__sidebar-controls"
+            data-collapsed={sidebarHidden ? "" : undefined}
+            data-happy-desktop-ui="app-shell-sidebar-controls"
+            data-motion={sidebarMotion ? "" : undefined}
+        >
+            <button
+                aria-label={
+                    sidebarHidden
+                        ? (local.sidebarExpandLabel ?? "Show sidebar")
+                        : (local.sidebarCollapseLabel ?? "Hide sidebar")
+                }
+                aria-keyshortcuts={shortcutHintsInteractive ? SIDEBAR_SHORTCUT.aria : undefined}
+                aria-pressed={!sidebarHidden}
+                className="happy-desktop-app-shell__sidebar-toggle"
+                data-happy-desktop-ui={
+                    sidebarHidden ? "app-shell-reveal-button" : "app-shell-sidebar-collapse"
+                }
+                data-shortcut-hint={shortcutHintsEnabled ? "" : undefined}
+                onClick={() => setSidebarCollapsed(!sidebarHidden)}
+                type="button"
+            >
+                <Icon name={sidebarHidden ? "sidebar-expand" : "sidebar-collapse"} size={16} />
+                {shortcutHintsEnabled ? (
+                    <KeyCap
+                        className="happy-shortcut-hint--floating"
+                        decorative
+                        keys={SIDEBAR_SHORTCUT.caps}
+                    />
+                ) : null}
+            </button>
+            {local.sidebarCollapsedAction ? (
+                <button
+                    aria-label={local.sidebarCollapsedAction.label}
+                    className="happy-desktop-app-shell__new-work"
+                    data-happy-desktop-ui="app-shell-collapsed-action"
+                    onClick={local.sidebarCollapsedAction.onClick}
+                    type="button"
+                >
+                    <Icon name="edit" size={16} />
+                </button>
+            ) : null}
+            <span aria-hidden="true" className="happy-desktop-app-shell__sidebar-controls-rule" />
+        </div>
+    ) : null;
+    const sidebarEdge = sidebarHidden ? 0 : clamp(sidebarWidth, sidebarMin, sidebarMax);
     const mainStyle: CSSProperties = {
         minWidth: `${sidebarLayoutMin + WORKSPACE_MIN_WIDTH}px`,
+        ...(sidebarTravel
+            ? ({
+                  "--happy-app-shell-sidebar-edge": `${String(sidebarEdge)}px`,
+                  "--happy-app-shell-sidebar-width": `${String(clamp(sidebarWidth, sidebarMin, sidebarMax))}px`,
+              } as CSSProperties)
+            : {}),
     };
     return (
         <WindowOverlayHostContext.Provider value={local.embedded ? outerOverlayHost : overlayHost}>
@@ -700,6 +777,8 @@ export function AppShell(props: AppShellProps) {
                 data-shortcut-hints={shortcutHintsVisible ? "" : undefined}
                 data-sidebar-collapsed={sidebarHidden ? "" : undefined}
                 data-sidebar-collapsed-layout={local.sidebarCollapsedLayout}
+                data-sidebar-motion={sidebarMotion ? "" : undefined}
+                data-sidebar-travel={sidebarTravel ? "" : undefined}
                 data-sidebar-search={local.sidebarSearchAction ? "" : undefined}
                 data-window-controls={local.windowControls ? "" : undefined}
                 data-window-full-screen={local.windowFullScreen ? "" : undefined}
@@ -776,7 +855,7 @@ export function AppShell(props: AppShellProps) {
                             data-happy-desktop-ui="app-shell-main"
                             style={mainStyle}
                         >
-                            {revealFloating ? null : reveal}
+                            {revealFloating || sidebarTravel ? null : reveal}
                             {local.sidebar ? (
                                 <div
                                     className="happy-desktop-app-shell__sidebar"
@@ -784,12 +863,21 @@ export function AppShell(props: AppShellProps) {
                                         sidebarInteractive && sidebarCollapsed ? "" : undefined
                                     }
                                     data-happy-desktop-ui="app-shell-sidebar"
+                                    data-motion={sidebarMotion ? "" : undefined}
                                     data-resizable={sidebarInteractive ? "" : undefined}
+                                    data-travel={sidebarTravel ? "" : undefined}
+                                    onTransitionEnd={(event) => {
+                                        if (
+                                            event.target === event.currentTarget &&
+                                            event.propertyName === "width"
+                                        )
+                                            setSidebarSettled(sidebarHidden);
+                                    }}
                                     style={sidebarStyle}
                                 >
                                     {local.sidebar}
-                                    {searchButton}
-                                    {sidebarInteractive ? (
+                                    {sidebarTravel ? null : searchButton}
+                                    {sidebarInteractive && !sidebarTravel ? (
                                         <button
                                             aria-label={
                                                 local.sidebarCollapseLabel ?? "Hide sidebar"
@@ -841,6 +929,9 @@ export function AppShell(props: AppShellProps) {
                             >
                                 {local.children}
                             </div>
+                            {/* After the workspace: its tab band is a drag lane,
+                                and a later rectangle wins. */}
+                            {sidebarControls}
                         </main>
                         {local.panel ? (
                             <aside

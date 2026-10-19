@@ -208,14 +208,12 @@ function view(
     );
 }
 
-it("heads the local sidebar with the shared brand mark, not a local-only title", () => {
+it("leaves the sidebar head to the window band, with no local-only title", () => {
     const { container } = view();
 
-    // Local renders the same mark-only brand heading the cloud surface does, so
-    // the two modes stay one component rendered twice rather than a local variant.
-    const logo = container.querySelector('[data-happy-desktop-ui="sidebar-brand-logo"]');
-    expect(logo).not.toBeNull();
-    expect(logo?.getAttribute("aria-label")).toBe("Happy Engineering");
+    // The integrated band holds the sidebar toggle and search in this lane, so
+    // the product mark stands down and no local title takes its place.
+    expect(container.querySelector('[data-happy-desktop-ui="sidebar-brand-logo"]')).toBeNull();
     expect(container.querySelector('[data-happy-desktop-ui="sidebar-title"]')).toBeNull();
 
     // The plain title row and its chevron affordance are gone.

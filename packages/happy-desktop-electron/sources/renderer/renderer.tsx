@@ -1057,6 +1057,11 @@ function DesktopCloudSignInNotice(props: { store: DesktopCloudSignInNoticeStore 
         />
     );
 }
+/* The traffic lights do not zoom with the page, so the safe area reserved for
+   them is divided by the zoom the View menu reports. A cold start is at 100%. */
+bridge?.zoomSubscribe((percent) => {
+    document.documentElement.style.setProperty("--happy-window-zoom", String(percent / 100));
+});
 
 function DesktopZoomIndicator(): ReactNode {
     const asks = useSyncExternalStore(zoomSubscribe, () => zoomAsks);

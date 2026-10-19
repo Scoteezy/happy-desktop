@@ -434,6 +434,8 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     /** Always-visible compose hint. Its aria value may include equivalent chords. */
     composeShortcut?: KeyboardShortcut;
     composeTooltip?: string;
+    /** A row above the compose row that opens the window's search. */
+    searchRow?: { label: string; shortcut?: KeyboardShortcut; onOpen: () => void };
     footer?: ReactNode;
     /** Stable product context rendered between the 56px heading and scrollport. */
     headerAccessory?: ReactNode;
@@ -1973,6 +1975,7 @@ export function Sidebar(props: SidebarProps) {
         "composeLabel",
         "composeShortcut",
         "composeTooltip",
+        "searchRow",
         "footer",
         "foldControlPlacement",
         "foldControlReveal",
@@ -2826,6 +2829,23 @@ export function Sidebar(props: SidebarProps) {
                     className="happy-sidebar__body-content"
                     data-happy-desktop-ui="sidebar-body-content"
                 >
+                    {local.searchRow ? (
+                        <SidebarRow
+                            active={false}
+                            className="happy-sidebar__compose"
+                            item={{
+                                icon: "search",
+                                id: "search",
+                                kind: "action",
+                                label: local.searchRow.label,
+                            }}
+                            onSelect={local.searchRow.onOpen}
+                            itemMarkPresentation={local.itemMarkPresentation}
+                            shortcut={local.searchRow.shortcut}
+                            shortcutActive={local.searchRow.shortcut !== undefined}
+                            shortcutAlwaysVisible={local.searchRow.shortcut !== undefined}
+                        />
+                    ) : null}
                     {local.onCompose ? (
                         <SidebarRow
                             active={local.composeActive === true}

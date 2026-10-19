@@ -42,6 +42,11 @@
 .happy-desktop-app-shell[data-navigation-chrome="integrated"] {
     --happy-integrated-leading-inset: var(--happy-panel-inset);
     --happy-integrated-band-height: 40px;
+    /* The desktop minimum is a window size, and a zoomed window lays out in
+       fewer pixels than it has: the shell keeps to the window, so its footer
+       and composer stay on screen at any zoom. */
+    min-width: min(720px, 100%);
+    min-height: min(640px, 100%);
 }
 
 .happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls]:not(
@@ -74,9 +79,10 @@
     height: var(--happy-integrated-band-height);
 }
 
-.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane__bar {
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane .happy-tabbed-pane__bar {
     height: var(--happy-integrated-band-height);
     align-items: center;
+    background: var(--groupped-background);
 }
 
 .happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane__scroller,
@@ -85,7 +91,7 @@
     height: 100%;
 }
 
-.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabs__tab {
+.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabs .happy-tabs__tab {
     height: 100%;
 }
 
@@ -158,13 +164,260 @@
     left: 0;
     height: var(--happy-integrated-band-height);
     background: var(--surface);
+    /* The cluster is controls in the header, not a surface beside the tabs:
+       spacing alone sets it apart, never a rule. */
+    border-right: 0;
 }
 
-.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-sidebar-collapsed-layout="overlay"][data-sidebar-collapsed]
+/* The sidebar folds by its width, so the toggle riding its edge moves with it.
+   Only a fold animates; a drag of the edge follows the pointer. */
+.happy-desktop-app-shell {
+    --happy-app-shell-motion-duration: 200ms;
+    --happy-app-shell-motion-easing: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-desktop-app-shell {
+        /* Not zero: the end of the move is what settles it. */
+        --happy-app-shell-motion-duration: 1ms;
+    }
+}
+
+.happy-desktop-app-shell__sidebar[data-travel][data-collapsed] {
+    display: flex;
+    visibility: hidden;
+    overflow: hidden;
+}
+
+.happy-desktop-app-shell__sidebar[data-travel][data-motion] {
+    overflow: hidden;
+    transition:
+        width var(--happy-app-shell-motion-duration) var(--happy-app-shell-motion-easing),
+        min-width var(--happy-app-shell-motion-duration) var(--happy-app-shell-motion-easing),
+        visibility 0s;
+}
+
+.happy-desktop-app-shell__sidebar[data-travel][data-collapsed][data-motion] {
+    transition:
+        width var(--happy-app-shell-motion-duration) var(--happy-app-shell-motion-easing),
+        min-width var(--happy-app-shell-motion-duration) var(--happy-app-shell-motion-easing),
+        visibility 0s linear var(--happy-app-shell-motion-duration);
+}
+
+/* The list keeps its width while the lane closes over it. */
+.happy-desktop-app-shell__sidebar[data-travel][data-motion] > .happy-sidebar,
+.happy-desktop-app-shell__sidebar[data-travel][data-collapsed] > .happy-sidebar {
+    flex: none;
+    min-width: var(--happy-app-shell-sidebar-width);
+}
+
+.happy-desktop-app-shell[data-sidebar-motion]
+    > .happy-desktop-app-shell__body
+    .happy-desktop-app-shell__main
     .happy-desktop-app-shell__workspace
-    > .happy-tabbed-pane:first-child
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__bar {
+    transition: padding-left var(--happy-app-shell-motion-duration)
+        var(--happy-app-shell-motion-easing);
+}
+
+.happy-desktop-app-shell__sidebar-controls {
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    left: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: var(--happy-app-shell-sidebar-edge);
+    height: var(--happy-integrated-band-height);
+    padding-left: var(--happy-integrated-leading-inset);
+    background: var(--groupped-background);
+    pointer-events: none;
+}
+
+.happy-desktop-app-shell__sidebar-controls > button {
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--header-tint-secondary);
+    cursor: pointer;
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+.happy-desktop-app-shell__sidebar-controls > button:hover {
+    background: var(--surface-pressed);
+    color: var(--text);
+}
+
+.happy-desktop-app-shell__sidebar-controls > button:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: 1px;
+}
+
+.happy-desktop-app-shell__sidebar-controls[data-collapsed] {
+    width: calc(var(--happy-integrated-leading-inset) + 60px + 56px);
+}
+
+.happy-desktop-app-shell__sidebar-toggle[aria-pressed="true"] {
+    background: var(--surface-pressed);
+    color: var(--text);
+}
+
+/* A short hairline between the toggle and the tabs, clear of the band's top
+   and bottom. */
+.happy-desktop-app-shell__sidebar-controls-rule {
+    position: absolute;
+    top: 0;
+    left: var(--happy-app-shell-sidebar-edge);
+    width: 1px;
+    height: var(--happy-integrated-band-height);
+    background: var(--divider);
+}
+
+.happy-desktop-app-shell__sidebar-controls[data-collapsed]
+    > .happy-desktop-app-shell__sidebar-controls-rule {
+    left: calc(var(--happy-integrated-leading-inset) + 60px + 56px);
+    top: calc(var(--happy-integrated-band-height) * 0.2);
+    height: calc(var(--happy-integrated-band-height) * 0.6);
+}
+
+.happy-desktop-app-shell__sidebar-controls[data-motion] {
+    transition: width var(--happy-app-shell-motion-duration) var(--happy-app-shell-motion-easing);
+}
+
+.happy-desktop-app-shell__sidebar-controls[data-motion]
+    > .happy-desktop-app-shell__sidebar-controls-rule {
+    transition: left var(--happy-app-shell-motion-duration) var(--happy-app-shell-motion-easing);
+}
+
+/* The band's tabs start past the controls and their hairline. The main strip
+   may sit in an embedded shell of its own (one with a side panel), so it is
+   found as any workspace's own strip under the main column. */
+.happy-desktop-app-shell[data-sidebar-travel]
+    > .happy-desktop-app-shell__body
+    .happy-desktop-app-shell__main
+    .happy-desktop-app-shell__workspace
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__bar {
+    padding-left: 0;
+}
+
+.happy-desktop-app-shell[data-sidebar-travel][data-sidebar-collapsed]
+    > .happy-desktop-app-shell__body
+    .happy-desktop-app-shell__main
+    .happy-desktop-app-shell__workspace
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__bar {
+    padding-left: calc(var(--happy-integrated-leading-inset) + 60px + 56px);
+}
+
+/* The header continues the navigation surface. Only content below the band
+   takes the inset corner; its tab strip keeps its full rectangular drag lane. */
+.happy-desktop-app-shell[data-sidebar-travel]:not([data-sidebar-collapsed])
+    > .happy-desktop-app-shell__body
+    > .happy-desktop-app-shell__content
+    > .happy-desktop-app-shell__main
+    > .happy-desktop-app-shell__workspace
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__body,
+.happy-desktop-app-shell[data-sidebar-travel]:not([data-sidebar-collapsed])
+    > .happy-desktop-app-shell__body
+    > .happy-desktop-app-shell__content
+    > .happy-desktop-app-shell__main
+    > .happy-desktop-app-shell__workspace
+    .happy-desktop-app-shell__workspace
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__body {
+    border-top-left-radius: 10px;
+    box-shadow: inset 1px 1px var(--divider);
+    overflow: hidden;
+}
+
+.happy-desktop-app-shell[data-sidebar-travel] .happy-desktop-app-shell__workspace {
+    background: var(--groupped-background);
+}
+
+.happy-desktop-app-shell[data-sidebar-travel] .happy-tabbed-pane__body {
+    background: var(--surface);
+}
+
+.happy-desktop-app-shell__sidebar[data-travel] > .happy-desktop-app-shell__resize-handle {
+    top: var(--happy-integrated-band-height);
+}
+
+/* One overlay owns the pane toggle in every state, above either tab strip. */
+.happy-desktop-app-shell__panel-controls {
+    position: absolute;
+    z-index: 5;
+    top: 0;
+    right: var(--happy-desktop-app-shell-caption-inset, 0px);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: var(--happy-integrated-band-height, 40px);
+    background: var(--groupped-background);
+}
+
+.happy-desktop-app-shell[data-panel-toggle]:not([data-panel-open])
+    > .happy-desktop-app-shell__panel-controls::before,
+.happy-desktop-app-shell[data-panel-toggle]
+    > .happy-desktop-app-shell__body
+    > .happy-desktop-app-shell__content
+    > .happy-desktop-app-shell__panel::before {
+    /* The short header rule lies on the same edge as the content divider. */
+    position: absolute;
+    z-index: 3;
+    top: calc(var(--happy-integrated-band-height, 40px) * 0.2);
+    left: 0;
+    width: 1px;
+    height: calc(var(--happy-integrated-band-height, 40px) * 0.6);
+    background: var(--divider);
+    content: "";
+}
+
+.happy-desktop-app-shell[data-panel-toggle][data-panel-open]
+    > .happy-desktop-app-shell__body
+    > .happy-desktop-app-shell__content
+    > .happy-desktop-app-shell__panel::before {
+    top: 0;
+    height: var(--happy-integrated-band-height, 40px);
+}
+
+.happy-desktop-app-shell[data-panel-toggle]
+    > .happy-desktop-app-shell__body
+    > .happy-desktop-app-shell__content
+    > .happy-desktop-app-shell__panel
+    > .happy-desktop-app-shell__resize-handle {
+    top: var(--happy-integrated-band-height, 40px);
+}
+
+.happy-desktop-app-shell[data-panel-toggle]:not([data-panel-open])
+    > .happy-desktop-app-shell__body
+    > .happy-desktop-app-shell__content
+    > .happy-desktop-app-shell__main
+    > .happy-desktop-app-shell__workspace
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__bar,
+.happy-desktop-app-shell[data-panel-toggle]
+    > .happy-desktop-app-shell__body
+    > .happy-desktop-app-shell__content
+    > .happy-desktop-app-shell__panel
     .happy-tabbed-pane__bar {
-    padding-left: calc(var(--happy-integrated-leading-inset) + 96px);
+    padding-right: 44px;
 }
 
 /* The collapsed navigation owns a real column, so tabs need no floating-control inset. */
