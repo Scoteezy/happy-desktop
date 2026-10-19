@@ -10,6 +10,7 @@ import {
     HappyAgentApiError,
     type Message,
     type MessageMode,
+    type Question,
 } from "@slopus/happy-agent-client";
 import type {
     ChatDelta,
@@ -1297,6 +1298,51 @@ it("reads the most recent sessions ahead once the sidebar is live, so opening on
     expect(daemon.callCount("getMessages")).toBe(2);
     // An older session was not read ahead, so opening it reads it.
     sessionWatch(connection, old.id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(3));
+});
+
+it("keeps an open session's question current while another loads in the background", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const open = daemon.agentSeed(project.id, { id: "agent-open", pendingQuestionId: "q1" });
+    const background = daemon.agentSeed(project.id, { id: "agent-background" });
+    const question: Question = {
+        id: "q1",
+        agentId: open.id,
+        runId: "r1",
+        status: "pending",
+        questions: [],
+        autoResolveAt: null,
+        answers: null,
+        version: daemon.versionNext(),
+        createdAt: 1,
+        answeredAt: null,
+    };
+    daemon.questionSet(open.id, question);
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    const watched = sessionWatch(connection, open.id);
+    await vi.waitFor(() => expect(watched.session?.historyLoading).not.toBe(true));
+    const questionReads = daemon.callCount("getPendingQuestion");
+
+    const releaseHistory = daemon.pause("getMessages");
+    connection.prefetchSession(background.id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(2));
+    daemon.eventEmit("question.updated", {
+        questionId: "q1",
+        previousVersion: daemon.versionNext(),
+        version: daemon.versionNext(),
+        changes: { updatedAt: 2 } as never,
+    });
+    // The open session reads its changed question at once, not when the other load lands.
+    await vi.waitFor(() => expect(daemon.callCount("getPendingQuestion")).toBe(questionReads + 1));
+
+    releaseHistory();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    // The background session's snapshot may predate that update, so opening it reads it again,
+    // behind the transcript it already has.
+    const reopened = sessionWatch(connection, background.id);
+    expect(reopened.session?.historyLoading).not.toBe(true);
     await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(3));
 });
 

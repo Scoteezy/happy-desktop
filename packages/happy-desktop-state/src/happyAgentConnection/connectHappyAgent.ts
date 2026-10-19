@@ -158,6 +158,11 @@ interface SessionEntry {
     loadingMore: boolean;
     loadMoreError?: string;
     hydrating: boolean;
+    /**
+     * A question or process update was applied while this session loaded with nobody reading it,
+     * so its snapshot may predate it.
+     */
+    broadcastMissed: boolean;
     bufferedEvents: HappyAgentEvent[];
     activityLoading: Promise<void> | undefined;
     activityRevision: number;
@@ -968,8 +973,16 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         }
     };
 
+    /**
+     * Question and process updates name no session, so they wait while a session someone reads
+     * is loading. One loading with nobody reading it, read ahead or prefetched, holds no one
+     * else's updates back; it reconciles once it lands instead.
+     */
+    const broadcastHeld = (): boolean =>
+        [...sessions.values()].some((entry) => entry.hydrating && entry.subscribers.size > 0);
+
     const drainHydrationBroadcastEvents = (): void => {
-        if ([...sessions.values()].some((entry) => entry.hydrating)) return;
+        if (broadcastHeld()) return;
         const buffered = hydrationBroadcastEvents.splice(0);
         for (const event of buffered) applyEvent(event);
     };
@@ -1128,6 +1141,13 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 if (question !== undefined) entry.question = question.question;
                 entry.historyLoaded = true;
                 entry.reconcileRequired = false;
+                if (entry.broadcastMissed) {
+                    // Read again behind the transcript already on screen: now if someone has
+                    // opened it since, otherwise when it is next opened.
+                    entry.broadcastMissed = false;
+                    if (entry.subscribers.size > 0) entry.loadRequestedRevision += 1;
+                    else entry.reconcileRequired = true;
+                }
                 entry.loadCompletedRevision = Math.max(entry.loadCompletedRevision, revision);
                 entry.loadRetryMs = INITIAL_RECONNECT_MS;
                 entry.hydrating = false;
@@ -1158,6 +1178,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             .catch((error: unknown) => {
                 if (rootController.signal.aborted) return;
                 entry.hydrating = false;
+                entry.broadcastMissed = false;
                 const buffered = entry.bufferedEvents.splice(0);
                 for (const event of buffered) applyEvent(event);
                 drainHydrationBroadcastEvents();
@@ -1239,13 +1260,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             const wanted = new Set(recent.map((agent) => agent.id));
             for (const id of preloadedSessions) {
                 if (wanted.has(id)) continue;
-                preloadedSessions.delete(id);
                 const stale = sessions.get(id);
-                if (
-                    stale !== undefined &&
-                    stale.subscribers.size === 0 &&
-                    stale.loading === undefined
-                ) {
+                // One still loading stays tracked, and goes on a later sweep.
+                if (stale?.loading !== undefined) continue;
+                preloadedSessions.delete(id);
+                if (stale !== undefined && stale.subscribers.size === 0) {
                     clearUserIndex(stale);
                     sessions.delete(id);
                 }
@@ -1257,7 +1276,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     await wait(PRELOAD_BUSY_WAIT_MS, rootController.signal);
                 }
                 const known = sessions.get(agent.id);
-                if (known !== undefined && known.historyLoaded) continue;
+                if (known !== undefined && known.historyLoaded && !known.reconcileRequired)
+                    continue;
                 const entry = known ?? sessionEntryCreate(agent.id);
                 if (known === undefined) preloadedSessions.add(agent.id);
                 await ensureSessionLoaded(entry);
@@ -1286,6 +1306,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             loadRetryMs: INITIAL_RECONNECT_MS,
             loadingMore: false,
             hydrating: false,
+            broadcastMissed: false,
             bufferedEvents: [],
             activityLoading: undefined,
             activityRevision: 0,
@@ -1522,13 +1543,16 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             return;
         }
         if (
-            (event.type === "question.updated" ||
-                event.type === "process.updated" ||
-                event.type === "process.exited") &&
-            [...sessions.values()].some((entry) => entry.hydrating)
+            event.type === "question.updated" ||
+            event.type === "process.updated" ||
+            event.type === "process.exited"
         ) {
-            hydrationBroadcastEvents.push(event);
-            return;
+            if (broadcastHeld()) {
+                hydrationBroadcastEvents.push(event);
+                return;
+            }
+            for (const entry of sessions.values())
+                if (entry.hydrating) entry.broadcastMissed = true;
         }
         applyEventNow(event);
     };
