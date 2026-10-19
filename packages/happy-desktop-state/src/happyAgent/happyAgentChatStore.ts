@@ -447,6 +447,9 @@ export interface HappyAgentOpenImage {
     readonly alt: string;
     readonly index: number;
     readonly total: number;
+    /** Immediate neighbors in arrow navigation order, including wraparound. */
+    readonly previousUrl?: string;
+    readonly nextUrl?: string;
 }
 
 function openImageProject(
@@ -458,7 +461,19 @@ function openImageProject(
     const index = gallery.findIndex((image) => imageRefEqual(image.ref, ref));
     const found = gallery[index];
     if (!found) return undefined;
-    return { id: found.id, url: found.url, alt: found.alt, index, total: gallery.length };
+    return {
+        id: found.id,
+        url: found.url,
+        alt: found.alt,
+        index,
+        total: gallery.length,
+        ...(gallery.length > 1
+            ? {
+                  previousUrl: gallery[(index - 1 + gallery.length) % gallery.length]?.url,
+                  nextUrl: gallery[(index + 1) % gallery.length]?.url,
+              }
+            : {}),
+    };
 }
 
 function sessionStatusProject(session: SessionState): HappyAgentSessionStatus {

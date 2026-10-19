@@ -33,7 +33,7 @@ export function VideoViewerPage() {
             title="VideoViewer"
         >
             <Specimen
-                detail="Paused, so the panel is up · 12 px inset · 6 px radius · elapsed, track, and length"
+                detail="Buffers while paused · the timeline shows received data before playback · 12 px panel inset · 6 px radius"
                 label="At rest"
                 number="01"
                 stage="surface"

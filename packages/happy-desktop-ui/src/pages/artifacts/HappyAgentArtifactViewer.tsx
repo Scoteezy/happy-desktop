@@ -431,7 +431,8 @@ function ArtifactContent(props: {
  */
 function ArtifactGallery(props: { images: readonly HappyAgentArtifactFileLink[] }) {
     const [selected, setSelected] = useState(0);
-    const shown = props.images[Math.min(selected, props.images.length - 1)];
+    const index = Math.min(selected, props.images.length - 1);
+    const shown = props.images[index];
     if (!shown) return <EmptyState icon="image" size="panel" title="This series has no pictures" />;
     return (
         <div
@@ -440,6 +441,12 @@ function ArtifactGallery(props: { images: readonly HappyAgentArtifactFileLink[] 
         >
             <div className="happy-agent-artifact-gallery__stage">
                 <ImageViewer
+                    adjacentImages={{
+                        previous:
+                            props.images[(index - 1 + props.images.length) % props.images.length]
+                                ?.url,
+                        next: props.images[(index + 1) % props.images.length]?.url,
+                    }}
                     content={{ type: "url", url: shown.url }}
                     name={artifactFileName(shown.file.path)}
                     tone="immersive"

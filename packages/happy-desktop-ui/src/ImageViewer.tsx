@@ -28,6 +28,8 @@ export type ImageViewerProps = {
     "data-testid"?: string;
     style?: CSSProperties;
     content: ImageViewerContent;
+    /** Keep both neighboring pictures fetched and decoded while this viewer is open. */
+    adjacentImages?: { readonly previous?: string; readonly next?: string };
     /** Accessible name of the picture — usually the file's name. */
     name: string;
     /** Leading controls in the tool bar, e.g. Open in a window of its own. */
@@ -72,6 +74,27 @@ const SCALE_EPSILON = 0.0001;
 interface ImageSize {
     readonly width: number;
     readonly height: number;
+}
+
+interface DecodedImage {
+    readonly image: HTMLImageElement;
+    readonly decoded: Promise<void>;
+    ready: boolean;
+}
+
+function imageDecode(url: string): DecodedImage {
+    const image = new Image();
+    image.src = url;
+    const entry: DecodedImage = {
+        image,
+        ready: false,
+        decoded: image.decode().then(() => {
+            entry.ready = true;
+        }),
+    };
+    // A neighbor may fail before it is opened; only opening it reports failure.
+    void entry.decoded.catch(() => undefined);
+    return entry;
 }
 
 /** Where the picture sits: contained in the frame, or placed by the reader. */
@@ -255,6 +278,7 @@ export function ImageViewer(props: ImageViewerProps) {
         "data-testid",
         "style",
         "content",
+        "adjacentImages",
         "name",
         "actions",
         "tone",
@@ -262,6 +286,7 @@ export function ImageViewer(props: ImageViewerProps) {
         "onNaturalSize",
     ]);
     const frameElement = useRef<HTMLDivElement>(null);
+    const decodedImages = useRef(new Map<string, DecodedImage>());
     const [frame, setFrame] = useState<ImageSize>();
     const [state, setState] = useState<ImageViewerState>(() => stateInitial(""));
     // The magnification a deliberate command settled on, said out loud once. The
@@ -274,21 +299,29 @@ export function ImageViewer(props: ImageViewerProps) {
     // rather than resetting in an effect keeps the first frame of a new picture
     // correct instead of showing the previous one's magnification for a beat.
     const live = state.url === url ? state : stateInitial(url);
-    const natural = live.natural;
+    // Keep the last decoded picture in place until its replacement is ready.
+    // Its view is fitted immediately: navigation never carries a zoom or pan
+    // into the next picture, and a fast load never paints an opening notice.
+    const displayed =
+        local.content.type === "url" && live.status === "loading" && state.status === "ready"
+            ? { ...state, view: VIEW_FIT }
+            : live;
+    const natural = displayed.natural;
     const fitScale = fitScaleOf(natural, frame);
     const zoomFloor = zoomFloorOf(fitScale);
     // Held to the ladder's ends here rather than only where it was chosen: the
     // frame resizes under a magnification the reader picked, and what was legal
     // in a small frame can be below the floor of a larger one.
-    const scale = live.view.kind === "fit" ? fitScale : scaleClamped(live.view.scale, zoomFloor);
+    const scale =
+        displayed.view.kind === "fit" ? fitScale : scaleClamped(displayed.view.scale, zoomFloor);
     const naturalWidth = natural?.width ?? 0;
     const naturalHeight = natural?.height ?? 0;
     const frameWidth = frame?.width ?? 0;
     const frameHeight = frame?.height ?? 0;
     const limitX = panLimit(naturalWidth, frameWidth, scale);
     const limitY = panLimit(naturalHeight, frameHeight, scale);
-    const offsetX = live.view.kind === "fit" ? 0 : clamp(live.view.x, limitX);
-    const offsetY = live.view.kind === "fit" ? 0 : clamp(live.view.y, limitY);
+    const offsetX = displayed.view.kind === "fit" ? 0 : clamp(displayed.view.x, limitX);
+    const offsetY = displayed.view.kind === "fit" ? 0 : clamp(displayed.view.y, limitY);
     const pannable = limitX > 0 || limitY > 0;
     // Nothing is magnified, panned, or reset until there is a decoded picture to
     // do it to: a gesture made while one is still opening would otherwise decide
@@ -326,6 +359,53 @@ export function ImageViewer(props: ImageViewerProps) {
     };
 
     const wanted = local.autoFocus === true;
+    const previousUrl = local.adjacentImages?.previous;
+    const nextUrl = local.adjacentImages?.next;
+    // eslint-disable-next-line happy-react/no-layout-effect -- retain browser image resources for the current picture and its neighbors; a decoded neighbor becomes visible before paint and cleanup discards late results after navigation
+    useLayoutEffect(() => {
+        const images = decodedImages.current;
+        const keep = new Set(url ? [url, previousUrl, nextUrl].filter(Boolean) : []);
+        for (const [heldUrl, entry] of images) {
+            if (keep.has(heldUrl)) continue;
+            entry.image.removeAttribute("src");
+            images.delete(heldUrl);
+        }
+        if (!url) return;
+        for (const address of [url, previousUrl, nextUrl]) {
+            if (address && !images.has(address)) images.set(address, imageDecode(address));
+        }
+        const entry = images.get(url);
+        if (!entry) return;
+        const image = entry.image;
+        let active = true;
+        const ready = (): void => {
+            if (!active) return;
+            setState((previous) => ({
+                ...(previous.url === url ? previous : stateInitial(url)),
+                natural: { width: image.naturalWidth, height: image.naturalHeight },
+                status: "ready",
+            }));
+        };
+        const failed = (): void => {
+            if (!active) return;
+            setState({ ...stateInitial(url), status: "error" });
+        };
+        if (entry.ready) ready();
+        else void entry.decoded.then(ready, failed);
+        return () => {
+            active = false;
+        };
+    }, [url, previousUrl, nextUrl]);
+
+    // eslint-disable-next-line happy-react/no-layout-effect -- release the retained decoded browser resources when the viewer closes
+    useLayoutEffect(() => {
+        const images = decodedImages.current;
+        return () => {
+            for (const entry of images.values()) entry.image.removeAttribute("src");
+            images.clear();
+        };
+    }, []);
+
     // eslint-disable-next-line happy-react/no-layout-effect -- move real keyboard focus to the frame on mount
     useLayoutEffect(() => {
         if (wanted) frameElement.current?.focus({ preventScroll: true });
@@ -421,7 +501,8 @@ export function ImageViewer(props: ImageViewerProps) {
         // An arrow is only the viewer's key while the picture has somewhere to
         // go. With the whole of it on screen there is nothing to pan, so the key
         // is left to whatever hosts the viewer — in a set, the next picture.
-        if (!pannable && key.startsWith("Arrow")) return;
+        if ((key === "ArrowLeft" || key === "ArrowRight") && limitX <= 0) return;
+        if ((key === "ArrowUp" || key === "ArrowDown") && limitY <= 0) return;
         if (key === "+" || key === "=") zoomBy(1);
         else if (key === "-" || key === "_") zoomBy(-1);
         else if (key === "0") fitToView();
@@ -496,6 +577,7 @@ export function ImageViewer(props: ImageViewerProps) {
             style={local.style}
         >
             <div
+                aria-busy={local.content.type === "url" && live.status === "loading"}
                 aria-label={`${local.name}, image`}
                 className="happy-image-viewer__frame"
                 data-dragging={dragging ? "" : undefined}
@@ -521,22 +603,18 @@ export function ImageViewer(props: ImageViewerProps) {
                     name={local.name}
                     offsetX={offsetX}
                     offsetY={offsetY}
-                    onError={() =>
+                    onError={() => {
+                        if (displayed.url !== url) return;
                         setState((previous) => ({
                             ...(previous.url === url ? previous : stateInitial(url)),
                             status: "error",
-                        }))
-                    }
-                    onReady={(size) => {
-                        local.onNaturalSize?.(size);
-                        setState((previous) => ({
-                            ...(previous.url === url ? previous : stateInitial(url)),
-                            natural: size,
-                            status: "ready",
                         }));
                     }}
+                    onReady={(size) => {
+                        if (displayed.url === url) local.onNaturalSize?.(size);
+                    }}
                     scale={scale}
-                    state={live}
+                    state={displayed}
                 />
             </div>
             <div className="happy-image-viewer__tools" data-happy-desktop-ui="image-viewer-tools">
@@ -555,7 +633,7 @@ export function ImageViewer(props: ImageViewerProps) {
                     className="happy-image-viewer__zoom"
                     data-happy-desktop-ui="image-viewer-zoom"
                 >
-                    {showing ? `${String(Math.round(scale * 100))}%` : "—"}
+                    {displayed.status === "ready" ? `${String(Math.round(scale * 100))}%` : "—"}
                 </span>
                 <Button
                     aria-label="Zoom in"
@@ -659,7 +737,7 @@ function ImageViewerStage(props: {
                         height: event.currentTarget.naturalHeight,
                     })
                 }
-                src={props.content.url}
+                src={status === "ready" ? props.state.url : props.content.url}
                 style={{
                     // The exact size the magnification asks for, in style rather
                     // than in the width and height attributes, which are whole

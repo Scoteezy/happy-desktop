@@ -140,6 +140,9 @@ export function ConversationDock(props: ConversationDockProps) {
     );
     const previewIndex = previewMedia.findIndex((item) => item.id === previewAttachmentId);
     const previewAttachment = previewIndex >= 0 ? previewMedia[previewIndex] : undefined;
+    const previousAttachment =
+        previewMedia[(previewIndex - 1 + previewMedia.length) % previewMedia.length];
+    const nextAttachment = previewMedia[(previewIndex + 1) % previewMedia.length];
     const previewStep = (direction: 1 | -1) => {
         if (previewIndex < 0 || previewMedia.length < 2) return;
         const index = (previewIndex + direction + previewMedia.length) % previewMedia.length;
@@ -176,6 +179,11 @@ export function ConversationDock(props: ConversationDockProps) {
     const mediaOverlay = previewAttachment ? (
         <ModalOverlay onDismiss={() => setPreviewAttachmentId(null)} placement="fill">
             <Lightbox
+                adjacentImages={{
+                    previous:
+                        previousAttachment?.kind === "image" ? previousAttachment.url : undefined,
+                    next: nextAttachment?.kind === "image" ? nextAttachment.url : undefined,
+                }}
                 actions={
                     attachmentRemoveEnabled ? (
                         <Button

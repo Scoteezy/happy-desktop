@@ -873,7 +873,14 @@ function VideoViewerStage(props: {
                 // leaves a spinner turning over a still frame with no `playing`
                 // event ever coming to take it down.
                 onPause={() => onState({ playing: false, waiting: false })}
-                onPlay={() => onState({ playing: true, ended: false, status: "ready" })}
+                onPlay={(event) =>
+                    onState({
+                        playing: true,
+                        ended: false,
+                        status: "ready",
+                        waiting: event.currentTarget.readyState < HTMLMediaElement.HAVE_FUTURE_DATA,
+                    })
+                }
                 onPlaying={() => onState({ playing: true, waiting: false })}
                 onProgress={(event) => {
                     const element = event.currentTarget;
@@ -888,12 +895,24 @@ function VideoViewerStage(props: {
                     onState({
                         time: element.currentTime,
                         buffered: bufferedRun(element.buffered, element.currentTime),
-                        waiting: false,
+                        waiting:
+                            !element.paused &&
+                            element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA,
+                    });
+                }}
+                onSeeking={(event) => {
+                    const element = event.currentTarget;
+                    onState({
+                        waiting:
+                            !element.paused &&
+                            element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA,
                     });
                 }}
                 // A stall is only a wait if something was expected to be moving.
                 onStalled={(event) => {
-                    if (!event.currentTarget.paused) onState({ waiting: true });
+                    const element = event.currentTarget;
+                    if (!element.paused && element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA)
+                        onState({ waiting: true });
                 }}
                 onTimeUpdate={(event) => {
                     const element = event.currentTarget;
@@ -907,12 +926,12 @@ function VideoViewerStage(props: {
                     const muted = event.currentTarget.muted;
                     onSettings((previous) => ({ ...previous, volume, muted }));
                 }}
-                onWaiting={() => onState({ waiting: true })}
+                onWaiting={(event) => onState({ waiting: !event.currentTarget.paused })}
                 playsInline
-                // Only enough to learn the shape and the length of the file. The
-                // rest arrives by range as it is watched, which is the whole
-                // reason the media element does the fetching and this does not.
-                preload="metadata"
+                // Start buffering as soon as the viewer opens, including while
+                // paused. The browser still owns range requests and its buffer
+                // budget; opening a clip never reads the whole file into JS.
+                preload="auto"
                 ref={attach}
                 src={content.url}
             />

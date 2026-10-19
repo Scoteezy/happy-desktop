@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "../../src/Button";
 import { Lightbox } from "../../src/Lightbox";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -35,6 +36,15 @@ function demoImage(width: number, height: number, from: string, to: string): str
 }
 
 export function LightboxPage() {
+    const [imageIndex, setImageIndex] = useState(0);
+    const images = [
+        { url: demoImage(480, 360, "#f59e0b", "#ef4444"), detail: "480 × 360" },
+        { url: demoImage(320, 1200, "#60a5fa", "#34d399"), detail: "320 × 1200" },
+        { url: demoImage(640, 400, "#8b7cf7", "#f472b6"), detail: "640 × 400" },
+        { url: demoImage(512, 512, "#34d399", "#60a5fa"), detail: "512 × 512" },
+        { url: demoImage(800, 440, "#ef4444", "#8b7cf7"), detail: "800 × 440" },
+    ];
+    const image = images[imageIndex]!;
     return (
         <ComponentPage
             number={componentNumber}
@@ -86,7 +96,7 @@ export function LightboxPage() {
             </Specimen>
 
             <Specimen
-                detail="One of a set: step controls and the reader's place in it · left/right arrow keys do the same"
+                detail="Both neighbors are fetched and decoded ahead of navigation · zoom the portrait to pan vertically while horizontal keys still change pictures"
                 label="Lightbox — in a set"
                 number="03"
                 stage="surface"
@@ -94,14 +104,23 @@ export function LightboxPage() {
                 <div style={column}>
                     <div style={viewport}>
                         <Lightbox
-                            alt="Run 3 of the device farm"
-                            caption="device-farm-03.png"
-                            detail="480 × 360"
-                            imageUrl={demoImage(480, 360, "#f59e0b", "#ef4444")}
+                            adjacentImages={{
+                                previous:
+                                    images[(imageIndex - 1 + images.length) % images.length]?.url,
+                                next: images[(imageIndex + 1) % images.length]?.url,
+                            }}
+                            alt={`Run ${String(imageIndex + 1)} of the device farm`}
+                            caption={`device-farm-0${String(imageIndex + 1)}.png`}
+                            detail={image.detail}
+                            imageUrl={image.url}
                             onClose={() => {}}
-                            onNext={() => {}}
-                            onPrevious={() => {}}
-                            position={{ index: 2, total: 7 }}
+                            onNext={() => setImageIndex((index) => (index + 1) % images.length)}
+                            onPrevious={() =>
+                                setImageIndex(
+                                    (index) => (index - 1 + images.length) % images.length,
+                                )
+                            }
+                            position={{ index: imageIndex, total: images.length }}
                         />
                     </div>
                     <DimensionRule label="28 px step controls · 4 px tool gap · count in tabular mono" />

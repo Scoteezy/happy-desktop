@@ -8579,6 +8579,10 @@ function HappyAgentConversationSurface(props: {
                 conversation.openImage ? (
                     <ModalOverlay onDismiss={() => workspace.imageClose()} placement="fill">
                         <Lightbox
+                            adjacentImages={{
+                                previous: conversation.openImage.previousUrl,
+                                next: conversation.openImage.nextUrl,
+                            }}
                             alt={conversation.openImage.alt}
                             imageUrl={conversation.openImage.url}
                             onClose={() => workspace.imageClose()}

@@ -142,7 +142,7 @@ export function MediaVideoTile(props: MediaVideoTileProps) {
                 data-happy-desktop-ui="media-video-tile-video"
                 playsInline
                 poster={props.posterUrl}
-                preload="metadata"
+                preload="auto"
                 src={props.url}
             />
         </span>

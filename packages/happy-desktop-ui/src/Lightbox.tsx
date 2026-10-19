@@ -6,7 +6,7 @@ import {
     type ReactNode,
 } from "react";
 import { Button } from "./Button";
-import { ImageViewer } from "./ImageViewer";
+import { ImageViewer, type ImageViewerProps } from "./ImageViewer";
 import { ThemeScope } from "./ThemeScope";
 import { VideoViewer } from "./VideoViewer";
 import { Ionicon } from "./vectorIcons/VectorIcon";
@@ -28,6 +28,7 @@ type LightboxSharedProps = {
      * the reader knows how much of the set is behind and ahead of them.
      */
     position?: { readonly index: number; readonly total: number };
+    adjacentImages?: ImageViewerProps["adjacentImages"];
     /** Wire both to step through a set; the header then carries its controls. */
     onPrevious?: () => void;
     onNext?: () => void;
@@ -77,6 +78,7 @@ export function Lightbox(props: LightboxProps) {
         "detail",
         "actions",
         "position",
+        "adjacentImages",
         "onPrevious",
         "onNext",
         "navigationLabel",
@@ -206,11 +208,14 @@ export function Lightbox(props: LightboxProps) {
                     <div className="happy-lightbox__frame" data-happy-desktop-ui="lightbox-frame">
                         {local.videoUrl ? (
                             <VideoViewer
+                                autoFocus
                                 content={{ type: "url", url: local.videoUrl }}
                                 name={mediaName}
                             />
                         ) : local.imageUrl !== undefined ? (
                             <ImageViewer
+                                adjacentImages={local.adjacentImages}
+                                autoFocus
                                 content={{ type: "url", url: local.imageUrl }}
                                 name={mediaName}
                                 tone="immersive"
