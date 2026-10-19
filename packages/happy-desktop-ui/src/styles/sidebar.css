@@ -1478,11 +1478,13 @@
 /* The card stands on the footer row, exactly as wide as it: inside the
    sidebar column, on the footer's own 12px insets, following the sidebar as it
    is resized. It covers the sidebar's last rows and nothing outside the
-   sidebar. `.happy-sidebar-footer` is the containing block. */
+   sidebar. `.happy-sidebar-footer` is the containing block. It is the row
+   centred in the footer, so the card clears the footer's divider, not the row,
+   by 8px: half the footer's spare height lifts it from the row to the divider. */
 .happy-sidebar-agent-update__panel {
     position: absolute;
     right: 0;
-    bottom: calc(100% + 8px);
+    bottom: calc((100% + var(--happy-surface-footer-height)) / 2 + 8px);
     left: 0;
     z-index: 30;
     display: flex;
