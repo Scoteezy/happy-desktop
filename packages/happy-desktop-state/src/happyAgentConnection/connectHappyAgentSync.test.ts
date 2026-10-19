@@ -1325,6 +1325,30 @@ it("resyncs the catalog and every open chat when the hello reports a cursor gap"
     expect(daemon.streamOpens[2]).toBe(daemon.cursorLatest());
 });
 
+it("reopens the feed after a gap without waiting for an open chat to be read again", async () => {
+    const { daemon, groups, chat, sessionId } = await liveHarness();
+    daemon.historySet(sessionId, [
+        fakeRun({
+            id: "r1",
+            status: "completed",
+            endedAt: 2,
+            messages: [fakeUserMessage({ id: "m1", content: [{ type: "text", text: "missed" }] })],
+        }),
+    ]);
+    const releaseHistory = daemon.pause("getMessages");
+    daemon.gapOnNextStream();
+    daemon.streamDropAll();
+
+    // The catalog is reconciled and the feed is live while the chat is still being read.
+    await vi.waitFor(() => {
+        expect(daemon.streamOpens).toHaveLength(3);
+        expect(groups.state.connection).toBe("live");
+    });
+    expect(userMessages(chat.elements)).toHaveLength(0);
+    releaseHistory();
+    await vi.waitFor(() => expect(userMessages(chat.elements)).toHaveLength(1));
+});
+
 it("replaces chat history across a gap resync instead of appending to it", async () => {
     const { daemon, chat, sessionId } = await liveHarness();
     daemon.eventEmit("message.created", {

@@ -990,9 +990,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 }
             }
         }
-        // A connection-wide resync owns its journal replay after all session
-        // snapshots land. Replaying the rolling window here as well would apply
-        // the same non-idempotent message delta twice.
+        // A connection-wide resync replays the journal it buffered itself.
+        // Replaying the rolling window here as well would apply the same
+        // non-idempotent message delta twice.
         // A hydration can outlive the rolling window. Its direct buffer keeps
         // every event needed by that in-flight read until the snapshot lands.
         for (const event of buffered) {
@@ -1291,6 +1291,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 }
             }
             advanceCursor(bootstrap.cursor);
+            // After a lost journal or a replaced process, the events remembered
+            // so far belong to an interval this snapshot supersedes, and their
+            // cursors need not even be comparable with the new ones. A session
+            // read again below must not replay them on top of its snapshot.
+            if (reconcileSessions) recentEvents.length = 0;
             for (const entry of sessions.values()) {
                 const known = agentOf(entry.id);
                 if (known !== undefined) {
@@ -1324,16 +1329,20 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             // Only a server-confirmed journal gap invalidates session caches.
             // Inactive caches are marked and reconciled lazily when reopened so
             // one lost cursor does not fan out across every chat ever viewed.
-            const activeReconciliations: Promise<void>[] = [];
+            // An open one is read again now, but the feed does not wait for
+            // it: from here it is an ordinary session load, which holds its
+            // own session's events until its snapshot lands and replays only
+            // the ones after it.
+            let reconciledSessions = 0;
             for (const entry of sessions.values()) {
                 publishSession(entry);
                 if (!reconcileSessions) continue;
                 entry.reconcileRequired = true;
                 if (entry.subscribers.size > 0) {
-                    activeReconciliations.push(requestSessionLoad(entry));
+                    reconciledSessions += 1;
+                    background(requestSessionLoad(entry));
                 }
             }
-            await Promise.all(activeReconciliations);
             const buffered = resyncBufferedEvents.splice(0);
             // The bootstrap snapshot already contains every change at or before
             // its cursor, and the buffer may hold redeliveries; replay only
@@ -1355,7 +1364,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             reportDebug({
                 detail: debugDetail({
                     cursor: bootstrap.cursor,
-                    reconciledSessions: activeReconciliations.length,
+                    reconciledSessions,
                     projects: bootstrap.projects.length,
                     sessions: bootstrap.projects.reduce(
                         (count, project) => count + project.agents.length,
