@@ -6,6 +6,16 @@ Markdown notes covering every included commit. Do not ask the person to type a
 version. Merging to `main` no longer deploys the hosted renderer; all previews
 are explicitly requested.
 
+Before choosing production, check that the user explicitly requested a production or stable
+release for this product in the current task. A generic "release" or "ship" request defaults to
+preview; permission to push does not authorize production. An existing explicit request is
+sufficient, so do not ask for redundant confirmation.
+
+Use the candidate ourselves in the affected workflows for at least a brief soak before releasing
+it to production. Passing tests or CI alone does not count as that use. If it has not been used,
+keep it in preview and explain what still needs to be tried. No fixed soak duration or previously
+published preview is required.
+
 For Agent/native versions, inspect GitHub releases and tags. Renderer previews
 have no release tag: inspect `gh run list --workflow local-web-pages.yml`; run
 names contain their versions and successful deployments identify what shipped.
@@ -48,7 +58,8 @@ verify Pages succeeded and the deployed `local-web-version.json` matches the bui
 Do not create native release tags locally, push, restart an app, or deploy merely
 because release tooling was changed.
 
-Production needs no prior preview. Native production uses the same workflow with
+Immediately before dispatching production, verify both the explicit user request for this product
+and our actual use of this candidate. Native production uses the same workflow with
 `prerelease=false` and stable `X.Y.Z`, shipping both app flavors on macOS and Windows.
 Windows installers are always Azure-signed (see `windows-release-ci.md`) and retain
 their installed-app and Agent checks. Native previews ship both macOS app flavors unless `nightly_only` is set. Preserve the existing
