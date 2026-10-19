@@ -141,7 +141,6 @@ export function PersonalDayWindow({ frame }: { frame: DayFrame }) {
                 stage={{
                     kind: "request",
                     id: `new-${person}-work`,
-                    placement: "automatic",
                     composer,
                 }}
             />

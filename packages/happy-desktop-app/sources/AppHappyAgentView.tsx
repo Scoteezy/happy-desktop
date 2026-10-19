@@ -318,6 +318,7 @@ import {
     happyAgentSpaceHappyIs,
     happyAgentSpaceLabel,
     happyAgentSpaceMark,
+    happyAgentSpacesStemCellIntro,
     HappyAgentSpacesSidebar,
     type HappyAgentSpacesNavigation,
     type HappyAgentSpacesPlaces,
@@ -3610,12 +3611,32 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         chatGroupOf: (agentId) => chatGroupFind(active?.projects ?? NO_PROJECTS, agentId),
     };
     const spacesProjects = active ? happyAgentSidebarTree(active).projects : [];
+    // New work nobody started does not outlive being left: with no message and
+    // nothing typed, leaving it drops its row. A draft keeps it, and the daemon
+    // refuses once its chat has any message.
+    const stemCellLeave = (leavingChatId: string | undefined, nextChatId?: string): void => {
+        if (!spacesEnabled || leavingChatId === undefined || leavingChatId === nextChatId) return;
+        const space = happyAgentSpaceFocused(spaces, { chatId: leavingChatId });
+        if (space === undefined || space.title !== null || space.icon?.type !== "stem_cell") return;
+        const conversation = active?.session?.workspace.get().conversation;
+        if (
+            conversation?.type !== "ready" ||
+            conversation.value.conversationId !== leavingChatId ||
+            conversation.value.entries.length > 0 ||
+            conversation.value.composer.text.trim().length > 0 ||
+            conversation.value.composer.attachments.length > 0
+        )
+            return;
+        spacesStore.stemCellDiscard(space.id);
+    };
     const spacesNavigation: HappyAgentSpacesNavigation | undefined = active
         ? {
               onChatSelect: (groupId, chatId) => {
+                  stemCellLeave(props.chatId, chatId);
                   props.onChatSelect(active.id, groupId, chatId);
               },
               onSurfaceOpen: (surfaceId) => {
+                  stemCellLeave(props.chatId);
                   props.onSurfaceOpen?.(active.id, surfaceId);
               },
           }
@@ -3756,6 +3777,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 : undefined;
         },
         floatyKey: (sessionId) => spaceOfChat(sessionId)?.id,
+        chatEmpty: (sessionId) => happyAgentSpacesStemCellIntro(spaceOfChat(sessionId)),
     };
     const sidebar = (
         <Sidebar
@@ -4538,12 +4560,16 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     clock={active.session.clock}
                     groupId={props.groupId}
                     key={active.id}
-                    onChatSelect={(groupId, chatId, replace) =>
-                        props.onChatSelect(active.id, groupId, chatId, replace)
-                    }
-                    onChatClose={(groupId, chatId, fallbackChatId) =>
-                        props.onChatClose?.(active.id, groupId, chatId, fallbackChatId) ?? false
-                    }
+                    onChatSelect={(groupId, chatId, replace) => {
+                        stemCellLeave(props.chatId, chatId);
+                        props.onChatSelect(active.id, groupId, chatId, replace);
+                    }}
+                    onChatClose={(groupId, chatId, fallbackChatId) => {
+                        stemCellLeave(chatId);
+                        return (
+                            props.onChatClose?.(active.id, groupId, chatId, fallbackChatId) ?? false
+                        );
+                    }}
                     onFileClose={(groupId, path) => props.onFileClose(active.id, groupId, path)}
                     onFileSelect={(groupId, chatId, path, kind, replace) =>
                         props.onFileSelect(active.id, groupId, chatId, path, kind, replace)
@@ -4680,7 +4706,14 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 the reader is, as the Tasks heading's + makes one. Bound only
                 while the machine on screen can make one, so an older Happy
                 Agent leaves the chord to do nothing at all. */}
-            {taskCreateTarget !== undefined ? (
+            {spacesSidebar ? (
+                <WindowShortcuts
+                    actions={[
+                        { run: () => makeStuff(null), shortcut: APP_SHORTCUTS.taskCreate },
+                        { run: () => makeStuff(null), shortcut: APP_SHORTCUTS.sessionCreate },
+                    ]}
+                />
+            ) : taskCreateTarget !== undefined ? (
                 <WindowShortcuts
                     actions={[
                         {
@@ -6314,6 +6347,8 @@ interface HappyAgentWorkspaceSpaces {
     chatMark(sessionId: string): Pick<TabItem, "imageMark" | "stemCell" | "label"> | undefined;
     /** Which space a chat's hand-folded floaty is remembered for. */
     floatyKey(sessionId: string): string | undefined;
+    /** What an empty conversation says instead of the default, such as new work's stem cell. */
+    chatEmpty(sessionId: string): ReactNode | undefined;
 }
 
 /**
@@ -7108,9 +7143,11 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                           ),
                       })}
                 emptyContent={
-                    openBot?.systemKey === "chief_of_staff" &&
-                    conversation.type === "ready" &&
-                    openBot.conversation.id === conversation.value.conversationId ? (
+                    props.spaces && props.chatId && props.spaces.chatEmpty(props.chatId) ? (
+                        props.spaces.chatEmpty(props.chatId)
+                    ) : openBot?.systemKey === "chief_of_staff" &&
+                      conversation.type === "ready" &&
+                      openBot.conversation.id === conversation.value.conversationId ? (
                         <EmptyState
                             animation="chief-of-staff"
                             description="This bot has elevated permissions to configure Happy around your needs. Tell it how you want Happy to work for you."
@@ -7441,7 +7478,8 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                           shortcut: APP_SHORTCUTS.panelToggleAlternate,
                                       },
                                   ]),
-                            ...(sessionCreateAvailable
+                            // The spaces sidebar gives Command-T to Make Stuff.
+                            ...(sessionCreateAvailable && !props.spaces
                                 ? [
                                       {
                                           run: () => groupConversationCreate(openGroup, "shortcut"),

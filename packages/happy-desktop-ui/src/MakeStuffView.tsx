@@ -6,7 +6,6 @@ export type MakeStuffStage =
     | {
           kind: "request";
           id: string;
-          placement: "automatic" | "section";
           composer: ConversationDockProps;
       }
     | {
@@ -17,25 +16,30 @@ export type MakeStuffStage =
 
 export type MakeStuffViewProps = { stage: MakeStuffStage };
 
+export type MakeStuffIntroProps = {
+    /** The new item's identity, so its stem cell is the one its row wears. */
+    id: string;
+};
+
+/** C-302 — new work before its first message: its stem cell and one short line. */
+export function MakeStuffIntro(props: MakeStuffIntroProps) {
+    return (
+        <div className="happy-make-stuff__empty" data-happy-desktop-ui="make-stuff-intro">
+            <StemCell id={props.id} size={64} />
+            <div className="happy-make-stuff__explanation">
+                <p>Say what it is — it’ll find its place.</p>
+            </div>
+        </div>
+    );
+}
+
 /** One intent becomes work or an artifact after its context has been resolved. */
 export function MakeStuffView({ stage }: MakeStuffViewProps) {
     if (stage.kind === "context")
         return <WorkTranscript rows={stage.rows} composer={stage.composer} />;
     return (
         <div className="happy-make-stuff" data-happy-desktop-ui="make-stuff" data-stage="request">
-            <div className="happy-make-stuff__empty">
-                <StemCell id={stage.id} size={64} />
-                <div className="happy-make-stuff__explanation">
-                    <p>
-                        {stage.placement === "section"
-                            ? "Say what this is — I'll shape it."
-                            : "Say what this is — I'll shape it and put it where it belongs."}
-                    </p>
-                    {stage.placement === "automatic" ? (
-                        <p>Want it somewhere specific? Just say “under Release Readiness”.</p>
-                    ) : null}
-                </div>
-            </div>
+            <MakeStuffIntro id={stage.id} />
             <ConversationDock {...stage.composer} />
         </div>
     );

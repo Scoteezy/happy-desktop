@@ -20,6 +20,7 @@ import {
     clayIconMark,
     clayIconSlugIs,
     happyIconMark,
+    MakeStuffIntro,
     Sidebar,
     type MenuItem,
     type SidebarItem,
@@ -576,4 +577,10 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             }
         />
     );
+}
+
+/** New work before its first message: its stem cell, centred above the composer. */
+export function happyAgentSpacesStemCellIntro(space: HappyAgentSpace | undefined): ReactNode {
+    if (space === undefined || space.icon?.type !== "stem_cell") return undefined;
+    return <MakeStuffIntro id={space.id} />;
 }

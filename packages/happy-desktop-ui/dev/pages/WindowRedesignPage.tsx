@@ -654,8 +654,6 @@ function StoryWindow(props: StoryFrame) {
                     : {
                           kind: "request",
                           id: scene === "movie-request" ? "movies" : newItemId,
-                          placement:
-                              creationSection === "release-readiness" ? "section" : "automatic",
                           composer: {
                               composer: { ...redesignComposer, text: draft },
                               composerPlaceholder: "Say what this is…",
