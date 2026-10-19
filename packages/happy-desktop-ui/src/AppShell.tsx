@@ -48,6 +48,8 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     navigationChrome?: "integrated";
     /** One create control beside the reveal button while navigation is folded. */
     sidebarCollapsedAction?: { label: string; onClick: () => void };
+    /** Search beside the sidebar toggle in integrated window chrome. */
+    sidebarSearchAction?: { label: string; onClick: () => void };
     /**
      * A connection rail stands between the window's left edge and this shell,
      * holding most of the traffic lights' lane itself. The chrome inset closes
@@ -354,6 +356,7 @@ export function AppShell(props: AppShellProps) {
         "windowFullScreen",
         "navigationChrome",
         "sidebarCollapsedAction",
+        "sidebarSearchAction",
         "connectionRail",
         "sidebarCollapsible",
         "sidebarDefaultWidth",
@@ -633,6 +636,18 @@ export function AppShell(props: AppShellProps) {
             ) : null}
         </button>
     ) : null;
+    const searchButton =
+        local.navigationChrome === "integrated" && local.sidebarSearchAction ? (
+            <button
+                aria-label={local.sidebarSearchAction.label}
+                className="happy-desktop-app-shell__search"
+                data-happy-desktop-ui="app-shell-search"
+                onClick={local.sidebarSearchAction.onClick}
+                type="button"
+            >
+                <Icon name="search" size={16} />
+            </button>
+        ) : null;
     // Floating, the control is the bare button rather than a lane wrapping it:
     // a wrapper around a control docked over native window chrome is what stops
     // the pointer reaching it, so the collapsed toggle is structurally the same
@@ -648,6 +663,7 @@ export function AppShell(props: AppShellProps) {
             {local.navigationChrome === "integrated" ? (
                 <div className="happy-desktop-app-shell__reveal-controls">
                     {revealButton}
+                    {searchButton}
                     {local.navigationChrome === "integrated" && local.sidebarCollapsedAction ? (
                         <button
                             aria-label={local.sidebarCollapsedAction.label}
@@ -678,6 +694,7 @@ export function AppShell(props: AppShellProps) {
                 data-happy-desktop-ui="app-shell"
                 data-shortcut-hints={shortcutHintsVisible ? "" : undefined}
                 data-sidebar-collapsed={sidebarHidden ? "" : undefined}
+                data-sidebar-search={local.sidebarSearchAction ? "" : undefined}
                 data-window-controls={local.windowControls ? "" : undefined}
                 data-window-full-screen={local.windowFullScreen ? "" : undefined}
                 data-connection-rail={local.connectionRail ? "" : undefined}
@@ -765,6 +782,7 @@ export function AppShell(props: AppShellProps) {
                                     style={sidebarStyle}
                                 >
                                     {local.sidebar}
+                                    {searchButton}
                                     {sidebarInteractive ? (
                                         <button
                                             aria-label={

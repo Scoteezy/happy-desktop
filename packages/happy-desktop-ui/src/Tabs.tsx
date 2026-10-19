@@ -74,6 +74,8 @@ export type TabItem = {
      * same for as long as the entity does. `icon` outranks it.
      */
     avatarId?: string;
+    /** Unframed artwork for an explicitly opened entity. */
+    imageMark?: { src: string; alt?: string };
     /**
      * The tab is what a voice call is pointing at. Its own ring and microphone,
      * never the active or unread treatment.
@@ -105,14 +107,19 @@ function tabHoldsLeadingLane(tab: TabItem): boolean {
  * reader was most likely to be looking for it.
  */
 function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
-    const mark =
-        tab.filePath !== undefined ? (
-            <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />
-        ) : tab.icon ? (
-            <Icon name={tab.icon} size={iconSize} />
-        ) : tab.avatarId !== undefined ? (
-            <AvatarBrutalist id={tab.avatarId} size={iconSize} />
-        ) : null;
+    const mark = tab.imageMark ? (
+        <img
+            alt={tab.imageMark.alt ?? ""}
+            className="happy-tabs__image-mark"
+            src={tab.imageMark.src}
+        />
+    ) : tab.filePath !== undefined ? (
+        <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />
+    ) : tab.icon ? (
+        <Icon name={tab.icon} size={iconSize} />
+    ) : tab.avatarId !== undefined ? (
+        <AvatarBrutalist id={tab.avatarId} size={iconSize} />
+    ) : null;
     if (mark === null && !tab.unread && !tabHoldsLeadingLane(tab)) return null;
     return (
         <span

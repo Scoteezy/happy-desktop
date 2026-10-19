@@ -113,6 +113,40 @@
     padding-left: var(--happy-integrated-leading-inset);
 }
 
+.happy-desktop-app-shell__search {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+}
+
+/* Expanded controls overlay the sidebar's existing empty title band. */
+.happy-desktop-app-shell__sidebar > .happy-desktop-app-shell__search {
+    position: absolute;
+    top: calc((var(--happy-integrated-band-height) - 28px) / 2);
+    left: calc(var(--happy-integrated-leading-inset) + 32px);
+    z-index: 2;
+}
+
+.happy-desktop-app-shell__search:hover {
+    background: var(--surface-pressed);
+    color: var(--text);
+}
+
+.happy-desktop-app-shell[data-navigation-chrome="integrated"][data-sidebar-search]
+    .happy-desktop-app-shell__reveal {
+    width: calc(var(--happy-integrated-leading-inset) + 96px);
+}
+
 /* The collapsed navigation owns a real column, so tabs need no floating-control inset. */
 .happy-desktop-app-shell[data-navigation-chrome="integrated"][data-window-controls][data-sidebar-collapsed]
     .happy-desktop-app-shell__workspace

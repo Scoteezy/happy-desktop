@@ -100,6 +100,8 @@ export type SidebarItem = {
     icon?: IconName;
     id: string;
     imageUrl?: string;
+    /** Unframed entity artwork in the existing 20px leading lane. */
+    imageMark?: { src: string; alt?: string };
     initials?: string;
     kind: "view" | "channel" | "workspace" | "project" | "person" | "agent" | "folder" | "action";
     label: string;
@@ -306,7 +308,13 @@ export type SidebarSection = {
     items: SidebarItem[];
     label?: string;
     /** Static space identity separating global rows from the space's sections. */
-    spaceHeading?: { avatarId: string; label: string };
+    spaceHeading?: {
+        avatarId?: string;
+        imageMark?: { src: string; alt?: string };
+        label: string;
+    };
+    /** A controlled fold for a whole work section. */
+    collapsed?: boolean;
     /**
      * What went wrong with this section, said under its heading until it
      * clears. It is the section's, not a row's, in both directions: an add that
@@ -361,6 +369,13 @@ export interface SidebarReorder {
 export type SidebarActivityPlacement = "leading" | "trailing";
 
 export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
+    /** Keep the identity lane intact when a row folds. Defaults to leading. */
+    foldControlPlacement?: "leading" | "trailing";
+    /** Omit identity lanes entirely, or use plain type glyphs instead of avatars. */
+    itemMarkPresentation?: "default" | "glyph" | "none";
+    /** Hide tree ribbons while retaining ordinary indentation. Defaults to true. */
+    treeConnectors?: boolean;
+    onSectionCollapseToggle?: (sectionId: string) => void;
     activeItemId: string;
     /** Which end of a row reports work. Defaults to `trailing`. */
     activityPlacement?: SidebarActivityPlacement;
@@ -1202,6 +1217,9 @@ function SidebarRow({
     onSecondaryAction?: () => void;
     /** Folds or unfolds this row; absent when the row has nothing to fold. */
     onCollapseToggle?: () => void;
+    foldControlPlacement?: "leading" | "trailing";
+    itemMarkPresentation?: "default" | "glyph" | "none";
+    treeConnectors?: boolean;
     onSelect: (id: string) => void;
     /** The row can be arranged, which is what the keyboard shortcut is offered for. */
     reorderable?: boolean;
@@ -1240,7 +1258,9 @@ function SidebarRow({
     // A muted row keeps the unread weight on its name and gives up only the dot.
     const unreadDot = () => unread() && item().muted !== true;
     const unreadOnLeading = () =>
-        unreadDot() && (item().kind === "project" || item().kind === "workspace");
+        props.itemMarkPresentation !== "none" &&
+        unreadDot() &&
+        (item().kind === "project" || item().kind === "workspace");
     const mentioned = () => (item().badge ?? 0) > 0;
     const hasChangeStats = () =>
         (item().changeStats?.added ?? 0) > 0 || (item().changeStats?.deleted ?? 0) > 0;
@@ -1480,6 +1500,7 @@ function SidebarRow({
                is shut while the pointer is elsewhere. */
             data-collapsed={props.onCollapseToggle && item().collapsed ? "" : undefined}
             data-foldable={props.onCollapseToggle ? "" : undefined}
+            data-fold-placement={props.foldControlPlacement}
             data-fold-in-branch={props.onCollapseToggle && foldInBranch() ? "" : undefined}
             data-depth={depth() > 0 ? String(depth()) : undefined}
             data-item-id={item().id}
@@ -1550,16 +1571,22 @@ function SidebarRow({
             }}
             type={props.rename ? undefined : "button"}
         >
-            {depth() > 0 ? (
+            {depth() > 0 && props.treeConnectors !== false ? (
                 <span
                     aria-hidden="true"
                     className="happy-sidebar__item-branch"
                     data-happy-desktop-ui="sidebar-item-branch"
                 >
-                    {foldInBranch() ? foldControl() : null}
+                    {foldInBranch() && props.foldControlPlacement !== "trailing"
+                        ? foldControl()
+                        : null}
                 </span>
             ) : null}
-            {showsLeadingSlot(item()) || activityLeading() ? (
+            {(props.itemMarkPresentation !== "none" || item().kind === "action") &&
+            (props.itemMarkPresentation === "glyph" ||
+                item().imageMark ||
+                showsLeadingSlot(item()) ||
+                activityLeading()) ? (
                 <span
                     className="happy-sidebar__item-leading"
                     data-happy-desktop-ui="sidebar-item-leading"
@@ -1578,7 +1605,15 @@ function SidebarRow({
                         none when it folds: the branch line beside it already says
                         what it is, and opening the lane for the chevron must not
                         put back the glyph that line replaced. */}
-                    {activityLeading() ? (
+                    {item().imageMark ? (
+                        <img
+                            alt={item().imageMark?.alt ?? ""}
+                            className="happy-sidebar__image-mark"
+                            src={item().imageMark?.src}
+                        />
+                    ) : props.itemMarkPresentation === "glyph" ? (
+                        <Icon name={leadingIcon(item())} size={16} />
+                    ) : activityLeading() ? (
                         activityMark()
                     ) : item().contextAvatars?.length ? (
                         item().contextAvatars?.map((avatar) => (
@@ -1646,7 +1681,7 @@ function SidebarRow({
                         row. A row that is shut keeps it showing: the reader has
                         to be able to find the work they folded away without
                         sweeping the column to see which rows answer. */}
-                    {foldControl()}
+                    {props.foldControlPlacement !== "trailing" ? foldControl() : null}
                 </span>
             ) : null}
             <span
@@ -1849,6 +1884,7 @@ function SidebarRow({
                 swapsTrailing(),
                 showCount() ? item().count : undefined,
             )}
+            {props.foldControlPlacement === "trailing" ? foldControl() : null}
         </Row>
     );
 }
@@ -1870,12 +1906,14 @@ export function Sidebar(props: SidebarProps) {
         "composeShortcut",
         "composeTooltip",
         "footer",
+        "foldControlPlacement",
         "headerAccessory",
         "headerAction",
         "onHeaderMenuSelect",
         "headerTrailing",
         "itemMenuItems",
         "itemRename",
+        "itemMarkPresentation",
         "onActionReorder",
         "onBack",
         "onHeaderAction",
@@ -1890,12 +1928,14 @@ export function Sidebar(props: SidebarProps) {
         "numberShortcuts",
         "numberShortcutTargets",
         "onSectionAction",
+        "onSectionCollapseToggle",
         "search",
         "onSectionMenuSelect",
         "sections",
         "style",
         "subtitle",
         "title",
+        "treeConnectors",
     ]);
     const menuRoot = useRef<HTMLDivElement>(null);
     const [renaming, setRenaming] = useState<{ id: string; initialValue: string }>();
@@ -2725,6 +2765,7 @@ export function Sidebar(props: SidebarProps) {
                                 label: local.composeLabel ?? "Create",
                             }}
                             onSelect={local.onCompose}
+                            itemMarkPresentation={local.itemMarkPresentation}
                             shortcut={local.composeShortcut}
                             shortcutActive={local.composeShortcut !== undefined}
                             shortcutAlwaysVisible={local.composeShortcut !== undefined}
@@ -2748,6 +2789,9 @@ export function Sidebar(props: SidebarProps) {
                                 return (
                                     <SidebarRow
                                         active={local.activeItemId === action.id}
+                                        foldControlPlacement={local.foldControlPlacement}
+                                        itemMarkPresentation={local.itemMarkPresentation}
+                                        treeConnectors={local.treeConnectors}
                                         className="happy-sidebar__compose"
                                         dragging={
                                             (dragging && drag.from === index) ||
@@ -2810,7 +2854,7 @@ export function Sidebar(props: SidebarProps) {
                         // is stated against these rather than against the rows
                         // the caller gave, so a row folded away can neither be
                         // dragged past nor counted as a neighbour of anything.
-                        const shown = visibleRows(section.items);
+                        const shown = section.collapsed ? [] : visibleRows(section.items);
                         const shownItems = shown.map((row) => row.item);
                         const sectionDrag = dragOf(section.id);
                         // The lift belongs to the live gesture while there is one
@@ -2848,10 +2892,19 @@ export function Sidebar(props: SidebarProps) {
                                         className="happy-sidebar__space-head"
                                         data-happy-desktop-ui="sidebar-space-head"
                                     >
-                                        <AvatarBrutalist
-                                            id={section.spaceHeading.avatarId}
-                                            size={20}
-                                        />
+                                        {local.itemMarkPresentation === "none" ? null : section
+                                              .spaceHeading.imageMark ? (
+                                            <img
+                                                alt={section.spaceHeading.imageMark.alt ?? ""}
+                                                className="happy-sidebar__image-mark"
+                                                src={section.spaceHeading.imageMark.src}
+                                            />
+                                        ) : section.spaceHeading.avatarId ? (
+                                            <AvatarBrutalist
+                                                id={section.spaceHeading.avatarId}
+                                                size={20}
+                                            />
+                                        ) : null}
                                         <span
                                             className="happy-sidebar__title"
                                             data-happy-desktop-ui="sidebar-space-title"
@@ -2880,6 +2933,26 @@ export function Sidebar(props: SidebarProps) {
                                             >
                                                 <Icon name="mic" size={12} />
                                             </span>
+                                        ) : null}
+                                        {section.collapsed !== undefined ? (
+                                            <button
+                                                aria-expanded={!section.collapsed}
+                                                aria-label={`${section.collapsed ? "Expand" : "Collapse"} ${section.label}`}
+                                                className="happy-sidebar__section-fold"
+                                                onClick={() =>
+                                                    local.onSectionCollapseToggle?.(section.id)
+                                                }
+                                                type="button"
+                                            >
+                                                <Icon
+                                                    name={
+                                                        section.collapsed
+                                                            ? "chevron-right"
+                                                            : "chevron-down"
+                                                    }
+                                                    size={12}
+                                                />
+                                            </button>
                                         ) : null}
                                         {section.action || section.secondaryAction ? (
                                             // The controls share one lane, a row's
@@ -2985,7 +3058,7 @@ export function Sidebar(props: SidebarProps) {
                                         {section.error}
                                     </p>
                                 ) : null}
-                                {!section.headingOnly ? (
+                                {!section.headingOnly && !section.collapsed ? (
                                     <div
                                         className="happy-sidebar__tree"
                                         data-connector-dragging={surfaceLift ? "" : undefined}
@@ -3009,7 +3082,7 @@ export function Sidebar(props: SidebarProps) {
                                                 }}
                                             />
                                         ) : null}
-                                        <SidebarTreeConnectors
+                                        {local.treeConnectors !== false ? <SidebarTreeConnectors
                                             carriedItemIds={carriedItemIds}
                                             drag={
                                                 sectionDrag?.moved === true
@@ -3022,7 +3095,7 @@ export function Sidebar(props: SidebarProps) {
                                                 if (node) connectorNodes.set(key, node);
                                                 else connectorNodes.delete(key);
                                             }}
-                                        />
+                                        /> : null}
                                         {shown.map(({ foldable, item }, index) => {
                                             const reorderable =
                                                 local.onItemReorder !== undefined &&
@@ -3073,6 +3146,13 @@ export function Sidebar(props: SidebarProps) {
                                                     }
                                                     active={item.id === local.activeItemId}
                                                     activityPlacement={local.activityPlacement}
+                                                    foldControlPlacement={
+                                                        local.foldControlPlacement
+                                                    }
+                                                    itemMarkPresentation={
+                                                        local.itemMarkPresentation
+                                                    }
+                                                    treeConnectors={local.treeConnectors}
                                                     dragging={
                                                         held ||
                                                         (dropped?.listId === section.id &&

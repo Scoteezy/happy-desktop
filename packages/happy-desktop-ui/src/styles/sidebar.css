@@ -403,6 +403,28 @@
     border-top: 1px solid var(--divider);
 }
 
+.happy-sidebar__image-mark {
+    display: block;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.happy-sidebar__section-fold {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
 .happy-sidebar__section-label {
     display: block;
     overflow: hidden;
@@ -936,16 +958,24 @@
 /* The mark steps aside for exactly as long as the chevron is up. The unread dot
    is not part of the mark and keeps its place: whether a row has activity in it
    is not something reaching for the fold should take away. */
-.happy-sidebar__item[data-foldable]:hover
+.happy-sidebar__item:not([data-fold-placement="trailing"])[data-foldable]:hover
     .happy-sidebar__item-leading
     > :not(.happy-sidebar__item-fold):not(.happy-sidebar__item-leading-unread),
-.happy-sidebar__item[data-foldable]:focus-visible
+.happy-sidebar__item:not([data-fold-placement="trailing"])[data-foldable]:focus-visible
     .happy-sidebar__item-leading
     > :not(.happy-sidebar__item-fold):not(.happy-sidebar__item-leading-unread),
-.happy-sidebar__item[data-collapsed]
+.happy-sidebar__item:not([data-fold-placement="trailing"])[data-collapsed]
     .happy-sidebar__item-leading
     > :not(.happy-sidebar__item-fold):not(.happy-sidebar__item-leading-unread) {
     opacity: 0;
+}
+
+.happy-sidebar__item[data-fold-placement="trailing"] > .happy-sidebar__item-fold {
+    position: static;
+    flex: none;
+    width: 16px;
+    height: 20px;
+    opacity: 1;
 }
 
 .happy-sidebar__item[data-active] .happy-sidebar__item-fold,

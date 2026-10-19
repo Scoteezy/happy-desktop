@@ -403,6 +403,13 @@
 
 /* The close affordance intentionally overlays the trailing title ink. It
    fades in with its own surface-tone mask, without changing the tab's width. */
+.happy-tabs__image-mark {
+    display: block;
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-trailing {
     position: absolute;
     top: 0;
