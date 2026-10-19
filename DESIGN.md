@@ -584,7 +584,8 @@ Generated raster icons require the same standard: do not center one by its file
 rectangle alone. Assert its visible bounds and optical center inside every
 button, rail item, field, or other container that uses it, since a generated
 asset often carries uneven transparent margins and must be normalized before
-component integration. Font icons are exempt — see "Icon systems" below.
+component integration. Font icons are exempt from the centroid rule and follow
+the keyline rule in "Icon systems" below instead.
 
 ## Icon systems
 
@@ -640,24 +641,62 @@ an icon gives it a fixed square slot that is itself a centring flex box, such as
 the menu's 16px gutter, and never positions the glyph by a margin, padding,
 baseline, or a nudge of its own.
 
-Centred ink is not enough: icons in one column must also look the same size.
-Ionicons draws its plus 10px and its cross 8px across in a 16px box, where its
-outline glyphs reach 12–15px, so beside them the plus and cross look shrunken and
-set in from the column's edge. A curated name whose upstream ink falls that far
-below the vocabulary declares an `opticalScale` in `Icon`'s glyph table (the plus
-1.25, the cross 1.375). The glyph is laid out at the box's own font size, so its
+Centred ink is not enough: icons in one column must also look the same size and
+the same weight. Equal ink boxes do not achieve that. A shape that spends its ink
+at the edges of its box — a framed square, a circle — reads smaller than a bare
+mark of the same box, and a mark scaled up to match a framed shape thickens with
+it. Every curated name therefore sits on a **keyline**, the proportions Lucide
+uses to balance its set ([design language](https://lucide.dev/contribute/icons/design-principles),
+[specification](https://lucide.dev/contribute/icons/specification): a 24px canvas,
+a 2px stroke, at least 1px of padding, and every icon matched in weight to the
+reference `circle` and `square`). Measured from Lucide's own SVGs and mapped to
+the slot, ink included:
+
+| Keyline      | Lucide reference (24 canvas, centrelines) | Ink / slot | Ink at 16 |
+| ------------ | ----------------------------------------- | ---------- | --------- |
+| Framed shape | `square` 18 × 18, `square-pen` frame 3–21 | 20/24      | 13–14px   |
+| Circle       | `circle` r = 10                           | 22/24      | 14px      |
+| Bare plus    | `plus` 5–19                               | 16/24      | 10.5px    |
+| Bare cross   | `x` 6–18; diagonals drawn shorter         | 14/24      | 9px       |
+
+The house stroke is the Ionicons outline stroke: 1px at a 16px box, scaling with
+it. Ionicons' outline drawings already sit on these keylines — outer shapes in a
+14px live area, `add-outline` 10px across — so they are used as drawn. A curated
+name whose upstream drawing falls off its keyline declares an `opticalScale` in
+`Icon`'s glyph table: the cross 1.1, so it lands just short of the plus. Octicons
+are drawn edge to edge on a 16 grid with a 1.5px stroke, so `Icon` sets the whole
+family at 14/16, which puts them in the Ionicons live area and takes most of the
+extra weight off. A scaled glyph is laid out at the box's own font size, so its
 baseline lands on the same pixel as every other glyph, and is then scaled about
-the box centre. The box does not change. A call site never enlarges an icon's box
-or font size to compensate for its glyph; it fixes the name in `Icon` instead.
+the box centre. The box does not change.
+
+The plus and cross are bare strokes with nothing enclosed, so they are the first
+to fade when a box shrinks and the stroke thins below a pixel. They carry a
+`minimumSize` of 16: in a 12 or 14px box they keep their 16px drawing — 10.5px
+and 9px of ink at a 1px stroke — centred in the smaller box. That drawing is the
+one the hover-revealed 12px row actions and tab close buttons have always shown,
+and it is now the same plus and cross a menu row, a button, a dialog, or a
+banner shows. The minimum is resolved in CSS against the font size the box
+actually renders at, so a surface that overrides an icon's box still gets the
+right drawing.
+
+A call site never enlarges an icon's box or font size to compensate for its
+glyph, and never shrinks it to tame one either; it fixes the name in `Icon`
+instead.
 
 Prove a font-icon integration with real ink (non-zero visible pixels, which also
 proves the font actually loaded) and the correct box geometry in the container
-that uses it, across Chromium, Firefox, and WebKit. Do **not** assert an ink
-centroid on a font icon: the font supplies a box-centered glyph, so there is no
-path data to nudge and an optical-centering assertion measures the typeface
-rather than our layout. Optical centering still applies to text, avatars, and
-generated raster assets. Prefer an accessible `aria-label` on a standalone,
-meaningful icon; a decorative icon stays `aria-hidden`.
+that uses it, across Chromium, Firefox, and WebKit. Where a component or `Icon`
+itself promises a keyline, assert it: the visible ink box against the keyline
+table, the ink box centred in its slot to within 0.25px, and the stroke weight
+derived from alpha mass. Assert those as ranges or relations (the cross smaller
+than the plus, the 12px plus equal to the 16px plus), because each platform's
+rasterizer quantizes a font glyph's edges differently. Do **not** assert an ink
+centroid on a font icon: its alpha mass sits where the typeface drew it, so a
+centroid assertion measures the typeface rather than our layout. Optical
+centering still applies to text, avatars, and generated raster assets. Prefer an
+accessible `aria-label` on a standalone, meaningful icon; a decorative icon stays
+`aria-hidden`.
 
 ## Generated background images
 

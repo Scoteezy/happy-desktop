@@ -47,8 +47,8 @@ const states: MenuItem[] = [
     { kind: "item", id: "remove", label: "Remove", icon: "close", danger: true },
 ];
 
-/* A task row's menu in the sidebar: the plus and the cross sit in the same icon
-   column as the outline glyphs, at the vocabulary's ink size. */
+/* A task row's menu in the sidebar: the plus and the cross share the icon column
+   with framed outline glyphs, each on its own keyline at one stroke weight. */
 const taskRow: MenuItem[] = [
     { kind: "item", id: "surface", label: "Add to Surfaces", icon: "plus" },
     { kind: "separator" },
@@ -178,7 +178,7 @@ export function MenuPage() {
                 </Specimen>
 
                 <Specimen
-                    detail="plus · edit · cross · archive — every glyph centred in its 16px slot, the plus and cross scaled to the column's ink"
+                    detail="plus 10.5 · cross 9 · framed 13–14 px of ink, one 1px stroke — every glyph centred in its 16px slot"
                     label="Icon column"
                     number="M-06"
                     stage="app"

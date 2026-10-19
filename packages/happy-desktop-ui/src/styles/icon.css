@@ -33,9 +33,10 @@
 }
 
 /*
- * An optically scaled glyph (Icon.tsx, `opticalScale`) keeps the box's line
- * box and is scaled about its own centre, which the flex box above holds on
- * the icon box's centre. The ink grows past the glyph's em square; the icon box
+ * An optically scaled glyph (Icon.tsx, `opticalScale`, and every Octicon) keeps
+ * the box's line box and is scaled about its own centre, which the flex box
+ * above holds on the icon box's centre. A glyph with a minimum size draws at
+ * that size inside a smaller box, centred the same way. Either way the icon box
  * stays what layout asked for.
  */
 .happy-icon__glyph {

@@ -18,6 +18,18 @@ const OPTICAL_ROW: IconName[] = [
     "send",
     "terminal",
 ];
+/* One glyph per keyline (DESIGN.md, "Icon slots and optical size"), and the two
+   Octicons the family scale brings into the Ionicons live area. */
+const KEYLINE_ROW: IconName[] = [
+    "edit",
+    "archive",
+    "check-circle",
+    "plus",
+    "close",
+    "branch",
+    "history",
+];
+const KEYLINE_SIZES = [12, 14, 16, 20] as const;
 function GlyphCell(props: { name: IconName }) {
     return (
         <div
@@ -157,6 +169,41 @@ export function IconPage() {
                     <Icon name="check-circle" size={20} color="#34d399" />
                     <Icon name="check-circle" size={20} color="#fbbf24" />
                     <Icon name="check-circle" size={20} color="#f87171" />
+                </div>
+            </Specimen>
+
+            <Specimen
+                number="03b"
+                label="Keylines"
+                detail="Framed 13–14 · plus 10.5 · cross 9 px of ink at 16, one 1px stroke · the plus and cross keep their 16 drawing in a 12 or 14 box"
+                stage="surface"
+            >
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {KEYLINE_SIZES.map((size) => (
+                        <div
+                            key={size}
+                            style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "16px",
+                                color: "var(--text-secondary)",
+                            }}
+                        >
+                            <span
+                                style={{
+                                    width: "20px",
+                                    fontFamily: "var(--happy-font-mono)",
+                                    fontSize: "9px",
+                                }}
+                            >
+                                {size}
+                            </span>
+                            {KEYLINE_ROW.map((name) => (
+                                <Icon key={name} name={name} size={size} />
+                            ))}
+                        </div>
+                    ))}
+                    <DimensionRule label="edit · archive · check-circle · plus · close · branch · history" />
                 </div>
             </Specimen>
 

@@ -5,7 +5,7 @@ import "./styles/icon.css";
 import "./styles/vector-icon.css";
 import "./styles/badge.css";
 import { Menu, type MenuItem } from "./Menu";
-import { createRenderer } from "./testing";
+import { createRenderer, type VisiblePixelMetrics } from "./testing";
 
 const FIGTREE = "happy Figtree, system-ui, sans-serif";
 
@@ -242,13 +242,15 @@ it("holds Menu popover geometry, item rows, icons, danger, and shortcuts", async
 }, 120_000);
 
 /*
- * A sidebar task row's menu: the plus and the cross share the icon column with
- * outline glyphs. Unscaled, Ionicons draws them 10px and 8px across in the 16px
- * slot beside 13–14px neighbours, so they read as shrunken and set in from the
- * column's edge. Icon scales both about the box centre; the ink bounds below are
- * the discrete Retina values, identical in every engine.
+ * A sidebar task row's menu, the one where the plus and the cross share the icon
+ * column with framed outline glyphs. Each sits on its keyline (DESIGN.md, "Icon
+ * slots and optical size"): the framed glyphs fill the 14px live area, the plus
+ * is 10.5px across, the cross a little less, and all of them carry the same 1px
+ * stroke. Ink edges are quantized differently by each platform's rasterizer, so
+ * the keylines are asserted as ranges and relations, never as one engine's
+ * pixels.
  */
-it("sets the plus and the cross in the icon column at the column's ink size, centred", async () => {
+it("sets the plus, the cross, and framed glyphs on their keylines in the icon column", async () => {
     const view = createRenderer();
     const items: MenuItem[] = [
         { kind: "item", id: "surface", label: "Add to Surfaces", icon: "plus" },
@@ -271,30 +273,52 @@ it("sets the plus and the cross in the icon column at the column's ink size, cen
         ),
     );
     const metrics = await view.visibleMetrics(slots);
-    const expected = {
-        surface: { x: 1.5, y: 1.5, width: 13, height: 13 },
-        rename: { x: 1.5, y: 1.5, width: 13, height: 13 },
-        leave: { x: 2.5, y: 2.5, width: 11, height: 11.5 },
-        archive: { x: 1, y: 1.5, width: 14, height: 13 },
+    const keylines = {
+        surface: { min: 10, max: 11 },
+        rename: { min: 13, max: 14.5 },
+        leave: { min: 9, max: 9.5 },
+        archive: { min: 13, max: 15 },
     };
+    const ink = Object.fromEntries(
+        ids.map((id, index) => [id, metrics.get(slots[index]!)!]),
+    ) as Record<(typeof ids)[number], VisiblePixelMetrics>;
     for (const [index, id] of ids.entries()) {
         const slot = slots[index]!;
         const icon = view.$(
             `[data-testid="task-row"] [data-item-id="${id}"] [data-happy-desktop-ui="icon"]`,
         );
-        // Every glyph's box is the slot itself, whatever its optical scale.
+        // Every glyph's box is the slot itself, whatever its keyline.
         expect(icon.bounds(), `${id} icon box`).toEqual(slot.bounds());
         expect(slot.bounds().width, `${id} slot`).toBe(16);
         expect(slot.bounds().height, `${id} slot`).toBe(16);
-        const ink = metrics.get(slot)!.bounds;
-        expect(ink, `${id} ink`).toEqual(expected[id]);
-        // Horizontally the ink is centred exactly; vertically to within the
-        // half device pixel the cross's round caps straddle.
-        expect(ink.x + ink.width / 2, `${id} ink centre x`).toBe(8);
-        expect(Math.abs(ink.y + ink.height / 2 - 8), `${id} ink centre y`).toBeLessThanOrEqual(
+        const bounds = ink[id].bounds;
+        for (const extent of [bounds.width, bounds.height]) {
+            expect(extent, `${id} ink ${JSON.stringify(bounds)}`).toBeGreaterThanOrEqual(
+                keylines[id].min,
+            );
+            expect(extent, `${id} ink ${JSON.stringify(bounds)}`).toBeLessThanOrEqual(
+                keylines[id].max,
+            );
+        }
+        // The ink box, not its centroid, is centred in the slot: the font
+        // places its alpha mass where the typeface drew it.
+        expect(Math.abs(bounds.x + bounds.width / 2 - 8), `${id} ink centre x`).toBeLessThanOrEqual(
             0.25,
         );
+        expect(
+            Math.abs(bounds.y + bounds.height / 2 - 8),
+            `${id} ink centre y`,
+        ).toBeLessThanOrEqual(0.25);
     }
+    // The cross stops a little short of the plus.
+    expect(ink.leave.bounds.width).toBeLessThan(ink.surface.bounds.width);
+    // The plus is two strokes of its own length crossing once, so its alpha
+    // mass (backing pixels, four per CSS px) over that length is its stroke:
+    // the house 1px, not the heavier stroke an enlarged glyph would carry.
+    const plus = ink.surface;
+    const stroke = plus.alphaMass / 4 / (plus.bounds.width + plus.bounds.height - 1);
+    expect(stroke, "plus stroke").toBeGreaterThanOrEqual(0.9);
+    expect(stroke, "plus stroke").toBeLessThanOrEqual(1.1);
 });
 
 it("holds Menu section labels, disabled items, and text-only alignment", async () => {

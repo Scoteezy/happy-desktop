@@ -119,13 +119,24 @@ export type IconProps = {
  * is painted, so the two edges read as one idea instead of borrowing an unrelated
  * symbol for one of them.
  *
- * An `opticalScale` name paints its glyph larger than the box, about the box's
- * centre, without changing the box. It exists for the few glyphs whose upstream
- * ink is drawn far smaller than the rest of the vocabulary: Ionicons sets its
- * plus 10px and its cross 8px across in a 16px box, where its outline icons
- * reach 12–15px, so in any column of icons the two read as shrunken and set
- * apart from the edge the others share. The scale lives here, once per name, so
- * no call site grows its own box or font-size to compensate.
+ * Every curated name paints at one optical size and one stroke weight: the
+ * Ionicons outline drawing, a 1px stroke at 16 with outer shapes in a 14px live
+ * area. The keylines follow Lucide's proportions (DESIGN.md, "Icon slots and
+ * optical size"): a framed shape fills the live area, a bare plus 2/3 of the
+ * slot, and a bare cross a little less, because its diagonals reach further.
+ *
+ * An `opticalScale` name paints its glyph scaled about the box's centre without
+ * changing the box, for an upstream drawing that falls outside its keyline. The
+ * scale lives here, once per name, so no call site grows its own box or
+ * font-size to compensate. Octicons are drawn edge to edge on their 16 grid
+ * with a 1.5px stroke, so the whole family is set at 14/16 to land in the
+ * Ionicons live area and lose most of that extra weight.
+ *
+ * A `minimumSize` name keeps the drawing it has at that size in any smaller
+ * box. The plus and cross are bare strokes with nothing enclosed: below 16 the
+ * house stroke thins under a pixel and they fade beside the 13px labels they
+ * sit next to, which is why the hover-revealed 12px row and tab controls hold
+ * them at their 16px drawing. The box stays what layout asked for.
  *
  * The `drawn` set is the single hand-drawn family, kept to Ionicons' own stroke
  * and box metrics; see `drawnGlyphs.tsx` for why it exists and why nothing else
@@ -135,7 +146,9 @@ type IconGlyph = (
     | { set: "drawn"; name: DrawnGlyphName }
     | { set: "ionicons"; name: IoniconName }
     | { set: "octicons"; name: OcticonName }
-) & { mirrored?: true; opticalScale?: number };
+) & { mirrored?: true; opticalScale?: number; minimumSize?: 16 };
+/* The Octicons 16 grid set inside the Ionicons 14px live area. */
+const OCTICONS_SCALE = 14 / 16;
 const glyphs: Record<IconName, IconGlyph> = {
     home: { set: "ionicons", name: "home-outline" },
     inbox: { set: "ionicons", name: "file-tray-outline" },
@@ -151,8 +164,9 @@ const glyphs: Record<IconName, IconGlyph> = {
     // answer, not working. The circled outline sits beside `clock` as its pair.
     question: { set: "ionicons", name: "help-circle-outline" },
     history: { set: "octicons", name: "history" },
-    // 12.5px of ink in a 16px box, level with the outline icons beside it.
-    plus: { set: "ionicons", name: "add-outline", opticalScale: 1.25 },
+    // 10.5px of ink with a 1px stroke at 16: Lucide's 14-of-24 plus. Held at
+    // that drawing in the 12px hover controls.
+    plus: { set: "ionicons", name: "add-outline", minimumSize: 16 },
     send: { set: "ionicons", name: "paper-plane-outline" },
     check: { set: "ionicons", name: "checkmark-outline" },
     "check-circle": { set: "ionicons", name: "checkmark-circle-outline" },
@@ -164,9 +178,9 @@ const glyphs: Record<IconName, IconGlyph> = {
     // A bare cross: dismissing a thing where it is an affordance, and what went
     // wrong where it is not. In a danger or warning tone beside a failure it is
     // the house mark for trouble; `shield` says the opposite and is never it.
-    // 11px of ink in a 16px box: a cross's diagonals already reach further
-    // than its square, so it stops short of the plus.
-    close: { set: "ionicons", name: "close-outline", opticalScale: 1.375 },
+    // 9px of ink at 16, a little short of the plus: a cross's diagonals
+    // already reach further than its square (Lucide's 12-of-24 x).
+    close: { set: "ionicons", name: "close-outline", opticalScale: 1.1, minimumSize: 16 },
     // The whole change read as one thing, rather than one file's diff: the mark
     // for the review stream and nothing else.
     "file-diff": { set: "octicons", name: "file-diff" },
@@ -276,16 +290,28 @@ function glyphContent(glyph: IconGlyph) {
     const codepoint =
         glyph.set === "ionicons" ? ioniconsGlyphs[glyph.name] : octiconsGlyphs[glyph.name];
     const character = String.fromCodePoint(codepoint);
-    if (glyph.opticalScale === undefined) return character;
+    const scale = (glyph.opticalScale ?? 1) * (glyph.set === "octicons" ? OCTICONS_SCALE : 1);
+    if (scale === 1 && glyph.minimumSize === undefined) return character;
     /*
      * The glyph is laid out at the box's own font-size, where its baseline lands
      * on the same pixel as every other glyph, and only then scaled about the
      * box's centre. A larger font-size would move the baseline to a fractional
      * position that each engine rounds its own way, setting the ink up to half
-     * a pixel off centre.
+     * a pixel off centre. A minimum size is the one exception, and it stays on
+     * whole pixels: a 16px line box centred in a 12 or 14px box overhangs it by
+     * 2 or 1px. It is resolved in CSS against the font-size the box actually
+     * renders at, so a surface that overrides an icon's box is still honoured.
      */
     return (
-        <span className="happy-icon__glyph" style={{ scale: String(glyph.opticalScale) }}>
+        <span
+            className="happy-icon__glyph"
+            style={{
+                ...(scale === 1 ? null : { scale: String(scale) }),
+                ...(glyph.minimumSize === undefined
+                    ? null
+                    : { fontSize: `max(${glyph.minimumSize}px, 1em)` }),
+            }}
+        >
             {character}
         </span>
     );
