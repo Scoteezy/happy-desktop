@@ -141,6 +141,7 @@ function catalogProject(
                 id: workspace.id as HappyAgentWorktreeId,
                 projectId: group.id as HappyAgentProjectId,
                 name: workspace.name,
+                creatorAgentId: workspace.creatorAgentId,
                 orderKey: workspace.orderKey,
                 path: workspace.path,
                 displayPath: workspace.path,

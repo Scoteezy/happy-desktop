@@ -254,3 +254,6 @@ export type {
     HappyTerminalCliResetEffects,
     HappyMobileManagementConfirmation,
 } from "./happyAgent/happyTerminalCli.js";
+export * from "./spaces/spaceTypes.js";
+export * from "./spaces/spacesStore.js";
+export * from "./spaces/spacesSidebarDocument.js";

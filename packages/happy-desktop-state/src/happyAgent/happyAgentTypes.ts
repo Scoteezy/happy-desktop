@@ -616,6 +616,8 @@ export interface HappyAgentWorktree {
     readonly id: HappyAgentWorktreeId;
     readonly projectId: HappyAgentProjectId;
     readonly name: string;
+    /** The agent that created this worktree, or null for one a person made. */
+    readonly creatorAgentId: string | null;
     /** Fractional index the host sorts a project's worktrees by. */
     readonly orderKey: string;
     readonly path: string;

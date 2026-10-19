@@ -33,6 +33,7 @@ export function happyAgentArtifactTypeProject(type: string): HappyAgentArtifactT
         case "image_series":
         case "video":
         case "document":
+        case "sidebar":
             return type;
         default:
             return "unknown";

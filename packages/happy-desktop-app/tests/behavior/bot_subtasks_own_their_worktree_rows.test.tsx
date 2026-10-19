@@ -60,6 +60,7 @@ const worktree = (
     id: id as HappyAgentWorktreeId,
     projectId: "prj_one" as HappyAgentProjectId,
     name,
+    creatorAgentId: null,
     orderKey: id,
     path: `/Users/happy/happy-worktrees/${name}`,
     displayPath: `~/happy-worktrees/${name}`,

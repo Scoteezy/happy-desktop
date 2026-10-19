@@ -22,6 +22,8 @@ export type HappyAgentArtifactType =
     | "image_series"
     | "video"
     | "document"
+    /** Experimental: a person's sidebar document, shown as the HTML it is. */
+    | "sidebar"
     | "unknown";
 
 /**

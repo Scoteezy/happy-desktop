@@ -1,6 +1,7 @@
 import { partitionComponentProps } from "./componentProps";
 import {
     memo,
+    useCallback,
     useEffectEvent,
     useLayoutEffect,
     useRef,
@@ -291,7 +292,10 @@ export type SidebarSection = {
     context?: string;
     /** Recent focus occupies a fixed two-line slot, including while folded. */
     recentFocus?: string;
-    /** A controlled disclosure of a section's ordered tail. */
+    /**
+     * A controlled disclosure of a section's ordered tail. It counts top-level
+     * rows: a row's nested children stay with it.
+     */
     tail?: { visibleCount: number; expanded: boolean };
     /** Input needed from the reader, visible even while the section is folded. */
     attentionCount?: number;
@@ -640,8 +644,17 @@ function sectionRows(section: SidebarSection, activeItemId?: string) {
     const rows = visibleRows(section.items);
     const tail = section.tail;
     if (!tail || tail.expanded) return rows;
+    let roots = 0;
     // Keep a focused destination mounted even if an updated tail boundary passes it.
-    return rows.filter((row, index) => index < tail.visibleCount || row.item.id === activeItemId);
+    return rows.filter((row) => {
+        if ((row.item.depth ?? 0) === 0) roots += 1;
+        return roots <= tail.visibleCount || row.item.id === activeItemId;
+    });
+}
+
+/** How many top-level rows a list holds; nested children travel with their row. */
+function rootCount(rows: readonly { readonly item: SidebarItem }[]): number {
+    return rows.filter((row) => (row.item.depth ?? 0) === 0).length;
 }
 
 /** Pointer travel, in px, before a press becomes a drag instead of a selection. */
@@ -2093,7 +2106,19 @@ export function Sidebar(props: SidebarProps) {
         return true;
     };
     // One menu at a time, opened either from a row or from a heading control.
-    const [itemMenu, setItemMenu] = useState<{
+    const interaction = useRef({ pointer: false, menu: false, reported: false });
+    const onInteractionChange = props.onInteractionChange;
+    // These identities keep the document-listener ref mounted across menu state
+    // changes. Detaching it would dismiss the menu it just opened; the menu
+    // attention regression test proves that lifetime contract.
+    const interactionReport = useCallback(() => {
+        const state = interaction.current;
+        const next = interactionEnabled && (state.pointer || state.menu);
+        if (next === state.reported) return;
+        state.reported = next;
+        onInteractionChange?.(next);
+    }, [interactionEnabled, onInteractionChange]);
+    type OpenMenu = {
         target:
             | { readonly kind: "item"; readonly item: SidebarItem }
             | {
@@ -2104,7 +2129,55 @@ export function Sidebar(props: SidebarProps) {
         items: MenuItem[];
         x: number;
         y: number;
-    }>();
+    };
+    const [itemMenu, itemMenuSet] = useState<OpenMenu>();
+    const setItemMenu = useCallback(
+        (next: OpenMenu | undefined) => {
+            interaction.current.menu = next !== undefined;
+            // Opening transfers this gesture to the menu. Closing it must not
+            // cancel a new pointer gesture that dismissed it on another row.
+            if (next !== undefined) interaction.current.pointer = false;
+            itemMenuSet(next);
+            interactionReport();
+        },
+        [interactionReport],
+    );
+    const interactionRef = useCallback(
+        (node: HTMLElement | null) => {
+            if (!node || !onInteractionChange || !interactionEnabled) return;
+            const change = (pointer: boolean) => {
+                interaction.current.pointer = pointer;
+                interactionReport();
+            };
+            const begin = () => change(true);
+            const end = () => change(false);
+            const dismiss = () => {
+                interaction.current.pointer = false;
+                setItemMenu(undefined);
+            };
+            const leave = (event: PointerEvent) => {
+                if (event.buttons === 0) end();
+            };
+            const owner = node.ownerDocument;
+            const view = owner.defaultView;
+            node.addEventListener("pointerenter", begin);
+            node.addEventListener("pointerdown", begin);
+            node.addEventListener("pointerleave", leave);
+            owner.addEventListener("pointerup", end);
+            owner.addEventListener("pointercancel", end);
+            view?.addEventListener("blur", dismiss);
+            return () => {
+                node.removeEventListener("pointerenter", begin);
+                node.removeEventListener("pointerdown", begin);
+                node.removeEventListener("pointerleave", leave);
+                owner.removeEventListener("pointerup", end);
+                owner.removeEventListener("pointercancel", end);
+                view?.removeEventListener("blur", dismiss);
+                dismiss();
+            };
+        },
+        [interactionEnabled, interactionReport, onInteractionChange, setItemMenu],
+    );
     // eslint-disable-next-line happy-react/no-layout-effect -- the context menu must measure its rendered height before clamping the fixed popover to the viewport, and global dismissal listeners require imperative cleanup
     useLayoutEffect(() => {
         if (!itemMenu) return;
@@ -2127,12 +2200,14 @@ export function Sidebar(props: SidebarProps) {
         document.addEventListener("pointerdown", close);
         document.addEventListener("keydown", closeOnEscape);
         window.addEventListener("resize", dismiss);
+        window.addEventListener("blur", dismiss);
         return () => {
             document.removeEventListener("pointerdown", close);
             document.removeEventListener("keydown", closeOnEscape);
             window.removeEventListener("resize", dismiss);
+            window.removeEventListener("blur", dismiss);
         };
-    }, [itemMenu]);
+    }, [itemMenu, setItemMenu]);
     // Reorder drag. The live value is kept in a ref as well as in state because
     // the pointer handlers read it in the same gesture that schedules the paint.
     const dragRef = useRef<{ listId: SidebarListId; drag: SidebarDrag } | undefined>(undefined);
@@ -2210,7 +2285,10 @@ export function Sidebar(props: SidebarProps) {
     };
     const liftFadeOf = (listId: SidebarListId): SidebarDrag | undefined =>
         liftFade?.listId === listId ? liftFade.drag : undefined;
-    const actions = local.actions ?? [];
+    // Pinned rows may carry a tree of their own, folded the way a section's are.
+    const actionRows = visibleRows(local.actions ?? []);
+    const actions = actionRows.map((row) => row.item);
+    const actionsTree = actions.some((action) => (action.depth ?? 0) > 0);
     const numberShortcuts = local.numberShortcuts !== undefined;
     const numberShortcutNavigation = local.numberShortcuts === "navigate";
     // Rows keep their objects across equal snapshots, so a store update that changes nothing
@@ -3085,6 +3163,7 @@ export function Sidebar(props: SidebarProps) {
         <nav
             {...rest}
             className={["happy-sidebar", local.className].filter(Boolean).join(" ")}
+            ref={interactionRef}
             data-back={local.onBack ? "" : undefined}
             data-actions-divider={local.actionsDivider ? "" : undefined}
             data-fold-control-reveal={local.foldControlReveal}
@@ -3283,11 +3362,31 @@ export function Sidebar(props: SidebarProps) {
                            compose row and every section would have it measuring
                            the whole sidebar. */
                         <div
-                            className="happy-sidebar__actions"
+                            className={[
+                                "happy-sidebar__actions",
+                                actionsTree ? "happy-sidebar__tree" : undefined,
+                            ]
+                                .filter(Boolean)
+                                .join(" ")}
                             data-happy-desktop-ui="sidebar-actions"
                             data-reordering={dragOf(ACTIONS_LIST) ? "" : undefined}
                         >
-                            {actions.map((action, index) => {
+                            {actionsTree && local.treeConnectors !== false ? (
+                                <SidebarTreeConnectors
+                                    drag={
+                                        dragOf(ACTIONS_LIST)?.moved === true
+                                            ? dragOf(ACTIONS_LIST)
+                                            : undefined
+                                    }
+                                    items={actions}
+                                    listId={ACTIONS_LIST}
+                                    onElement={(key, node) => {
+                                        if (node) connectorNodes.set(key, node);
+                                        else connectorNodes.delete(key);
+                                    }}
+                                />
+                            ) : null}
+                            {actionRows.map(({ foldable, item: action }, index) => {
                                 const drag = dragOf(ACTIONS_LIST);
                                 const dragging = drag?.moved === true;
                                 return (
@@ -3296,7 +3395,12 @@ export function Sidebar(props: SidebarProps) {
                                         foldControlPlacement={local.foldControlPlacement}
                                         itemMarkPresentation={local.itemMarkPresentation}
                                         treeConnectors={local.treeConnectors}
-                                        className="happy-sidebar__compose"
+                                        // A nested row is drawn as a section's is.
+                                        className={
+                                            (action.depth ?? 0) > 0
+                                                ? undefined
+                                                : "happy-sidebar__compose"
+                                        }
                                         dragging={
                                             (dragging && drag.from === index) ||
                                             rowKey(ACTIONS_LIST, action.id) === dropped?.key
@@ -3309,6 +3413,12 @@ export function Sidebar(props: SidebarProps) {
                                             if (node) rowNodes.set(key, node);
                                             else rowNodes.delete(key);
                                         }}
+                                        onContextMenu={openItemMenu}
+                                        onCollapseToggle={
+                                            local.onItemCollapseToggle && foldable
+                                                ? () => local.onItemCollapseToggle?.(action.id)
+                                                : undefined
+                                        }
                                         onKeyDown={
                                             local.onActionReorder
                                                 ? (event) =>
@@ -3364,10 +3474,10 @@ export function Sidebar(props: SidebarProps) {
                         const tailCount = section.tail
                             ? Math.max(
                                   0,
-                                  visibleRows(section.items).length -
+                                  rootCount(visibleRows(section.items)) -
                                       (section.tail.expanded
                                           ? section.tail.visibleCount
-                                          : shown.length),
+                                          : rootCount(shown)),
                               )
                             : 0;
                         const shownItems = shown.map((row) => row.item);
@@ -3857,6 +3967,7 @@ export function Sidebar(props: SidebarProps) {
                                         key={item.id}
                                         item={item}
                                         active={local.activeItemId === item.id}
+                                        onContextMenu={openItemMenu}
                                         onSelect={local.onItemSelect}
                                         itemMarkPresentation={local.itemMarkPresentation}
                                     />
@@ -3882,19 +3993,25 @@ export function Sidebar(props: SidebarProps) {
                         items={itemMenu.items}
                         onSelect={(actionId) => {
                             const target = itemMenu.target;
-                            setItemMenu(undefined);
-                            if (target.kind === "item" && actionId === local.itemRename?.actionId) {
-                                renameStart(target.item);
-                                return;
+                            try {
+                                if (
+                                    target.kind === "item" &&
+                                    actionId === local.itemRename?.actionId
+                                ) {
+                                    renameStart(target.item);
+                                    return;
+                                }
+                                if (target.kind === "item")
+                                    local.onItemMenuSelect?.(target.item, actionId);
+                                else
+                                    local.onSectionMenuSelect?.(
+                                        target.sectionId,
+                                        target.source,
+                                        actionId,
+                                    );
+                            } finally {
+                                setItemMenu(undefined);
                             }
-                            if (target.kind === "item")
-                                local.onItemMenuSelect?.(target.item, actionId);
-                            else
-                                local.onSectionMenuSelect?.(
-                                    target.sectionId,
-                                    target.source,
-                                    actionId,
-                                );
                         }}
                         width={SIDEBAR_MENU_WIDTH}
                     />

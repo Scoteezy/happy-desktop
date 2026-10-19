@@ -608,6 +608,8 @@ export interface GroupSession {
 export interface WorkspaceGroup {
     id: string;
     name: string;
+    /** The agent that created this workspace, or null for a person's. */
+    creatorAgentId: string | null;
     orderKey: string;
     path: string;
     presence: "present" | "missing";

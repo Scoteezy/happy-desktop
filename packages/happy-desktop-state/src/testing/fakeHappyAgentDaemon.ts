@@ -629,6 +629,18 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
                 throw new HappyAgentApiError(404, "Not found.", "not_found", null);
             return { started: request.providerIds ?? [] };
         },
+        async listSpaces(...args: unknown[]) {
+            await record("listSpaces", args);
+            return { spaces: [], sections: [] };
+        },
+        async listSpaceBatches(...args: unknown[]) {
+            await record("listSpaceBatches", args);
+            return { batches: [] };
+        },
+        async getSpaceSidebar(...args: unknown[]) {
+            await record("getSpaceSidebar", args);
+            return { artifactId: "sidebar", version: 1, html: "<nav></nav>", spaces: [] };
+        },
         async getHealth(...args: unknown[]) {
             await record("getHealth", args);
             return health();

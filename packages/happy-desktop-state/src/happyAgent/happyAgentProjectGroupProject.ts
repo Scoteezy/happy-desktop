@@ -58,6 +58,8 @@ export interface HappyAgentWorktreeGroup {
     readonly projectId: HappyAgentProjectId;
     /** Name the daemon reserved for the worktree; the row's label. */
     readonly name: string;
+    /** The agent that created this worktree, or null for one a person made. */
+    readonly creatorAgentId: string | null;
     /** Fractional index this worktree sorts by among its project's worktrees. */
     readonly orderKey: string;
     readonly path: string;
@@ -173,6 +175,7 @@ export function happyAgentProjectGroupsProject(
             id: worktree.id,
             projectId: worktree.projectId,
             name: worktree.name,
+            creatorAgentId: worktree.creatorAgentId,
             orderKey: worktree.orderKey,
             path: worktree.path,
             displayPath: worktree.displayPath,

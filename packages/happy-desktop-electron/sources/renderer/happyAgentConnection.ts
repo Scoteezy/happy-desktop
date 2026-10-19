@@ -43,6 +43,7 @@ import {
     type HappyAgentSecretsStore,
     type HappyAgentArtifacts,
     type HappyAgentSurfaces,
+    type HappyAgentSpacesStore,
     type HappyAgentSessionLocation,
     type HappyAgentWorkspaceMemoryDocument,
     type HappyAgentWorkspaceMemoryPersistence,
@@ -130,6 +131,8 @@ export interface HappyAgentSession {
     readonly artifacts: HappyAgentArtifacts;
     /** This Happy Agent's shared Surfaces, such as todo lists, materialized as they open. */
     readonly surfaces: HappyAgentSurfaces;
+    /** The redesigned sidebar, read once something subscribes to it. */
+    readonly spaces: HappyAgentSpacesStore;
     readonly clock: HappyAgentClockStore;
 }
 
@@ -581,6 +584,7 @@ export function happyAgentConnectionOpen(input: {
                     artifacts: client.artifacts(),
                     surfaces: client.surfaces(),
                     clock,
+                    spaces: client.spaces(),
                 };
                 debugEntry({
                     level: "info",

@@ -48,7 +48,6 @@ import {
 
 export const componentNumber = "P-021";
 const noop = () => undefined;
-const composeShortcut = { aria: "Meta+N Meta+T", caps: "⌘N" };
 const desktopWindows = [
     { width: 1440, height: 900 },
     { width: 1100, height: 760 },
@@ -755,10 +754,11 @@ function StoryWindow(props: StoryFrame) {
                                 activeItemId={mainId}
                                 actions={primaryRows}
                                 actionsDivider
-                                composeLabel="Make Stuff"
-                                composeShortcut={composeShortcut}
-                                composeTooltip="New item (⌘N or ⌘T)"
-                                onCompose={begin}
+                                searchRow={{
+                                    label: "Search",
+                                    shortcut: { aria: "Meta+K", caps: "⌘K" },
+                                    onOpen: () => setSearchOpen(true),
+                                }}
                                 itemMarkPresentation={props.iconsOff ? "none" : "default"}
                                 treeConnectors={false}
                                 foldControlPlacement="trailing"
@@ -906,7 +906,7 @@ function StoryWindow(props: StoryFrame) {
                 </ConnectionShell>
                 {props.windowed ? <TrafficLights /> : null}
                 {searchOpen ? (
-                    <ModalOverlay placement="top" onDismiss={() => setSearchOpen(false)}>
+                    <ModalOverlay placement="center" onDismiss={() => setSearchOpen(false)}>
                         <CommandPalette
                             query={query}
                             onQueryChange={(next) => {

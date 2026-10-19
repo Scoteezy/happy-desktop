@@ -986,6 +986,13 @@ export { FileChangeDiff, type FileChangeDiffProps } from "./FileChangeDiff";
 export { WorkTabControls, type WorkTabControlsProps } from "./WorkTabControls";
 export { ConversationSummaryRow, type ConversationSummaryRowProps } from "./ConversationSummaryRow";
 export { MakeStuffView, type MakeStuffStage, type MakeStuffViewProps } from "./MakeStuffView";
+export {
+    CLAY_ICON_SLUGS,
+    clayIconMark,
+    clayIconSlugIs,
+    happyIconMark,
+    type ClayIconSlug,
+} from "./clayIcons";
 export { WorkTranscript, type WorkTranscriptRow, type WorkTranscriptProps } from "./WorkTranscript";
 export {
     DataDisclosure,

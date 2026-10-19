@@ -740,6 +740,7 @@ function projectWorkspace(
     return {
         id: workspace.id,
         name: workspace.name,
+        creatorAgentId: workspace.creatorAgentId,
         orderKey: workspace.orderKey,
         path: computePath(workspace.compute),
         presence: "present",
