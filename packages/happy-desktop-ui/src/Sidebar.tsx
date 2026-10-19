@@ -32,6 +32,7 @@ import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
 import { ScrollArea } from "./Scrollbar";
 import { TextField } from "./TextField";
+import { sidebarSectionsReuser } from "./sidebarSectionsReuser";
 /** One control on a row: its glyph, what it does, and when it shows. */
 export type SidebarItemAction = {
     icon: IconName;
@@ -1888,7 +1889,10 @@ export function Sidebar(props: SidebarProps) {
     const actions = local.actions ?? [];
     const numberShortcuts = local.numberShortcuts !== undefined;
     const numberShortcutNavigation = local.numberShortcuts === "navigate";
-    const sections = local.sections;
+    // Rows keep their objects across equal snapshots, so a store update that changes nothing
+    // the sidebar shows leaves every row's memoized render standing. See the reuser.
+    const [sectionsReuse] = useState(sidebarSectionsReuser);
+    const sections = sectionsReuse(local.sections);
     const onItemSelect = local.onItemSelect;
     const shortcutRows = numberShortcuts
         ? shortcutRowsOf(sections, local.numberShortcutTargets)
@@ -2566,7 +2570,7 @@ export function Sidebar(props: SidebarProps) {
                             {local.bodyAccessory}
                         </div>
                     ) : null}
-                    {local.sections.map((section) => {
+                    {sections.map((section) => {
                         // The rows as they stand on screen. Everything below —
                         // the tree connectors, a drag's units, a keyboard move —
                         // is stated against these rather than against the rows
