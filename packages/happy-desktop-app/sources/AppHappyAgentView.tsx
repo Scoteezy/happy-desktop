@@ -73,6 +73,7 @@ import type {
     HappyAgentPanelStore,
     HappyAgentPanelTabId,
     HappyAgentPanelTabSnapshot,
+    HappyAgentBrowserNetworkId,
     HappyAgentPermissionMode,
     HappyAgentProfileStore,
     HappyAgentInboxItem,
@@ -10066,6 +10067,25 @@ function HappyAgentToolBodies(props: {
                                               connectionId: props.browserConnectionId,
                                               workspaceId: tab.workspaceId,
                                               agentId: tab.agentId,
+                                              ...(tab.networkId === undefined
+                                                  ? {}
+                                                  : { networkId: tab.networkId }),
+                                          },
+                                          browserNetworkResolved: (networkId) =>
+                                              props.store.browserNetworkBind(
+                                                  tab.id,
+                                                  networkId as HappyAgentBrowserNetworkId,
+                                              ),
+                                          // A page's popup opens beside it, on
+                                          // its own agent and network.
+                                          browserPopupRequested: (url) => {
+                                              if (tab.networkId === undefined) return;
+                                              props.store.browserPopupAdd(
+                                                  url,
+                                                  tab.workspaceId,
+                                                  tab.agentId,
+                                                  tab.networkId,
+                                              );
                                           },
                                       })
                                 : undefined

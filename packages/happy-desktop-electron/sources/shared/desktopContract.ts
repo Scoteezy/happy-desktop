@@ -644,19 +644,30 @@ export interface DesktopBrowserStatus {
     readonly statusText: string;
 }
 
-/** The owning Happy Agent route, workspace, and agent whose network the guest uses. */
+/** The agent a browser tab is opened for, asked once which network it uses. */
 export interface DesktopBrowserProxyTarget {
     /** Null names the host; otherwise the host-published connection identity. */
     readonly connectionId: string | null;
     readonly workspaceId: string;
-    /** The agent whose machine carries the traffic, fixed for the tab's lifetime. */
     readonly agentId: string;
 }
 
-/** A page a workspace browser guest opened, with the network it was opened on. */
+/**
+ * One compute network a browser tab is bound to for its whole life. Its
+ * cookies, storage, and route belong to the network, so every tab bound to it
+ * shares them, whichever agent named it.
+ */
+export interface DesktopBrowserNetwork {
+    /** Null names the host; otherwise the host-published connection identity. */
+    readonly connectionId: string | null;
+    /** Opaque, minted by Happy Agent. */
+    readonly networkId: string;
+}
+
+/** A page a workspace browser guest asked to open, for the guest's own tab to place. */
 export interface DesktopBrowserPopup {
+    readonly guestId: number;
     readonly url: string;
-    readonly opener: DesktopBrowserProxyTarget;
 }
 
 /**
@@ -775,18 +786,22 @@ export interface HappyDesktopBridge {
      */
     attachmentSourcePath(file: File): string | undefined;
     /**
-     * Returns the guest partition after routing it through its agent's proxy.
-     * The three agent browser members are absent on native hosts that cannot
-     * route a browser to one agent, which must not open one at all.
+     * Asks the agent's Happy Agent which network the agent's traffic leaves
+     * from, once, when a tab is created. The four network browser members are
+     * absent on native hosts without network profiles, which must not open a
+     * workspace browser at all.
      */
-    browserAgentProxyApply?(target: DesktopBrowserProxyTarget): Promise<string>;
-    browserAgentCommand?(
-        target: DesktopBrowserProxyTarget,
+    browserNetworkResolve?(target: DesktopBrowserProxyTarget): Promise<string>;
+    /** Returns the partition of a network's profile, opening it the first time. */
+    browserNetworkProfileOpen?(network: DesktopBrowserNetwork): Promise<string>;
+    /** Navigates one guest of an open network profile. */
+    browserNetworkCommand?(
+        partition: string,
         guestId: number,
         command: DesktopBrowserCommand,
     ): Promise<void>;
-    /** Pages a workspace browser guest opened, to be opened on the same agent. */
-    browserAgentPopupSubscribe?(listener: (popup: DesktopBrowserPopup) => void): () => void;
+    /** Pages a workspace browser guest opened, for the guest's own tab to place. */
+    browserNetworkPopupSubscribe?(listener: (popup: DesktopBrowserPopup) => void): () => void;
     /** Web links Happy itself was asked to open, outside any workspace browser. */
     browserOpenSubscribe(listener: (url: string) => void): () => void;
     browserStatusSubscribe(listener: (status: DesktopBrowserStatus) => void): () => void;
@@ -955,9 +970,10 @@ export const desktopIpc = {
     liveMicrophoneRevoke: "happy:live:microphone-revoke",
     /** Renderer → main only: the appearance source inherited by local web contents. */
     appearanceSet: "happy:appearance:set",
-    browserAgentProxyApply: "happy:browser:agent-proxy-apply",
-    browserAgentPopupRequested: "happy:browser:agent-popup-requested",
-    browserAgentCommand: "happy:browser:agent-command",
+    browserNetworkResolve: "happy:browser:network-resolve",
+    browserNetworkProfileOpen: "happy:browser:network-profile-open",
+    browserNetworkPopupRequested: "happy:browser:network-popup-requested",
+    browserNetworkCommand: "happy:browser:network-command",
     browserOpenRequested: "happy:browser:open-requested",
     browserStatusChanged: "happy:browser:status-changed",
     browserTunnelFailed: "happy:browser:tunnel-failed",

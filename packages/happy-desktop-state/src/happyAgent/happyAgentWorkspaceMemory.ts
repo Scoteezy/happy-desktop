@@ -1,5 +1,9 @@
 import type { HappyAgentFileTabKind } from "./happyAgentWorkspaceStore.js";
-import type { HappyAgentGroupId, HappyAgentSessionId } from "./happyAgentTypes.js";
+import type {
+    HappyAgentBrowserNetworkId,
+    HappyAgentGroupId,
+    HappyAgentSessionId,
+} from "./happyAgentTypes.js";
 import type { HappyAgentViewPlacement } from "./happyAgentPanelStore.js";
 
 /** One file tab remembered for a group, enough to reopen it as it was left. */
@@ -34,8 +38,10 @@ export type HappyAgentRecentTabMemory =
 export interface HappyAgentPanelBrowserMemory {
     readonly url: string;
     readonly label: string;
-    /** The agent whose machine the page's network belongs to, fixed when it opened. */
+    /** The agent the page was opened for. */
     readonly agentId: HappyAgentSessionId;
+    /** The network the page was bound to when it opened; it never moves to another. */
+    readonly networkId: HappyAgentBrowserNetworkId;
     /**
      * Which strip the page was being read in. Absent means the panel, which is
      * where every page opens and where every page remembered before this was
@@ -268,8 +274,8 @@ function panelParse(value: unknown): HappyAgentPanelMemory | undefined {
             : undefined;
     let activeIndex: number | undefined;
     const browsers: HappyAgentPanelBrowserMemory[] = [];
-    // A page remembered without its agent has no machine to load from, so it
-    // is not brought back on some other agent's network.
+    // A page remembered without its agent and network has no network to load
+    // from, so it is not brought back on some other one.
     for (const [index, entry] of (Array.isArray(record.browsers)
         ? record.browsers
         : []
@@ -278,11 +284,13 @@ function panelParse(value: unknown): HappyAgentPanelMemory | undefined {
         const browser = entry as Record<string, unknown>;
         if (typeof browser.url !== "string") continue;
         if (typeof browser.agentId !== "string" || browser.agentId.length === 0) continue;
+        if (typeof browser.networkId !== "string" || browser.networkId.length === 0) continue;
         if (index === storedIndex) activeIndex = browsers.length;
         browsers.push({
             url: browser.url,
             label: typeof browser.label === "string" ? browser.label : browser.url,
             agentId: browser.agentId as HappyAgentSessionId,
+            networkId: browser.networkId as HappyAgentBrowserNetworkId,
         });
     }
     const active: HappyAgentPanelViewMemory =

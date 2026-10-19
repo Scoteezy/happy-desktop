@@ -16,9 +16,18 @@ declare const happyAgentWorktreeIdBrand: unique symbol;
 declare const happyAgentTerminalIdBrand: unique symbol;
 declare const happyAgentBotIdBrand: unique symbol;
 declare const happyAgentTaskIdBrand: unique symbol;
+declare const happyAgentBrowserNetworkIdBrand: unique symbol;
 
 /** Branded session identifier (CUID2 on the wire) so ids are not interchangeable with plain strings. */
 export type HappyAgentSessionId = string & { readonly [happyAgentSessionIdBrand]: true };
+
+/**
+ * Branded, opaque identifier Happy Agent mints for the compute network an
+ * agent's traffic leaves from. Agents sharing a network share one identifier.
+ */
+export type HappyAgentBrowserNetworkId = string & {
+    readonly [happyAgentBrowserNetworkIdBrand]: true;
+};
 
 /** Branded identifier of a project the daemon owns durably (CUID2 on the wire). */
 export type HappyAgentProjectId = string & { readonly [happyAgentProjectIdBrand]: true };

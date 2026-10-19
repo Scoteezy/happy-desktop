@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type {
+    DesktopBrowserNetwork,
     DesktopBrowserProxyTarget,
     DesktopRuntimeSnapshot,
     DesktopStartRequest,
@@ -272,16 +273,22 @@ export class DesktopRuntime implements AsyncDisposable {
         return endpoint ? endpoint.replace(/\/$/u, "") : undefined;
     }
 
-    /** Opens a browser tunnel to the target agent's machine through its owning connection. */
-    async openHttpProxy(target: DesktopBrowserProxyTarget, signal?: AbortSignal): Promise<Duplex> {
+    /** Asks the agent's own connection which network its traffic leaves from. */
+    browserNetworkResolve(
+        target: DesktopBrowserProxyTarget,
+        signal?: AbortSignal,
+    ): Promise<string> {
         const host = this.browserHost();
         const client = target.connectionId === null ? host : host.connection(target.connectionId);
+        return client.getWorkspaceAgentNetwork(target.workspaceId, target.agentId, signal);
+    }
+
+    /** Opens a browser tunnel into one network through its owning connection. */
+    async openHttpProxy(network: DesktopBrowserNetwork, signal?: AbortSignal): Promise<Duplex> {
+        const host = this.browserHost();
+        const client = network.connectionId === null ? host : host.connection(network.connectionId);
         try {
-            return await client.openWorkspaceAgentHttpProxy(
-                target.workspaceId,
-                target.agentId,
-                signal,
-            );
+            return await client.openNetworkHttpProxy(network.networkId, signal);
         } catch (error) {
             // The browser proxy gives a tunnel a deadline; running out of it is
             // the daemon not answering, unlike the page or profile going away.

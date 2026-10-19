@@ -47,7 +47,7 @@ import {
     liveWindowArgument,
     mediaPreviewView,
     type DesktopBrowserPopup,
-    type DesktopBrowserProxyTarget,
+    type DesktopBrowserNetwork,
     type DesktopBrowserStatus,
     type DesktopBrowserTunnelFailure,
     type DesktopCloudAuthConfiguration,
@@ -77,6 +77,7 @@ import { legacyCliConnectorCreate } from "./legacyCliConnect";
 import { legacyCliManagementCreate } from "./legacyCliManagement";
 import {
     desktopBrowserCommandValidate,
+    desktopBrowserNetworkValidate,
     desktopBrowserProxyTargetValidate,
 } from "./happyAgentIpcValidation";
 import { htmlPreviewProxyCreate, type HtmlPreviewProxyHandle } from "./htmlPreviewProxy";
@@ -587,9 +588,9 @@ function browserProxySerial<T>(work: () => Promise<T>): Promise<T> {
     return next;
 }
 
-function browserProxyApply(target: DesktopBrowserProxyTarget): Promise<string> {
+function browserProxyApply(network: DesktopBrowserNetwork): Promise<string> {
     return browserProxySerial(async () => {
-        const partition = HappyAgentBrowser.partition(target);
+        const partition = HappyAgentBrowser.partition(network);
         if (browserProxies.has(partition)) return partition;
         if (browserProxies.size >= 128)
             throw new Error("Too many workspace browser profiles are open.");
@@ -597,7 +598,7 @@ function browserProxyApply(target: DesktopBrowserProxyTarget): Promise<string> {
         await browserSessionConfigure(browserSession);
         let candidate: HappyAgentBrowser | undefined;
         try {
-            candidate = await HappyAgentBrowser.create(browserSession, target, runtime);
+            candidate = await HappyAgentBrowser.create(browserSession, network, runtime);
             browserProxies.set(partition, candidate);
             return partition;
         } catch (error) {
@@ -620,17 +621,13 @@ function browserWebUrl(candidate: string, allowBlank = false): string | undefine
     }
 }
 
-/** A guest's popup opens on the guest's own agent, whatever the window has open now. */
-function browserPopupPublish(
-    window: BrowserWindow,
-    candidate: string,
-    opener: DesktopBrowserProxyTarget,
-): void {
+/** A guest's popup goes to the guest's own tab, which places it on its own network. */
+function browserPopupPublish(window: BrowserWindow, candidate: string, guestId: number): void {
     const url = browserWebUrl(candidate);
     if (!url || window.isDestroyed() || window.webContents.isDestroyed()) return;
-    window.webContents.send(desktopIpc.browserAgentPopupRequested, {
+    window.webContents.send(desktopIpc.browserNetworkPopupRequested, {
+        guestId,
         url,
-        opener,
     } satisfies DesktopBrowserPopup);
 }
 
@@ -886,7 +883,7 @@ function browserGuestAttach(window: BrowserWindow): void {
         // guest is still on about:blank here, so no page runs before it holds.
         guest.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
         guest.setWindowOpenHandler(({ url }) => {
-            if (browser.popupAllowed(guest, url)) browserPopupPublish(window, url, browser.target);
+            if (browser.popupAllowed(guest, url)) browserPopupPublish(window, url, guest.id);
             return { action: "deny" };
         });
         const navigationGuard = (event: Electron.Event, candidate: string) => {
@@ -1824,24 +1821,33 @@ void app
                 desktopReactDevtoolsMessageValidate(raw);
             if (message) desktopProfilerController.reactMessage(message);
         });
-        ipcMain.handle(desktopIpc.browserAgentProxyApply, (event, target: unknown) => {
+        ipcMain.handle(desktopIpc.browserNetworkResolve, (event, target: unknown) => {
+            desktopDaemonSenderRequire(event.sender);
+            if (event.senderFrame !== event.sender.mainFrame)
+                throw new Error("Only Happy can open a browser tab.");
+            return runtime.browserNetworkResolve(
+                desktopBrowserProxyTargetValidate(target),
+                AbortSignal.timeout(10_000),
+            );
+        });
+        ipcMain.handle(desktopIpc.browserNetworkProfileOpen, (event, network: unknown) => {
             desktopDaemonSenderRequire(event.sender);
             if (event.senderFrame !== event.sender.mainFrame)
                 throw new Error("Only Happy can configure a browser profile.");
-            return browserProxyApply(desktopBrowserProxyTargetValidate(target));
+            return browserProxyApply(desktopBrowserNetworkValidate(network));
         });
         ipcMain.handle(
-            desktopIpc.browserAgentCommand,
-            (event, rawTarget: unknown, guestId: unknown, rawCommand: unknown) => {
+            desktopIpc.browserNetworkCommand,
+            (event, partition: unknown, guestId: unknown, rawCommand: unknown) => {
                 desktopDaemonSenderRequire(event.sender);
                 if (
                     event.senderFrame !== event.sender.mainFrame ||
+                    typeof partition !== "string" ||
                     !Number.isSafeInteger(guestId) ||
                     (guestId as number) <= 0
                 )
                     throw new Error("Invalid browser tab.");
-                const target = desktopBrowserProxyTargetValidate(rawTarget);
-                const browser = browserProxies.get(HappyAgentBrowser.partition(target));
+                const browser = browserProxies.get(partition);
                 const guest = electronWebContents.fromId(guestId as number);
                 if (
                     !browser ||

@@ -62,6 +62,7 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
     private proxyGeneration = 0;
     private statusUnsubscribe?: () => void;
     private tunnelFailureUnsubscribe?: () => void;
+    private popupUnsubscribe?: () => void;
     /**
      * A recent tunnel failure main reported for the current navigation's
      * address. It and the engine's failure event arrive in either order, so
@@ -101,12 +102,12 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
 
     private command(command: DesktopBrowserCommand): void {
         const desktop = window.happyDesktop;
-        const target = this.props.target;
+        const partition = this.state.partition;
         const view = this.element;
-        if (!desktop?.browserAgentCommand || !target || !view || !this.initialized) return;
+        if (!desktop?.browserNetworkCommand || !partition || !view || !this.initialized) return;
         const generation = this.proxyGeneration;
         void desktop
-            .browserAgentCommand(target, view.getWebContentsId(), command)
+            .browserNetworkCommand(partition, view.getWebContentsId(), command)
             .catch((error: unknown) => {
                 if (
                     generation !== this.proxyGeneration ||
@@ -203,6 +204,11 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
                 });
             },
         );
+        this.popupUnsubscribe = window.happyDesktop?.browserNetworkPopupSubscribe?.((popup) => {
+            if (!this.initialized) return;
+            if (popup.guestId !== this.element?.getWebContentsId()) return;
+            this.props.browserPopupRequested?.(popup.url);
+        });
         this.statusUnsubscribe = window.happyDesktop?.browserStatusSubscribe((status) => {
             if (!this.initialized) return;
             if (status.guestId !== this.element?.getWebContentsId()) return;
@@ -216,7 +222,8 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         if (
             before.target?.workspaceId !== this.props.target?.workspaceId ||
             before.target?.connectionId !== this.props.target?.connectionId ||
-            before.target?.agentId !== this.props.target?.agentId
+            before.target?.agentId !== this.props.target?.agentId ||
+            before.target?.networkId !== this.props.target?.networkId
         )
             this.proxyApply();
     }
@@ -227,6 +234,8 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         this.statusUnsubscribe = undefined;
         this.tunnelFailureUnsubscribe?.();
         this.tunnelFailureUnsubscribe = undefined;
+        this.popupUnsubscribe?.();
+        this.popupUnsubscribe = undefined;
         this.elementApply(undefined);
     }
 
@@ -274,28 +283,52 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
             this.props.browserFailed({ message: "The browser has no Happy Agent workspace." });
             return;
         }
-        // A host without the agent route would put the page on some other
+        // A host without network profiles would put the page on some other
         // machine's network, so it does not get to open one.
-        if (!desktop.browserAgentProxyApply || !desktop.browserAgentCommand) {
+        if (
+            !desktop.browserNetworkResolve ||
+            !desktop.browserNetworkProfileOpen ||
+            !desktop.browserNetworkCommand ||
+            !desktop.browserNetworkPopupSubscribe
+        ) {
             this.props.browserFailed({
                 message: "Update Happy to use the workspace browser.",
             });
             return;
         }
-        void desktop.browserAgentProxyApply(target).then(
-            (partition) => {
+        const failed = (error: unknown) => {
+            if (generation !== this.proxyGeneration) return;
+            this.props.browserFailed({
+                message:
+                    error instanceof Error
+                        ? error.message
+                        : "The Happy Agent browser proxy could not be opened.",
+            });
+        };
+        // A tab is bound to a network once. A bound tab only ever opens that
+        // network's profile; if the network has ended, its tunnels are refused
+        // and the tab is not moved to whatever the agent names now.
+        if (target.networkId === undefined) {
+            // Bind the tab this view was asked for, even if the view has moved
+            // on by the time the agent answers.
+            const bind = this.props.browserNetworkResolved;
+            void desktop
+                .browserNetworkResolve({
+                    connectionId: target.connectionId,
+                    workspaceId: target.workspaceId,
+                    agentId: target.agentId,
+                })
+                .then((networkId) => bind?.(networkId), failed);
+            return;
+        }
+        void desktop
+            .browserNetworkProfileOpen({
+                connectionId: target.connectionId,
+                networkId: target.networkId,
+            })
+            .then((partition) => {
                 if (generation === this.proxyGeneration) this.setState({ partition });
-            },
-            (error: unknown) => {
-                if (generation !== this.proxyGeneration) return;
-                this.props.browserFailed({
-                    message:
-                        error instanceof Error
-                            ? error.message
-                            : "The Happy Agent browser proxy could not be opened.",
-                });
-            },
-        );
+            }, failed);
     }
 
     /** The tunnel's own reason, when main reported one for this address. */

@@ -31,11 +31,15 @@ export interface BrowserFailure {
 }
 
 export interface BrowserContentProps {
-    /** Owning workspace, host-published Happy Agent route, and the agent whose network it uses. */
+    /**
+     * Owning workspace, host-published Happy Agent route, the agent the tab was
+     * opened for, and the network it is bound to once that has been named.
+     */
     readonly target?: {
         readonly connectionId: string | null;
         readonly workspaceId: string;
         readonly agentId: string;
+        readonly networkId?: string;
     };
     /** Initial location for the Chromium guest. Further navigation uses the controller. */
     readonly source: string;
@@ -44,6 +48,10 @@ export interface BrowserContentProps {
     browserLocationChanged(url: string, canGoBack: boolean, canGoForward: boolean): void;
     browserTitleChanged(title: string): void;
     browserFailed(failure: BrowserFailure): void;
+    /** The tab's agent named its network; the tab is bound to it from now on. */
+    browserNetworkResolved?(networkId: string): void;
+    /** The page asked to open another page, which belongs on the same network. */
+    browserPopupRequested?(url: string): void;
 }
 
 /** Native browser-content adapter supplied by the host (Electron in production). */

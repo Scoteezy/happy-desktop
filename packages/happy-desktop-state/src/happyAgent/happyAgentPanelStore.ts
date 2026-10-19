@@ -3,7 +3,11 @@ import type {
     HappyAgentTerminalStore,
 } from "./happyAgentTerminalStore.js";
 import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
-import type { HappyAgentGroupId, HappyAgentSessionId } from "./happyAgentTypes.js";
+import type {
+    HappyAgentBrowserNetworkId,
+    HappyAgentGroupId,
+    HappyAgentSessionId,
+} from "./happyAgentTypes.js";
 import type { HappyAgentPanelMemory } from "./happyAgentWorkspaceMemory.js";
 
 declare const happyAgentPanelTabIdBrand: unique symbol;
@@ -46,10 +50,16 @@ export type HappyAgentPanelTabSnapshot =
           /** Authoritative workspace network boundary. */
           readonly workspaceId: HappyAgentGroupId;
           /**
-           * The agent whose machine carries the page's network, fixed when the
-           * tab opened. Reading another of the workspace's chats never moves it.
+           * The agent the tab was opened for, fixed when it opened. Reading
+           * another of the workspace's chats never moves it.
            */
           readonly agentId: HappyAgentSessionId;
+          /**
+           * The network the tab is bound to, named once by the agent's Happy
+           * Agent and never replaced: a different network is a different tab.
+           * Absent until it has been named.
+           */
+          readonly networkId?: HappyAgentBrowserNetworkId;
           /** Last committed main-frame location, restored if the surface remounts. */
           readonly url: string;
       })
@@ -222,7 +232,17 @@ export interface HappyAgentPanelStore {
      * Adds a page another page opened. It belongs where its opener does, to the
      * opener's group and on the opener's agent, whichever group is open now.
      */
-    browserPopupAdd(url: string, groupId: HappyAgentGroupId, agentId: HappyAgentSessionId): void;
+    browserPopupAdd(
+        url: string,
+        groupId: HappyAgentGroupId,
+        agentId: HappyAgentSessionId,
+        networkId: HappyAgentBrowserNetworkId,
+    ): void;
+    /**
+     * Binds a browser tab to the network its agent's Happy Agent named. A tab
+     * is bound once; a tab already bound keeps its network.
+     */
+    browserNetworkBind(tabId: HappyAgentPanelTabId, networkId: HappyAgentBrowserNetworkId): void;
     /** Reconciles Chromium-owned location/title metadata into one browser tab. */
     browserUpdate(tabId: HappyAgentPanelTabId, update: HappyAgentBrowserUpdate): void;
     tabSelect(tabId: HappyAgentPanelTabId): void;
@@ -286,6 +306,7 @@ interface Tab {
     label: string;
     readonly groupId: HappyAgentGroupId;
     readonly agentId?: HappyAgentSessionId;
+    networkId?: HappyAgentBrowserNetworkId;
     readonly terminal?: HappyAgentTerminalHandle;
     title?: string;
     url?: string;
@@ -317,7 +338,8 @@ function tabSame(
             next.kind === "browser" &&
             before.url === next.url &&
             before.workspaceId === next.workspaceId &&
-            before.agentId === next.agentId
+            before.agentId === next.agentId &&
+            before.networkId === next.networkId
         );
     if (before.kind === "artifact")
         return (
@@ -402,6 +424,9 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
                                   url: tab.url ?? "about:blank",
                                   workspaceId: tab.groupId,
                                   agentId: tab.agentId,
+                                  ...(tab.networkId === undefined
+                                      ? {}
+                                      : { networkId: tab.networkId }),
                               },
                           ];
                 if (tab.kind === "artifact" && tab.artifactId !== undefined)
@@ -483,23 +508,27 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
     const remember = (group = groupId): void => {
         if (!group || !deps.memoryWrite) return;
         const addressed = group === groupId;
-        const browsers = tabs.filter((tab) => tab.groupId === group && tab.kind === "browser");
+        // A page not yet bound to a network has loaded nothing, so it is not
+        // written down; it could only come back on a network named later.
+        const browsers = tabs.flatMap((tab) =>
+            tab.groupId === group &&
+            tab.kind === "browser" &&
+            tab.agentId !== undefined &&
+            tab.networkId !== undefined
+                ? [{ tab, agentId: tab.agentId, networkId: tab.networkId }]
+                : [],
+        );
         const selected = addressed ? activeViewId : activeByGroup.get(group);
-        const activeIndex = browsers.findIndex((tab) => tab.id === selected);
+        const activeIndex = browsers.findIndex(({ tab }) => tab.id === selected);
         deps.memoryWrite(group, {
             open: addressed ? open : (chromeByGroup.get(group)?.open ?? false),
-            browsers: browsers.flatMap((tab) =>
-                tab.agentId === undefined
-                    ? []
-                    : [
-                          {
-                              url: tab.url ?? "about:blank",
-                              label: tab.label,
-                              agentId: tab.agentId,
-                              placement: tab.placement,
-                          },
-                      ],
-            ),
+            browsers: browsers.map(({ tab, agentId, networkId }) => ({
+                url: tab.url ?? "about:blank",
+                label: tab.label,
+                agentId,
+                networkId,
+                placement: tab.placement,
+            })),
             active: activeIndex >= 0 ? { type: "browser", index: activeIndex } : { type: "files" },
         });
     };
@@ -525,6 +554,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
     const browserTabAdd = (
         group: HappyAgentGroupId,
         agent: HappyAgentSessionId,
+        network: HappyAgentBrowserNetworkId | undefined,
         candidate?: string,
         label?: string,
     ): boolean => {
@@ -538,6 +568,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             label: label ?? browserLabel(url),
             groupId: group,
             agentId: agent,
+            ...(network === undefined ? {} : { networkId: network }),
             placement: "panel",
             url,
         });
@@ -557,7 +588,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         const memory = deps.memoryRead?.(group);
         if (!memory) return;
         for (const browser of memory.browsers) {
-            browserTabAdd(group, browser.agentId, browser.url, browser.label);
+            browserTabAdd(group, browser.agentId, browser.networkId, browser.url, browser.label);
             // A page left in the main content comes back to the main content.
             // Where it was being read is part of how the group was arranged.
             const added = tabs.at(-1);
@@ -771,15 +802,15 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         },
         browserAdd(url) {
             if (disposed || !groupId || !conversationId) return;
-            if (!browserTabAdd(groupId, conversationId, url)) return;
+            if (!browserTabAdd(groupId, conversationId, undefined, url)) return;
             open = true;
             remember();
             recompute();
         },
-        browserPopupAdd(url, group, agent) {
+        browserPopupAdd(url, group, agent, network) {
             if (disposed) return;
             if (group === groupId) {
-                if (!browserTabAdd(group, agent, url)) return;
+                if (!browserTabAdd(group, agent, network, url)) return;
                 open = true;
                 remember();
                 recompute();
@@ -789,11 +820,21 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             // does not replace what that group remembered.
             const selected = activeViewId;
             groupRestore(group);
-            const added = browserTabAdd(group, agent, url);
+            const added = browserTabAdd(group, agent, network, url);
             activeViewId = selected;
             if (!added) return;
             chromeByGroup.set(group, { open: true });
             remember(group);
+        },
+        browserNetworkBind(tabId, network) {
+            if (disposed) return;
+            const tab = tabs.find(
+                (candidate) => candidate.id === tabId && candidate.kind === "browser",
+            );
+            if (!tab || tab.networkId !== undefined) return;
+            tab.networkId = network;
+            remember(tab.groupId);
+            recompute();
         },
         browserUpdate(tabId, update) {
             if (disposed) return;

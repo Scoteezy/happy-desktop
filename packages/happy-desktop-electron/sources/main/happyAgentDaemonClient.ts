@@ -25,7 +25,9 @@ import {
     type WorkspaceResponse,
     type WriteFileRequest,
     type WriteFileResponse,
+    workspaceAgentNetworkResponseSchema,
 } from "@slopus/happy-agent-client";
+import { Value } from "@sinclair/typebox/value";
 import { WebSocket, createWebSocketStream } from "ws";
 
 /**
@@ -337,18 +339,37 @@ export class HappyAgentDaemonClient {
     }
 
     /**
-     * Opens `CONNECT /v0/workspaces/:workspaceId/agents/:agentId/proxy`: the
-     * network of that agent's own machine. A daemon that does not know the agent,
-     * or this route, refuses it, and nothing falls back to the workspace's.
+     * `GET /v0/workspaces/:workspaceId/agents/:agentId/proxy`: the network that
+     * agent's traffic leaves from. Agents sharing a network get the same answer.
+     * Protocol 28 introduced the route, so an older Happy Agent is not asked.
      */
-    openWorkspaceAgentHttpProxy(
+    async getWorkspaceAgentNetwork(
         workspaceId: string,
         agentId: string,
         signal?: AbortSignal,
-    ): Promise<Duplex> {
-        const url = new URL(
-            this.#client.workspaceAgentProxyUrl(workspaceId as Cuid2, agentId as Cuid2),
+    ): Promise<string> {
+        const { version } = await this.health(signal);
+        if (version.protocol < BROWSER_NETWORK_PROTOCOL)
+            throw new Error(
+                `Happy Agent ${version.daemon} (protocol ${String(version.protocol)}) cannot open a workspace browser; it needs protocol ${String(BROWSER_NETWORK_PROTOCOL)}.`,
+            );
+        const response: unknown = await this.#client.getWorkspaceAgentNetwork(
+            workspaceId as Cuid2,
+            agentId as Cuid2,
+            signal ? { signal } : undefined,
         );
+        if (!Value.Check(workspaceAgentNetworkResponseSchema, response))
+            throw new Error("Happy Agent described an invalid browser network.");
+        return response.networkId;
+    }
+
+    /**
+     * Opens `CONNECT /v0/networks/:networkId/proxy`: one network, whichever
+     * agent named it. An unknown or ended network is refused, and nothing falls
+     * back to another one.
+     */
+    openNetworkHttpProxy(networkId: string, signal?: AbortSignal): Promise<Duplex> {
+        const url = new URL(this.#client.networkProxyUrl(networkId));
         return this.#openConnect(url.pathname, signal);
     }
 
@@ -650,6 +671,8 @@ function happyAgentBridgeRefusal(statusCode: number, body: string): HappyAgentBr
     return new HappyAgentBridgeRefusedError(statusCode, code, message);
 }
 
+/** The first Happy Agent protocol that names and opens browser networks. */
+const BROWSER_NETWORK_PROTOCOL = 28;
 /** The most of a refused proxy tunnel's body that is read, and for how long. */
 const PROXY_REFUSAL_MAX_BYTES = 16 * 1024;
 const PROXY_REFUSAL_READ_MS = 2_000;

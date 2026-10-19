@@ -1,35 +1,38 @@
 import { createHash } from "node:crypto";
 import type { Session, WebContents } from "electron";
-import type { DesktopBrowserCommand, DesktopBrowserProxyTarget } from "../shared/desktopContract";
+import type { DesktopBrowserCommand, DesktopBrowserNetwork } from "../shared/desktopContract";
 import {
     happyAgentBrowserProxyCreate,
     type HappyAgentBrowserProxyHandle,
 } from "./happyAgentBrowserProxy";
 import type { DesktopRuntime } from "./desktopRuntime";
 
-/** Chromium stays local; all network traffic exits through the owning agent's machine. */
+/**
+ * Chromium stays local; all network traffic exits through one compute network.
+ * Every tab bound to that network shares the profile's cookies and storage.
+ */
 export class HappyAgentBrowser {
     readonly #guests = new Map<number, WebContents>();
     #closed = false;
 
-    static partition(target: DesktopBrowserProxyTarget): string {
+    static partition(network: DesktopBrowserNetwork): string {
         const identity = createHash("sha256")
-            .update(JSON.stringify([target.connectionId, target.workspaceId, target.agentId]))
+            .update(JSON.stringify([network.connectionId, network.networkId]))
             .digest("hex");
         return `persist:happy-browser-${identity}`;
     }
 
     static async create(
         session: Session,
-        target: DesktopBrowserProxyTarget,
+        network: DesktopBrowserNetwork,
         runtime: DesktopRuntime,
     ): Promise<HappyAgentBrowser> {
         const proxy = await happyAgentBrowserProxyCreate({
             // Resolve the current connection on each request so reconnecting does
-            // not replace the profile or its guests. An unavailable agent rejects.
-            openHttpProxy: (signal) => runtime.openHttpProxy(target, signal),
+            // not replace the profile or its guests. An ended network rejects.
+            openHttpProxy: (signal) => runtime.openHttpProxy(network, signal),
         });
-        const browser = new HappyAgentBrowser(session, target, proxy);
+        const browser = new HappyAgentBrowser(session, proxy);
         try {
             session.webRequest.onBeforeRequest((details, callback) => {
                 const protocol = new URL(details.url).protocol;
@@ -65,8 +68,6 @@ export class HappyAgentBrowser {
 
     private constructor(
         readonly session: Session,
-        /** Where the profile's pages, and pages they open, have their network. */
-        readonly target: DesktopBrowserProxyTarget,
         readonly proxy: HappyAgentBrowserProxyHandle,
     ) {}
 

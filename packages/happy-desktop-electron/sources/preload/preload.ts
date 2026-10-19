@@ -83,15 +83,16 @@ const bridge: HappyDesktopBridge = {
             return undefined;
         }
     },
-    browserAgentProxyApply: (target) =>
-        ipcRenderer.invoke(desktopIpc.browserAgentProxyApply, target),
-    browserAgentCommand: (target, guestId, command) =>
-        ipcRenderer.invoke(desktopIpc.browserAgentCommand, target, guestId, command),
-    browserAgentPopupSubscribe(listener: (popup: DesktopBrowserPopup) => void) {
+    browserNetworkResolve: (target) => ipcRenderer.invoke(desktopIpc.browserNetworkResolve, target),
+    browserNetworkProfileOpen: (network) =>
+        ipcRenderer.invoke(desktopIpc.browserNetworkProfileOpen, network),
+    browserNetworkCommand: (partition, guestId, command) =>
+        ipcRenderer.invoke(desktopIpc.browserNetworkCommand, partition, guestId, command),
+    browserNetworkPopupSubscribe(listener: (popup: DesktopBrowserPopup) => void) {
         const receive = (_event: Electron.IpcRendererEvent, popup: DesktopBrowserPopup) =>
             listener(popup);
-        ipcRenderer.on(desktopIpc.browserAgentPopupRequested, receive);
-        return () => ipcRenderer.removeListener(desktopIpc.browserAgentPopupRequested, receive);
+        ipcRenderer.on(desktopIpc.browserNetworkPopupRequested, receive);
+        return () => ipcRenderer.removeListener(desktopIpc.browserNetworkPopupRequested, receive);
     },
     browserOpenSubscribe(listener: (url: string) => void) {
         const receive = (_event: Electron.IpcRendererEvent, url: string) => listener(url);

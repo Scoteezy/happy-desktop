@@ -1,9 +1,15 @@
 // Renderer-input validation for the Happy Agent IPC that is left. The rich Happy Agent data
 // connection no longer flows over IPC (the renderer reaches the daemon through
 // the main process's HTTP proxy), so what remains is the install terminal's
-// input and size, and the address a browser tunnel is opened on.
+// input and size, and the agent and network a browser tunnel is opened for.
 
-import type { DesktopBrowserCommand, DesktopBrowserProxyTarget } from "../shared/desktopContract";
+import { networkIdSchema } from "@slopus/happy-agent-client";
+import { Value } from "@sinclair/typebox/value";
+import type {
+    DesktopBrowserCommand,
+    DesktopBrowserNetwork,
+    DesktopBrowserProxyTarget,
+} from "../shared/desktopContract";
 
 export function desktopBrowserCommandValidate(value: unknown): DesktopBrowserCommand {
     if (typeof value !== "object" || value === null) throw new Error("Invalid browser command.");
@@ -24,7 +30,7 @@ export function desktopBrowserCommandValidate(value: unknown): DesktopBrowserCom
     throw new Error("Invalid browser command.");
 }
 
-/** The explicit Happy Agent connection, workspace, and agent a browser tunnel is asked for. */
+/** The explicit Happy Agent connection, workspace, and agent asked for its network. */
 export function desktopBrowserProxyTargetValidate(value: unknown): DesktopBrowserProxyTarget {
     if (typeof value !== "object" || value === null)
         throw new Error("The Happy Agent browser target is invalid.");
@@ -48,6 +54,24 @@ export function desktopBrowserProxyTargetValidate(value: unknown): DesktopBrowse
     );
     const agentId = boundedString(target.agentId, "The Happy Agent browser agent identity", 256);
     return { connectionId, workspaceId, agentId };
+}
+
+/** The explicit Happy Agent connection and opaque network a browser profile belongs to. */
+export function desktopBrowserNetworkValidate(value: unknown): DesktopBrowserNetwork {
+    if (typeof value !== "object" || value === null)
+        throw new Error("The Happy Agent browser network is invalid.");
+    const network = value as { readonly connectionId?: unknown; readonly networkId?: unknown };
+    const connectionId =
+        network.connectionId === null
+            ? null
+            : boundedString(
+                  network.connectionId,
+                  "The Happy Agent browser connection identity",
+                  256,
+              );
+    if (!Value.Check(networkIdSchema, network.networkId))
+        throw new Error("The Happy Agent browser network is invalid.");
+    return { connectionId, networkId: network.networkId };
 }
 
 export function happyAgentTerminalInputValidate(value: unknown): string {
