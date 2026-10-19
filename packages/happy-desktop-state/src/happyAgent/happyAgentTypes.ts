@@ -271,6 +271,8 @@ export interface HappyAgentModel {
 
 export interface HappyAgentModelProvider {
     readonly id: string;
+    /** The configured friendly account name; separate from service type and routing ID. */
+    readonly name?: string;
     /**
      * The canonical kind of service behind this provider, as configured: `"codex"`,
      * `"claude"`, `"grok"`, `"bedrock"`, … Several providers may share one type,
@@ -463,6 +465,8 @@ export interface HappyAgentUsageQuotaWindow {
 /** Provider-level quota for a session, with any reported rate-limit windows. */
 export interface HappyAgentUsageQuota {
     readonly providerId: string;
+    readonly providerName?: string;
+    readonly providerType?: string;
     readonly windows: readonly HappyAgentUsageQuotaWindow[];
 }
 
@@ -827,6 +831,8 @@ export interface HappyAgentSlashCommand {
 
 export interface HappyAgentModelOption {
     readonly providerId: string;
+    /** The configured friendly account name, when supplied by the catalog. */
+    readonly providerName?: string;
     readonly modelId: string;
     readonly name: string;
     readonly disabled: boolean;

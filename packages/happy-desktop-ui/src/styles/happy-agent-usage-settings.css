@@ -102,6 +102,7 @@
     white-space: nowrap;
 }
 
+.happy-agent-usage-settings__service,
 .happy-agent-usage-settings__plan {
     overflow: hidden;
     font-size: 13px;

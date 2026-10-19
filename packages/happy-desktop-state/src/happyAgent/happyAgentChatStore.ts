@@ -146,7 +146,10 @@ function workingWaitProject(session: SessionState | undefined): HappyAgentWorkin
     return { startedAt: wait.startedAt, dueAt: wait.dueAt };
 }
 
-function transcriptUsageProject(usage: SessionUsage): HappyAgentSessionUsage {
+function transcriptUsageProject(
+    usage: SessionUsage,
+    catalog: HappyAgentModelCatalog,
+): HappyAgentSessionUsage {
     return {
         currentProviderId: usage.currentProviderId,
         groups: usage.groups.map((group) => ({
@@ -177,19 +180,24 @@ function transcriptUsageProject(usage: SessionUsage): HappyAgentSessionUsage {
                   },
               }
             : {}),
-        quotas: usage.quotas.map((quota) => ({
-            providerId: quota.providerId,
-            windows: (
-                [
-                    ["fiveHour", quota.quota.windows.fiveHour],
-                    ["weekly", quota.quota.windows.weekly],
-                ] as const
-            ).flatMap(([kind, window]) =>
-                window?.status === "available"
-                    ? [{ kind, usedPercent: window.usedPercent, resetsAt: window.resetsAt }]
-                    : [],
-            ),
-        })),
+        quotas: usage.quotas.map((quota) => {
+            const provider = catalog.providers.find((entry) => entry.id === quota.providerId);
+            return {
+                providerId: quota.providerId,
+                ...(provider?.name === undefined ? {} : { providerName: provider.name }),
+                ...(provider === undefined ? {} : { providerType: provider.type }),
+                windows: (
+                    [
+                        ["fiveHour", quota.quota.windows.fiveHour],
+                        ["weekly", quota.quota.windows.weekly],
+                    ] as const
+                ).flatMap(([kind, window]) =>
+                    window?.status === "available"
+                        ? [{ kind, usedPercent: window.usedPercent, resetsAt: window.resetsAt }]
+                        : [],
+                ),
+            };
+        }),
     };
 }
 
@@ -960,7 +968,9 @@ export function happyAgentChatStoreCreate(
         const entries = entriesMerge(previous.entries, withMutation);
         const waitingForModel = waitingForModelProject(connected, transcriptElements, runStatus);
         const usage =
-            connected?.usage === undefined ? undefined : transcriptUsageProject(connected.usage);
+            connected?.usage === undefined
+                ? undefined
+                : transcriptUsageProject(connected.usage, catalog);
         const workingLabel = workingLabelProject(connected, waitingForModel);
         const workingWait = workingWaitProject(connected);
         const openImage = openImageProject(entries, openImageRef);
@@ -1441,7 +1451,7 @@ export function happyAgentChatStoreCreate(
             const usage = transcriptSession?.usage;
             return usage === undefined
                 ? Promise.reject(new UserError("Usage is not available yet."))
-                : Promise.resolve(transcriptUsageProject(usage));
+                : Promise.resolve(transcriptUsageProject(usage, catalog));
         },
         activityPanelToggle() {
             activityPanelOpen = !activityPanelOpen;

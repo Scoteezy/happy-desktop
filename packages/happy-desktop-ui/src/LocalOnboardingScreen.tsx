@@ -1,4 +1,3 @@
-import { happyAgentProviderName } from "happy-desktop-state";
 import { type AssistantMarkName } from "./AssistantMark";
 import {
     DesktopMobileSetup,
@@ -229,14 +228,14 @@ const ASSISTANTS: Record<
             powershell: "irm https://claude.ai/install.ps1 | iex",
         },
         mark: "claude",
-        name: happyAgentProviderName("claude"),
+        name: "Claude Code",
         signIn: "claude auth login",
     },
     codex: {
         command: "codex",
         install: { posix: "npm i -g @openai/codex", powershell: "npm i -g @openai/codex" },
         mark: "openai",
-        name: happyAgentProviderName("codex"),
+        name: "Codex",
         signIn: "codex login",
     },
     grok: {
@@ -247,7 +246,7 @@ const ASSISTANTS: Record<
             powershell: "irm https://x.ai/cli/install.ps1 | iex",
         },
         mark: "grok",
-        name: happyAgentProviderName("grok"),
+        name: "Grok",
         // Grok has no login subcommand: running it is the sign-in.
         signIn: "grok",
     },

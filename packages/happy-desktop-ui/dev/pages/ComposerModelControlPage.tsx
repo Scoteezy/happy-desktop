@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from "react";
-import { happyAgentProviderName } from "happy-desktop-state";
 import { Button } from "../../src/Button";
 import { Composer } from "../../src/Composer";
 import {
@@ -93,15 +92,15 @@ const SERVICES: readonly ComposerModelService[] = [
         id: "codex",
         label: "Codex",
         account: "codex",
-        accounts: [{ id: "codex", label: happyAgentProviderName("codex"), models: CODEX_MODELS }],
+        accounts: [{ id: "codex", label: "Current CLI", models: CODEX_MODELS }],
     },
     {
         id: "claude",
         label: "Claude",
         account: "claude",
         accounts: [
-            { id: "claude", label: happyAgentProviderName("claude"), models: CLAUDE_MODELS },
-            { id: "claude_extra", label: "claude_extra", models: CLAUDE_MODELS },
+            { id: "claude", label: "Current CLI", models: CLAUDE_MODELS },
+            { id: "claude_extra", label: "work@example.com", models: CLAUDE_MODELS },
         ],
     },
     {
@@ -109,8 +108,8 @@ const SERVICES: readonly ComposerModelService[] = [
         label: "Grok",
         account: "grok",
         accounts: [
-            { id: "grok", label: happyAgentProviderName("grok"), models: GROK_MODELS },
-            { id: "grok_api", label: "grok_api", models: GROK_MODELS },
+            { id: "grok", label: "Current CLI", models: GROK_MODELS },
+            { id: "grok_api", label: "api@example.com", models: GROK_MODELS },
         ],
     },
 ];
@@ -282,10 +281,10 @@ const PARTIAL_SERVICES: readonly ComposerModelService[] = SERVICES.map((service)
               accounts: [
                   {
                       id: "claude",
-                      label: happyAgentProviderName("claude"),
+                      label: "Current CLI",
                       models: [OPUS_5_5, OPUS_5],
                   },
-                  { id: "claude_extra", label: "claude_extra", models: CLAUDE_MODELS },
+                  { id: "claude_extra", label: "work@example.com", models: CLAUDE_MODELS },
               ],
           }
         : service,
@@ -457,7 +456,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="03"
                 label="Model list"
-                detail="Model opens the catalog beside the menu, bottom edges level. Astra is chosen: its check follows its name. Each header reads its service and account, such as Codex (Current Codex CLI), with a chevron centred on the text."
+                detail="Model opens the catalog beside the menu, bottom edges level. Astra is chosen: its check follows its name. Each header reads its service and account, such as Codex (Current CLI), with a chevron centred on the text."
                 stage="surface"
             >
                 <Open />
@@ -519,7 +518,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09"
                 label="Default account and a named one"
-                detail="Codex runs on Current Codex CLI. Claude runs on claude_extra, which reads by its id. Headers never show a plan; plans live in the account panel."
+                detail="Codex runs on Current CLI. Claude runs on work@example.com, the configured account's friendly name. Headers never show a plan; plans live in the account panel."
                 stage="surface"
             >
                 <Open selection={OPUS_EXTRA} />
@@ -568,7 +567,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="12"
                 label="Account without the model"
-                detail="Fable 5.1 runs on claude_extra. Current Claude CLI has no Fable 5.1, but it can still be picked: the selection moves to its top model, Opus 5.5, on its remembered or default effort."
+                detail="Fable 5.1 runs on work@example.com. Current CLI has no Fable 5.1, but it can still be picked: the selection moves to its top model, Opus 5.5, on its remembered or default effort."
                 stage="surface"
             >
                 <Open

@@ -32,6 +32,7 @@ import {
     HAPPY_AGENT_SECURITY_POLICY_MAX_BYTES,
     happyAgentModelKey,
     happyAgentPermissionLabel,
+    happyAgentServiceName,
     happyAgentThinkingLabel,
     experimentsStoreNoop,
     projectsVisibilityStoreNoop,
@@ -1063,7 +1064,18 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             ) : section === "usage" ? (
                 <HappyAgentUsageSettings
                     loading={usage.loading}
-                    providers={usage.providers}
+                    providers={usage.providers.map((entry) => {
+                        const provider = catalog?.providers.find(
+                            (candidate) => candidate.id === entry.providerId,
+                        );
+                        return {
+                            ...entry,
+                            name: providerAccountName(entry.providerId, provider?.name),
+                            ...(provider === undefined
+                                ? {}
+                                : { typeName: happyAgentServiceName(provider.type) }),
+                        };
+                    })}
                     readingTime={usageReadingTime}
                     {...(clockStore ? { currentTime } : {})}
                     {...(usage.error ? { error: usage.error } : {})}
@@ -1507,7 +1519,7 @@ function modelOptions(
             )
             .map((model) => ({
                 disabled: provider.disabledReason !== undefined,
-                label: `${providerAccountName(provider.id)} · ${model.name}`,
+                label: `${happyAgentServiceName(provider.type)} · ${providerAccountName(provider.id, provider.name)} · ${model.name}`,
                 value: happyAgentModelKey(provider.id, model.id),
             })),
     );
@@ -1530,7 +1542,8 @@ function providerRows(
             modelId: model.id,
             name: model.name,
         })),
-        name: providerAccountName(provider.id),
+        name: providerAccountName(provider.id, provider.name),
+        typeName: happyAgentServiceName(provider.type),
         saving: provider.saving,
         serviceTiers: [
             ...new Set(

@@ -215,7 +215,6 @@ export * from "./happyAgent/happyAgentSidebarTree.js";
 export * from "./happyAgent/happyAgentSidebarVisibilityStore.js";
 export * from "./happyAgent/happyAgentChiefOfStaffRequest.js";
 export * from "./happyAgent/happyAgentSupport.js";
-export * from "./happyAgent/happyAgentProviderName.js";
 export * from "./happyAgent/happyAgentActivity.js";
 export * from "./happyAgent/happyAgentTerminalStore.js";
 export * from "./happyAgent/happyAgentHostServices.js";

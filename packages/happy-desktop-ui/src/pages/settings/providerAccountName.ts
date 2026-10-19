@@ -1,9 +1,6 @@
-import { happyAgentProviderName } from "happy-desktop-state";
-
-/** Settings share the built-in CLI names and retain custom account title casing. */
-export function providerAccountName(providerId: string): string {
-    const name = happyAgentProviderName(providerId);
-    if (name !== providerId) return name;
+/** The daemon's friendly account name, or a readable configured ID when unnamed. */
+export function providerAccountName(providerId: string, configuredName?: string): string {
+    if (configuredName !== undefined) return configuredName;
     return (
         providerId
             .split(/[_-]/u)

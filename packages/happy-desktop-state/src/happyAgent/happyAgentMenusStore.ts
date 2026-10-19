@@ -44,13 +44,14 @@ export function happyAgentMenusDerive(
         (provider) => provider.id === selection.providerId,
     );
     const optionOf = (
-        provider: Pick<HappyAgentModelProvider, "id" | "type">,
+        provider: Pick<HappyAgentModelProvider, "id" | "name" | "type">,
         model: HappyAgentModel,
         disabled: boolean,
     ): HappyAgentModelOption => {
         const rememberedEffort = remembered?.(provider.id, model.id);
         return {
             providerId: provider.id,
+            ...(provider.name === undefined ? {} : { providerName: provider.name }),
             modelId: model.id,
             name: model.name,
             disabled,

@@ -1,6 +1,5 @@
 import {
     happyAgentChiefOfStaffRequestText,
-    happyAgentProviderName,
     happyAgentServiceName,
     type HappyAgentChiefOfStaffRequest,
     type HappyAgentMenusSnapshot,
@@ -54,7 +53,7 @@ function accountNoticeOf(
         reason: menus.currentAccount,
         ...(sessionId === undefined ? {} : { sessionId }),
     };
-    const accountName = happyAgentProviderName(menus.currentProviderId);
+    const accountName = menus.currentOption?.providerName ?? menus.currentProviderId;
     return {
         kind: "unavailable",
         explanation:
@@ -103,14 +102,9 @@ export function happyAgentComposerModelControlProps(
         }
         let account = service.accounts.find((candidate) => candidate.id === option.providerId);
         if (account === undefined) {
-            const label = happyAgentProviderName(option.providerId);
             account = {
                 id: option.providerId,
-                label,
-                // A built-in CLI's product name must remain visible in the account list and header.
-                ...(option.providerId === option.providerType && label === option.providerId
-                    ? { default: true }
-                    : {}),
+                label: option.providerName ?? option.providerId,
                 models: [],
             };
             service.accounts.push(account);

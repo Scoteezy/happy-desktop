@@ -16,7 +16,7 @@ import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
 export interface HappyAgentUsageSettingsProps {
     /** Every configured provider account, in the order they should be read. */
-    providers: readonly HappyAgentProviderUsageEntry[];
+    providers: readonly HappyAgentUsageProviderRow[];
     /** True before the first reading arrives, so "no accounts" is not claimed early. */
     loading?: boolean;
     /** The reading itself failed; whatever was already read stays legible beneath it. */
@@ -25,6 +25,12 @@ export interface HappyAgentUsageSettingsProps {
     readingTime?: (capturedAt: number) => string | undefined;
     /** Current epoch millis used to render live time remaining until each reported reset. */
     currentTime?: number;
+}
+
+/** Usage joined to the authoritative provider catalog by its stable routing ID. */
+export interface HappyAgentUsageProviderRow extends HappyAgentProviderUsageEntry {
+    readonly name?: string;
+    readonly typeName?: string;
 }
 
 /** An account is in one of these; the first three come straight from its worst window. */
@@ -136,7 +142,7 @@ export function HappyAgentUsageSettings(props: HappyAgentUsageSettingsProps) {
 
 function ProviderSection(props: {
     currentTime?: number;
-    provider: HappyAgentProviderUsageEntry;
+    provider: HappyAgentUsageProviderRow;
     readingTime?: (capturedAt: number) => string | undefined;
 }) {
     const { provider } = props;
@@ -174,11 +180,16 @@ function ProviderSection(props: {
                         data-happy-desktop-ui="happy-agent-usage-settings-dot"
                         role="img"
                     />
+                    {provider.typeName ? (
+                        <span className="happy-agent-usage-settings__service">
+                            {provider.typeName}
+                        </span>
+                    ) : null}
                     <span
                         className="happy-agent-usage-settings__name"
                         data-happy-desktop-ui="happy-agent-usage-settings-provider-name"
                     >
-                        {providerAccountName(provider.providerId)}
+                        {providerAccountName(provider.providerId, provider.name)}
                     </span>
                     {usage?.planName ? (
                         <span className="happy-agent-usage-settings__plan">{usage.planName}</span>

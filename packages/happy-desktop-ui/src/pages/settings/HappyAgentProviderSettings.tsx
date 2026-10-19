@@ -26,6 +26,8 @@ export interface HappyAgentProviderModelRow {
 
 export interface HappyAgentProviderRow {
     readonly id: string;
+    /** Service identity shown separately from the account's friendly name. */
+    readonly typeName?: string;
     readonly name: string;
     readonly status: HappyAgentProviderStatus;
     /** Whether the machine will use this provider at all. */
@@ -151,7 +153,7 @@ export function HappyAgentProviderSettings(props: HappyAgentProviderSettingsProp
                             />
                             {provider.saving ? <Spinner size={16} /> : null}
                             <Switch
-                                aria-label={`${provider.name} enabled`}
+                                aria-label={`${provider.typeName ? `${provider.typeName} · ` : ""}${provider.name} enabled`}
                                 checked={provider.enabled}
                                 disabled={props.unavailable !== undefined || provider.saving}
                                 onChange={(enabled) =>
@@ -225,9 +227,9 @@ export function HappyAgentProviderSettings(props: HappyAgentProviderSettingsProp
 
 function providerMeta(provider: HappyAgentProviderRow): string {
     const models = `${provider.models.length} ${provider.models.length === 1 ? "model" : "models"}`;
-    return provider.serviceTiers.length > 0
-        ? `${models} · ${provider.serviceTiers.join(", ")}`
-        : models;
+    return [provider.typeName, models, provider.serviceTiers.join(", ")]
+        .filter(Boolean)
+        .join(" · ");
 }
 
 function modelMeta(model: HappyAgentProviderModelRow): string {

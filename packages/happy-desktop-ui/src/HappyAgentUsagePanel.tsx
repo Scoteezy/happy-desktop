@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import {
-    happyAgentProviderName,
+    happyAgentServiceName,
     type HappyAgentSessionUsage,
     type HappyAgentUsageGroup,
     type HappyAgentUsageQuota,
@@ -85,7 +85,8 @@ function QuotaRow(props: { quota: HappyAgentUsageQuota }) {
     return (
         <div className="happy-agent-usage__quota" data-happy-desktop-ui="happy-agent-usage-quota">
             <span className="happy-agent-usage__quota-provider">
-                {happyAgentProviderName(quota.providerId)}
+                {quota.providerType ? `${happyAgentServiceName(quota.providerType)} · ` : ""}
+                {quota.providerName ?? quota.providerId}
             </span>
             {quota.windows.length === 0 ? (
                 <span className="happy-agent-usage__quota-empty">No limits reported</span>

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { happyAgentProviderName, type HappyAgentProviderUsageEntry } from "happy-desktop-state";
 import {
     DesktopMobileSetup,
     HappyAgentAccountSettings,
@@ -21,6 +20,7 @@ import {
     type HappyAgentProviderRow,
     type HappyAgentSecretRow,
     type HappyAgentSettingsCategory,
+    type HappyAgentUsageProviderRow,
 } from "../../src";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
 import { direct, relayWaiting } from "./mobilePairingFixtures";
@@ -51,9 +51,11 @@ const accountDescription = "Local author identity and Happy account connection";
 
 const mobileDescription = "This Happy Agent's connection to Happy Mobile";
 
-const usageAccounts: readonly HappyAgentProviderUsageEntry[] = [
+const usageAccounts: readonly HappyAgentUsageProviderRow[] = [
     {
         providerId: "claude",
+        name: "Current CLI",
+        typeName: "Claude",
         checkedAt: 1_700_000_000_000,
         usage: {
             capturedAt: 1_700_000_000_000,
@@ -116,6 +118,8 @@ const usageAccounts: readonly HappyAgentProviderUsageEntry[] = [
     },
     {
         providerId: "work_codex",
+        name: "work@example.com",
+        typeName: "Codex",
         checkedAt: 1_700_000_000_000,
         usage: {
             capturedAt: 1_699_999_400_000,
@@ -145,6 +149,8 @@ const usageAccounts: readonly HappyAgentProviderUsageEntry[] = [
     },
     {
         providerId: "grok",
+        name: "Current CLI",
+        typeName: "Grok",
         checkedAt: 1_700_000_000_000,
         error: "The Grok account could not be read: the assistant is signed out.",
     },
@@ -153,12 +159,14 @@ const usageAccounts: readonly HappyAgentProviderUsageEntry[] = [
 /**
  * What the daemon actually reports today: absolute token counts by model, with
  * no plan share behind them. Two of these accounts are the same vendor with
- * different credentials, which is why an account is named by its own id — a
- * vendor's name would print "Codex" twice and hide which one is spending.
+ * different credentials, which is why each account keeps its configured name
+ * while its vendor is shown separately.
  */
-const usageTokensOnly: readonly HappyAgentProviderUsageEntry[] = [
+const usageTokensOnly: readonly HappyAgentUsageProviderRow[] = [
     {
         providerId: "kirill_claude",
+        name: "kirill@example.com",
+        typeName: "Claude",
         checkedAt: 1_700_000_000_000,
         usage: {
             capturedAt: 1_700_000_000_000,
@@ -246,7 +254,7 @@ const usageTokensOnly: readonly HappyAgentProviderUsageEntry[] = [
 ];
 
 /** A configured account the daemon has not reached yet: neither read nor failed. */
-const usageUnread: readonly HappyAgentProviderUsageEntry[] = [
+const usageUnread: readonly HappyAgentUsageProviderRow[] = [
     {
         providerId: "claude",
         checkedAt: 1_700_000_000_000,
@@ -324,15 +332,21 @@ Ask before touching anything outside the working directory.
 
 const modelOptions = [
     {
-        label: `${happyAgentProviderName("codex")} · GPT-5.6 Sol`,
+        label: "Codex · Current CLI · GPT-5.6 Sol",
         value: "codex:openai/gpt-5.6-sol",
     },
     {
-        label: `${happyAgentProviderName("codex")} · GPT-5.6 Terra`,
+        label: "Codex · Current CLI · GPT-5.6 Terra",
         value: "codex:openai/gpt-5.6-terra",
     },
-    { label: `${happyAgentProviderName("claude")} · Opus 5 1M`, value: "claude:anthropic/opus-5" },
-    { label: `${happyAgentProviderName("claude")} · Sonnet 5`, value: "claude:anthropic/sonnet-5" },
+    {
+        label: "Claude · Current CLI · Opus 5 1M",
+        value: "claude:anthropic/opus-5",
+    },
+    {
+        label: "Claude · Current CLI · Sonnet 5",
+        value: "claude:anthropic/sonnet-5",
+    },
 ];
 
 const effortOptions = [
@@ -380,7 +394,8 @@ const providers: readonly HappyAgentProviderRow[] = [
                 name: "GPT-5.6 Luna",
             },
         ],
-        name: happyAgentProviderName("codex"),
+        name: "Current CLI",
+        typeName: "Codex",
         serviceTiers: ["Fast"],
         status: "ready",
     },
@@ -407,7 +422,8 @@ const providers: readonly HappyAgentProviderRow[] = [
                 name: "Sonnet 5",
             },
         ],
-        name: happyAgentProviderName("claude"),
+        name: "Current CLI",
+        typeName: "Claude",
         serviceTiers: [],
         status: "ready",
     },

@@ -918,6 +918,7 @@ export {
 export {
     HappyAgentUsageSettings,
     type HappyAgentUsageSettingsProps,
+    type HappyAgentUsageProviderRow,
 } from "./pages/settings/HappyAgentUsageSettings";
 export { providerAccountName } from "./pages/settings/providerAccountName";
 export { ConnectionShell, type ConnectionShellItem } from "./ConnectionShell";
