@@ -1188,6 +1188,60 @@ it("settles a finished run on the stream alone, without refetching history", asy
     expect(agentTexts(chat.elements).map((element) => element.text)).toEqual(["final text"]);
 });
 
+it("reopens a session that streamed while unwatched without reading its history again", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a" });
+    const groups = groupsWatch(connection);
+    const first: SessionWatch = { elements: [], session: undefined, errors: [], deltas: [] };
+    const handle = connection.connectSession({
+        sessionId: agent.id,
+        onChange(elements, session) {
+            first.elements = elements;
+            first.session = session;
+        },
+    });
+    await vi.waitFor(() => {
+        expect(groups.state.connection).toBe("live");
+        expect(first.session?.connection).toBe("live");
+    });
+    handle.close();
+    const loads = daemon.callCount("getMessages");
+
+    // The reader is elsewhere while the whole turn streams.
+    daemon.eventEmit("run.started", {
+        agentId: agent.id,
+        run: fakeRun({ id: "r1", status: "running" }),
+        acceptedMessageIds: [],
+    });
+    daemon.eventEmit("message.created", {
+        agentId: agent.id,
+        message: fakeAgentMessage({ id: "a1", content: [{ type: "text", text: "Hel" }] }),
+        runId: "r1",
+    });
+    daemon.eventEmit("message.delta", {
+        agentId: agent.id,
+        runId: "r1",
+        messageId: "a1",
+        blockIndex: 0,
+        offset: 3,
+        append: "lo",
+    });
+    await vi.waitFor(() => expect(daemon.streamOpens.length).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    // Coming back shows the streamed text at once, without a history read.
+    const reopened = sessionWatch(connection, agent.id);
+    expect(agentTexts(reopened.elements).map((element) => element.text)).toEqual(["Hello"]);
+
+    daemon.eventEmit("run.finished", {
+        agentId: agent.id,
+        run: fakeRun({ id: "r1", status: "completed", endedAt: 2 }),
+    });
+    await vi.waitFor(() => expect(reopened.session?.status).toBe("idle"));
+    expect(daemon.callCount("getMessages")).toBe(loads);
+});
+
 // --- lost cursor and full resync -------------------------------------------
 
 it("resyncs the catalog and every open chat when the hello reports a cursor gap", async () => {
