@@ -33,9 +33,10 @@
     border: 1px solid var(--modal-border);
     border-radius: 12px;
     background: var(--surface);
-    box-shadow:
-        0 12px 32px var(--shadow-floating),
-        0 2px 8px var(--shadow-color);
+    /* The footer's own popover shadow, as `.happy-sidebar-update__panel` casts
+       it. The card stands on the sidebar's 12px gutters, so a shadow reaching
+       further than that is cut off by the column's edge. */
+    box-shadow: 0 2px 8px var(--shadow-color);
     color: var(--text);
     font-family: var(--happy-font-ui);
     font-synthesis: none;

@@ -30,6 +30,15 @@ const REVEAL_HOLD_MS = 1_200;
  * update "done", which this window states for three seconds with the time it
  * took, then clears.
  *
+ * "Talking to the new daemon" is read from the window's connection as it is
+ * now — the same fact its connection status shows — not from having watched
+ * it drop. The main process reports the update finished only once the old
+ * daemon has exited and the new one answers, so a connection that is up by
+ * then is up on the new daemon. Requiring the drop to have been seen held the
+ * card on "Reconnecting" for good whenever this store was not being read at
+ * that moment: the sidebar unmounted while Settings was open, or a window
+ * opened part-way through.
+ *
  * The time is measured only when this window saw the update begin. A window
  * opened part-way through has no start to measure from and says nothing about
  * it rather than a shorter number.
@@ -49,10 +58,6 @@ export function desktopAgentUpdateStoreCreate(input: {
     let expanded = true;
     // Held "reconnecting" until the window is connected again.
     let held = false;
-    // Whether the local connection has gone down since the update began. Until
-    // it has, a "connected" entry is the old socket that has not yet noticed the
-    // daemon leave, and finishing on it would be finishing too early.
-    let dropped = false;
     let done: { readonly tookMs?: number } | undefined;
     let doneTimer: ReturnType<typeof setTimeout> | undefined;
     // The failure the card is showing, so a new one opens the card again.
@@ -71,7 +76,6 @@ export function desktopAgentUpdateStoreCreate(input: {
         revealTimer = undefined;
         active = false;
         held = false;
-        dropped = false;
         done = undefined;
         failure = undefined;
         startedAt = undefined;
@@ -87,8 +91,6 @@ export function desktopAgentUpdateStoreCreate(input: {
 
     const progressRead = (): AppHappyAgentUpdateProgress | undefined => {
         const install = input.daemon.get().install;
-        const entry = local();
-        if (entry && entry.status !== "connected") dropped = true;
         if (install.phase !== "idle") {
             if (!active || done) {
                 clear();
@@ -133,7 +135,8 @@ export function desktopAgentUpdateStoreCreate(input: {
             if (active) clear();
             return undefined;
         }
-        if (!entry || !settled(entry, dropped)) return { kind: "reconnecting" };
+        const entry = local();
+        if (!entry || !settled(entry)) return { kind: "reconnecting" };
         held = false;
         // A connection that came back failing has its own explanation beside
         // the Happy Agent; "Updated" over it would be untrue.
@@ -281,13 +284,13 @@ export function desktopAgentUpdateStoreCreate(input: {
 }
 
 /**
- * Whether the window is back in touch with the updated agent: a fresh
- * connection with its catalog read, after the old one was seen to drop, or a
- * failure the window explains on its own.
+ * Whether the window is back in touch with the updated agent, asked only once
+ * the main process has reported it serving: connected with its catalog read,
+ * or a failure the window explains on its own.
  */
-function settled(entry: HappyAgentDirectoryEntry, dropped: boolean): boolean {
+function settled(entry: HappyAgentDirectoryEntry): boolean {
     if (entry.status === "error") return true;
-    return dropped && entry.status === "connected" && entry.projectsStatus !== "loading";
+    return entry.status === "connected" && entry.projectsStatus !== "loading";
 }
 
 function progressProject(
