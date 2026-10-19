@@ -243,14 +243,14 @@ it("holds Menu popover geometry, item rows, icons, danger, and shortcuts", async
 
 /*
  * A sidebar task row's menu, the one where the plus and the cross share the icon
- * column with framed outline glyphs. Each sits on its keyline (DESIGN.md, "Icon
- * slots and optical size"): the framed glyphs fill the 14px live area, the plus
- * is 10.5px across, the cross a little less, and all of them carry the same 1px
- * stroke. Ink edges are quantized differently by each platform's rasterizer, so
+ * column with the pencil and a framed outline glyph. Each sits on its keyline
+ * (DESIGN.md, "Icon slots and optical size"): the archive box fills the 14px
+ * live area, the pencil runs 13px corner to corner, the plus is 10.5px across,
+ * and the cross a little less. Ink edges are quantized differently by each platform's rasterizer, so
  * the keylines are asserted as ranges and relations, never as one engine's
  * pixels.
  */
-it("sets the plus, the cross, and framed glyphs on their keylines in the icon column", async () => {
+it("sets the plus, the cross, the pencil, and framed glyphs on their keylines in the icon column", async () => {
     const view = createRenderer();
     const items: MenuItem[] = [
         { kind: "item", id: "surface", label: "Add to Surfaces", icon: "plus" },
@@ -275,7 +275,7 @@ it("sets the plus, the cross, and framed glyphs on their keylines in the icon co
     const metrics = await view.visibleMetrics(slots);
     const keylines = {
         surface: { min: 10, max: 11 },
-        rename: { min: 13, max: 14.5 },
+        rename: { min: 12, max: 13.5 },
         leave: { min: 9, max: 9.5 },
         archive: { min: 13, max: 15 },
     };

@@ -18,8 +18,9 @@ const OPTICAL_ROW: IconName[] = [
     "send",
     "terminal",
 ];
-/* One glyph per keyline (DESIGN.md, "Icon slots and optical size"), and the two
-   Octicons the family scale brings into the Ionicons live area. */
+/* One glyph per keyline (DESIGN.md, "Icon slots and optical size"): framed
+   shapes, a circle, the pencil, the plus and cross, and two more Octicons the
+   family scale brings into the Ionicons live area. */
 const KEYLINE_ROW: IconName[] = [
     "edit",
     "archive",
@@ -175,7 +176,7 @@ export function IconPage() {
             <Specimen
                 number="03b"
                 label="Keylines"
-                detail="Framed 13–14 · plus 10.5 · cross 9 px of ink at 16, one 1px stroke · the plus and cross keep their 16 drawing in a 12 or 14 box"
+                detail="Framed 13–14 · pencil 13 · plus 10.5 · cross 9 px of ink at 16 · the plus and cross keep their 16 drawing in a 12 or 14 box"
                 stage="surface"
             >
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>

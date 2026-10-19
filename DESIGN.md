@@ -652,12 +652,18 @@ a 2px stroke, at least 1px of padding, and every icon matched in weight to the
 reference `circle` and `square`). Measured from Lucide's own SVGs and mapped to
 the slot, ink included:
 
-| Keyline      | Lucide reference (24 canvas, centrelines) | Ink / slot | Ink at 16 |
-| ------------ | ----------------------------------------- | ---------- | --------- |
-| Framed shape | `square` 18 × 18, `square-pen` frame 3–21 | 20/24      | 13–14px   |
-| Circle       | `circle` r = 10                           | 22/24      | 14px      |
-| Bare plus    | `plus` 5–19                               | 16/24      | 10.5px    |
-| Bare cross   | `x` 6–18; diagonals drawn shorter         | 14/24      | 9px       |
+| Keyline         | Lucide reference (24 canvas, centrelines)  | Ink / slot | Ink at 16 |
+| --------------- | ------------------------------------------ | ---------- | --------- |
+| Framed shape    | `square` 18 × 18                           | 20/24      | 13–14px   |
+| Circle          | `circle` r = 10                            | 22/24      | 14px      |
+| Diagonal object | `pencil` about 2–22 on both axes, one body | 20–22/24   | 13px      |
+| Bare plus       | `plus` 5–19                                | 16/24      | 10.5px    |
+| Bare cross      | `x` 6–18; diagonals drawn shorter          | 14/24      | 9px       |
+
+A diagonal object such as the pencil is not a bare stroke: it has a body, so it
+runs corner to corner like a framed shape rather than stopping at the cross. The
+`edit` pencil is Octicons' `pencil` at the family scale, 13px across; Ionicons'
+pencils fill their narrow body in to one solid bar at 16 and read as a slash.
 
 The house stroke is the Ionicons outline stroke: 1px at a 16px box, scaling with
 it. Ionicons' outline drawings already sit on these keylines — outer shapes in a

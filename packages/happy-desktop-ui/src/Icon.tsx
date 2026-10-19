@@ -105,7 +105,8 @@ export type IconProps = {
  * the exact glyph Happy renders while call sites keep the small, stable
  * `IconName` union. Outline Ionicons variants are chosen so the set reads with a
  * consistent light stroke weight; the few code/repository affordances that only
- * Octicons carries (branch, merge, braces, hash) come from Octicons.
+ * Octicons carries (branch, merge, braces, hash) come from Octicons, and so does
+ * the pencil, the one Octicons draws legibly at 16.
  *
  * The glyph itself is a Private Use Area codepoint painted in the icon font, so
  * there is no path data or optical centering to tune here — the font supplies a
@@ -243,7 +244,10 @@ const glyphs: Record<IconName, IconGlyph> = {
     terminal: { set: "ionicons", name: "terminal-outline" },
     globe: { set: "ionicons", name: "globe-outline" },
     filter: { set: "ionicons", name: "funnel-outline" },
-    edit: { set: "ionicons", name: "create-outline" },
+    // A plain pencil, symmetric about its diagonal. The Octicon keeps an open
+    // outlined body, tip and eraser at 16 where Ionicons' narrow pencil body
+    // fills in to one solid bar; the family scale sets it 13px across.
+    edit: { set: "octicons", name: "pencil" },
     sun: { set: "ionicons", name: "sunny-outline" },
     moon: { set: "ionicons", name: "moon-outline" },
     // A cup of coffee: the sign every keep-awake utility has used for keeping a
