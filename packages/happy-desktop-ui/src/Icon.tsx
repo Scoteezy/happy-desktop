@@ -118,6 +118,14 @@ export type IconProps = {
  * is painted, so the two edges read as one idea instead of borrowing an unrelated
  * symbol for one of them.
  *
+ * An `opticalScale` name paints its glyph larger than the box, about the box's
+ * centre, without changing the box. It exists for the few glyphs whose upstream
+ * ink is drawn far smaller than the rest of the vocabulary: Ionicons sets its
+ * plus 10px and its cross 8px across in a 16px box, where its outline icons
+ * reach 12–15px, so in any column of icons the two read as shrunken and set
+ * apart from the edge the others share. The scale lives here, once per name, so
+ * no call site grows its own box or font-size to compensate.
+ *
  * The `drawn` set is the single hand-drawn family, kept to Ionicons' own stroke
  * and box metrics; see `drawnGlyphs.tsx` for why it exists and why nothing else
  * belongs in it.
@@ -126,7 +134,7 @@ type IconGlyph = (
     | { set: "drawn"; name: DrawnGlyphName }
     | { set: "ionicons"; name: IoniconName }
     | { set: "octicons"; name: OcticonName }
-) & { mirrored?: true };
+) & { mirrored?: true; opticalScale?: number };
 const glyphs: Record<IconName, IconGlyph> = {
     home: { set: "ionicons", name: "home-outline" },
     inbox: { set: "ionicons", name: "file-tray-outline" },
@@ -142,7 +150,8 @@ const glyphs: Record<IconName, IconGlyph> = {
     // answer, not working. The circled outline sits beside `clock` as its pair.
     question: { set: "ionicons", name: "help-circle-outline" },
     history: { set: "octicons", name: "history" },
-    plus: { set: "ionicons", name: "add-outline" },
+    // 12.5px of ink in a 16px box, level with the outline icons beside it.
+    plus: { set: "ionicons", name: "add-outline", opticalScale: 1.25 },
     send: { set: "ionicons", name: "paper-plane-outline" },
     check: { set: "ionicons", name: "checkmark-outline" },
     "check-circle": { set: "ionicons", name: "checkmark-circle-outline" },
@@ -154,7 +163,9 @@ const glyphs: Record<IconName, IconGlyph> = {
     // A bare cross: dismissing a thing where it is an affordance, and what went
     // wrong where it is not. In a danger or warning tone beside a failure it is
     // the house mark for trouble; `shield` says the opposite and is never it.
-    close: { set: "ionicons", name: "close-outline" },
+    // 11px of ink in a 16px box: a cross's diagonals already reach further
+    // than its square, so it stops short of the plus.
+    close: { set: "ionicons", name: "close-outline", opticalScale: 1.375 },
     // The whole change read as one thing, rather than one file's diff: the mark
     // for the review stream and nothing else.
     "file-diff": { set: "octicons", name: "file-diff" },
@@ -262,7 +273,20 @@ function glyphContent(glyph: IconGlyph) {
     }
     const codepoint =
         glyph.set === "ionicons" ? ioniconsGlyphs[glyph.name] : octiconsGlyphs[glyph.name];
-    return String.fromCodePoint(codepoint);
+    const character = String.fromCodePoint(codepoint);
+    if (glyph.opticalScale === undefined) return character;
+    /*
+     * The glyph is laid out at the box's own font-size, where its baseline lands
+     * on the same pixel as every other glyph, and only then scaled about the
+     * box's centre. A larger font-size would move the baseline to a fractional
+     * position that each engine rounds its own way, setting the ink up to half
+     * a pixel off centre.
+     */
+    return (
+        <span className="happy-icon__glyph" style={{ scale: String(glyph.opticalScale) }}>
+            {character}
+        </span>
+    );
 }
 export function Icon(props: IconProps) {
     const [local] = partitionComponentProps(props, [

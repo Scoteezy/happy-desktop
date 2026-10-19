@@ -185,3 +185,74 @@ it("composes the controlled model picker into the composer and navigates its men
     expect(view.container.textContent).not.toContain("Speed");
     await view.screenshot("ComposerModelControl.test");
 }, 120000);
+
+it("truncates a long account name in its header without widening the model list", async () => {
+    const SHORT = "work";
+    const LONG = "claude_kirill_for_sms_gmail";
+    const view = createRenderer();
+    for (const account of [SHORT, LONG])
+        view.render(
+            () => (
+                <div
+                    className="happy-theme-dark"
+                    data-testid={`account-${account}`}
+                    style={{
+                        display: "flex",
+                        alignItems: "flex-end",
+                        justifyContent: "flex-end",
+                        width: 560,
+                        height: 280,
+                    }}
+                >
+                    <ComposerModelControl
+                        selection={{ service: "codex", account, model: "sol", effort: "standard" }}
+                        services={[
+                            {
+                                id: "codex",
+                                label: "Codex",
+                                account: "personal",
+                                accounts: [
+                                    { id: "personal", label: "personal", models: MODELS },
+                                    { id: account, label: account, models: MODELS },
+                                ],
+                            },
+                        ]}
+                    />
+                </div>
+            ),
+            { width: 600, height: 320, padding: 20 },
+        );
+    await view.ready();
+    const part = (account: string, name: string) =>
+        view.$(`[data-testid="account-${account}"] [data-happy-desktop-ui="${name}"]`);
+    // Opening one picker closes the other, so each list is measured while it is open.
+    const open = async (account: string) => {
+        await userEvent.click(part(account, "composer-model-control-trigger").element);
+        await userEvent.click(part(account, "composer-model-control-model-setting").element);
+    };
+    await open(SHORT);
+    const shortWidth = part(SHORT, "composer-model-control-models").bounds().width;
+    const shortName = part(SHORT, "composer-model-control-account-label").element.querySelector(
+        ".happy-composer-model-control__account-name",
+    )!;
+    // A short name still reads whole.
+    expect(shortName.scrollWidth).toBe(shortName.clientWidth);
+    await open(LONG);
+    // The list is as wide as its model names make it, whatever the account is called.
+    expect(part(LONG, "composer-model-control-models").bounds().width).toBe(shortWidth);
+    expect(shortWidth).toBe(192);
+    // The service, both parentheses, and the chevron stay whole; only the name gives way.
+    const header = part(LONG, "composer-model-control-account-label");
+    const name = header.element.querySelector<HTMLElement>(
+        ".happy-composer-model-control__account-name",
+    )!;
+    expect(
+        header.element.querySelector(".happy-composer-model-control__account-text")?.textContent,
+    ).toBe(`(${LONG})`);
+    expect(name.scrollWidth).toBeGreaterThan(name.clientWidth);
+    expect(getComputedStyle(name).textOverflow).toBe("ellipsis");
+    const chevron = header.element.querySelector(".happy-composer-model-control__account-chevron")!;
+    const row = header.element.parentElement!.getBoundingClientRect();
+    expect(chevron.getBoundingClientRect().right).toBeLessThanOrEqual(row.right - 10);
+    expect(header.element.getAttribute("aria-label")).toBe(`Codex account: ${LONG}`);
+}, 60000);

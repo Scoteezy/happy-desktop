@@ -352,6 +352,21 @@ const OPUS_MEDIUM: ComposerModelSelection = {
 
 const OPUS_EXTRA: ComposerModelSelection = { ...OPUS_MEDIUM, account: "claude_extra" };
 
+/** Claude on an account whose id is longer than the model list is wide. */
+const LONG_ACCOUNT = "claude_kirill_for_sms_gmail";
+const LONG_ACCOUNT_SERVICES: readonly ComposerModelService[] = SERVICES.map((service) =>
+    service.id === "claude"
+        ? {
+              ...service,
+              accounts: [
+                  ...service.accounts,
+                  { id: LONG_ACCOUNT, label: LONG_ACCOUNT, models: CLAUDE_MODELS },
+              ],
+          }
+        : service,
+);
+const OPUS_LONG_ACCOUNT: ComposerModelSelection = { ...OPUS_MEDIUM, account: LONG_ACCOUNT };
+
 export function ComposerModelControlPage() {
     const [configured, configuredSet] = useState(false);
     const [selection, selectionSet] = useState(ASTRA);
@@ -456,6 +471,27 @@ export function ComposerModelControlPage() {
                 stage="surface"
             >
                 <Open selection={OPUS_EXTRA} />
+            </Specimen>
+            <Specimen
+                number="09b"
+                label="Long account name"
+                detail="Claude runs on claude_kirill_for_sms_gmail. The header keeps Claude, the parentheses, and the chevron, and the account ends in an ellipsis, so the list stays as wide as its model names make it. The full name is in the account panel."
+                stage="surface"
+            >
+                <Open selection={OPUS_LONG_ACCOUNT} services={LONG_ACCOUNT_SERVICES} />
+            </Specimen>
+            <Specimen
+                number="09c"
+                label="Long account name, account panel"
+                detail="The same account in the panel beside the list, truncated the same way."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: LONG_ACCOUNT }}
+                    selection={OPUS_LONG_ACCOUNT}
+                    services={LONG_ACCOUNT_SERVICES}
+                    width={1140}
+                />
             </Specimen>
             <Specimen
                 number="10"

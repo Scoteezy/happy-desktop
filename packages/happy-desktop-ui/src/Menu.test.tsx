@@ -241,6 +241,62 @@ it("holds Menu popover geometry, item rows, icons, danger, and shortcuts", async
     await view.screenshot("Menu.test");
 }, 120_000);
 
+/*
+ * A sidebar task row's menu: the plus and the cross share the icon column with
+ * outline glyphs. Unscaled, Ionicons draws them 10px and 8px across in the 16px
+ * slot beside 13–14px neighbours, so they read as shrunken and set in from the
+ * column's edge. Icon scales both about the box centre; the ink bounds below are
+ * the discrete Retina values, identical in every engine.
+ */
+it("sets the plus and the cross in the icon column at the column's ink size, centred", async () => {
+    const view = createRenderer();
+    const items: MenuItem[] = [
+        { kind: "item", id: "surface", label: "Add to Surfaces", icon: "plus" },
+        { kind: "separator" },
+        { kind: "item", id: "rename", label: "Rename task", icon: "edit" },
+        { kind: "item", id: "leave", label: "Leave task", icon: "close" },
+        { kind: "separator" },
+        { kind: "item", id: "archive", label: "Archive task", icon: "archive", danger: true },
+    ];
+    view.render(() => <Menu data-testid="task-row" items={items} width={200} />, {
+        width: 260,
+        height: 200,
+        padding: 24,
+    });
+    await view.ready();
+    const ids = ["surface", "rename", "leave", "archive"] as const;
+    const slots = ids.map((id) =>
+        view.$(
+            `[data-testid="task-row"] [data-item-id="${id}"] [data-happy-desktop-ui="menu-item-icon"]`,
+        ),
+    );
+    const metrics = await view.visibleMetrics(slots);
+    const expected = {
+        surface: { x: 1.5, y: 1.5, width: 13, height: 13 },
+        rename: { x: 1.5, y: 1.5, width: 13, height: 13 },
+        leave: { x: 2.5, y: 2.5, width: 11, height: 11.5 },
+        archive: { x: 1, y: 1.5, width: 14, height: 13 },
+    };
+    for (const [index, id] of ids.entries()) {
+        const slot = slots[index]!;
+        const icon = view.$(
+            `[data-testid="task-row"] [data-item-id="${id}"] [data-happy-desktop-ui="icon"]`,
+        );
+        // Every glyph's box is the slot itself, whatever its optical scale.
+        expect(icon.bounds(), `${id} icon box`).toEqual(slot.bounds());
+        expect(slot.bounds().width, `${id} slot`).toBe(16);
+        expect(slot.bounds().height, `${id} slot`).toBe(16);
+        const ink = metrics.get(slot)!.bounds;
+        expect(ink, `${id} ink`).toEqual(expected[id]);
+        // Horizontally the ink is centred exactly; vertically to within the
+        // half device pixel the cross's round caps straddle.
+        expect(ink.x + ink.width / 2, `${id} ink centre x`).toBe(8);
+        expect(Math.abs(ink.y + ink.height / 2 - 8), `${id} ink centre y`).toBeLessThanOrEqual(
+            0.25,
+        );
+    }
+});
+
 it("holds Menu section labels, disabled items, and text-only alignment", async () => {
     const selected: string[] = [];
     const view = createRenderer();

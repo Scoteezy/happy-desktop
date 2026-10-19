@@ -67,7 +67,7 @@ Core values (see `theme.css` for the full set):
 | Interactive/link | teal `#2baccc` in both schemes; original system-blue controls use `#007aff` / `#0a84ff`                                                                                 |
 | Primary action   | black with white text in both schemes                                                                                                                                   |
 | Semantics        | green `#34c759` / `#32d74b`, orange `#ff9500` / `#ff9f0a`, red `#ff3b30` / `#ff453a`                                                                                    |
-| Type             | UI "happy Figtree" (Figtree variable), code "happy Mono" (JetBrains Mono variable)                                                                                    |
+| Type             | UI "happy Figtree" (Figtree variable), code "happy Mono" (JetBrains Mono variable)                                                                                      |
 | Radii            | controls 6 px, content 8 px, cards 10 px, large shells 14 px, pills 999                                                                                                 |
 
 Text colors are solid (not alpha) so rendering tests can assert exact `rgb()`
@@ -278,8 +278,11 @@ same visual contract without mutating vendor structure.
 
 Never truncate menu or popover headings, headers, buttons, or settings labels.
 Keep them short enough to fit, or let them wrap. Truncation is only for
-unbounded user content (titles, paths, branch names), with the full text
-reachable elsewhere.
+unbounded user content (titles, paths, branch names, account names), with the
+full text reachable elsewhere. Such content never sets the width of the popover
+or row that holds it: the surrounding content does, and the user's text ends in
+an ellipsis inside that width while the fixed words and marks beside it stay
+whole.
 
 ## Window controls
 
@@ -627,6 +630,25 @@ here.
   the exact same glyph Happy renders.
 - A glyph paints as a single PUA character in a square, `currentColor` box that
   never distorts inside a flex row. `size` sets both the font size and the box.
+
+### Icon slots and optical size
+
+`Icon` owns centring. Its box is a square flex container that centres the glyph
+on both axes, and the font draws every glyph about the centre of its em square,
+so the ink of every curated name is centred in its box. A container that holds
+an icon gives it a fixed square slot that is itself a centring flex box, such as
+the menu's 16px gutter, and never positions the glyph by a margin, padding,
+baseline, or a nudge of its own.
+
+Centred ink is not enough: icons in one column must also look the same size.
+Ionicons draws its plus 10px and its cross 8px across in a 16px box, where its
+outline glyphs reach 12–15px, so beside them the plus and cross look shrunken and
+set in from the column's edge. A curated name whose upstream ink falls that far
+below the vocabulary declares an `opticalScale` in `Icon`'s glyph table (the plus
+1.25, the cross 1.375). The glyph is laid out at the box's own font size, so its
+baseline lands on the same pixel as every other glyph, and is then scaled about
+the box centre. The box does not change. A call site never enlarges an icon's box
+or font size to compensate for its glyph; it fixes the name in `Icon` instead.
 
 Prove a font-icon integration with real ink (non-zero visible pixels, which also
 proves the font actually loaded) and the correct box geometry in the container

@@ -47,6 +47,17 @@ const states: MenuItem[] = [
     { kind: "item", id: "remove", label: "Remove", icon: "close", danger: true },
 ];
 
+/* A task row's menu in the sidebar: the plus and the cross sit in the same icon
+   column as the outline glyphs, at the vocabulary's ink size. */
+const taskRow: MenuItem[] = [
+    { kind: "item", id: "surface", label: "Add to Surfaces", icon: "plus" },
+    { kind: "separator" },
+    { kind: "item", id: "rename", label: "Rename task", icon: "edit" },
+    { kind: "item", id: "leave", label: "Leave task", icon: "close" },
+    { kind: "separator" },
+    { kind: "item", id: "archive", label: "Archive task", icon: "archive", danger: true },
+];
+
 const linkPlaces: MenuItem[] = [
     { kind: "item", id: "browser", label: "Open in browser", icon: "open-external" },
     { kind: "item", id: "panel", label: "Open in side panel", icon: "panel-expand" },
@@ -163,6 +174,17 @@ export function MenuPage() {
                 >
                     <div style={{ padding: "28px" }}>
                         <ContextMenuSpecimen />
+                    </div>
+                </Specimen>
+
+                <Specimen
+                    detail="plus · edit · cross · archive — every glyph centred in its 16px slot, the plus and cross scaled to the column's ink"
+                    label="Icon column"
+                    number="M-06"
+                    stage="app"
+                >
+                    <div style={{ padding: "28px" }}>
+                        <Menu items={taskRow} width={200} />
                     </div>
                 </Specimen>
             </div>

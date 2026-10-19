@@ -441,7 +441,7 @@ it("holds Composer geometry, colors, and typography", async () => {
                 '[data-testid="composer-default"] [aria-label="Attach file"] [data-happy-desktop-ui="icon"]',
             )
             .bounds(),
-    ).toMatchObject({ height: 20, width: 20 });
+    ).toMatchObject({ height: 16, width: 16 });
     await userEvent.hover(attachment.element);
     for (const animation of attachment.element.getAnimations()) animation.finish();
     expect(attachment.computedStyles(["background-color", "border-radius", "color"])).toEqual({

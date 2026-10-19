@@ -1022,7 +1022,11 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                                                 {service.label}
                                                             </span>
                                                             <span className="happy-composer-model-control__account-text">
-                                                                {`(${accountSummary(service)})`}
+                                                                (
+                                                                <span className="happy-composer-model-control__account-name">
+                                                                    {accountSummary(service)}
+                                                                </span>
+                                                                )
                                                             </span>
                                                             <span className="happy-composer-model-control__account-chevron">
                                                                 <Icon

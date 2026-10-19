@@ -33,6 +33,17 @@
 }
 
 /*
+ * An optically scaled glyph (Icon.tsx, `opticalScale`) keeps the box's line
+ * box and is scaled about its own centre, which the flex box above holds on
+ * the icon box's centre. The ink grows past the glyph's em square; the icon box
+ * stays what layout asked for.
+ */
+.happy-icon__glyph {
+    display: block;
+    flex: none;
+}
+
+/*
  * A mirrored name paints its upstream glyph flipped across the vertical axis, for
  * an affordance that is the same act at the opposite edge of the window. The box
  * is square and the glyph is box-centered, so the flip changes what is drawn and

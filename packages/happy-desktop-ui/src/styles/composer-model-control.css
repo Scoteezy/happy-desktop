@@ -231,7 +231,12 @@
     -webkit-appearance: none;
 }
 
+/* An account name is the user's own and can be any length, so a header takes the
+ * width the model names give the list instead of asking for its own: the
+ * service and the chevron stay whole and the account in between ends in an
+ * ellipsis, as it does in the account panel. */
 .happy-composer-model-control__service-header {
+    contain: inline-size;
     height: 28px;
     color: var(--text-secondary);
     font-size: 12px;
@@ -300,7 +305,7 @@
 
 .happy-composer-model-control__name,
 .happy-composer-model-control__service-name,
-.happy-composer-model-control__account-text {
+.happy-composer-model-control__account-name {
     flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
@@ -311,6 +316,14 @@
 .happy-composer-model-control__service-name {
     flex-shrink: 0;
     font-weight: 600;
+}
+
+/* The parentheses stay whole around an account name that ends in an ellipsis. */
+.happy-composer-model-control__account-text {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    white-space: nowrap;
 }
 
 /* A service header is a text button coloured like the effort in the pill.

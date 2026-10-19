@@ -378,12 +378,13 @@
     font-size: 16px !important;
 }
 
-/* The attachment plus needs a fuller 20px stroke presence in its 32px target;
- * the directional send glyph remains 16px for its lighter arrow silhouette. */
+/* The attachment plus takes the 16px chrome box the trailing controls use; Icon
+ * already scales the plus to the vocabulary's ink, so it needs no larger box of
+ * its own here. */
 .happy-composer__leading > .happy-button[aria-label="Attach file"] .happy-icon {
-    width: 20px !important;
-    height: 20px !important;
-    font-size: 20px !important;
+    width: 16px !important;
+    height: 16px !important;
+    font-size: 16px !important;
 }
 
 .happy-composer__popover {
