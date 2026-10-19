@@ -149,6 +149,42 @@
     min-width: 0;
 }
 
+.happy-make-stuff[data-stage="request"] {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 16px;
+}
+
+.happy-make-stuff__empty {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-height: 0;
+    padding: 16px;
+}
+
+.happy-make-stuff__explanation {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--text);
+    font-size: 14px;
+    line-height: 20px;
+    text-align: center;
+}
+
+.happy-make-stuff__explanation p {
+    margin: 0;
+}
+
+.happy-make-stuff__explanation p + p {
+    color: var(--text-secondary);
+}
+
 .happy-make-stuff__title {
     margin: 0;
     color: var(--text);

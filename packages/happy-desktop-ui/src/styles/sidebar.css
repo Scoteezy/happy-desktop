@@ -342,6 +342,20 @@
     flex-direction: column;
 }
 
+.happy-sidebar[data-actions-divider] .happy-sidebar__actions {
+    gap: 2px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--divider);
+}
+
+.happy-sidebar[data-actions-divider] .happy-sidebar__compose + .happy-sidebar__actions {
+    margin-top: 2px;
+}
+
+.happy-sidebar[data-actions-divider] .happy-sidebar__actions + .happy-sidebar__section {
+    margin-top: 12px;
+}
+
 .happy-sidebar__section {
     display: flex;
     flex-direction: column;
@@ -423,6 +437,42 @@
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
+}
+
+.happy-sidebar[data-fold-control-reveal="hover"] .happy-sidebar__section-fold,
+.happy-sidebar[data-fold-control-reveal="hover"] .happy-sidebar__item .happy-sidebar__item-fold {
+    opacity: 0;
+}
+
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__section-head:hover
+    .happy-sidebar__section-fold,
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__section-head:has(:focus-visible)
+    .happy-sidebar__section-fold,
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__section-head:has(:focus-visible)
+    .happy-sidebar__section-action,
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__item:hover
+    .happy-sidebar__item-fold,
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__item:focus-visible
+    .happy-sidebar__item-fold,
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__item:has(:focus-visible)
+    .happy-sidebar__item-fold {
+    opacity: 1;
+}
+
+.happy-sidebar[data-fold-control-reveal="hover"] .happy-sidebar__section-fold {
+    margin-left: auto;
+}
+
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__section-fold
+    + .happy-sidebar__section-actions {
+    margin-left: 4px;
 }
 
 .happy-sidebar__section-label {
@@ -951,7 +1001,9 @@
  */
 .happy-sidebar__item:hover .happy-sidebar__item-fold,
 .happy-sidebar__item:focus-visible .happy-sidebar__item-fold,
-.happy-sidebar__item[data-collapsed] .happy-sidebar__item-fold {
+.happy-sidebar:not([data-fold-control-reveal="hover"])
+    .happy-sidebar__item[data-collapsed]
+    .happy-sidebar__item-fold {
     opacity: 1;
 }
 
@@ -964,7 +1016,8 @@
 .happy-sidebar__item:not([data-fold-placement="trailing"])[data-foldable]:focus-visible
     .happy-sidebar__item-leading
     > :not(.happy-sidebar__item-fold):not(.happy-sidebar__item-leading-unread),
-.happy-sidebar__item:not([data-fold-placement="trailing"])[data-collapsed]
+.happy-sidebar:not([data-fold-control-reveal="hover"])
+    .happy-sidebar__item:not([data-fold-placement="trailing"])[data-collapsed]
     .happy-sidebar__item-leading
     > :not(.happy-sidebar__item-fold):not(.happy-sidebar__item-leading-unread) {
     opacity: 0;
@@ -987,7 +1040,9 @@
    of adding an empty identity slot. Hide only the elbow under the overlay. */
 .happy-sidebar__item[data-fold-in-branch]:hover .happy-sidebar__item-branch::after,
 .happy-sidebar__item[data-fold-in-branch]:focus-visible .happy-sidebar__item-branch::after,
-.happy-sidebar__item[data-fold-in-branch][data-collapsed] .happy-sidebar__item-branch::after {
+.happy-sidebar:not([data-fold-control-reveal="hover"])
+    .happy-sidebar__item[data-fold-in-branch][data-collapsed]
+    .happy-sidebar__item-branch::after {
     opacity: 0;
 }
 

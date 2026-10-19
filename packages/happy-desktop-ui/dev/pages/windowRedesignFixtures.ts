@@ -88,6 +88,7 @@ export const redesignConnections: readonly ConnectionShellItem[] = [
 
 export const redesignPrimary: SidebarItem[] = [
     { id: "happy", label: "Happy", kind: "agent", imageMark: { src: happyMark } },
+    { id: "feedback", label: "Backlog & feedback", kind: "view", ...redesignMarks.feedback },
 ];
 
 const work = (
@@ -106,13 +107,6 @@ const work = (
 });
 
 export const redesignSections: SidebarSection[] = [
-    { id: "pinned", label: "Pinned", items: [work("feedback", "Backlog & feedback", "feedback")] },
-    {
-        id: "space",
-        spaceHeading: { label: "Happy Team", icon: redesignMarks.team.icon },
-        headingOnly: true,
-        items: [],
-    },
     {
         id: "crew",
         label: "Crew",
@@ -148,6 +142,7 @@ export const redesignSections: SidebarSection[] = [
     {
         id: "release-readiness",
         label: "Release readiness",
+        action: { icon: "plus", label: "New item in Release readiness", reveal: "hover" },
         collapsed: true,
         items: [
             work("integration-gates", "Current integration gates", "release"),

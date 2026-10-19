@@ -375,6 +375,8 @@ export type SidebarActivityPlacement = "leading" | "trailing";
 export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     /** Keep the identity lane intact when a row folds. Defaults to leading. */
     foldControlPlacement?: "leading" | "trailing";
+    /** Reveal section and row fold controls only on hover or keyboard focus. */
+    foldControlReveal?: "hover";
     /** Omit identity lanes entirely, or use plain type glyphs instead of avatars. */
     itemMarkPresentation?: "default" | "glyph" | "none";
     /** Hide tree ribbons while retaining ordinary indentation. Defaults to true. */
@@ -390,6 +392,8 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
      * a durable destination of their own.
      */
     actions?: SidebarItem[];
+    /** Join global rows at the normal 2px rhythm, then separate them from sections. */
+    actionsDivider?: boolean;
     /** Agent-authored menu content between the pinned actions and project sections. */
     bodyAccessory?: ReactNode;
     /**
@@ -1904,6 +1908,7 @@ function SidebarRow({
 export function Sidebar(props: SidebarProps) {
     const [local, rest] = partitionComponentProps(props, [
         "actions",
+        "actionsDivider",
         "activeItemId",
         "activityPlacement",
         "brand",
@@ -1915,6 +1920,7 @@ export function Sidebar(props: SidebarProps) {
         "composeTooltip",
         "footer",
         "foldControlPlacement",
+        "foldControlReveal",
         "headerAccessory",
         "headerAction",
         "onHeaderMenuSelect",
@@ -2625,6 +2631,8 @@ export function Sidebar(props: SidebarProps) {
             {...rest}
             className={["happy-sidebar", local.className].filter(Boolean).join(" ")}
             data-back={local.onBack ? "" : undefined}
+            data-actions-divider={local.actionsDivider ? "" : undefined}
+            data-fold-control-reveal={local.foldControlReveal}
             data-happy-desktop-ui="sidebar"
             data-scrolled={scrolled ? "" : undefined}
             style={local.style}

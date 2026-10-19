@@ -53,6 +53,7 @@ type Scene =
     | "context"
     | "landed"
     | "icon-assigned"
+    | "section-plus"
     | "working"
     | "replaced"
     | "leased"
@@ -88,6 +89,11 @@ const frames: readonly StoryFrame[] = [
     },
     { id: "02c-task-landed", label: "A task lands in Desktop workflow", scene: "landed" },
     { id: "02d-icon-assigned", label: "Happy gives the new item its icon", scene: "icon-assigned" },
+    {
+        id: "02e-section-plus",
+        label: "A new item starts under Release readiness",
+        scene: "section-plus",
+    },
     {
         id: "03-task-working",
         label: "Work · summarized transcript and active floaty",
@@ -270,12 +276,24 @@ function StoryWindow(props: StoryFrame) {
     const [searchOpen, setSearchOpen] = useState(props.scene === "search");
     const [query, setQuery] = useState("");
     const [searchIndex, setSearchIndex] = useState(0);
-    const [sections, setSections] = useState(redesignSections);
+    const [sections, setSections] = useState(
+        props.scene === "section-plus"
+            ? redesignSections.map((section) =>
+                  section.id === "release-readiness" ? { ...section, collapsed: false } : section,
+              )
+            : redesignSections,
+    );
     const [moviesCreated, setMoviesCreated] = useState(props.scene === "movies");
+    const [creationSection, setCreationSection] = useState<
+        "desktop-workflow" | "release-readiness"
+    >(props.scene === "section-plus" ? "release-readiness" : "desktop-workflow");
+    const [releaseItemCreated, setReleaseItemCreated] = useState(props.scene === "section-plus");
     const [draft, setDraft] = useState(
-        props.scene === "movie-request"
-            ? "Make a list of movies I have downloaded."
-            : "Refine the sidebar search and tabs.",
+        props.scene === "section-plus"
+            ? ""
+            : props.scene === "movie-request"
+              ? "Make a list of movies I have downloaded."
+              : "Refine the sidebar search and tabs.",
     );
     const [reply, setReply] = useState("");
     const [releaseAnswer, setReleaseAnswer] = useState<string>();
@@ -288,21 +306,30 @@ function StoryWindow(props: StoryFrame) {
         "leased",
         "history",
     ].includes(scene);
+    const newItemId =
+        creationSection === "release-readiness" ? "new-release-item" : "window-navigation";
+    const newItemLabel = creationSection === "release-readiness" ? "New item" : "Window navigation";
     const newItemMark =
-        scene === "landed" ? { stemCell: { id: "window-navigation" } } : redesignMarks.redesign;
-    const activeTaskId = taskLanded ? "window-navigation" : "redesign";
+        scene === "request" || scene === "context" || scene === "landed" || scene === "section-plus"
+            ? { stemCell: { id: newItemId } }
+            : creationSection === "release-readiness"
+              ? redesignMarks.release
+              : redesignMarks.redesign;
+    const activeTaskId = taskLanded ? newItemId : "redesign";
     const [closedTabs, setClosedTabs] = useState<readonly string[]>([]);
     const mainId =
         openedContent ??
         (scene === "movies"
             ? "movies"
-            : scene === "morning" || scene === "search"
-              ? "happy"
-              : scene === "release"
-                ? "release-coordinator"
-                : scene === "request" || scene === "context" || scene === "movie-request"
-                  ? "make-stuff"
-                  : activeTaskId);
+            : scene === "section-plus"
+              ? newItemId
+              : scene === "morning" || scene === "search"
+                ? "happy"
+                : scene === "release"
+                  ? "release-coordinator"
+                  : scene === "request" || scene === "context" || scene === "movie-request"
+                    ? "make-stuff"
+                    : activeTaskId);
 
     const open = (id: string) => {
         if (id === "muse-research" || id === "finished-research") {
@@ -320,6 +347,7 @@ function StoryWindow(props: StoryFrame) {
         setSearchOpen(false);
     };
     const begin = () => {
+        setCreationSection("desktop-workflow");
         setScene("request");
         setOpenedContent(undefined);
         setDraft("");
@@ -328,17 +356,17 @@ function StoryWindow(props: StoryFrame) {
 
     const taskTab: TabItem = {
         id: activeTaskId,
-        label: taskLanded ? "Window navigation" : "Desktop redesign",
+        label: taskLanded ? newItemLabel : "Desktop redesign",
         ...(taskLanded ? newItemMark : redesignMarks.redesign),
     };
     const titleTabs: TabItem[] =
-        mainId === "make-stuff"
+        mainId === "make-stuff" || scene === "section-plus"
             ? [
                   taskTab,
                   {
-                      id: "make-stuff",
-                      label: "Make Stuff",
-                      stemCell: { id: scene === "movie-request" ? "movies" : "window-navigation" },
+                      id: scene === "section-plus" ? newItemId : "make-stuff",
+                      label: scene === "section-plus" ? "New item" : "Make Stuff",
+                      stemCell: { id: scene === "movie-request" ? "movies" : newItemId },
                   },
               ]
             : scene === "movies"
@@ -365,6 +393,7 @@ function StoryWindow(props: StoryFrame) {
     if (openedContent && !titleTabs.some((tab) => tab.id === openedContent)) {
         const existing = [
             ...redesignTabs,
+            ...redesignPrimary,
             ...redesignSections.flatMap((section) => section.items),
         ].find((item) => item.id === openedContent);
         titleTabs.push({
@@ -461,23 +490,35 @@ function StoryWindow(props: StoryFrame) {
             kind: "message",
             author: "Kirill",
             own: true,
-            text: "Refine the sidebar search and tabs.",
+            text:
+                creationSection === "release-readiness"
+                    ? draft
+                    : "Refine the sidebar search and tabs.",
         },
         {
             id: "landed-context",
             kind: "summary",
-            label: "Connected Happy Desktop · added under Desktop workflow",
-            details: [
-                "Related work: Desktop redesign and Shared chat sync.",
-                "Window navigation is scoped under Desktop redesign; the blueprint continuation stays with its existing helper.",
-            ],
+            label:
+                creationSection === "release-readiness"
+                    ? "Connected Happy Desktop · added under Release readiness"
+                    : "Connected Happy Desktop · added under Desktop workflow",
+            details:
+                creationSection === "release-readiness"
+                    ? ["The new item stays under Release readiness."]
+                    : [
+                          "Related work: Desktop redesign and Shared chat sync.",
+                          "Window navigation is scoped under Desktop redesign; the blueprint continuation stays with its existing helper.",
+                      ],
         },
         {
             id: "landed-answer",
             kind: "message",
-            author: "Window navigation",
+            author: newItemLabel,
             ...newItemMark,
-            text: "I’ll keep the sidebar toggle and search in place, then bring the tabs into one shared band. The related redesign work stays linked here.",
+            text:
+                creationSection === "release-readiness"
+                    ? "I’ll shape this work with the release context and keep it in Release readiness."
+                    : "I’ll keep the sidebar toggle and search in place, then bring the tabs into one shared band. The related redesign work stays linked here.",
         },
     ];
     let rows =
@@ -528,7 +569,7 @@ function StoryWindow(props: StoryFrame) {
         />
     );
     const content =
-        mainId === "make-stuff" ? (
+        mainId === "make-stuff" || (scene === "section-plus" && mainId === newItemId) ? (
             <MakeStuffView
                 stage={
                     scene === "context"
@@ -536,19 +577,33 @@ function StoryWindow(props: StoryFrame) {
                               kind: "context",
                               text: draft,
                               project: "Happy Desktop",
-                              related: [
-                                  { id: "desktop-redesign", label: "Desktop redesign" },
-                                  { id: "chat-sync", label: "Shared chat sync" },
-                              ],
-                              placement: "Lands in Desktop workflow",
-                              conflict: {
-                                  label: "Redesign blueprints",
-                                  onOpen: () => {
-                                      setScene("working");
-                                      setOpenedContent(undefined);
-                                      setFloatyOpen(true);
-                                  },
-                              },
+                              related:
+                                  creationSection === "release-readiness"
+                                      ? [
+                                            {
+                                                id: "integration-gates",
+                                                label: "Current integration gates",
+                                            },
+                                        ]
+                                      : [
+                                            { id: "desktop-redesign", label: "Desktop redesign" },
+                                            { id: "chat-sync", label: "Shared chat sync" },
+                                        ],
+                              placement:
+                                  creationSection === "release-readiness"
+                                      ? "Lands in Release readiness"
+                                      : "Lands in Desktop workflow",
+                              conflict:
+                                  creationSection === "release-readiness"
+                                      ? undefined
+                                      : {
+                                            label: "Redesign blueprints",
+                                            onOpen: () => {
+                                                setScene("working");
+                                                setOpenedContent(undefined);
+                                                setFloatyOpen(true);
+                                            },
+                                        },
                               onStart: () => {
                                   setScene("landed");
                                   setOpenedContent(undefined);
@@ -556,12 +611,17 @@ function StoryWindow(props: StoryFrame) {
                           }
                         : {
                               kind: "request",
-                              text: draft,
-                              onTextChange: setDraft,
-                              onContinue: () => {
-                                  if (scene === "movie-request") setMoviesCreated(true);
-                                  setScene(scene === "movie-request" ? "movies" : "context");
-                                  setOpenedContent(undefined);
+                              id: scene === "movie-request" ? "movies" : newItemId,
+                              composer: {
+                                  composer: { ...redesignComposer, text: draft },
+                                  composerPlaceholder: "Say what this is…",
+                                  composerFocusOnType: false,
+                                  onComposerValueChange: setDraft,
+                                  onComposerSend: () => {
+                                      if (scene === "movie-request") setMoviesCreated(true);
+                                      setScene(scene === "movie-request" ? "movies" : "context");
+                                      setOpenedContent(undefined);
+                                  },
                               },
                           }
                 }
@@ -644,6 +704,7 @@ function StoryWindow(props: StoryFrame) {
                             <Sidebar
                                 activeItemId={mainId}
                                 actions={redesignPrimary}
+                                actionsDivider
                                 composeActive={mainId === "make-stuff"}
                                 composeLabel="Make Stuff"
                                 composeShortcut={composeShortcut}
@@ -652,6 +713,23 @@ function StoryWindow(props: StoryFrame) {
                                 itemMarkPresentation={props.iconsOff ? "none" : "default"}
                                 treeConnectors={false}
                                 foldControlPlacement="trailing"
+                                foldControlReveal="hover"
+                                onSectionAction={(id) => {
+                                    if (id !== "release-readiness") return;
+                                    setCreationSection("release-readiness");
+                                    setReleaseItemCreated(true);
+                                    setSections(
+                                        sections.map((section) =>
+                                            section.id === "release-readiness"
+                                                ? { ...section, collapsed: false }
+                                                : section,
+                                        ),
+                                    );
+                                    setScene("section-plus");
+                                    setOpenedContent(undefined);
+                                    setDraft("");
+                                    setFloatyOpen(false);
+                                }}
                                 onItemSelect={open}
                                 onSectionCollapseToggle={(id) =>
                                     setSections(
@@ -675,7 +753,9 @@ function StoryWindow(props: StoryFrame) {
                                     )
                                 }
                                 sections={sections.map((section) =>
-                                    section.id === "desktop-workflow" && taskLanded
+                                    section.id === "desktop-workflow" &&
+                                    taskLanded &&
+                                    creationSection === "desktop-workflow"
                                         ? {
                                               ...section,
                                               items: [
@@ -690,21 +770,41 @@ function StoryWindow(props: StoryFrame) {
                                                   ...section.items.slice(1),
                                               ],
                                           }
-                                        : section.id === "today" && moviesCreated
+                                        : section.id === "release-readiness" && releaseItemCreated
                                           ? {
                                                 ...section,
-                                                collapsed: false,
                                                 items: [
                                                     {
-                                                        id: "movies",
-                                                        label: "Downloaded movies",
+                                                        id: "new-release-item",
+                                                        label: "New item",
                                                         kind: "view",
-                                                        ...redesignMarks.movies,
+                                                        ...(creationSection ===
+                                                            "release-readiness" && taskLanded
+                                                            ? newItemMark
+                                                            : {
+                                                                  stemCell: {
+                                                                      id: "new-release-item",
+                                                                  },
+                                                              }),
                                                     },
                                                     ...section.items,
                                                 ],
                                             }
-                                          : section,
+                                          : section.id === "today" && moviesCreated
+                                            ? {
+                                                  ...section,
+                                                  collapsed: false,
+                                                  items: [
+                                                      {
+                                                          id: "movies",
+                                                          label: "Downloaded movies",
+                                                          kind: "view",
+                                                          ...redesignMarks.movies,
+                                                      },
+                                                      ...section.items,
+                                                  ],
+                                              }
+                                            : section,
                                 )}
                             />
                         }
