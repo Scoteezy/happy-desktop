@@ -29,7 +29,9 @@ it("releases old prepared runs while preserving exact warm and resized heights",
 
 it("measures oversized messages exactly without retaining their prepared segments", () => {
     const cache = messageTextLayoutCacheCreate();
-    const text = "Large transcript words. ".repeat(8_000);
+    // Mixed styles retain a prepared run per fragment; plain paragraphs now
+    // use only two runs and this source length no longer exceeds the budget.
+    const text = "Large transcript **words**. ".repeat(8_000);
     const height = markdownBodyHeight(text, 540, cache);
     expect(height).toBeGreaterThan(1_000);
     expect(Object.keys(cache.richPrepared)).toHaveLength(0);

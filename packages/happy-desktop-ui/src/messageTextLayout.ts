@@ -1001,6 +1001,33 @@ function markdownInlineHeight(
         suffixText.length === 0
     )
         return 0;
+    const only = children.length === 1 ? children[0] : undefined;
+    if (
+        only?.type === "text" &&
+        trailingExtraWidth === 0 &&
+        !task &&
+        suffixText.length === 0 &&
+        !tableCell
+    ) {
+        /* A single undecorated text node has no internal font/chrome boundary.
+         * Prepare its prose together instead of allocating one rich run per word.
+         * Keep the final token separate: Blink's shaped-run rounding belongs only
+         * at the end of the node, not on every wrapped fragment of the prose. */
+        const font = markdownInlineFont(style);
+        const text = inlineBreaksMark(only.value);
+        const match = /^([\s\S]*\s)(\S+)$/u.exec(text);
+        const items: MarkdownInlineItem[] = match
+            ? [
+                  { font, text: match[1]! },
+                  { font, text: match[2]! },
+              ]
+            : [{ font, text }];
+        if (!WEBKIT_INLINE_SLICE && !GECKO_INLINE_SLICE && text.trim().length > 0) {
+            const width = naturalTextWidth(text, font, cache);
+            items[items.length - 1]!.extraWidth = Math.ceil(width * 64) / 64 - width;
+        }
+        return richItemsHeight(items, lineHeight, measure, cache);
+    }
     const runs = markdownInlineRuns(
         children,
         style,
