@@ -12,6 +12,7 @@ import {
     conversationRowHeight,
     conversationRowHeightCached,
     conversationRowHeightCacheCreate,
+    conversationRowHeightCachePrune,
 } from "./conversationRowHeight";
 import { messageTextLayoutCacheRefresh } from "./messageTextLayout";
 import type { MessageListLegacyScrollPosition, MessageListScrollPosition } from "./Message";
@@ -137,6 +138,29 @@ it("invalidates row heights even when another consumer has already refreshed the
     expect(conversationRowHeightCached(entries, 0, context, cache)).toBeUndefined();
     expect(conversationRowHeight(entries, 0, context, cache)).toBe(height);
     expect(cache.generation).toBe(cache.text.generation);
+});
+it("keeps a growing conversation's layout results only for the rows it still holds", () => {
+    const cache = conversationRowHeightCacheCreate();
+    const context = { surface: "conversation", viewerId: reader.id, width: 720 } as const;
+    const many: ConversationMessageEntry[] = Array.from({ length: 700 }, (_, index) => {
+        const entry = entries[index % entries.length]!;
+        return { ...entry, message: { ...entry.message, id: `grow-${String(index)}` } };
+    });
+    const heights = many.map((_, index) => conversationRowHeight(many, index, context, cache));
+    expect(cache.size).toBe(700);
+
+    // Holding them all, or a page that halves them, keeps everything.
+    conversationRowHeightCachePrune(cache, many);
+    conversationRowHeightCachePrune(cache, many.slice(-350));
+    expect(cache.size).toBe(700);
+
+    // Past twice what the transcript holds, only its rows stay, at the heights they had.
+    const kept = many.slice(-300);
+    conversationRowHeightCachePrune(cache, kept);
+    expect(cache.size).toBe(300);
+    expect(Object.keys(cache.text.markdownTrees)).toHaveLength(0);
+    expect(conversationRowHeightCached(kept, 0, context, cache)).toBe(heights[400]);
+    expect(conversationRowHeightCached(many, 0, context, cache)).toBeUndefined();
 });
 function harnessRender(width: number): Harness {
     const view = createRenderer();

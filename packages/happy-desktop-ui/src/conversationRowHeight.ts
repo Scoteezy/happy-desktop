@@ -26,6 +26,7 @@ import {
     plainTextHeight,
     messageTextLayoutCacheCreate,
     messageTextLayoutCacheRefresh,
+    messageTextLayoutCacheSettledClear,
     monoOutputTextHeight,
     monoTextNaturalWidth,
     noticeTextHeight,
@@ -142,6 +143,8 @@ export interface ConversationRowHeightCache {
     generation: number;
     /** Immutable-entry results at every width this conversation has occupied. */
     rows: Dictionary<CachedEntryHeights>;
+    /** How many entries `rows` holds. */
+    size: number;
     /** Prepared text and final text-layout results owned by this conversation. */
     readonly text: MessageTextLayoutCache;
 }
@@ -151,9 +154,36 @@ export function conversationRowHeightCacheCreate(): ConversationRowHeightCache {
     return {
         generation: text.generation,
         rows: dictionaryCreate(),
+        size: 0,
         text,
     };
 }
+/**
+ * A transcript lets go of its oldest rows as it keeps growing, but its cache would keep their
+ * results for as long as the conversation stays open. Once it holds results for twice the rows
+ * the transcript still has, it keeps only theirs and forgets its settled text layout, so what one
+ * conversation retains stays proportional to what it shows.
+ */
+export function conversationRowHeightCachePrune(
+    cache: ConversationRowHeightCache,
+    entries: readonly ConversationEntry[],
+): void {
+    if (cache.size <= Math.max(ROW_CACHE_PRUNE_MINIMUM, entries.length * 2)) return;
+    const rows = dictionaryCreate<CachedEntryHeights>();
+    let size = 0;
+    for (const entry of entries) {
+        const id = entryKey(entry);
+        const kept = cache.rows[id];
+        if (kept === undefined || rows[id] !== undefined) continue;
+        rows[id] = kept;
+        size += 1;
+    }
+    cache.rows = rows;
+    cache.size = size;
+    messageTextLayoutCacheSettledClear(cache.text);
+}
+/** Below this many cached rows a conversation is never pruned. */
+const ROW_CACHE_PRUNE_MINIMUM = 600;
 /* Set while `conversationRowHeightCached` asks: a miss is recorded, not laid out. */
 let cacheProbe: { missed: boolean } | undefined;
 function rowHeightCached(
@@ -166,11 +196,13 @@ function rowHeightCached(
     messageTextLayoutCacheRefresh(cache.text);
     if (cache.generation !== cache.text.generation) {
         cache.rows = dictionaryCreate();
+        cache.size = 0;
         cache.generation = cache.text.generation;
     }
     const id = entryKey(entry);
     let cachedEntry = cache.rows[id];
     if (!cachedEntry || cachedEntry.entry !== entry) {
+        if (!cachedEntry) cache.size += 1;
         cachedEntry = { entry, variants: dictionaryCreate() };
         cache.rows[id] = cachedEntry;
     }

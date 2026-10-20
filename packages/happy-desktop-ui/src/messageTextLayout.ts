@@ -255,6 +255,21 @@ export function messageTextLayoutCacheRefresh(cache: MessageTextLayoutCache): bo
 }
 
 /**
+ * Forgets the settled results kept per source text: parsed trees, footnotes, Mermaid geometry and
+ * every final height or width. They are kept for as long as the conversation is, so one whose
+ * oldest rows leave clears them along with those rows, and the rows it still shows lay out again
+ * only when asked. Preparation is bounded on its own and stays.
+ */
+export function messageTextLayoutCacheSettledClear(cache: MessageTextLayoutCache): void {
+    cache.markdownHeights = dictionaryCreate();
+    cache.mermaidDimensions = dictionaryCreate();
+    cache.markdownTrees = dictionaryCreate();
+    cache.markdownFootnotes = dictionaryCreate();
+    cache.runHeights = dictionaryCreate();
+    cache.naturalWidths = dictionaryCreate();
+}
+
+/**
  * The cache one streaming prefix is measured in. A prefix keeps no tree and no
  * final height: those start empty for every prefix, so a long stream retains
  * nothing per delta. Width-independent preparation is kept, bounded, in this

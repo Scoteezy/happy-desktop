@@ -54,6 +54,7 @@ import {
     conversationRowHeightCached,
     conversationRowHeightPrepare,
     conversationRowHeightCacheCreate,
+    conversationRowHeightCachePrune,
     type ConversationFailureRowContext,
     type ConversationRowContext,
     type ConversationRowHeightCache,
@@ -569,6 +570,7 @@ export function ConversationView(props: ConversationViewProps) {
         });
     };
     const rowHeightCache = conversationRowHeightCacheGet(conversationCacheKey);
+    conversationRowHeightCachePrune(rowHeightCache, props.entries);
     const { transcript, queued } = conversationPendingSteering(props.entries);
     /* Every change to an inline page's collapse or height is one generation,
        which re-sizes the rows; the values themselves live in module memory. */
