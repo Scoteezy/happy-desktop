@@ -199,3 +199,17 @@ show less than more — show the most important stuff only.
 ## [later] Search
 
 Search also needs to be redesigned, later.
+
+## [later] Prioritize, not tree
+
+Realistically one of the core things we actually want is to prioritize things.
+I'm kind of hesitant that this whole tree structure is even of value, to be
+honest. It may be a little bit of value, but most of the time you don't even go
+into these subtasks, and most of the value comes from whether something is in
+review or not — which Conductor and other orchestrators have largely shipped.
+
+Idea: automatically shuffle these, and add a spacer between the different parts:
+
+- high priority
+- already in process of just being merged — handed off to release
+- final section: archived / auto-archived
