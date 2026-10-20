@@ -68,9 +68,17 @@ export function entriesMerge<Entry extends ConversationEntry>(
         consumed.add(previous);
         if (entryEquivalent(previous, entry)) next[index] = previous;
     }
+    // A row only this window holds is kept until its owner settles it. A row
+    // the daemon's transcript projected is that transcript's: when it leaves,
+    // as a refused send does, it is gone, so one message never stands twice.
     for (let index = settled; index < current.length; index += 1) {
         const entry = current[index]!;
-        if (!consumed.has(entry) && entry.kind === "message" && entry.delivery !== "sent")
+        if (
+            !consumed.has(entry) &&
+            entry.kind === "message" &&
+            entry.source === "local" &&
+            entry.delivery !== "sent"
+        )
             next.push(entry);
     }
     // The producer emits rows in order and a retained local send belongs last,
