@@ -33,6 +33,7 @@ import {
 } from "./happyAgentAgentIdentities.js";
 import type {
     ConversationAgentIdentity,
+    ConversationFailureFallback,
     ConversationRetrying,
 } from "../conversation/conversationEntry.js";
 import { happyAgentRetryingProject } from "./happyAgentFailureProject.js";
@@ -690,6 +691,10 @@ export interface HappyAgentChatStore {
     permissionModeUpdate(permissionMode: HappyAgentPermissionMode): void;
     serviceTierUpdate(serviceTier?: HappyAgentServiceTier): void;
     compact(): Promise<void>;
+    /** Runs the turn a failure card's entry failed again. */
+    failureRetry(entryId: string): Promise<void>;
+    /** Moves to one of the failure's fallback targets and continues the failed turn there. */
+    failureSwitch(entryId: string, target: ConversationFailureFallback): Promise<void>;
     backgroundProcessStop(processId: number): Promise<void>;
     usageGet(): Promise<HappyAgentSessionUsage>;
     activityPanelToggle(): void;
@@ -722,6 +727,8 @@ export interface HappyAgentChatDeps {
         | "answerUserInput"
         | "compactSession"
         | "invokeSlashCommand"
+        | "retryFailedTurn"
+        | "switchAndContinue"
         | "sendMessage"
         | "sendMessageConfirmed"
         | "sendAcceptanceWait"
@@ -1214,6 +1221,24 @@ export function happyAgentChatStoreCreate(
         }
     };
 
+    // A failure action names the durable service message its card was
+    // projected from, and only while that failure is still unresolved.
+    const failedMessageOf = (entryId: string): string => {
+        const entry = store
+            .getState()
+            .entries.find((candidate) => candidate.kind === "notice" && candidate.id === entryId);
+        if (
+            entry?.kind !== "notice" ||
+            entry.variant !== "notice" ||
+            entry.failure === undefined ||
+            entry.source === undefined
+        )
+            throw new UserError("This failure is no longer in the conversation.");
+        if (entry.failure.resolution !== undefined)
+            throw new UserError("This failure has already been handled.");
+        return entry.source.messageId;
+    };
+
     const sentImagesRemember = (
         messageId: string,
         images: readonly HappyAgentImageInput[],
@@ -1480,6 +1505,21 @@ export function happyAgentChatStoreCreate(
         compact: () =>
             rejecting(() => {
                 connectMutationTrack(deps.connectActions.compactSession(sessionId));
+            }),
+        failureRetry: (entryId) =>
+            rejecting(() => {
+                const messageId = failedMessageOf(entryId);
+                connectMutationTrack(deps.connectActions.retryFailedTurn(sessionId, messageId));
+            }),
+        failureSwitch: (entryId, target) =>
+            rejecting(() => {
+                const messageId = failedMessageOf(entryId);
+                connectMutationTrack(
+                    deps.connectActions.switchAndContinue(sessionId, messageId, {
+                        providerId: target.providerId,
+                        modelId: target.modelId,
+                    }),
+                );
             }),
         backgroundProcessStop: (processId) =>
             rejecting(() => {

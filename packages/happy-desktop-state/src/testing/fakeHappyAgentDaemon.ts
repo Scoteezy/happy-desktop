@@ -13,9 +13,11 @@ import {
     type LiveSession,
     type EventStreamFrame,
     type EventStreamOptions,
+    type FailureResolutionResponse,
     type HappyAgentEvent,
     type HistoryRun,
     type Message,
+    type MessageFailureResolution,
     type MessageHistoryQuery,
     type MessageMode,
     type Profile,
@@ -25,6 +27,7 @@ import {
     type Run,
     type SaveUserSettingRequest,
     type SendMessageRequest,
+    type ServiceMessage,
     type StoredUserSetting,
     type Task,
     type TaskMembership,
@@ -420,6 +423,30 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         };
         agents.set(agentId, next);
         return next;
+    };
+
+    // Records what was done about a failed service message in its history and
+    // answers with it, as both failure actions do. No events: the continued
+    // run is not modelled, so the answer alone has to carry the resolution.
+    const failureResolve = (
+        agentId: string,
+        messageId: string,
+        resolution: MessageFailureResolution,
+    ): FailureResolutionResponse => {
+        for (const run of historyOf(agentId).runs) {
+            const index = run.messages.findIndex((message) => message.id === messageId);
+            const failed = run.messages[index];
+            if (failed === undefined) continue;
+            if (failed.role !== "service" || failed.failure === undefined)
+                throw new Error(`Message ${messageId} is not a failure.`);
+            const message: ServiceMessage = {
+                ...failed,
+                failure: { ...failed.failure, resolution },
+            };
+            run.messages[index] = message;
+            return { agent: agentBump(agentId), message, cursor: latestCursor };
+        }
+        throw new Error(`Unknown message ${messageId}.`);
     };
 
     const workspacesWithAgents = (): Workspace[] =>
@@ -1082,6 +1109,20 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             emit("run.started", { acceptedMessageIds: [], agentId, run });
             emit("message.created", { agentId, message, runId: run.id });
             return { agent: agentBump(agentId), cursor, message, run };
+        },
+        async retryFailedTurn(agentId: string, messageId: string, ...rest: unknown[]) {
+            await record("retryFailedTurn", [agentId, messageId, ...rest]);
+            return failureResolve(agentId, messageId, { action: "retried", at: 1 });
+        },
+        async switchAndContinue(agentId: string, messageId: string, ...rest: unknown[]) {
+            await record("switchAndContinue", [agentId, messageId, ...rest]);
+            const request = rest[0] as { providerId: string; modelId: string };
+            return failureResolve(agentId, messageId, {
+                action: "switched",
+                at: 1,
+                providerId: request.providerId,
+                modelId: request.modelId,
+            });
         },
         async markAgentRead(agentId: string, ...rest: unknown[]) {
             await record("markAgentRead", [agentId, ...rest]);

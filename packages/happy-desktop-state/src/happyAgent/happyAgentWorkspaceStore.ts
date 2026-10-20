@@ -11,6 +11,7 @@ import type {
     ConversationEntry,
     ConversationErrorAssistance,
     ConversationErrorAssistanceEntry,
+    ConversationFailureFallback,
     ConversationRetrying,
 } from "../conversation/conversationEntry.js";
 import { happyAgentChatDraftAppend } from "./happyAgentChatDraftAppend.js";
@@ -1862,6 +1863,10 @@ export interface HappyAgentWorkspaceStore {
         answers: Readonly<Record<string, readonly string[]>>,
     ): void;
     compact(): Promise<void>;
+    /** Runs the turn a failure card in the open conversation failed again. */
+    failureRetry(entryId: string): Promise<void>;
+    /** Continues the failed turn on one of the failure's fallback targets. */
+    failureSwitch(entryId: string, target: ConversationFailureFallback): Promise<void>;
     /** Loads the next page before the active conversation's current window. */
     historyLoadMore(): void;
     /** Requests termination of one background terminal in the active session (`/stop`). */
@@ -7807,6 +7812,14 @@ export function happyAgentWorkspaceStoreCreate(
             ),
         compact: () =>
             writeGuard(openGroupConversationRefusal(), () => withChat((store) => store.compact())),
+        failureRetry: (entryId) =>
+            writeGuard(openGroupConversationRefusal(), () =>
+                withChat((store) => store.failureRetry(entryId)),
+            ),
+        failureSwitch: (entryId, target) =>
+            writeGuard(openGroupConversationRefusal(), () =>
+                withChat((store) => store.failureSwitch(entryId, target)),
+            ),
         historyLoadMore: () => chatStore?.historyLoadMore(),
         usageGet: () => withChat((store) => store.usageGet()),
         usagePanelOpen: () => panel.usageSelect(),

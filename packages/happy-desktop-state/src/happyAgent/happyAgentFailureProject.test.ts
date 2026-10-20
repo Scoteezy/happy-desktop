@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { entriesMerge } from "../conversation/conversationEntries.js";
 import type { ConversationEntry } from "../conversation/conversationEntry.js";
-import {
-    happyAgentFailureProject,
-    happyAgentRetryingProject,
-    type HappyAgentMessageFailure,
-} from "./happyAgentFailureProject.js";
+import type { MessageFailure } from "@slopus/happy-agent-client";
+import { happyAgentFailureProject, happyAgentRetryingProject } from "./happyAgentFailureProject.js";
 import type { HappyAgentModel } from "./happyAgentTypes.js";
 
 const model = (id: string, name: string): HappyAgentModel => ({
@@ -20,7 +17,7 @@ const MODELS = [
     model("openai/gpt-6.1-sol", "GPT-6.1 Sol"),
 ];
 
-const usageLimit: HappyAgentMessageFailure = {
+const usageLimit: MessageFailure = {
     kind: "usage_limit",
     provider: { id: "claude", type: "claude", vendorName: "Claude", label: "claude" },
     resetsAt: 1_792_449_600_000,
@@ -127,7 +124,7 @@ describe("happyAgentFailureProject", () => {
                     message: "The daemon's own sentence.",
                     fallbackProviders: [],
                     ...fields,
-                } as unknown as HappyAgentMessageFailure,
+                } as unknown as MessageFailure,
                 MODELS,
             );
         const provider = usageLimit.kind === "usage_limit" ? usageLimit.provider : undefined;
@@ -176,10 +173,10 @@ describe("happyAgentFailureProject", () => {
     });
 
     it("names the overflowed model, falling back to its ID", () => {
-        const tooLong: HappyAgentMessageFailure = {
+        const tooLong: MessageFailure = {
             kind: "context_too_long",
             modelId: "anthropic/opus-5-5",
-            message: "",
+            message: "This conversation is too long for this model.",
             fallbackProviders: [],
         };
         expect(happyAgentFailureProject(tooLong, MODELS)).toMatchObject({ modelName: "Opus 5.5" });
@@ -216,7 +213,7 @@ describe("happyAgentRetryingProject", () => {
 });
 
 describe("failure rows in entriesMerge", () => {
-    const row = (failure: HappyAgentMessageFailure): ConversationEntry => ({
+    const row = (failure: MessageFailure): ConversationEntry => ({
         kind: "notice",
         id: "failed",
         sequence: "1",

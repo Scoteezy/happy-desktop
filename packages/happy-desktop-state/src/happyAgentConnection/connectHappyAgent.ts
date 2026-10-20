@@ -10,6 +10,7 @@ import {
     type Bot,
     type BackgroundProcess,
     type DaemonConfig,
+    type FailureResolutionResponse,
     type HappyAgentEvent,
     type Message,
     type MessageBlock,
@@ -1953,6 +1954,18 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         publishSession(entry);
     };
 
+    // The failed message comes back carrying its resolution; it keeps the run
+    // it already belongs to, and the continued run arrives through events.
+    const failureResolutionAdopt = (
+        agentId: string,
+        { agent, message }: FailureResolutionResponse,
+    ): void => {
+        adoptAgent(agent);
+        const entry = sessions.get(agentId);
+        if (entry === undefined) return;
+        updateMessage(agentId, message, entry.messages.get(message.id)?.runId ?? null);
+    };
+
     const updateMessageSnapshot = (agentId: string, message: Message, runId: string): void => {
         const entry = sessions.get(agentId);
         if (entry !== undefined && entry.subscribers.size === 0 && message.role === "agent") {
@@ -3601,6 +3614,48 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     if (!entry.runs.has(run.id)) updateRun(sessionId, run);
                     if (!entry.messages.has(message.id)) updateMessage(sessionId, message, run.id);
                 },
+                undefined,
+                sessionId,
+                `agent:${sessionId}`,
+            );
+        },
+        retryFailedTurn(sessionId, messageId) {
+            const mutationId = nextId();
+            return mutation(
+                "retry_failed_turn",
+                mutationId,
+                async () => {
+                    const response = await client.retryFailedTurn(
+                        sessionId,
+                        messageId,
+                        { mutationId },
+                        { signal: deadlineSignal() },
+                    );
+                    await ensureMessageUsers([response.message]);
+                    return response;
+                },
+                (response) => failureResolutionAdopt(sessionId, response),
+                undefined,
+                sessionId,
+                `agent:${sessionId}`,
+            );
+        },
+        switchAndContinue(sessionId, messageId, target) {
+            const mutationId = nextId();
+            return mutation(
+                "switch_and_continue",
+                mutationId,
+                async () => {
+                    const response = await client.switchAndContinue(
+                        sessionId,
+                        messageId,
+                        { providerId: target.providerId, modelId: target.modelId, mutationId },
+                        { signal: deadlineSignal() },
+                    );
+                    await ensureMessageUsers([response.message]);
+                    return response;
+                },
+                (response) => failureResolutionAdopt(sessionId, response),
                 undefined,
                 sessionId,
                 `agent:${sessionId}`,

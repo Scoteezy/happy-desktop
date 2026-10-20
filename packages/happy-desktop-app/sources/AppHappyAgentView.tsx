@@ -99,6 +99,7 @@ import type {
     HappyAgentTaskId,
     ProjectsVisibilityStore,
     HappyAgentGroupLifecycle,
+    ConversationFailureFallback,
     HappyAgentChangeTier,
     HappyAgentChangeTierId,
     HappyAgentChangeTiersSnapshot,
@@ -8656,11 +8657,23 @@ function HappyAgentConversationSurface(props: {
             onErrorAssistanceRequest={(entryId) => {
                 if (props.happyAgentOnline()) workspace.errorAssistanceRequest(entryId);
             }}
-            /* Retry and switch-and-continue arrive with the client package that
-               declares them; until then a failure card offers what is wired. */
-            {...(props.onNewChat === undefined
-                ? {}
-                : { failureActions: { onNewChat: () => props.onNewChat!() } })}
+            /* A chat that takes no message cannot be continued from its failure
+               either, so a read-only one offers only a new chat. */
+            failureActions={{
+                ...(props.readOnly
+                    ? {}
+                    : {
+                          onRetry: (entryId: string) => {
+                              if (props.happyAgentOnline())
+                                  swallow(workspace.failureRetry(entryId));
+                          },
+                          onSwitch: (entryId: string, target: ConversationFailureFallback) => {
+                              if (props.happyAgentOnline())
+                                  swallow(workspace.failureSwitch(entryId, target));
+                          },
+                      }),
+                ...(props.onNewChat === undefined ? {} : { onNewChat: () => props.onNewChat!() }),
+            }}
             {...(conversation.retrying === undefined ? {} : { retrying: conversation.retrying })}
             loading={!conversation.ready}
             {...(props.notice === undefined ? {} : { notice: props.notice })}

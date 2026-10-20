@@ -1,11 +1,13 @@
 import type {
     Agent,
+    AgentRetrying,
     Bot,
     ConfigurationBlock,
     HappyAgentClient,
     HappyAgentEvent,
     MessageBlock,
     MessageError,
+    MessageFailure,
     MessageMode,
     MutationId,
     Project,
@@ -18,10 +20,6 @@ import type {
     HappyAgentSubtaskActivity,
 } from "../happyAgent/happyAgentTypes.js";
 import type { HappyAgentServiceTier } from "../happyAgentServiceTier.js";
-import type {
-    HappyAgentMessageFailure,
-    HappyAgentRetrying,
-} from "../happyAgent/happyAgentFailureProject.js";
 import type { HappyAgentSync } from "./happyAgentSync.js";
 import type { UserProfile } from "./userProfiles.js";
 
@@ -331,7 +329,7 @@ export interface FailureElement extends BaseChatElement {
     reason: string;
     error?: MessageError;
     /** Protocol 30 typed reason; absent from an older daemon. */
-    failure?: HappyAgentMessageFailure;
+    failure?: MessageFailure;
 }
 
 export interface ConfigurationElement extends BaseChatElement {
@@ -436,7 +434,7 @@ export interface SessionState {
         since: number;
         wait?: { startedAt: number; dueAt: number };
         /** An automatic recovery the provider or a context reset is running. */
-        retrying?: HappyAgentRetrying;
+        retrying?: AgentRetrying;
     };
     activeGroup?: { groupId: string; runId: string; startedAt: number };
     activeTurn?: { runId: string; startedAt: number; kind?: "compaction" };
@@ -772,6 +770,8 @@ export type MutationAction =
     | "set_draft"
     | "answer_user_input"
     | "compact_session"
+    | "retry_failed_turn"
+    | "switch_and_continue"
     | "set_session_archived"
     | "mark_session_read"
     | "rename_group"
@@ -862,6 +862,12 @@ export interface DraftUpdate {
 export interface ModelSelection {
     modelId: string;
     providerId?: string;
+}
+
+/** One of a failure's fallback providers, naming exactly where to continue. */
+export interface FailureTarget {
+    providerId: string;
+    modelId: string;
 }
 
 export interface CreateSessionInput {
@@ -999,6 +1005,13 @@ export interface HappyAgentConnection {
     stopBackgroundProcess(sessionId: string, projectedProcessId: number): MutationId;
     stopRun(sessionId: string): MutationId;
     compactSession(sessionId: string): MutationId;
+    /** Runs a failed turn again; the failed message comes back resolved as retried. */
+    retryFailedTurn(sessionId: string, messageId: string): MutationId;
+    /**
+     * Moves the session to one of a failure's fallback targets and continues the
+     * failed turn there; the failed message comes back resolved as switched.
+     */
+    switchAndContinue(sessionId: string, messageId: string, target: FailureTarget): MutationId;
     setDraft(sessionId: string, update: string | DraftUpdate): MutationId;
     /** Fresh authoritative read, one append, and confirmed idempotent draft save; never sends. */
     draftAppendConfirmed(sessionId: string, text: string, updatedAt: number): Promise<void>;

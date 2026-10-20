@@ -24,10 +24,6 @@ import { happyAgentConversationActivityProject } from "../happyAgent/happyAgentC
 import type { HappyAgentSubtaskActivity } from "../happyAgent/happyAgentTypes.js";
 import type { UserProfile } from "./userProfiles.js";
 import type {
-    HappyAgentMessageFailure,
-    HappyAgentRetrying,
-} from "../happyAgent/happyAgentFailureProject.js";
-import type {
     BotGroup,
     BotSubtaskGroup,
     ChatElement,
@@ -1131,7 +1127,9 @@ function messageElementsProject(
                 });
             } else if (
                 message.role === "service" &&
-                (message.error !== undefined || runStatus === "failed")
+                (message.failure !== undefined ||
+                    message.error !== undefined ||
+                    runStatus === "failed")
             ) {
                 elements.push({
                     ...base,
@@ -1141,9 +1139,7 @@ function messageElementsProject(
                     outcome: "failed",
                     reason: block.text,
                     ...(message.error === undefined ? {} : { error: message.error }),
-                    ...((failure) => (failure === undefined ? {} : { failure }))(
-                        messageFailureOf(message),
-                    ),
+                    ...(message.failure === undefined ? {} : { failure: message.failure }),
                 });
             } else {
                 elements.push({ ...base, id, kind: "system_notice", text: block.text });
@@ -1462,20 +1458,9 @@ function modelDefinitionsProject(config: DaemonConfig): readonly unknown[] {
     }));
 }
 
-/*
- * Protocol 30 fields read before @slopus/happy-agent-client types them. Each
- * becomes a plain property access once the published package declares it.
- */
-function messageFailureOf(message: object): HappyAgentMessageFailure | undefined {
-    return (message as { readonly failure?: HappyAgentMessageFailure | null }).failure ?? undefined;
-}
-function agentRetryingOf(agent: Agent): HappyAgentRetrying | undefined {
-    return (agent as { readonly retrying?: HappyAgentRetrying | null }).retrying ?? undefined;
-}
-
 function activityOf(agent: Agent): SessionState["activity"] {
-    const retrying = agentRetryingOf(agent);
-    if (retrying !== undefined)
+    const retrying = agent.retrying;
+    if (retrying != null)
         return {
             kind: "thinking",
             label: "Retrying",
