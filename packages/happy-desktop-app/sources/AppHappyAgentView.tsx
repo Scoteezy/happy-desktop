@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { HappyAgentSystemMonitorStore } from "happy-desktop-state";
 import { HappyAgentSystemMonitorSurfacePage } from "happy-desktop-ui";
 import {
@@ -7532,13 +7532,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                                     activeReview === undefined &&
                                                     displayedFile === undefined
                                                 }
-                                                {...(props.artifacts
-                                                    ? { artifacts: props.artifacts }
-                                                    : {})}
-                                                linkOpenDefault={props.linkOpenDefault}
-                                                list={workspace.list}
-                                                modelUsageWatch={modelUsageWatch}
-                                                viewerId={props.viewerId}
                                                 workspace={props.workspace}
                                             />
                                             <HappyAgentToolBodies
@@ -8318,15 +8311,8 @@ function HappyAgentGroupComposer(props: {
     );
 }
 
-/**
- * The open conversation's materialization states, inside the directory's tabs.
- *
- * Memoized for a performance contract: a conversation kept out of sight is
- * handed the same props until its own snapshot changes, and this is where
- * React stops instead of re-rendering every hidden transcript at idle
- * priority each time the clock ticks or another conversation streams.
- */
-const HappyAgentConversationBody = memo(function HappyAgentConversationBody(props: {
+/** The open conversation's materialization states, inside the directory's tabs. */
+function HappyAgentConversationBody(props: {
     activitySelected: boolean;
     /** The machine's artifacts, which the transcript's references name. */
     artifacts?: HappyAgentArtifacts;
@@ -8488,55 +8474,24 @@ const HappyAgentConversationBody = memo(function HappyAgentConversationBody(prop
             title="No session selected"
         />
     );
-});
-
-/*
- * What a conversation out of sight is given in place of the surface's live
- * handlers and clock. Nothing out of sight can be clicked or typed into, so
- * none of these is ever called; they are constants so the view keeps the same
- * props until its own snapshot changes. It reads the real time and its real
- * handlers again the moment it is shown.
- */
-const HIDDEN_NOW = 0;
-const hiddenNothing = (): void => undefined;
-const hiddenOffline = (): boolean => false;
-/** One ready wrapper per kept snapshot, so an unchanged conversation is handed an unchanged prop. */
-const hiddenReady = new WeakMap<
-    HappyAgentConversationSnapshot,
-    HappyAgentWorkspaceSnapshot["conversation"]
->();
-function hiddenReadyOf(
-    value: HappyAgentConversationSnapshot,
-): HappyAgentWorkspaceSnapshot["conversation"] {
-    let ready = hiddenReady.get(value);
-    if (!ready) {
-        ready = { type: "ready", value };
-        hiddenReady.set(value, ready);
-    }
-    return ready;
 }
 
 /**
  * The open conversation and the ones the workspace keeps behind it, each in a
  * view of its own that stays mounted out of sight. Going back to a kept
  * conversation shows the view already built for it — its transcript, where it
- * was scrolled to, its open rows — instead of building the whole thing again.
- * The ones kept keep following their transcripts at idle priority, so the one
- * shown is already current.
+ * was scrolled to, its open rows — and draws it once from the conversation as
+ * it is now, instead of building the whole thing again.
  *
- * Its own subscription to the kept conversations, beside the surface's: one
- * streaming out of sight re-renders this list and that view, never the surface.
+ * Only the open conversation is given content. A kept one stays exactly as it
+ * was drawn when it was left and does no work while out of sight, however much
+ * it streams; so does the open one while a file or tool covers it.
  */
 function HappyAgentConversationViews(props: {
     /** The conversation the address names, drawn by the surface with everything it knows. */
     open: { readonly id: string; readonly content: ReactNode } | undefined;
     /** Whether the main pane shows the open conversation rather than a file or tool over it. */
     shown: boolean;
-    artifacts?: HappyAgentArtifacts;
-    linkOpenDefault: LinkOpenPlacement;
-    list: HappyAgentWorkspaceSnapshot["list"];
-    modelUsageWatch?: ComposerModelUsageWatch;
-    viewerId: string;
     workspace: HappyAgentWorkspaceStore;
 }) {
     const { workspace } = props;
@@ -8552,38 +8507,11 @@ function HappyAgentConversationViews(props: {
             workspace.conversationViewSizeUpdate(id as HappyAgentSessionId, elements),
         [workspace],
     );
-    const referenceEntities = messageReferenceEntities(props.list);
     const views = [
         ...(props.open ? [props.open] : []),
-        ...kept.conversations
-            .filter((conversation) => conversation.conversationId !== props.open?.id)
-            .map((conversation) => ({
-                id: conversation.conversationId,
-                content: (
-                    <HappyAgentConversationBody
-                        activitySelected={false}
-                        {...(props.artifacts ? { artifacts: props.artifacts } : {})}
-                        referenceEntities={referenceEntities}
-                        onReferenceGroupOpen={hiddenNothing}
-                        modelUsageWatch={props.modelUsageWatch}
-                        conversation={hiddenReadyOf(conversation)}
-                        focusOnType={false}
-                        groupId=""
-                        groupName=""
-                        now={HIDDEN_NOW}
-                        onChatSelect={hiddenNothing}
-                        onFileOpen={hiddenNothing}
-                        onFileLinkOpen={hiddenNothing}
-                        onLinkOpen={hiddenNothing}
-                        linkOpenDefault={props.linkOpenDefault}
-                        canAbort={false}
-                        readOnly={false}
-                        happyAgentOnline={hiddenOffline}
-                        viewerId={props.viewerId}
-                        workspace={workspace}
-                    />
-                ),
-            })),
+        ...kept.conversationIds
+            .filter((conversationId) => conversationId !== props.open?.id)
+            .map((conversationId) => ({ id: conversationId })),
     ];
     return (
         <RetainedViews
