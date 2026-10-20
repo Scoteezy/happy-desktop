@@ -130,7 +130,6 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                         {layout.lineAction ? (
                             <Button
                                 className="happy-conversation-failure-card__line-action"
-                                data-happy-desktop-ui="conversation-failure-line-action"
                                 onClick={lineAction === "retry" ? props.onRetry : props.onNewChat}
                                 size="small"
                                 variant={layout.lineAction.primary ? "primary" : "secondary"}
@@ -183,7 +182,6 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                             {layout.assistance ? (
                                 <Button
                                     className="happy-conversation-failure-card__ask"
-                                    data-happy-desktop-ui="conversation-failure-ask"
                                     disabled={
                                         layout.assistance.disabled || !props.onAssistanceRequest
                                     }

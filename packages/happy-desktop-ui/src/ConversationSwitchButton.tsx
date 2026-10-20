@@ -130,7 +130,6 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
         >
             <Button
                 className="happy-conversation-switch__main"
-                data-happy-desktop-ui="conversation-switch-main"
                 disabled={!props.onSwitch}
                 onClick={() => props.onSwitch?.(current)}
                 size="small"
@@ -145,7 +144,6 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
                 aria-haspopup="menu"
                 aria-label="Choose another account"
                 className="happy-conversation-switch__menu"
-                data-happy-desktop-ui="conversation-switch-menu"
                 data-open={open ? "" : undefined}
                 iconOnly
                 onClick={() => {
