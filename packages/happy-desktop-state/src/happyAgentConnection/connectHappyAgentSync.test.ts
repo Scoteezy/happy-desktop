@@ -1791,6 +1791,108 @@ it("keeps a prefetched session whose read is still loading when older ones are l
     expect(daemon.callCount("getMessages")).toBe(ids.length);
 });
 
+it("lets go of the prefetched sessions it kept while they loaded once their reads land", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const ids = Array.from(
+        { length: 12 },
+        (_, index) => daemon.agentSeed(project.id, { id: `agent-${String(index)}` }).id,
+    );
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    const releaseHistory = daemon.pause("getMessages");
+
+    for (const id of ids) connection.prefetchSession(id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(ids.length));
+    releaseHistory();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Only the newest six stay; opening each of the rest reads it again.
+    for (const id of ids) sessionWatch(connection, id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(ids.length + 6));
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(daemon.callCount("getMessages")).toBe(ids.length + 6);
+});
+
+it("updates a session's sidebar row while its transcript is still being read", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a", title: "Before" });
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    const releaseHistory = daemon.pause("getMessages");
+    connection.prefetchSession(agent.id);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(1));
+
+    daemon.eventEmit("agent.updated", {
+        agentId: agent.id,
+        previousVersion: agent.version,
+        version: daemon.versionNext(),
+        changes: { title: "After", status: "working", updatedAt: 2 },
+    });
+    const row = () => groups.projects[0]?.sessions.find((session) => session.id === agent.id);
+    await vi.waitFor(() => expect(row()?.title).toBe("After"));
+
+    // The load landing with its older snapshot does not put the old title back.
+    releaseHistory();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(row()?.title).toBe("After");
+    expect(sessionWatch(connection, agent.id).session?.title).toBe("After");
+});
+
+it("keeps only the latest page of a session that streams while nobody reads it", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a" });
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    let firstLoading: boolean | undefined = true;
+    const first = connection.connectSession({
+        sessionId: agent.id,
+        onChange(_elements, session) {
+            firstLoading = session.historyLoading;
+        },
+    });
+    await vi.waitFor(() => expect(firstLoading).not.toBe(true));
+    first.close();
+    const loads = daemon.callCount("getMessages");
+
+    const runs = [];
+    for (let index = 0; index < 150; index += 1) {
+        const runId = `r${String(index)}`;
+        const message = fakeAgentMessage({
+            id: `a${String(index)}`,
+            createdAt: index + 1,
+            content: [{ type: "text", text: `answer ${String(index)}` }],
+        });
+        daemon.eventEmit("run.started", {
+            agentId: agent.id,
+            run: fakeRun({ id: runId, status: "running", startedAt: index + 1 }),
+            acceptedMessageIds: [],
+        });
+        daemon.eventEmit("message.created", { agentId: agent.id, message, runId });
+        const finished = {
+            id: runId,
+            status: "completed",
+            startedAt: index + 1,
+            endedAt: index + 2,
+        } as const;
+        runs.push(fakeRun({ ...finished, messages: [message] }));
+        daemon.eventEmit("run.finished", { agentId: agent.id, run: fakeRun(finished) });
+    }
+    daemon.historySet(agent.id, runs);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // Reopening shows the newest hundred at once, without a read, and the rest are a scroll away.
+    const reopened = sessionWatch(connection, agent.id);
+    const answers = agentTexts(reopened.elements).map((element) => element.text);
+    expect(answers).toHaveLength(100);
+    expect(answers.at(-1)).toBe("answer 149");
+    expect(answers[0]).toBe("answer 50");
+    expect(reopened.session?.transcriptComplete).toBe(false);
+    expect(reopened.session?.loadMoreToken).toBe("r50");
+    expect(daemon.callCount("getMessages")).toBe(loads);
+});
+
 // --- lost cursor and full resync -------------------------------------------
 
 it("resyncs the catalog and every open chat when the hello reports a cursor gap", async () => {

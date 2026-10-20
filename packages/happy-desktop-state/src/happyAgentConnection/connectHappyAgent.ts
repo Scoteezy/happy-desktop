@@ -1227,6 +1227,24 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     /** Sessions loaded ahead of an open by `prefetchSession` and not opened since, oldest first. */
     const prefetchedSessions = new Set<string>();
 
+    /**
+     * Keep only the newest few prefetched sessions that were never opened. One still loading,
+     * and `keep`, stay until their reads land rather than being read twice.
+     */
+    const trimPrefetchedSessions = (keep?: string): void => {
+        for (const oldest of prefetchedSessions) {
+            if (prefetchedSessions.size <= PREFETCHED_SESSION_LIMIT) break;
+            if (oldest === keep) continue;
+            const stale = sessions.get(oldest);
+            if (stale !== undefined && stale.loading !== undefined) continue;
+            prefetchedSessions.delete(oldest);
+            if (stale !== undefined && stale.subscribers.size === 0) {
+                clearUserIndex(stale);
+                sessions.delete(oldest);
+            }
+        }
+    };
+
     /** Sessions read ahead by `preloadRecentSessions` and not opened since. */
     const preloadedSessions = new Set<string>();
     let preloading = false;
@@ -1730,7 +1748,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         const hydratingEntry = eventAgentId === undefined ? undefined : sessions.get(eventAgentId);
         if (hydratingEntry?.hydrating === true) {
             hydratingEntry.bufferedEvents.push(event);
-            return;
+            // The sidebar row shows the agent itself, so it moves on now. Replayed after the
+            // load, the same version is a no-op unless the snapshot put back an older one.
+            if (event.type !== "agent.updated") return;
         }
         switch (event.type) {
             case "project.created":
@@ -2018,6 +2038,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             case "run.finished":
                 updateRun(event.payload.agentId, event.payload.run);
                 recoverCorruptedMessages(event.payload.agentId);
+                trimUnwatchedHistory(event.payload.agentId);
                 if (agentOf(event.payload.agentId)?.parentAgentId === null) {
                     options.onTopLevelSessionFinished?.(event.payload.agentId);
                 }
@@ -2162,6 +2183,34 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         entry.runsOrdered = undefined;
         captureRunFinalContext(entry, run);
         publishSession(entry);
+    };
+
+    /**
+     * A session nobody watches follows its stream, so its runs would pile up for as long as it
+     * works. Past a page, the oldest go, and are read again only if someone scrolls back to them.
+     */
+    const trimUnwatchedHistory = (agentId: string): void => {
+        const entry = sessions.get(agentId);
+        if (entry === undefined || entry.subscribers.size > 0) return;
+        const ordered = runsOrderedOf(entry);
+        if (ordered.length <= DEFAULT_HISTORY_LIMIT) return;
+        const dropped = new Set(
+            ordered.slice(0, ordered.length - DEFAULT_HISTORY_LIMIT).map((run) => run.id),
+        );
+        for (const id of dropped) {
+            entry.runs.delete(id);
+            entry.runFinalContextTokens.delete(id);
+        }
+        for (const [id, message] of entry.messages) {
+            if (message.runId === null || !dropped.has(message.runId)) continue;
+            entry.messages.delete(id);
+            entry.messageBlockOffsets.delete(id);
+            entry.corruptedMessageIds.delete(id);
+        }
+        entry.runsOrdered = undefined;
+        entry.hasMore = true;
+        clearUserIndex(entry);
+        for (const { message } of entry.messages.values()) indexMessageUser(entry, message);
     };
 
     const updateMessage = (agentId: string, message: Message, runId: string | null): void => {
@@ -3423,21 +3472,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             }
             const entry = sessionEntryCreate(sessionId);
             prefetchedSessions.add(sessionId);
-            // Keep only the newest few that were never opened; one that is still
-            // loading, this one included, stays until its read lands rather than
-            // being read twice.
-            for (const oldest of prefetchedSessions) {
-                if (prefetchedSessions.size <= PREFETCHED_SESSION_LIMIT) break;
-                if (oldest === sessionId) continue;
-                const stale = sessions.get(oldest);
-                if (stale !== undefined && stale.loading !== undefined) continue;
-                prefetchedSessions.delete(oldest);
-                if (stale !== undefined && stale.subscribers.size === 0) {
-                    clearUserIndex(stale);
-                    sessions.delete(oldest);
-                }
-            }
-            void ensureSessionLoaded(entry);
+            trimPrefetchedSessions(sessionId);
+            // A read that lands lets go of the ones kept while they loaded.
+            const trim = (): void => trimPrefetchedSessions();
+            ensureSessionLoaded(entry).then(trim, trim);
         },
         connectSession(subscription) {
             if (closed) throw new Error("This Happy Agent connection is closed.");
