@@ -4,7 +4,6 @@ import type {
 } from "../modules/terminal/terminalState.js";
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
 import { happyAgentProjectAddError } from "./happyAgentProjectRegistration.js";
-import { HAPPY_AGENT_CONVERSATIONS_RETAINED_MAX } from "./happyAgentConversationRetention.js";
 import {
     happyAgentFileLinkWorkspaceResolve,
     type HappyAgentFileLinkTarget,
@@ -515,13 +514,10 @@ export function happyAgentWorkspaceClientCreate(
     deps: HappyAgentWorkspaceClientDeps,
 ): HappyAgentWorkspaceClient {
     const configuredMaxLiveChatSubscriptions = deps.maxLiveChatSubscriptions;
-    // Room for the open conversation and every one a workspace may keep behind
-    // it (`HAPPY_AGENT_CONVERSATIONS_RETAINED_MAX`), with four to spare for the
-    // brief leases a send into another conversation takes.
     const maxLiveChatSubscriptions =
         configuredMaxLiveChatSubscriptions === undefined ||
         !Number.isFinite(configuredMaxLiveChatSubscriptions)
-            ? HAPPY_AGENT_CONVERSATIONS_RETAINED_MAX + 5
+            ? 8
             : Math.max(1, Math.floor(configuredMaxLiveChatSubscriptions));
     const models = happyAgentModelStoreCreate({
         catalogRead: async () =>

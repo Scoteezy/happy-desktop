@@ -1,10 +1,10 @@
-import type { HappyAgentConversationSnapshot } from "./happyAgentWorkspaceStore.js";
+import type { HappyAgentSessionId } from "./happyAgentTypes.js";
 
 /**
- * How much of the conversations the reader has just left a workspace keeps
- * materialized, so going back to one shows it at once instead of building its
- * transcript again. The most recently left are kept while they fit both limits;
- * the rest are released, oldest first.
+ * How many of the conversations the reader has just left a workspace keeps,
+ * so a window can keep their views mounted and going back to one shows it at
+ * once instead of building its transcript again. The most recently left are
+ * kept while they fit both limits; the rest are let go, oldest first.
  */
 export interface HappyAgentConversationRetention {
     /** Conversations kept beside the one on screen. Zero keeps none. */
@@ -17,17 +17,17 @@ export interface HappyAgentConversationRetention {
     readonly size: number;
 }
 
-/** The conversations a workspace keeps materialized behind the open one. */
+/**
+ * The conversations a workspace keeps behind the open one. Only which ones:
+ * a kept view shows its conversation as it was left, and is shown again from
+ * the conversation as it is when it is opened.
+ */
 export interface HappyAgentRetainedConversationsSnapshot {
     /** The most recently left first. Never the conversation that is open. */
-    readonly conversations: readonly HappyAgentConversationSnapshot[];
+    readonly conversationIds: readonly HappyAgentSessionId[];
 }
 
-/**
- * A store of its own rather than part of the workspace snapshot: a kept
- * conversation that is streaming changes far more often than anything the
- * surface around it shows, and must not drag that surface through a render.
- */
+/** Changes only when a conversation is kept or let go, never as one streams. */
 export interface HappyAgentRetainedConversationsStore {
     get(): HappyAgentRetainedConversationsSnapshot;
     subscribe(listener: () => void): () => void;
@@ -35,8 +35,7 @@ export interface HappyAgentRetainedConversationsStore {
 
 /**
  * The most conversations kept beside the open one, whatever the machine: eight
- * views in all. Each holds a live chat lease, and the client leaves room for
- * the brief leases a send into another conversation takes beside them.
+ * views in all.
  */
 export const HAPPY_AGENT_CONVERSATIONS_RETAINED_MAX = 7;
 
@@ -55,7 +54,7 @@ export const HAPPY_AGENT_CONVERSATION_RETENTION_NONE: HappyAgentConversationRete
     size: 0,
 };
 
-const RETAINED_NONE: HappyAgentRetainedConversationsSnapshot = { conversations: [] };
+const RETAINED_NONE: HappyAgentRetainedConversationsSnapshot = { conversationIds: [] };
 
 /** The kept conversations of a workspace that keeps none, for Blueprint and tests. */
 export const HAPPY_AGENT_RETAINED_CONVERSATIONS_NONE: HappyAgentRetainedConversationsStore = {

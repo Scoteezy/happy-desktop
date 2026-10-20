@@ -15,10 +15,11 @@ import type {
 import { happyAgentWorkspaceStoreCreate } from "./happyAgentWorkspaceStore.js";
 
 /**
- * Leaving a conversation keeps it materialized, so a window can keep its view
- * mounted and show it again at once. The workspace keeps the ones left most
- * recently while they fit the count and the size its host gave it, lets the
- * rest go oldest first, and drops any the list stops listing.
+ * Leaving a conversation keeps it, so a window can keep its view mounted and
+ * show it again at once. The workspace keeps the ones left most recently while
+ * they fit the count and the size its host gave it, lets the rest go oldest
+ * first, and drops any the list stops listing. A kept conversation holds no
+ * lease and follows nothing while it is out of sight.
  */
 
 const PROJECT = "prj_retention" as HappyAgentProjectId;
@@ -133,6 +134,9 @@ function workspaceCreate(retention?: HappyAgentConversationRetention, ids = "abc
     const listListeners = new Set<() => void>();
     const chats = new Map([...ids].map((id) => [id, chatCreate(id)]));
     const reads: string[] = [];
+    /** Reads held back until `arrive`, while `holding` is set. */
+    const held: (() => void)[] = [];
+    let holding = false;
     const loading = { type: "loading" } as const;
     const client = new Proxy(
         {
@@ -160,14 +164,16 @@ function workspaceCreate(retention?: HappyAgentConversationRetention, ids = "abc
                 const chat = chats.get(sessionId)!;
                 chat.leases += 1;
                 let released = false;
-                return Promise.resolve({
+                const handle: HappyAgentChatHandle = {
                     store: chat.store,
                     [Symbol.dispose]() {
                         if (released) return;
                         released = true;
                         chat.leases -= 1;
                     },
-                });
+                };
+                if (!holding) return Promise.resolve(handle);
+                return new Promise((resolve) => held.push(() => resolve(handle)));
             },
             openInTargetsRead: () => new Promise(() => undefined),
             workspaceFilesSubscribe: () => () => undefined,
@@ -190,8 +196,17 @@ function workspaceCreate(retention?: HappyAgentConversationRetention, ids = "abc
             await Promise.resolve();
             await Promise.resolve();
         },
-        kept: () =>
-            workspace.conversationsRetained.get().conversations.map((c) => c.conversationId),
+        hold() {
+            holding = true;
+        },
+        /** Lets the reads held back arrive. */
+        async arrive() {
+            holding = false;
+            for (const resolve of held.splice(0)) resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+        },
+        kept: () => workspace.conversationsRetained.get().conversationIds,
         leased: () => [...chats].filter(([, chat]) => chat.leases > 0).map(([id]) => id),
         hostLists(remaining: string) {
             const projects = list.projects as unknown as { value: readonly object[] };
@@ -213,47 +228,54 @@ it("keeps the conversations just left, newest first, and lets the oldest go past
     for (const id of "abcd") await view.open(id);
 
     expect(view.kept()).toEqual(["c", "b"]);
-    // The one on screen and the two kept hold leases; the oldest gave its lease back.
-    expect(view.leased().sort()).toEqual(["b", "c", "d"]);
+    // Only the one on screen holds a lease: kept ones are read again when opened.
+    expect(view.leased()).toEqual(["d"]);
     view.unsubscribe();
 });
 
-it("opens a kept conversation again from its lease, whole, in the same call", async () => {
+it("shows a kept conversation as it was left until it is read again", async () => {
     const view = workspaceCreate({ count: 3, size: 1_000 });
     for (const id of "abc") await view.open(id);
-    const reads = view.reads.length;
+    // It went on while out of sight; the connection has the rest.
+    view.chats.get("a")!.stream("a:2");
+    view.hold();
 
     view.workspace.conversationOpen("a" as HappyAgentSessionId, GROUP);
 
-    // Nothing was read, and the transcript is there before anything settles.
-    expect(view.reads.length).toBe(reads);
-    const open = view.workspace.get().conversation;
-    expect(open.type === "ready" && open.value.entries.map(entryKey)).toEqual(["a:1"]);
-    expect(open.type === "ready" && open.value.conversationId).toBe("a");
+    // Its transcript is there in the same call, never an empty one in between.
+    const shown = view.workspace.get().conversation;
+    expect(shown.type === "ready" && shown.value.conversationId).toBe("a");
+    expect(shown.type === "ready" && shown.value.entries.map(entryKey)).toEqual(["a:1"]);
     // Opening it takes it out of the kept ones, and what was open is kept instead.
     expect(view.kept()).toEqual(["c", "b"]);
-    expect(view.leased().sort()).toEqual(["a", "b", "c"]);
+
+    await view.arrive();
+
+    const read = view.workspace.get().conversation;
+    expect(view.reads.filter((id) => id === "a")).toHaveLength(2);
+    expect(read.type === "ready" && read.value.entries.map(entryKey)).toEqual(["a:1", "a:2"]);
+    expect(view.leased()).toEqual(["a"]);
     view.unsubscribe();
 });
 
-it("follows what a kept conversation streams while it is out of sight", async () => {
+it("does nothing while a kept conversation streams out of sight", async () => {
     const view = workspaceCreate({ count: 2, size: 1_000 });
     await view.open("a");
     await view.open("b");
-    const before = view.workspace.conversationsRetained.get();
+    const kept = view.workspace.conversationsRetained.get();
+    const shown = view.workspace.get();
     let notified = 0;
     const stop = view.workspace.conversationsRetained.subscribe(() => (notified += 1));
+    const stopWorkspace = view.workspace.subscribe(() => (notified += 1));
 
     view.chats.get("a")!.stream("a:2");
 
-    expect(notified).toBe(1);
-    const kept = view.workspace.conversationsRetained.get();
-    expect(kept).not.toBe(before);
-    expect(kept.conversations[0]!.entries.map(entryKey)).toEqual(["a:1", "a:2"]);
-    // A change to the open conversation's chat is not the kept store's to announce.
-    view.chats.get("b")!.stream("b:2");
-    expect(notified).toBe(1);
+    expect(view.chats.get("a")!.listeners.size).toBe(0);
+    expect(notified).toBe(0);
+    expect(view.workspace.conversationsRetained.get()).toBe(kept);
+    expect(view.workspace.get()).toBe(shown);
     stop();
+    stopWorkspace();
     view.unsubscribe();
 });
 
@@ -269,13 +291,11 @@ it("lets the least recently left views go once the kept ones no longer fit their
     // Ten more than fits: the oldest go until the rest fit, whatever their own size.
     view.workspace.conversationViewSizeUpdate("b" as HappyAgentSessionId, 20);
     expect(view.kept()).toEqual(["d", "c"]);
-    expect(view.leased().sort()).toEqual(["c", "d", "e"]);
 
     // A view measured while it is on screen counts once it is left.
     view.workspace.conversationViewSizeUpdate("e" as HappyAgentSessionId, 90);
     await view.open("f");
     expect(view.kept()).toEqual(["e"]);
-    expect(view.leased().sort()).toEqual(["e", "f"]);
     view.unsubscribe();
 });
 
@@ -286,7 +306,6 @@ it("lets go of a kept conversation the list stops listing", async () => {
     view.hostLists("bc");
 
     expect(view.kept()).toEqual(["b"]);
-    expect(view.leased().sort()).toEqual(["b", "c"]);
     view.unsubscribe();
 });
 
