@@ -1,0 +1,217 @@
+import "./styles.css";
+import { useSyncExternalStore } from "react";
+import { flushSync } from "react-dom";
+import type { ComposerSnapshot, ConversationEntry } from "happy-desktop-state";
+import { expect, it } from "vitest";
+import { ConversationView } from "./ConversationView";
+import { RetainedViews } from "./RetainedViews";
+import { createRenderer } from "./testing";
+
+/* Views kept out of sight keep their DOM and scroll position, and nothing in
+ * them answers the reader: no typing, no focus, no layout, no accessibility
+ * tree. The conversation view is the real one, every composer told to claim
+ * stray typing, so only the boundary keeps the hidden ones quiet. */
+
+const size = { height: 600, width: 720 };
+
+function composer(scopeId: string): ComposerSnapshot {
+    return {
+        agentUserIds: [],
+        attachments: [],
+        capabilities: { commands: [], mentions: false, shellMode: false },
+        focused: false,
+        mentionCandidates: [],
+        revision: 0,
+        scopeId,
+        submission: { status: "idle" },
+        text: "",
+    };
+}
+
+function transcript(id: string): readonly ConversationEntry[] {
+    return Array.from({ length: 60 }, (_, index) => ({
+        kind: "notice" as const,
+        id: `${id}-${String(index)}`,
+        level: "info" as const,
+        sequence: String(index),
+        text: `${id} line ${String(index)} — long enough to give the transcript some height to scroll through.`,
+        variant: "notice" as const,
+    }));
+}
+
+const TRANSCRIPTS = new Map(["a", "b", "c"].map((id) => [id, transcript(id)]));
+
+type Shown = { readonly activeId: string | undefined; readonly ids: readonly string[] };
+
+function shownStoreCreate(initial: Shown) {
+    let snapshot = initial;
+    const listeners = new Set<() => void>();
+    return {
+        get: () => snapshot,
+        set(next: Shown) {
+            snapshot = next;
+            flushSync(() => {
+                for (const listener of listeners) listener();
+            });
+        },
+        subscribe(listener: () => void) {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+        },
+    };
+}
+
+function frame() {
+    return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function harness(initial: Shown) {
+    const shown = shownStoreCreate(initial);
+    const hides: { id: string; elements: number }[] = [];
+    const onViewHide = (id: string, elements: number) => hides.push({ id, elements });
+    function Harness() {
+        const snapshot = useSyncExternalStore(shown.subscribe, shown.get, shown.get);
+        return (
+            <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                <RetainedViews
+                    {...(snapshot.activeId === undefined ? {} : { activeId: snapshot.activeId })}
+                    onViewHide={onViewHide}
+                    views={snapshot.ids.map((id) => ({
+                        id,
+                        content: (
+                            <ConversationView
+                                composer={composer(id)}
+                                composerFocusKey={id}
+                                composerFocusOnType
+                                composerPlaceholder={`Write to ${id}`}
+                                conversationId={id}
+                                entries={TRANSCRIPTS.get(id)!}
+                                onComposerSend={() => undefined}
+                                onComposerValueChange={() => undefined}
+                            />
+                        ),
+                    }))}
+                />
+            </div>
+        );
+    }
+    const view = createRenderer().render(() => <Harness />, size);
+    const frameOf = (id: string) =>
+        view.container.querySelector<HTMLElement>(
+            `[data-happy-desktop-ui="retained-view"][data-view-id="${id}"]`,
+        );
+    const textareaOf = (id: string) =>
+        frameOf(id)?.querySelector<HTMLTextAreaElement>(
+            '[data-happy-desktop-ui="composer-textarea"]',
+        ) ?? null;
+    const viewportOf = (id: string) =>
+        frameOf(id)?.querySelector<HTMLElement>(".happy-message-list__viewport") ?? null;
+    return { view, shown, hides, frameOf, textareaOf, viewportOf };
+}
+
+function type(key: string) {
+    const target = document.activeElement ?? document.body;
+    target.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key }));
+}
+
+/** Puts each view on screen once, ending on the first: a view kept is always one that was shown. */
+async function showEach(shown: ReturnType<typeof harness>["shown"], ids: readonly string[]) {
+    for (const id of [...ids].reverse()) {
+        shown.set({ activeId: id, ids });
+        await frame();
+    }
+}
+
+it("shows only the active view and keeps the others mounted, out of layout and out of reach", async () => {
+    const { view, shown, frameOf, textareaOf } = harness({ activeId: "b", ids: ["a", "b"] });
+    await view.ready();
+    await showEach(shown, ["a", "b"]);
+
+    const a = frameOf("a")!;
+    const b = frameOf("b")!;
+    expect(getComputedStyle(a).display).toBe("flex");
+    expect(getComputedStyle(b).display).toBe("none");
+    // The view on screen takes the whole column; the hidden one leaves no box.
+    expect(a.getBoundingClientRect().height).toBe(size.height);
+    expect(b.getBoundingClientRect().height).toBe(0);
+    // Nothing hidden is visible to the reader or to assistive technology,
+    // which leaves out every node that is not rendered.
+    expect(textareaOf("b")!.checkVisibility()).toBe(false);
+    expect(textareaOf("a")!.checkVisibility()).toBe(true);
+
+    // A hidden control cannot take the caret.
+    textareaOf("b")!.focus();
+    expect(document.activeElement).not.toBe(textareaOf("b"));
+
+    // Stray typing goes to the view on screen, although every composer claims it.
+    (document.activeElement as HTMLElement | null)?.blur();
+    type("x");
+    expect(document.activeElement).toBe(textareaOf("a"));
+
+    // Switching keeps both DOM trees, and now only the other one answers.
+    const aTextarea = textareaOf("a");
+    const bTextarea = textareaOf("b");
+    shown.set({ activeId: "b", ids: ["a", "b"] });
+    await frame();
+    expect(frameOf("a")).toBe(a);
+    expect(frameOf("b")).toBe(b);
+    expect(textareaOf("a")).toBe(aTextarea);
+    expect(textareaOf("b")).toBe(bTextarea);
+    expect(getComputedStyle(a).display).toBe("none");
+    expect(getComputedStyle(b).display).toBe("flex");
+    // The focus left with the view it was in, and the view shown takes the caret.
+    expect(document.activeElement).toBe(textareaOf("b"));
+    (document.activeElement as HTMLElement).blur();
+    type("y");
+    expect(document.activeElement).toBe(textareaOf("b"));
+    expect(textareaOf("a")!.checkVisibility()).toBe(false);
+});
+
+it("returns a view to where its transcript was scrolled, and reports what it holds when it hides", async () => {
+    const { view, shown, hides, viewportOf } = harness({ activeId: "a", ids: ["a"] });
+    await view.ready();
+    await frame();
+
+    const viewport = viewportOf("a")!;
+    expect(viewport.scrollHeight).toBeGreaterThan(viewport.clientHeight + 400);
+    viewport.scrollTop = 300;
+    viewport.dispatchEvent(new Event("scroll"));
+    await frame();
+    const position = viewport.scrollTop;
+    expect(position).toBeGreaterThan(0);
+
+    shown.set({ activeId: "b", ids: ["a", "b"] });
+    await frame();
+    expect(hides.map((hide) => hide.id)).toEqual(["a"]);
+    // The count is the hidden view's whole subtree: a transcript and its composer.
+    expect(hides[0]!.elements).toBeGreaterThan(50);
+
+    shown.set({ activeId: "a", ids: ["a", "b"] });
+    await frame();
+    await frame();
+    expect(viewportOf("a")).toBe(viewport);
+    expect(viewport.scrollTop).toBe(position);
+    expect(hides.map((hide) => hide.id)).toEqual(["a", "b"]);
+});
+
+it("hides every view while none is active, and unmounts a view its owner lets go", async () => {
+    const { view, shown, frameOf } = harness({ activeId: "c", ids: ["a", "b", "c"] });
+    await view.ready();
+    await showEach(shown, ["a", "b", "c"]);
+
+    shown.set({ activeId: undefined, ids: ["a", "b", "c"] });
+    await frame();
+    for (const id of ["a", "b", "c"]) expect(getComputedStyle(frameOf(id)!).display).toBe("none");
+
+    // Placed by id, so a view added or let go never moves the others.
+    const kept = frameOf("c");
+    shown.set({ activeId: "c", ids: ["c", "a"] });
+    await frame();
+    expect(frameOf("b")).toBeNull();
+    expect(frameOf("c")).toBe(kept);
+    expect(
+        [...view.container.querySelectorAll('[data-happy-desktop-ui="retained-view"]')].map(
+            (element) => element.getAttribute("data-view-id"),
+        ),
+    ).toEqual(["a", "c"]);
+});

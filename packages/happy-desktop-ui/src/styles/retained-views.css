@@ -1,0 +1,13 @@
+/*
+ * C-300 RetainedViews — views kept mounted out of sight. Each fills the column
+ * it is placed in; React's Activity takes the ones out of sight away with an
+ * important `display: none`, so they leave no box behind.
+ */
+
+.happy-retained-views__view {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+}

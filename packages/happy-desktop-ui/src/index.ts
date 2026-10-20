@@ -523,6 +523,7 @@ export {
     type DeferredPanePending,
     type DeferredPaneProps,
 } from "./DeferredPane";
+export { RetainedViews, type RetainedView, type RetainedViewsProps } from "./RetainedViews";
 export { TransferZone, type TransferZoneProps } from "./TransferZone";
 export {
     TRANSFER_ZONE_ATTRIBUTE,
