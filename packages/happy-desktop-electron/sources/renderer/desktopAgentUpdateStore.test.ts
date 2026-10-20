@@ -226,7 +226,7 @@ describe("desktop agent update store", () => {
         expect(store.get()?.progress).toEqual({ kind: "starting", startedAt });
         daemon.report({ ...reload, finishedAt: startedAt + 262_000, phase: "reconnecting" });
         daemon.report(IDLE);
-        expect(store.get()?.progress.kind).toBe("reconnecting");
+        expect(store.get()?.progress).toEqual({ kind: "reconnecting", startedAt });
 
         // Measured to when the reload itself finished, not to when this
         // window happened to reconnect.

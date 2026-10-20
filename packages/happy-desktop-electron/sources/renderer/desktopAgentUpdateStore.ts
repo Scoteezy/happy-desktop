@@ -149,7 +149,9 @@ export function desktopAgentUpdateStoreCreate(input: {
             return undefined;
         }
         const entry = local();
-        if (!entry || !settled(entry)) return { kind: "reconnecting" };
+        // The clock keeps running from the same start once the host reports idle.
+        if (!entry || !settled(entry))
+            return { kind: "reconnecting", ...(startedAt === undefined ? {} : { startedAt }) };
         held = false;
         // A connection that came back failing has its own explanation beside
         // the Happy Agent; "Updated" over it would be untrue.
