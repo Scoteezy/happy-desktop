@@ -48,6 +48,12 @@ export const plainTextMessageFixtures = {
         "see https://example.com/a/really/long/path/without/any/spaces/that/is/wider/than/the/bubble/on/every/measure?query=and-more-and-more-and-more",
         "and /var/lib/happy-agent/.config/happy-agent/credentials/bulka_happy_codex.json",
     ].join("\n"),
+    /* A real message: the bubble wrapped inside the URL's hyphenated path. */
+    urlInSentence: [
+        "Can you check https://github.com/slopus/happy-desktop/issues/1234 again? It looks wrong on Firefox too — thanks!",
+        "",
+        "Row 28",
+    ].join("\n"),
 } as const;
 
 export type PlainTextMessageFixture = keyof typeof plainTextMessageFixtures;

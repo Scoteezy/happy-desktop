@@ -107,8 +107,20 @@ const GECKO_INLINE_SLICE = typeof navigator !== "undefined" && /Gecko\//u.test(n
  * whole, and so does Pretext. In Gecko, mark that opportunity with a
  * zero-width break before the text is measured. */
 const GECKO_SLASH_BREAK = /\/(?=\p{L})/gu;
+/** Pretext keeps a URL-like run (`scheme://…`, `www.…`) whole up to its query,
+ * but browsers have no notion of a URL: they break inside one exactly where
+ * they break in prose, such as after the hyphen in `happy-desktop`. A word
+ * joiner before `://` or after a leading `www` stops Pretext recognising the
+ * run, so it is segmented like the prose the browser sees; the joiner has no
+ * advance and is itself no break opportunity. */
+const URL_SCHEME_RUN = /(?<=[A-Za-z][A-Za-z0-9+.-]*)(?=:\/\/)/gu;
+const URL_WWW_RUN = /(?<![\p{L}\p{N}])www(?=\.)/gu;
 function inlineBreaksMark(text: string): string {
-    return GECKO_INLINE_SLICE ? text.replace(GECKO_SLASH_BREAK, "/\u200b") : text;
+    const prose =
+        text.includes("://") || text.includes("www.")
+            ? text.replace(URL_SCHEME_RUN, "\u2060").replace(URL_WWW_RUN, "www\u2060")
+            : text;
+    return GECKO_INLINE_SLICE ? prose.replace(GECKO_SLASH_BREAK, "/\u200b") : prose;
 }
 /** `.happy-system-notice__text` — 13px copy on a 20px line. */
 const NOTICE_SIZE = 13;
@@ -1046,7 +1058,7 @@ function preparedPlainSegments(
  * browser's break opportunity between closing and opening brackets. */
 const BRACKET_BREAK = /(?<=[\])}])(?=[([{])/gu;
 
-/** Gecko skips a tab stop less than half a `ch` ahead. Pretext only models
+/** Gecko skips a tab stop less than half a `ch` ahead, compared exactly. Pretext only models
  * the next stop. Resolve tab advances from this line's origin without
  * changing the text that the browser renders or the reader can copy. */
 function plainTabStopsApply(
@@ -1066,7 +1078,7 @@ function plainTabStopsApply(
     for (let index = cursor.segmentIndex; index < widths.length; index += 1) {
         if (kinds[index] === "tab") {
             let width = stop - (advance % stop);
-            if (width < minimum - INLINE_MEASURE_EPSILON) width += stop;
+            if (width < minimum) width += stop;
             widths[index] = width;
             kinds[index] = "preserved-space";
             lineEndFitAdvances[index] = 0;
