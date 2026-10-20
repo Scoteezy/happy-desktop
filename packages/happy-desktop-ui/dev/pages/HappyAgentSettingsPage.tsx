@@ -273,7 +273,7 @@ const usageUnread: readonly HappyAgentUsageProviderRow[] = [
  * read now, one whose latest refresh failed beside the reading it keeps, and
  * one whose only read failed.
  */
-const usageFreshness: readonly HappyAgentProviderUsageEntry[] = [
+const usageFreshness: readonly HappyAgentUsageProviderRow[] = [
     {
         providerId: "claude",
         checkedAt: 1_700_000_000_000,
