@@ -1034,6 +1034,7 @@ function DesktopCloudSignInNotice(props: { store: DesktopCloudSignInNoticeStore 
             onClose={props.store.noticeClose}
             onConnectionOpen={props.store.connectionOpen}
             onSignIn={props.store.signInStart}
+            onTeamConnect={props.store.teamConnect}
             onTeamsCheck={props.store.teamsCheck}
             view={notice.view}
         />

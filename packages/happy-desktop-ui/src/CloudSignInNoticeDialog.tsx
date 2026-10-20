@@ -60,15 +60,18 @@ export type CloudSignInNoticeView =
 
 export type CloudSignInNoticeChiefOfStaff =
     | { status: "available" }
-    | { status: "pending" }
+    /** A handoff is in flight; `teamId` names the team row that asked, if one did. */
+    | { status: "pending"; teamId?: string }
     | { status: "unavailable"; reason: string };
 
 export type CloudSignInNoticeDialogProps = {
     view: CloudSignInNoticeView;
     chiefOfStaff: CloudSignInNoticeChiefOfStaff;
     onClose: () => void;
-    /** Hands the teams that are not added yet, or the failure, to the Chief of Staff. */
+    /** Hands the failure to the Chief of Staff. */
     onChiefOfStaffAsk: () => void;
+    /** Hands one team that isn't added yet to the Chief of Staff to connect. */
+    onTeamConnect: (teamId: string) => void;
     /** Starts a fresh sign-in that this window records and can match. */
     onSignIn: () => void;
     /** Shows the teams of an account that is already signed in. */
@@ -122,36 +125,10 @@ const FAILURES: Record<
     },
 };
 
-/**
- * Whether a team or connection name fits in a title or button of the medium
- * card. Titles and labels never truncate, so a longer name gives way to
- * generic words there. The body still shows the full name.
- */
-function nameFits(name: string): boolean {
-    return [...name].length <= 18;
-}
-
-/** Names exactly what the primary action does; the label is the action's whole explanation. */
-function connectLabel(missing: readonly CloudSignInNoticeTeam[]): string {
-    if (missing.length === 1 && nameFits(missing[0]!.name))
-        return `Ask Chief of Staff to connect ${missing[0]!.name}`;
-    return missing.length === 1
-        ? "Ask Chief of Staff to connect this team"
-        : `Ask Chief of Staff to connect ${missing.length} teams`;
-}
-
+/** "Connected" only from the live status; a saved connection alone is "Added". */
 function connectionWords(team: CloudSignInNoticeTeam): string {
-    switch (team.connection?.status) {
-        case undefined:
-            return "Not added";
-        case "connected":
-            return "Connected";
-        case "connecting":
-            return "Added · connecting";
-        case "disconnected":
-        case "error":
-            return "Added · not reachable";
-    }
+    if (team.connection === undefined) return "Not added";
+    return team.connection.status === "connected" ? "Connected" : "Added";
 }
 
 interface Presentation {
@@ -159,17 +136,19 @@ interface Presentation {
     icon: IconName;
     tone: ModalTone;
     body: ReactNode;
-    footer: ReactNode;
+    /** Absent for a notice whose actions sit in its body. */
+    footer?: ReactNode;
 }
 
 /**
  * C-301 CloudSignInNoticeDialog — the centered notice for a Happy account
  * sign-in that came back to the app.
  *
- * It says only what the app knows. A completed sign-in lists the account's
- * teams against the saved connections, joined by organization ID. A team
- * that isn't added yet gets one action, named exactly for what it does: hand
- * the team to the Chief of Staff. A team that is already added opens instead.
+ * It says only what the app knows. A completed sign-in shows "Your teams":
+ * the account's teams against the saved connections, joined by organization
+ * ID, not-added teams first. Each row carries its own action: a team that
+ * isn't added asks the Chief of Staff to connect it, and one already added
+ * opens.
  * A sign-in this window didn't start is never used; the only way forward is a
  * fresh sign-in started here. A failure names its reason and offers a direct
  * retry. The notice closes only through Close, Escape, or an action, never
@@ -302,22 +281,32 @@ function present(props: CloudSignInNoticeDialogProps): Presentation {
     }
 }
 
-function teamList(props: CloudSignInNoticeDialogProps, teams: readonly CloudSignInNoticeTeam[]) {
+function teamRows(props: CloudSignInNoticeDialogProps, teams: readonly CloudSignInNoticeTeam[]) {
+    const ordered = [
+        ...teams.filter((team) => team.connection === undefined),
+        ...teams.filter((team) => team.connection !== undefined),
+    ];
+    const chief = props.chiefOfStaff;
     return (
         <ul
             aria-label="Teams"
             className="cloud-sign-in-notice__teams"
             data-happy-desktop-ui="cloud-sign-in-notice-teams"
         >
-            {teams.map((team) => (
+            {ordered.map((team) => (
                 <li
                     className="cloud-sign-in-notice__team"
                     data-happy-desktop-ui="cloud-sign-in-notice-team"
                     key={team.id}
                 >
                     <span className="cloud-sign-in-notice__team-text">
-                        <span className="cloud-sign-in-notice__team-name">{team.name}</span>
-                        <span className="cloud-sign-in-notice__team-status">
+                        <span className="cloud-sign-in-notice__team-name" title={team.name}>
+                            {team.name}
+                        </span>
+                        <span
+                            className="cloud-sign-in-notice__team-status"
+                            data-status={team.connection === undefined ? "missing" : "added"}
+                        >
                             {connectionWords(team)}
                         </span>
                     </span>
@@ -330,7 +319,19 @@ function teamList(props: CloudSignInNoticeDialogProps, teams: readonly CloudSign
                         >
                             Open
                         </Button>
-                    ) : null}
+                    ) : (
+                        <Button
+                            aria-label={`Ask Chief of Staff to connect ${team.name}`}
+                            disabled={chief.status === "unavailable"}
+                            loading={chief.status === "pending" && chief.teamId === team.id}
+                            onClick={() => props.onTeamConnect(team.id)}
+                            size="small"
+                            title={chief.status === "unavailable" ? chief.reason : undefined}
+                            variant="primary"
+                        >
+                            Ask Chief of Staff to connect
+                        </Button>
+                    )}
                 </li>
             ))}
         </ul>
@@ -354,9 +355,8 @@ function signedIn(
     if (teams.status === "loading")
         return {
             body: paragraph(`${account} Checking your teams…`),
-            footer: closeButton(props),
             icon: "users",
-            title: "Signed in",
+            title: "Your teams",
             tone: "default",
         };
     if (teams.status === "error")
@@ -385,88 +385,46 @@ function signedIn(
         };
     if (teams.teams.length === 0)
         return {
-            body: paragraph(`${account} This account isn’t on a Happy team.`),
-            footer: (
+            body: (
                 <>
-                    {closeButton(props)}
-                    <Button onClick={props.onAccountSettingsOpen} variant="secondary">
-                        Open account settings
-                    </Button>
+                    {paragraph(`${account} This account isn’t on a Happy team.`)}
+                    {accountSettingsNote(props)}
                 </>
             ),
             icon: "users",
-            title: "Signed in",
+            title: "Your teams",
             tone: "default",
         };
-    const missing = teams.teams.filter((team) => team.connection === undefined);
-    if (missing.length === 0) {
-        const only = teams.teams.length === 1 ? teams.teams[0]! : undefined;
-        // "Connected" only from the live status; a saved connection is "added".
-        const allConnected = teams.teams.every((team) => team.connection?.status === "connected");
-        return {
-            body: only
-                ? paragraph(`${account} ${connectionWords(only)}.`)
-                : teamList(props, teams.teams),
-            footer: (
-                <>
-                    {closeButton(props)}
-                    {only?.connection ? (
-                        <Button onClick={() => props.onConnectionOpen(only.id)} variant="primary">
-                            {nameFits(only.connection.label)
-                                ? `Open ${only.connection.label}`
-                                : "Open connection"}
-                        </Button>
-                    ) : null}
-                </>
-            ),
-            icon: "check-circle",
-            title: only
-                ? allConnected
-                    ? nameFits(only.name)
-                        ? `Connected to ${only.name}`
-                        : "Connected to your team"
-                    : nameFits(only.name)
-                      ? `${only.name} is already added`
-                      : "Your team is already added"
-                : allConnected
-                  ? "Connected to your teams"
-                  : "Your teams are already added",
-            tone: "default",
-        };
-    }
-    const unavailable = props.chiefOfStaff.status === "unavailable";
     return {
         body: (
             <>
-                {teams.teams.length === 1
-                    ? paragraph(`${account} ${missing[0]!.name} isn’t added to Happy yet.`)
-                    : paragraph(account)}
-                {teams.teams.length > 1 ? teamList(props, teams.teams) : null}
-                {chiefOfStaffBanner(props)}
-            </>
-        ),
-        footer: unavailable ? (
-            <>
-                {closeButton(props)}
-                <Button onClick={props.onAccountSettingsOpen} variant="secondary">
-                    Open account settings
-                </Button>
-            </>
-        ) : (
-            <>
-                {closeButton(props, "Not now")}
-                {chiefOfStaffButton(props, connectLabel(missing), "primary")}
+                {paragraph(account)}
+                {teamRows(props, teams.teams)}
+                {props.chiefOfStaff.status === "unavailable" &&
+                teams.teams.some((team) => team.connection === undefined)
+                    ? accountSettingsNote(props, props.chiefOfStaff.reason)
+                    : null}
             </>
         ),
         icon: "users",
-        title:
-            missing.length > 1
-                ? "You’re in new teams"
-                : nameFits(missing[0]!.name)
-                  ? `You’re in ${missing[0]!.name}`
-                  : "You’re in a new team",
+        title: "Your teams",
         tone: "default",
     };
+}
+
+/** A small way to account settings, inside the body rather than in a footer. */
+function accountSettingsNote(props: CloudSignInNoticeDialogProps, reason?: string): ReactNode {
+    return (
+        <div
+            className="cloud-sign-in-notice__note"
+            data-happy-desktop-ui="cloud-sign-in-notice-note"
+        >
+            {reason ? <span className="cloud-sign-in-notice__note-text">{reason}</span> : null}
+            <Button onClick={props.onAccountSettingsOpen} size="small" variant="ghost">
+                Open account settings
+            </Button>
+        </div>
+    );
 }
 
 function unmatched(

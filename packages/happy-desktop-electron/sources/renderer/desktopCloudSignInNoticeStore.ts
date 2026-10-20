@@ -33,6 +33,8 @@ export interface DesktopCloudSignInNoticeStore {
     signInStart(): void;
     teamsCheck(): void;
     chiefOfStaffAsk(): void;
+    /** Hands one team that isn't added yet to the Chief of Staff to connect. */
+    teamConnect(teamId: string): void;
     connectionOpen(teamId: string): void;
     accountSettingsOpen(): void;
 }
@@ -67,7 +69,10 @@ export function desktopCloudSignInNoticeStoreCreate(input: {
     // Which notice a Chief of Staff handoff belongs to, so a late answer for
     // a replaced notice changes nothing.
     let generation = 0;
-    let chiefOfStaff: "idle" | "pending" | { readonly refused: string } = "idle";
+    let chiefOfStaff:
+        | "idle"
+        | { readonly pending: string | undefined }
+        | { readonly refused: string } = "idle";
     let snapshot: DesktopCloudSignInNoticeSnapshot | undefined;
     let snapshotKey = "";
     let directoryUnsubscribe: (() => void) | undefined;
@@ -111,7 +116,10 @@ export function desktopCloudSignInNoticeStoreCreate(input: {
     };
 
     const chiefOfStaffRead = (): CloudSignInNoticeChiefOfStaff => {
-        if (chiefOfStaff === "pending") return { status: "pending" };
+        if (chiefOfStaff !== "idle" && "pending" in chiefOfStaff)
+            return chiefOfStaff.pending === undefined
+                ? { status: "pending" }
+                : { status: "pending", teamId: chiefOfStaff.pending };
         if (chiefOfStaff !== "idle") return { reason: chiefOfStaff.refused, status: "unavailable" };
         const local = entry(LOCAL_HAPPY_AGENT_ID);
         if (
@@ -214,17 +222,37 @@ export function desktopCloudSignInNoticeStoreCreate(input: {
         if (!view) return undefined;
         if (view.kind === "failed") return { kind: "cloudSignInFailed", reason: view.reason };
         if (view.kind === "unmatched") return { kind: "cloudSignInFailed", reason: "unmatched" };
-        if (view.kind !== "signedIn" || view.teams === undefined) return undefined;
-        if (view.teams.status === "error")
+        if (view.kind === "signedIn" && view.teams?.status === "error")
             return { kind: "cloudSignInFailed", reason: "teamsUnreadable" };
-        if (view.teams.status !== "ready") return undefined;
-        const missing = view.teams.teams.filter((team) => team.connection === undefined);
-        return missing.length === 0
-            ? undefined
-            : {
-                  kind: "teamConnectionAdd",
-                  teams: missing.map((team) => ({ id: team.id, name: team.name })),
-              };
+        return undefined;
+    };
+
+    /** Writes one request into This Mac's Chief of Staff draft, opens it, and closes the notice. */
+    const handoff = (request: HappyAgentChiefOfStaffRequest, teamId?: string): void => {
+        const workspace = entry(LOCAL_HAPPY_AGENT_ID)?.session?.workspace;
+        if (!workspace || (chiefOfStaff !== "idle" && "pending" in chiefOfStaff)) return;
+        const asked = generation;
+        chiefOfStaff = { pending: teamId };
+        reconcile();
+        workspace.chiefOfStaffDraftAppend(request).then(
+            () => {
+                if (asked !== generation) return;
+                // The draft opened in the Chief of Staff's conversation, which
+                // lives on This Mac.
+                input.happyAgents.happyAgentActivate(LOCAL_HAPPY_AGENT_ID);
+                noticeSet(undefined);
+            },
+            (error: unknown) => {
+                if (asked !== generation) return;
+                chiefOfStaff = {
+                    refused:
+                        error instanceof Error
+                            ? error.message
+                            : "Chief of Staff couldn't take the draft.",
+                };
+                reconcile();
+            },
+        );
     };
 
     return {
@@ -293,29 +321,18 @@ export function desktopCloudSignInNoticeStoreCreate(input: {
         },
         chiefOfStaffAsk() {
             const request = chiefOfStaffRequest();
-            const workspace = entry(LOCAL_HAPPY_AGENT_ID)?.session?.workspace;
-            if (!request || !workspace || chiefOfStaff === "pending") return;
-            const asked = generation;
-            chiefOfStaff = "pending";
-            reconcile();
-            workspace.chiefOfStaffDraftAppend(request).then(
-                () => {
-                    if (asked !== generation) return;
-                    // The draft opened in the Chief of Staff's conversation,
-                    // which lives on This Mac.
-                    input.happyAgents.happyAgentActivate(LOCAL_HAPPY_AGENT_ID);
-                    noticeSet(undefined);
-                },
-                (error: unknown) => {
-                    if (asked !== generation) return;
-                    chiefOfStaff = {
-                        refused:
-                            error instanceof Error
-                                ? error.message
-                                : "Chief of Staff couldn't take the draft.",
-                    };
-                    reconcile();
-                },
+            if (request) handoff(request);
+        },
+        teamConnect(teamId) {
+            const view = snapshot?.view;
+            if (view?.kind !== "signedIn" || view.teams?.status !== "ready") return;
+            const team = view.teams.teams.find(
+                (candidate) => candidate.id === teamId && candidate.connection === undefined,
+            );
+            if (!team) return;
+            handoff(
+                { kind: "teamConnectionAdd", teams: [{ id: team.id, name: team.name }] },
+                team.id,
             );
         },
         connectionOpen(teamId) {

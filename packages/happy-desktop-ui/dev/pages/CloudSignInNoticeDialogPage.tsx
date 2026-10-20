@@ -42,6 +42,7 @@ const handlers = {
     onClose: () => undefined,
     onConnectionOpen: () => undefined,
     onSignIn: () => undefined,
+    onTeamConnect: () => undefined,
     onTeamsCheck: () => undefined,
 };
 
@@ -64,46 +65,8 @@ const SPECIMENS: readonly {
         view: { kind: "completing" },
     },
     {
-        detail: "one team, no saved connection · primary hands an unsent draft to Chief of Staff",
-        label: "Team not added",
-        view: {
-            email: EMAIL,
-            kind: "signedIn",
-            teams: {
-                status: "ready",
-                teams: [{ id: "org_01EXAMPLETEAM", name: "Happy Robotics" }],
-            },
-        },
-    },
-    {
-        detail: "draft is in flight",
-        label: "Team not added · pending",
-        chiefOfStaff: { status: "pending" },
-        view: {
-            email: EMAIL,
-            kind: "signedIn",
-            teams: {
-                status: "ready",
-                teams: [{ id: "org_01EXAMPLETEAM", name: "Happy Robotics" }],
-            },
-        },
-    },
-    {
-        detail: "no Chief of Staff · reason shown, settings offered instead",
-        label: "Team not added · no Chief of Staff",
-        chiefOfStaff: UNAVAILABLE,
-        view: {
-            email: EMAIL,
-            kind: "signedIn",
-            teams: {
-                status: "ready",
-                teams: [{ id: "org_01EXAMPLETEAM", name: "Happy Robotics" }],
-            },
-        },
-    },
-    {
-        detail: "one team added and live, one not added",
-        label: "Mixed teams",
+        detail: "one team added and live, one not added · not-added first",
+        label: "Your teams",
         view: {
             email: EMAIL,
             kind: "signedIn",
@@ -117,6 +80,44 @@ const SPECIMENS: readonly {
                     },
                     { id: "org_01EXAMPLETEAM", name: "Happy Robotics" },
                 ],
+            },
+        },
+    },
+    {
+        detail: "one team, no saved connection · row action hands an unsent draft to Chief of Staff",
+        label: "Team not added",
+        view: {
+            email: EMAIL,
+            kind: "signedIn",
+            teams: {
+                status: "ready",
+                teams: [{ id: "org_01EXAMPLETEAM", name: "Happy Robotics" }],
+            },
+        },
+    },
+    {
+        detail: "draft is in flight",
+        label: "Team not added · pending",
+        chiefOfStaff: { status: "pending", teamId: "org_01EXAMPLETEAM" },
+        view: {
+            email: EMAIL,
+            kind: "signedIn",
+            teams: {
+                status: "ready",
+                teams: [{ id: "org_01EXAMPLETEAM", name: "Happy Robotics" }],
+            },
+        },
+    },
+    {
+        detail: "no Chief of Staff · row action disabled, reason and settings in the body",
+        label: "Team not added · no Chief of Staff",
+        chiefOfStaff: UNAVAILABLE,
+        view: {
+            email: EMAIL,
+            kind: "signedIn",
+            teams: {
+                status: "ready",
+                teams: [{ id: "org_01EXAMPLETEAM", name: "Happy Robotics" }],
             },
         },
     },
@@ -157,7 +158,7 @@ const SPECIMENS: readonly {
         },
     },
     {
-        detail: "long team name · button counts instead of truncating",
+        detail: "long team name truncates (full name on hover); the row action keeps its label",
         label: "Team not added · long name",
         view: {
             email: EMAIL,

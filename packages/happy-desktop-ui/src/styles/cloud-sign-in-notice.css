@@ -2,8 +2,8 @@
  * C-301 CloudSignInNoticeDialog — a Happy account sign-in notice in the medium
  * modal card, centered on the shared overlay. The body is a 12px-gap column
  * of paragraphs, banners, and a team list. Each team row is its name over its
- * connection status, followed by one trailing small button, with 8px gaps
- * between rows.
+ * status, with its own small action at the trailing edge; rows sit 8px apart.
+ * A team that isn't added shows its status in the warning colour.
  */
 
 .cloud-sign-in-notice__body {
@@ -62,6 +62,27 @@
 }
 
 .cloud-sign-in-notice__team-status {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+}
+
+.cloud-sign-in-notice__team-status[data-status="missing"] {
+    color: var(--box-warning-text);
+    font-weight: 500;
+}
+
+.cloud-sign-in-notice__note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.cloud-sign-in-notice__note-text {
+    flex: 1 1 auto;
+    min-width: 0;
     color: var(--text-secondary);
     font-size: 12px;
     font-weight: 400;
