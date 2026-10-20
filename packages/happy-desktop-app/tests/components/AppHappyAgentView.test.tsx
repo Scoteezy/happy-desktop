@@ -11,6 +11,7 @@ import type {
 import {
     appearanceStoreCreate,
     happyAgentGroupAccessRefused,
+    HAPPY_AGENT_RETAINED_CONVERSATIONS_NONE,
     happyAgentHostNoop,
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
 } from "happy-desktop-state";
@@ -119,6 +120,7 @@ function workspace(): HappyAgentWorkspaceStore {
     return {
         get: () => snapshot,
         deviceBridgeSupport: () => undefined,
+        conversationsRetained: HAPPY_AGENT_RETAINED_CONVERSATIONS_NONE,
         panel: panel(),
         subscribe: () => () => undefined,
         conversationOpen: () => undefined,

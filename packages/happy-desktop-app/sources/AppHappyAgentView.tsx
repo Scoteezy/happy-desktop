@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { HappyAgentSystemMonitorStore } from "happy-desktop-state";
 import { HappyAgentSystemMonitorSurfacePage } from "happy-desktop-ui";
 import {
@@ -282,6 +282,7 @@ import {
     TerminalPanel,
     ToolCallPreview,
     TransferZone,
+    RetainedViews,
     type TabTransferTarget,
     WindowDragRegion,
     happyAgentComposerModelControlProps,
@@ -6704,6 +6705,12 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             />
         );
     };
+    // A session the address names is drawn among the views kept for the ones
+    // left before it; the group's own composer and the empty state are not.
+    const openConversationView =
+        openGroup !== undefined &&
+        props.chatId !== undefined &&
+        !(openGroup.conversations.length === 0 && workspace.groupComposer);
     const mainConversationBody =
         openGroup === undefined ? undefined : openGroup.conversations.length === 0 &&
           workspace.groupComposer ? (
@@ -7466,10 +7473,13 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                                           displayedFile.presentationId,
                                                       content: mainFileBody(displayedFile),
                                                   }
-                                                : {
-                                                      id: `conversation:${openGroup.id}:${props.chatId ?? "empty"}`,
-                                                      content: mainConversationBody,
-                                                  }
+                                                : openConversationView
+                                                  ? // Drawn among the kept views below.
+                                                    undefined
+                                                  : {
+                                                        id: `conversation:${openGroup.id}:empty`,
+                                                        content: mainConversationBody,
+                                                    }
                                     }
                                     fallback={
                                         <EmptyState
@@ -7496,36 +7506,70 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                             : undefined
                                     }
                                     // Every page moved to this side stays
-                                    // mounted whichever tab is on screen.
+                                    // mounted whichever tab is on screen, and so
+                                    // do the conversations left most recently.
                                     persistent={
-                                        <HappyAgentToolBodies
-                                            activeId={workspace.displayedMainViewId}
-                                            {...(props.artifacts
-                                                ? {
-                                                      artifacts: {
-                                                          artifacts: props.artifacts,
-                                                          places: artifactPlaces,
-                                                          ...(props.artifactPage
-                                                              ? { page: props.artifactPage }
-                                                              : {}),
-                                                      },
-                                                  }
-                                                : {})}
-                                            browserConnectionId={props.browserConnectionId}
-                                            {...(props.browserContent
-                                                ? { browserContent: props.browserContent }
-                                                : {})}
-                                            store={props.workspace.panel}
-                                            tabs={mainTools}
-                                            {...(terminalHappyAgentAvailability === undefined
-                                                ? {}
-                                                : {
-                                                      happyAgentAvailability:
-                                                          terminalHappyAgentAvailability,
-                                                      happyAgentAvailabilityReason:
-                                                          availability.message,
-                                                  })}
-                                        />
+                                        <>
+                                            <HappyAgentConversationViews
+                                                open={
+                                                    openConversationView &&
+                                                    props.chatId !== undefined
+                                                        ? {
+                                                              // Named by what the body draws,
+                                                              // so a view and its content agree
+                                                              // while the address catches up.
+                                                              id:
+                                                                  conversation.type === "ready"
+                                                                      ? conversation.value
+                                                                            .conversationId
+                                                                      : props.chatId,
+                                                              content: mainConversationBody,
+                                                          }
+                                                        : undefined
+                                                }
+                                                shown={
+                                                    !displayedMainTool &&
+                                                    activeReview === undefined &&
+                                                    displayedFile === undefined
+                                                }
+                                                {...(props.artifacts
+                                                    ? { artifacts: props.artifacts }
+                                                    : {})}
+                                                linkOpenDefault={props.linkOpenDefault}
+                                                list={workspace.list}
+                                                modelUsageWatch={modelUsageWatch}
+                                                viewerId={props.viewerId}
+                                                workspace={props.workspace}
+                                            />
+                                            <HappyAgentToolBodies
+                                                activeId={workspace.displayedMainViewId}
+                                                {...(props.artifacts
+                                                    ? {
+                                                          artifacts: {
+                                                              artifacts: props.artifacts,
+                                                              places: artifactPlaces,
+                                                              ...(props.artifactPage
+                                                                  ? { page: props.artifactPage }
+                                                                  : {}),
+                                                          },
+                                                      }
+                                                    : {})}
+                                                browserConnectionId={props.browserConnectionId}
+                                                {...(props.browserContent
+                                                    ? { browserContent: props.browserContent }
+                                                    : {})}
+                                                store={props.workspace.panel}
+                                                tabs={mainTools}
+                                                {...(terminalHappyAgentAvailability === undefined
+                                                    ? {}
+                                                    : {
+                                                          happyAgentAvailability:
+                                                              terminalHappyAgentAvailability,
+                                                          happyAgentAvailabilityReason:
+                                                              availability.message,
+                                                      })}
+                                            />
+                                        </>
                                     }
                                 />
                             </TransferZone>
@@ -8274,8 +8318,15 @@ function HappyAgentGroupComposer(props: {
     );
 }
 
-/** The open conversation's materialization states, inside the directory's tabs. */
-function HappyAgentConversationBody(props: {
+/**
+ * The open conversation's materialization states, inside the directory's tabs.
+ *
+ * Memoized for a performance contract: a conversation kept out of sight is
+ * handed the same props until its own snapshot changes, and this is where
+ * React stops instead of re-rendering every hidden transcript at idle
+ * priority each time the clock ticks or another conversation streams.
+ */
+const HappyAgentConversationBody = memo(function HappyAgentConversationBody(props: {
     activitySelected: boolean;
     /** The machine's artifacts, which the transcript's references name. */
     artifacts?: HappyAgentArtifacts;
@@ -8435,6 +8486,110 @@ function HappyAgentConversationBody(props: {
             icon="chat"
             size="panel"
             title="No session selected"
+        />
+    );
+});
+
+/*
+ * What a conversation out of sight is given in place of the surface's live
+ * handlers and clock. Nothing out of sight can be clicked or typed into, so
+ * none of these is ever called; they are constants so the view keeps the same
+ * props until its own snapshot changes. It reads the real time and its real
+ * handlers again the moment it is shown.
+ */
+const HIDDEN_NOW = 0;
+const hiddenNothing = (): void => undefined;
+const hiddenOffline = (): boolean => false;
+/** One ready wrapper per kept snapshot, so an unchanged conversation is handed an unchanged prop. */
+const hiddenReady = new WeakMap<
+    HappyAgentConversationSnapshot,
+    HappyAgentWorkspaceSnapshot["conversation"]
+>();
+function hiddenReadyOf(
+    value: HappyAgentConversationSnapshot,
+): HappyAgentWorkspaceSnapshot["conversation"] {
+    let ready = hiddenReady.get(value);
+    if (!ready) {
+        ready = { type: "ready", value };
+        hiddenReady.set(value, ready);
+    }
+    return ready;
+}
+
+/**
+ * The open conversation and the ones the workspace keeps behind it, each in a
+ * view of its own that stays mounted out of sight. Going back to a kept
+ * conversation shows the view already built for it — its transcript, where it
+ * was scrolled to, its open rows — instead of building the whole thing again.
+ * The ones kept keep following their transcripts at idle priority, so the one
+ * shown is already current.
+ *
+ * Its own subscription to the kept conversations, beside the surface's: one
+ * streaming out of sight re-renders this list and that view, never the surface.
+ */
+function HappyAgentConversationViews(props: {
+    /** The conversation the address names, drawn by the surface with everything it knows. */
+    open: { readonly id: string; readonly content: ReactNode } | undefined;
+    /** Whether the main pane shows the open conversation rather than a file or tool over it. */
+    shown: boolean;
+    artifacts?: HappyAgentArtifacts;
+    linkOpenDefault: LinkOpenPlacement;
+    list: HappyAgentWorkspaceSnapshot["list"];
+    modelUsageWatch?: ComposerModelUsageWatch;
+    viewerId: string;
+    workspace: HappyAgentWorkspaceStore;
+}) {
+    const { workspace } = props;
+    const kept = useSyncExternalStore(
+        reactFrameSubscribe(workspace.conversationsRetained),
+        workspace.conversationsRetained.get,
+        workspace.conversationsRetained.get,
+    );
+    // Stable for the workspace's lifetime: each view's frame is keyed on it, and
+    // a new identity would re-measure the view on screen on every render.
+    const viewHide = useCallback(
+        (id: string, elements: number) =>
+            workspace.conversationViewSizeUpdate(id as HappyAgentSessionId, elements),
+        [workspace],
+    );
+    const referenceEntities = messageReferenceEntities(props.list);
+    const views = [
+        ...(props.open ? [props.open] : []),
+        ...kept.conversations
+            .filter((conversation) => conversation.conversationId !== props.open?.id)
+            .map((conversation) => ({
+                id: conversation.conversationId,
+                content: (
+                    <HappyAgentConversationBody
+                        activitySelected={false}
+                        {...(props.artifacts ? { artifacts: props.artifacts } : {})}
+                        referenceEntities={referenceEntities}
+                        onReferenceGroupOpen={hiddenNothing}
+                        modelUsageWatch={props.modelUsageWatch}
+                        conversation={hiddenReadyOf(conversation)}
+                        focusOnType={false}
+                        groupId=""
+                        groupName=""
+                        now={HIDDEN_NOW}
+                        onChatSelect={hiddenNothing}
+                        onFileOpen={hiddenNothing}
+                        onFileLinkOpen={hiddenNothing}
+                        onLinkOpen={hiddenNothing}
+                        linkOpenDefault={props.linkOpenDefault}
+                        canAbort={false}
+                        readOnly={false}
+                        happyAgentOnline={hiddenOffline}
+                        viewerId={props.viewerId}
+                        workspace={workspace}
+                    />
+                ),
+            })),
+    ];
+    return (
+        <RetainedViews
+            {...(props.shown && props.open ? { activeId: props.open.id } : {})}
+            onViewHide={viewHide}
+            views={views}
         />
     );
 }

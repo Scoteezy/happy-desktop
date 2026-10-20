@@ -21,6 +21,7 @@ import {
     appearanceStoreCreate,
     happyAgentSidebarCollapseStoreCreate,
     happyAgentGroupAccessRefused,
+    HAPPY_AGENT_RETAINED_CONVERSATIONS_NONE,
     happyAgentHostNoop,
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
     gptLiveStoreCreate,
@@ -152,6 +153,7 @@ function workspace(actions: {
     return {
         get: () => snapshot,
         deviceBridgeSupport: () => undefined,
+        conversationsRetained: HAPPY_AGENT_RETAINED_CONVERSATIONS_NONE,
         panel: {
             get: () => PANEL_CLOSED,
             subscribe: () => () => undefined,

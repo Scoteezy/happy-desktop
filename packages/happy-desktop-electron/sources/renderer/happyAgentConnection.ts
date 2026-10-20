@@ -10,6 +10,7 @@ import {
     type GptLiveRuntimeCreateOptions,
     happyAgentDebugLogStoreCreate,
     happyAgentWorkspaceStoreCreate,
+    happyAgentConversationRetentionFor,
     happyAgentOnboardingStoreCreate,
     happyAgentMobileConnectorStoreCreate,
     welcomeStoreCreate,
@@ -493,6 +494,11 @@ export function happyAgentConnectionOpen(input: {
             workspace = happyAgentWorkspaceStoreCreate(client, {
                 host: input.host,
                 viewPreferences: desktopViewPreferencesPersistence(input.happyAgentId),
+                // How many conversations just left this window keeps mounted is a
+                // property of the machine it runs on, which only the browser can say.
+                conversationRetention: happyAgentConversationRetentionFor(
+                    (navigator as Navigator & { readonly deviceMemory?: number }).deviceMemory,
+                ),
                 output: (event) => {
                     switch (event.type) {
                         case "conversationOpenRequested":
