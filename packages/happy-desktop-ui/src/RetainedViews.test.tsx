@@ -3,6 +3,8 @@ import { Profiler, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import type { ComposerSnapshot, ConversationEntry } from "happy-desktop-state";
 import { expect, it } from "vitest";
+import { AppShell } from "./AppShell";
+import { ContextMenu } from "./ContextMenu";
 import { ConversationView } from "./ConversationView";
 import { RetainedViews } from "./RetainedViews";
 import { createRenderer } from "./testing";
@@ -279,4 +281,84 @@ it("does no work for a view out of sight, and draws it once from what it is give
     expect(renders.get("a")).toBe(hiddenRenders! + 1);
     expect(textOf("a")).toBe("a at 4");
     expect(textOf("b")).toBe("b at 3");
+});
+
+it("takes what a view hung off the window with it when it hides, and the focus inside it", async () => {
+    let shown: Shown = { activeId: "a", ids: ["a", "b"] };
+    const listeners = new Set<() => void>();
+    const set = (next: Shown) => {
+        shown = next;
+        flushSync(() => {
+            for (const listener of listeners) listener();
+        });
+    };
+    const subscribe = (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+    };
+    const get = () => shown;
+    function Harness() {
+        const snapshot = useSyncExternalStore(subscribe, get, get);
+        return (
+            <AppShell data-testid="shell">
+                <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                    <RetainedViews
+                        {...(snapshot.activeId === undefined
+                            ? {}
+                            : { activeId: snapshot.activeId })}
+                        views={snapshot.ids.map((id) => ({
+                            id,
+                            content: (
+                                <div>
+                                    <p>{id}</p>
+                                    {/* A menu the view opened, which hangs off the shell's overlay lane. */}
+                                    <ContextMenu
+                                        data-testid={`menu-${id}`}
+                                        items={[{ kind: "item", id: "copy", label: `Copy ${id}` }]}
+                                        onClose={() => undefined}
+                                        onSelect={() => undefined}
+                                        x={40}
+                                        y={40}
+                                    />
+                                </div>
+                            ),
+                        }))}
+                    />
+                </div>
+            </AppShell>
+        );
+    }
+    const view = createRenderer().render(() => <Harness />, size);
+    await view.ready();
+    await frame();
+    const lane = view.container.querySelector<HTMLElement>(
+        '[data-happy-desktop-ui="app-shell-overlays"]',
+    )!;
+    const itemOf = (id: string) =>
+        [...lane.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+            item.textContent?.includes(`Copy ${id}`),
+        );
+    // The menus really hang off the shell, outside every view's frame.
+    expect(itemOf("a")).toBeDefined();
+    expect(itemOf("a")!.closest('[data-happy-desktop-ui="retained-view"]')).toBeNull();
+    expect(itemOf("a")!.checkVisibility()).toBe(true);
+    itemOf("a")!.focus();
+    expect(document.activeElement).toBe(itemOf("a"));
+
+    set({ activeId: "b", ids: ["a", "b"] });
+    await frame();
+
+    // The hidden view's menu is out of sight and out of reach with it, and
+    // the focus did not stay behind in it.
+    expect(itemOf("a")!.checkVisibility()).toBe(false);
+    expect(document.activeElement).not.toBe(itemOf("a"));
+    itemOf("a")!.focus();
+    expect(document.activeElement).not.toBe(itemOf("a"));
+    expect(itemOf("b")!.checkVisibility()).toBe(true);
+
+    // Shown again, the view brings its menu back.
+    set({ activeId: "a", ids: ["a", "b"] });
+    await frame();
+    expect(itemOf("a")!.checkVisibility()).toBe(true);
+    expect(itemOf("b")!.checkVisibility()).toBe(false);
 });

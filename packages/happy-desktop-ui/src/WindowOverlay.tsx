@@ -10,6 +10,30 @@ import { createPortal } from "react-dom";
 export const WindowOverlayHostContext = createContext<HTMLElement | null>(null);
 
 /**
+ * True inside a view that can be kept mounted out of sight — see
+ * `RetainedViews`. React's `Activity` hides a hidden view's own DOM, but not
+ * what the view hung off the shell, so an overlay there would stay on screen,
+ * focused and clickable, over the view shown next.
+ */
+export const WindowOverlayRetainedContext = createContext(false);
+
+/*
+ * Hides an overlay of a view kept out of sight, with the focus in it, and shows
+ * it again with the view. React detaches the refs of a subtree its `Activity`
+ * hides — portals included — and attaches them again when it is shown; one
+ * detached for good is unmounted with its node, so hiding it costs nothing.
+ */
+function retainedOverlayFrame(element: HTMLDivElement | null) {
+    if (!element) return;
+    element.style.removeProperty("display");
+    return () => {
+        const focused = element.ownerDocument.activeElement;
+        if (focused instanceof HTMLElement && element.contains(focused)) focused.blur();
+        element.style.setProperty("display", "none", "important");
+    };
+}
+
+/**
  * Hangs a window-covering surface off the shell rather than off whatever part
  * of the product opened it.
  *
@@ -29,5 +53,20 @@ export const WindowOverlayHostContext = createContext<HTMLElement | null>(null);
  */
 export function WindowOverlay(props: { children: ReactNode }) {
     const host = useContext(WindowOverlayHostContext);
-    return host === null ? <>{props.children}</> : createPortal(props.children, host);
+    const retained = useContext(WindowOverlayRetainedContext);
+    if (host === null) return <>{props.children}</>;
+    return createPortal(
+        retained ? (
+            <div
+                className="happy-retained-views__overlay"
+                data-happy-desktop-ui="retained-view-overlay"
+                ref={retainedOverlayFrame}
+            >
+                {props.children}
+            </div>
+        ) : (
+            props.children
+        ),
+        host,
+    );
 }

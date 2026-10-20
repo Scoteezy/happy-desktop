@@ -1,4 +1,5 @@
 import { Activity, memo, useCallback, type ReactNode } from "react";
+import { WindowOverlayRetainedContext } from "./WindowOverlay";
 
 export type RetainedView = {
     readonly id: string;
@@ -35,7 +36,9 @@ export type RetainedViewsProps = {
  * `display: none`, so it takes no space and nothing in it can be focused,
  * clicked, typed into, found, or read by assistive technology; its effects and
  * refs are disconnected, so no listener of its own answers the keyboard or the
- * window, and no store it reads re-renders it. Its DOM, including where each
+ * window, and no store it reads re-renders it. What it hung off the shell
+ * through `WindowOverlay` — a menu, a picture viewer — leaves with it, and so
+ * does the focus, wherever in the view it was. Its DOM, including where each
  * scrollport was scrolled to, is left exactly as it was.
  *
  * A view out of sight does no work at all: it is frozen as it was last drawn,
@@ -140,7 +143,9 @@ const RetainedViewFrame = memo(
                 data-view-id={id}
                 ref={frame}
             >
-                {props.content}
+                <WindowOverlayRetainedContext.Provider value>
+                    {props.content}
+                </WindowOverlayRetainedContext.Provider>
             </div>
         );
     },

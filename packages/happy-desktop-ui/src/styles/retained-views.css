@@ -11,3 +11,9 @@
     min-width: 0;
     min-height: 0;
 }
+
+/* What a kept view hangs off the shell's overlay lane, wrapped so it can be
+   hidden with the view. It lays out nothing, like the lane it sits in. */
+.happy-retained-views__overlay {
+    display: contents;
+}
