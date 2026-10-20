@@ -18,6 +18,15 @@ export interface HappyAgentConnectionsSnapshot {
     readonly reorderError?: string;
 }
 
+/**
+ * Where the host keeps the last membership this daemon confirmed, so the next start can open
+ * the connections it lists before the daemon has been asked again.
+ */
+export interface HappyAgentConnectionsPersistence {
+    read(): readonly HappyAgentConnectionItem[] | undefined;
+    write(items: readonly HappyAgentConnectionItem[]): void;
+}
+
 export interface HappyAgentConnectionsStore {
     get(): HappyAgentConnectionsSnapshot;
     subscribe(listener: () => void): () => void;
@@ -26,13 +35,21 @@ export interface HappyAgentConnectionsStore {
     [Symbol.dispose](): void;
 }
 
-/** The main daemon owns membership; connectivity never removes a known UI. */
+/**
+ * The main daemon owns membership; connectivity never removes a known UI. Until the daemon
+ * has answered, the membership it last confirmed stands in for it, so its connections start
+ * at once rather than one bootstrap and one read later; the first answer replaces it.
+ */
 export function happyAgentConnectionsStoreCreate(
     client: HappyAgentClient,
     sync: HappyAgentSync,
+    persistence?: HappyAgentConnectionsPersistence,
 ): HappyAgentConnectionsStore {
+    const remembered = (persistence?.read() ?? []).filter(
+        (item) => item.remoteId !== undefined && item.id === `connection:${item.remoteId}`,
+    );
     let snapshot: HappyAgentConnectionsSnapshot = {
-        items: [{ id: "local", name: "This Mac" }],
+        items: [{ id: "local", name: "This Mac" }, ...remembered],
         selectedId: "local",
         reordering: false,
     };
@@ -74,6 +91,7 @@ export function happyAgentConnectionsStoreCreate(
             );
         }
         confirmedItems = items;
+        persistence?.write(items.filter((item) => item.remoteId !== undefined));
         if (optimisticOrder) {
             const byId = new Map(items.map((item) => [item.id, item]));
             const order = new Set(optimisticOrder);

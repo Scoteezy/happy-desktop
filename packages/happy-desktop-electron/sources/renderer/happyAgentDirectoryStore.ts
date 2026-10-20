@@ -2,6 +2,8 @@ import {
     HappyAgentClient,
     happyAgentConnectionsStoreCreate,
     happyAgentNodeStoreCreate,
+    type HappyAgentConnectionItem,
+    type HappyAgentConnectionsPersistence,
     type HappyAgentConnectionsStore,
     type HappyAgentNodeIdentity,
     type HappyAgentNodeStore,
@@ -31,6 +33,41 @@ import {
 import type { DesktopRuntimeStore } from "./runtimeStore";
 
 export const LOCAL_HAPPY_AGENT_ID = "local";
+const CONNECTIONS_KEY = "happy.happy-agent.connections.v1";
+
+/**
+ * The remote connections the local daemon last listed, kept in this window's storage so the
+ * next start opens them while the daemon is still being asked.
+ */
+const connectionsPersistence: HappyAgentConnectionsPersistence = {
+    read() {
+        try {
+            const value: unknown = JSON.parse(localStorage.getItem(CONNECTIONS_KEY) ?? "null");
+            if (!Array.isArray(value)) return undefined;
+            return value.flatMap((item: unknown): HappyAgentConnectionItem[] => {
+                if (typeof item !== "object" || item === null) return [];
+                const { id, name, remoteId } = item as Record<string, unknown>;
+                return typeof id === "string" &&
+                    typeof name === "string" &&
+                    typeof remoteId === "string"
+                    ? [{ id, name, remoteId }]
+                    : [];
+            });
+        } catch {
+            return undefined;
+        }
+    },
+    write(items) {
+        try {
+            localStorage.setItem(
+                CONNECTIONS_KEY,
+                JSON.stringify(items.map(({ id, name, remoteId }) => ({ id, name, remoteId }))),
+            );
+        } catch {
+            // Storage-denied windows wait for the daemon's list on every start.
+        }
+    },
+};
 const PROJECT_ADD_IDLE: HappyAgentProjectAddSnapshot = { pending: false };
 const NO_SUBTASK_FAILURES: HappyAgentSessionListSnapshot["subtaskFailures"] = new Map();
 const NO_TASKS: HappyAgentSessionListSnapshot["tasks"] = [];
@@ -561,8 +598,12 @@ export function happyAgentDirectoryStoreCreate(
                 token: "happy-local-capability",
             });
             connectionOpen(happyAgent, client, base);
-            roster = happyAgentConnectionsStoreCreate(client, happyAgent.connection!.sync);
-            rosterUnsubscribe = roster.subscribe(() => {
+            roster = happyAgentConnectionsStoreCreate(
+                client,
+                happyAgent.connection!.sync,
+                connectionsPersistence,
+            );
+            const rosterReconcile = (): void => {
                 const membership = roster!.get();
                 // A local restart takes the daemon down and brings it back with an
                 // empty registry for a beat. Pruning against that would collapse
@@ -620,7 +661,10 @@ export function happyAgentDirectoryStoreCreate(
                     }
                 }
                 publish();
-            });
+            };
+            rosterUnsubscribe = roster.subscribe(rosterReconcile);
+            // The membership last confirmed is opened now, before the daemon is asked again.
+            rosterReconcile();
         }
         publish();
     };
