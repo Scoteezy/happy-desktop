@@ -329,18 +329,145 @@ it("keeps 523 untouched catalog sessions identical when one session changes", as
     }
 });
 
-it("connects through health and bootstrap, then streams from the bootstrap cursor", async () => {
+it("starts in one round trip: the bootstrap is read beside the feed, and nothing else", async () => {
     const { connection, daemon } = harnessOpen();
     daemon.projectSeed({ id: "project-a" });
-    const bootstrapCursor = daemon.cursorLatest();
     const groups = groupsWatch(connection);
 
     await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
     expect(groups.state.sessionsComplete).toBe(true);
     expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
+    // The feed opened at the same time as the bootstrap, from the journal's head, and the
+    // bootstrap was the health check: no health, onboarding, profile, or config read.
+    expect(daemon.calls.slice(0, 2).map((call) => call.method)).toEqual([
+        "streamEvents",
+        "getDesktopBootstrap",
+    ]);
+    expect(daemon.streamOpens).toEqual([undefined]);
+    expect(daemon.callCount("getHealth")).toBe(0);
+    expect(daemon.callCount("getOnboarding")).toBe(0);
+    expect(daemon.callCount("getProfile")).toBe(0);
+    expect(daemon.callCount("getConfig")).toBe(0);
+    expect(connection.compatibility().status).toBe("compatible");
+    expect(connection.sync.health()).toMatchObject({ ready: true });
+    expect(connection.config()).toEqual(daemon.configGet());
+});
+
+it("asks an older daemon whose bootstrap carries no health for it apart, after the bootstrap", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.bootstrapHealthSet(false);
+    daemon.projectSeed({ id: "project-a" });
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
+    const methods = daemon.calls.map((call) => call.method);
+    expect(methods.indexOf("getHealth")).toBeGreaterThan(methods.indexOf("getDesktopBootstrap"));
     expect(daemon.callCount("getHealth")).toBe(1);
     expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
-    expect(daemon.streamOpens).toEqual([bootstrapCursor]);
+    expect(daemon.callCount("getOnboarding")).toBe(0);
+    expect(daemon.streamOpens).toEqual([undefined]);
+    expect(connection.compatibility().status).toBe("compatible");
+});
+
+it("takes nothing from an older daemon of an unsupported version found by its health after the bootstrap", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.bootstrapHealthSet(false);
+    daemon.healthSet({ daemon: "0.0.1" });
+    daemon.projectSeed({ id: "project-a" });
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+
+    await vi.waitFor(() =>
+        expect(connection.compatibility()).toMatchObject({ status: "server_outdated" }),
+    );
+    await vi.waitFor(() => expect(daemon.streamLiveCount()).toBe(0));
+    expect(groups.state.connection).toBe("connecting");
+    expect(groups.projects).toEqual([]);
+    expect(connection.config()).toBeUndefined();
+});
+
+it("holds updates that arrive before the bootstrap and applies only the ones past its cursor", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a", title: "First" });
+    const releaseBootstrap = daemon.pause("getDesktopBootstrap");
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+    const titled = (title: string, previousVersion: string) => {
+        const version = daemon.versionNext();
+        daemon.agentReplace({ ...daemon.agentGet(agent.id), title, version });
+        daemon.eventEmit("agent.updated", {
+            agentId: agent.id,
+            previousVersion,
+            version,
+            changes: { title },
+        });
+    };
+
+    // The feed is open while the bootstrap is out, and changes arrive on it meanwhile.
+    await vi.waitFor(() => expect(daemon.streamLiveCount()).toBe(1));
+    titled("Second", agent.version);
+    titled("Third", daemon.agentGet(agent.id).version);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    // Nothing the feed brought is applied, or even announced, before the snapshot is.
+    expect(groups.projects).toEqual([]);
+    expect(groups.state.connection).toBe("connecting");
+
+    // The snapshot already holds both changes. Applying either again would break the
+    // version chain and read the agent again.
+    releaseBootstrap();
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.projects[0]?.sessions[0]?.title).toBe("Third");
+
+    titled("Fourth", daemon.agentGet(agent.id).version);
+    await vi.waitFor(() => expect(groups.projects[0]?.sessions[0]?.title).toBe("Fourth"));
+    expect(daemon.callCount("getAgent")).toBe(0);
+    expect(daemon.streamOpens).toEqual([undefined]);
+});
+
+it("follows from the bootstrap's cursor when the feed beside it opened past it", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a", title: "First" });
+    const releaseStream = daemon.pause("streamEvents");
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+
+    // The snapshot is taken while the feed is still opening...
+    await vi.waitFor(() => expect(groups.projects[0]?.sessions[0]?.title).toBe("First"));
+    const bootstrapCursor = daemon.cursorLatest();
+    // ...and a change lands between the snapshot and the feed's hello.
+    const version = daemon.versionNext();
+    daemon.agentReplace({ ...daemon.agentGet(agent.id), title: "Between", version });
+    daemon.eventEmit("agent.updated", {
+        agentId: agent.id,
+        previousVersion: agent.version,
+        version,
+        changes: { title: "Between" },
+    });
+    releaseStream();
+
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    await vi.waitFor(() => expect(groups.projects[0]?.sessions[0]?.title).toBe("Between"));
+    // The change was in neither, so the feed was opened again from the snapshot's cursor.
+    expect(daemon.streamOpens).toEqual([undefined, bootstrapCursor]);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(daemon.callCount("getAgent")).toBe(0);
+});
+
+it("does not hold the live feed for the git watch", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.projectSeed({ id: "project-a" });
+    const releaseWatch = daemon.pause("watchGit");
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
+    expect(daemon.callCount("watchGit")).toBe(1);
+    releaseWatch();
 });
 
 it("reports reconnecting after a server drop and resumes from the last applied cursor", async () => {
@@ -380,7 +507,8 @@ it("reads a replacement daemon's health and reports its version after reconcilin
         }),
     );
     await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
-    expect(daemon.callCount("getHealth")).toBe(2);
+    // The first process's health came with its bootstrap; only the replacement's is read.
+    expect(daemon.callCount("getHealth")).toBe(1);
     expect(daemon.callCount("getDesktopBootstrap")).toBe(2);
     expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
 });
@@ -419,16 +547,18 @@ it("does not read health again when the same daemon's feed only reconnects", asy
     daemon.streamDropAll();
     await vi.waitFor(() => expect(daemon.streamOpens).toHaveLength(2));
     await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
-    expect(daemon.callCount("getHealth")).toBe(1);
+    expect(daemon.callCount("getHealth")).toBe(0);
     expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
 });
 
 it("retries an unreachable daemon with exponential backoff and surfaces the error", async () => {
     const daemon = fakeHappyAgentDaemonCreate();
     daemon.projectSeed({ id: "project-a" });
-    daemon.failOnce("getHealth", new Error("down"));
-    daemon.failOnce("getHealth", new Error("down"));
-    daemon.failOnce("getHealth", new Error("down"));
+    // Each attempt's bootstrap fails, and so does the health asked why.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        daemon.failOnce("getDesktopBootstrap", new Error("down"));
+        daemon.failOnce("getHealth", new Error("down"));
+    }
     const { connection, waits } = harnessOpen(daemon);
     const groups = groupsWatch(connection);
 
@@ -437,7 +567,7 @@ it("retries an unreachable daemon with exponential backoff and surfaces the erro
     expect(groups.errors.length).toBeGreaterThanOrEqual(3);
 });
 
-it("polls health until the daemon is ready before opening the stream", async () => {
+it("asks health why a failed bootstrap failed, then polls it until the daemon is ready", async () => {
     const daemon = fakeHappyAgentDaemonCreate();
     daemon.projectSeed({ id: "project-a" });
     daemon.healthSet({ ready: false });
@@ -445,11 +575,66 @@ it("polls health until the daemon is ready before opening the stream", async () 
     const groups = groupsWatch(connection);
 
     await vi.waitFor(() => expect(waits.length).toBeGreaterThanOrEqual(2));
-    expect(daemon.callCount("streamEvents")).toBe(0);
+    // Each attempt's bootstrap is refused, health says why, and the feed opened beside it is
+    // closed again: nothing of a starting daemon is taken.
+    expect(daemon.callCount("getHealth")).toBe(daemon.callCount("getDesktopBootstrap"));
+    expect(daemon.callCount("getOnboarding")).toBe(0);
+    expect(daemon.streamLiveCount()).toBe(0);
     expect(groups.state.connection).toBe("connecting");
 
     daemon.healthSet({ ready: true });
     await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
+});
+
+it("starts step by step when a refused bootstrap turns out to come from a healthy daemon", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.projectSeed({ id: "project-a" });
+    daemon.failOnce(
+        "getDesktopBootstrap",
+        new HappyAgentApiError(401, "Unauthorized", "unauthorized", null),
+    );
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
+    // Health explains the refusal, then the start goes the way it always went.
+    expect(
+        daemon.calls
+            .map((call) => call.method)
+            .filter((method) => method !== "streamEvents" && method !== "watchGit"),
+    ).toEqual([
+        "getDesktopBootstrap",
+        "getHealth",
+        "getOnboarding",
+        "getProfile",
+        "getDesktopBootstrap",
+    ]);
+    expect(daemon.streamOpens).toEqual([undefined, daemon.cursorLatest()]);
+});
+
+it("takes nothing from a daemon whose bootstrap health names an unsupported version", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.healthSet({ daemon: "0.0.1" });
+    daemon.projectSeed({ id: "project-a" });
+    const { connection } = harnessOpen(daemon);
+    const groups = groupsWatch(connection);
+
+    await vi.waitFor(() =>
+        expect(connection.compatibility()).toMatchObject({
+            status: "server_outdated",
+            serverVersion: "0.0.1",
+        }),
+    );
+    await vi.waitFor(() => expect(daemon.callCount("getHealth")).toBeGreaterThanOrEqual(1));
+    expect(daemon.streamLiveCount()).toBe(0);
+    expect(groups.state.connection).toBe("connecting");
+    expect(groups.projects).toEqual([]);
+
+    daemon.healthSet({ daemon: MINIMUM_HAPPY_AGENT_VERSION });
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    expect(groups.projects.map((project) => project.id)).toEqual(["project-a"]);
 });
 
 const freshMachineOnboarding = {
@@ -468,9 +653,12 @@ it("holds a team member without a profile before bootstrap and the stream", asyn
     const groups = groupsWatch(connection);
 
     await vi.waitFor(() => expect(daemon.callCount("getOnboarding")).toBeGreaterThanOrEqual(2));
-    expect(daemon.callCount("getDesktopBootstrap")).toBe(0);
-    expect(daemon.callCount("streamEvents")).toBe(0);
+    // Only the bootstrap tried beside the feed, which said a profile is still owed; the feed
+    // opened beside it is closed and nothing of it is applied.
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(daemon.streamLiveCount()).toBe(0);
     expect(groups.state.connection).toBe("connecting");
+    expect(groups.projects).toEqual([]);
 });
 
 it("bootstraps a fresh solo machine that has no profile", async () => {

@@ -1,6 +1,6 @@
 export { ChatStore } from "./ChatStore.js";
 export { connectHappyAgent } from "./connectHappyAgent.js";
-export type { HappyAgentSync, HappyAgentSyncInput } from "./happyAgentSync.js";
+export type { HappyAgentHealth, HappyAgentSync, HappyAgentSyncInput } from "./happyAgentSync.js";
 export { happyAgentSyncRead } from "./happyAgentSyncRead.js";
 export { chatElementRequest, projectNumericIdentity } from "./projection.js";
 export {

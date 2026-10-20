@@ -23,9 +23,10 @@ const UNSUPPORTED: HappyAgentDeviceBridgeSupportSnapshot = { status: "unsupporte
 const RETRY_MS = 5_000;
 
 /**
- * One connection's answer to whether it serves local bridges, read from its
- * health and read again whenever the connection is re-established, since that
- * is when a different daemon may be answering.
+ * One connection's answer to whether it serves local bridges, from its health
+ * as the connection last heard it, and asked again whenever the connection is
+ * re-established, since that is when a different daemon may be answering. The
+ * health is read here only while the connection has heard none.
  *
  * It exists apart from the bridges themselves because the two live for
  * different lengths of time: whether to offer Devices matters wherever the
@@ -52,6 +53,12 @@ export function happyAgentDeviceBridgeSupportStoreCreate(
         pending?.abort();
         if (retry) clearTimeout(retry);
         retry = undefined;
+        const known = deps.sync.health();
+        if (known !== undefined) {
+            pending = undefined;
+            set(known.capabilities?.workspaceBridges === true ? SUPPORTED : UNSUPPORTED);
+            return;
+        }
         const own = new AbortController();
         pending = own;
         const signal = AbortSignal.any([parent, own.signal]);

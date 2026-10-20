@@ -80,10 +80,24 @@ it("keeps a remote member without a profile out of the workspace", async () => {
     // Startup state arrives, so the member can be asked for a profile...
     await vi.waitFor(() => expect(handle.setup?.onboarding.get().available).toBe(true));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    // ...but nothing that needs one is read.
+    // ...but nothing that needs one is kept. The one bootstrap tried beside the feed said a
+    // profile is still owed, so it was set aside and the feed opened beside it closed.
     expect(handle.get()).toBeUndefined();
-    expect(daemon.callCount("getDesktopBootstrap")).toBe(0);
-    expect(daemon.callCount("streamEvents")).toBe(0);
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(daemon.streamLiveCount()).toBe(0);
+});
+
+it("loads the workspace without reading health, onboarding, profile, or config apart", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const handle = connectionOpen(daemon, { local: true });
+
+    await vi.waitFor(() => expect(handle.get()).toBeDefined());
+    // The bootstrap carried all of them, and the model catalog came from its configuration.
+    expect(daemon.callCount("getDesktopBootstrap")).toBe(1);
+    expect(daemon.callCount("getHealth")).toBe(0);
+    expect(daemon.callCount("getOnboarding")).toBe(0);
+    expect(daemon.callCount("getProfile")).toBe(0);
+    expect(daemon.callCount("getConfig")).toBe(0);
 });
 
 it("offers mobile setup on a fresh machine's project stage", async () => {

@@ -522,6 +522,10 @@ export function happyAgentWorkspaceClientCreate(
     const models = happyAgentModelStoreCreate({
         catalogRead: async () =>
             happyAgentModelCatalogProject((await deps.client.getConfig()).config),
+        catalogCurrent: () => {
+            const config = deps.connection.config();
+            return config === undefined ? undefined : happyAgentModelCatalogProject(config);
+        },
         sync: deps.connection.sync,
         ...(deps.modelPreferencePersistence
             ? { preferencePersistence: deps.modelPreferencePersistence }

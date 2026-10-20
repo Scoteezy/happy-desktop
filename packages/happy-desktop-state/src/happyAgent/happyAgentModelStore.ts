@@ -108,6 +108,12 @@ export interface HappyAgentModelStore {
 export interface HappyAgentModelStoreOptions {
     readonly catalogRead: () => Promise<HappyAgentModelCatalog>;
     /**
+     * The catalog of the configuration the connection already holds, when it holds a current
+     * one. The first `load()` adopts it instead of reading the configuration again: the
+     * bootstrap that started the connection carried it.
+     */
+    readonly catalogCurrent?: () => HappyAgentModelCatalog | undefined;
+    /**
      * The connection's authoritative input, followed from the first `load()`.
      * A bootstrap — including the one taken after a replacement daemon starts
      * answering — carries the configuration and replaces the catalog outright;
@@ -182,19 +188,21 @@ export function happyAgentModelStoreCreate(
      * not a change: keeping the old reference is what lets every picker and
      * chat that derived from it stand still.
      */
-    const catalogAdopt = (catalog: HappyAgentModelCatalog): void => {
-        if (snapshot.type === "ready" && deepEqual(snapshot.catalog, catalog)) return;
+    const catalogAdopt = (catalog: HappyAgentModelCatalog): HappyAgentModelStoreReadySnapshot => {
+        if (snapshot.type === "ready" && deepEqual(snapshot.catalog, catalog)) return snapshot;
         const selections = selectionsFromDocument(
             catalog,
             document,
             snapshot.type === "ready" ? snapshot : undefined,
         );
-        publish({
+        const ready: HappyAgentModelStoreReadySnapshot = {
             type: "ready",
             catalog,
             ...selections,
             menus: happyAgentMenusDerive(catalog, selections.lastUsedSelection, effortRemembered),
-        });
+        };
+        publish(ready);
+        return ready;
     };
 
     // Every source of a catalog takes the next number, and only the newest may
@@ -247,10 +255,13 @@ export function happyAgentModelStoreCreate(
         const active = new AbortController();
         follow = active;
         void (async () => {
+            let greeted = false;
             for await (const input of sync.follow({
                 signal: active.signal,
                 events: ["config.updated"],
             })) {
+                const greeting = !greeted;
+                greeted = true;
                 if (input.kind === "error") continue;
                 if (input.kind === "bootstrap") {
                     catalogRetryCancel();
@@ -258,9 +269,10 @@ export function happyAgentModelStoreCreate(
                     catalogReadFailed = false;
                     catalogAdopt(happyAgentModelCatalogProject(input.bootstrap.config));
                 } else if (input.kind === "reconcile") {
-                    // The first load was sent after this subscription was
+                    // The first load was sent, or answered from the connection's
+                    // current configuration, after this subscription was
                     // installed, so it already answers for everything before.
-                    if (!loadPromise) catalogReload(active.signal);
+                    if (!greeting && !loadPromise) catalogReload(active.signal);
                 } else if (
                     (input.update.kind === "connected" && catalogReadFailed) ||
                     (input.update.kind === "event" && input.update.event.type === "config.updated")
@@ -285,6 +297,11 @@ export function happyAgentModelStoreCreate(
             if (loadPromise) return loadPromise;
             if (snapshot.type === "error") publish({ type: "loading" });
             followStart();
+            const current = options.catalogCurrent?.();
+            if (current !== undefined) {
+                ++catalogGeneration;
+                return Promise.resolve(catalogAdopt(current));
+            }
             const generation = ++catalogGeneration;
             loadPromise = options.catalogRead().then(
                 (catalog) => {

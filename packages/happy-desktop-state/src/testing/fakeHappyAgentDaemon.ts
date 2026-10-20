@@ -139,10 +139,20 @@ export interface FakeHappyAgentDaemon {
     streamDropAll(): void;
     /** How many streams are live right now. */
     streamLiveCount(): number;
-    /** The `after` cursor of every stream ever opened, in open order. */
+    /**
+     * The `after` cursor of every stream ever opened, in open order. A stream opened after a
+     * cursor this process journaled replays the events since it, as the daemon's does.
+     * `pause("streamEvents")` holds a stream before its hello, so the journal can move on
+     * while it is being opened.
+     */
     readonly streamOpens: readonly (string | undefined)[];
     /** Answer the next stream's hello with `gap: true` — the cursor was lost. */
     gapOnNextStream(): void;
+    /**
+     * Whether the desktop bootstrap carries the daemon's health, as a current daemon's does.
+     * Turned off, it is a daemon from before that, whose health is only on its own route.
+     */
+    bootstrapHealthSet(carried: boolean): void;
 
     /** Toggle daemon health readiness, protocol number, and product version. */
     healthSet(options: {
@@ -383,6 +393,9 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     const streamOpens: (string | undefined)[] = [];
     let nextStreamGap = false;
     let healthReady = true;
+    let bootstrapHealth = true;
+    /** Every event this process journaled; a replacement starts with none. */
+    let journal: HappyAgentEvent[] = [];
     let desktopLiveControl: boolean | undefined;
     const liveSessions = new Map<string, LiveSession>();
     const liveUrls = new HappyAgentClient({ endpoint: "http://fake-happy-agent.test/" });
@@ -540,11 +553,20 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     ): HappyAgentEvent => {
         latestCursor = cursorOf((cursorCounter += 1));
         const event = { cursor: latestCursor, type, occurredAt: 1, payload } as HappyAgentEvent;
+        journal.push(event);
         for (const stream of streams) {
             stream.push({ kind: "event", event, cursor: event.cursor });
         }
         return event;
     };
+
+    const health = () => ({
+        healthy: true,
+        ready: healthReady,
+        status: healthReady ? ("ready" as const) : ("starting" as const),
+        version: { daemon: daemonVersion, protocol },
+        ...(desktopLiveControl === undefined ? {} : { capabilities: { desktopLiveControl } }),
+    });
 
     const client = {
         async getUsage(...args: unknown[]) {
@@ -559,15 +581,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         async getHealth(...args: unknown[]) {
             await record("getHealth", args);
-            return {
-                healthy: true,
-                ready: healthReady,
-                status: healthReady ? ("ready" as const) : ("starting" as const),
-                version: { daemon: daemonVersion, protocol },
-                ...(desktopLiveControl === undefined
-                    ? {}
-                    : { capabilities: { desktopLiveControl } }),
-            };
+            return health();
         },
         async getConfig(...args: unknown[]) {
             await record("getConfig", args);
@@ -678,7 +692,16 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         async getDesktopBootstrap(...args: unknown[]) {
             await record("getDesktopBootstrap", args);
+            // Only health answers while the daemon is starting.
+            if (!healthReady)
+                throw new HappyAgentApiError(
+                    503,
+                    "Happy Agent is still starting.",
+                    "not_initialized",
+                    null,
+                );
             return {
+                ...(bootstrapHealth ? { health: health() } : {}),
                 config,
                 cursor: latestCursor,
                 onboarding,
@@ -882,9 +905,17 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         async *streamEvents(options: EventStreamOptions = {}): AsyncGenerator<EventStreamFrame> {
             calls.push({ method: "streamEvents", args: [options] });
             streamOpens.push(options.after ?? options.lastEventId);
+            const opening = gates.get("streamEvents");
+            if (opening !== undefined) await opening;
             const gap = nextStreamGap;
             nextStreamGap = false;
-            const frames: EventStreamFrame[] = [];
+            const after = options.after ?? options.lastEventId;
+            const frames: EventStreamFrame[] =
+                !gap && after !== undefined
+                    ? journal
+                          .filter((event) => event.cursor.localeCompare(after) > 0)
+                          .map((event) => ({ kind: "event", event, cursor: event.cursor }))
+                    : [];
             let wake: (() => void) | undefined;
             let closed = false;
             const connection: StreamConnection = {
@@ -911,7 +942,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
                         daemonId: `daemon-${String(daemonGeneration)}`,
                         daemonStartedAt: daemonGeneration,
                         gap,
-                        resumed: !gap && (options.after ?? options.lastEventId) !== undefined,
+                        resumed: !gap && after !== undefined,
                     },
                 };
                 while (true) {
@@ -1384,6 +1415,9 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         gapOnNextStream() {
             nextStreamGap = true;
         },
+        bootstrapHealthSet(carried) {
+            bootstrapHealth = carried;
+        },
         onboardingSet(state) {
             onboarding = state;
         },
@@ -1416,6 +1450,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         daemonReplace(options = {}) {
             daemonGeneration += 1;
+            journal = [];
             if (options.version !== undefined) daemonVersion = options.version;
             for (const stream of streams) stream.end();
         },

@@ -6,6 +6,9 @@ import type {
 
 type DesktopBootstrap = Awaited<ReturnType<HappyAgentClient["getDesktopBootstrap"]>>;
 
+/** What a daemon says about itself on `GET /v0/health`, and in a current daemon's bootstrap. */
+export type HappyAgentHealth = Awaited<ReturnType<HappyAgentClient["getHealth"]>>;
+
 /** The only authenticated state available before a team member has a profile. */
 export interface HappyAgentOnboardingInput {
     readonly onboarding: Awaited<ReturnType<HappyAgentClient["getOnboarding"]>>;
@@ -36,6 +39,13 @@ export interface HappyAgentSync {
         /** Opts into narrow startup reads, without releasing protected surface reads. */
         readonly onOnboarding?: (input: HappyAgentOnboardingInput | undefined) => void;
     }): AsyncIterable<HappyAgentSyncInput>;
+    /**
+     * What the daemon this connection follows last said about its health, once
+     * the connection has heard. The connection reads it again, or takes it from
+     * the bootstrap, whenever a different process may be answering, so a
+     * surface that only needs capabilities asks nothing of its own.
+     */
+    health(): HappyAgentHealth | undefined;
 }
 
 /**
@@ -54,6 +64,7 @@ export function happyAgentSyncCreate() {
     /** The latest connection, which names the stream documents subscribe on. */
     let connected: Extract<HappyAgentUpdate, { kind: "connected" }> | undefined;
     let onboarding: HappyAgentOnboardingInput | undefined;
+    let health: HappyAgentHealth | undefined;
     const onboardingPublish = (input: HappyAgentOnboardingInput | undefined): void => {
         if (closed) return;
         onboarding = input;
@@ -124,6 +135,7 @@ export function happyAgentSyncCreate() {
                 queue.length = 0;
             }
         },
+        health: () => health,
     };
     return {
         source,
@@ -133,6 +145,10 @@ export function happyAgentSyncCreate() {
             },
             onboardingUnavailable(): void {
                 onboardingPublish(undefined);
+            },
+            /** Recorded before anything that follows from it is published. */
+            healthReceived(next: HappyAgentHealth): void {
+                health = next;
             },
             bootstrapReceived(bootstrap: DesktopBootstrap): void {
                 onboarding = undefined;

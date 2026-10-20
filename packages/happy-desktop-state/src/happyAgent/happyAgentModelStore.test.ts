@@ -307,6 +307,78 @@ it("keeps the newest catalog when an older read answers after it", async () => {
     expect(models.get()).toMatchObject({ type: "ready", catalog: after });
 });
 
+it("loads the catalog from the configuration the connection's bootstrap carried", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const connection = connectHappyAgent({
+        endpoint: "http://happy-agent.test/",
+        token: "token",
+        client: daemon.client,
+        wait: () => new Promise((resolve) => setTimeout(resolve, 0)),
+        now: () => 1_000,
+    });
+    connections.push(connection);
+    const catalogCurrent = (): HappyAgentModelCatalog | undefined => {
+        const config = connection.config();
+        return config === undefined ? undefined : happyAgentModelCatalogProject(config);
+    };
+    await vi.waitFor(() => expect(catalogCurrent()).toBeDefined());
+    const models = happyAgentModelStoreCreate({
+        catalogRead: async () =>
+            happyAgentModelCatalogProject((await daemon.client.getConfig()).config),
+        catalogCurrent,
+        sync: connection.sync,
+    });
+    disposables.push(models);
+
+    await models.load();
+    expect(modelIds(models)).toEqual(["test-provider/test-model"]);
+    // Neither the load nor the follower it installed reads the configuration again.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(daemon.callCount("getConfig")).toBe(0);
+
+    // A change announced later is still read.
+    daemon.configSet(configWithProvider(daemon.configGet(), "grok", "grok-4.7"));
+    daemon.eventEmit("config.updated", {});
+    await vi.waitFor(() =>
+        expect(modelIds(models)).toEqual(["test-provider/test-model", "grok/grok-4.7"]),
+    );
+});
+
+it("reads the catalog itself while the connection's configuration is being read again", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const connection = connectHappyAgent({
+        endpoint: "http://happy-agent.test/",
+        token: "token",
+        client: daemon.client,
+        wait: () => new Promise((resolve) => setTimeout(resolve, 0)),
+        now: () => 1_000,
+    });
+    connections.push(connection);
+    await vi.waitFor(() => expect(daemon.streamLiveCount()).toBe(1));
+    const release = daemon.pause("getConfig");
+    daemon.configSet(configWithProvider(daemon.configGet(), "grok", "grok-4.7"));
+    daemon.eventEmit("config.updated", {});
+    await vi.waitFor(() => expect(daemon.callCount("getConfig")).toBe(1));
+    // What the connection holds is no longer current.
+    expect(connection.config()).toBeUndefined();
+
+    const models = happyAgentModelStoreCreate({
+        catalogRead: async () =>
+            happyAgentModelCatalogProject((await daemon.client.getConfig()).config),
+        catalogCurrent: () => {
+            const config = connection.config();
+            return config === undefined ? undefined : happyAgentModelCatalogProject(config);
+        },
+        sync: connection.sync,
+    });
+    disposables.push(models);
+    const loaded = models.load();
+    release();
+    await loaded;
+    expect(modelIds(models)).toEqual(["test-provider/test-model", "grok/grok-4.7"]);
+    expect(daemon.callCount("getConfig")).toBe(2);
+});
+
 it("stops following the daemon once disposed", async () => {
     const { daemon, models } = await harnessOpen();
     models[Symbol.dispose]();

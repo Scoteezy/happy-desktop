@@ -64,6 +64,7 @@ function syncScript() {
                 });
             }
         },
+        health: () => undefined,
     };
     const push = (input: HappyAgentSyncInput): void => {
         queue.push(input);

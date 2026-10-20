@@ -1,5 +1,5 @@
 import type { HappyAgentClient } from "@slopus/happy-agent-client";
-import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import type { HappyAgentHealth, HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 
 /** Whether one kind of Surface can be made, and for a document written, here. */
 export type HappyAgentSurfaceSupport = "checking" | "supported" | "unsupported";
@@ -44,12 +44,13 @@ const supportOf = (supported: boolean): HappyAgentSurfaceSupport =>
     supported ? "supported" : "unsupported";
 
 /**
- * One connection's answer to which newer Surfaces it serves, read from its
- * health and read again whenever the connection is re-established, since that
- * is when a different daemon may be answering. Offering a new document, a
- * new calendar, or a new chat waits on it: an older Happy Agent can show a
- * document, but nobody can write one here, and it cannot make a calendar or a
- * chat at all.
+ * One connection's answer to which newer Surfaces it serves, from its health
+ * as the connection last heard it, and asked again whenever the connection is
+ * re-established, since that is when a different daemon may be answering. The
+ * health is read here only while the connection has heard none. Offering a new
+ * document, a new calendar, or a new chat waits on it: an older Happy Agent can
+ * show a document, but nobody can write one here, and it cannot make a
+ * calendar or a chat at all.
  */
 export function happyAgentSurfaceSupportStoreCreate(
     deps: HappyAgentSurfaceSupportDeps,
@@ -72,22 +73,31 @@ export function happyAgentSurfaceSupportStoreCreate(
         for (const listener of listeners) listener();
     };
 
+    const adopt = (health: HappyAgentHealth): void =>
+        set({
+            documents: supportOf(health.capabilities?.collaborativeDocuments === true),
+            calendars: supportOf(health.capabilities?.calendarSurfaces === true),
+            systemMonitors: supportOf(health.capabilities?.systemMonitorSurfaces === true),
+            chats: supportOf(health.capabilities?.chatSurfaces === true),
+        });
+
     const check = (parent: AbortSignal): void => {
         pending?.abort();
         if (retry) clearTimeout(retry);
         retry = undefined;
+        const known = deps.sync.health();
+        if (known !== undefined) {
+            pending = undefined;
+            adopt(known);
+            return;
+        }
         const own = new AbortController();
         pending = own;
         const signal = AbortSignal.any([parent, own.signal]);
         void deps.client.getHealth({ signal }).then(
             (health) => {
                 if (signal.aborted) return;
-                set({
-                    documents: supportOf(health.capabilities?.collaborativeDocuments === true),
-                    calendars: supportOf(health.capabilities?.calendarSurfaces === true),
-                    systemMonitors: supportOf(health.capabilities?.systemMonitorSurfaces === true),
-                    chats: supportOf(health.capabilities?.chatSurfaces === true),
-                });
+                adopt(health);
             },
             () => {
                 // Not knowing is not "unsupported": an offer already made stays

@@ -3,6 +3,7 @@ import type {
     AgentRetrying,
     Bot,
     ConfigurationBlock,
+    DaemonConfig,
     HappyAgentClient,
     HappyAgentEvent,
     MessageBlock,
@@ -968,6 +969,12 @@ export interface HappyAgentConnection {
     /** Shared authoritative transport input for this connection's feature stores. */
     readonly sync: HappyAgentSync;
     compatibility: () => ServerCompatibility;
+    /**
+     * The daemon configuration this connection holds, from its bootstrap or the read that
+     * followed the latest `config.updated`. Undefined before the first bootstrap and while a
+     * changed configuration is still being read, when only a read of its own is current.
+     */
+    config: () => DaemonConfig | undefined;
     /** Interrupts the managed update feed or startup wait so reconnection starts immediately. */
     retry: () => void;
     connectSession: (options: HappyAgentSessionSubscriptionOptions) => HappyAgentSessionConnection;

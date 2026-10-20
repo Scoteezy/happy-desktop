@@ -12,6 +12,7 @@ import {
     type DaemonConfig,
     type FailureResolutionResponse,
     type HappyAgentEvent,
+    type HappyAgentUpdate,
     type Message,
     type MessageBlock,
     type MessageMode,
@@ -31,7 +32,7 @@ import { createStore } from "zustand/vanilla";
 import { happyAgentServiceTierToWire } from "../happyAgentServiceTier.js";
 import { ChatStore } from "./ChatStore.js";
 import { userProfilesCreate } from "./userProfiles.js";
-import { happyAgentSyncCreate } from "./happyAgentSync.js";
+import { happyAgentSyncCreate, type HappyAgentHealth } from "./happyAgentSync.js";
 import { happyAgentSyncRead } from "./happyAgentSyncRead.js";
 import { gitSnapshotStateUpdate, type GitSnapshotState } from "./gitSnapshotState.js";
 import { CHECKING_SERVER_COMPATIBILITY, serverCompatibility } from "./compatibility.js";
@@ -96,12 +97,21 @@ const QUIET_AGENT_PUBLISH_MS = 1_000;
 /**
  * The desktop bootstrap as a current daemon serves it: beside the owners and their active
  * agents, the most recently archived agents of those owners, newest first, as full agent
- * objects. The published client this package pins does not describe that additive field yet;
- * this widening goes away with the client release that does.
+ * objects, and exactly what its health route answers. The published client this package pins
+ * does not describe those additive fields yet; this widening goes away with the client release
+ * that does. A daemon too old to carry `health` has its health read on its own route.
  */
-type DesktopBootstrapWithArchivedAgents = Awaited<
-    ReturnType<HappyAgentClient["getDesktopBootstrap"]>
-> & { readonly archivedAgents?: readonly Agent[] };
+type DesktopBootstrapCurrent = Awaited<ReturnType<HappyAgentClient["getDesktopBootstrap"]>> & {
+    readonly archivedAgents?: readonly Agent[];
+    readonly health?: HappyAgentHealth;
+};
+
+/**
+ * How many updates the feed opened beside the bootstrap may hold while that bootstrap is
+ * still out. Past it the read-ahead is dropped and the feed is opened again from the
+ * bootstrap's cursor instead, so a slow snapshot cannot pile up a journal in memory.
+ */
+const FEED_READ_AHEAD_LIMIT = 1_000;
 /*
  * Deadline for mutations the daemon answers without doing model work. A
  * create, send, or abort whose response never arrives would otherwise pend
@@ -1326,7 +1336,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         return entry;
     };
 
-    const resync = (reconcileSessions: boolean): Promise<void> => {
+    /**
+     * Applies a desktop bootstrap: the one read here, or one already read beside the update
+     * feed (`read`).
+     */
+    const resync = (reconcileSessions: boolean, read?: DesktopBootstrapCurrent): Promise<void> => {
         if (resyncTask !== undefined) return resyncTask;
         reportDebug({
             detail: debugDetail({ after: cursor ?? null, reconcileSessions }),
@@ -1335,25 +1349,18 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             source: "sync",
         });
         const running = (async (): Promise<void> => {
-            const bootstrap: DesktopBootstrapWithArchivedAgents = await client.getDesktopBootstrap({
-                signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
-            });
+            const bootstrap: DesktopBootstrapCurrent =
+                read ??
+                (await client.getDesktopBootstrap({
+                    signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+                }));
             if (rootController.signal.aborted) return;
+            // A current daemon's bootstrap is its health as well, and the freshest one.
+            if (bootstrap.health !== undefined) sync.writer.healthReceived(bootstrap.health);
             viewerIdentityUpdate(bootstrap.profile);
             if (reconcileSessions) await users.refresh();
-            sync.writer.bootstrapReceived(bootstrap);
-            const watchedGit = await optional(() =>
-                client.watchGit(
-                    {
-                        workspaceIds: activeGitWorkspaceIds(
-                            bootstrap.projects,
-                            bootstrap.workspaces,
-                        ),
-                    },
-                    { signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS) },
-                ),
-            );
             config = bootstrap.config;
+            sync.writer.bootstrapReceived(bootstrap);
             // The daemon lists a project's or workspace's active agents on the owner and its
             // most recently archived ones apart, in `archivedAgents`; a daemon too old to carry
             // that field remembers no archived agent for this connection at all.
@@ -1379,16 +1386,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             for (const workspaceId of gitStates.keys()) {
                 if (!gitWorkspaceIds.has(workspaceId)) gitStates.delete(workspaceId);
             }
-            for (const workspaceId of gitWorkspaceIds) {
-                const previous = gitStates.get(workspaceId);
-                const git = watchedGit?.snapshots[workspaceId];
-                if (git !== undefined) {
-                    gitStates.set(workspaceId, gitSnapshotStateUpdate(previous, git));
-                } else if (previous !== undefined) {
-                    // A reconnecting watch can fail before the daemon has a fresh scan.
-                    gitStates.set(workspaceId, { ...previous, invalidated: true });
-                }
-            }
+            // Neither the first paint nor the update feed waits for the watch: its scans land
+            // whenever they do, and anything it notices later arrives as `git.updated`.
+            gitWatchStart([...gitWorkspaceIds]);
             advanceCursor(bootstrap.cursor);
             // After a lost journal or a replaced process, the events remembered
             // so far belong to an interval this snapshot supersedes, and their
@@ -1472,7 +1472,6 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             0,
                         ),
                     ),
-                    watchedGit: Object.keys(watchedGit?.snapshots ?? {}).length,
                     workspaces: bootstrap.workspaces.length,
                 }),
                 level: "info",
@@ -1490,6 +1489,58 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         });
         resyncTask = tracked;
         return tracked;
+    };
+
+    // Only the watch sent for the newest bootstrap may land.
+    let gitWatchGeneration = 0;
+
+    /**
+     * Registers the bootstrap's workspaces with the daemon's git watcher and adopts the scans
+     * it already holds. A state that moved on while the watch was out (a newer
+     * `git.updated`, a workspace gone) is not set back by it.
+     */
+    const gitWatchStart = (workspaceIds: readonly string[]): void => {
+        const generation = ++gitWatchGeneration;
+        const sent = new Map(gitStates);
+        background(
+            (async () => {
+                const watched = await optional(() =>
+                    client.watchGit(
+                        { workspaceIds: [...workspaceIds] },
+                        { signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS) },
+                    ),
+                );
+                if (rootController.signal.aborted || generation !== gitWatchGeneration) return;
+                const { projects, workspaces } = groupsStore.getState();
+                const active = new Set(activeGitWorkspaceIds(projects, workspaces));
+                let changed = false;
+                for (const workspaceId of workspaceIds) {
+                    if (!active.has(workspaceId)) continue;
+                    const current = gitStates.get(workspaceId);
+                    const git = watched?.snapshots[workspaceId];
+                    if (git !== undefined) {
+                        const next = gitSnapshotStateUpdate(current, git);
+                        if (next === current) continue;
+                        gitStates.set(workspaceId, next);
+                        changed = true;
+                    } else if (current !== undefined && current === sent.get(workspaceId)) {
+                        // A reconnecting watch can fail before the daemon has a fresh scan.
+                        gitStates.set(workspaceId, { ...current, invalidated: true });
+                        changed = true;
+                    }
+                }
+                reportDebug({
+                    detail: debugDetail({
+                        watchedGit: Object.keys(watched?.snapshots ?? {}).length,
+                        workspaces: workspaceIds.length,
+                    }),
+                    level: watched === undefined ? "warning" : "info",
+                    message: watched === undefined ? "Git watch failed" : "Git watch registered",
+                    source: "sync",
+                });
+                if (changed) publishGroups();
+            })(),
+        );
     };
 
     const renewGitWatch = async (): Promise<void> => {
@@ -1657,11 +1708,19 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         publishGroups();
     };
 
+    // Reads of a changed configuration still out; until they land `config` is not current.
+    let configReloads = 0;
+
     const reloadConfig = async (): Promise<void> => {
-        const response = await client.getConfig({
-            signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
-        });
-        config = response.config;
+        configReloads += 1;
+        try {
+            const response = await client.getConfig({
+                signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+            });
+            config = response.config;
+        } finally {
+            configReloads -= 1;
+        }
         publishGroups();
         for (const entry of sessions.values()) publishSession(entry);
     };
@@ -2433,8 +2492,197 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         }
     };
 
+    /**
+     * What a daemon's health admits: whether it is ready, and speaks a protocol this client
+     * does. Health is read for every new process, so this is also where a replacement that
+     * admits work again is first known.
+     */
+    const healthAdmit = (health: HappyAgentHealth): boolean => {
+        reportDebug({
+            detail: debugDetail(health),
+            level: health.ready ? "info" : "warning",
+            message: health.ready ? "Happy Agent health check passed" : "Happy Agent is not ready",
+            source: "connection",
+        });
+        sync.writer.healthReceived(health);
+        // Health is read for every new process, so this is where a
+        // replacement that admits work again is first known.
+        admittingSet(health.draining !== true && health.shuttingDown !== true);
+        const nextCompatibility = serverCompatibility(health.version);
+        reportCompatibility(nextCompatibility);
+        return nextCompatibility.status === "compatible" && health.ready;
+    };
+
+    /**
+     * Starts a connection in one round trip: the desktop bootstrap is read and the update feed
+     * opened at the same time, with no health check in front of either. A current daemon's
+     * bootstrap carries its health; an older one's is read after it. Updates that arrive
+     * before the bootstrap are held, and handed on only after it has been applied.
+     *
+     * Takes nothing when the step-by-step start would have stopped before the bootstrap, and
+     * says which way the caller goes instead, where every such case is explained and waited out
+     * exactly as it always was: `unanswered` when the bootstrap failed, which health, read
+     * next, explains (a daemon still starting, a member not let in yet); `gated` when the
+     * daemon speaks a protocol this client does not, or a member still owes a profile, which
+     * the step-by-step start keeps checking from then on.
+     */
+    const bootstrapBesideFeed = async (
+        attemptSignal: AbortSignal,
+    ): Promise<
+        | {
+              /** The feed opened beside the bootstrap, or none when its read-ahead was dropped. */
+              readonly feed: AsyncIterable<HappyAgentUpdate> | undefined;
+              /** The bootstrap's cursor: everything at or before it is already applied. */
+              readonly floor: string;
+          }
+        | "unanswered"
+        | "gated"
+    > => {
+        const feedController = new AbortController();
+        const iterator = client
+            .updates({ signal: AbortSignal.any([attemptSignal, feedController.signal]) })
+            [Symbol.asyncIterator]();
+        const early: HappyAgentUpdate[] = [];
+        let next: Promise<IteratorResult<HappyAgentUpdate>> | undefined = iterator.next();
+        let feedOpen = true;
+        const feedClose = (): void => {
+            feedOpen = false;
+            feedController.abort();
+            void next?.catch(() => undefined);
+            next = undefined;
+            early.length = 0;
+            // Ends the feed even where it rests on an update nobody will ask past.
+            void iterator.return?.(undefined).catch(() => undefined);
+        };
+        reportDebug({
+            level: "info",
+            message: "Reading desktop bootstrap beside the managed update feed",
+            source: "sync",
+        });
+        const reading: Promise<
+            { readonly bootstrap: DesktopBootstrapCurrent } | { readonly error: unknown }
+        > = client
+            .getDesktopBootstrap({
+                signal: AbortSignal.any([
+                    attemptSignal,
+                    AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+                ]),
+            })
+            .then(
+                (bootstrap: DesktopBootstrapCurrent) => ({ bootstrap }),
+                (error: unknown) => ({ error }),
+            );
+        let read: Awaited<typeof reading>;
+        for (;;) {
+            const pending = next;
+            const step =
+                pending === undefined
+                    ? await reading
+                    : await Promise.race([
+                          reading,
+                          pending.then(
+                              (result) => ({ result }),
+                              () => ({ result: undefined }),
+                          ),
+                      ]);
+            if (!("result" in step)) {
+                read = step;
+                break;
+            }
+            if (step.result === undefined || step.result.done === true) {
+                next = undefined;
+                continue;
+            }
+            early.push(step.result.value);
+            if (early.length >= FEED_READ_AHEAD_LIMIT) {
+                reportDebug({
+                    detail: debugDetail({ held: early.length }),
+                    level: "warning",
+                    message: "Update feed read ahead too far; reopening it after the bootstrap",
+                    source: "sse",
+                });
+                feedClose();
+                continue;
+            }
+            next = iterator.next();
+        }
+        try {
+            if ("error" in read) {
+                // An abandoned attempt is not the daemon's answer; the loop retries it.
+                if (attemptSignal.aborted) throw read.error;
+                reportDebug({
+                    detail: errorDetail(read.error),
+                    level: "warning",
+                    message: "Desktop bootstrap failed; asking Happy Agent health why",
+                    source: "sync",
+                });
+                feedClose();
+                return "unanswered";
+            }
+            const { bootstrap } = read;
+            // A daemon too old to carry its health in the bootstrap is asked for it apart.
+            const health =
+                bootstrap.health ??
+                (await client.getHealth({
+                    signal: AbortSignal.any([
+                        attemptSignal,
+                        AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+                    ]),
+                }));
+            if (!healthAdmit(health)) {
+                feedClose();
+                return "gated";
+            }
+            if (
+                options.memberProfileRequired !== false &&
+                !bootstrap.onboarding.completed &&
+                !bootstrap.onboarding.steps.profile.done
+            ) {
+                feedClose();
+                return "gated";
+            }
+            await resync(false, bootstrap);
+            if (rootController.signal.aborted || !feedOpen) {
+                feedClose();
+                return { feed: undefined, floor: bootstrap.cursor };
+            }
+            const held = early.splice(0);
+            let pending = next;
+            next = undefined;
+            // The held updates first, then the read already out, then the feed itself, handed
+            // through directly so a live update reaches the loop as promptly as a plain feed's.
+            const feed: AsyncIterable<HappyAgentUpdate> = {
+                [Symbol.asyncIterator]: () => ({
+                    next: (): Promise<IteratorResult<HappyAgentUpdate>> => {
+                        const value = held.shift();
+                        if (value !== undefined) return Promise.resolve({ done: false, value });
+                        const taken = pending;
+                        pending = undefined;
+                        return taken ?? iterator.next();
+                    },
+                    return: (): Promise<IteratorResult<HappyAgentUpdate>> => {
+                        held.length = 0;
+                        feedController.abort();
+                        void pending?.catch(() => undefined);
+                        pending = undefined;
+                        void iterator.return?.(undefined).catch(() => undefined);
+                        return Promise.resolve({ done: true, value: undefined });
+                    },
+                }),
+            };
+            return { feed, floor: bootstrap.cursor };
+        } catch (error) {
+            feedClose();
+            throw error;
+        }
+    };
+
     const runUpdates = async (): Promise<void> => {
         let reconnectMs = INITIAL_RECONNECT_MS;
+        // Startup reads the bootstrap beside the feed until the daemon turns out to need the
+        // step-by-step start: it speaks another protocol, or a member owes a profile. From
+        // then on startup gates on health and onboarding, as it always did.
+        let bootstrapOptimistic = true;
         while (!rootController.signal.aborted) {
             const attemptController = new AbortController();
             updatesAttemptController = attemptController;
@@ -2443,12 +2691,25 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 attemptController.signal,
             ]);
             try {
-                // Health gates startup because it is the only route guaranteed
-                // while the daemon is booting. Once the first bootstrap lands,
-                // the client's managed update feed owns reachability and
-                // reconnection — until a different process may be answering
-                // it, which passes the same gate before anything of its is used.
-                if (config === undefined || daemonVerify) {
+                // The feed this attempt follows when it was opened beside the bootstrap, and
+                // that bootstrap's cursor: the feed's events at or before it are in the
+                // snapshot already, and a feed that opened past it missed the ones between.
+                let besideFeed: AsyncIterable<HappyAgentUpdate> | undefined;
+                let feedFloor: string | undefined;
+                if (config === undefined && !daemonVerify && bootstrapOptimistic) {
+                    const started = await bootstrapBesideFeed(attemptSignal);
+                    if (started === "gated") bootstrapOptimistic = false;
+                    else if (started !== "unanswered") {
+                        besideFeed = started.feed;
+                        feedFloor = started.floor;
+                    }
+                }
+                // Health gates every other start because it is the only route guaranteed
+                // while the daemon is booting. Once the first bootstrap lands, the client's
+                // managed update feed owns reachability and reconnection — until a different
+                // process may be answering it, which passes the same gate before anything of
+                // its is used.
+                if (feedFloor === undefined && (config === undefined || daemonVerify)) {
                     reportDebug({
                         level: "info",
                         message: "Checking Happy Agent health before managed updates",
@@ -2460,20 +2721,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
                         ]),
                     });
-                    reportDebug({
-                        detail: debugDetail(health),
-                        level: health.ready ? "info" : "warning",
-                        message: health.ready
-                            ? "Happy Agent health check passed"
-                            : "Happy Agent is not ready",
-                        source: "connection",
-                    });
-                    // Health is read for every new process, so this is where a
-                    // replacement that admits work again is first known.
-                    admittingSet(health.draining !== true && health.shuttingDown !== true);
-                    const nextCompatibility = serverCompatibility(health.version);
-                    reportCompatibility(nextCompatibility);
-                    if (nextCompatibility.status !== "compatible" || !health.ready) {
+                    if (!healthAdmit(health)) {
                         if (config === undefined) sync.writer.onboardingUnavailable();
                         publishConnection(config === undefined ? "connecting" : "reconnecting");
                         reportDebug({
@@ -2486,7 +2734,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         // still starting and is ready in moments, so it is asked again at the
                         // first interval, but only within that window.
                         const starting =
-                            nextCompatibility.status === "compatible" &&
+                            compatibility.status === "compatible" &&
                             now() < replacementExpectedUntil;
                         await reconnectPause(starting ? INITIAL_RECONNECT_MS : reconnectMs);
                         if (!starting)
@@ -2494,7 +2742,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         continue;
                     }
                 }
-                if (config === undefined) {
+                if (feedFloor === undefined && config === undefined) {
                     // Team members without a profile can read these endpoints,
                     // but cannot read config/bootstrap or open the event stream.
                     // Keep that authorization boundary identical for every route.
@@ -2522,7 +2770,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         continue;
                     }
                 }
-                if (config === undefined) await resync(false);
+                if (feedFloor !== undefined) {
+                    // Already applied beside the feed.
+                } else if (config === undefined) await resync(false);
                 else if (daemonVerify) {
                     // A replacement carries none of the previous process's
                     // journal, so everything applied so far is only as good as
@@ -2533,16 +2783,47 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     daemonVerify = false;
                 }
                 let reopen = false;
+                // A fresh stream's hello names the journal's head when it opened. Only the
+                // first one of a feed opened beside the bootstrap needs comparing with it.
+                let floorHelloPending = besideFeed !== undefined;
                 reportDebug({
-                    detail: debugDetail({ after: cursor ?? null }),
+                    detail: debugDetail({
+                        after: cursor ?? null,
+                        beside: besideFeed !== undefined,
+                    }),
                     level: "info",
                     message: "Opening managed update feed",
                     source: "sse",
                 });
-                for await (const update of client.updates({
-                    after: cursor,
-                    signal: attemptSignal,
-                })) {
+                for await (const update of besideFeed ??
+                    client.updates({
+                        after: cursor,
+                        signal: attemptSignal,
+                    })) {
+                    if (floorHelloPending && update.kind === "connected") {
+                        floorHelloPending = false;
+                        if (feedFloor !== undefined && update.cursor.localeCompare(feedFloor) > 0) {
+                            // The feed opened after the bootstrap's cursor, so the events
+                            // between the two are in neither. Follow from the bootstrap's
+                            // cursor instead, which replays exactly those.
+                            reportDebug({
+                                detail: debugDetail({ bootstrap: feedFloor, feed: update.cursor }),
+                                level: "info",
+                                message: "Update feed opened past the bootstrap; reopening from it",
+                                source: "sse",
+                            });
+                            reopen = true;
+                            break;
+                        }
+                    }
+                    // Already part of the bootstrap snapshot; applying it again could repeat a
+                    // non-idempotent change.
+                    if (
+                        update.kind === "event" &&
+                        feedFloor !== undefined &&
+                        update.cursor.localeCompare(feedFloor) <= 0
+                    )
+                        continue;
                     if (
                         update.kind === "event" &&
                         (update.event.type === "message.created" ||
@@ -3100,6 +3381,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
 
     return {
         compatibility: () => compatibility,
+        config: () => (configReloads === 0 ? config : undefined),
         sync: sync.source,
         retry: retryUpdates,
         connectGroups(subscription) {
