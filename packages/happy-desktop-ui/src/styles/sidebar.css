@@ -520,6 +520,8 @@
  */
 .happy-sidebar__tree {
     position: relative;
+    /* Keep the carried subtree's paint ranks inside this one tree. */
+    isolation: isolate;
     display: flex;
     flex: none;
     flex-direction: column;
@@ -545,37 +547,65 @@
    frame — cannot do. */
 .happy-sidebar__tree-drag-surface {
     position: absolute;
+    /* Once released, the fading face must sit below ordinary rows and stems.
+       A drop with no remaining motion can clear its carried IDs immediately,
+       while this shadow still has part of its 120ms fade left to paint. */
     z-index: 0;
     right: 0;
     left: 0;
     display: block;
     border-radius: var(--happy-radius-sm);
-    background: var(--surface-ripple);
-    box-shadow: 0 4px 12px var(--shadow-subtle);
+    /* An opaque base keeps stationary peer ink from showing through the lift. */
+    background: var(--groupped-background);
+    box-shadow:
+        inset 0 0 0 999px var(--surface-ripple),
+        0 4px 12px var(--shadow-subtle);
     opacity: 0;
     pointer-events: none;
     transition: opacity 120ms ease;
 }
 
 .happy-sidebar__tree-drag-surface[data-carried] {
+    z-index: 2;
     opacity: 1;
+}
+
+/* This opaque backing belongs to the carried rows, independently of the outer
+   shadow's fade or an archived row's opacity. Its top shares the root's FLIP. */
+.happy-sidebar__tree-carried-surface {
+    position: absolute;
+    z-index: 2;
+    right: 0;
+    left: 0;
+    border-radius: var(--happy-radius-sm);
+    background: var(--groupped-background);
+    box-shadow: inset 0 0 0 999px var(--surface-ripple);
+    pointer-events: none;
 }
 
 .happy-sidebar__tree-connectors {
     position: absolute;
-    /* Tree ink stays above row fills, including selection and the held row. */
-    z-index: 2;
+    /* Individual stems share the tree's stack: ordinary ink is under the lift,
+       while stems attached to the carried rows stay over their opaque fill. */
     inset: 0;
     pointer-events: none;
 }
 
 .happy-sidebar__tree-connector {
     position: absolute;
+    z-index: 1;
     display: block;
     width: 1px;
-    background: var(--text-secondary);
+    /* Anchor the stroke to the edge where the row's horizontal border begins.
+       Borders quantize their width once; a filled box rounds its two edges
+       independently and can alternate between thin and thick at browser zoom. */
+    border-right: 1px solid var(--text-secondary);
     opacity: 0.28;
     transition: none;
+}
+
+.happy-sidebar__tree-connector[data-carried] {
+    z-index: 4;
 }
 
 .happy-sidebar__empty {
@@ -673,17 +703,19 @@
     cursor: grabbing;
 }
 
-/* A tree drag paints one surface around the complete held subtree, so no row in
-   it paints a lift of its own — for the whole of the move, including the travel
-   after the surface has gone. Its rows keep this attribute only so every
-   offset tracks the pointer without lag. */
+/* One surface owns the subtree's outer shadow. Opaque row faces also keep peer
+   ink underneath while that shadow fades and the whole subtree settles. */
 .happy-sidebar__tree[data-connector-dragging] > .happy-sidebar__item[data-dragging] {
-    background: transparent;
-    box-shadow: none;
+    z-index: 3;
+    /* Keep the same opaque lift tone through settling, after its outer shadow
+       has faded. The existing dropped IDs retain every row in the subtree. */
+    background: var(--groupped-background);
+    box-shadow: inset 0 0 0 999px var(--surface-ripple);
 }
 
 .happy-sidebar__tree[data-connector-dragging] > .happy-sidebar__item[data-dragging][data-active] {
     background: var(--surface-selected);
+    box-shadow: none;
 }
 
 /* Said again inside the list being arranged, because that is where it has to
@@ -755,17 +787,18 @@
 .happy-sidebar__item-branch::after {
     position: absolute;
     pointer-events: none;
-    background: var(--text-secondary);
+    /* Use the same border stroke as the stem. A 1px filled rectangle can paint
+       two or four backing rows at 125% zoom solely because its top moved. */
+    border-bottom: 1px solid var(--text-secondary);
     content: "";
     opacity: 0.28;
-}
-
-.happy-sidebar__item-branch::after {
-    top: 50%;
+    /* The stem ends 1px below the row centre. Anchor this edge too, so the
+       browser's quantized border width cannot leave a gap or a trailing stem. */
+    bottom: calc(50% - 1px);
     /* Start at the stem's far edge, never on top of its painted pixel. */
     left: calc(50% + 0.5px);
     width: 9px;
-    height: 1px;
+    height: 0;
 }
 
 /* Cancel the archived row's 0.55 dimming so the elbow keeps the stem's tone. */

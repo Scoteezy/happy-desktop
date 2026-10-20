@@ -126,6 +126,64 @@ them. Prefer integer CSS-pixel positions and sizes.
 At the required 2× device scale, important edges must land on physical pixel
 boundaries so one-pixel borders do not become blurry.
 
+Equal DOM bounds or equal integrated pixel coverage do not prove equal stroke
+weight. Compare the perpendicular painted width, full pixel profile, and peak
+contrast of equal-role rules at different positions and zoom levels, including
+terminal and intermediate tree branches. Tree stems and horizontal branches have
+the same painted thickness and peak contrast against the same local background;
+verify both perpendicular orientations, rather than inferring stem weight from
+branch measurements. Every connector that belongs to a carried object remains
+visible from the first lifted commit through travel, holding, drop, and the end
+of settling. A remaining parent's connector must also retain its intended visible
+connection when one of its children moves. Inspect native-resolution captures and
+use integer nearest-neighbor enlargement for thin-ink comparisons: resizing a
+video or screenshot can itself make equal strokes appear uneven.
+Motion evidence must assert the intended movement and state change. Its measured
+coordinates and captured pixels must describe the same verified pose; labels or
+stationary frames do not establish that a moving interface renders correctly.
+
+Every moving, resized, or transformed piece of custom UI has this contract,
+including text, font icons, existing sanctioned SVG artwork, controls, and
+compound components. Its internal geometry, alignment, glyph size, and visual
+weight stay consistent across supported desktop widths, zoom, and display scales.
+Let content adapt to a sensible window or sidebar width without imposing an
+unnecessary minimum or introducing a mobile layout.
+
+Measure and move geometry in one coherent coordinate space, normally viewport
+CSS pixels from `getBoundingClientRect()`. Preserve fractional measurements;
+mixing rounded `offset*` values with fractional bounds, or discarding a small
+settle delta, can create a visible jump at another zoom. A carried item or subtree
+moves as one object through pickup, travel, release, and settling. If paint needs
+alignment, apply a shared correction at its root rather than independently
+rounding its children. A semantic change of parent or indentation begins at the
+drop, rather than distorting the object under the pointer.
+
+One owner paints each shared stroke or edge. Equal roles retain their intended
+CSS thickness and perceived weight at every supported position. The carried
+surface, its content, and its connectors compose above stationary peers for the
+whole motion; its opaque backing covers row gaps and remains independent of a
+shadow fade or a child's opacity until settling completes.
+A fading lift must also leave settled content and connectors visible when a drop
+needs no animation and its carried state clears immediately.
+
+Existing sanctioned SVG artwork declares its viewport, painted bounds, and stroke
+behavior under supported scaling. Do not impose a global `non-scaling-stroke`
+rule: artwork may intentionally scale as a whole. These motion requirements do
+not change the font icon system or open a new SVG icon path.
+
+Verify representative narrow and wide desktop layouts, including odd sidebar
+widths, at native 80%, 100%, 125%, and 150% zoom. Use the actual component and
+handlers: prove the intended root moves, its descendants retain their relative
+geometry, the callback and resulting order are correct, and returning restores
+the expected order. Compare native painted profiles through the relevant states,
+including the first lifted commit and the carried surface after its shadow has
+faded. Record each stem's identity and nonzero geometry, and compare its native
+perpendicular pixel profile and peak contrast with horizontal branches against
+their local background in that same pose. A visible branch, a later held frame,
+or a correctly ranked DOM node alone does not prove continuous stem visibility.
+These are verification
+requirements, not permission to add tests without a request.
+
 Do not make dimensions accidental. If a component promises a size, its border,
 padding, content, and `box-sizing` must resolve to that size. Test fixed,
 content-sized, percentage, full-width, nested, and constrained-container cases

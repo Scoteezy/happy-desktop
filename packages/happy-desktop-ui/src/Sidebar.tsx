@@ -866,6 +866,7 @@ function sidebarConnectorGroups(items: readonly SidebarItem[]): readonly Sidebar
 }
 
 interface SidebarTreeConnectorsProps {
+    readonly carriedItemIds: readonly string[];
     readonly items: readonly SidebarItem[];
     readonly drag?: SidebarDrag;
     readonly listId: SidebarListId;
@@ -879,46 +880,95 @@ interface SidebarTreeConnectorsProps {
  */
 function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
     const groups = sidebarConnectorGroups(props.items);
-    const rowPitch = SIDEBAR_ROW_HEIGHT + SIDEBAR_ROW_GAP;
-    // Connector geometry reads the same current shift as each row. It is not
-    // transitioned, so a held endpoint follows every pointer update immediately.
-    const rowCenter = (index: number): number =>
-        index * rowPitch + SIDEBAR_ROW_HEIGHT / 2 + rowDragShift(props.drag, index);
+    const layerRef = useRef<HTMLDivElement>(null);
+    // eslint-disable-next-line happy-react/no-layout-effect -- Connector endpoints require the browser's used row pitch after zoom quantizes flex row heights and gaps; one tree observer keeps that measured geometry current and is cleaned up with the layer.
+    useLayoutEffect(() => {
+        const layer = layerRef.current;
+        const tree = layer?.parentElement;
+        const firstRow = tree?.querySelector<HTMLElement>(":scope > .happy-sidebar__item");
+        if (!layer || !tree || !firstRow) return;
+        const align = (): void => {
+            // Relative drag offsets do not change the flex tree's extent. Read
+            // its uniform row geometry once, then apply the same explicit drag
+            // shift as the rows. Reading moving row tops would count it twice.
+            const rowHeight = firstRow.getBoundingClientRect().height;
+            const treeHeight = tree.getBoundingClientRect().height;
+            const rowPitch =
+                props.items.length > 1
+                    ? (treeHeight - rowHeight) / (props.items.length - 1)
+                    : rowHeight;
+            const rowCenter = (index: number): number =>
+                index * rowPitch + rowHeight / 2 + rowDragShift(props.drag, index);
+            const geometry = groups.map((group) => {
+                const top = rowCenter(group.parentIndex) + SIDEBAR_BRANCH_STEM_INSET;
+                const bottom = Math.max(...group.childIndexes.map(rowCenter)) + 1;
+                return { top, height: Math.max(0, bottom - top) };
+            });
+            const surface = tree.querySelector<HTMLSpanElement>(
+                ":scope > .happy-sidebar__tree-carried-surface",
+            );
+            const carriedIndexes = props.items.flatMap((item, index) =>
+                props.carriedItemIds.includes(item.id) ? [index] : [],
+            );
+            const firstCarried = carriedIndexes[0];
+            const lastCarried = carriedIndexes[carriedIndexes.length - 1];
+            for (const [index, bounds] of geometry.entries()) {
+                const node = layer.children[index] as HTMLSpanElement;
+                const top = `${String(bounds.top)}px`;
+                const height = `${String(bounds.height)}px`;
+                if (node.style.top !== top) node.style.top = top;
+                if (node.style.height !== height) node.style.height = height;
+            }
+            if (surface && firstCarried !== undefined && lastCarried !== undefined) {
+                const top = `${String(
+                    firstCarried * rowPitch + rowDragShift(props.drag, firstCarried),
+                )}px`;
+                const height = `${String((lastCarried - firstCarried) * rowPitch + rowHeight)}px`;
+                if (surface.style.top !== top) surface.style.top = top;
+                if (surface.style.height !== height) surface.style.height = height;
+            }
+        };
+        align();
+        const observer = new ResizeObserver(align);
+        observer.observe(tree);
+        observer.observe(firstRow);
+        window.addEventListener("resize", align);
+        return () => {
+            observer.disconnect();
+            window.removeEventListener("resize", align);
+        };
+    });
     return (
         <div
             aria-hidden="true"
             className="happy-sidebar__tree-connectors"
             data-happy-desktop-ui="sidebar-tree-connectors"
+            ref={layerRef}
         >
             {groups.map((group) => {
-                // The stem hangs from just under the parent's glyph, not from its
-                // midline, which is where the resting per-row segment starts too.
-                const stemTop = rowCenter(group.parentIndex) + SIDEBAR_BRANCH_STEM_INSET;
-                // The run ends on whichever child is currently lowest, so carrying
-                // the bottom child upward shortens the line instead of leaving it
-                // sticking out past the last elbow.
-                const lowestChildCenter = Math.max(
-                    ...group.childIndexes.map((index) => rowCenter(index)),
-                );
                 const key = rowKey(props.listId, group.parentId);
                 return (
                     <span
                         className="happy-sidebar__tree-connector"
+                        data-carried={
+                            props.carriedItemIds.includes(group.parentId) ||
+                            group.childIndexes.some((index) =>
+                                props.carriedItemIds.includes(props.items[index]!.id),
+                            )
+                                ? ""
+                                : undefined
+                        }
                         data-parent-id={group.parentId}
                         data-happy-desktop-ui="sidebar-tree-connector"
                         key={group.parentId}
                         ref={(element) => props.onElement(key, element)}
                         style={{
-                            // A CSS height ends before its final pixel. Add the
-                            // 1px stroke so the stem reaches the elbow's full depth.
-                            height: `${String(Math.max(0, lowestChildCenter - stemTop + 1))}px`,
                             left: `${String(
                                 SIDEBAR_ROW_PADDING_X +
                                     group.depth * SIDEBAR_ROW_INDENT +
                                     SIDEBAR_LEADING_SLOT / 2 -
                                     0.5,
                             )}px`,
-                            top: `${String(stemTop)}px`,
                         }}
                     />
                 );
@@ -1773,6 +1823,7 @@ export function Sidebar(props: SidebarProps) {
     // Connector stems have stable parent keys, so the drop can animate their
     // endpoint separately from the rows that carry the horizontal elbows.
     const [connectorNodes] = useState(() => new Map<string, HTMLSpanElement>());
+    const [carriedSurfaceNodes] = useState(() => new Map<SidebarListId, HTMLSpanElement>());
     // Row tops captured at the drop, consumed by the layout effect below.
     const flipRef = useRef<Map<string, number> | undefined>(undefined);
     const connectorFlipRef = useRef<
@@ -1792,6 +1843,7 @@ export function Sidebar(props: SidebarProps) {
     // The row that was just dropped, kept lit until it has finished travelling.
     const [dropped, setDropped] = useState<{
         readonly carried: boolean;
+        readonly itemIds: readonly string[];
         readonly key: string;
         readonly listId: SidebarListId;
     }>();
@@ -2002,7 +2054,16 @@ export function Sidebar(props: SidebarProps) {
         settleRef.current = { expected, key: rowKey(listId, movedId) };
         // Released lit, not resting: the highlight is handed from the drag to
         // the travelling row and only let go once it has arrived.
-        setDropped({ carried: settle.carried, key: rowKey(listId, movedId), listId });
+        const movedIndex = items.findIndex((item) => item.id === movedId);
+        setDropped({
+            carried: settle.carried,
+            itemIds:
+                movedIndex < 0
+                    ? [movedId]
+                    : subtreeOf(items, movedIndex).map((index) => items[index]!.id),
+            key: rowKey(listId, movedId),
+            listId,
+        });
         // The capture waits for the render that applies the new order, but
         // it cannot wait forever: a move the caller declines to make, or one
         // the server rejects, never produces that render, and an unclaimed
@@ -2182,6 +2243,18 @@ export function Sidebar(props: SidebarProps) {
                     easing: SETTLE_EASING,
                 }),
             );
+            if (dropped?.carried && key === dropped.key) {
+                const surface = carriedSurfaceNodes.get(dropped.listId);
+                if (surface) {
+                    const top = Number.parseFloat(surface.style.top);
+                    played.push(
+                        surface.animate(
+                            [{ top: `${String(top + delta)}px` }, { top: `${String(top)}px` }],
+                            { duration: SETTLE_MS, easing: SETTLE_EASING },
+                        ),
+                    );
+                }
+            }
         }
         if (connectorFirsts) {
             for (const [key, first] of connectorFirsts) {
@@ -2516,6 +2589,14 @@ export function Sidebar(props: SidebarProps) {
                         const surfaceLift =
                             sectionLift !== undefined ||
                             (dropped?.carried === true && dropped.listId === section.id);
+                        const carriedItemIds =
+                            sectionDrag?.moved === true
+                                ? sectionDrag.units[sectionDrag.from]!.map(
+                                      (index) => shownItems[index]!.id,
+                                  )
+                                : dropped?.carried === true && dropped.listId === section.id
+                                  ? dropped.itemIds
+                                  : [];
                         return (
                             <section
                                 className="happy-sidebar__section"
@@ -2661,7 +2742,20 @@ export function Sidebar(props: SidebarProps) {
                                                 drag={sectionLift}
                                             />
                                         ) : null}
+                                        {carriedItemIds.length > 0 ? (
+                                            <span
+                                                aria-hidden="true"
+                                                className="happy-sidebar__tree-carried-surface"
+                                                data-happy-desktop-ui="sidebar-tree-carried-surface"
+                                                ref={(node) => {
+                                                    if (node)
+                                                        carriedSurfaceNodes.set(section.id, node);
+                                                    else carriedSurfaceNodes.delete(section.id);
+                                                }}
+                                            />
+                                        ) : null}
                                         <SidebarTreeConnectors
+                                            carriedItemIds={carriedItemIds}
                                             drag={
                                                 sectionDrag?.moved === true
                                                     ? sectionDrag
@@ -2716,7 +2810,11 @@ export function Sidebar(props: SidebarProps) {
                                                     activityPlacement={local.activityPlacement}
                                                     dragging={
                                                         held ||
-                                                        rowKey(section.id, item.id) === dropped?.key
+                                                        (dropped?.listId === section.id &&
+                                                            (dropped.carried
+                                                                ? dropped.itemIds.includes(item.id)
+                                                                : rowKey(section.id, item.id) ===
+                                                                  dropped.key))
                                                     }
                                                     grabbed={held}
                                                     key={item.id}
