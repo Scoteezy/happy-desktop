@@ -258,6 +258,28 @@ it("shows a kept conversation as it was left until it is read again", async () =
     view.unsubscribe();
 });
 
+it("shows the oldest kept conversation as it was left even when keeping the one left pushes it out", async () => {
+    for (const [count, ids] of [
+        [1, "ab"],
+        [3, "abcd"],
+    ] as const) {
+        const view = workspaceCreate({ count, size: 1_000 });
+        for (const id of ids) await view.open(id);
+        expect(view.kept().at(-1)).toBe("a");
+        view.hold();
+
+        view.workspace.conversationOpen("a" as HappyAgentSessionId, GROUP);
+
+        const shown = view.workspace.get().conversation;
+        expect(shown.type === "ready" && shown.value.conversationId).toBe("a");
+        expect(shown.type === "ready" && shown.value.ready).toBe(true);
+        expect(shown.type === "ready" && shown.value.entries.map(entryKey)).toEqual(["a:1"]);
+        expect(view.kept()).toEqual([...ids.slice(1)].reverse());
+        await view.arrive();
+        view.unsubscribe();
+    }
+});
+
 it("does nothing while a kept conversation streams out of sight", async () => {
     const view = workspaceCreate({ count: 2, size: 1_000 });
     await view.open("a");

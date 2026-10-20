@@ -5182,10 +5182,6 @@ export function happyAgentWorkspaceStoreCreate(
             composer = composerCreate(conversationId);
             unsubscribeComposer = composer.subscribe(recompute);
         }
-        // A conversation left a moment ago is published as it was left until
-        // it is read back, so the view kept for it is shown again as it was
-        // rather than through an empty transcript.
-        reopened = retainedTake(conversationId) ?? reopened;
         if (conversation.type === "error") conversation = { type: "loading" };
         recompute();
         const acquisition = client.chat(conversationId);
@@ -5293,8 +5289,12 @@ export function happyAgentWorkspaceStoreCreate(
         }
         acquisitionGeneration += 1;
         acquiringId = undefined;
+        // A conversation left a moment ago is published as it was left until
+        // it is read back, so the view kept for it is shown again as it was
+        // rather than through an empty transcript. It is taken out before the
+        // one being left is kept, which could otherwise push it out.
+        reopened = conversationId === undefined ? undefined : retainedTake(conversationId);
         if (openId !== undefined) retainedAdd(openId);
-        reopened = undefined;
         openId = conversationId;
         releaseConversation();
         if (!conversationId) {
