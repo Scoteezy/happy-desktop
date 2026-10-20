@@ -819,6 +819,11 @@ export interface MessageListScrollPosition {
 const FOLLOW_BOTTOM_THRESHOLD = 8;
 /** A reader this close to the top (px) is looking at the oldest loaded row. */
 const START_REACHED_THRESHOLD = 64;
+/**
+ * A reader within this many screens of the oldest loaded row asks for the page before it, so it
+ * has arrived by the time they scroll there instead of after.
+ */
+const START_READ_AHEAD_SCREENS = 2;
 /** Do not expose the final fractional/integer pixels to a further downward wheel. */
 const BOTTOM_WHEEL_EPSILON = 2;
 /** Transcript clearances represented inside the virtualizer's coordinate space. */
@@ -968,7 +973,11 @@ export function MessageList(props: MessageListProps) {
         readerScrollTop.current = element.scrollTop;
     }).current;
     const startReachedReport = (element: HTMLElement) => {
-        if (element.scrollTop > START_REACHED_THRESHOLD) return;
+        if (
+            element.scrollTop >
+            Math.max(START_REACHED_THRESHOLD, element.clientHeight * START_READ_AHEAD_SCREENS)
+        )
+            return;
         startReportedHeight.current = element.scrollHeight;
         startReached.current?.();
     };
