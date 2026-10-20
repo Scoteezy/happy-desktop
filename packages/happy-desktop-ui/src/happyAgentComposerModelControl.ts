@@ -23,6 +23,7 @@ import type {
     ComposerModelUsageWatch,
     ComposerModelUsageWindow,
 } from "./ComposerModelControl";
+import { localClockTime, localDayTime, localWeekdayShort } from "./localTime";
 
 function choiceOf(option: HappyAgentModelOption): ComposerModelChoice {
     return {
@@ -160,26 +161,15 @@ function usageWindow(
     id: string,
     label: string,
     window: HappyAgentProviderUsageWindow | undefined,
-    resets: (at: Date) => string,
+    resets: (at: number) => string,
 ): ComposerModelUsageWindow {
     return {
         id,
         label,
         ...(window === undefined ? {} : { usedPercent: window.usedPercent }),
-        ...(window?.resetsAt === undefined ? {} : { resets: resets(new Date(window.resetsAt)) }),
+        ...(window?.resetsAt === undefined ? {} : { resets: resets(window.resetsAt) }),
         ...(window?.capturedAt === undefined ? {} : { capturedAt: window.capturedAt }),
     };
-}
-
-function clockTime(at: Date): string {
-    return at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-/** A moment today reads as its time alone; any other day leads with the weekday. */
-function dayTime(at: Date, now: Date): string {
-    return at.toDateString() === now.toDateString()
-        ? clockTime(at)
-        : `${at.toLocaleDateString([], { weekday: "short" })} ${clockTime(at)}`;
 }
 
 /**
@@ -212,7 +202,6 @@ export function happyAgentComposerModelUsageProject(
     snapshot: HappyAgentProviderUsageSnapshot,
     now: number,
 ): ReadonlyMap<string, ComposerModelAccountUsage> {
-    const today = new Date(now);
     const usage = new Map<string, ComposerModelAccountUsage>();
     for (const entry of snapshot.providers) {
         const reading = entry.usage;
@@ -237,14 +226,13 @@ export function happyAgentComposerModelUsageProject(
                           "fiveHour",
                           "5h",
                           reading.fiveHour,
-                          (at) => `resets ${clockTime(at)}`,
+                          (at) => `resets ${localClockTime(at)}`,
                       ),
                       usageWindow(
                           "weekly",
                           "Weekly",
                           reading.weekly,
-                          (at) =>
-                              `resets ${at.toLocaleDateString([], { weekday: "short" })} ${clockTime(at)}`,
+                          (at) => `resets ${localWeekdayShort(at)} ${localClockTime(at)}`,
                       ),
                   ]
                 : [],
@@ -256,7 +244,7 @@ export function happyAgentComposerModelUsageProject(
                       limit:
                           limitResets === undefined
                               ? {}
-                              : { resets: dayTime(new Date(limitResets), today) },
+                              : { resets: localDayTime(limitResets, now) },
                   }
                 : {}),
         });

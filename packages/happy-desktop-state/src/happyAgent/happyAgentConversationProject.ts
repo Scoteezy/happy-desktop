@@ -34,6 +34,7 @@ import {
 } from "./happyAgentConversationAuthors.js";
 import { happyAgentCompactionSubject } from "./happyAgentTokenFormat.js";
 import { happyAgentConfigurationChanges } from "./happyAgentConfigurationChanges.js";
+import { happyAgentFailureProject } from "./happyAgentFailureProject.js";
 import type { HappyAgentModel } from "./happyAgentTypes.js";
 
 type HappyAgentProfile = NonNullable<Extract<ChatElement, { kind: "user_message" }>["profile"]>;
@@ -903,6 +904,14 @@ function happyAgentConnectGroupProject(
                                   ...element.error,
                                   ...(modelName === undefined ? {} : { modelName }),
                               },
+                          }),
+                    ...(element.failure === undefined
+                        ? {}
+                        : {
+                              failure: happyAgentFailureProject(
+                                  element.failure,
+                                  input.models ?? [],
+                              ),
                           }),
                     sequence,
                 });

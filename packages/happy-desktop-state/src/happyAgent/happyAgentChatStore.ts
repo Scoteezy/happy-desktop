@@ -31,7 +31,11 @@ import {
     happyAgentTranscriptSenderIds,
     type HappyAgentAgentIdentitySource,
 } from "./happyAgentAgentIdentities.js";
-import type { ConversationAgentIdentity } from "../conversation/conversationEntry.js";
+import type {
+    ConversationAgentIdentity,
+    ConversationRetrying,
+} from "../conversation/conversationEntry.js";
+import { happyAgentRetryingProject } from "./happyAgentFailureProject.js";
 import type {
     HappyAgentAnsweredUserInput,
     HappyAgentBackgroundProcess,
@@ -603,6 +607,8 @@ export interface HappyAgentChatSnapshot {
     readonly workingPhase: HappyAgentWorkingPhase;
     readonly workingLabel?: string;
     readonly workingWait?: HappyAgentWorkingWait;
+    /** The automatic recovery the turn is running, which the working line reports. */
+    readonly retrying?: ConversationRetrying;
     readonly activeTurnId?: string;
     readonly runId?: string;
     readonly runStartedAt?: number;
@@ -1000,6 +1006,7 @@ export function happyAgentChatStoreCreate(
                 : transcriptUsageProject(connected.usage, catalog);
         const workingLabel = workingLabelProject(connected, waitingForModel);
         const workingWait = workingWaitProject(connected);
+        const retrying = happyAgentRetryingProject(connected?.activity.retrying);
         const openImage = openImageProject(entries, openImageRef);
         const next: HappyAgentChatSnapshot = {
             sessionId,
@@ -1018,6 +1025,7 @@ export function happyAgentChatStoreCreate(
             workingPhase: workingPhaseProject(connected, waitingForModel),
             ...(workingLabel === undefined ? {} : { workingLabel }),
             ...(workingWait === undefined ? {} : { workingWait }),
+            ...(retrying === undefined ? {} : { retrying }),
             ...(runId === undefined ? {} : { runId }),
             ...(runStartedAt === undefined ? {} : { runStartedAt }),
             ...(turnElapsedMs === undefined ? {} : { turnElapsedMs }),

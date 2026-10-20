@@ -17,6 +17,11 @@ import { AgentActivityRow, type ActivityMotion, type ActivityTreatment } from ".
 import type { InlinePageProps } from "./InlinePage";
 import { ConversationComputeEvent } from "./ConversationComputeEvent";
 import { ConversationErrorCard } from "./ConversationErrorCard";
+import {
+    ConversationFailureCard,
+    type ConversationFailureActions,
+} from "./ConversationFailureCard";
+import type { ConversationFailureClock } from "./conversationFailureText";
 import { conversationErrorTitle } from "./conversationErrorTitle";
 import { DelegatedAgentActivity } from "./DelegatedAgentActivity";
 import { TurnSummary } from "./TurnSummary";
@@ -30,12 +35,29 @@ import { type HappyAgentUserInputAnswerMap } from "./HappyAgentUserInputPrompt";
 import { FileAttachment, type FileAttachmentKind } from "./FileAttachment";
 import { SYSTEM_NOTIFICATION_LABEL } from "./systemNotification";
 
+/** A failure card's live state and actions, supplied by the conversation that owns it. */
+export type ConversationEntryFailureProps = ConversationFailureActions & {
+    /** The conversation has not moved past this failure, so its actions are offered. */
+    readonly current: boolean;
+    readonly target?: string;
+    readonly onTargetChange?: (key: string) => void;
+    readonly clock?: ConversationFailureClock;
+    /** Seeds the switch list open, for a blueprint or test. */
+    readonly previewMenu?: { readonly active?: string };
+};
+
 type ConversationLinkedAttachment = Extract<ConversationAttachment, { kind: "linked" }>;
 
 export type ConversationEntryViewProps = {
     entry: ConversationEntry;
     errorAssistance?: ConversationErrorAssistance;
     onErrorAssistanceRequest?: (entryId: string) => void;
+    /**
+     * What a failure card on this row offers and which switch target is
+     * picked. Absent, the card shows its message and offers only Ask Chief of
+     * Staff.
+     */
+    failure?: ConversationEntryFailureProps;
     /** Identity heading for the first activity in an agent turn. */
     activityAuthor?: ConversationAuthor;
     /** Identity id of the reader, so their own messages take the own treatment. */
@@ -343,7 +365,30 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
         if (entry.variant === "divider")
             return <DayDivider className={props.className} label={entry.text} />;
         const notice =
-            entry.level === "error" || entry.retry !== undefined ? (
+            entry.failure !== undefined ? (
+                <ConversationFailureCard
+                    assistance={props.errorAssistance}
+                    className={props.activityAuthor ? undefined : props.className}
+                    {...(props.failure?.clock ? { clock: props.failure.clock } : {})}
+                    current={props.failure?.current ?? false}
+                    data-testid={props["data-testid"]}
+                    failure={entry.failure}
+                    onAssistanceRequest={
+                        props.onErrorAssistanceRequest
+                            ? () => props.onErrorAssistanceRequest!(entry.id)
+                            : undefined
+                    }
+                    onNewChat={props.failure?.onNewChat}
+                    onRetry={props.failure?.onRetry}
+                    onSwitch={props.failure?.onSwitch}
+                    onTargetChange={props.failure?.onTargetChange}
+                    style={props.activityAuthor ? undefined : props.style}
+                    target={props.failure?.target}
+                    {...(props.failure?.previewMenu
+                        ? { previewMenu: props.failure.previewMenu }
+                        : {})}
+                />
+            ) : entry.level === "error" || entry.retry !== undefined ? (
                 <ConversationErrorCard
                     assistance={props.errorAssistance}
                     onAssistanceRequest={

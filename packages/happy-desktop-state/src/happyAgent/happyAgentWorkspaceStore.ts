@@ -11,6 +11,7 @@ import type {
     ConversationEntry,
     ConversationErrorAssistance,
     ConversationErrorAssistanceEntry,
+    ConversationRetrying,
 } from "../conversation/conversationEntry.js";
 import { happyAgentChatDraftAppend } from "./happyAgentChatDraftAppend.js";
 import {
@@ -253,6 +254,8 @@ export interface HappyAgentConversationSnapshot {
     readonly workingLabel?: string;
     /** The scheduled wait the agent is inside, so a surface can count it down. */
     readonly workingWait?: HappyAgentWorkingWait;
+    /** The automatic recovery the turn is running, which the working line reports. */
+    readonly retrying?: ConversationRetrying;
     readonly runStartedAt?: number;
     readonly turnElapsedMs?: number;
     readonly transcriptComplete: boolean;
@@ -2845,6 +2848,7 @@ export function happyAgentWorkspaceStoreCreate(
             workingPhase: chat.workingPhase,
             ...(chat.workingLabel !== undefined ? { workingLabel: chat.workingLabel } : {}),
             ...(chat.workingWait !== undefined ? { workingWait: chat.workingWait } : {}),
+            ...(chat.retrying !== undefined ? { retrying: chat.retrying } : {}),
             ...(chat.runStartedAt !== undefined ? { runStartedAt: chat.runStartedAt } : {}),
             ...(chat.turnElapsedMs !== undefined ? { turnElapsedMs: chat.turnElapsedMs } : {}),
             transcriptComplete: chat.transcriptComplete,

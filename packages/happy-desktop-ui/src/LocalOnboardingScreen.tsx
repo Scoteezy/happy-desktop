@@ -247,8 +247,7 @@ const ASSISTANTS: Record<
         },
         mark: "grok",
         name: "Grok",
-        // Grok has no login subcommand: running it is the sign-in.
-        signIn: "grok",
+        signIn: "grok login",
     },
 };
 

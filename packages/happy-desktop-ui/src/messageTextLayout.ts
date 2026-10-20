@@ -1170,6 +1170,55 @@ export function errorTextHeight(
         heading ? "normal" : "pre-wrap",
     );
 }
+/**
+ * The failure card's 14/20 message, in which a command is one unbreakable box:
+ * its 13px mono text plus `extraWidth` of padding and copy button. Punctuation
+ * that touches the box's far edge cannot begin a line, so it travels with it.
+ */
+export function errorRichTextHeight(
+    runs: readonly (
+        | { readonly text: string }
+        | { readonly code: string; readonly extraWidth: number }
+    )[],
+    measure: number,
+    cache: MessageTextLayoutCache = sharedCache,
+): number {
+    const font = `14px ${UI_FAMILY}`;
+    const items: RichInlineItem[] = [];
+    let carried = "";
+    for (const [index, run] of runs.entries()) {
+        if ("code" in run) {
+            const next = runs[index + 1];
+            carried = next !== undefined && "text" in next ? /^\S*/u.exec(next.text)![0] : "";
+            items.push({
+                break: "never",
+                extraWidth:
+                    run.extraWidth +
+                    (carried.length > 0 ? naturalTextWidth(carried, font, cache) : 0),
+                font: `13px ${MONO_FAMILY}`,
+                text: run.code,
+            });
+            continue;
+        }
+        const text = run.text.slice(carried.length);
+        carried = "";
+        if (text.length > 0) items.push({ font, text });
+    }
+    return richItemsHeight(items, 20, measure, cache);
+}
+/** Natural width of a single-line control label, with its CSS letter spacing. */
+export function controlLabelNaturalWidth(
+    text: string,
+    size: number,
+    weight: number,
+    letterSpacing: number,
+    cache: MessageTextLayoutCache = sharedCache,
+): number {
+    return richItemsNaturalWidth(
+        [{ font: `${String(weight)} ${String(size)}px ${UI_FAMILY}`, letterSpacing, text }],
+        cache,
+    );
+}
 /** The heading ramp: h2 is the largest, h3 alone carries a taller line. */
 const HEADINGS = [
     { size: 16, line: 24, weight: 900 },

@@ -18,6 +18,10 @@ import type {
     HappyAgentSubtaskActivity,
 } from "../happyAgent/happyAgentTypes.js";
 import type { HappyAgentServiceTier } from "../happyAgentServiceTier.js";
+import type {
+    HappyAgentMessageFailure,
+    HappyAgentRetrying,
+} from "../happyAgent/happyAgentFailureProject.js";
 import type { HappyAgentSync } from "./happyAgentSync.js";
 import type { UserProfile } from "./userProfiles.js";
 
@@ -326,6 +330,8 @@ export interface FailureElement extends BaseChatElement {
     attempt?: number;
     reason: string;
     error?: MessageError;
+    /** Protocol 30 typed reason; absent from an older daemon. */
+    failure?: HappyAgentMessageFailure;
 }
 
 export interface ConfigurationElement extends BaseChatElement {
@@ -429,6 +435,8 @@ export interface SessionState {
         label: string;
         since: number;
         wait?: { startedAt: number; dueAt: number };
+        /** An automatic recovery the provider or a context reset is running. */
+        retrying?: HappyAgentRetrying;
     };
     activeGroup?: { groupId: string; runId: string; startedAt: number };
     activeTurn?: { runId: string; startedAt: number; kind?: "compaction" };

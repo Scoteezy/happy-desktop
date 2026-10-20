@@ -9,7 +9,9 @@ import {
     type ConversationEntry,
     type ConversationErrorAssistance,
     type ConversationErrorAssistanceEntry,
+    type ConversationFailureFallback,
     type ConversationRequestSubmission,
+    type ConversationRetrying,
     type ConversationToolCall,
 } from "happy-desktop-state";
 import { type ActivityMotion, type ActivityTreatment } from "./AgentActivityRow";
@@ -22,7 +24,15 @@ import {
 } from "./AgentWorkingStatus";
 import { ChannelHeader } from "./ChannelHeader";
 import { ConversationDock } from "./ConversationDock";
-import { ConversationEntryView, type ConversationEntryViewProps } from "./ConversationEntryView";
+import {
+    ConversationEntryView,
+    type ConversationEntryFailureProps,
+    type ConversationEntryViewProps,
+} from "./ConversationEntryView";
+import {
+    conversationRetryingLabel,
+    type ConversationFailureClock,
+} from "./conversationFailureText";
 import {
     conversationAgentRowStartsGroup,
     conversationEntryPrecedesActivity,
@@ -38,6 +48,7 @@ import {
     conversationReferencesSignature,
     conversationRowHeight,
     conversationRowHeightCacheCreate,
+    type ConversationFailureRowContext,
     type ConversationRowHeightCache,
 } from "./conversationRowHeight";
 import {
@@ -80,6 +91,27 @@ export type ConversationViewProps = {
     workingLabel?: string;
     /** The scheduled wait the turn is inside, counted down by the owner's clock. */
     workingWait?: AgentWaitStatus;
+    /**
+     * The automatic recovery the turn is running. It names itself on the
+     * working line in place of `workingLabel`, with the usual Stop.
+     */
+    retrying?: ConversationRetrying;
+    /**
+     * What the latest failure card can do. Each handler is told which failure
+     * row it acts on; a missing one leaves its button off the card.
+     */
+    failureActions?: ConversationFailureHandlers;
+    /**
+     * Pins the clock failure cards tell reset times on, for a blueprint or
+     * test. Otherwise they use `now` in the viewer's own time zone.
+     */
+    failureClock?: ConversationFailureClock;
+    /**
+     * Transient states of the current failure card, rendered directly so a
+     * blueprint or test can show them without a pointer. Each only seeds local
+     * state: the picked target, and the switch list open with a row hovered.
+     */
+    failurePreview?: { readonly target?: string; readonly menu?: { readonly active?: string } };
     /**
      * How many agents this conversation delegated to are still working. A turn
      * can hand work to a child and end before the child does, and the reader is
@@ -442,8 +474,53 @@ export function ConversationStatus(props: { elapsedMs?: number; running?: boolea
  * `onComposerValueChange`, so the composer store — not this component — owns the
  * draft, the active command query, and the mention query.
  */
+/** What a conversation can do about its latest failure, told which failure row it acts on. */
+export interface ConversationFailureHandlers {
+    readonly onRetry?: (entryId: string) => void;
+    readonly onNewChat?: (entryId: string) => void;
+    readonly onSwitch?: (entryId: string, target: ConversationFailureFallback) => void;
+}
+
+/**
+ * The failure the conversation ends on, which is the only one still offering
+ * its actions. A failure followed by anything but the turn's closing status
+ * has been moved past.
+ */
+function conversationCurrentFailure(transcript: readonly ConversationEntry[]): string | undefined {
+    for (let index = transcript.length - 1; index >= 0; index -= 1) {
+        const entry = transcript[index]!;
+        if (entry.kind === "turnStatus") continue;
+        return entry.kind === "notice" &&
+            entry.variant !== "compute" &&
+            entry.failure !== undefined &&
+            entry.failure.resolution === undefined
+            ? entry.id
+            : undefined;
+    }
+    return undefined;
+}
+
+/** The geometry-relevant part of a failure row's props, for the row-height model. */
+function failureRowContext(failure: ConversationEntryFailureProps): ConversationFailureRowContext {
+    return {
+        current: failure.current,
+        actions: {
+            retry: failure.onRetry !== undefined,
+            newChat: failure.onNewChat !== undefined,
+            switch: failure.onSwitch !== undefined,
+        },
+        ...(failure.target === undefined ? {} : { target: failure.target }),
+        ...(failure.clock === undefined ? {} : { clock: failure.clock }),
+    };
+}
+
 export function ConversationView(props: ConversationViewProps) {
     const composer = props.composer;
+    /* The switch target picked on each failure card. Picking only changes the
+       target; it is this view's own UI state, keyed like row expansion so it
+       never leaks into another conversation. */
+    const [failureTargets, setFailureTargets] = useState(() => new Map<string, string>());
+    const failurePreview = props.failurePreview;
     const errorAssistanceByEntry = new Map(
         props.errorAssistance?.map((entry) => [entry.entryId, entry.assistance]),
     );
@@ -510,6 +587,43 @@ export function ConversationView(props: ConversationViewProps) {
                   inlineLeads,
                   inlinePageLocal,
               );
+    const currentFailureId =
+        props.running === true ? undefined : conversationCurrentFailure(transcript);
+    const failureFor = (
+        entry: ConversationEntry | undefined,
+    ): ConversationEntryFailureProps | undefined => {
+        if (entry?.kind !== "notice" || entry.variant === "compute" || entry.failure === undefined)
+            return undefined;
+        const current = entry.id === currentFailureId;
+        const key = rowExpansionKey(entry);
+        const actions = props.failureActions;
+        const target = failureTargets.get(key) ?? (current ? failurePreview?.target : undefined);
+        return {
+            current,
+            ...(current && failurePreview?.menu ? { previewMenu: failurePreview.menu } : {}),
+            ...(target === undefined ? {} : { target }),
+            ...((clock) => (clock ? { clock } : {}))(
+                props.failureClock ?? (props.now === undefined ? undefined : { now: props.now }),
+            ),
+            ...(current && actions?.onRetry ? { onRetry: () => actions.onRetry!(entry.id) } : {}),
+            ...(current && actions?.onNewChat
+                ? { onNewChat: () => actions.onNewChat!(entry.id) }
+                : {}),
+            ...(current && actions?.onSwitch
+                ? {
+                      onSwitch: (fallback: ConversationFailureFallback) =>
+                          actions.onSwitch!(entry.id, fallback),
+                  }
+                : {}),
+            onTargetChange: (picked: string) =>
+                setFailureTargets((targets) => {
+                    if (targets.get(key) === picked) return targets;
+                    const next = new Map(targets);
+                    next.set(key, picked);
+                    return next;
+                }),
+        };
+    };
     const awaitingInput = transcript.some(
         (entry) =>
             entry.kind === "request" &&
@@ -559,7 +673,13 @@ export function ConversationView(props: ConversationViewProps) {
                 .filter(Boolean)
                 .join(" ")}
             elapsedMs={delegating ? props.delegatedElapsedMs : props.elapsedMs}
-            label={delegating ? undefined : props.workingLabel}
+            label={
+                delegating
+                    ? undefined
+                    : props.retrying
+                      ? conversationRetryingLabel(props.retrying)
+                      : props.workingLabel
+            }
             /* The phase word is the one label whose changes are the whole
                point of the row, so it retypes wherever the rows above it
                retype verbs. */
@@ -707,6 +827,13 @@ export function ConversationView(props: ConversationViewProps) {
                     estimateDependencies={[
                         props.errorAssistance,
                         props.errorAssistanceUnavailable,
+                        // Which actions a card offers sizes it; their identity does not.
+                        props.failureActions?.onRetry === undefined,
+                        props.failureActions?.onNewChat === undefined,
+                        props.failureActions?.onSwitch === undefined,
+                        props.failureClock,
+                        failureTargets,
+                        currentFailureId,
                         props.viewerId,
                         props.activityTreatment,
                         rowExpansion,
@@ -724,6 +851,10 @@ export function ConversationView(props: ConversationViewProps) {
                             {
                                 activityTreatment: props.activityTreatment,
                                 errorAssistance: errorAssistanceFor(transcript[index]),
+                                ...((failure) =>
+                                    failure ? { failure: failureRowContext(failure) } : {})(
+                                    failureFor(transcript[index]),
+                                ),
                                 expanded:
                                     transcript[index] === undefined
                                         ? false
@@ -825,6 +956,7 @@ export function ConversationView(props: ConversationViewProps) {
                                 key={entry.kind === "message" ? entry.message.id : entry.id}
                                 {...(inlinePage ? { inlinePage: inlinePage.props } : {})}
                                 errorAssistance={errorAssistanceFor(entry)}
+                                failure={failureFor(entry)}
                                 onErrorAssistanceRequest={props.onErrorAssistanceRequest}
                                 activityMotion={props.motion}
                                 activityTreatment={props.activityTreatment}

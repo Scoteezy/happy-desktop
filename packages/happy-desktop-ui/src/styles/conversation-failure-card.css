@@ -1,0 +1,185 @@
+/*
+ * ConversationFailureCard — a failed turn the client writes from its kind.
+ *
+ * It wears the error card's frame, icon and colour. The message line holds the
+ * message and its own action; one left-aligned row below holds the switch
+ * split button and Ask Chief of Staff. Every constant here is mirrored in
+ * `conversationRowHeight.ts`, which models this card without mounting it.
+ */
+
+.happy-conversation-failure-card__content {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+/* Once acted on, the record sits closer under the message than a row of buttons. */
+.happy-conversation-failure-card__content[data-resolved] {
+    gap: 6px;
+}
+
+.happy-conversation-failure-card__line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-conversation-failure-card__message {
+    flex: 0 1 auto;
+    min-width: 0;
+    min-height: 20px;
+    overflow-wrap: anywhere;
+    color: color-mix(in srgb, var(--status-error) 38%, var(--text-secondary));
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 20px;
+}
+
+/* The 28px button hangs 4px over and under the message's 20px line, so the
+   line keeps the icon's height and the button stays centred on the text. */
+.happy-conversation-failure-card__line-action {
+    margin: -4px 0;
+}
+
+/* A command with its copy button is one unbreakable box on the 20px line. */
+.happy-conversation-failure-card__code {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 20px;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.happy-conversation-failure-card__code-text {
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--input-background);
+    font-family: var(--happy-font-mono);
+    font-size: 13px;
+    line-height: 20px;
+}
+
+/* A command in an error card is the remedy, so its copy button is always shown. */
+.happy-conversation-failure-card__copy.happy-copy-button {
+    opacity: 1;
+}
+
+.happy-conversation-failure-card__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-conversation-failure-card__detail {
+    min-width: 0;
+    min-height: 20px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.happy-conversation-failure-card__resolution {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.happy-conversation-failure-card__resolution-icon {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 20px;
+}
+
+.happy-conversation-failure-card__resolution-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+/* The switch split button: one pill in two segments with a hairline between.
+   The main segment gives way first, ending its account name in an ellipsis. */
+.happy-conversation-switch {
+    display: inline-flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.happy-conversation-switch .happy-conversation-switch__main {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding-right: 10px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.happy-conversation-switch__main .happy-button__content,
+.happy-conversation-switch__main .happy-button__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.happy-conversation-switch__main .happy-button__content {
+    flex: 0 1 auto;
+}
+
+.happy-conversation-switch .happy-conversation-switch__menu {
+    width: 30px;
+    padding: 0;
+    border-left: 1px solid color-mix(in srgb, var(--surface) 35%, transparent);
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+/* Open: the chevron segment reads as pressed, the primary hover's lift doubled. */
+.happy-conversation-switch .happy-conversation-switch__menu[data-open] {
+    background-image:
+        linear-gradient(var(--button-primary-ripple), var(--button-primary-ripple)),
+        linear-gradient(var(--button-primary-ripple), var(--button-primary-ripple));
+}
+
+/* Covers the window while the list is open, so a click outside closes it and
+   nothing under it scrolls away from the button the list hangs from. */
+.happy-conversation-switch__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--happy-z-overlay) - 1);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: default;
+}
+
+/* Placed beside the button by the component once the list has a size: its
+   trailing edge on the button's, 4px above or below it. The inline offsets it
+   writes are the whole position. */
+.happy-conversation-switch__anchor {
+    position: fixed;
+    z-index: var(--happy-z-overlay);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+/* The model picker's own popup, laid out in the anchor rather than beside the pill. */
+.happy-conversation-switch__anchor .happy-conversation-switch__popup {
+    position: static;
+    width: 300px;
+    box-shadow: 0 2px 8px var(--shadow-color);
+}

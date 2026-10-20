@@ -10,6 +10,10 @@ import {
     type ConversationDiffHunk,
     type ConversationEntry,
     type ConversationError,
+    type ConversationFailure,
+    type ConversationFailureFallback,
+    type ConversationFailureProvider,
+    type ConversationFailureResolution,
     type ConversationFileDiff,
     type ConversationJson,
     type ConversationMediaItem,
@@ -215,6 +219,7 @@ function payloadEqual(left: ConversationEntry, right: ConversationEntry): boolea
             left.level === right.level &&
             left.title === right.title &&
             errorEqual(left.error, right.error) &&
+            noticeFailureEqual(left.failure, right.failure) &&
             left.source?.messageId === right.source?.messageId &&
             left.source?.runId === right.source?.runId
         );
@@ -239,6 +244,103 @@ function payloadEqual(left: ConversationEntry, right: ConversationEntry): boolea
             left.tools === right.tools
         );
     return false;
+}
+
+function failureFallbackEqual(
+    left: ConversationFailureFallback,
+    right: ConversationFailureFallback | undefined,
+): boolean {
+    return (
+        left.providerId === right?.providerId &&
+        left.providerLabel === right.providerLabel &&
+        left.modelId === right.modelId &&
+        left.modelName === right.modelName &&
+        left.usedPercent === right.usedPercent &&
+        left.usageWindow === right.usageWindow &&
+        left.group === right.group
+    );
+}
+
+function failureProviderEqual(
+    left: ConversationFailureProvider,
+    right: ConversationFailureProvider,
+): boolean {
+    return (
+        left.id === right.id &&
+        left.type === right.type &&
+        left.vendorName === right.vendorName &&
+        left.label === right.label
+    );
+}
+
+function failureResolutionEqual(
+    left: ConversationFailureResolution | undefined,
+    right: ConversationFailureResolution | undefined,
+): boolean {
+    if (left === right) return true;
+    if (!left || !right || left.action !== right.action || left.at !== right.at) return false;
+    return (
+        left.action !== "switched" ||
+        (right.action === "switched" &&
+            left.providerId === right.providerId &&
+            left.providerLabel === right.providerLabel &&
+            left.modelId === right.modelId &&
+            left.modelName === right.modelName)
+    );
+}
+
+function noticeFailureEqual(
+    left: ConversationFailure | undefined,
+    right: ConversationFailure | undefined,
+): boolean {
+    if (left === right) return true;
+    if (!left || !right) return false;
+    if (
+        left.kind !== right.kind ||
+        left.message !== right.message ||
+        left.fallbackProviders.length !== right.fallbackProviders.length ||
+        !left.fallbackProviders.every((fallback, index) =>
+            failureFallbackEqual(fallback, right.fallbackProviders[index]),
+        ) ||
+        !failureResolutionEqual(left.resolution, right.resolution)
+    )
+        return false;
+    switch (left.kind) {
+        case "signin_missing":
+            return (
+                right.kind === left.kind &&
+                failureProviderEqual(left.provider, right.provider) &&
+                left.product === right.product &&
+                left.command === right.command
+            );
+        case "usage_limit":
+            return (
+                right.kind === left.kind &&
+                failureProviderEqual(left.provider, right.provider) &&
+                left.resetsAt === right.resetsAt
+            );
+        case "no_account_available":
+            return (
+                right.kind === left.kind &&
+                left.poolName === right.poolName &&
+                left.resetsAt === right.resetsAt
+            );
+        case "rate_limited":
+        case "provider_unavailable":
+        case "network":
+        case "provider_disabled":
+            return right.kind === left.kind && failureProviderEqual(left.provider, right.provider);
+        case "context_too_long":
+            return (
+                right.kind === left.kind &&
+                left.modelId === right.modelId &&
+                left.modelName === right.modelName
+            );
+        case "internal":
+            return right.kind === left.kind && left.detail === right.detail;
+        case "unknown":
+            return true;
+    }
 }
 
 function errorEqual(

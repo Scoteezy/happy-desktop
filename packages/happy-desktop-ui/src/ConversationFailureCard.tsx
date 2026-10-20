@@ -1,0 +1,208 @@
+import { type CSSProperties } from "react";
+import type {
+    ConversationErrorAssistance,
+    ConversationFailure,
+    ConversationFailureFallback,
+} from "happy-desktop-state";
+import { Button } from "./Button";
+import { CopyButton } from "./CopyButton";
+import { ConversationSwitchButton } from "./ConversationSwitchButton";
+import {
+    conversationFailureCardLayout,
+    conversationFailureLineAction,
+    conversationFailureMessage,
+    type ConversationFailureClock,
+} from "./conversationFailureText";
+import { Ionicon, Octicon } from "./vectorIcons/VectorIcon";
+
+/** Without the owner's clock a reset time always carries its date. */
+const NO_CLOCK: ConversationFailureClock = {};
+
+/** Which of a failure card's actions its owner can carry out. */
+export interface ConversationFailureActions {
+    readonly onRetry?: () => void;
+    readonly onNewChat?: () => void;
+    readonly onSwitch?: (target: ConversationFailureFallback) => void;
+}
+
+export interface ConversationFailureCardProps extends ConversationFailureActions {
+    readonly className?: string;
+    readonly "data-testid"?: string;
+    readonly style?: CSSProperties;
+    readonly failure: ConversationFailure;
+    /** Absent tells the time on the viewer's clock at render. */
+    readonly clock?: ConversationFailureClock;
+    /**
+     * Whether the card still offers its actions. A failure the conversation has
+     * since moved past keeps its message, and offers only Ask Chief of Staff.
+     */
+    readonly current: boolean;
+    /** The picked switch target's key; the first target when absent. */
+    readonly target?: string;
+    readonly onTargetChange?: (key: string) => void;
+    readonly assistance?: ConversationErrorAssistance;
+    readonly onAssistanceRequest?: () => void;
+    /** Seeds the switch list open, and the row drawn as hovered, for a blueprint or test. */
+    readonly previewMenu?: { readonly active?: string };
+}
+
+/**
+ * A failed turn, written by the client from the failure's kind: the message
+ * with its own action after it, then one left-aligned row with the switch
+ * split button and Ask Chief of Staff. Exactly one button is primary: the
+ * switch when it is offered, otherwise the message's own action. Once acted
+ * on, the card stays in the transcript and records what was done.
+ */
+export function ConversationFailureCard(props: ConversationFailureCardProps) {
+    const clock = props.clock ?? NO_CLOCK;
+    const layout = conversationFailureCardLayout(props.failure, {
+        current: props.current,
+        actions: {
+            retry: props.onRetry !== undefined,
+            newChat: props.onNewChat !== undefined,
+            switch: props.onSwitch !== undefined,
+        },
+        ...(props.assistance ? { assistance: props.assistance } : {}),
+    });
+    const lineAction = conversationFailureLineAction(props.failure);
+    const actionsRow = layout.switchTargets !== undefined || layout.assistance !== undefined;
+    return (
+        <div
+            className={[
+                "happy-conversation-error-card happy-conversation-failure-card",
+                props.className,
+            ]
+                .filter(Boolean)
+                .join(" ")}
+            data-happy-desktop-ui="conversation-error-card"
+            data-kind={props.failure.kind}
+            data-testid={props["data-testid"]}
+            data-tone="error"
+            role="alert"
+            style={props.style}
+        >
+            <div
+                className="happy-conversation-error-card__bubble"
+                data-happy-desktop-ui="conversation-error-bubble"
+            >
+                <span
+                    aria-hidden="true"
+                    className="happy-conversation-error-card__icon"
+                    data-happy-desktop-ui="conversation-error-icon"
+                >
+                    <Octicon name="alert-fill" size={14} />
+                </span>
+                <div
+                    className="happy-conversation-failure-card__content"
+                    data-happy-desktop-ui="conversation-error-content"
+                    data-resolved={layout.resolution === undefined ? undefined : ""}
+                >
+                    <div
+                        className="happy-conversation-failure-card__line"
+                        data-happy-desktop-ui="conversation-failure-line"
+                    >
+                        <span
+                            className="happy-conversation-failure-card__message"
+                            data-happy-desktop-ui="conversation-error-reason"
+                        >
+                            {conversationFailureMessage(props.failure, clock).map(
+                                (segment, index) =>
+                                    segment.kind === "text" ? (
+                                        segment.text
+                                    ) : (
+                                        <span
+                                            className="happy-conversation-failure-card__code"
+                                            data-happy-desktop-ui="conversation-failure-code"
+                                            key={`code:${String(index)}`}
+                                        >
+                                            <code className="happy-conversation-failure-card__code-text">
+                                                {segment.text}
+                                            </code>
+                                            <CopyButton
+                                                className="happy-conversation-failure-card__copy"
+                                                label={`Copy ${segment.text}`}
+                                                text={segment.text}
+                                            />
+                                        </span>
+                                    ),
+                            )}
+                        </span>
+                        {layout.lineAction ? (
+                            <Button
+                                className="happy-conversation-failure-card__line-action"
+                                data-happy-desktop-ui="conversation-failure-line-action"
+                                onClick={lineAction === "retry" ? props.onRetry : props.onNewChat}
+                                size="small"
+                                variant={layout.lineAction.primary ? "primary" : "secondary"}
+                            >
+                                {layout.lineAction.label}
+                            </Button>
+                        ) : null}
+                    </div>
+                    {layout.resolution !== undefined ? (
+                        <span
+                            className="happy-conversation-failure-card__resolution"
+                            data-happy-desktop-ui="conversation-failure-resolution"
+                        >
+                            <span
+                                aria-hidden="true"
+                                className="happy-conversation-failure-card__resolution-icon"
+                            >
+                                {props.failure.resolution?.action === "switched" ? (
+                                    <Octicon name="arrow-switch" size={14} />
+                                ) : (
+                                    <Ionicon name="refresh-outline" size={14} />
+                                )}
+                            </span>
+                            <span className="happy-conversation-failure-card__resolution-text">
+                                {layout.resolution}
+                            </span>
+                        </span>
+                    ) : null}
+                    {actionsRow ? (
+                        <div
+                            className="happy-conversation-failure-card__actions"
+                            data-happy-desktop-ui="conversation-failure-actions"
+                        >
+                            {layout.switchTargets ? (
+                                <ConversationSwitchButton
+                                    {...(props.previewMenu
+                                        ? {
+                                              defaultOpen: true,
+                                              ...(props.previewMenu.active === undefined
+                                                  ? {}
+                                                  : { previewActive: props.previewMenu.active }),
+                                          }
+                                        : {})}
+                                    onSwitch={props.onSwitch}
+                                    onTargetChange={props.onTargetChange}
+                                    target={props.target}
+                                    targets={layout.switchTargets}
+                                />
+                            ) : null}
+                            {layout.assistance ? (
+                                <Button
+                                    className="happy-conversation-failure-card__ask"
+                                    data-happy-desktop-ui="conversation-failure-ask"
+                                    disabled={
+                                        layout.assistance.disabled || !props.onAssistanceRequest
+                                    }
+                                    onClick={props.onAssistanceRequest}
+                                    size="small"
+                                    variant="secondary"
+                                >
+                                    {layout.assistance.label}
+                                </Button>
+                            ) : null}
+                        </div>
+                    ) : null}
+                    {layout.assistance?.detail ? (
+                        <span className="happy-conversation-failure-card__detail">
+                            {layout.assistance.detail}
+                        </span>
+                    ) : null}
+                </div>
+            </div>
+        </div>
+    );
+}

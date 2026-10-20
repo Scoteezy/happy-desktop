@@ -8310,6 +8310,7 @@ function HappyAgentConversationBody(props: {
                 groupName={props.groupName}
                 {...(props.notice === undefined ? {} : { notice: props.notice })}
                 now={props.now}
+                {...(props.onCreate === undefined ? {} : { onNewChat: props.onCreate })}
                 onChatSelect={props.onChatSelect}
                 onFileOpen={props.onFileOpen}
                 onFileLinkOpen={props.onFileLinkOpen}
@@ -8472,6 +8473,8 @@ function HappyAgentConversationSurface(props: {
     /** What to say above every message here; see `HappyAgentConversationBody`. */
     notice?: ReactNode;
     now: number;
+    /** Starts a fresh session here, offered by a conversation too long to continue. */
+    onNewChat?: () => void;
     onChatSelect: HappyAgentWorkspaceSurfaceProps["onChatSelect"];
     /** Opens a file the transcript names, in the panel beside it, at the lines it named. */
     onFileOpen: FileOpenHandler;
@@ -8653,6 +8656,12 @@ function HappyAgentConversationSurface(props: {
             onErrorAssistanceRequest={(entryId) => {
                 if (props.happyAgentOnline()) workspace.errorAssistanceRequest(entryId);
             }}
+            /* Retry and switch-and-continue arrive with the client package that
+               declares them; until then a failure card offers what is wired. */
+            {...(props.onNewChat === undefined
+                ? {}
+                : { failureActions: { onNewChat: () => props.onNewChat!() } })}
+            {...(conversation.retrying === undefined ? {} : { retrying: conversation.retrying })}
             loading={!conversation.ready}
             {...(props.notice === undefined ? {} : { notice: props.notice })}
             scrollPosition={conversation.scrollPosition}

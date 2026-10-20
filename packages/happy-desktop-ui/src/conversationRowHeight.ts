@@ -18,6 +18,8 @@ import {
 } from "./conversationMessageGrouped";
 import {
     asideTimeWidth,
+    controlLabelNaturalWidth,
+    errorRichTextHeight,
     errorTextHeight,
     markdownBodyHeight,
     plainTextHeight,
@@ -43,6 +45,13 @@ import { agentTraceMetaStats, agentTraceMetaTitle } from "./agentTraceMeta";
 import { conversationErrorTitle } from "./conversationErrorTitle";
 import { conversationErrorAssistanceText } from "./conversationErrorAssistanceText";
 import { conversationErrorDetails } from "./conversationErrorDetails";
+import {
+    conversationFailureCardLayout,
+    conversationFailureMessage,
+    type ConversationFailureClock,
+    conversationFailureSwitchLabel,
+    conversationFailureTargetKey,
+} from "./conversationFailureText";
 import {
     MEDIA_SINGLE_MAX_W,
     MESSAGE_MEDIA_MAX,
@@ -86,6 +95,8 @@ export type ConversationRowContext = {
     /** A live status footer follows the final agent message. */
     readonly liveStatus?: boolean;
     readonly errorAssistance?: ConversationErrorAssistance;
+    /** What a failure card on this row offers, which sets the buttons it lays out. */
+    readonly failure?: ConversationFailureRowContext;
     /**
      * What the Happy references in message bodies read as now. A reference is
      * laid out as its live title, the words the reader sees, so the row is
@@ -98,6 +109,26 @@ export type ConversationRowContext = {
      */
     readonly inlinePage?: InlinePageGeometry;
 };
+export type ConversationFailureRowContext = {
+    /** The conversation has not moved past this failure, so its actions are offered. */
+    readonly current: boolean;
+    readonly actions: {
+        readonly retry: boolean;
+        readonly newChat: boolean;
+        readonly switch: boolean;
+    };
+    /** The picked switch target's key, which sets the split button's label. */
+    readonly target?: string;
+    readonly clock?: ConversationFailureClock;
+};
+/** A failure card whose owner offers nothing: its message and nothing else. */
+const FAILURE_ROW_INERT: ConversationFailureRowContext = {
+    current: false,
+    actions: { retry: false, newChat: false, switch: false },
+};
+function smallButtonWidth(label: string, cache: MessageTextLayoutCache | undefined): number {
+    return controlLabelNaturalWidth(label, 12, 700, 0.12, cache) + SMALL_BUTTON_CHROME;
+}
 type CachedRowHeight = { readonly value: number | undefined };
 type Dictionary<T> = Record<string, T | undefined>;
 type CachedEntryHeights = {
@@ -261,6 +292,25 @@ const NOTICE_INSET = 50;
 const ERROR_TEXT_INSET = 22;
 /** Error card: 6px vertical padding per side, plus 4px between heading and reason. */
 const ERROR_TEXT_CHROME = 16;
+/** Failure card: 6px vertical padding per side. */
+const FAILURE_CHROME = 12;
+/** Failure card: between the message line and the button row, and below that row. */
+const FAILURE_SECTION_GAP = 12;
+/** Failure card: between the message line and the record of what was done. */
+const FAILURE_RESOLUTION_GAP = 6;
+/** `.happy-conversation-failure-card__line` gap before the line's own button. */
+const FAILURE_LINE_GAP = 8;
+/** A command box: 5px padding per side, the 2px gap and the 20px copy button. */
+const FAILURE_CODE_EXTRA = 32;
+/** The resolution record's 14px icon and its 6px gap. */
+const FAILURE_RESOLUTION_INSET = 20;
+/** Small Button: 28px tall, 10px padding and a 1px border per side, 12/700 at 0.01em. */
+const SMALL_BUTTON_HEIGHT = 28;
+const SMALL_BUTTON_CHROME = 22;
+/** The split button's chevron segment. */
+const SWITCH_MENU_WIDTH = 30;
+/** `.happy-conversation-failure-card__actions` gap, across and between wrapped lines. */
+const FAILURE_ACTIONS_GAP = 8;
 /* A steering notice keeps the notice row's 16px lead but closes to 4px above the
    quote it introduces; the quote itself wraps at 560px, inset 20px per side, and
    closes the row with the notice's usual 16px. */
@@ -736,6 +786,93 @@ export function conversationRowHeight(
             context.surface === "conversation" && conversationAgentRowStartsGroup(entries, index)
                 ? ACTIVITY_LEAD_CHROME
                 : 0;
+        if (entry.failure !== undefined) {
+            const failure = entry.failure;
+            const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
+            const options = context.failure ?? FAILURE_ROW_INERT;
+            const layout = conversationFailureCardLayout(failure, {
+                current: options.current,
+                actions: options.actions,
+                ...(context.errorAssistance ? { assistance: context.errorAssistance } : {}),
+            });
+            const segments = conversationFailureMessage(failure, options.clock ?? {});
+            const target =
+                layout.switchTargets?.find(
+                    (candidate) => conversationFailureTargetKey(candidate) === options.target,
+                ) ?? layout.switchTargets?.[0];
+            const switchLabel = target ? conversationFailureSwitchLabel(target) : "";
+            return rowHeightCached(
+                cache,
+                entry,
+                [
+                    "failure",
+                    String(width),
+                    String(lead),
+                    segments.map((segment) => `${segment.kind}:${segment.text}`).join("\u0000"),
+                    layout.lineAction?.label ?? "",
+                    switchLabel,
+                    layout.assistance?.label ?? "",
+                    layout.assistance?.detail ?? "",
+                    layout.resolution ?? "",
+                ].join(":"),
+                () => {
+                    const lineAction = layout.lineAction
+                        ? FAILURE_LINE_GAP + smallButtonWidth(layout.lineAction.label, cache?.text)
+                        : 0;
+                    let height =
+                        lead +
+                        FAILURE_CHROME +
+                        errorRichTextHeight(
+                            segments.map((segment) =>
+                                segment.kind === "code"
+                                    ? { code: segment.text, extraWidth: FAILURE_CODE_EXTRA }
+                                    : { text: segment.text },
+                            ),
+                            measure - lineAction,
+                            cache?.text,
+                        );
+                    if (layout.resolution !== undefined)
+                        return (
+                            height +
+                            FAILURE_RESOLUTION_GAP +
+                            errorTextHeight(
+                                layout.resolution,
+                                measure - FAILURE_RESOLUTION_INSET,
+                                cache?.text,
+                            )
+                        );
+                    /* The row wraps like flex does: each button joins the line
+                       while it fits, and one wider than the line takes a line of
+                       its own, where the split button's main segment gives way. */
+                    const buttons = [
+                        ...(target
+                            ? [smallButtonWidth(switchLabel, cache?.text) + SWITCH_MENU_WIDTH]
+                            : []),
+                        ...(layout.assistance
+                            ? [smallButtonWidth(layout.assistance.label, cache?.text)]
+                            : []),
+                    ];
+                    let lines = 0;
+                    let used = 0;
+                    for (const button of buttons) {
+                        if (lines === 0 || used + FAILURE_ACTIONS_GAP + button > measure + 1 / 64) {
+                            lines += 1;
+                            used = button;
+                        } else used += FAILURE_ACTIONS_GAP + button;
+                    }
+                    if (lines > 0)
+                        height +=
+                            FAILURE_SECTION_GAP +
+                            lines * SMALL_BUTTON_HEIGHT +
+                            (lines - 1) * FAILURE_ACTIONS_GAP;
+                    if (layout.assistance?.detail)
+                        height +=
+                            FAILURE_SECTION_GAP +
+                            errorTextHeight(layout.assistance.detail, measure, cache?.text);
+                    return height;
+                },
+            );
+        }
         if (entry.level === "error" || entry.retry !== undefined) {
             const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
             const assistance =
