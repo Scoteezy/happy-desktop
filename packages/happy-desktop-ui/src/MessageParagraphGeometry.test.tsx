@@ -4,7 +4,7 @@ import { Message } from "./Message";
 import { markdownBodyHeight, messageTextLayoutCacheCreate } from "./messageTextLayout";
 import { createRenderer } from "./testing";
 
-it("matches undecorated paragraph wrapping at every pixel and on width round trips", async () => {
+it("matches text-node paragraph wrapping at every pixel and on width round trips", async () => {
     const sources = [
         "I found the mismatch in the message height model. The browser wraps the long identifier, but the model reserves one line.",
         "I’ll make the renderer and model agree, then verify it at the normal and narrow desktop widths. ".repeat(
@@ -17,6 +17,18 @@ it("matches undecorated paragraph wrapping at every pixel and on width round tri
         "日本語の文章と English words, 中文内容 그리고 한국어 🙂. ".repeat(8),
         "A nonbreaking\u00a0space and supercalifragilisticexpialidocious".repeat(8),
         "longidentifier".repeat(30),
+        "Continuous prose around **several bold words and punctuation**, then more prose and *several italic words*. ".repeat(
+            5,
+        ),
+        "A text run followed by (`inline code`) and [a long link label with multiple words](https://example.com/path), then plain text. ".repeat(
+            4,
+        ),
+        "A prefix around **nested *mixed emphasis* words**; joining**bold**suffix and more prose. ".repeat(
+            5,
+        ),
+        "A plain run with **strong words** followed by trailing spaces   \nand another line with `code`. ".repeat(
+            5,
+        ),
     ];
     const view = createRenderer();
     for (const source of sources)

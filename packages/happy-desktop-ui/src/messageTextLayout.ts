@@ -639,6 +639,13 @@ function markdownInlineFragmentItems(
     }
     return items;
 }
+/** Preserve the last token as an attachment/rounding boundary, while preparing
+ * the rest of a same-font text node together. Trailing whitespace stays its own
+ * item, as it was in the word-wise path, so it never receives font rounding. */
+function markdownTextChunks(text: string): string[] {
+    const match = /^(.*\S)(\s+)$/su.exec(text) ?? /^([\s\S]*\s)(\S+)$/u.exec(text);
+    return match ? [match[1]!, match[2]!] : [text];
+}
 function markdownInlineItemsAppend(
     node: MarkdownPhrasing,
     style: MarkdownInlineStyle,
@@ -663,7 +670,11 @@ function markdownInlineItemsAppend(
             bindDecoratedPunctuation,
         );
         if (text.length === 0) return;
-        const tokens = atomic ? [text] : (text.match(/\s*\S+|\s+$/gu) ?? [text]);
+        const tokens = atomic
+            ? [text]
+            : fragmentLong
+              ? (text.match(/\s*\S+|\s+$/gu) ?? [text])
+              : markdownTextChunks(text);
         const itemStart = current().length;
         for (const token of tokens) {
             const match = /^(\s*)(\S+)$/u.exec(token);
@@ -1001,33 +1012,6 @@ function markdownInlineHeight(
         suffixText.length === 0
     )
         return 0;
-    const only = children.length === 1 ? children[0] : undefined;
-    if (
-        only?.type === "text" &&
-        trailingExtraWidth === 0 &&
-        !task &&
-        suffixText.length === 0 &&
-        !tableCell
-    ) {
-        /* A single undecorated text node has no internal font/chrome boundary.
-         * Prepare its prose together instead of allocating one rich run per word.
-         * Keep the final token separate: Blink's shaped-run rounding belongs only
-         * at the end of the node, not on every wrapped fragment of the prose. */
-        const font = markdownInlineFont(style);
-        const text = inlineBreaksMark(only.value);
-        const match = /^([\s\S]*\s)(\S+)$/u.exec(text);
-        const items: MarkdownInlineItem[] = match
-            ? [
-                  { font, text: match[1]! },
-                  { font, text: match[2]! },
-              ]
-            : [{ font, text }];
-        if (!WEBKIT_INLINE_SLICE && !GECKO_INLINE_SLICE && text.trim().length > 0) {
-            const width = naturalTextWidth(text, font, cache);
-            items[items.length - 1]!.extraWidth = Math.ceil(width * 64) / 64 - width;
-        }
-        return richItemsHeight(items, lineHeight, measure, cache);
-    }
     const runs = markdownInlineRuns(
         children,
         style,
