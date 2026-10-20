@@ -49,6 +49,11 @@ describe("artifact network addresses", () => {
             "2002:7f00:1::",
             "2001:0:4136:e378:8000:63bf:3fff:fdd2",
             "2001:db8::1",
+            "2001:2::1",
+            "3fff::1",
+            "4000::1",
+            "8000::1",
+            "2002:0808:0808::1",
             "not an address",
         ])
             expect(artifactAddressPublic(address), address).toBe(false);
@@ -64,7 +69,6 @@ describe("artifact network addresses", () => {
             "2a00:1450:4001:81c::200e",
             "::ffff:8.8.8.8",
             "64:ff9b::808:808",
-            "2002:0808:0808::1",
         ])
             expect(artifactAddressPublic(address), address).toBe(true);
     });

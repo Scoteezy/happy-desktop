@@ -8,8 +8,8 @@ import { artifactSiteScheme } from "./artifactSite";
 /**
  * Every address range an artifact page may not reach: this machine, the local
  * network it sits on, and the ranges that only ever name one of those or
- * nothing at all. An IPv6 address that embeds an IPv4 one is judged by the
- * address it embeds, so a mapped or translated loopback is still loopback.
+ * nothing at all, for IPv4. IPv6 is admitted by range instead; see
+ * `artifactAddressPublic`.
  */
 const refusedAddresses = (() => {
     const list = new BlockList();
@@ -31,15 +31,6 @@ const refusedAddresses = (() => {
         ["240.0.0.0", 4],
     ] as const)
         list.addSubnet(network, prefix, "ipv4");
-    for (const [network, prefix] of [
-        ["100::", 64],
-        ["2001:db8::", 32],
-        ["fc00::", 7],
-        ["fe80::", 10],
-        ["fec0::", 10],
-        ["ff00::", 8],
-    ] as const)
-        list.addSubnet(network, prefix, "ipv6");
     return list;
 })();
 
@@ -72,22 +63,38 @@ function ipv6Bytes(address: string): number[] {
 }
 
 /**
- * The IPv4 address an IPv6 one stands for — mapped, compatible, NAT64, or
- * 6to4 — or `null` for a range that hides its destination and is refused whole.
+ * IPv6 that is public only by being an IPv4 address in disguise — mapped,
+ * translated (RFC 6145), or the well-known NAT64 prefix — is judged by that
+ * IPv4 address. Every other IPv6 address must be global unicast outside the
+ * special-purpose ranges; anything else, including 6to4, Teredo, and
+ * IPv4-compatible addresses, is refused.
  */
-function ipv6Embedded(bytes: readonly number[]): string | null | undefined {
+const ipv6SpecialPurpose = (() => {
+    const list = new BlockList();
+    for (const [network, prefix] of [
+        ["2001::", 23],
+        ["2001:db8::", 32],
+        ["2002::", 16],
+        ["3fff::", 20],
+    ] as const)
+        list.addSubnet(network, prefix, "ipv6");
+    return list;
+})();
+
+/** The IPv4 address an IPv6 one carries as mapped, translated, or well-known NAT64. */
+function ipv6Embedded(bytes: readonly number[]): string | undefined {
     const zero = (from: number, to: number) => bytes.slice(from, to).every((value) => value === 0);
-    const quad = (at: number) => bytes.slice(at, at + 4).join(".");
-    if (zero(0, 10) && bytes[10] === 255 && bytes[11] === 255) return quad(12);
-    // IPv4-translated (RFC 6145), ::ffff:0:a.b.c.d.
-    if (zero(0, 8) && bytes[8] === 255 && bytes[9] === 255 && zero(10, 12)) return quad(12);
-    if (zero(0, 12)) return quad(12);
-    const nat64 = bytes[0] === 0 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b;
-    if (nat64 && zero(4, 12)) return quad(12);
-    // Local-use NAT64 and Teredo carry an address this check cannot see.
-    if (nat64 && bytes[4] === 0 && bytes[5] === 1) return null;
-    if (bytes[0] === 0x20 && bytes[1] === 0x01 && zero(2, 4)) return null;
-    if (bytes[0] === 0x20 && bytes[1] === 0x02) return quad(2);
+    const quad = bytes.slice(12, 16).join(".");
+    if (zero(0, 10) && bytes[10] === 255 && bytes[11] === 255) return quad;
+    if (zero(0, 8) && bytes[8] === 255 && bytes[9] === 255 && zero(10, 12)) return quad;
+    if (
+        bytes[0] === 0 &&
+        bytes[1] === 0x64 &&
+        bytes[2] === 0xff &&
+        bytes[3] === 0x9b &&
+        zero(4, 12)
+    )
+        return quad;
     return undefined;
 }
 
@@ -96,10 +103,11 @@ export function artifactAddressPublic(address: string): boolean {
     const family = isIP(address);
     if (family === 4) return !refusedAddresses.check(address, "ipv4");
     if (family !== 6) return false;
-    const embedded = ipv6Embedded(ipv6Bytes(address));
-    if (embedded === null) return false;
+    const bytes = ipv6Bytes(address);
+    const embedded = ipv6Embedded(bytes);
     if (embedded !== undefined) return !refusedAddresses.check(embedded, "ipv4");
-    return !refusedAddresses.check(address.replace(/%.*$/u, ""), "ipv6");
+    const unzoned = address.replace(/%.*$/u, "");
+    return (bytes[0]! & 0xe0) === 0x20 && !ipv6SpecialPurpose.check(unzoned, "ipv6");
 }
 
 /**

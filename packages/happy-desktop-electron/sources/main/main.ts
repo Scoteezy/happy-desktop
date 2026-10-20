@@ -925,10 +925,6 @@ function browserGuestAttach(window: BrowserWindow): void {
         }
         browser.register(guest);
         guest.setUserAgent(guest.session.getUserAgent());
-        // The agent proxy carries TCP only. Without this a page's WebRTC sends
-        // UDP straight from this computer and lists its local addresses; the
-        // guest is still on about:blank here, so no page runs before it holds.
-        guest.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
         guest.setWindowOpenHandler(({ url }) => {
             if (browser.popupAllowed(guest, url)) browserPopupPublish(window, url, guest.id);
             return { action: "deny" };
