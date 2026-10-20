@@ -120,6 +120,61 @@ describe("happyAgentFailureProject", () => {
         ).toEqual({ kind: "unknown", message: "Paused by the host.", fallbackProviders: [] });
     });
 
+    it("projects a known kind missing a field its card reads as unknown, never guessing it", () => {
+        const malformed = (fields: Record<string, unknown>) =>
+            happyAgentFailureProject(
+                {
+                    message: "The daemon's own sentence.",
+                    fallbackProviders: [],
+                    ...fields,
+                } as unknown as HappyAgentMessageFailure,
+                MODELS,
+            );
+        const provider = usageLimit.kind === "usage_limit" ? usageLimit.provider : undefined;
+        for (const fields of [
+            // usage_limit without resetsAt must not read as "no reset time".
+            { kind: "usage_limit", provider },
+            { kind: "usage_limit", provider, resetsAt: "2026-10-19T22:40:00Z" },
+            { kind: "usage_limit", resetsAt: null },
+            { kind: "signin_missing", product: "Claude Code", command: "claude auth login" },
+            { kind: "signin_missing", provider, command: "claude auth login" },
+            { kind: "signin_missing", provider: { id: "claude" }, product: null, command: null },
+            { kind: "no_account_available", resetsAt: null },
+            { kind: "no_account_available", poolName: "Claude pool" },
+            { kind: "rate_limited" },
+            { kind: "context_too_long" },
+            { kind: "internal" },
+        ])
+            expect(malformed(fields), JSON.stringify(fields)).toEqual({
+                kind: "unknown",
+                message: "The daemon's own sentence.",
+                fallbackProviders: [],
+            });
+        // A well-formed one with a null reset time stays known.
+        expect(malformed({ kind: "usage_limit", provider, resetsAt: null })).toMatchObject({
+            kind: "usage_limit",
+            resetsAt: null,
+        });
+    });
+
+    it("drops a switch target it could not name, and an unnamed switch reads as handled", () => {
+        const projected = happyAgentFailureProject(
+            {
+                ...usageLimit,
+                fallbackProviders: [
+                    usageLimit.fallbackProviders[0]!,
+                    { providerId: "codex", modelId: "openai/gpt-6.1-sol" },
+                ] as never,
+                resolution: { action: "switched", at: 3 } as never,
+            },
+            MODELS,
+        );
+        expect(projected.fallbackProviders.map((target) => target.providerId)).toEqual([
+            "claude_work",
+        ]);
+        expect(projected.resolution).toEqual({ action: "handled", at: 3 });
+    });
+
     it("names the overflowed model, falling back to its ID", () => {
         const tooLong: HappyAgentMessageFailure = {
             kind: "context_too_long",

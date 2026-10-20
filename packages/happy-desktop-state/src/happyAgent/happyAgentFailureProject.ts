@@ -92,11 +92,67 @@ const KNOWN_KINDS: ReadonlySet<string> = new Set<Exclude<ConversationFailureKind
     "internal",
 ]);
 
-/** The package's own `isKnownMessageFailure`, until it is published. */
+/*
+ * The daemon is another process, so a known kind is trusted only when every
+ * field its card reads is really there. A kind name alone is not enough: a
+ * `usage_limit` without `resetsAt` would otherwise read as one with no reset
+ * time. Anything malformed is projected as `unknown` and shows `message`.
+ */
+type Fields = Readonly<Record<string, unknown>>;
+const isString = (value: unknown): value is string => typeof value === "string";
+const isStringOrNull = (value: unknown) => value === null || isString(value);
+const isTimeOrNull = (value: unknown) =>
+    value === null || (typeof value === "number" && Number.isFinite(value));
+const hasProvider = (fields: Fields) => {
+    const provider = fields["provider"];
+    if (typeof provider !== "object" || provider === null) return false;
+    const named = provider as Fields;
+    return (
+        isString(named["id"]) &&
+        isString(named["type"]) &&
+        isString(named["vendorName"]) &&
+        isString(named["label"])
+    );
+};
+
+/** Whether a failure's kind is known and every field that kind's card reads is present. */
 function knownMessageFailure(
     failure: HappyAgentMessageFailure,
 ): failure is HappyAgentKnownMessageFailure {
-    return KNOWN_KINDS.has(failure.kind);
+    if (!KNOWN_KINDS.has(failure.kind)) return false;
+    const fields = failure as unknown as Fields;
+    switch (failure.kind) {
+        case "signin_missing":
+            return (
+                hasProvider(fields) &&
+                isStringOrNull(fields["product"]) &&
+                isStringOrNull(fields["command"])
+            );
+        case "usage_limit":
+            return hasProvider(fields) && isTimeOrNull(fields["resetsAt"]);
+        case "no_account_available":
+            return isString(fields["poolName"]) && isTimeOrNull(fields["resetsAt"]);
+        case "context_too_long":
+            return isString(fields["modelId"]);
+        case "internal":
+            return isString(fields["detail"]);
+        default:
+            return hasProvider(fields);
+    }
+}
+
+/** A switch target is offered only when everything it switches to is named. */
+function fallbackValid(fallback: HappyAgentMessageFailureFallback): boolean {
+    const fields = fallback as unknown as Fields;
+    const used = fields["usedPercent"];
+    return (
+        isString(fields["providerId"]) &&
+        isString(fields["providerLabel"]) &&
+        isString(fields["modelId"]) &&
+        isString(fields["group"]) &&
+        (used === null || (typeof used === "number" && Number.isFinite(used))) &&
+        isStringOrNull(fields["usageWindow"])
+    );
 }
 
 function modelNameOf(models: readonly HappyAgentModel[], modelId: string): string | undefined {
@@ -109,7 +165,12 @@ function resolutionProject(
     models: readonly HappyAgentModel[],
 ): ConversationFailureResolution {
     if (resolution.action === "retried") return { action: "retried", at: resolution.at };
-    if (resolution.action === "switched" && "providerId" in resolution) {
+    if (
+        resolution.action === "switched" &&
+        "providerId" in resolution &&
+        isString(resolution.providerId) &&
+        isString(resolution.modelId)
+    ) {
         const modelName = modelNameOf(models, resolution.modelId);
         return {
             action: "switched",
@@ -135,8 +196,11 @@ export function happyAgentFailureProject(
     failure: HappyAgentMessageFailure,
     models: readonly HappyAgentModel[],
 ): ConversationFailure {
-    const fallbackProviders = failure.fallbackProviders.map(
-        (fallback): ConversationFailureFallback => {
+    const fallbackProviders = (
+        Array.isArray(failure.fallbackProviders) ? failure.fallbackProviders : []
+    )
+        .filter(fallbackValid)
+        .map((fallback): ConversationFailureFallback => {
             const modelName = modelNameOf(models, fallback.modelId);
             return {
                 providerId: fallback.providerId,
@@ -147,8 +211,7 @@ export function happyAgentFailureProject(
                 usageWindow: fallback.usageWindow,
                 group: fallback.group,
             };
-        },
-    );
+        });
     const base = {
         message: failure.message,
         fallbackProviders,
