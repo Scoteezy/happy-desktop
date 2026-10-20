@@ -3038,8 +3038,7 @@ export function Sidebar(props: SidebarProps) {
                                                         (dropped?.listId === section.id &&
                                                             (dropped.carried
                                                                 ? dropped.itemIds.includes(item.id)
-                                                                : key ===
-                                                                  dropped.key))
+                                                                : key === dropped.key))
                                                     }
                                                     grabbed={held}
                                                     key={item.id}
