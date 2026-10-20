@@ -16,6 +16,7 @@
 .system-monitor__viewport {
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
 }
 .system-monitor__content {
     display: flex;
@@ -215,6 +216,7 @@
 }
 .system-monitor__process-panel {
     display: flex;
+    flex: none;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
@@ -222,7 +224,7 @@
     color: var(--text);
     border: 1px solid var(--divider);
     border-radius: 10px;
-    overflow: hidden;
+    container-type: inline-size;
 }
 .system-monitor__process-toolbar {
     display: flex;
@@ -249,20 +251,19 @@
     font-size: 11px;
     line-height: 16px;
 }
-.system-monitor__process-scroll {
-    display: flex;
-    flex: 0 1 auto;
-    min-height: 0;
-    max-height: 444px;
-}
 .system-monitor__process-table {
     display: flex;
     flex-direction: column;
-    min-width: 916px;
+    min-width: 0;
 }
 .system-monitor__process-table [role="rowgroup"] {
     display: flex;
     flex-direction: column;
+}
+.system-monitor__process-header {
+    position: sticky;
+    top: 0;
+    z-index: 2;
 }
 .system-monitor__process-row {
     display: flex;
@@ -297,7 +298,6 @@
 }
 .system-monitor__process-name {
     flex: 1;
-    min-width: 164px;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -315,6 +315,27 @@
 .system-monitor__process-memory {
     width: 112px;
     font-variant-numeric: tabular-nums;
+}
+@container (max-width: 920px) {
+    .system-monitor__process-threads {
+        display: none;
+    }
+}
+@container (max-width: 830px) {
+    .system-monitor__process-user {
+        display: none;
+    }
+}
+@container (max-width: 740px) {
+    .system-monitor__process-state {
+        display: none;
+    }
+    .system-monitor__process-cpu {
+        width: 100px;
+    }
+    .system-monitor__process-memory {
+        width: 88px;
+    }
 }
 .system-monitor__process-state {
     width: 80px;

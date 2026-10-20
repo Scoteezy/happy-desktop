@@ -4,7 +4,6 @@ import type {
 } from "happy-desktop-state";
 import { TextField } from "../../TextField";
 import { Icon } from "../../Icon";
-import { ScrollArea } from "../../Scrollbar";
 import { SystemMonitorAsciiMeter, SystemMonitorProcessSpark } from "./systemMonitorGraphics";
 import {
     systemMonitorBytes,
@@ -75,134 +74,128 @@ export function HappyAgentSystemMonitorProcessesPanel(
                 </div>
             ) : (
                 <>
-                    <ScrollArea axes="both" className="system-monitor__process-scroll">
-                        <div
-                            className="system-monitor__process-table"
-                            role="table"
-                            aria-label="Live processes"
-                            aria-rowcount={processRows.length + 1}
-                        >
-                            <div role="rowgroup">
-                                <div
-                                    className="system-monitor__process-row system-monitor__process-columns"
-                                    role="row"
-                                >
-                                    {COLUMNS.map(({ column, label }) => (
-                                        <div
-                                            className={`system-monitor__process-cell system-monitor__process-${column}`}
-                                            role="columnheader"
-                                            key={column}
-                                            aria-sort={
-                                                column === processSort.column
-                                                    ? processSort.direction
-                                                    : "none"
-                                            }
-                                        >
-                                            <button
-                                                onClick={() => props.onProcessSortChange(column)}
-                                            >
-                                                {label}
-                                                {processSort.column === column ? (
-                                                    <Icon
-                                                        name={
-                                                            processSort.direction === "descending"
-                                                                ? "chevron-down"
-                                                                : "chevron-up"
-                                                        }
-                                                        size={12}
-                                                    />
-                                                ) : null}
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            <div role="rowgroup">
-                                {processRows.map(({ process, cpuHistory }) => (
+                    <div
+                        className="system-monitor__process-table"
+                        role="table"
+                        aria-label="Live processes"
+                        aria-rowcount={processRows.length + 1}
+                    >
+                        <div role="rowgroup" className="system-monitor__process-header">
+                            <div
+                                className="system-monitor__process-row system-monitor__process-columns"
+                                role="row"
+                            >
+                                {COLUMNS.map(({ column, label }) => (
                                     <div
-                                        className="system-monitor__process-row"
-                                        role="row"
-                                        key={process.pid}
-                                        data-process-pid={process.pid}
+                                        className={`system-monitor__process-cell system-monitor__process-${column}`}
+                                        role="columnheader"
+                                        key={column}
+                                        aria-sort={
+                                            column === processSort.column
+                                                ? processSort.direction
+                                                : "none"
+                                        }
                                     >
-                                        <div
-                                            role="cell"
-                                            className="system-monitor__process-cell system-monitor__process-pid"
-                                        >
-                                            {process.pid}
-                                        </div>
-                                        <div
-                                            role="cell"
-                                            className="system-monitor__process-cell system-monitor__process-name"
-                                            title={process.name}
-                                        >
-                                            <span className="system-monitor__process-label">
-                                                {process.name}
-                                            </span>
-                                        </div>
-                                        <div
-                                            role="cell"
-                                            className="system-monitor__process-cell system-monitor__process-user"
-                                            title={process.user ?? undefined}
-                                        >
-                                            <span className="system-monitor__process-label">
-                                                {process.user ?? "—"}
-                                            </span>
-                                        </div>
-                                        <div
-                                            role="cell"
-                                            className="system-monitor__process-cell system-monitor__process-cpu"
-                                        >
-                                            <div className="system-monitor__process-reading">
-                                                <SystemMonitorAsciiMeter
-                                                    value={process.cpuPercent}
-                                                    label={`${process.name} CPU usage`}
-                                                    compact
+                                        <button onClick={() => props.onProcessSortChange(column)}>
+                                            {label}
+                                            {processSort.column === column ? (
+                                                <Icon
+                                                    name={
+                                                        processSort.direction === "descending"
+                                                            ? "chevron-down"
+                                                            : "chevron-up"
+                                                    }
+                                                    size={12}
                                                 />
-                                                <span>
-                                                    {systemMonitorPercent(process.cpuPercent)}
-                                                </span>
-                                            </div>
-                                            <SystemMonitorProcessSpark
-                                                values={cpuHistory}
-                                                label={`${process.name} CPU history`}
-                                            />
-                                        </div>
-                                        <div
-                                            role="cell"
-                                            className="system-monitor__process-cell system-monitor__process-memory"
-                                        >
-                                            <span>{systemMonitorBytes(process.memoryBytes)}</span>
-                                            <SystemMonitorAsciiMeter
-                                                value={
-                                                    sample
-                                                        ? systemMonitorRatio(
-                                                              process.memoryBytes,
-                                                              sample.memory.totalBytes,
-                                                          )
-                                                        : null
-                                                }
-                                                label={`${process.name} physical memory share`}
-                                                compact
-                                            />
-                                        </div>
-                                        <div
-                                            role="cell"
-                                            className="system-monitor__process-cell system-monitor__process-state"
-                                        >
-                                            {process.state ?? "—"}
-                                        </div>
-                                        <div
-                                            role="cell"
-                                            className="system-monitor__process-cell system-monitor__process-threads"
-                                        >
-                                            {process.threads ?? "—"}
-                                        </div>
+                                            ) : null}
+                                        </button>
                                     </div>
                                 ))}
                             </div>
                         </div>
-                    </ScrollArea>
+                        <div role="rowgroup">
+                            {processRows.map(({ process, cpuHistory }) => (
+                                <div
+                                    className="system-monitor__process-row"
+                                    role="row"
+                                    key={process.pid}
+                                    data-process-pid={process.pid}
+                                >
+                                    <div
+                                        role="cell"
+                                        className="system-monitor__process-cell system-monitor__process-pid"
+                                    >
+                                        {process.pid}
+                                    </div>
+                                    <div
+                                        role="cell"
+                                        className="system-monitor__process-cell system-monitor__process-name"
+                                        title={process.name}
+                                    >
+                                        <span className="system-monitor__process-label">
+                                            {process.name}
+                                        </span>
+                                    </div>
+                                    <div
+                                        role="cell"
+                                        className="system-monitor__process-cell system-monitor__process-user"
+                                        title={process.user ?? undefined}
+                                    >
+                                        <span className="system-monitor__process-label">
+                                            {process.user ?? "—"}
+                                        </span>
+                                    </div>
+                                    <div
+                                        role="cell"
+                                        className="system-monitor__process-cell system-monitor__process-cpu"
+                                    >
+                                        <div className="system-monitor__process-reading">
+                                            <SystemMonitorAsciiMeter
+                                                value={process.cpuPercent}
+                                                label={`${process.name} CPU usage`}
+                                                compact
+                                            />
+                                            <span>{systemMonitorPercent(process.cpuPercent)}</span>
+                                        </div>
+                                        <SystemMonitorProcessSpark
+                                            values={cpuHistory}
+                                            label={`${process.name} CPU history`}
+                                        />
+                                    </div>
+                                    <div
+                                        role="cell"
+                                        className="system-monitor__process-cell system-monitor__process-memory"
+                                    >
+                                        <span>{systemMonitorBytes(process.memoryBytes)}</span>
+                                        <SystemMonitorAsciiMeter
+                                            value={
+                                                sample
+                                                    ? systemMonitorRatio(
+                                                          process.memoryBytes,
+                                                          sample.memory.totalBytes,
+                                                      )
+                                                    : null
+                                            }
+                                            label={`${process.name} physical memory share`}
+                                            compact
+                                        />
+                                    </div>
+                                    <div
+                                        role="cell"
+                                        className="system-monitor__process-cell system-monitor__process-state"
+                                    >
+                                        {process.state ?? "—"}
+                                    </div>
+                                    <div
+                                        role="cell"
+                                        className="system-monitor__process-cell system-monitor__process-threads"
+                                    >
+                                        {process.threads ?? "—"}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                     {processRows.length === 0 ? (
                         <div className="system-monitor__process-empty">
                             <strong>
