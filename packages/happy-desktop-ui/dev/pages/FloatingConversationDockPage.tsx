@@ -1,5 +1,11 @@
 import { useState } from "react";
-import type { ComposerSnapshot } from "happy-desktop-state";
+import {
+    agentAuthor,
+    happyAgentOwnerAuthor,
+    type ComposerSnapshot,
+    type ConversationAuthor,
+    type ConversationEntry,
+} from "happy-desktop-state";
 import { AppShell } from "../../src/AppShell";
 import { Box } from "../../src/Box";
 import { ComposerModelControl } from "../../src/ComposerModelControl";
@@ -8,6 +14,7 @@ import {
     ConversationDock,
     FloatingConversationDock,
 } from "../../src/ConversationDock";
+import { ConversationView } from "../../src/ConversationView";
 import {
     HappyAgentControlMenu,
     HappyAgentSessionControls,
@@ -127,6 +134,91 @@ const LONG_DRAFT = [
     "",
     "Do not reload the live daemon; use the isolated home only.",
 ].join("\n");
+
+function transcriptMessage(
+    id: string,
+    sender: ConversationAuthor,
+    text: string,
+    createdAt: string,
+): ConversationEntry {
+    return {
+        kind: "message",
+        source: "server",
+        delivery: "sent",
+        message: {
+            id,
+            chatId: "dock-restarting",
+            sequence: id,
+            changePts: id,
+            sender,
+            text,
+            attachments: [],
+            reactions: [],
+            createdAt,
+        },
+    };
+}
+
+/** A conversation whose transcript already carries a model switch line, for comparing greys. */
+const RESTARTING_ENTRIES: readonly ConversationEntry[] = [
+    transcriptMessage(
+        "1",
+        happyAgentOwnerAuthor,
+        "Run the release checks and tell me when they pass.",
+        "2026-10-20T08:40:00.000Z",
+    ),
+    transcriptMessage(
+        "2",
+        agentAuthor,
+        "The renderer checks pass. The update store tests are still running.",
+        "2026-10-20T08:41:00.000Z",
+    ),
+    {
+        kind: "notice",
+        id: "switch:model",
+        sequence: "3",
+        variant: "configuration",
+        level: "info",
+        text: "Model Opus 5.5 → Sonnet 5.5",
+    },
+    {
+        kind: "notice",
+        id: "switch:account",
+        sequence: "4",
+        variant: "configuration",
+        level: "info",
+        text: "Account Work → Personal",
+    },
+];
+
+function TranscriptWindow(props: { readonly restarting: boolean }) {
+    return (
+        <div
+            style={{
+                background: "var(--surface)",
+                display: "flex",
+                height: "100%",
+                width: "100%",
+            }}
+        >
+            <ConversationView
+                agentAuthor={agentAuthor}
+                composer={composer({ text: LONG_DRAFT })}
+                composerPlaceholder="Message Happy…"
+                composerSubmitDisabled={props.restarting}
+                conversationId={`dock-restarting-${props.restarting ? "on" : "off"}`}
+                entries={RESTARTING_ENTRIES}
+                onComposerSend={noop}
+                onComposerValueChange={noop}
+                running={false}
+                style={{ flex: "1 1 auto", minWidth: 0 }}
+                title="Release checklist"
+                viewerId={happyAgentOwnerAuthor.id}
+                {...(props.restarting ? { composerNotice: RESTARTING_NOTICE } : {})}
+            />
+        </div>
+    );
+}
 
 function dock(
     value: string,
@@ -362,6 +454,24 @@ export function FloatingConversationDockPage() {
                     </div>
                 </Box>
             </Specimen>
+            <FullScreenSpecimen
+                detail="The restarting notice in a conversation whose transcript already has model and account switch lines: same left edge, same muted grey"
+                label="Agent restarting · in a conversation"
+                number="07"
+                screen="01-restarting-transcript-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <TranscriptWindow restarting />
+            </FullScreenSpecimen>
+            <FullScreenSpecimen
+                detail="The same conversation and draft while the agent takes messages"
+                label="Agent writable · in a conversation"
+                number="08"
+                screen="02-normal-transcript-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <TranscriptWindow restarting={false} />
+            </FullScreenSpecimen>
             <Specimen
                 detail="56px image, video, and file previews · loaded images open immediately in the full-window Lightbox"
                 label="Draft attachments"
