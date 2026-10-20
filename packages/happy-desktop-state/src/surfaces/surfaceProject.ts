@@ -9,6 +9,7 @@ import type {
     Surface,
     SurfaceDocument,
     SurfaceMember,
+    SurfaceMessage,
     SurfaceTarget,
     Todo,
 } from "@slopus/happy-agent-client";
@@ -29,6 +30,8 @@ import type {
     HappyAgentSurfaceDocument,
     HappyAgentSurfaceId,
     HappyAgentSurfaceMember,
+    HappyAgentSurfaceMessage,
+    HappyAgentSurfaceMessageId,
     HappyAgentSurfaceTarget,
     HappyAgentSurfaceType,
     HappyAgentSurfaceTodo,
@@ -50,6 +53,12 @@ export const HAPPY_AGENT_TODO_EVENT_TYPES = [
 /** The event an open document follows. */
 export const HAPPY_AGENT_SURFACE_DOCUMENT_EVENT_TYPES = [
     "surface.document.updated",
+] as const satisfies readonly HappyAgentEvent["type"][];
+
+/** The events an open chat Surface follows for the messages people post in it. */
+export const HAPPY_AGENT_SURFACE_MESSAGE_EVENT_TYPES = [
+    "surface_message.created",
+    "surface_message.updated",
 ] as const satisfies readonly HappyAgentEvent["type"][];
 
 /**
@@ -161,6 +170,7 @@ export function happyAgentSurfaceTypeProject(type: string): HappyAgentSurfaceTyp
         case "document":
         case "calendar":
         case "system_monitor":
+        case "chat":
         case "artifact":
         case "bot":
         case "task":
@@ -280,6 +290,97 @@ export function happyAgentSurfaceDocumentProject(
         createdAt: document.createdAt,
         updatedAt: document.updatedAt,
         version: document.version,
+    };
+}
+
+export function happyAgentSurfaceMessageProject(message: SurfaceMessage): HappyAgentSurfaceMessage {
+    return {
+        id: message.id as HappyAgentSurfaceMessageId,
+        surfaceId: message.surfaceId as HappyAgentSurfaceId,
+        seq: message.seq,
+        authorUserId: message.authorUserId,
+        text: message.text,
+        status: message.status,
+        createdAt: message.createdAt,
+        updatedAt: message.updatedAt,
+        editedAt: message.editedAt,
+        deletedAt: message.deletedAt,
+        version: message.version,
+    };
+}
+
+/** The fields a message update carries; absent fields are unchanged. */
+export interface HappyAgentSurfaceMessageChanges {
+    readonly text?: string;
+    readonly editedAt?: number | null;
+    readonly status?: HappyAgentSurfaceMessage["status"];
+    readonly deletedAt?: number | null;
+    readonly updatedAt: number;
+}
+
+/** One message change from the event stream, projected out of its wire envelope. */
+export type HappyAgentSurfaceMessageEvent =
+    | { readonly type: "created"; readonly message: HappyAgentSurfaceMessage }
+    | {
+          readonly type: "updated";
+          readonly surfaceId: HappyAgentSurfaceId;
+          readonly messageId: HappyAgentSurfaceMessageId;
+          readonly previousVersion: string;
+          readonly version: string;
+          readonly changes: HappyAgentSurfaceMessageChanges;
+      };
+
+export function happyAgentSurfaceMessageEventProject(
+    event: HappyAgentEvent,
+): HappyAgentSurfaceMessageEvent | undefined {
+    switch (event.type) {
+        case "surface_message.created":
+            return {
+                type: "created",
+                message: happyAgentSurfaceMessageProject(event.payload.message),
+            };
+        case "surface_message.updated": {
+            const { changes } = event.payload;
+            return {
+                type: "updated",
+                surfaceId: event.payload.surfaceId as HappyAgentSurfaceId,
+                messageId: event.payload.messageId as HappyAgentSurfaceMessageId,
+                previousVersion: event.payload.previousVersion,
+                version: event.payload.version,
+                changes: {
+                    updatedAt: changes.updatedAt,
+                    ...(changes.text === undefined ? {} : { text: changes.text }),
+                    ...(changes.editedAt === undefined ? {} : { editedAt: changes.editedAt }),
+                    ...(changes.status === undefined ? {} : { status: changes.status }),
+                    ...(changes.deletedAt === undefined ? {} : { deletedAt: changes.deletedAt }),
+                },
+            };
+        }
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * A message with an update's changes applied, or `undefined` when the result
+ * is not a message the daemon could hold, which means it should be read again.
+ */
+export function happyAgentSurfaceMessageChangesApply(
+    message: HappyAgentSurfaceMessage,
+    changes: HappyAgentSurfaceMessageChanges,
+    version: string,
+): HappyAgentSurfaceMessage | undefined {
+    const status = changes.status ?? message.status;
+    const deletedAt = changes.deletedAt === undefined ? message.deletedAt : changes.deletedAt;
+    if ((status === "deleted") !== (deletedAt !== null)) return undefined;
+    return {
+        ...message,
+        text: changes.text ?? message.text,
+        status,
+        editedAt: changes.editedAt === undefined ? message.editedAt : changes.editedAt,
+        deletedAt,
+        updatedAt: changes.updatedAt,
+        version,
     };
 }
 

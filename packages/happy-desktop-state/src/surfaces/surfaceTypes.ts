@@ -16,6 +16,7 @@ import type {
 declare const happyAgentSurfaceIdBrand: unique symbol;
 declare const happyAgentSurfaceTodoIdBrand: unique symbol;
 declare const happyAgentCalendarEventIdBrand: unique symbol;
+declare const happyAgentSurfaceMessageIdBrand: unique symbol;
 
 /** Branded Surface identifier (CUID2 on the wire). */
 export type HappyAgentSurfaceId = string & { readonly [happyAgentSurfaceIdBrand]: true };
@@ -26,6 +27,11 @@ export type HappyAgentSurfaceTodoId = string & { readonly [happyAgentSurfaceTodo
 /** Branded calendar event identifier (CUID2 on the wire). */
 export type HappyAgentCalendarEventId = string & {
     readonly [happyAgentCalendarEventIdBrand]: true;
+};
+
+/** Branded identifier of one message people posted in a chat Surface (CUID2 on the wire). */
+export type HappyAgentSurfaceMessageId = string & {
+    readonly [happyAgentSurfaceMessageIdBrand]: true;
 };
 
 /**
@@ -42,6 +48,12 @@ export type HappyAgentSurfaceType =
     /** One shared set of calendar events, kept with every version each has had. */
     | { readonly kind: "calendar" }
     | { readonly kind: "system_monitor" }
+    /**
+     * One conversation among people, with no agent in it. Its messages are
+     * the Surface's own; its shared chat beside it is the agent's, as for
+     * every other type.
+     */
+    | { readonly kind: "chat" }
     /** One artifact, bot, or task, kept among the Surfaces; opening it opens that. */
     | { readonly kind: HappyAgentSurfaceReferenceKind }
     | { readonly kind: "unsupported"; readonly type: string };
@@ -59,6 +71,7 @@ export function happyAgentSurfaceChatSupported(type: HappyAgentSurfaceType): boo
         case "document":
         case "calendar":
         case "system_monitor":
+        case "chat":
         case "artifact":
         case "bot":
         case "task":
@@ -348,4 +361,34 @@ export interface HappyAgentCalendarOccurrence {
     /** Zero-based within the series; a one-off event has only 0. */
     readonly index: number;
     readonly timing: HappyAgentCalendarTiming;
+}
+
+/**
+ * One message a person posted in a chat Surface. A deleted one is a tombstone
+ * that keeps its place in the conversation and its last text, which is never
+ * shown again.
+ */
+export interface HappyAgentSurfaceMessage {
+    readonly id: HappyAgentSurfaceMessageId;
+    readonly surfaceId: HappyAgentSurfaceId;
+    /**
+     * Its place in the conversation: contiguous from 1 in the order messages
+     * were posted, and never reused, so a gap means messages not read yet.
+     */
+    readonly seq: number;
+    /**
+     * Who posted it, set once. `null` on a standalone installation, whose one
+     * person posted every message.
+     */
+    readonly authorUserId: string | null;
+    /** Markdown, as written. */
+    readonly text: string;
+    readonly status: "active" | "deleted";
+    readonly createdAt: number;
+    readonly updatedAt: number;
+    /** When its text was last changed, or `null` while it reads as first posted. */
+    readonly editedAt: number | null;
+    readonly deletedAt: number | null;
+    /** The resource version a change must name. */
+    readonly version: string;
 }

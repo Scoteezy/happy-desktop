@@ -32,6 +32,9 @@ export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
     const kind = props.surface.type.kind;
     const credit =
         kind === "artifact" || kind === "bot" || kind === "task" ? "Added by" : "Created by";
+    // A chat Surface is itself a chat among people, so the one with its agent
+    // is named for the agent rather than as a second chat.
+    const agentChat = kind === "chat";
     return (
         <PanelHeader className="happy-agent-surface-header">
             <div className="happy-agent-surface-header__lead">
@@ -55,15 +58,19 @@ export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
                     aria-pressed={props.chat.open}
                     className="happy-agent-surface-header__chat"
                     data-testid="happy-agent-surface-chat-toggle"
-                    icon="chat"
+                    icon={agentChat ? "spark" : "chat"}
                     onClick={props.chat.onToggle}
                     size="small"
                     title={
-                        props.chat.open ? "Close the chat" : "Open the chat everyone here shares"
+                        props.chat.open
+                            ? "Close the chat"
+                            : agentChat
+                              ? "Open the chat with the agent everyone here shares"
+                              : "Open the chat everyone here shares"
                     }
                     variant="ghost"
                 >
-                    Chat
+                    {agentChat ? "Agent" : "Chat"}
                 </Button>
             ) : null}
         </PanelHeader>

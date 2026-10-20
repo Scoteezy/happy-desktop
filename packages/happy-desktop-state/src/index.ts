@@ -112,6 +112,14 @@ export type {
     HappyAgentSurfaceDocumentSync,
 } from "./surfaces/surfaceDocumentStore.js";
 export {
+    HAPPY_AGENT_SURFACE_MESSAGE_TEXT_LIMIT,
+    type HappyAgentSurfaceMessageEditing,
+    type HappyAgentSurfaceMessagesOlder,
+    type HappyAgentSurfaceMessagesSnapshot,
+    type HappyAgentSurfaceMessagesStore,
+    type HappyAgentSurfaceOutgoingMessage,
+} from "./surfaces/surfaceMessagesStore.js";
+export {
     happyAgentSurfaceSupportStoreNone,
     type HappyAgentSurfaceSupport,
     type HappyAgentSurfaceSupportSnapshot,

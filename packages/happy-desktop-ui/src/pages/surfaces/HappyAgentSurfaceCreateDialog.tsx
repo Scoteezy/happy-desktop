@@ -24,7 +24,12 @@ function imageSignatureAccepted(bytes: Uint8Array): boolean {
 }
 
 /** The kinds of Surface this dialog makes. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar" | "system_monitor";
+export type HappyAgentSurfaceCreateKind =
+    | "todo"
+    | "document"
+    | "calendar"
+    | "system_monitor"
+    | "chat";
 
 /** What the dialog asks for: a name, and a picture if the reader chose one. */
 export interface HappyAgentSurfaceCreateInput {
@@ -39,6 +44,7 @@ const KINDS = {
     document: { title: "New document", icon: "doc", placeholder: "House rules" },
     calendar: { title: "New calendar", icon: "calendar", placeholder: "Team" },
     system_monitor: { title: "New system monitor", icon: "pulse", placeholder: "System Monitor" },
+    chat: { title: "New chat", icon: "users", placeholder: "Family" },
 } as const satisfies Record<
     HappyAgentSurfaceCreateKind,
     { title: string; icon: IconName; placeholder: string }

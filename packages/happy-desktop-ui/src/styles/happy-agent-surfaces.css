@@ -138,6 +138,7 @@
 
 .happy-agent-todo-surface,
 .happy-agent-document-surface,
+.happy-agent-messages-surface,
 .happy-agent-surface-not-made,
 .happy-agent-surface-reference,
 .happy-agent-surface-unsupported {
@@ -447,6 +448,90 @@
     justify-content: center;
     min-height: 0;
     padding: 24px;
+}
+
+/* ---- Chat page --------------------------------------------------------- */
+
+/*
+ * The conversation is centred at the shared readable measure, as a
+ * conversation with an agent is; the scrollport stays full-bleed and only its
+ * content column is capped.
+ */
+.happy-agent-messages-surface .happy-message-list__content {
+    width: 100%;
+    max-width: var(--happy-chat-measure);
+    margin-inline: auto;
+}
+
+.happy-agent-messages-surface__empty {
+    display: flex;
+    flex: 1 1 auto;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+    padding: 24px;
+}
+
+.happy-agent-messages-surface__row {
+    position: relative;
+}
+
+/* The message being edited in the composer is marked where it stands. */
+.happy-agent-messages-surface__row[data-editing] .happy-message {
+    background: var(--surface-pressed);
+}
+
+/*
+ * A floating toolbar over the reader's own message. It leaves the flow on
+ * purpose: rows are laid out from their text alone, so controls that came and
+ * went with the pointer may not move anything. It straddles the row's top
+ * edge, over the padding between messages rather than over the text.
+ */
+.happy-agent-messages-surface__actions {
+    position: absolute;
+    top: -14px;
+    right: 20px;
+    z-index: 1;
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--divider);
+    /* Parallel to the small buttons' corners, 3px inside it. */
+    border-radius: calc(var(--happy-radius-sm) + 3px);
+    background: var(--surface);
+    box-shadow: 0 1px 3px var(--shadow-color);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.happy-agent-messages-surface__row:hover .happy-agent-messages-surface__actions,
+.happy-agent-messages-surface__actions:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.happy-agent-messages-surface__above-composer {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.happy-agent-messages-surface__editing {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding-left: 12px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 20px;
+}
+
+.happy-agent-messages-surface__confirm {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 20px;
 }
 
 /* ---- Unsupported type -------------------------------------------------- */

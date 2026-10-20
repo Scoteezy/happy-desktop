@@ -10,6 +10,11 @@ import {
     type HappyAgentSurfaceDocumentStore,
 } from "./surfaceDocumentStore.js";
 import {
+    happyAgentSurfaceMessagesStoreCreate,
+    type HappyAgentSurfaceMessagesDeps,
+    type HappyAgentSurfaceMessagesStore,
+} from "./surfaceMessagesStore.js";
+import {
     happyAgentSurfaceSupportStoreCreate,
     type HappyAgentSurfaceSupportDeps,
     type HappyAgentSurfaceSupportStore,
@@ -58,6 +63,12 @@ export interface HappyAgentSurfaces {
      */
     calendar(surfaceId: HappyAgentSurfaceId): HappyAgentCalendarStore;
     systemMonitor(surfaceId: HappyAgentSurfaceId): HappyAgentSystemMonitorStore;
+    /**
+     * The messages people post in one chat Surface, kept for the life of the
+     * connection like a todo list, so a message is still sent after the
+     * reader has moved on.
+     */
+    messages(surfaceId: HappyAgentSurfaceId): HappyAgentSurfaceMessagesStore;
     /** Which newer Surface types this Happy Agent serves. */
     support(): HappyAgentSurfaceSupportStore;
     [Symbol.dispose](): void;
@@ -69,6 +80,7 @@ export interface HappyAgentSurfacesDeps {
         HappyAgentSurfaceDocumentDeps["client"] &
         HappyAgentCalendarDeps["client"] &
         HappyAgentSystemMonitorDeps["client"] &
+        HappyAgentSurfaceMessagesDeps["client"] &
         HappyAgentSurfaceSupportDeps["client"];
     readonly sync: HappyAgentSync;
     /** Told of the workspace each Surface chat is held in, once the daemon has said. */
@@ -81,6 +93,7 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
     const documents = new Map<HappyAgentSurfaceId, HappyAgentSurfaceDocumentStore>();
     const calendars = new Map<HappyAgentSurfaceId, HappyAgentCalendarStore>();
     const monitors = new Map<HappyAgentSurfaceId, HappyAgentSystemMonitorStore>();
+    const messages = new Map<HappyAgentSurfaceId, HappyAgentSurfaceMessagesStore>();
     let support: HappyAgentSurfaceSupportStore | undefined;
     /** Lists this connection is making, until the daemon answers, for their todo stores to wait on. */
     const creating = new Map<HappyAgentSurfaceId, Promise<void>>();
@@ -175,6 +188,22 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             }
             return store;
         },
+        messages(surfaceId) {
+            let store = messages.get(surfaceId);
+            if (store === undefined) {
+                const created = creating.get(surfaceId);
+                store = inert(
+                    happyAgentSurfaceMessagesStoreCreate({
+                        client: deps.client,
+                        sync: deps.sync,
+                        surfaceId,
+                        ...(created === undefined ? {} : { surfaceCreated: created }),
+                    }),
+                );
+                if (!disposed) messages.set(surfaceId, store);
+            }
+            return store;
+        },
         support() {
             return (support ??= inert(
                 happyAgentSurfaceSupportStoreCreate({
@@ -196,6 +225,8 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
             calendars.clear();
             for (const store of monitors.values()) store[Symbol.dispose]();
             monitors.clear();
+            for (const store of messages.values()) store[Symbol.dispose]();
+            messages.clear();
         },
     };
 }

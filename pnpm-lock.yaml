@@ -251,8 +251,8 @@ importers:
   packages/happy-desktop-gym:
     dependencies:
       '@slopus/happy-agent-client':
-        specifier: 0.0.99
-        version: 0.0.99
+        specifier: 0.0.101
+        version: 0.0.101
       happy-desktop-state:
         specifier: workspace:*
         version: link:../happy-desktop-state
@@ -291,8 +291,8 @@ importers:
         specifier: ^0.34.49
         version: 0.34.52
       '@slopus/happy-agent-client':
-        specifier: 0.0.99
-        version: 0.0.99
+        specifier: 0.0.101
+        version: 0.0.101
       picomatch:
         specifier: 4.0.5
         version: 4.0.5
@@ -2012,6 +2012,10 @@ packages:
 
   '@slopus/ghostty-web@0.1.3':
     resolution: {integrity: sha512-z6t+XKBqUWQPM2tjBbOL6EjuKtD12gqtuLKUjMT4Pn74DjuGNHDw5tEdzn5hA0MTvXPW2w1rQTX089QDa892Xw==}
+
+  '@slopus/happy-agent-client@0.0.101':
+    resolution: {integrity: sha512-4NuUQHV544YgBOpL/nVEx9QTA3q4Hq4cpc/O4u9/hV+Ag4TnhDJsG+CvHacxQVEsdmPx2eAP9yCdxszsz9UlxQ==}
+    engines: {node: '>=20'}
 
   '@slopus/happy-agent-client@0.0.99':
     resolution: {integrity: sha512-6zDA9f0r0Vf7cP+p5XKxDjXH/WYLil5agTJF7zCQMURugN5mpuy8M4LaIwnkXsNTZwC548iOO3gOXcluw2nZSQ==}
@@ -7296,6 +7300,10 @@ snapshots:
   '@slopus/ghostty-wasm@1.3.6': {}
 
   '@slopus/ghostty-web@0.1.3': {}
+
+  '@slopus/happy-agent-client@0.0.101':
+    dependencies:
+      '@sinclair/typebox': 0.34.52
 
   '@slopus/happy-agent-client@0.0.99':
     dependencies:

@@ -173,6 +173,7 @@ import {
     type HappyAgentSurfaceId,
     type HappyAgentSurfaces,
     type HappyAgentTodoListStore,
+    type HappyAgentSurfaceMessagesStore,
     type HappyAgentSurfaceDocumentStore,
     type HappyAgentCalendarStore,
 } from "happy-desktop-state";
@@ -245,6 +246,7 @@ import {
     HappyAgentSurfaceChatPanel,
     type HappyAgentSurfaceChatToggle,
     HappyAgentTodoSurfacePage,
+    HappyAgentMessagesSurfacePage,
     HappyAgentDocumentSurfacePage,
     HappyAgentCalendarSurfacePage,
     type HappyAgentDocumentSurfaceContent,
@@ -2343,19 +2345,21 @@ const SURFACE_CREATE_OFFERS: readonly {
     { kind: "document", icon: "doc", label: "New document" },
     { kind: "calendar", icon: "calendar", label: "New calendar" },
     { kind: "system_monitor", icon: "pulse", label: "New system monitor" },
+    { kind: "chat", icon: "users", label: "New chat" },
 ];
 
 /**
  * The + menu: a document only from a Happy Agent that serves collaborative
  * documents, since an older one can show a document but nobody can write it,
- * and a calendar only from one that serves calendars.
+ * and a calendar, a system monitor, or a chat only from one that serves them.
  */
 function surfaceCreateMenu(support: HappyAgentSurfaceSupportSnapshot): MenuItem[] {
     return SURFACE_CREATE_OFFERS.filter(
         (offer) =>
             (offer.kind !== "document" || support.documents === "supported") &&
             (offer.kind !== "calendar" || support.calendars === "supported") &&
-            (offer.kind !== "system_monitor" || support.systemMonitors === "supported"),
+            (offer.kind !== "system_monitor" || support.systemMonitors === "supported") &&
+            (offer.kind !== "chat" || support.chats === "supported"),
     ).map((offer) => ({ kind: "item", id: offer.kind, icon: offer.icon, label: offer.label }));
 }
 
@@ -4150,6 +4154,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     }}
                     clock={session.clock}
                     places={surfacePlacesOf(active)}
+                    {...(activeAvailability?.refusal === undefined
+                        ? {}
+                        : { unavailable: activeAvailability.refusal })}
                     surfaceId={props.surfaceId as HappyAgentSurfaceId}
                     surfaces={active.session.surfaces}
                 />
@@ -5228,6 +5235,8 @@ function HappyAgentSurfaceContent(props: {
     /** The connection's clock, which a calendar's line across today follows. */
     clock: HappyAgentClockStore;
     places: SurfacePlaces;
+    /** Why this Happy Agent cannot currently accept network actions. */
+    unavailable?: string;
     /** Opens what an artifact, bot, or task Surface points at, joining a task first. */
     onTargetOpen: (surface: HappyAgentSurface) => void;
     /** The shared chat the address opens beside the Surface, when it does. */
@@ -5339,6 +5348,17 @@ function HappyAgentSurfaceContent(props: {
             ) : (
                 <HappyAgentSurfaceUnsupportedPage
                     surface={{ ...view, type: { kind: "unsupported", type: "system_monitor" } }}
+                />
+            );
+        if (surface.type.kind === "chat")
+            return (
+                <HappyAgentMessagesSurface
+                    {...(chat ? { chat } : {})}
+                    focusOnType={!conversationShown}
+                    store={props.surfaces.messages(surface.id)}
+                    surface={view}
+                    {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
+                    {...(catalog.viewer ? { viewer: catalog.viewer } : {})}
                 />
             );
         if (surface.type.kind === "calendar")
@@ -5654,6 +5674,38 @@ function HappyAgentCalendarSurface(props: {
             onWeekShow={store.weekShow}
             surface={props.surface}
             timeZones={calendarTimeZones()}
+        />
+    );
+}
+
+/** A chat Surface, read from its own store for as long as it is on screen. */
+function HappyAgentMessagesSurface(props: {
+    store: HappyAgentSurfaceMessagesStore;
+    surface: HappyAgentSurfaceView;
+    viewer?: { readonly userId: string | null };
+    unavailable?: string;
+    chat?: HappyAgentSurfaceChatToggle;
+    focusOnType: boolean;
+}) {
+    const store = props.store;
+    const messages = useSyncExternalStore(store.subscribe, store.get, store.get);
+    return (
+        <HappyAgentMessagesSurfacePage
+            {...(props.chat ? { chat: props.chat } : {})}
+            focusOnType={props.focusOnType}
+            messages={messages}
+            onDraftChange={store.draftUpdate}
+            onDraftSubmit={store.draftSubmit}
+            onFailureDismiss={store.failureDismiss}
+            onMessageDelete={store.messageDelete}
+            onMessageEditCancel={store.messageEditCancel}
+            onMessageEditCommit={store.messageEditCommit}
+            onMessageEditStart={store.messageEditStart}
+            onMessageEditTextChange={store.messageEditTextUpdate}
+            onOlderLoad={store.olderLoad}
+            surface={props.surface}
+            {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
+            {...(props.viewer ? { viewer: props.viewer } : {})}
         />
     );
 }

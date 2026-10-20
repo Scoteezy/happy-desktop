@@ -6,12 +6,13 @@ export type HappyAgentSurfaceSupport = "checking" | "supported" | "unsupported";
 
 /**
  * Which Surfaces a Happy Agent can make that an older one cannot, as its
- * health says: collaborative documents, calendars, and system monitors.
+ * health says: collaborative documents, calendars, system monitors, and chats.
  */
 export interface HappyAgentSurfaceSupportSnapshot {
     readonly documents: HappyAgentSurfaceSupport;
     readonly calendars: HappyAgentSurfaceSupport;
     readonly systemMonitors: HappyAgentSurfaceSupport;
+    readonly chats: HappyAgentSurfaceSupport;
 }
 
 export interface HappyAgentSurfaceSupportStore {
@@ -29,11 +30,13 @@ const CHECKING: HappyAgentSurfaceSupportSnapshot = {
     documents: "checking",
     calendars: "checking",
     systemMonitors: "checking",
+    chats: "checking",
 };
 const UNSUPPORTED: HappyAgentSurfaceSupportSnapshot = {
     documents: "unsupported",
     calendars: "unsupported",
     systemMonitors: "unsupported",
+    chats: "unsupported",
 };
 const RETRY_MS = 5_000;
 
@@ -43,9 +46,10 @@ const supportOf = (supported: boolean): HappyAgentSurfaceSupport =>
 /**
  * One connection's answer to which newer Surfaces it serves, read from its
  * health and read again whenever the connection is re-established, since that
- * is when a different daemon may be answering. Offering a new document or a
- * new calendar waits on it: an older Happy Agent can show a document, but
- * nobody can write one here, and it cannot make a calendar at all.
+ * is when a different daemon may be answering. Offering a new document, a
+ * new calendar, or a new chat waits on it: an older Happy Agent can show a
+ * document, but nobody can write one here, and it cannot make a calendar or a
+ * chat at all.
  */
 export function happyAgentSurfaceSupportStoreCreate(
     deps: HappyAgentSurfaceSupportDeps,
@@ -60,7 +64,8 @@ export function happyAgentSurfaceSupportStoreCreate(
         if (
             next.documents === snapshot.documents &&
             next.calendars === snapshot.calendars &&
-            next.systemMonitors === snapshot.systemMonitors
+            next.systemMonitors === snapshot.systemMonitors &&
+            next.chats === snapshot.chats
         )
             return;
         snapshot = next;
@@ -81,6 +86,7 @@ export function happyAgentSurfaceSupportStoreCreate(
                     documents: supportOf(health.capabilities?.collaborativeDocuments === true),
                     calendars: supportOf(health.capabilities?.calendarSurfaces === true),
                     systemMonitors: supportOf(health.capabilities?.systemMonitorSurfaces === true),
+                    chats: supportOf(health.capabilities?.chatSurfaces === true),
                 });
             },
             () => {

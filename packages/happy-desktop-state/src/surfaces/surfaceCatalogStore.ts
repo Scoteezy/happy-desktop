@@ -133,7 +133,12 @@ const NAME_FORBIDDEN = /[\u0000-\u001f\u007f]/gu;
 export type HappyAgentSurfaceMembershipAction = "join" | "leave" | "reorder";
 
 /** The kinds of Surface the reader can make here. */
-export type HappyAgentSurfaceCreateKind = "todo" | "document" | "calendar" | "system_monitor";
+export type HappyAgentSurfaceCreateKind =
+    | "todo"
+    | "document"
+    | "calendar"
+    | "system_monitor"
+    | "chat";
 
 /**
  * Whether the form that makes a new Surface is open, and for which kind.
@@ -404,6 +409,7 @@ const CREATE_NOUNS = {
     document: "documents",
     calendar: "calendars",
     system_monitor: "System Monitors",
+    chat: "chats",
     artifact: "Surfaces for artifacts",
     bot: "Surfaces for bots",
     task: "Surfaces for tasks",

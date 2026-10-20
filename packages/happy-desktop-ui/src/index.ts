@@ -744,6 +744,10 @@ export {
     type HappyAgentTodoSurfacePageProps,
 } from "./pages/surfaces/HappyAgentTodoSurfacePage";
 export {
+    HappyAgentMessagesSurfacePage,
+    type HappyAgentMessagesSurfacePageProps,
+} from "./pages/surfaces/HappyAgentMessagesSurfacePage";
+export {
     HappyAgentDocumentSurfacePage,
     type HappyAgentDocumentSurfaceContent,
     type HappyAgentDocumentSurfacePageProps,
