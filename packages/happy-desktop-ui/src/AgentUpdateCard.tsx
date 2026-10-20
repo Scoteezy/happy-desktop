@@ -17,9 +17,17 @@ export interface AgentUpdateCardAgent {
     onSelect?(): void;
 }
 
+/**
+ * What the card is about: moving onto another version, or coming back on the
+ * same one. Only the words that close it differ.
+ */
+export type AgentUpdateCardReason = "update" | "restart";
+
 export type AgentUpdateCardView =
     | {
           readonly kind: "draining";
+          /** How long the whole restart has been going, from its own start. */
+          readonly elapsedMs?: number;
           /** The waiting agents the reader would recognise, in the daemon's order. */
           readonly agents: readonly AgentUpdateCardAgent[];
           /**
@@ -32,15 +40,16 @@ export type AgentUpdateCardView =
           /** The share of the drain already finished, once the daemon has reported one. */
           readonly fraction?: number;
       }
-    | { readonly kind: "stopping"; readonly killed: boolean }
-    | { readonly kind: "starting" }
-    | { readonly kind: "reconnecting" }
-    /** `tookMs` is present only when this window watched the whole update. */
-    | { readonly kind: "done"; readonly tookMs?: number }
+    | { readonly kind: "stopping"; readonly killed: boolean; readonly elapsedMs?: number }
+    | { readonly kind: "starting"; readonly elapsedMs?: number }
+    | { readonly kind: "reconnecting"; readonly elapsedMs?: number }
+    /** `tookMs` is present only when the update's start is known. */
+    | { readonly kind: "done"; readonly tookMs?: number; readonly reason?: AgentUpdateCardReason }
     | {
           readonly kind: "failed";
           readonly failedAt: AgentUpdateStep;
           readonly message: string;
+          readonly reason?: AgentUpdateCardReason;
       };
 
 export interface AgentUpdateCardProps {
@@ -96,6 +105,10 @@ const DETAIL_LINES = 3;
  */
 const RESTART_COST = "stops tools";
 
+const RESTART_LINE = { kind: "restart" } as const;
+/** The narrow card's cost of "Restart now", on its own line under the action. */
+const RESTART_COST_LINE = { kind: "text", text: "Stops running tools" } as const;
+
 type Line =
     | { readonly kind: "empty" }
     | { readonly kind: "text"; readonly text: string }
@@ -116,18 +129,20 @@ type Line =
  * inside it. A phase change rewrites the text in those slots and nothing else,
  * so the card never moves under the pointer while the update runs on its own.
  *
- * The first detail slot is the one directly under the title. While work is
- * finishing it holds "Restart now", which stops waiting; every other phase
- * holds its own first line there.
+ * While work is finishing the slots list what is still running first, and
+ * "Restart now", which stops waiting, takes the last slot below them.
  *
- * The title names the step. The bar says where in the sequence that step is,
- * so it carries no labels of its own, and there is no version or step count to
- * read twice. The snail is mounted once and loops while the update runs; when
+ * The title names the step, and beside it, while the update runs, how long it
+ * has been going (at the bar's end on a narrow card, where it cannot fit): measured from the update's own start, which its owner
+ * supplies, so a card shown part-way through still counts from the beginning.
+ * The bar says where in the sequence that step is, so it carries no labels of
+ * its own, and there is no version or step count to read twice. The snail is mounted once and loops while the update runs; when
  * it finishes or fails, the cycle under way plays out and holds.
  */
 export function AgentUpdateCard(props: AgentUpdateCardProps) {
     const { view } = props;
     const settled = view.kind === "done" || view.kind === "failed";
+    const elapsed = settled ? undefined : view.elapsedMs;
     const detail = (line: Line, index: number) => (
         <DetailLine
             // Slots, not entities: the lines are fixed positions whose words
@@ -161,25 +176,42 @@ export function AgentUpdateCard(props: AgentUpdateCardProps) {
                 </span>
                 <span className="happy-agent-update-card__content">
                     <span
-                        className="happy-agent-update-card__title"
-                        data-happy-desktop-ui="agent-update-card-title"
-                        data-tone={view.kind === "failed" ? "failed" : undefined}
+                        className="happy-agent-update-card__heading"
+                        data-happy-desktop-ui="agent-update-card-heading"
                     >
-                        {title(view)}
+                        <span
+                            className="happy-agent-update-card__title"
+                            data-happy-desktop-ui="agent-update-card-title"
+                            data-tone={view.kind === "failed" ? "failed" : undefined}
+                        >
+                            {title(view)}
+                        </span>
+                        {elapsed === undefined ? null : (
+                            <span
+                                className="happy-agent-update-card__elapsed"
+                                data-form="wide"
+                                data-happy-desktop-ui="agent-update-card-elapsed"
+                            >
+                                {clockText(elapsed)}
+                            </span>
+                        )}
                     </span>
                     {view.kind === "draining" && props.onRestartNow ? (
+                        /* What is still running fills the slots first, and the
+                           way out takes the last one. In each of the card's two
+                           widths; the narrow card cannot fit the cost beside the
+                           action, so it says it on a line of its own. */
                         <>
-                            {detail({ kind: "restart" }, 0)}
-                            {/* The two slots under it, in each of the card's two
-                                widths; the narrow card cannot fit the cost
-                                beside the action, so it says it on its own line. */}
                             <span className="happy-agent-update-card__lines" data-form="wide">
-                                {slots(drainLines(view, DETAIL_LINES - 1), DETAIL_LINES - 1).map(
-                                    detail,
-                                )}
+                                {[
+                                    ...slots(drainLines(view, DETAIL_LINES - 1), DETAIL_LINES - 1),
+                                    RESTART_LINE,
+                                ].map(detail)}
                             </span>
                             <span className="happy-agent-update-card__lines" data-form="narrow">
-                                {slots(drainLinesNarrow(view), DETAIL_LINES - 1).map(detail)}
+                                {[drainSummaryNarrow(view), RESTART_LINE, RESTART_COST_LINE].map(
+                                    detail,
+                                )}
                             </span>
                         </>
                     ) : (
@@ -196,12 +228,25 @@ export function AgentUpdateCard(props: AgentUpdateCardProps) {
                 size="small"
                 variant="ghost"
             />
-            <SegmentedProgress
-                className="happy-agent-update-card__bar"
-                label="Update progress"
-                labels="hidden"
-                segments={segments(view)}
-            />
+            <span className="happy-agent-update-card__footer">
+                <SegmentedProgress
+                    className="happy-agent-update-card__bar"
+                    label="Update progress"
+                    labels="hidden"
+                    segments={segments(view)}
+                />
+                {/* The narrow card has no room for the clock beside its title,
+                    so it reads at the end of the bar instead. */}
+                {elapsed === undefined ? null : (
+                    <span
+                        aria-hidden="true"
+                        className="happy-agent-update-card__elapsed"
+                        data-form="narrow"
+                    >
+                        {clockText(elapsed)}
+                    </span>
+                )}
+            </span>
         </div>
     );
 }
@@ -374,9 +419,9 @@ function title(view: AgentUpdateCardView): string {
         case "reconnecting":
             return "Reconnecting";
         case "done":
-            return "Updated";
+            return view.reason === "restart" ? "Restarted" : "Updated";
         case "failed":
-            return "Update failed";
+            return view.reason === "restart" ? "Restart failed" : "Update failed";
     }
 }
 
@@ -386,26 +431,19 @@ function slots(filled: readonly Line[], count: number): readonly Line[] {
 }
 
 /**
- * The two slots under "Restart now" on a narrow card: what it costs, on a line
- * of its own, then what the drain is waiting on, counted rather than listed.
+ * What the drain is waiting on, in the one slot a narrow card has above
+ * "Restart now": the agent when there is only one, otherwise counted.
  */
-function drainLinesNarrow(view: Extract<AgentUpdateCardView, { kind: "draining" }>): Line[] {
+function drainSummaryNarrow(view: Extract<AgentUpdateCardView, { kind: "draining" }>): Line {
     const total = Math.max(view.agentCount, view.agents.length);
     const only = view.agents.length === 1 && total === 1 ? view.agents[0] : undefined;
-    return [
-        { kind: "text", text: "Stops running tools" },
-        total === 0
-            ? {
-                  kind: "text",
-                  text: view.operationCount === 0 ? "Nothing new starts." : "Background only.",
-              }
-            : only
-              ? { agent: only, kind: "agent" }
-              : {
-                    kind: "text",
-                    text: `${String(total)} ${total === 1 ? "agent" : "agents"} working`,
-                },
-    ];
+    if (total === 0)
+        return {
+            kind: "text",
+            text: view.operationCount === 0 ? "Nothing new starts." : "Background only.",
+        };
+    if (only) return { agent: only, kind: "agent" };
+    return { kind: "text", text: `${String(total)} ${total === 1 ? "agent" : "agents"} working` };
 }
 
 /** What a drain is waiting on, in `count` lines; past that the last one counts the rest. */
@@ -497,6 +535,15 @@ function segments(view: AgentUpdateCardView): readonly SegmentedProgressSegment[
             ...(fraction === undefined ? {} : { fraction }),
         };
     });
+}
+
+/** "0:42", "4:12", "1:03:09": a running clock, as a stopwatch reads it. */
+function clockText(ms: number): string {
+    const seconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(seconds / 60);
+    const two = (value: number) => String(value).padStart(2, "0");
+    if (minutes < 60) return `${String(minutes)}:${two(seconds % 60)}`;
+    return `${String(Math.floor(minutes / 60))}:${two(minutes % 60)}:${two(seconds % 60)}`;
 }
 
 /** "42s", "1m 42s", "1h 3m": the measured time, to the second under an hour. */

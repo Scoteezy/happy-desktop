@@ -165,7 +165,7 @@ describe("desktop agent update store", () => {
         expect(store.get()?.progress.kind).toBe("reconnecting");
 
         daemon.report(IDLE);
-        expect(store.get()?.progress).toEqual({ kind: "done" });
+        expect(store.get()?.progress).toEqual({ kind: "done", reason: "update" });
     });
 
     it("holds reconnecting until the window's own connection has read the catalog", () => {
@@ -192,5 +192,71 @@ describe("desktop agent update store", () => {
 
         vi.advanceTimersByTime(3_000);
         expect(store.get()).toBeUndefined();
+    });
+
+    it("tells a reload run outside the app from its own start, without a way to cut it short", () => {
+        const daemon = daemonCreate();
+        const directory = directoryCreate();
+        const store = desktopAgentUpdateStoreCreate({
+            daemon: daemon.store,
+            happyAgents: directory.store,
+        });
+        const restartNow = vi.spyOn(daemon.store, "daemonInstallKill");
+        store.subscribe(() => undefined);
+        const startedAt = Date.now() - 250_000;
+        const reload = { reason: "reload" as const, startedAt, version: "1.2.0" };
+        daemon.report({
+            ...reload,
+            killable: false,
+            phase: "draining",
+            waitingFor: [{ agents: [{ id: "a1", stage: "tools" }], count: 1, name: "agents" }],
+            waitingPeak: 1,
+        });
+        expect(store.get()?.progress).toMatchObject({
+            kind: "draining",
+            restartNow: "unavailable",
+            startedAt,
+        });
+        store.restartNow();
+        expect(restartNow).not.toHaveBeenCalled();
+
+        daemon.report({ ...reload, killed: false, phase: "stopping" });
+        directory.local("disconnected", "ready");
+        daemon.report({ ...reload, phase: "starting" });
+        expect(store.get()?.progress).toEqual({ kind: "starting", startedAt });
+        daemon.report({ ...reload, finishedAt: startedAt + 262_000, phase: "reconnecting" });
+        daemon.report(IDLE);
+        expect(store.get()?.progress.kind).toBe("reconnecting");
+
+        // Measured to when the reload itself finished, not to when this
+        // window happened to reconnect.
+        vi.advanceTimersByTime(5_000);
+        directory.local("connected", "ready");
+        expect(store.get()?.progress).toEqual({
+            kind: "done",
+            reason: "restart",
+            tookMs: 262_000,
+        });
+    });
+
+    it("counts from the host's start in a window that opened part-way through", () => {
+        const daemon = daemonCreate();
+        const directory = directoryCreate();
+        const store = desktopAgentUpdateStoreCreate({
+            daemon: daemon.store,
+            happyAgents: directory.store,
+        });
+        const startedAt = Date.now() - 40_000;
+        daemon.report({ ...STARTING, startedAt });
+        store.subscribe(() => undefined);
+        directory.local("disconnected", "ready");
+        daemon.report({ ...RECONNECTING, startedAt });
+        daemon.report(IDLE);
+        directory.local("connected", "ready");
+        expect(store.get()?.progress).toEqual({
+            kind: "done",
+            reason: "update",
+            tookMs: 40_000,
+        });
     });
 });

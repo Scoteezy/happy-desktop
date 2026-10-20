@@ -22,6 +22,12 @@ export interface HappyAgentConnectionSnapshot {
     readonly message?: string;
     /** Consecutive failed reconnect attempts; zero while connected. */
     readonly attempt: number;
+    /**
+     * Present while the daemon admits no new work: from the moment it starts
+     * draining for a restart, through the restart, until a replacement process
+     * admits work again. It is the daemon's own report, carried as it is.
+     */
+    readonly admitting?: false;
 }
 
 /**
@@ -49,6 +55,11 @@ export interface HappyAgentAvailabilitySnapshot {
     readonly refusal?: string;
     /** Short in-context status for a lane, banner, terminal, or sidebar. */
     readonly message: string;
+    /**
+     * Present while the daemon admits no new work because it is restarting:
+     * reads still work while it drains, but nothing new can be sent to it.
+     */
+    readonly admitting?: false;
 }
 
 /** Outer route state, such as a host's current link to one remote Happy Agent. */
@@ -64,6 +75,15 @@ export interface HappyAgentAvailabilityLink {
  * another startup.
  */
 export function happyAgentAvailabilityProject(
+    snapshot: HappyAgentConnectionSnapshot,
+    materialized: boolean,
+    link?: HappyAgentAvailabilityLink,
+): HappyAgentAvailabilitySnapshot {
+    const availability = availabilityProject(snapshot, materialized, link);
+    return snapshot.admitting === false ? { ...availability, admitting: false } : availability;
+}
+
+function availabilityProject(
     snapshot: HappyAgentConnectionSnapshot,
     materialized: boolean,
     link?: HappyAgentAvailabilityLink,
@@ -225,7 +245,8 @@ function snapshotsEqual(
         left.daemon === right.daemon &&
         left.version === right.version &&
         left.message === right.message &&
-        left.attempt === right.attempt
+        left.attempt === right.attempt &&
+        left.admitting === right.admitting
     );
 }
 

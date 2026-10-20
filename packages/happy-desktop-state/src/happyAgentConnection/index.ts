@@ -11,7 +11,11 @@ export {
     happyAgentVersionAtLeast,
     serverCompatibility,
 } from "./compatibility.js";
-export { ProjectRegistrationError, ProjectRegistrationProtocolError } from "./errors.js";
+export {
+    MessageRefusedError,
+    ProjectRegistrationError,
+    ProjectRegistrationProtocolError,
+} from "./errors.js";
 export type { ProjectRegistrationErrorCode } from "./errors.js";
 export type * from "./types.js";
 export type { UserProfile } from "./userProfiles.js";

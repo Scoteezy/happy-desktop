@@ -11,6 +11,18 @@ export type ProjectRegistrationErrorCode =
     | "project_id_conflict"
     | (string & {});
 
+/**
+ * The host refused a send outright, so the message it carried was never
+ * delivered and its row is gone. Other acceptance failures leave delivery
+ * unknown, and are deliberately not this.
+ */
+export class MessageRefusedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "MessageRefusedError";
+    }
+}
+
 export class ProjectRegistrationError extends Error {
     constructor(
         readonly code: ProjectRegistrationErrorCode,

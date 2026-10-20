@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { connectHappyAgent } from "./connectHappyAgent.js";
+import { MessageRefusedError } from "./errors.js";
 import { happyAgentChatStoreCreate } from "../happyAgent/happyAgentChatStore.js";
 import { happyAgentModelCatalogProject } from "../happyAgent/happyAgentProject.js";
 import type { HappyAgentSessionId } from "../happyAgent/happyAgentTypes.js";
@@ -761,6 +762,24 @@ it("voice acceptance rejects a delayed daemon refusal without claiming delivery 
     await expect(sent).rejects.toThrow("not accepted");
     expect(userMessages(chat.elements)).toEqual([]);
     expect(daemon.callCount("sendMessage")).toBe(1);
+});
+
+it("fails a send a draining daemon refuses at once, and says the daemon takes nothing new", async () => {
+    const { connection, daemon, chat, groups, sessionId } = await liveHarness();
+    expect(groups.state.admitting).toBeUndefined();
+    daemon.failOnce(
+        "sendMessage",
+        new HappyAgentApiError(503, "Happy Agent is draining.", "draining", null),
+    );
+    const mutationId = connection.sendMessage(sessionId, "Racing the start of a drain");
+    expect(userMessages(chat.elements)).toHaveLength(1);
+    await expect(connection.sendAcceptanceWait(mutationId)).rejects.toBeInstanceOf(
+        MessageRefusedError,
+    );
+    // Refused for good rather than retried for minutes, and its one row gone.
+    expect(daemon.callCount("sendMessage")).toBe(1);
+    expect(userMessages(chat.elements)).toEqual([]);
+    expect(groups.state.admitting).toBe(false);
 });
 
 it("shows an optimistic message immediately and keeps its identity once the daemon takes it", async () => {

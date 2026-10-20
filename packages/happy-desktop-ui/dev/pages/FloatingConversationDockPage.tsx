@@ -111,11 +111,29 @@ const chatItems = [
     { kind: "item" as const, id: "wt3|ses_c", label: "Provider catalog" },
 ];
 
+/** What the dock says while the agent is draining or restarting. */
+const RESTARTING_NOTICE = [
+    "Agent is restarting and can't accept new messages.",
+    "You can keep editing your draft.",
+] as const;
+
+const LONG_DRAFT = [
+    "When the agent is back, please pick up where the release checklist left off:",
+    "",
+    "1. Re-run the renderer typecheck and lint, then the update store tests.",
+    "2. Capture the sidebar card in both widths while it is still finishing work.",
+    "3. Compare the composer notice against a model switch line in the transcript,",
+    "   so the left edges and the muted grey match exactly.",
+    "",
+    "Do not reload the live daemon; use the isolated home only.",
+].join("\n");
+
 function dock(
     value: string,
     submitDisabled = false,
     attachments: ComposerSnapshot["attachments"] = [],
     onAttachmentRemove: (attachmentId: string) => void = noop,
+    notice?: readonly string[],
 ) {
     return (
         <ConversationDock
@@ -162,6 +180,7 @@ function dock(
             onComposerSend={noop}
             onComposerValueChange={noop}
             submitDisabled={submitDisabled}
+            {...(notice === undefined ? {} : { notice })}
         />
     );
 }
@@ -317,6 +336,30 @@ export function FloatingConversationDockPage() {
                     }}
                 >
                     {dock("Keep this draft here until the Happy Agent reconnects.", true)}
+                </Box>
+            </Specimen>
+            <Specimen
+                detail="Two muted lines directly above the input, starting on the draft's own text column · the draft stays whole and editable, the placeholder is untouched, and Send is withheld until the agent takes messages again"
+                label="Agent restarting"
+                number="06"
+                stage="surface"
+            >
+                <Box
+                    style={{
+                        background: "var(--surface)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "32px",
+                        justifyContent: "flex-end",
+                        width: "720px",
+                    }}
+                >
+                    <div data-screen="dock-restarting-long-draft" style={{ display: "flex" }}>
+                        {dock(LONG_DRAFT, true, [], noop, RESTARTING_NOTICE)}
+                    </div>
+                    <div data-screen="dock-restarting-empty" style={{ display: "flex" }}>
+                        {dock("", true, [], noop, RESTARTING_NOTICE)}
+                    </div>
                 </Box>
             </Specimen>
             <Specimen

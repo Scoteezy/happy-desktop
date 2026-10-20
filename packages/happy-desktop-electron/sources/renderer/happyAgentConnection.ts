@@ -200,7 +200,8 @@ function snapshotsEqual(
         left.daemon === right.daemon &&
         left.version === right.version &&
         left.message === right.message &&
-        left.attempt === right.attempt
+        left.attempt === right.attempt &&
+        left.admitting === right.admitting
     );
 }
 
@@ -246,12 +247,15 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
         onChange: (_projects, state) => {
             const previous = sourceState;
             sourceState = state.connection;
+            // The daemon's own word that it takes nothing new, from its drain
+            // until a replacement admits work, carried through every state.
+            const admitting = state.admitting === false ? { admitting: false as const } : {};
             if (state.connection === "live") {
-                publish({ attempt: 0, connection: "connected", daemon: "ready" });
+                publish({ attempt: 0, connection: "connected", daemon: "ready", ...admitting });
                 return;
             }
             if (state.connection === "connecting") {
-                publish({ attempt: 0, connection: "connecting", daemon: "unknown" });
+                publish({ attempt: 0, connection: "connecting", daemon: "unknown", ...admitting });
                 return;
             }
             const attempt =
@@ -262,6 +266,7 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
                 attempt,
                 connection: "disconnected",
                 daemon: "unknown",
+                ...admitting,
                 // A closed connection is a fact about this Happy Agent worth stating.
                 // Reconnecting is not: the window's own header says the machine
                 // is unreachable, and naming the transport that is retrying
@@ -276,6 +281,7 @@ function streamConnectionStoreCreate(connection: HappyAgentConnection): {
                 attempt: Math.max(1, snapshot.attempt),
                 connection: "disconnected",
                 daemon: "unknown",
+                ...(snapshot.admitting === false ? { admitting: false as const } : {}),
                 message: error instanceof Error ? error.message : String(error),
             });
         },

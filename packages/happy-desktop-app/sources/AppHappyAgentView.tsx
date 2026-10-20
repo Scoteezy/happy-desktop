@@ -4,6 +4,7 @@ import { HappyAgentSystemMonitorSurfacePage } from "happy-desktop-ui";
 import {
     gptLiveStoreNoop,
     happyAgentBotSubtasks,
+    happyAgentClockStoreCreate,
     happyAgentSidebarTree,
     happyAgentTabsOrdered,
     happyAgentTodoHeading,
@@ -322,8 +323,8 @@ import type {
     AppHappyAgentDaemonSnapshot,
     AppHappyAgentDaemonStore,
 } from "./views/AppHappyAgentSettingsView";
-import type { AppHappyAgentUpdateStore } from "./agentUpdate";
-import { agentUpdateCardView } from "./agentUpdateCardView";
+import type { AppHappyAgentUpdateSnapshot, AppHappyAgentUpdateStore } from "./agentUpdate";
+import { agentUpdateCardView, type AgentUpdateCatalog } from "./agentUpdateCardView";
 
 const sidebarDaemonUnavailable: AppHappyAgentDaemonSnapshot = {
     install: { phase: "idle" },
@@ -348,6 +349,15 @@ const sidebarDaemonStoreNoop: AppHappyAgentDaemonStore = {
 };
 
 /** Stands in wherever no update of a machine-local agent can be under way. */
+/**
+ * What the composer says while the Happy Agent is draining or restarting. The
+ * draft stays editable underneath and nothing is sent until it is back.
+ */
+const AGENT_RESTARTING_NOTICE = [
+    "Agent is restarting and can't accept new messages.",
+    "You can keep editing your draft.",
+] as const;
+
 const agentUpdateStoreNoop: AppHappyAgentUpdateStore = {
     cardToggle: () => undefined,
     chiefOfStaffAsk: () => undefined,
@@ -356,6 +366,58 @@ const agentUpdateStoreNoop: AppHappyAgentUpdateStore = {
     subscribe: () => () => undefined,
     updateRetry: () => undefined,
 };
+
+/**
+ * The clock an update's elapsed time is read against. It ticks only while a
+ * running update's card is subscribed to it.
+ */
+const agentUpdateClock = happyAgentClockStoreCreate();
+const AGENT_UPDATE_CLOCK_STOPPED = (): undefined => undefined;
+
+/**
+ * The footer's update slot while an update runs. Its own component so the
+ * elapsed time ticking once a second redraws only the card, not the window.
+ */
+function AgentUpdateSidebar(props: {
+    readonly snapshot: AppHappyAgentUpdateSnapshot;
+    readonly store: AppHappyAgentUpdateStore;
+    readonly catalog: AgentUpdateCatalog;
+    readonly onConversationOpen: (groupId: string, sessionId: string) => void;
+}) {
+    const { snapshot, store } = props;
+    const progress = snapshot.progress;
+    const ticking =
+        progress.kind !== "done" && progress.kind !== "failed" && progress.startedAt !== undefined;
+    const now = useSyncExternalStore(
+        ticking ? agentUpdateClock.subscribe : SUBSCRIBE_NONE,
+        ticking ? agentUpdateClock.get : AGENT_UPDATE_CLOCK_STOPPED,
+        ticking ? agentUpdateClock.get : AGENT_UPDATE_CLOCK_STOPPED,
+    );
+    return (
+        <SidebarAgentUpdate
+            chiefOfStaffPending={snapshot.chiefOfStaff === "pending"}
+            expanded={snapshot.expanded}
+            hidden={!snapshot.revealed}
+            onCollapse={store.cardToggle}
+            onToggle={store.cardToggle}
+            view={agentUpdateCardView(progress, props.catalog, props.onConversationOpen, now)}
+            {...(progress.kind === "draining" && progress.restartNow !== "unavailable"
+                ? {
+                      onRestartNow: store.restartNow,
+                      restartNowPending: progress.restartNow === "pending",
+                  }
+                : {})}
+            {...(progress.kind === "failed"
+                ? {
+                      onRetry: store.updateRetry,
+                      ...(snapshot.chiefOfStaff === "unavailable"
+                          ? {}
+                          : { onChiefOfStaffAsk: store.chiefOfStaffAsk }),
+                  }
+                : {})}
+        />
+    );
+}
 
 /**
  * What the sidebar has to say about the agent, if anything.
@@ -3283,33 +3345,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // An update under way owns the slot: the window keeps working beside it,
     // and the offer comes back only once it has finished and been cleared.
     const sidebarUpdate = updateProgress ? (
-        <SidebarAgentUpdate
-            chiefOfStaffPending={updateProgress.chiefOfStaff === "pending"}
-            expanded={updateProgress.expanded}
-            hidden={!updateProgress.revealed}
-            onCollapse={updateStore.cardToggle}
-            onToggle={updateStore.cardToggle}
-            view={agentUpdateCardView(
-                updateProgress.progress,
-                updateHost ?? { bots: [], projects: [] },
-                (groupId, sessionId) => {
-                    if (updateHost) props.onChatSelect(updateHost.id, groupId, sessionId);
-                },
-            )}
-            {...(updateProgress.progress.kind === "draining"
-                ? {
-                      onRestartNow: updateStore.restartNow,
-                      restartNowPending: updateProgress.progress.restartNow === "pending",
-                  }
-                : {})}
-            {...(updateProgress.progress.kind === "failed"
-                ? {
-                      onRetry: updateStore.updateRetry,
-                      ...(updateProgress.chiefOfStaff === "unavailable"
-                          ? {}
-                          : { onChiefOfStaffAsk: updateStore.chiefOfStaffAsk }),
-                  }
-                : {})}
+        <AgentUpdateSidebar
+            catalog={updateHost ?? { bots: [], projects: [] }}
+            onConversationOpen={(groupId, sessionId) => {
+                if (updateHost) props.onChatSelect(updateHost.id, groupId, sessionId);
+            }}
+            snapshot={updateProgress}
+            store={updateStore}
         />
     ) : props.update ? (
         <SidebarUpdateAction
@@ -6636,6 +6678,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 groupName={openGroup.name}
                 happyAgentOnline={happyAgentOnline}
                 {...(connectionRefusal === undefined ? {} : { unavailable: connectionRefusal })}
+                {...(availability.admitting === false ? { restarting: true } : {})}
                 workspace={props.workspace}
             />
         ) : (
@@ -6726,6 +6769,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 readOnly={conversationReadOnly}
                 happyAgentOnline={happyAgentOnline}
                 {...(connectionRefusal === undefined ? {} : { unavailable: connectionRefusal })}
+                {...(availability.admitting === false ? { restarting: true } : {})}
                 {...(conversationReadOnlyReason === undefined
                     ? {}
                     : { readOnlyReason: conversationReadOnlyReason })}
@@ -8081,6 +8125,11 @@ function HappyAgentGroupComposer(props: {
     happyAgentOnline: () => boolean;
     /** Why this Happy Agent cannot accept network actions while the local draft remains editable. */
     unavailable?: string;
+    /**
+     * The Happy Agent is restarting and takes no new messages until it is back:
+     * the draft stays editable, Send is held, and the composer says why.
+     */
+    restarting?: boolean;
     workspace: HappyAgentWorkspaceStore;
 }) {
     const workspace = props.workspace;
@@ -8104,7 +8153,8 @@ function HappyAgentGroupComposer(props: {
                     ? "Configure models to start messaging…"
                     : composerPlaceholder(props.groupName)
             }
-            composerSubmitDisabled={props.unavailable !== undefined}
+            composerSubmitDisabled={props.unavailable !== undefined || props.restarting === true}
+            {...(props.restarting === true ? { composerNotice: AGENT_RESTARTING_NOTICE } : {})}
             entries={NO_ENTRIES}
             // The first message is what creates the session, so its model,
             // effort, and access mode have to be choosable before it is sent
@@ -8211,6 +8261,11 @@ function HappyAgentConversationBody(props: {
     /** Why this Happy Agent cannot currently accept network actions. */
     unavailable?: string;
     /**
+     * The Happy Agent is restarting and takes no new messages until it is back:
+     * the draft stays editable, Send is held, and the composer says why.
+     */
+    restarting?: boolean;
+    /**
      * Whether a run already going here may be stopped. Separate from `readOnly`
      * on purpose: a checkout that has gone away closes the input, but the run
      * inside it is a process the host owns and the reader must still be able to
@@ -8248,6 +8303,7 @@ function HappyAgentConversationBody(props: {
                 readOnly={props.readOnly}
                 happyAgentOnline={props.happyAgentOnline}
                 {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
+                {...(props.restarting === true ? { restarting: true } : {})}
                 {...(props.readOnlyReason === undefined
                     ? {}
                     : { readOnlyReason: props.readOnlyReason })}
@@ -8408,6 +8464,11 @@ function HappyAgentConversationSurface(props: {
     /** Why this Happy Agent cannot currently accept network actions. */
     unavailable?: string;
     /**
+     * The Happy Agent is restarting and takes no new messages until it is back:
+     * the draft stays editable, Send is held, and the composer says why.
+     */
+    restarting?: boolean;
+    /**
      * Whether a run already going here may be stopped. Separate from `readOnly`
      * on purpose: a checkout that has gone away closes the input, but the run
      * inside it is a process the host owns and the reader must still be able to
@@ -8508,7 +8569,12 @@ function HappyAgentConversationSurface(props: {
             }
             composer={conversation.composer}
             composerDisabled={composerDisabled}
-            composerSubmitDisabled={sendRefusal !== undefined}
+            composerSubmitDisabled={sendRefusal !== undefined || props.restarting === true}
+            // A restarting agent is said in two plain lines above the input,
+            // and only while the input is open: a locked chat already says why.
+            {...(props.restarting === true && !composerDisabled
+                ? { composerNotice: AGENT_RESTARTING_NOTICE }
+                : {})}
             composerFocusOnType={!composerDisabled && props.focusOnType}
             // The open conversation is what this composer writes into, so moving
             // to another one — or landing in the one a new workspace was made

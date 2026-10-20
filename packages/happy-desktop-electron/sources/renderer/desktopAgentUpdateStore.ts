@@ -1,7 +1,9 @@
 import type {
     AppHappyAgentDaemonInstall,
+    AppHappyAgentDaemonRestartReason,
     AppHappyAgentDaemonStore,
     AppHappyAgentUpdateProgress,
+    AppHappyAgentUpdateReason,
     AppHappyAgentUpdateSnapshot,
     AppHappyAgentUpdateStore,
 } from "happy-desktop-app";
@@ -39,9 +41,11 @@ const REVEAL_HOLD_MS = 1_200;
  * that moment: the sidebar unmounted while Settings was open, or a window
  * opened part-way through.
  *
- * The time is measured only when this window saw the update begin. A window
- * opened part-way through has no start to measure from and says nothing about
- * it rather than a shorter number.
+ * The time is measured from the start the host reports with every step, and
+ * to the moment the restart itself finished when the host knows it, as it
+ * does for `happy-agent reload`. An older host reports no start; then the time
+ * is measured only when this window saw the update begin, and a window opened
+ * part-way through says nothing about it rather than a shorter number.
  */
 export function desktopAgentUpdateStoreCreate(input: {
     readonly daemon: AppHappyAgentDaemonStore;
@@ -55,6 +59,9 @@ export function desktopAgentUpdateStoreCreate(input: {
     // One update, from the first report of it until it is cleared.
     let active = false;
     let startedAt: number | undefined;
+    // What the host said of it: why, when it began, and when it finished.
+    let reason: AppHappyAgentDaemonRestartReason = "install";
+    let finishedAt: number | undefined;
     let expanded = true;
     // Held "reconnecting" until the window is connected again.
     let held = false;
@@ -79,6 +86,8 @@ export function desktopAgentUpdateStoreCreate(input: {
         done = undefined;
         failure = undefined;
         startedAt = undefined;
+        reason = "install";
+        finishedAt = undefined;
         expanded = true;
         chiefOfStaff = "idle";
         restartRequested = false;
@@ -109,6 +118,10 @@ export function desktopAgentUpdateStoreCreate(input: {
                     reconcile();
                 }, REVEAL_HOLD_MS);
             }
+            reason = install.reason;
+            if (install.startedAt !== undefined) startedAt = install.startedAt;
+            if (install.phase === "reconnecting" && install.finishedAt !== undefined)
+                finishedAt = install.finishedAt;
             if (
                 install.phase !== "draining" ||
                 install.waitingFor.length > 0 ||
@@ -130,7 +143,7 @@ export function desktopAgentUpdateStoreCreate(input: {
             }
             return progressProject(install, restartRequested);
         }
-        if (done) return { kind: "done", ...done };
+        if (done) return { kind: "done", reason: reasonProject(reason), ...done };
         if (!held) {
             if (active) clear();
             return undefined;
@@ -144,13 +157,16 @@ export function desktopAgentUpdateStoreCreate(input: {
             clear();
             return undefined;
         }
-        done = startedAt === undefined ? {} : { tookMs: Date.now() - startedAt };
+        done =
+            startedAt === undefined
+                ? {}
+                : { tookMs: Math.max(0, (finishedAt ?? Date.now()) - startedAt) };
         doneTimer = setTimeout(() => {
             doneTimer = undefined;
             clear();
             reconcile();
         }, DONE_VISIBLE_MS);
-        return { kind: "done", ...done };
+        return { kind: "done", reason: reasonProject(reason), ...done };
     };
 
     const chiefOfStaffAvailable = (): boolean => {
@@ -245,7 +261,8 @@ export function desktopAgentUpdateStoreCreate(input: {
         },
         restartNow() {
             const install = input.daemon.get().install;
-            if (install.phase !== "draining" || restartRequested) return;
+            if (install.phase !== "draining" || install.reason === "reload" || restartRequested)
+                return;
             restartRequested = true;
             reconcile();
             // The main process stops waiting and asks the daemon to exit; its
@@ -297,25 +314,39 @@ function progressProject(
     install: Exclude<AppHappyAgentDaemonInstall, { phase: "idle" }>,
     restartRequested: boolean,
 ): AppHappyAgentUpdateProgress {
+    const started = install.startedAt === undefined ? {} : { startedAt: install.startedAt };
     switch (install.phase) {
         case "draining":
             return {
                 kind: "draining",
-                restartNow: restartRequested ? "pending" : "available",
+                // A reload run from a terminal is not this window's to stop.
+                restartNow:
+                    install.reason === "reload"
+                        ? "unavailable"
+                        : restartRequested
+                          ? "pending"
+                          : "available",
+                ...started,
                 waitingFor: install.waitingFor,
                 waitingPeak: install.waitingPeak,
             };
         case "stopping":
-            return { killed: install.killed, kind: "stopping" };
+            return { killed: install.killed, kind: "stopping", ...started };
         case "starting":
         case "reconnecting":
-            return { kind: install.phase };
+            return { kind: install.phase, ...started };
         case "error":
             return {
                 failedAt: install.failedAt,
                 kind: "failed",
                 message: install.message,
+                reason: reasonProject(install.reason),
                 version: install.version,
             };
     }
+}
+
+/** An install moves onto another version; a restart or reload comes back on the same one. */
+function reasonProject(reason: AppHappyAgentDaemonRestartReason): AppHappyAgentUpdateReason {
+    return reason === "install" ? "update" : "restart";
 }

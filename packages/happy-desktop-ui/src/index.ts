@@ -618,6 +618,7 @@ export {
     AgentUpdateCard,
     type AgentUpdateCardAgent,
     type AgentUpdateCardProps,
+    type AgentUpdateCardReason,
     type AgentUpdateCardView,
     type AgentUpdateStep,
 } from "./AgentUpdateCard";

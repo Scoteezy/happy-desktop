@@ -24,7 +24,16 @@ export function agentUpdateCardView(
     progress: AppHappyAgentUpdateProgress,
     catalog: AgentUpdateCatalog,
     open: (groupId: string, sessionId: string) => void,
+    /** The clock the elapsed time is read against, while the update runs. */
+    now?: number,
 ): AgentUpdateCardView {
+    const elapsed =
+        progress.kind !== "done" &&
+        progress.kind !== "failed" &&
+        progress.startedAt !== undefined &&
+        now !== undefined
+            ? { elapsedMs: Math.max(0, now - progress.startedAt) }
+            : {};
     switch (progress.kind) {
         case "draining": {
             const agents: AgentUpdateCardAgent[] = [];
@@ -57,6 +66,7 @@ export function agentUpdateCardView(
             return {
                 agentCount,
                 agents,
+                ...elapsed,
                 kind: "draining",
                 operationCount,
                 ...(progress.waitingPeak > 0
@@ -73,17 +83,23 @@ export function agentUpdateCardView(
             };
         }
         case "stopping":
-            return { kind: "stopping", killed: progress.killed };
+            return { ...elapsed, kind: "stopping", killed: progress.killed };
         case "starting":
         case "reconnecting":
-            return { kind: progress.kind };
+            return { ...elapsed, kind: progress.kind };
         case "done":
             return {
                 kind: "done",
+                reason: progress.reason,
                 ...(progress.tookMs === undefined ? {} : { tookMs: progress.tookMs }),
             };
         case "failed":
-            return { failedAt: progress.failedAt, kind: "failed", message: progress.message };
+            return {
+                failedAt: progress.failedAt,
+                kind: "failed",
+                message: progress.message,
+                reason: progress.reason,
+            };
     }
 }
 

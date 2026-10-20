@@ -169,8 +169,11 @@ export interface AppHappyAgentDrainComponent {
     readonly truncated?: boolean;
 }
 
-/** Why the daemon is being taken down and brought back. */
-export type AppHappyAgentDaemonRestartReason = "install" | "restart";
+/**
+ * Why the daemon is being taken down and brought back. `reload` is one this
+ * window did not start: `happy-agent reload`, run from a terminal or an agent.
+ */
+export type AppHappyAgentDaemonRestartReason = "install" | "restart" | "reload";
 
 /** The steps a restart runs through, in the order it runs them. */
 export type AppHappyAgentDaemonRestartStep = "draining" | "stopping" | "starting" | "reconnecting";
@@ -186,6 +189,8 @@ export type AppHappyAgentDaemonInstall =
           readonly phase: "draining";
           readonly reason: AppHappyAgentDaemonRestartReason;
           readonly version: string;
+          /** When the whole restart began (epoch ms); absent from an older host. */
+          readonly startedAt?: number;
           readonly waitingFor: readonly AppHappyAgentDrainComponent[];
           /**
            * The most open work this drain has held at once, which the share
@@ -199,6 +204,7 @@ export type AppHappyAgentDaemonInstall =
           readonly phase: "stopping";
           readonly reason: AppHappyAgentDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
           /** The drain was cut short, so work was interrupted rather than finished. */
           readonly killed: boolean;
       }
@@ -206,16 +212,21 @@ export type AppHappyAgentDaemonInstall =
           readonly phase: "starting";
           readonly reason: AppHappyAgentDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
       }
     | {
           readonly phase: "reconnecting";
           readonly reason: AppHappyAgentDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
+          /** When the restart itself finished (epoch ms), when the host knows. */
+          readonly finishedAt?: number;
       }
     | {
           readonly phase: "error";
           readonly reason: AppHappyAgentDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
           readonly message: string;
           /** The step that was running when it failed. */
           readonly failedAt: AppHappyAgentDaemonRestartStep;

@@ -718,6 +718,12 @@ export interface TaskGroup {
 export interface GroupsState {
     connection: ConnectionState;
     sessionsComplete: boolean;
+    /**
+     * Present while the daemon admits no new work: from its drain, through its
+     * restart, until a replacement process admits work again. A send is then
+     * refused, though the connection may still be live and streaming.
+     */
+    admitting?: false;
 }
 
 export type GroupDelta =
@@ -967,6 +973,11 @@ export interface HappyAgentConnection {
     sendMessage(sessionId: string, message: string | SendMessageInput): MutationId;
     /** Same send/idempotency path, resolving only after authoritative acceptance. */
     sendMessageConfirmed(sessionId: string, message: string | SendMessageInput): Promise<void>;
+    /**
+     * Waits for the host to accept a send `sendMessage` just started, rejecting
+     * when it refused it. Ask in the same call stack the send started in.
+     */
+    sendAcceptanceWait(mutationId: MutationId): Promise<void>;
     /** Invokes one slash command under the session's current composer selection. */
     invokeSlashCommand(sessionId: string, name: string, argumentsValue?: string): MutationId;
     stopBackgroundProcess(sessionId: string, projectedProcessId: number): MutationId;

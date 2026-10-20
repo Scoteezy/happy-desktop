@@ -26,6 +26,7 @@ export {
 } from "./HappyAgentVersionProvider";
 export {
     type AppHappyAgentUpdateProgress,
+    type AppHappyAgentUpdateReason,
     type AppHappyAgentUpdateSnapshot,
     type AppHappyAgentUpdateStore,
 } from "./agentUpdate";

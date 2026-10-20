@@ -23,6 +23,12 @@ export type ConversationDockProps = {
     composerControls?: ReactNode;
     /** Agent-authored contribution bar immediately above the composer card. */
     composerAboveControl?: ReactNode;
+    /**
+     * Lines said directly above the input, one per line, in the transcript's
+     * muted service-line voice: why sending is held while the draft stays
+     * editable. The input, its placeholder, and its draft are left as they are.
+     */
+    notice?: readonly string[];
     /** Accessory rendered below the composer card. */
     composerFooterControl?: ReactNode;
     composerPlaceholder?: string;
@@ -247,6 +253,19 @@ export function ConversationDock(props: ConversationDockProps) {
             ) : null}
             <div className="happy-conversation__dock-inner">
                 {props.composerAboveControl}
+                {props.notice === undefined || props.notice.length === 0 ? null : (
+                    <div
+                        className="happy-conversation__notice"
+                        data-happy-desktop-ui="conversation-dock-notice"
+                        role="status"
+                    >
+                        {props.notice.map((line) => (
+                            <span className="happy-system-notice__text" key={line}>
+                                {line}
+                            </span>
+                        ))}
+                    </div>
+                )}
                 <Composer
                     attachmentMultiple
                     attachmentPreviews={attachmentPreviews}

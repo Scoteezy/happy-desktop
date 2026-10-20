@@ -62,6 +62,7 @@ import {
     happyAgentCommentsTextAppend,
     happyAgentComposerAttachmentCreate,
     happyAgentComposerAttachmentPreviewRelease,
+    happyAgentComposerAttachmentPreviewRenew,
     happyAgentComposerAttachmentsValidate,
     happyAgentImageInputsOf,
     happyAgentWorkspaceAttachmentData,
@@ -4920,7 +4921,29 @@ export function happyAgentWorkspaceStoreCreate(
                                     event.attachments,
                                 );
                                 const session = await withChatStore(async (store) => {
-                                    await store.messageSend(text, images);
+                                    await store.messageSend(text, images, () => {
+                                        // Refused after it left the composer,
+                                        // as a send racing the start of a drain
+                                        // is: the words come back, unless
+                                        // something newer has been written.
+                                        if (created.getState().text.length > 0) return;
+                                        created.getState().composerInput({
+                                            type: "submissionReturned",
+                                            text: event.text,
+                                            attachments: event.attachments.map(
+                                                happyAgentComposerAttachmentPreviewRenew,
+                                            ),
+                                        });
+                                        if (created.getState().text !== event.text) return;
+                                        attachmentsRemember(
+                                            conversationAttachments,
+                                            conversationId,
+                                            created,
+                                        );
+                                        void store
+                                            .draftSet(event.text, nextDraftUpdatedAt(), draftOrigin)
+                                            .catch(() => undefined);
+                                    });
                                     return store.get().session;
                                 });
                                 activityRecord({

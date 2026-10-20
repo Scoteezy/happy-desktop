@@ -266,6 +266,27 @@
 }
 
 /*
+ * Why sending is held, said directly above the input in the voice of the
+ * transcript's start-aligned service lines (a model or provider switch): the
+ * same muted text role at the same 14px/20px, one line each. The 20px inset is
+ * the card's 1px border plus the input's 19px side inset, so these lines start
+ * on the column the draft's own text starts on.
+ */
+.happy-conversation__notice {
+    display: flex;
+    flex-direction: column;
+    padding: 0 20px;
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-conversation__notice > .happy-system-notice__text {
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+}
+
+/*
  * Floating conversation dock — the composer over an expanded panel.
  *
  * It leaves the flow on purpose (an overlay, not a row): the surface underneath

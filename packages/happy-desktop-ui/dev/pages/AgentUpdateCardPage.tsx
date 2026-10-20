@@ -37,20 +37,31 @@ type Phase = {
 };
 
 const DRAINING_FIVE: Phase = {
-    detail: "More than fit: one named, the last line counts the rest",
+    detail: "More than fit: one named, the second line counts the rest, Restart now below them",
     label: "Finishing work · 5 agents",
     restart: "available",
-    view: { agentCount: 5, agents: AGENTS, kind: "draining", operationCount: 0 },
+    view: {
+        agentCount: 5,
+        agents: AGENTS,
+        elapsedMs: 252_000,
+        kind: "draining",
+        operationCount: 0,
+    },
 };
 const STOPPING: Phase = {
     detail: "Drained, the daemon is asked to exit",
     label: "Shutting down",
-    view: { kind: "stopping", killed: false },
+    view: { elapsedMs: 261_000, kind: "stopping", killed: false },
 };
 const STARTING: Phase = {
     detail: "The new version is coming up",
     label: "Starting",
-    view: { kind: "starting" },
+    view: { elapsedMs: 264_000, kind: "starting" },
+};
+const RESTARTED: Phase = {
+    detail: "A restart onto the same version, such as happy-agent reload, closes with its own word",
+    label: "Restarted",
+    view: { kind: "done", reason: "restart", tookMs: 272_000 },
 };
 const DONE: Phase = {
     detail: "Measured by this window from the update's start; clears itself after 3 seconds",
@@ -69,12 +80,13 @@ const FAILED: Phase = {
 
 const PHASES: readonly Phase[] = [
     {
-        detail: "Restart now under the title · two agents fit below it: name · status, each opening its chat",
+        detail: "What is still running first: name · status, each opening its chat · Restart now below the list · the clock counts from the update's start",
         label: "Finishing work · 2 agents",
         restart: "available",
         view: {
             agentCount: 2,
             agents: AGENTS.slice(0, 2),
+            elapsedMs: 42_000,
             fraction: 0.4,
             kind: "draining",
             operationCount: 0,
@@ -82,36 +94,65 @@ const PHASES: readonly Phase[] = [
     },
     DRAINING_FIVE,
     {
+        detail: "A reload run from the command line cannot be cut short here, so all three lines list what is running",
+        label: "Finishing work · CLI reload",
+        view: {
+            agentCount: 3,
+            agents: AGENTS.slice(0, 3),
+            elapsedMs: 3_729_000,
+            fraction: 0.2,
+            kind: "draining",
+            operationCount: 0,
+        },
+    },
+    {
         detail: "Only internal workers are left: said once, never counted as +N more",
         label: "Finishing work · background only",
         restart: "available",
-        view: { agentCount: 0, agents: [], kind: "draining", operationCount: 2 },
+        view: { agentCount: 0, agents: [], elapsedMs: 9_000, kind: "draining", operationCount: 2 },
     },
     {
         detail: "Asked for: the link waits until the daemon reports it stopping",
         label: "Finishing work · restarting",
         restart: "pending",
-        view: { agentCount: 5, agents: AGENTS, kind: "draining", operationCount: 0 },
+        view: {
+            agentCount: 5,
+            agents: AGENTS,
+            elapsedMs: 255_000,
+            kind: "draining",
+            operationCount: 0,
+        },
     },
     STOPPING,
     {
         detail: "Restarted without waiting: what that cost, said plainly",
         label: "Shutting down · restarted now",
-        view: { kind: "stopping", killed: true },
+        view: { elapsedMs: 256_000, kind: "stopping", killed: true },
     },
     STARTING,
     {
         detail: "The window catches up with the new daemon",
         label: "Reconnecting",
-        view: { kind: "reconnecting" },
+        view: { elapsedMs: 268_000, kind: "reconnecting" },
     },
     DONE,
+    RESTARTED,
     {
         detail: "A window that arrived mid-update has no start to measure from and says nothing",
         label: "Updated · unmeasured",
         view: { kind: "done" },
     },
     FAILED,
+    {
+        detail: "A reload that failed says so in the restart's words",
+        label: "Restart failed",
+        view: {
+            failedAt: "starting",
+            kind: "failed",
+            message: "The new Happy Agent was not ready after 5 minutes.",
+            reason: "restart",
+        },
+    },
 ];
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/gu, "-");
@@ -214,7 +255,7 @@ const WINDOWS = [
     { height: 900, sidebar: 220, width: 720 },
 ] as const;
 
-const WINDOW_PHASES: readonly Phase[] = [DRAINING_FIVE, STOPPING, STARTING, DONE, FAILED];
+const WINDOW_PHASES: readonly Phase[] = [DRAINING_FIVE, STOPPING, STARTING, RESTARTED, FAILED];
 
 function CardAt(props: { readonly width: number; readonly children: ReactNode }) {
     return (
@@ -226,7 +267,7 @@ export function AgentUpdateCardPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="A Happy Agent update, told on a card that stands on the sidebar footer while the window stays usable. Every phase is the same 128px-tall frame, as wide as the footer row: the bare looping snail in a 56px square, a title naming the step, three fixed detail lines, and four equal unlabelled tracks. While work is finishing, the line under the title is Restart now and what it costs. Only the words change. The footer's update slot turns into a slowly spinning sync button while the update runs and toggles the card; once the update is cleared, the slot is empty again."
+            summary="A Happy Agent update or restart, told on a card that stands on the sidebar footer while the window stays usable. Every phase is the same 128px-tall frame, as wide as the footer row: the bare looping snail in a 56px square, a title naming the step with the time since the update began beside it, three fixed detail lines, and four equal unlabelled tracks. While work is finishing, the lines list what is still running first and Restart now, with what it costs, sits below them. Only the words change. The footer's update slot turns into a slowly spinning sync button while the update runs and toggles the card; once the update is cleared, the slot is empty again."
             title="Agent update card"
         >
             {CARD_WIDTHS.map((width, widthIndex) => (

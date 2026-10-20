@@ -213,7 +213,17 @@ export type ComposerInput =
       }
     | { readonly type: "agentUsersReconciled"; readonly agentUserIds: readonly string[] }
     | { readonly type: "submissionConfirmed"; readonly revision: number }
-    | { readonly type: "submissionFailed"; readonly revision: number; readonly error: UserError };
+    | { readonly type: "submissionFailed"; readonly revision: number; readonly error: UserError }
+    /**
+     * A send that had already left the composer was refused, so its words and
+     * attachments come back. Only into an empty composer: a draft written
+     * since is newer, and is never replaced.
+     */
+    | {
+          readonly type: "submissionReturned";
+          readonly text: string;
+          readonly attachments: readonly ComposerAttachment[];
+      };
 
 export interface ComposerState extends ComposerSnapshot {
     textUpdate(text: string): void;
@@ -607,6 +617,23 @@ export function composerStoreCreate(
                             shellCommand: undefined,
                             mentionCandidates: [],
                         });
+                    return;
+                case "submissionReturned":
+                    if (
+                        snapshot.voiceDraft ||
+                        snapshot.submission.status === "pending" ||
+                        snapshot.text.length > 0 ||
+                        snapshot.attachments.length > 0
+                    )
+                        return;
+                    set({
+                        text: event.text,
+                        attachments: event.attachments,
+                        revision: snapshot.revision + 1,
+                        submission: { status: "idle" },
+                        textUpdatedAt: now(),
+                        ...draftDerive(event.text, snapshot.capabilities),
+                    });
                     return;
                 case "submissionFailed":
                     if (

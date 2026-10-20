@@ -34,7 +34,7 @@ import { happyAgentSyncCreate } from "./happyAgentSync.js";
 import { happyAgentSyncRead } from "./happyAgentSyncRead.js";
 import { gitSnapshotStateUpdate, type GitSnapshotState } from "./gitSnapshotState.js";
 import { CHECKING_SERVER_COMPATIBILITY, serverCompatibility } from "./compatibility.js";
-import { projectRegistrationError } from "./errors.js";
+import { MessageRefusedError, projectRegistrationError } from "./errors.js";
 import { deepEqual } from "../happyAgent/happyAgentSupport.js";
 import { happyAgentDraftAppended } from "../happyAgent/happyAgentChatDraftAppend.js";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
@@ -437,6 +437,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const groupState = (): GroupsState => ({
         connection: groupsStore.getState().connection,
         sessionsComplete: config !== undefined,
+        ...(admitting ? {} : { admitting: false as const }),
     });
 
     /**
@@ -676,6 +677,25 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         });
         publishGroups([{ type: "groups_state_changed", state: groupState() }]);
         for (const entry of sessions.values()) publishSession(entry);
+    };
+
+    /**
+     * Records whether the daemon answering admits new work, and tells the
+     * window when that changes: it is what says the agent is restarting, from
+     * the drain until a replacement process admits work again.
+     */
+    const admittingSet = (next: boolean): void => {
+        if (admitting === next) return;
+        admitting = next;
+        reportDebug({
+            detail: debugDetail({ admitting: next }),
+            level: "info",
+            message: next
+                ? "Happy Agent admits new work"
+                : "Happy Agent stopped admitting new work",
+            source: "connection",
+        });
+        publishGroups([{ type: "groups_state_changed", state: groupState() }]);
     };
 
     const workspaceOf = (workspaceId: string): Workspace | undefined =>
@@ -2272,7 +2292,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     });
                     // Health is read for every new process, so this is where a
                     // replacement that admits work again is first known.
-                    admitting = health.draining !== true && health.shuttingDown !== true;
+                    admittingSet(health.draining !== true && health.shuttingDown !== true);
                     const nextCompatibility = serverCompatibility(health.version);
                     reportCompatibility(nextCompatibility);
                     if (nextCompatibility.status !== "compatible" || !health.ready) {
@@ -2404,7 +2424,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         // A draining agent still answers and still streams, and
                         // the feed says so itself when it finally stops. It no
                         // longer admits writes, so routine ones are held.
-                        admitting = false;
+                        admittingSet(false);
                         reportDebug({
                             detail: debugDetail({
                                 cursor: update.cursor,
@@ -2509,6 +2529,13 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     confirmed.then(() => undefined),
                 ]);
             } catch (error) {
+                // A draining daemon has said it takes nothing new until it is
+                // replaced, which takes far longer than any retry here waits.
+                // The send fails now, so its words go back to the composer.
+                if (drainingRefusal(error)) {
+                    admittingSet(false);
+                    throw error;
+                }
                 const retryable =
                     !(error instanceof HappyAgentApiError) ||
                     error.status === 408 ||
@@ -2686,7 +2713,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         });
                     } catch (error) {
                         if (drainingRefusal(error)) {
-                            admitting = false;
+                            admittingSet(false);
                             if (save.confirmation) throw error;
                             if (!heldDraftSaves.has(sessionId)) heldDraftSaves.set(sessionId, save);
                             return undefined;
@@ -2773,7 +2800,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     );
                 } catch (error) {
                     if (!drainingRefusal(error)) throw error;
-                    admitting = false;
+                    admittingSet(false);
                     heldReads.add(sessionId);
                     return undefined;
                 }
@@ -3414,7 +3441,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         current.messages.delete(mutationId);
                         publishSession(current);
                         acceptance.reject(
-                            new Error(
+                            new MessageRefusedError(
                                 "The message was not accepted. Your local draft is retained.",
                             ),
                         );
@@ -3439,8 +3466,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         },
         sendMessageConfirmed(sessionId, message) {
             const id = this.sendMessage(sessionId, message);
+            return this.sendAcceptanceWait(id);
+        },
+        sendAcceptanceWait(mutationId) {
             return (
-                sendAcceptance.get(id) ??
+                sendAcceptance.get(mutationId) ??
                 Promise.reject(new Error("Message acceptance is unavailable."))
             );
         },

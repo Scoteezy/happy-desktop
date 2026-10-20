@@ -16,24 +16,36 @@ export type AppHappyAgentUpdateProgress =
           readonly waitingPeak: number;
           /**
            * Whether the drain can be cut short from the card. `pending` once
-           * the window has asked, until the daemon reports it stopping.
+           * the window has asked, until the daemon reports it stopping;
+           * `unavailable` for a restart this window did not start and cannot
+           * stop, such as `happy-agent reload` run from a terminal.
            */
-          readonly restartNow: "available" | "pending";
+          readonly restartNow: "available" | "pending" | "unavailable";
+          /** When the whole restart began (epoch ms), when the host said. */
+          readonly startedAt?: number;
       }
-    | { readonly kind: "stopping"; readonly killed: boolean }
-    | { readonly kind: "starting" }
-    | { readonly kind: "reconnecting" }
+    | { readonly kind: "stopping"; readonly killed: boolean; readonly startedAt?: number }
+    | { readonly kind: "starting"; readonly startedAt?: number }
+    | { readonly kind: "reconnecting"; readonly startedAt?: number }
     | {
           readonly kind: "done";
-          /** Present only when this window watched the update from its start. */
+          /** Present only when the update's start is known. */
           readonly tookMs?: number;
+          readonly reason: AppHappyAgentUpdateReason;
       }
     | {
           readonly kind: "failed";
           readonly version: string;
           readonly message: string;
           readonly failedAt: AppHappyAgentDaemonRestartStep;
+          readonly reason: AppHappyAgentUpdateReason;
       };
+
+/**
+ * What the update was, as its closing words say it: onto another version, or
+ * back on the same one (a restart from Settings, or `happy-agent reload`).
+ */
+export type AppHappyAgentUpdateReason = "update" | "restart";
 
 export interface AppHappyAgentUpdateSnapshot {
     readonly progress: AppHappyAgentUpdateProgress;

@@ -29,3 +29,41 @@ describe("composerState slash commands", () => {
         ]);
     });
 });
+
+describe("composerState refused submissions", () => {
+    it("returns a refused send's words to an empty composer without re-saving them itself", () => {
+        const output: ComposerOutput[] = [];
+        const store = composerStoreCreate("session-a", {
+            now: () => 7,
+            output: (event) => output.push(event),
+        });
+        store.getState().textUpdate("Ship the release notes");
+        store.getState().textSubmit();
+        const revision = store.getState().revision;
+        store.getState().composerInput({ type: "submissionConfirmed", revision });
+        expect(store.getState().text).toBe("");
+        output.length = 0;
+
+        store.getState().composerInput({
+            type: "submissionReturned",
+            text: "Ship the release notes",
+            attachments: [],
+        });
+        expect(store.getState()).toMatchObject({
+            submission: { status: "idle" },
+            text: "Ship the release notes",
+        });
+        expect(output).toEqual([]);
+    });
+
+    it("never replaces a draft written since", () => {
+        const store = composerStoreCreate("session-a");
+        store.getState().textUpdate("Something newer");
+        store.getState().composerInput({
+            type: "submissionReturned",
+            text: "The refused send",
+            attachments: [],
+        });
+        expect(store.getState().text).toBe("Something newer");
+    });
+});

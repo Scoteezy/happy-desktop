@@ -8,9 +8,9 @@
  *   gap       16
  *   bar       4px, four equal tracks, no labels
  *
- * Under 240px — a sidebar narrower than 264px — the snail draws at 40px and the
- * fold control moves from the title's end to the bar's, so the title keeps
- * the whole width beside the snail.
+ * The fold control sits at the bar's end, so the title and the clock beside it
+ * keep the whole width beside the snail. Under 240px — a sidebar narrower than
+ * 264px — the snail draws at 40px and the clock moves to the bar's end too.
  */
 .happy-agent-update-card {
     --happy-agent-update-card-title: 22px;
@@ -71,18 +71,36 @@
     height: var(--happy-agent-update-card-row);
 }
 
-.happy-agent-update-card__title {
-    display: block;
+/* The title slot: the step, then how long the update has been going. */
+.happy-agent-update-card__heading {
+    display: flex;
     flex: none;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
     height: var(--happy-agent-update-card-title);
-    /* The collapse control's lane. */
-    padding-right: 28px;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.happy-agent-update-card__title {
+    flex: 0 1 auto;
+    min-width: 0;
     overflow: hidden;
     font-size: 16px;
     font-weight: 700;
     line-height: var(--happy-agent-update-card-title);
     text-overflow: ellipsis;
-    white-space: nowrap;
+}
+
+/* Tabular figures, so the clock ticking never nudges the title beside it. */
+.happy-agent-update-card__elapsed {
+    flex: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    line-height: var(--happy-agent-update-card-title);
 }
 
 .happy-agent-update-card__title[data-tone="failed"] {
@@ -197,17 +215,35 @@ button.happy-agent-update-card__agent:hover .happy-agent-update-card__agent-go {
     outline-offset: 2px;
 }
 
+/* Centred on the bar, at its end. */
 .happy-agent-update-card__collapse.happy-button {
     position: absolute;
-    top: 12px;
-    right: 12px;
+    right: 6px;
+    bottom: 4px;
 }
 
-.happy-agent-update-card__bar {
+/* The bar's row: 4px tall whatever it holds, and clear of the fold control. */
+.happy-agent-update-card__footer {
+    display: flex;
     flex: none;
+    align-items: center;
+    gap: 8px;
+    height: 4px;
+    margin-right: 25px;
 }
 
-/* The slots under "Restart now", in the wide and the narrow form; one shows. */
+.happy-agent-update-card .happy-agent-update-card__bar {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+}
+
+.happy-agent-update-card__elapsed[data-form="narrow"] {
+    display: none;
+}
+
+/* The drain's three slots, list first and "Restart now" last, in the wide and
+   the narrow form; one shows. */
 .happy-agent-update-card__lines {
     display: flex;
     flex: none;
@@ -238,20 +274,12 @@ button.happy-agent-update-card__agent:hover .happy-agent-update-card__agent-go {
         transform: scale(calc(40 / 56));
     }
 
-    .happy-agent-update-card__title {
-        padding-right: 0;
+    .happy-agent-update-card__elapsed[data-form="wide"] {
+        display: none;
     }
 
-    /* Centred on the bar, at its end. */
-    .happy-agent-update-card__collapse.happy-button {
-        top: auto;
-        right: 6px;
-        bottom: 4px;
-    }
-
-    .happy-agent-update-card .happy-agent-update-card__bar {
-        width: auto;
-        margin-right: 25px;
+    .happy-agent-update-card__elapsed[data-form="narrow"] {
+        display: block;
     }
 
     .happy-agent-update-card__restart-cost,

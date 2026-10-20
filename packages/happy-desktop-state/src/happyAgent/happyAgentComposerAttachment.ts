@@ -118,6 +118,19 @@ export async function happyAgentWorkspaceAttachmentData(
     return base64Encode(new Uint8Array(await attachment.file.arrayBuffer()));
 }
 
+/**
+ * The same attachment with a preview of its own again, for one coming back to
+ * a draft after its earlier preview was released.
+ */
+export function happyAgentComposerAttachmentPreviewRenew(
+    attachment: ComposerAttachment,
+): ComposerAttachment {
+    if (attachment.kind === "reviewComments") return attachment;
+    const { previewUrl: _released, ...rest } = attachment;
+    const previewUrl = mediaPreviewUrl(attachment.file);
+    return previewUrl === undefined ? rest : { ...rest, previewUrl };
+}
+
 /** Releases the browser resource held by one media preview, when it has one. */
 export function happyAgentComposerAttachmentPreviewRelease(attachment: ComposerAttachment): void {
     if (attachment.kind === "reviewComments") return;

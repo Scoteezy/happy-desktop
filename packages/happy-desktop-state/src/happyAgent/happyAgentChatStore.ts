@@ -8,6 +8,7 @@ import {
 } from "../conversation/conversationEntry.js";
 import {
     chatElementRequest,
+    MessageRefusedError,
     type ChatElement,
     type MutationRejectedDelta,
     type HappyAgentConnection,
@@ -652,7 +653,16 @@ export interface HappyAgentChatStore {
     subscribe(listener: () => void): () => void;
     sessionRetry(): void;
     historyLoadMore(): void;
-    messageSend(text: string, images?: readonly HappyAgentImageInput[]): Promise<void>;
+    /**
+     * Sends a message the moment it is handed over, resolving once it is on its
+     * way. `refused` is called if the host then refuses it outright, so it was
+     * never delivered and its row has gone: the caller can put its words back.
+     */
+    messageSend(
+        text: string,
+        images?: readonly HappyAgentImageInput[],
+        refused?: (error: UserError) => void,
+    ): Promise<void>;
     /** Exact-text human confirmation from voice. Never routes text into a pending question. */
     voiceMessageSendConfirmed(
         text: string,
@@ -708,6 +718,7 @@ export interface HappyAgentChatDeps {
         | "invokeSlashCommand"
         | "sendMessage"
         | "sendMessageConfirmed"
+        | "sendAcceptanceWait"
         | "setDraft"
         | "draftAppendConfirmed"
         | "setEffort"
@@ -1338,7 +1349,7 @@ export function happyAgentChatStoreCreate(
                 await deps.connectActions.sendMessageConfirmed(sessionId, text);
                 output({ type: "messageSent", sessionId, steered });
             }),
-        messageSend: (text, images) =>
+        messageSend: (text, images, refused) =>
             rejecting(async () => {
                 if (!arrived()) await arrivalWait();
                 if ((await pendingQuestionAnswer(text)).textUsed) return;
@@ -1361,6 +1372,11 @@ export function happyAgentChatStoreCreate(
                 );
                 if (images && images.length > 0) sentImagesRemember(mutationId, images);
                 connectMutationTrack(mutationId);
+                if (refused !== undefined)
+                    void deps.connectActions.sendAcceptanceWait(mutationId).catch((error) => {
+                        if (error instanceof MessageRefusedError)
+                            refused(happyAgentUserError(error));
+                    });
                 output({ type: "messageSent", sessionId, steered });
             }),
         slashCommandInvoke: (name, argumentsValue) =>
