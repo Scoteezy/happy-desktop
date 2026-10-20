@@ -104,18 +104,22 @@ export function desktopCloudAuthRouterCreate(
         reading = true;
         again = false;
         try {
-            const callback = await bridge.cloudAuthCallbackTake();
-            if (!callback) return;
-            const result = desktopCloudAuthCallbackClassify(callback, owners, seen);
-            if (result.kind === "duplicate") return;
-            remember(callback);
-            if (result.kind === "unmatched") {
-                onEvent({ kind: "unmatched", providerError: result.providerError });
-                return;
+            // The shell may hold several callbacks, oldest first; one read takes
+            // all of them so none waits for a later notification.
+            for (;;) {
+                const callback = await bridge.cloudAuthCallbackTake();
+                if (!callback) return;
+                const result = desktopCloudAuthCallbackClassify(callback, owners, seen);
+                if (result.kind === "duplicate") continue;
+                remember(callback);
+                if (result.kind === "unmatched") {
+                    onEvent({ kind: "unmatched", providerError: result.providerError });
+                    continue;
+                }
+                pending.set(result.id, callback);
+                onEvent({ kind: "matched", id: result.id });
+                for (const listener of listeners.get(result.id) ?? []) listener();
             }
-            pending.set(result.id, callback);
-            onEvent({ kind: "matched", id: result.id });
-            for (const listener of listeners.get(result.id) ?? []) listener();
         } finally {
             reading = false;
             if (again) void receive().catch(() => undefined);

@@ -359,7 +359,14 @@ const cloudAuthConfiguration: DesktopCloudAuthConfiguration = {
     redirectUri: cloudAuthProductionRedirectUri,
 };
 const cloudAuthProtocol = new URL(cloudAuthConfiguration.redirectUri).protocol.slice(0, -1);
-let cloudAuthCallback: string | undefined;
+/**
+ * Callbacks the window has not taken yet, oldest first. A short queue rather
+ * than one slot, so a second callback arriving before the window reads the
+ * first does not erase it; the bound keeps a misbehaving browser from growing
+ * it without limit.
+ */
+const cloudAuthCallbacks: string[] = [];
+const CLOUD_AUTH_CALLBACKS_MAX = 8;
 
 function cloudAuthCallbackRead(candidate: string): string | undefined {
     try {
@@ -381,18 +388,36 @@ if (
 )
     console.warn(`Happy could not register the ${cloudAuthProtocol}: callback protocol.`);
 
-app.on("open-url", (event, candidate) => {
+/**
+ * Takes one browser callback in for the window, from whichever way the system
+ * delivered it, and brings the window forward. Returns whether it was one.
+ */
+function cloudAuthCallbackDeliver(candidate: string): boolean {
     const callback = cloudAuthCallbackRead(candidate);
-    if (!callback) return;
-    event.preventDefault();
-    cloudAuthCallback = callback;
+    if (!callback) return false;
+    cloudAuthCallbacks.push(callback);
+    if (cloudAuthCallbacks.length > CLOUD_AUTH_CALLBACKS_MAX) cloudAuthCallbacks.shift();
     const window = windowLifecycle.get();
-    if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
+    if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return true;
     window.webContents.send(desktopIpc.cloudAuthCallbackReceived);
     if (window.isMinimized()) window.restore();
     window.show();
     window.focus();
+    return true;
+}
+
+/** Windows and Linux hand a protocol URL to the app as a command-line argument. */
+function cloudAuthCallbackFromArguments(argv: readonly string[]): void {
+    if (process.platform !== "win32" && process.platform !== "linux") return;
+    for (const argument of argv) if (cloudAuthCallbackDeliver(argument)) return;
+}
+
+// macOS delivers the URL as an event, both to a running app and at launch.
+app.on("open-url", (event, candidate) => {
+    if (cloudAuthCallbackDeliver(candidate)) event.preventDefault();
 });
+// A first launch by the URL itself carries it in this process's arguments.
+cloudAuthCallbackFromArguments(process.argv);
 const unavailableBrowserProxy = "http://127.0.0.1:9";
 let happyAgentRendererSession: HappyAgentRendererSession | undefined;
 /*
@@ -1712,13 +1737,11 @@ void app
         });
         ipcMain.handle(desktopIpc.cloudAuthCallbackTake, (event) => {
             desktopDaemonSenderRequire(event.sender);
-            const callback = cloudAuthCallback;
-            cloudAuthCallback = undefined;
-            return callback;
+            return cloudAuthCallbacks.shift();
         });
         ipcMain.handle(desktopIpc.cloudAuthCallbackPending, (event) => {
             desktopDaemonSenderRequire(event.sender);
-            return cloudAuthCallback !== undefined;
+            return cloudAuthCallbacks.length > 0;
         });
         ipcMain.handle(desktopIpc.cloudAuthConfigurationGet, (event) => {
             desktopDaemonSenderRequire(event.sender);
@@ -2023,7 +2046,10 @@ void app
         app.quit();
     });
 
-app.on("second-instance", () => {
+app.on("second-instance", (_event, argv) => {
+    // A URL opened while Happy runs starts a second process, which quits on
+    // the instance lock and forwards its arguments here.
+    cloudAuthCallbackFromArguments(argv);
     const window = windowLifecycle.get();
     if (!window) return;
     if (window.isMinimized()) window.restore();
