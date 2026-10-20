@@ -95,8 +95,6 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
     private requested?: string;
     /** Lays the page inline while the owner asks for that; see `BrowserContentProps.fit`. */
     private readonly fitter = new GuestPageFit(() => this.props.fit);
-    /** This view's own name for its inline page's profile; see `profileOpen`. */
-    private readonly inlinePage = crypto.randomUUID();
 
     private readonly controller: BrowserController = {
         browserBack: () => {
@@ -299,7 +297,6 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         this.networkMissingUnsubscribe = undefined;
         this.elementApply(undefined);
         this.fitter.dispose();
-        this.inlineProfileClose(this.state.partition);
     }
 
     /**
@@ -342,7 +339,6 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         const desktop = window.happyDesktop;
         const generation = (this.proxyGeneration += 1);
         this.elementApply(undefined);
-        this.inlineProfileClose(this.state.partition);
         if (this.state.partition) this.setState({ partition: undefined });
         if (!target || !desktop) {
             this.props.browserFailed({ message: "The browser has no Happy Agent workspace." });
@@ -400,29 +396,23 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         generation: number,
         failed: (error: unknown) => void,
     ): void {
-        // A page laid inline gets a profile of its own for as long as it is
-        // mounted, never the workspace browser's, whose logins it must not see.
-        // Each attempt names its own, so one abandoned midway is closed alone.
+        // A page laid inline is a live artifact, in that artifact's own profile;
+        // it never falls back to the workspace browser's, whose logins it must
+        // not see.
         const artifactId = this.props.target?.artifactId;
-        const page =
-            artifactId === undefined && this.props.fit
-                ? `${this.inlinePage}-${String(generation)}`
-                : undefined;
+        if (this.props.fit && artifactId === undefined) {
+            failed(new Error("Only a live artifact can be shown inline."));
+            return;
+        }
         void window.happyDesktop
             ?.browserNetworkProfileOpen?.(
                 artifactId === undefined
-                    ? { connectionId, networkId, page }
+                    ? { connectionId, networkId }
                     : { connectionId, networkId, artifactId },
             )
             .then((partition) => {
                 if (generation === this.proxyGeneration) this.setState({ partition });
-                else if (page !== undefined) this.inlineProfileClose(partition);
             }, failed);
-    }
-
-    private inlineProfileClose(partition: string | undefined): void {
-        if (partition === undefined || !this.props.fit) return;
-        void window.happyDesktop?.browserNetworkProfileClose?.(partition).catch(() => undefined);
     }
 
     /**

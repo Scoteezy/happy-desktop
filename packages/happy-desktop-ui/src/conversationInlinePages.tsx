@@ -24,12 +24,6 @@ export interface ConversationInlinePages {
     /** Draws an artifact's page served at `url`; absent where the host has no engine. */
     readonly artifactRender?: (url: string, fit: InlinePageFit) => ReactNode;
     /**
-     * Draws a web page through the conversation's agent's network; absent where
-     * the host has no browser. The page may reach the network like any page
-     * the browser shows — a potential vulnerability the host's sandbox bounds.
-     */
-    readonly pageRender?: (url: string, fit: InlinePageFit) => ReactNode;
-    /**
      * Draws a live artifact's page through the network it was made on, in a
      * browser profile of that artifact's own: its cookies and storage are
      * never the workspace browser's or another artifact's.
@@ -156,29 +150,18 @@ export function conversationInlinePage(
         };
     }
     if (presentation?.type === "page") {
-        if (pages.pageRender === undefined) return undefined;
-        const render = pages.pageRender;
+        // A page from the deprecated show_page is not run inline: its network
+        // has no rule for where the page may connect, which a live artifact's
+        // has. It keeps its title, and the reader may open it beside the chat.
         const url = presentation.url;
-        const placement = presentation.display === "side" ? "title" : "inline";
-        const collapsed = local.collapsed(rowKey) ?? presentation.display === "inline_compact";
-        const height = local.height(rowKey);
-        const geometry: InlinePageGeometry = {
-            placement,
-            collapsed,
-            ...(height === undefined ? {} : { height }),
-        };
+        const geometry: InlinePageGeometry = { placement: "title", collapsed: true };
         return {
             geometry,
             props: {
                 title: presentation.title,
                 glyph: <Icon name="globe" size={16} />,
                 geometry,
-                page: { key: url, render: (fit) => render(url, fit) },
-                onCollapsedChange: (next) => local.collapsedSet(rowKey, next),
-                onOpenSide: () => {
-                    if (placement === "inline") local.collapsedSet(rowKey, true);
-                    pages.pageOpen(url);
-                },
+                onOpenSide: () => pages.pageOpen(url),
                 onHeightChange: (next) => local.heightSet(rowKey, next),
                 "data-testid": "conversation-inline-page",
             },

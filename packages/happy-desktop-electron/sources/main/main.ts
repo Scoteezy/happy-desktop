@@ -337,8 +337,6 @@ let quitting = false;
 let desktopUpdater: DesktopUpdater | undefined;
 /** Each workspace keeps its own network profile, including while its tabs are hidden. */
 const browserProxies = new Map<string, HappyAgentBrowser>();
-/** The open profiles of inline pages, oldest first; each is also in `browserProxies`. */
-const browserInlinePages = new Set<string>();
 /** The isolated world inline guests are measured in, apart from the page's own. */
 const guestFitWorld = 1_000;
 let htmlPreviewProxy: HtmlPreviewProxyHandle | undefined;
@@ -623,16 +621,7 @@ function browserProxyApply(network: DesktopBrowserNetwork): Promise<string> {
     return browserProxySerial(async () => {
         const partition = HappyAgentBrowser.partition(network);
         if (browserProxies.has(partition)) return partition;
-        const inlinePage = HappyAgentBrowser.inlinePage(partition);
-        if (inlinePage) {
-            // Inline pages come and go as the transcript scrolls; the oldest
-            // still open makes way rather than refusing the newest.
-            while (browserInlinePages.size >= 64) {
-                const oldest = browserInlinePages.values().next().value;
-                if (oldest === undefined) break;
-                browserInlinePageClose(oldest);
-            }
-        } else if (browserProxies.size - browserInlinePages.size >= 128)
+        if (browserProxies.size >= 128)
             throw new Error("Too many workspace browser profiles are open.");
         const browserSession = electronSession.fromPartition(partition, { cache: true });
         await browserSessionConfigure(browserSession);
@@ -646,7 +635,6 @@ function browserProxyApply(network: DesktopBrowserNetwork): Promise<string> {
                 } satisfies DesktopBrowserNetworkMissing);
             });
             browserProxies.set(partition, candidate);
-            if (inlinePage) browserInlinePages.add(partition);
             return partition;
         } catch (error) {
             candidate?.close();
@@ -654,17 +642,6 @@ function browserProxyApply(network: DesktopBrowserNetwork): Promise<string> {
             throw error;
         }
     });
-}
-
-/** Closes an inline page's profile and forgets everything it kept in memory. */
-function browserInlinePageClose(partition: string): void {
-    if (!browserInlinePages.delete(partition)) return;
-    browserProxies.get(partition)?.close();
-    browserProxies.delete(partition);
-    void electronSession
-        .fromPartition(partition)
-        .clearStorageData()
-        .catch(() => undefined);
 }
 
 function browserWebUrl(candidate: string, allowBlank = false): string | undefined {
@@ -816,6 +793,18 @@ async function artifactSessionStart(): Promise<void> {
     );
     artifactSites = sites;
 }
+
+/*
+ * No page Happy hosts as a guest (artifacts, inline pages, browser tabs,
+ * previews) may send WebRTC traffic that skips its proxy: Chromium would
+ * otherwise send UDP straight from this machine, past every network rule
+ * the guest's session has, and gather this machine's local addresses. The
+ * app's own window keeps WebRTC for live voice.
+ */
+app.on("web-contents-created", (_event, contents) => {
+    if (contents.getType() === "webview")
+        contents.setWebRTCIPHandlingPolicy("disable_non_proxied_udp");
+});
 
 app.on("select-client-certificate", (event, webContents, _url, _list, callback) => {
     // An artifact page never presents one of this machine's certificates.
@@ -1893,12 +1882,6 @@ void app
             if (event.senderFrame !== event.sender.mainFrame)
                 throw new Error("Only Happy can configure a browser profile.");
             return browserProxyApply(desktopBrowserNetworkValidate(network));
-        });
-        ipcMain.handle(desktopIpc.browserNetworkProfileClose, (event, partition: unknown) => {
-            desktopDaemonSenderRequire(event.sender);
-            if (event.senderFrame !== event.sender.mainFrame || typeof partition !== "string")
-                throw new Error("Only Happy can close a browser profile.");
-            if (HappyAgentBrowser.inlinePage(partition)) browserInlinePageClose(partition);
         });
         ipcMain.handle(
             desktopIpc.guestFitMeasure,

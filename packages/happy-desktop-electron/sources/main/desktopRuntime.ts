@@ -288,7 +288,11 @@ export class DesktopRuntime implements AsyncDisposable {
         const host = this.browserHost();
         const client = network.connectionId === null ? host : host.connection(network.connectionId);
         try {
-            return await client.openNetworkHttpProxy(network.networkId, signal);
+            // A live artifact's page reaches only what the daemon allows it, so
+            // it never opens the network's own, unrestricted tunnel.
+            return await (network.artifactId === undefined
+                ? client.openNetworkHttpProxy(network.networkId, signal)
+                : client.openArtifactHttpProxy(network.artifactId, signal));
         } catch (error) {
             // The browser proxy gives a tunnel a deadline; running out of it is
             // the daemon not answering, unlike the page or profile going away.

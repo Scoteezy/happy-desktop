@@ -30,22 +30,10 @@ export class HappyAgentBrowser {
                 .digest("hex");
             return `persist:happy-artifact-live-${identity}`;
         }
-        if (network.page !== undefined) {
-            const identity = createHash("sha256")
-                .update(JSON.stringify([network.connectionId, network.networkId, network.page]))
-                .digest("hex");
-            return `${HappyAgentBrowser.inlinePagePrefix}${identity}`;
-        }
         const identity = createHash("sha256")
             .update(JSON.stringify([network.connectionId, network.networkId]))
             .digest("hex");
         return `persist:happy-browser-${identity}`;
-    }
-
-    static readonly inlinePagePrefix = "happy-inline-page-";
-
-    static inlinePage(partition: string): boolean {
-        return partition.startsWith(HappyAgentBrowser.inlinePagePrefix);
     }
 
     static async create(

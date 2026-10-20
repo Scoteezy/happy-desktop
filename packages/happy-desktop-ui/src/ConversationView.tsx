@@ -879,7 +879,7 @@ export function ConversationView(props: ConversationViewProps) {
                             inlinePageGeneration,
                             inlinePages?.artifacts,
                             inlinePages?.artifactRender === undefined,
-                            inlinePages?.pageRender === undefined,
+                            inlinePages?.liveRender === undefined,
                         ]}
                         estimateRowSize={(index, width) =>
                             conversationRowHeight(

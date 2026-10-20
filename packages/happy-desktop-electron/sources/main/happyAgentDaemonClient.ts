@@ -373,6 +373,16 @@ export class HappyAgentDaemonClient {
         return this.#openConnect(url.pathname, signal);
     }
 
+    /**
+     * Opens `CONNECT /v0/artifacts/:artifactId/proxy`: a live artifact's own
+     * tunnel, in the network it was made on, where the daemon decides every
+     * address its page may reach.
+     */
+    openArtifactHttpProxy(artifactId: string, signal?: AbortSignal): Promise<Duplex> {
+        const url = new URL(this.#client.artifactProxyUrl(artifactId));
+        return this.#openConnect(url.pathname, signal);
+    }
+
     /** Opens `CONNECT /v0/workspaces/:workspaceId/proxy`. */
     openWorkspaceHttpProxy(workspaceId: string, signal?: AbortSignal): Promise<Duplex> {
         // The SDK owns and validates the host-published connection prefix, just

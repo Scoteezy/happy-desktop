@@ -36,6 +36,8 @@ describe("artifact network addresses", () => {
             "fd12:3456::1",
             "ff02::1",
             "::ffff:127.0.0.1",
+            "::ffff:0:127.0.0.1",
+            "::ffff:0:10.0.0.1",
             "::ffff:7f00:1",
             "0:0:0:0:0:ffff:7f00:1",
             "::ffff:192.168.1.1",

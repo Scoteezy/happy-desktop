@@ -84,21 +84,6 @@ export function conversationInlinePagesCreate(input: {
             : {}),
         ...(browserContent
             ? {
-                  pageRender: (url, fit) =>
-                      browserContent({
-                          source: url,
-                          fit,
-                          target: {
-                              connectionId: input.browserConnectionId,
-                              workspaceId: input.workspaceId,
-                              agentId: input.agentId,
-                          },
-                          browserControllerReady: ignore,
-                          browserLoadingChanged: ignore,
-                          browserLocationChanged: ignore,
-                          browserTitleChanged: ignore,
-                          browserFailed: (failure) => fit.failed(browserFailureMessage(failure)),
-                      }),
                   liveRender: (artifactId, live, fit) =>
                       browserContent({
                           source: live.url,

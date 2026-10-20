@@ -79,6 +79,8 @@ function ipv6Embedded(bytes: readonly number[]): string | null | undefined {
     const zero = (from: number, to: number) => bytes.slice(from, to).every((value) => value === 0);
     const quad = (at: number) => bytes.slice(at, at + 4).join(".");
     if (zero(0, 10) && bytes[10] === 255 && bytes[11] === 255) return quad(12);
+    // IPv4-translated (RFC 6145), ::ffff:0:a.b.c.d.
+    if (zero(0, 8) && bytes[8] === 255 && bytes[9] === 255 && zero(10, 12)) return quad(12);
     if (zero(0, 12)) return quad(12);
     const nat64 = bytes[0] === 0 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b;
     if (nat64 && zero(4, 12)) return quad(12);
