@@ -58,16 +58,22 @@ export class GuestPageFit {
     private generation = 0;
     private guest?: FitGuestElement;
     private stylesKey?: string;
-    private readonly schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    /**
+     * Followed from the first document on, not from construction: a view is
+     * also rendered where there is no window, as markup for a test's guest.
+     */
+    private schemeQuery?: MediaQueryList;
 
     /** `fit` is read each time a height arrives, so it is always the view's current one. */
-    constructor(private readonly fit: () => InlinePageFit | undefined) {
-        this.schemeQuery.addEventListener("change", this.schemeChanged);
-    }
+    constructor(private readonly fit: () => InlinePageFit | undefined) {}
 
     /** A new document is ready in `guest`: style it and follow its height. */
     documentReady(guest: FitGuestElement): void {
         const generation = ++this.generation;
+        if (!this.schemeQuery) {
+            this.schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+            this.schemeQuery.addEventListener("change", this.schemeChanged);
+        }
         this.guest = guest;
         this.stylesKey = undefined;
         this.stylesApply(guest, generation);
@@ -99,7 +105,8 @@ export class GuestPageFit {
 
     dispose(): void {
         this.stop();
-        this.schemeQuery.removeEventListener("change", this.schemeChanged);
+        this.schemeQuery?.removeEventListener("change", this.schemeChanged);
+        this.schemeQuery = undefined;
     }
 
     private stylesApply(guest: FitGuestElement, generation: number): void {
