@@ -382,6 +382,7 @@ interface HappyAgentGalleryImage {
     readonly id: string;
     readonly url: string;
     readonly alt: string;
+    readonly name: string;
     readonly thumbnail?: HappyAgentOpenImage["thumbnail"];
 }
 
@@ -399,11 +400,12 @@ function imageRefEqual(left: HappyAgentImageRef, right: HappyAgentImageRef): boo
 
 function imageSourceOf(
     attachment: ConversationAttachment,
-): Pick<HappyAgentGalleryImage, "url" | "alt" | "thumbnail"> | undefined {
+): Pick<HappyAgentGalleryImage, "url" | "alt" | "name" | "thumbnail"> | undefined {
     if (attachment.kind === "inlineImage")
         return {
             url: `data:${attachment.mediaType};base64,${attachment.data}`,
             alt: "Attached image",
+            name: inlineImageNameOf(attachment.mediaType),
             thumbnail: {
                 url: `data:${attachment.mediaType};base64,${attachment.data}`,
                 width: attachment.width,
@@ -414,6 +416,7 @@ function imageSourceOf(
         return {
             url: attachment.openUrl,
             alt: attachment.name,
+            name: attachment.name,
             thumbnail: {
                 url: attachment.thumbnailUrl ?? attachment.openUrl,
                 thumbhash: attachment.thumbhash,
@@ -422,6 +425,15 @@ function imageSourceOf(
             },
         };
     return undefined;
+}
+
+/**
+ * An inline picture carries only its media type, so the name it is saved under
+ * is a plain one with the extension that type implies.
+ */
+function inlineImageNameOf(mediaType: string): string {
+    const subtype = mediaType.slice(mediaType.indexOf("/") + 1).split("+")[0];
+    return `image.${subtype === "jpeg" ? "jpg" : subtype || "png"}`;
 }
 
 /**
@@ -458,6 +470,7 @@ function imageGalleryOf(entries: readonly ConversationEntry[]): readonly HappyAg
                     id: `${entry.id}:${String(index)}`,
                     url: item.url,
                     alt: item.name,
+                    name: item.name,
                     thumbnail: {
                         url: item.url,
                         thumbhash: item.thumbhash,
@@ -474,6 +487,8 @@ export interface HappyAgentOpenImage {
     readonly id: string;
     readonly url: string;
     readonly alt: string;
+    /** File name the picture is saved under when downloaded. */
+    readonly name: string;
     /** The selected transcript thumbnail, available while its full image decodes. */
     readonly thumbnail?: {
         readonly url?: string;
@@ -501,6 +516,7 @@ function openImageProject(
         id: found.id,
         url: found.url,
         alt: found.alt,
+        name: found.name,
         thumbnail: found.thumbnail,
         index,
         total: gallery.length,

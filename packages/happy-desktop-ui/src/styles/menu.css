@@ -182,11 +182,15 @@
 
 /* A Menu opened at the pointer. The backdrop is a full-window click target
    that takes the menu down; the card itself is fixed at the point asked for,
-   and the component pushes it back inside the viewport after measuring. */
+   and the component pushes it back inside the viewport after measuring. The
+   backdrop shares the overlay level with the card, which follows it in the
+   document and so paints above it: a menu opened from inside a modal is mounted
+   after that modal, and its backdrop must cover the modal rather than sit
+   beneath it, or a click beside the menu lands on the modal instead. */
 .happy-context-menu__backdrop {
     position: fixed;
     inset: 0;
-    z-index: calc(var(--happy-z-overlay) - 1);
+    z-index: var(--happy-z-overlay);
     margin: 0;
     padding: 0;
     border: 0;

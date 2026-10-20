@@ -314,6 +314,7 @@ import {
 } from "./commandPaletteResults";
 import { openExternalLink } from "./externalLink";
 import { fileDownload } from "./fileDownload";
+import { imageCopy } from "./imageCopy";
 import { reactFrameInputUpdate, reactFrameSubscribe } from "./reactFrameSubscribe";
 import { useDisposableLease } from "./useDisposableLease";
 import { BlueprintView } from "./views/BlueprintView";
@@ -8474,6 +8475,7 @@ function HappyAgentConversationSurface(props: {
     const configurable = !composerDisabled && sendRefusal === undefined;
     const activeActivity = happyAgentActiveActivityCounts(conversation);
     const activityTotal = activeActivity.agents + activeActivity.terminals;
+    const openImage = conversation.openImage;
     const references = messageReferencesCreate({
         titles,
         titlesStore,
@@ -8701,22 +8703,26 @@ function HappyAgentConversationSurface(props: {
             expandedTurnIds={conversation.expandedTurnIds}
             onTraceToggle={(turnId) => workspace.turnTraceToggle(turnId)}
             overlay={
-                conversation.openImage ? (
+                openImage ? (
                     <ModalOverlay onDismiss={() => workspace.imageClose()} placement="fill">
                         <Lightbox
                             adjacentImages={{
-                                previous: conversation.openImage.previousUrl,
-                                next: conversation.openImage.nextUrl,
+                                previous: openImage.previousUrl,
+                                next: openImage.nextUrl,
                             }}
-                            alt={conversation.openImage.alt}
-                            imageThumbnail={conversation.openImage.thumbnail}
-                            imageUrl={conversation.openImage.url}
+                            alt={openImage.alt}
+                            imageThumbnail={openImage.thumbnail}
+                            imageUrl={openImage.url}
                             onClose={() => workspace.imageClose()}
-                            {...(conversation.openImage.total > 1
+                            onCopy={() => imageCopy(openImage.url)}
+                            onDownload={() =>
+                                fileDownload(openImage.name, { type: "url", url: openImage.url })
+                            }
+                            {...(openImage.total > 1
                                 ? {
                                       position: {
-                                          index: conversation.openImage.index,
-                                          total: conversation.openImage.total,
+                                          index: openImage.index,
+                                          total: openImage.total,
                                       },
                                       onNext: () => workspace.imageNext(),
                                       onPrevious: () => workspace.imagePrevious(),

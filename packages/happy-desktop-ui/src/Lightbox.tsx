@@ -4,9 +4,14 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
     type MouseEvent as ReactMouseEvent,
     type ReactNode,
+    useRef,
+    useState,
 } from "react";
 import { Button } from "./Button";
+import { ContextMenu } from "./ContextMenu";
 import { ImageViewer, type ImageViewerProps } from "./ImageViewer";
+import { commandShortcut, commandShortcutMatches } from "./keyboardShortcut";
+import type { MenuItem } from "./Menu";
 import { VideoViewer } from "./VideoViewer";
 import { thumbhashDataUrl } from "./thumbhashDataUrl";
 import { Ionicon } from "./vectorIcons/VectorIcon";
@@ -20,8 +25,16 @@ type LightboxSharedProps = {
     caption?: string;
     /** Secondary meta above the frame — usually size / dimensions. */
     detail?: string;
-    /** Trailing controls in the header, e.g. a download button. */
+    /** Trailing controls in the header, after the copy and download actions. */
     actions?: ReactNode;
+    /**
+     * Puts the picture on the clipboard. Given for an image, the header offers
+     * it and Command-C does the same; the promise settles the button's
+     * copied or failed state.
+     */
+    onCopy?: () => Promise<void>;
+    /** Saves the media to the reader's machine; a rejection marks the button failed. */
+    onDownload?: () => Promise<void>;
     /**
      * Where this media sits in the set it was opened from, counted from zero.
      * Given together with `onPrevious`/`onNext`, it is stated in the header so
@@ -44,6 +57,29 @@ type LightboxSharedProps = {
     navigationLabel?: string;
     onClose?: () => void;
     closeLabel?: string;
+};
+
+/** How long a finished copy or a failed action keeps its mark on the button. */
+const OUTCOME_MS = 1_600;
+
+const COPY_SHORTCUT = commandShortcut("c");
+
+type LightboxAction = "copy" | "download";
+
+type LightboxActionStatus = "pending" | "done" | "failed";
+
+/** The parts of the shared viewer that are the picture itself, for its menu. */
+const PICTURE_PARTS = new Set(["image-viewer-image", "image-viewer-thumbnail"]);
+
+/**
+ * How each action last went, for the media it was pressed on: stepping to
+ * another picture leaves a mark that belongs to the previous one.
+ */
+type LightboxActionStates = {
+    readonly [action in LightboxAction]?: {
+        readonly mediaUrl: string;
+        readonly status: LightboxActionStatus;
+    };
 };
 
 export type LightboxProps = LightboxSharedProps &
@@ -83,6 +119,8 @@ export function Lightbox(props: LightboxProps) {
         "caption",
         "detail",
         "actions",
+        "onCopy",
+        "onDownload",
         "position",
         "adjacentImages",
         "loadedImage",
@@ -100,8 +138,88 @@ export function Lightbox(props: LightboxProps) {
             ? thumbhashDataUrl(local.imageThumbnail.thumbhash)
             : undefined) ?? local.imageThumbnail?.url;
     const mediaName = local.alt ?? local.caption ?? (local.videoUrl ? "Video" : "Image");
+    const mediaNoun = local.videoUrl ? "video" : "image";
+    const mediaUrl = local.imageUrl ?? local.videoUrl;
+    const [actionStates, setActionStates] = useState<LightboxActionStates>({});
+    const outcomeTimers = useRef<{ [action in LightboxAction]?: ReturnType<typeof setTimeout> }>(
+        {},
+    );
+    const statusOf = (action: LightboxAction): LightboxActionStatus | undefined => {
+        const state = actionStates[action];
+        return state !== undefined && state.mediaUrl === mediaUrl ? state.status : undefined;
+    };
+    const copyStatus = statusOf("copy");
+    const downloadStatus = statusOf("download");
+    const canCopy = Boolean(local.onCopy && local.imageUrl !== undefined);
+    const [menuAt, setMenuAt] = useState<{ readonly x: number; readonly y: number }>();
+    // The picture's frame had focus before the menu took it; it gets it back so
+    // Escape, the arrows, and Command-C keep working on the picture afterwards.
+    const menuReturn = useRef<HTMLElement | null>(null);
+    const menuItems: MenuItem[] = [
+        ...(canCopy
+            ? [
+                  {
+                      kind: "item" as const,
+                      id: "copy",
+                      label: "Copy image",
+                      shortcut: COPY_SHORTCUT.caps,
+                  },
+              ]
+            : []),
+        ...(local.onDownload && local.imageUrl !== undefined
+            ? [{ kind: "item" as const, id: "download", label: "Download image" }]
+            : []),
+    ];
+    const menuClose = (): void => {
+        menuReturn.current?.focus();
+        menuReturn.current = null;
+        setMenuAt(undefined);
+    };
+    /**
+     * A right-click on the picture offers what the header offers for it, in
+     * place of the browser's own menu. The room around the picture keeps the
+     * browser's behaviour; only the picture is the thing being acted on.
+     */
+    const contextMenu = (event: ReactMouseEvent<HTMLDivElement>): void => {
+        if (menuItems.length === 0 || !(event.target instanceof HTMLElement)) return;
+        if (!PICTURE_PARTS.has(event.target.dataset.happyDesktopUi ?? "")) return;
+        event.preventDefault();
+        menuReturn.current = event.target.closest<HTMLElement>(
+            '[data-happy-desktop-ui="image-viewer-frame"]',
+        );
+        setMenuAt({ x: event.clientX, y: event.clientY });
+    };
+    const run = (action: LightboxAction, work: (() => Promise<void>) | undefined): void => {
+        if (!work || mediaUrl === undefined || statusOf(action) === "pending") return;
+        clearTimeout(outcomeTimers.current[action]);
+        // A later press on another picture replaces this one's state, so a
+        // settling press only writes over the state it set itself.
+        const update = (status: LightboxActionStatus | undefined): void =>
+            setActionStates((current) =>
+                current[action]?.mediaUrl === mediaUrl
+                    ? { ...current, [action]: status && { mediaUrl, status } }
+                    : current,
+            );
+        setActionStates((current) => ({ ...current, [action]: { mediaUrl, status: "pending" } }));
+        const settle = (status: "done" | "failed"): void => {
+            update(status);
+            outcomeTimers.current[action] = setTimeout(() => update(undefined), OUTCOME_MS);
+        };
+        work().then(
+            () => settle("done"),
+            () => settle("failed"),
+        );
+    };
     const hasHeader = () =>
-        Boolean(local.caption || local.detail || local.actions || local.onClose || stepping);
+        Boolean(
+            local.caption ||
+            local.detail ||
+            local.actions ||
+            canCopy ||
+            local.onDownload ||
+            local.onClose ||
+            stepping,
+        );
     /**
      * The space around the picture is the way out, as it is in every viewer that
      * takes the window: with the overlay's gutter gone, this surface is what a
@@ -117,6 +235,14 @@ export function Lightbox(props: LightboxProps) {
         local.onClose?.();
     };
     const keyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+        // Command-C (Ctrl-C off the Mac) copies the picture unless the reader
+        // selected text to copy.
+        if (canCopy && commandShortcutMatches(event.nativeEvent, COPY_SHORTCUT)) {
+            if (!(window.getSelection()?.isCollapsed ?? true)) return;
+            event.preventDefault();
+            run("copy", local.onCopy);
+            return;
+        }
         // Not the viewer's key, and not a shortcut of the window's: only a bare
         // arrow the picture underneath had no use for steps through the set.
         if (!stepping || event.defaultPrevented) return;
@@ -202,6 +328,53 @@ export function Lightbox(props: LightboxProps) {
                                     <Ionicon name="chevron-forward-outline" size={14} />
                                 </Button>
                             ) : null}
+                            {canCopy ? (
+                                <Button
+                                    aria-label={
+                                        copyStatus === "done"
+                                            ? "Copied"
+                                            : copyStatus === "failed"
+                                              ? "Couldn't copy image"
+                                              : "Copy image"
+                                    }
+                                    data-testid="lightbox-copy"
+                                    icon={
+                                        copyStatus === "done"
+                                            ? "check"
+                                            : copyStatus === "failed"
+                                              ? "alert"
+                                              : "copy"
+                                    }
+                                    iconOnly
+                                    loading={copyStatus === "pending"}
+                                    onClick={() => run("copy", local.onCopy)}
+                                    shortcut={COPY_SHORTCUT}
+                                    size="small"
+                                    variant="ghost"
+                                />
+                            ) : null}
+                            {local.onDownload ? (
+                                <Button
+                                    aria-label={
+                                        downloadStatus === "failed"
+                                            ? `Couldn't download ${mediaNoun}`
+                                            : `Download ${mediaNoun}`
+                                    }
+                                    data-testid="lightbox-download"
+                                    iconOnly
+                                    loading={downloadStatus === "pending"}
+                                    onClick={() => run("download", local.onDownload)}
+                                    size="small"
+                                    title={`Download ${mediaNoun}`}
+                                    variant="ghost"
+                                >
+                                    {downloadStatus === "failed" ? (
+                                        <Ionicon name="alert-circle-outline" size={14} />
+                                    ) : (
+                                        <Ionicon name="download-outline" size={14} />
+                                    )}
+                                </Button>
+                            ) : null}
                             {local.actions}
                             {local.onClose ? (
                                 <Button
@@ -216,7 +389,11 @@ export function Lightbox(props: LightboxProps) {
                         </div>
                     </header>
                 ) : null}
-                <div className="happy-lightbox__frame" data-happy-desktop-ui="lightbox-frame">
+                <div
+                    className="happy-lightbox__frame"
+                    data-happy-desktop-ui="lightbox-frame"
+                    onContextMenu={contextMenu}
+                >
                     {local.videoUrl ? (
                         <VideoViewer
                             autoFocus
@@ -245,6 +422,20 @@ export function Lightbox(props: LightboxProps) {
                     ) : null}
                 </div>
             </div>
+            {menuAt !== undefined && menuItems.length > 0 ? (
+                <ContextMenu
+                    data-testid="lightbox-image-menu"
+                    items={menuItems}
+                    onClose={menuClose}
+                    onSelect={(id) => {
+                        menuClose();
+                        if (id === "copy") run("copy", local.onCopy);
+                        else if (id === "download") run("download", local.onDownload);
+                    }}
+                    x={menuAt.x}
+                    y={menuAt.y}
+                />
+            ) : null}
         </div>
     );
 }

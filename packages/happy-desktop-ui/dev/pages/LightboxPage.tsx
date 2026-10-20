@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Button } from "../../src/Button";
 import { Lightbox } from "../../src/Lightbox";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, DimensionRule, FullScreenSpecimen, Specimen } from "../kit";
@@ -36,6 +35,14 @@ function demoImage(width: number, height: number, from: string, to: string): str
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+/* The specimen's actions stand in for the app's clipboard and save: one lands
+ * after a short wait so the pending spinner is visible, the other refuses. */
+function settleAfter(ms: number, outcome: "resolve" | "reject"): Promise<void> {
+    return new Promise((resolve, reject) =>
+        setTimeout(() => (outcome === "resolve" ? resolve() : reject(new Error("Refused"))), ms),
+    );
+}
+
 export function LightboxPage() {
     const [imageIndex, setImageIndex] = useState(0);
     const images = [
@@ -53,7 +60,7 @@ export function LightboxPage() {
             title="Lightbox"
         >
             <Specimen
-                detail="caption + detail + download action + close · one themed surface edge to edge, no card"
+                detail="caption + detail + copy (⌘C) and download actions, also on a right-click on the picture + close · one themed surface edge to edge, no card"
                 label="Lightbox — full"
                 number="01"
                 stage="surface"
@@ -61,20 +68,13 @@ export function LightboxPage() {
                 <div style={column}>
                     <div style={viewport}>
                         <Lightbox
-                            actions={
-                                <Button
-                                    aria-label="Download"
-                                    icon="files"
-                                    iconOnly
-                                    size="small"
-                                    variant="ghost"
-                                />
-                            }
                             alt="Device farm results"
                             caption="device-farm-green.png"
                             detail="640 × 400 · 412 KB"
                             imageUrl={demoImage(640, 400, "#8b7cf7", "#f472b6")}
                             onClose={() => {}}
+                            onCopy={() => settleAfter(400, "resolve")}
+                            onDownload={() => settleAfter(400, "resolve")}
                         />
                     </div>
                     <DimensionRule label="fills its window · 52 px header, no rule · 40 px tool bar" />
@@ -82,9 +82,30 @@ export function LightboxPage() {
             </Specimen>
 
             <Specimen
+                detail="A copy or download that fails marks its button with an alert for a moment, then offers the action again"
+                label="Lightbox — action failed"
+                number="02"
+                stage="surface"
+            >
+                <div style={column}>
+                    <div style={viewport}>
+                        <Lightbox
+                            alt="Device farm results"
+                            caption="device-farm-red.png"
+                            detail="640 × 400 · 398 KB"
+                            imageUrl={demoImage(640, 400, "#ef4444", "#f59e0b")}
+                            onClose={() => {}}
+                            onCopy={() => settleAfter(400, "reject")}
+                            onDownload={() => settleAfter(400, "reject")}
+                        />
+                    </div>
+                </div>
+            </Specimen>
+
+            <Specimen
                 detail="Header collapses to just the close control when no caption/detail is set"
                 label="Lightbox — image only"
-                number="02"
+                number="03"
                 stage="surface"
             >
                 <div style={viewport}>
@@ -99,7 +120,7 @@ export function LightboxPage() {
             <Specimen
                 detail="The selected thumbnail shows until full decode · without a thumbnail, loading appears after 500ms and stays at least 500ms · arrow keys navigate without outlining the frame"
                 label="Lightbox — in a set"
-                number="03"
+                number="04"
                 stage="surface"
             >
                 <div style={column}>
@@ -132,7 +153,7 @@ export function LightboxPage() {
             <Specimen
                 detail="The shared VideoViewer fills the same immersive room, retaining its transport and keyboard controls"
                 label="Lightbox — video"
-                number="04"
+                number="05"
                 stage="surface"
             >
                 <div style={viewport}>
@@ -155,7 +176,7 @@ export function LightboxPage() {
                         detail="Surface, caption, and controls inherit the surrounding appearance"
                         key={`${mode}-${String(window.width)}`}
                         label={`${mode === "light" ? "Light" : "Dark"} appearance`}
-                        number={String(5 + modeIndex * 2 + sizeIndex).padStart(2, "0")}
+                        number={String(6 + modeIndex * 2 + sizeIndex).padStart(2, "0")}
                         screen={`${mode}-${String(window.width)}x${String(window.height)}`}
                         window={window}
                     >
