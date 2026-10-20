@@ -967,33 +967,37 @@
 
 /* ---- Inline photo attachments ----------------------------------------- */
 
-/* The photos as one mosaic: `mediaMosaicStyle` sizes this box and
-   `mediaMosaicTileStyle` places each tile in it. Outer corners keep the
-   tile's radius; corners between tiles close to a small one. */
+/* The photos as one `MediaFlow`: it sizes every tile from its photo's own
+   shape, at most `MESSAGE_MEDIA_MAX_WIDTH` across. */
 .happy-message__media {
-    --happy-media-mosaic-radius: 8px;
-    --happy-media-mosaic-inner-radius: 4px;
-
-    position: relative;
     flex: none;
     margin-top: 8px;
     min-width: 0;
 }
 
 .happy-message__media-item {
-    /* Absolute: a mosaic tile's frame is computed from every photo's aspect
-       ratio, spanning rows in one place and columns in another, which neither
-       one flex axis nor a track grid can express. */
-    position: absolute;
+    position: relative;
     box-sizing: border-box;
     display: block;
     overflow: hidden;
     margin: 0;
     padding: 0;
     background: var(--input-background);
-    border: 1px solid var(--divider);
+    border: 0;
     border-radius: 8px;
     appearance: none;
+}
+
+/* The hairline is drawn over the photo so it never shrinks the photo's box,
+   which would letterbox a wide photo inside a tile at its own shape. */
+.happy-message__media-item::after {
+    /* Absolute: the hairline is an overlay of the tile's own box. */
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--divider);
+    border-radius: inherit;
+    pointer-events: none;
+    content: "";
     transition: border-color 120ms ease;
 }
 
@@ -1001,7 +1005,7 @@
     cursor: zoom-in;
 }
 
-.happy-message__media-item[data-interactive]:hover {
+.happy-message__media-item[data-interactive]:hover::after {
     border-color: var(--surface-selected);
 }
 
@@ -1010,13 +1014,22 @@
     outline-offset: 2px;
 }
 
-/* Every tile is a fixed box from the mosaic; the picture fills its reserved
-   space so the layout never reflows when the image loads. */
+/* Every tile is a fixed box from the flow, at the photo's own shape; the
+   picture fills its reserved space whole, so the layout never reflows when
+   the image loads and nothing is cropped. */
+.happy-message__media-image,
+.happy-message__media-loading {
+    /* Absolute: the picture is a layer of the tile's box, not content that
+       could size it. */
+    position: absolute;
+    inset: 0;
+}
+
 .happy-message__media-image {
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     -webkit-user-drag: none;
     -webkit-user-select: none;
     user-select: none;
@@ -1026,10 +1039,10 @@
     display: block;
     width: 100%;
     height: 100%;
-    min-height: 120px;
     background: var(--surface-pressed);
     background-position: center;
-    background-size: cover;
+    background-repeat: no-repeat;
+    background-size: contain;
 }
 
 .happy-message__reactions {

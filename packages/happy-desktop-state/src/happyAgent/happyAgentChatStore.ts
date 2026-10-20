@@ -2,6 +2,7 @@ import { createStore } from "zustand/vanilla";
 import { entriesMerge } from "../conversation/conversationEntries.js";
 import type { Loadable } from "../conversation/loadable.js";
 import {
+    conversationMediaOrder,
     type ConversationAttachment,
     type ConversationEntry,
     type ConversationRequestSubmission,
@@ -469,8 +470,14 @@ function imageGalleryOf(entries: readonly ConversationEntry[]): readonly HappyAg
         if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") continue;
         const presentation = entry.activity.tool.presentation;
         if (presentation?.type !== "media") continue;
-        presentation.items.forEach((item, index) => {
-            if (item.kind === "image")
+        /* A tree names its items in its own order, which is the order the
+           reader sees them in; stepping follows it. */
+        for (const index of conversationMediaOrder(
+            presentation.items.length,
+            presentation.layout,
+        )) {
+            const item = presentation.items[index];
+            if (item?.kind === "image")
                 gallery.push({
                     ref: { kind: "toolMedia", entryId: entry.id, index },
                     id: `${entry.id}:${String(index)}`,
@@ -484,7 +491,7 @@ function imageGalleryOf(entries: readonly ConversationEntry[]): readonly HappyAg
                         height: item.height,
                     },
                 });
-        });
+        }
     }
     return gallery;
 }

@@ -1,4 +1,4 @@
-import { messageMediaSingleBox } from "../../src/mediaMosaic";
+import { mediaVideoBox } from "../../src/mediaLayout";
 import { MediaImageTile } from "../../src/ConversationMedia";
 import { thumbhashDataUrl } from "../../src/thumbhashDataUrl";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -36,7 +36,7 @@ export function MediaImageTilePage() {
             >
                 <div style={row}>
                     {[mediaImageSquare, mediaImageWide, mediaImageTall].map((item) => {
-                        const box = messageMediaSingleBox(item);
+                        const box = mediaVideoBox(item);
                         return (
                             <MediaImageTile
                                 alt={item.name}

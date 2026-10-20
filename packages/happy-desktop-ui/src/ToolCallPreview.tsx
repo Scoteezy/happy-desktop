@@ -208,7 +208,10 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
                     {presentation?.type === "media" ? (
                         <section className="happy-tool-call-preview__section">
                             <span className="happy-tool-call-preview__label">Files</span>
-                            <ConversationMedia items={presentation.items} />
+                            <ConversationMedia
+                                items={presentation.items}
+                                {...(presentation.layout ? { layout: presentation.layout } : {})}
+                            />
                         </section>
                     ) : null}
                     {presentation?.type === "artifact" ? (

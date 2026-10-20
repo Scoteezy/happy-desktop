@@ -13,7 +13,13 @@ import type {
     UserError,
 } from "happy-desktop-state";
 import { messageBodyFormat } from "./messagePlainText";
-import { AgentActivityRow, type ActivityMotion, type ActivityTreatment } from "./AgentActivityRow";
+import {
+    AgentActivityRow,
+    type ActivityMotion,
+    type ActivityTreatment,
+    type AgentActivityMediaRun,
+} from "./AgentActivityRow";
+import type { ConversationMediaRun } from "./conversationMediaRuns";
 import type { InlinePageProps } from "./InlinePage";
 import { ConversationComputeEvent } from "./ConversationComputeEvent";
 import { ConversationErrorCard } from "./ConversationErrorCard";
@@ -92,6 +98,11 @@ export type ConversationEntryViewProps = {
     onToolSelect?: (entryId: string, tool: ConversationToolCall) => void;
     /** Opens one file this entry's tool call presented, by its media position. */
     onToolMediaOpen?: (entryId: string, tool: ConversationToolCall, index: number) => void;
+    /**
+     * This row's part in a run of calls whose pictures form one grid, from
+     * `conversationMediaRuns`. Absent, a tool call draws its own pictures.
+     */
+    mediaRun?: ConversationMediaRun;
     /** Opens one child session represented by a delegated-agent entry. */
     onDelegationSelect?: (sessionId: string) => void;
     /** Reference epoch millis used by live delegated-agent timers. */
@@ -263,6 +274,9 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                               props.onToolMediaOpen?.(entry.id, tool, index),
                       }
                     : {})}
+                {...((run) => (run ? { mediaRun: run } : {}))(
+                    activityMediaRun(props.mediaRun, props.onToolMediaOpen),
+                )}
                 {...(props.references ? { references: props.references } : {})}
                 {...(props.inlinePage ? { inlinePage: props.inlinePage } : {})}
                 singleLine={entry.activity.kind === "tool"}
@@ -629,4 +643,29 @@ function initialsOf(displayName: string | undefined): string {
     const first = parts[0]?.[0] ?? "?";
     const second = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
     return `${first}${second}`.toUpperCase();
+}
+
+/**
+ * A row's part in a picture run, as its activity row draws it: the run's
+ * pictures, each opening as the item of the call it belongs to, so the viewer
+ * steps through the whole transcript from there.
+ */
+function activityMediaRun(
+    run: ConversationMediaRun | undefined,
+    open: ConversationEntryViewProps["onToolMediaOpen"],
+): AgentActivityMediaRun | undefined {
+    if (run === undefined || run.type === "deferred") return run;
+    return {
+        type: "end",
+        columns: run.columns,
+        items: run.members.map((member) => member.item),
+        ...(open
+            ? {
+                  onItemOpen: (position: number) => {
+                      const member = run.members[position];
+                      if (member) open(member.entryId, member.tool, member.index);
+                  },
+              }
+            : {}),
+    };
 }

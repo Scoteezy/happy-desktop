@@ -1,0 +1,442 @@
+import {
+    agentAuthor,
+    happyAgentOwnerAuthor,
+    type ConversationAuthor,
+    type ConversationEntry,
+    type ConversationMediaItem,
+    type ConversationMediaLayout,
+    type ConversationMediaLayoutNode,
+    type ConversationToolCall,
+} from "happy-desktop-state";
+import { happyAgentExplorationTool } from "./happyAgentChatFixtures";
+
+/*
+ * Deterministic, offline pictures for the media layouts: screenshots of the
+ * shapes agents actually read (a desktop window, a header strip, a narrow
+ * sidebar crop, an onboarding screen), and generated art. Every one is an
+ * inline SVG, so a capture never waits on the network.
+ */
+function svg(width: number, height: number, body: string): string {
+    return `data:image/svg+xml;utf8,${encodeURIComponent(
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${String(width)}" height="${String(height)}" viewBox="0 0 ${String(width)} ${String(height)}">${body}</svg>`,
+    )}`;
+}
+
+const TEXT = `font-family="Helvetica, Arial, sans-serif"`;
+
+function item(
+    name: string,
+    width: number,
+    height: number,
+    url: string,
+    size = 380_000,
+): ConversationMediaItem {
+    return { kind: "image", name, mimeType: "image/png", size, width, height, url };
+}
+
+/** A 16:10 desktop window: sidebar, toolbar, a chart, and cards. */
+function dashboard(accent: string, title: string): string {
+    const bars = Array.from(
+        { length: 12 },
+        (_, index) =>
+            `<rect x="${String(340 + index * 58)}" y="${String(520 - ((index * 37) % 220))}" width="36" height="${String(80 + ((index * 37) % 220))}" rx="6" fill="${index % 4 === 1 ? accent : "#3a4152"}"/>`,
+    ).join("");
+    const nav = Array.from(
+        { length: 9 },
+        (_, index) =>
+            `<rect x="28" y="${String(120 + index * 52)}" width="${String(180 - (index % 3) * 30)}" height="20" rx="10" fill="${index === 2 ? accent : "#323846"}"/>`,
+    ).join("");
+    return svg(
+        1440,
+        900,
+        `<rect width="1440" height="900" fill="#171a21"/>
+         <rect width="260" height="900" fill="#1f232c"/>
+         <rect x="260" width="1180" height="72" fill="#1d2129"/>
+         <circle cx="34" cy="36" r="9" fill="#ff5f57"/><circle cx="62" cy="36" r="9" fill="#febc2e"/><circle cx="90" cy="36" r="9" fill="#28c840"/>
+         <text x="300" y="46" ${TEXT} font-size="26" font-weight="700" fill="#e8ebf2">${title}</text>
+         <rect x="1220" y="20" width="180" height="34" rx="17" fill="${accent}"/>
+         ${nav}
+         <rect x="300" y="110" width="760" height="460" rx="18" fill="#1f232c"/>
+         ${bars}
+         <rect x="1090" y="110" width="310" height="210" rx="18" fill="#1f232c"/>
+         <text x="1120" y="170" ${TEXT} font-size="20" fill="#9aa3b5">Active agents</text>
+         <text x="1120" y="250" ${TEXT} font-size="64" font-weight="700" fill="#e8ebf2">128</text>
+         <rect x="1090" y="350" width="310" height="220" rx="18" fill="${accent}" opacity="0.85"/>
+         <rect x="300" y="610" width="1100" height="250" rx="18" fill="#1f232c"/>
+         <rect x="330" y="650" width="520" height="18" rx="9" fill="#3a4152"/>
+         <rect x="330" y="700" width="980" height="18" rx="9" fill="#323846"/>
+         <rect x="330" y="750" width="860" height="18" rx="9" fill="#323846"/>
+         <rect x="330" y="800" width="700" height="18" rx="9" fill="#323846"/>`,
+    );
+}
+
+/** A 7:1 header strip, the screenshot a messenger mosaic cuts in half. */
+const headerStrip = svg(
+    1400,
+    200,
+    `<rect width="1400" height="200" fill="#ffffff"/>
+     <rect y="198" width="1400" height="2" fill="#e5e7eb"/>
+     <circle cx="80" cy="100" r="34" fill="#2baccc"/>
+     <text x="134" y="114" ${TEXT} font-size="40" font-weight="700" fill="#111827">Happy</text>
+     <text x="420" y="112" ${TEXT} font-size="26" fill="#374151">Chats</text>
+     <text x="540" y="112" ${TEXT} font-size="26" fill="#374151">Agents</text>
+     <text x="670" y="112" ${TEXT} font-size="26" fill="#374151">Files</text>
+     <rect x="780" y="70" width="330" height="60" rx="30" fill="#f3f4f6"/>
+     <text x="820" y="111" ${TEXT} font-size="24" fill="#9ca3af">Search…</text>
+     <rect x="1150" y="66" width="150" height="68" rx="34" fill="#111827"/>
+     <text x="1186" y="111" ${TEXT} font-size="26" font-weight="700" fill="#ffffff">Share</text>
+     <circle cx="1346" cy="100" r="30" fill="#f472b6"/>`,
+);
+
+/** A 1:3 crop of a phone-width sidebar. */
+const narrowCrop = svg(
+    300,
+    900,
+    `<rect width="300" height="900" fill="#f8fafc"/>
+     <rect x="20" y="24" width="180" height="28" rx="14" fill="#0f172a"/>
+     ${Array.from(
+         { length: 11 },
+         (_, index) =>
+             `<rect x="20" y="${String(90 + index * 72)}" width="260" height="56" rx="12" fill="${index === 3 ? "#2baccc" : "#e2e8f0"}"/>
+              <circle cx="48" cy="${String(118 + index * 72)}" r="14" fill="${index === 3 ? "#ffffff" : "#94a3b8"}"/>
+              <rect x="74" y="${String(110 + index * 72)}" width="${String(150 - (index % 3) * 30)}" height="16" rx="8" fill="${index === 3 ? "#ffffff" : "#64748b"}"/>`,
+     ).join("")}`,
+);
+
+/** An onboarding screen over a sky, like the pair in the layout complaint. */
+function onboarding(width: number, height: number, title: string, action: string): string {
+    const clouds = Array.from({ length: 14 }, (_, index) => {
+        const x = (index * 397) % width;
+        const y = height * 0.55 + ((index * 131) % (height * 0.4));
+        return `<ellipse cx="${String(x)}" cy="${String(y)}" rx="${String(220 + (index % 4) * 70)}" ry="${String(70 + (index % 3) * 26)}" fill="#ffffff" opacity="${String(0.35 + (index % 3) * 0.15)}"/>`;
+    }).join("");
+    const cx = width / 2;
+    return svg(
+        width,
+        height,
+        `<defs><linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+           <stop offset="0" stop-color="#1c3f86"/><stop offset="0.6" stop-color="#3f74c4"/><stop offset="1" stop-color="#9dc2ea"/>
+         </linearGradient></defs>
+         <rect width="${String(width)}" height="${String(height)}" fill="url(#sky)"/>
+         ${clouds}
+         <text x="${String(cx)}" y="${String(height * 0.43)}" text-anchor="middle" ${TEXT} font-size="${String(height * 0.045)}" font-weight="700" fill="#ffffff">${title}</text>
+         <text x="${String(cx)}" y="${String(height * 0.49)}" text-anchor="middle" ${TEXT} font-size="${String(height * 0.018)}" fill="#e5edff">Happy Agent uses this for your work and shared messages.</text>
+         <rect x="${String(cx - width * 0.12)}" y="${String(height * 0.6)}" width="${String(width * 0.24)}" height="${String(height * 0.05)}" rx="${String(height * 0.025)}" fill="#ffffff"/>
+         <text x="${String(cx)}" y="${String(height * 0.633)}" text-anchor="middle" ${TEXT} font-size="${String(height * 0.02)}" font-weight="700" fill="#111827">${action}</text>`,
+    );
+}
+
+/** Generated art: banded hills under a sun, in one palette per picture. */
+function art(width: number, height: number, sky: string, sun: string, hills: readonly string[]) {
+    const bands = hills
+        .map((fill, index) => {
+            const base = height * (0.5 + index * 0.13);
+            return `<path d="M0 ${String(base)} C ${String(width * 0.25)} ${String(base - height * 0.12)}, ${String(width * 0.6)} ${String(base + height * 0.1)}, ${String(width)} ${String(base - height * 0.05)} L ${String(width)} ${String(height)} L 0 ${String(height)} Z" fill="${fill}"/>`;
+        })
+        .join("");
+    return svg(
+        width,
+        height,
+        `<rect width="${String(width)}" height="${String(height)}" fill="${sky}"/>
+         <circle cx="${String(width * 0.68)}" cy="${String(height * 0.3)}" r="${String(Math.min(width, height) * 0.14)}" fill="${sun}"/>
+         ${bands}`,
+    );
+}
+
+export const readWide = item("onboarding-desktop.png", 1440, 900, dashboard("#5b8cff", "Overview"));
+export const readFlat = item("header-strip.png", 1400, 200, headerStrip);
+export const readNarrow = item("sidebar-crop.png", 300, 900, narrowCrop);
+export const readWideSecond = item(
+    "settings-models.png",
+    1440,
+    900,
+    dashboard("#34c38f", "Models"),
+);
+export const readTall = item(
+    "full-page-capture.png",
+    1440,
+    7200,
+    svg(
+        1440,
+        7200,
+        `<rect width="1440" height="7200" fill="#f8fafc"/>
+         ${Array.from(
+             { length: 24 },
+             (_, index) =>
+                 `<rect x="120" y="${String(120 + index * 290)}" width="1200" height="240" rx="24" fill="${index % 5 === 0 ? "#2baccc" : "#e2e8f0"}"/>`,
+         ).join("")}`,
+    ),
+);
+
+export const generatedLandscape = item(
+    "dusk-valley.png",
+    1536,
+    1024,
+    art(1536, 1024, "#f3c9a5", "#fff3d6", ["#c27c6b", "#8a4f5c", "#4b2c48"]),
+    2_100_000,
+);
+export const generatedSquare = item(
+    "lake-morning.png",
+    1024,
+    1024,
+    art(1024, 1024, "#bfe3f0", "#fffbe0", ["#6fb3b8", "#3a7f8c", "#1e4b5c"]),
+    1_600_000,
+);
+export const generatedPortrait = item(
+    "ridge-night.png",
+    1024,
+    1536,
+    art(1024, 1536, "#28305e", "#f6e7a7", ["#4a4f8a", "#343a6e", "#1c1f42"]),
+    1_900_000,
+);
+
+export const complaintCreateProfile = item(
+    "create-profile.png",
+    3456,
+    2168,
+    onboarding(3456, 2168, "Create your profile", "Create profile"),
+    6_062_642,
+);
+export const complaintConnect = item(
+    "connect-harnesses.png",
+    3680,
+    2392,
+    onboarding(3680, 2392, "Connect your local harnesses", "Skip"),
+    6_951_893,
+);
+
+const COLUMNS_TWO: ConversationMediaLayout = { type: "columns", columns: 2 };
+const COLUMNS_ONE: ConversationMediaLayout = { type: "columns", columns: 1 };
+
+function mediaTool(
+    toolCallId: string,
+    toolName: string,
+    items: readonly ConversationMediaItem[],
+    layout?: ConversationMediaLayout,
+): ConversationToolCall {
+    return {
+        toolCallId,
+        toolName,
+        arguments: items.length === 1 ? { file_path: `/work/screens/${items[0]!.name}` } : {},
+        status: "success",
+        failed: false,
+        presentation: { type: "media", items, ...(layout ? { layout } : {}) },
+    };
+}
+
+export const readWideTool = mediaTool("tool-read-wide", "Read", [readWide], COLUMNS_TWO);
+export const readFlatTool = mediaTool("tool-read-flat", "Read", [readFlat], COLUMNS_TWO);
+export const readNarrowTool = mediaTool("tool-read-narrow", "Read", [readNarrow], COLUMNS_TWO);
+export const readWideSecondTool = mediaTool(
+    "tool-read-wide-2",
+    "view_image",
+    [readWideSecond],
+    COLUMNS_TWO,
+);
+export const readTallTool = mediaTool("tool-read-tall", "Read", [readTall], COLUMNS_TWO);
+export const imagegenTools: readonly ConversationToolCall[] = [
+    mediaTool("tool-imagegen-1", "codex_imagegen", [generatedLandscape], COLUMNS_ONE),
+    mediaTool("tool-imagegen-2", "codex_imagegen", [generatedSquare], COLUMNS_ONE),
+    mediaTool("tool-imagegen-3", "codex_imagegen", [generatedPortrait], COLUMNS_ONE),
+];
+
+const text = (value: string): ConversationMediaLayoutNode => ({ type: "text", text: value });
+
+/** A layout an agent wrote: a heading, a captioned two-up grid, and a full-width figure. */
+export const treeLayout: ConversationMediaLayout = {
+    type: "tree",
+    root: [
+        {
+            type: "element",
+            tag: "section",
+            style: { display: "flex", flexDirection: "column", rowGap: 12 },
+            children: [
+                {
+                    type: "element",
+                    tag: "p",
+                    style: { fontSize: "large", fontWeight: "bold" },
+                    children: [text("Onboarding, before and after")],
+                },
+                {
+                    type: "element",
+                    tag: "div",
+                    style: {
+                        display: "grid",
+                        gridTemplateColumns: [1, 1],
+                        columnGap: 12,
+                        rowGap: 12,
+                    },
+                    children: [
+                        {
+                            type: "element",
+                            tag: "figure",
+                            style: { display: "flex", flexDirection: "column", rowGap: 6 },
+                            children: [
+                                { type: "item", index: 0, alt: "Before: create profile" },
+                                {
+                                    type: "element",
+                                    tag: "figcaption",
+                                    style: { fontSize: "small", tone: "muted" },
+                                    children: [
+                                        {
+                                            type: "element",
+                                            tag: "strong",
+                                            children: [text("Before.")],
+                                        },
+                                        text(
+                                            " The form floats over the sky with no card behind it.",
+                                        ),
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            type: "element",
+                            tag: "figure",
+                            style: { display: "flex", flexDirection: "column", rowGap: 6 },
+                            children: [
+                                { type: "item", index: 1, alt: "After: connect harnesses" },
+                                {
+                                    type: "element",
+                                    tag: "figcaption",
+                                    style: { fontSize: "small", tone: "muted" },
+                                    children: [
+                                        {
+                                            type: "element",
+                                            tag: "strong",
+                                            children: [text("After.")],
+                                        },
+                                        text(" One column, and "),
+                                        { type: "element", tag: "code", children: [text("Skip")] },
+                                        text(" is the primary action."),
+                                    ],
+                                },
+                            ],
+                        },
+                    ],
+                },
+                {
+                    type: "element",
+                    tag: "figure",
+                    style: { display: "flex", flexDirection: "column", rowGap: 6 },
+                    children: [
+                        { type: "item", index: 2, style: { objectFit: "contain" } },
+                        {
+                            type: "element",
+                            tag: "figcaption",
+                            style: { fontSize: "small", tone: "muted", textAlign: "center" },
+                            children: [text("The header at full width, as shipped.")],
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+};
+
+export const treeTool = mediaTool(
+    "tool-present-tree",
+    "present_files",
+    [complaintCreateProfile, complaintConnect, readFlat],
+    treeLayout,
+);
+/** The automatic set from the complaint: two onboarding screenshots, no layout. */
+export const automaticTool = mediaTool("tool-present-auto", "present_files", [
+    complaintConnect,
+    complaintCreateProfile,
+]);
+export const automaticMixedTool = mediaTool("tool-present-mixed", "present_files", [
+    readWide,
+    readNarrow,
+    generatedSquare,
+    readFlat,
+    readWideSecond,
+]);
+
+function message(
+    id: string,
+    sender: ConversationAuthor,
+    body: string,
+    createdAt: string,
+): ConversationEntry {
+    return {
+        kind: "message",
+        source: "server",
+        delivery: "sent",
+        message: {
+            id,
+            chatId: "media-layouts",
+            sequence: id,
+            changePts: id,
+            sender,
+            text: body,
+            attachments: [],
+            reactions: [],
+            createdAt,
+        },
+    };
+}
+
+function activity(
+    tool: ConversationToolCall,
+    sequence: string,
+    occurredAt: string,
+): ConversationEntry {
+    return {
+        kind: "agentActivity",
+        id: tool.toolCallId,
+        sequence,
+        occurredAt: Date.parse(occurredAt),
+        activity: { kind: "tool", tool },
+    };
+}
+
+/** Several sequential screenshot reads, then generated images: one grid per run. */
+export const readRunEntries: readonly ConversationEntry[] = [
+    message(
+        "m-01",
+        happyAgentOwnerAuthor,
+        "Look at the screenshots in /work/screens and tell me what's off.",
+        "2026-10-20T10:00:00.000Z",
+    ),
+    message("m-02", agentAuthor, "Reading the four screenshots.", "2026-10-20T10:00:05.000Z"),
+    activity(readWideTool, "m-03", "2026-10-20T10:00:06.000Z"),
+    activity(
+        { ...happyAgentExplorationTool, toolCallId: "tool-explore-screens" },
+        "m-04",
+        "2026-10-20T10:00:07.000Z",
+    ),
+    activity(readFlatTool, "m-05", "2026-10-20T10:00:08.000Z"),
+    activity(readNarrowTool, "m-06", "2026-10-20T10:00:09.000Z"),
+    activity(readWideSecondTool, "m-07", "2026-10-20T10:00:10.000Z"),
+    message(
+        "m-08",
+        agentAuthor,
+        "The header strip and the sidebar crop are both shown whole now. Generating three alternatives for the hero image.",
+        "2026-10-20T10:00:20.000Z",
+    ),
+    ...imagegenTools.map((tool, index) =>
+        activity(tool, `m-1${String(index)}`, `2026-10-20T10:01:0${String(index)}.000Z`),
+    ),
+];
+
+/** What `present_files` shows: an agent-written tree, then unarranged sets. */
+export const presentedEntries: readonly ConversationEntry[] = [
+    message(
+        "m-19",
+        happyAgentOwnerAuthor,
+        "Put the before and after side by side for me.",
+        "2026-10-20T10:01:50.000Z",
+    ),
+    message(
+        "m-20",
+        agentAuthor,
+        "Here is the comparison, laid out with captions.",
+        "2026-10-20T10:02:00.000Z",
+    ),
+    activity(treeTool, "m-21", "2026-10-20T10:02:01.000Z"),
+    message("m-22", agentAuthor, "And the two raw screens:", "2026-10-20T10:02:10.000Z"),
+    activity(automaticTool, "m-23", "2026-10-20T10:02:11.000Z"),
+    activity(automaticMixedTool, "m-24", "2026-10-20T10:02:12.000Z"),
+    message("m-25", agentAuthor, "Nothing above is cropped.", "2026-10-20T10:02:20.000Z"),
+];

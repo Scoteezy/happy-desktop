@@ -25,14 +25,12 @@ import { AutomatedTag } from "./AutomatedTag";
 import { ReactionChip } from "./Badge";
 import { Icon, type IconName } from "./Icon";
 import {
-    MEDIA_MOSAIC_MAX_WIDTH,
+    MESSAGE_MEDIA_LIMITS,
     MESSAGE_MEDIA_MAX,
-    mediaMosaicLayout,
-    mediaMosaicStyle,
-    mediaMosaicTileStyle,
-    type MediaMosaicLayout,
-    type MediaMosaicTile,
-} from "./mediaMosaic";
+    MESSAGE_MEDIA_MAX_WIDTH,
+    mediaJustifiedPlan,
+} from "./mediaLayout";
+import { MediaFlow } from "./MediaFlow";
 import { messagePlainTextNormalize, type MessageBodyFormat } from "./messagePlainText";
 import type { MessageReferences } from "./messageReferences";
 import {
@@ -83,16 +81,15 @@ export type MessageImage = {
 };
 
 /**
- * One image tile at its frame in the message's photo mosaic: the box
- * `mediaMosaicLayout` computes from every photo's own shape, so the layout is
- * reserved up front and nothing reflows when the bytes arrive — and the
- * transcript's virtualizer, which reserves the row from the same function,
- * agrees with it. Without an open action it remains media, not a fake button.
+ * One image tile at its box in the message's photo flow: the box `MediaFlow`
+ * sizes from every photo's own shape, so the layout is reserved up front and
+ * nothing reflows when the bytes arrive — and the transcript's virtualizer,
+ * which reserves the row from the same plan, agrees with it. Without an open
+ * action it remains media, not a fake button.
  */
 function MessageMediaItem(props: {
     image: MessageImage;
-    layout: MediaMosaicLayout;
-    tile: MediaMosaicTile;
+    style: CSSProperties;
     onOpen?: (id: string) => void;
 }) {
     const content = props.image.url ? (
@@ -124,7 +121,7 @@ function MessageMediaItem(props: {
         "data-fixed": "",
         "data-media-id": props.image.id,
         "data-happy-desktop-ui": "message-media-item",
-        style: mediaMosaicTileStyle(props.layout, props.tile),
+        style: props.style,
     } as const;
     return props.onOpen ? (
         <button
@@ -575,9 +572,7 @@ export function Message(props: MessageProps) {
         (bodyNode !== null ||
             (local.automated && (Boolean(local.images?.length) || hasAttachments())));
     const shownImages = local.images?.slice(0, MESSAGE_MEDIA_MAX) ?? [];
-    /* Laid out at full size; a narrower column scales the frame, and the tiles
-       with it, exactly as the row model scales this layout to its measure. */
-    const mosaic = mediaMosaicLayout(shownImages, MEDIA_MOSAIC_MAX_WIDTH);
+    const mediaPlan = mediaJustifiedPlan(shownImages, MESSAGE_MEDIA_LIMITS);
     const groupedIncomingLine =
         !local.own && grouped() && bodyNode !== null ? (
             <div
@@ -695,22 +690,20 @@ export function Message(props: MessageProps) {
                     (groupedIncomingLine ?? bodyNode)
                 )}
                 {shownImages.length > 0 ? (
-                    <div
+                    <MediaFlow
+                        align={local.own ? "end" : "start"}
                         className="happy-message__media"
-                        data-count={shownImages.length}
-                        data-happy-desktop-ui="message-media"
-                        style={mediaMosaicStyle(mosaic)}
-                    >
-                        {shownImages.map((image, position) => (
+                        maxWidth={MESSAGE_MEDIA_MAX_WIDTH}
+                        plan={mediaPlan}
+                        renderTile={(position, style) => (
                             <MessageMediaItem
-                                image={image}
-                                key={image.id}
-                                layout={mosaic}
+                                image={shownImages[position]!}
+                                key={shownImages[position]!.id}
                                 onOpen={local.onImageOpen}
-                                tile={mosaic.tiles[position]!}
+                                style={style}
                             />
-                        ))}
-                    </div>
+                        )}
+                    />
                 ) : null}
                 {hasAttachments() ? (
                     <div

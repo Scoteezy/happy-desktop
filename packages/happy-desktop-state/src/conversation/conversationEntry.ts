@@ -167,6 +167,117 @@ export interface ConversationMediaItem {
     readonly url: string;
 }
 
+/**
+ * How the producer asked a call's media to be arranged. Absent, the surface
+ * lays the items out itself. `columns` is an equal-column grid, the shape a
+ * run of image reads (two) or generated images (one) is shown in. `tree` is a
+ * layout the agent wrote, as closed typed nodes: every item it names appears
+ * exactly once, and an item it left out is appended after it.
+ */
+export type ConversationMediaLayout =
+    | { readonly type: "columns"; readonly columns: 1 | 2 }
+    | { readonly type: "tree"; readonly root: readonly ConversationMediaLayoutNode[] };
+
+export type ConversationMediaLayoutTag =
+    | "div"
+    | "section"
+    | "figure"
+    | "figcaption"
+    | "p"
+    | "span"
+    | "strong"
+    | "em"
+    | "code";
+
+export type ConversationMediaLayoutNode =
+    | {
+          readonly type: "element";
+          readonly tag: ConversationMediaLayoutTag;
+          readonly style?: ConversationMediaLayoutStyle;
+          readonly children: readonly ConversationMediaLayoutNode[];
+      }
+    /** One of the call's items, by its position in `items`. */
+    | {
+          readonly type: "item";
+          readonly index: number;
+          readonly alt?: string;
+          readonly style?: ConversationMediaLayoutStyle;
+      }
+    | { readonly type: "text"; readonly text: string }
+    | { readonly type: "break" };
+
+export type ConversationMediaLayoutLength =
+    | { readonly unit: "%"; readonly value: number }
+    | { readonly unit: "px"; readonly value: number };
+
+/** Four edges in whole CSS pixels, 0–64. */
+export interface ConversationMediaLayoutBox {
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+    readonly left: number;
+}
+
+/**
+ * The presentation a layout node may ask for. Every field is a closed literal
+ * set or a bounded number; there is no CSS text, and colour is a theme tone.
+ */
+export interface ConversationMediaLayoutStyle {
+    readonly display?: "block" | "flex" | "grid";
+    readonly flexDirection?: "row" | "column" | "row-reverse" | "column-reverse";
+    readonly flexWrap?: "nowrap" | "wrap";
+    readonly flexGrow?: number;
+    readonly flexShrink?: number;
+    readonly flexBasis?: ConversationMediaLayoutLength | "auto";
+    readonly justifyContent?:
+        | "start"
+        | "center"
+        | "end"
+        | "space-between"
+        | "space-around"
+        | "space-evenly";
+    readonly alignItems?: "start" | "center" | "end" | "stretch" | "baseline";
+    readonly alignSelf?: "auto" | "start" | "center" | "end" | "stretch" | "baseline";
+    readonly rowGap?: number;
+    readonly columnGap?: number;
+    /** Fractional track weights, one per column. */
+    readonly gridTemplateColumns?: readonly number[];
+    readonly gridColumnSpan?: number;
+    readonly padding?: ConversationMediaLayoutBox;
+    readonly margin?: ConversationMediaLayoutBox;
+    readonly width?: ConversationMediaLayoutLength;
+    readonly minWidth?: ConversationMediaLayoutLength;
+    readonly maxWidth?: ConversationMediaLayoutLength;
+    /** Width over height. */
+    readonly aspectRatio?: number;
+    readonly objectFit?: "contain" | "cover";
+    readonly textAlign?: "left" | "center" | "right";
+    readonly fontWeight?: "normal" | "bold";
+    readonly fontStyle?: "normal" | "italic";
+    readonly fontSize?: "small" | "normal" | "large" | "title";
+    readonly tone?: "default" | "muted" | "accent";
+}
+
+/**
+ * The positions of a call's items in the order the reader meets them: the
+ * order a tree names them in, else the order they were presented in.
+ */
+export function conversationMediaOrder(
+    count: number,
+    layout: ConversationMediaLayout | undefined,
+): readonly number[] {
+    if (layout?.type !== "tree") return Array.from({ length: count }, (_, index) => index);
+    const order: number[] = [];
+    const visit = (nodes: readonly ConversationMediaLayoutNode[]) => {
+        for (const node of nodes) {
+            if (node.type === "item") order.push(node.index);
+            else if (node.type === "element") visit(node.children);
+        }
+    };
+    visit(layout.root);
+    return order;
+}
+
 /** The rich body an activity expands into, when the producer knows its shape. */
 export type ConversationActivityPresentation =
     | {
@@ -228,6 +339,7 @@ export type ConversationActivityPresentation =
     | {
           readonly type: "media";
           readonly items: readonly ConversationMediaItem[];
+          readonly layout?: ConversationMediaLayout;
       }
     /**
      * The artifact a call made, changed, or took up. `shows` is `"latest"`

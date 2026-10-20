@@ -1,4 +1,4 @@
-import { conversationMediaVideoBox } from "../../src/conversationRowHeight";
+import { mediaVideoBox } from "../../src/mediaLayout";
 import { MediaVideoTile } from "../../src/ConversationMedia";
 import { thumbhashDataUrl } from "../../src/thumbhashDataUrl";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -9,8 +9,8 @@ import { videoClipPortrait, videoClipWide } from "./videoClips";
 export const componentNumber = "C-293";
 
 export function MediaVideoTilePage() {
-    const fallback = conversationMediaVideoBox({});
-    const portrait = conversationMediaVideoBox({ width: 720, height: 1280 });
+    const fallback = mediaVideoBox({});
+    const portrait = mediaVideoBox({ width: 720, height: 1280 });
     return (
         <ComponentPage
             number={componentNumber}

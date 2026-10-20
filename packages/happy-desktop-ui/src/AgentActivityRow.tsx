@@ -8,6 +8,7 @@ import type {
     ConversationActivityStatus,
     ConversationFileDiff,
     ConversationJson,
+    ConversationMediaItem,
     ConversationToolCall,
 } from "happy-desktop-state";
 import { compactCount, changeCountLabel } from "./countText";
@@ -44,6 +45,18 @@ export type ActivityMotion = "typewriter" | "verb-typed" | "calm-typed" | "calm"
  */
 export type ActivityTreatment = "detailed" | "focused";
 
+/** How a call in a run of picture-showing calls draws its pictures. */
+export type AgentActivityMediaRun =
+    | { readonly type: "deferred" }
+    | {
+          readonly type: "end";
+          readonly columns: 1 | 2;
+          /** Every picture of the run, in order. */
+          readonly items: readonly ConversationMediaItem[];
+          /** Opens one picture by its position in `items`. */
+          readonly onItemOpen?: (position: number) => void;
+      };
+
 export type AgentActivityRowProps = {
     activity: ConversationActivity;
     /** Motion profile for live updates. Defaults to the historical `typewriter`. */
@@ -63,6 +76,12 @@ export type AgentActivityRowProps = {
      * media: a picture full size, a document or file in its preview.
      */
     onMediaOpen?: (tool: ConversationToolCall, index: number) => void;
+    /**
+     * This call's part in a run of calls whose pictures form one grid: its
+     * own pictures are drawn under a later call, or it is the last call and
+     * draws the whole run's. Absent, the call draws its own.
+     */
+    mediaRun?: AgentActivityMediaRun;
     /** Start expanded (blueprint/tests). Otherwise rich bodies collapse by default. */
     defaultExpanded?: boolean;
     /** Controlled disclosure state for a virtualized transcript row. */
@@ -203,7 +222,10 @@ function toolVerb(
         return status === "failed" ? "Failed" : active ? "Compacting" : "Compacted";
     }
     if (presentation?.type === "search") return active ? "Searching" : "Searched";
-    if (presentation?.type === "media") return mediaNoun(presentation.items);
+    /* A read that turned out to be a picture still says it read it; every
+       other call that presents files is named by what it presented. */
+    if (presentation?.type === "media")
+        return /(read|view)/.test(lower) ? "Read" : mediaNoun(presentation.items);
     // An artifact's tools say what they did to it in their own words: the
     // generic family below would read `edit_artifact_files` as an edit of a
     // file called "Edit artifact files".
@@ -654,6 +676,7 @@ function AgentToolActivity(props: {
     onSelect?: (tool: ConversationToolCall) => void;
     onFileOpen?: (path: string) => void;
     onMediaOpen?: (tool: ConversationToolCall, index: number) => void;
+    mediaRun?: AgentActivityMediaRun;
     references?: MessageReferences;
     inlinePage?: InlinePageProps;
     singleLine?: boolean;
@@ -1002,14 +1025,25 @@ function AgentToolActivity(props: {
                 )}
             </div>
 
-            {presentation?.type === "media" && presentation.items.length > 0 ? (
+            {presentation?.type !== "media" ||
+            presentation.items.length === 0 ||
+            props.mediaRun?.type === "deferred" ? null : props.mediaRun?.type === "end" ? (
+                <ConversationMedia
+                    items={props.mediaRun.items}
+                    layout={{ type: "columns", columns: props.mediaRun.columns }}
+                    {...(props.mediaRun.onItemOpen
+                        ? { onItemOpen: props.mediaRun.onItemOpen }
+                        : {})}
+                />
+            ) : (
                 <ConversationMedia
                     items={presentation.items}
+                    {...(presentation.layout ? { layout: presentation.layout } : {})}
                     {...(props.onMediaOpen
                         ? { onItemOpen: (index: number) => props.onMediaOpen?.(tool, index) }
                         : {})}
                 />
-            ) : null}
+            )}
 
             {props.inlinePage ? (
                 <InlinePage {...props.inlinePage} />
@@ -1569,6 +1603,7 @@ export function AgentActivityRow(props: AgentActivityRowProps) {
                     onSelect={props.onToolSelect}
                     {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
                     {...(props.onMediaOpen ? { onMediaOpen: props.onMediaOpen } : {})}
+                    {...(props.mediaRun ? { mediaRun: props.mediaRun } : {})}
                     {...(props.references ? { references: props.references } : {})}
                     {...(props.inlinePage ? { inlinePage: props.inlinePage } : {})}
                     singleLine={props.singleLine}

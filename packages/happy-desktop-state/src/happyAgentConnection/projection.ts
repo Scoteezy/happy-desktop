@@ -1,4 +1,5 @@
 import { gitSnapshotProject, type GitSnapshotState } from "./gitSnapshotState.js";
+import { mediaLayoutProject } from "./mediaLayoutProject.js";
 import type {
     Agent,
     AgentActivityResponse,
@@ -1340,6 +1341,14 @@ function projectToolPresentation(
                     ...(item.thumbhash === undefined ? {} : { thumbhash: item.thumbhash }),
                     url: mediaUrl(index),
                 })),
+                ...((layout) => (layout === undefined ? {} : { layout }))(
+                    mediaLayoutProject(
+                        // `layout` is in the protocol from client 0.0.109; this
+                        // build reads it off the wire until that client ships.
+                        (presentation as { readonly layout?: unknown }).layout,
+                        presentation.items.length,
+                    ),
+                ),
             };
         case "artifact":
             return {

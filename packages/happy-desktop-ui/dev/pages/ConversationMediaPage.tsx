@@ -1,4 +1,4 @@
-import type { ConversationMediaItem } from "happy-desktop-state";
+import type { ConversationMediaItem, ConversationMediaLayout } from "happy-desktop-state";
 import { ConversationMedia } from "../../src/ConversationMedia";
 import { conversationMediaHeight } from "../../src/conversationRowHeight";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -15,89 +15,97 @@ import {
     mediaScreenshots,
     mediaVideo,
 } from "./conversationMediaFixtures";
+import {
+    complaintConnect,
+    complaintCreateProfile,
+    generatedLandscape,
+    generatedPortrait,
+    generatedSquare,
+    readFlat,
+    readNarrow,
+    readTall,
+    readWide,
+    readWideSecond,
+    treeLayout,
+    treeTool,
+} from "./conversationMediaLayoutFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-294";
 
-/** A tool row's measure at a wide window: wider than the mosaic, which stops at 560. */
-const MEASURE = 640;
-/** A tool row's measure at Happy's minimum window, where the mosaic scales down. */
+/** A tool row's measure at Happy's default window. */
+const MEASURE = 720;
+/** A tool row's measure at Happy's minimum window. */
 const NARROW_MEASURE = 360;
 
-function sized(items: readonly ConversationMediaItem[], measure: number) {
-    return `${String(measure)}px measure · ${String(Math.round(conversationMediaHeight(items, measure) * 100) / 100)}px reserved by the row model`;
+function sized(
+    items: readonly ConversationMediaItem[],
+    measure: number,
+    layout: ConversationMediaLayout | undefined,
+) {
+    return `${String(measure)}px measure · ${String(Math.round(conversationMediaHeight(items, measure, layout) * 100) / 100)}px reserved by the row model`;
 }
 
-const [general, models, secrets, about] = mediaScreenshots as [
-    ConversationMediaItem,
-    ConversationMediaItem,
-    ConversationMediaItem,
-    ConversationMediaItem,
-];
+const [general, models] = mediaScreenshots as [ConversationMediaItem, ConversationMediaItem];
 
 const specimens: readonly {
     label: string;
     detail: string;
     items: readonly ConversationMediaItem[];
+    layout?: ConversationMediaLayout;
     measure?: number;
 }[] = [
     {
         label: "One picture",
-        detail: "a lone picture keeps its own box, at most 380 × 320",
+        detail: "a lone picture at the full measure, never past its own pixels or 640 tall",
         items: [mediaImageWide],
     },
     {
-        label: "Two pictures, landscape and portrait",
-        detail: "side by side at one shared height, widths from their shapes",
-        items: [mediaImageWide, mediaImagePortrait],
+        label: "The complaint's two screenshots",
+        detail: "justified: one shared height, each at its true shape, nothing cropped",
+        items: [complaintConnect, complaintCreateProfile],
     },
     {
-        label: "Two screenshots",
-        detail: "two wide pictures much wider than the mosaic stack at full width",
-        items: [general, models],
-    },
-    {
-        label: "Three pictures",
-        detail: "the first across the top, the other two beneath it",
-        items: [mediaImageSquare, mediaImageWide, mediaImageTall],
-    },
-    {
-        label: "Three pictures, portrait first",
-        detail: "a narrow first picture takes the full height on the left",
-        items: [mediaImageTall, mediaImageWide, mediaImageSquare],
-    },
-    {
-        label: "Four 16:10 screenshots",
-        detail: "the first across the top, three in one row beneath it",
-        items: mediaScreenshots,
-    },
-    {
-        label: "Four pictures, portrait first",
-        detail: "the first at full height on the left, three stacked on the right",
-        items: [mediaImagePortrait, mediaImageWide, mediaImageSquare, mediaImageTall],
-    },
-    {
-        label: "Five mixed pictures",
-        detail: "justified rows: the split whose height lands closest to the target",
-        items: [mediaImageWide, mediaImagePortrait, mediaImageSquare, general, mediaImageTall],
+        label: "Mixed shapes, automatic",
+        detail: "a 7:1 strip and a 1:3 crop are extreme and take rows of their own; the rest justify",
+        items: [readWide, readNarrow, generatedSquare, readFlat, readWideSecond],
     },
     {
         label: "Seven pictures",
-        detail: "justified rows, every row flush at both edges",
+        detail: "linear partition: the rows whose heights land closest to the target",
         items: [
             general,
             models,
             mediaImagePortrait,
-            secrets,
             mediaImageSquare,
-            about,
+            mediaImageTall,
             mediaImageWide,
+            mediaImagePanorama,
         ],
     },
     {
-        label: "A very wide picture",
-        detail: "a ratio past 2:1 sends even three pictures to justified rows",
-        items: [mediaImagePanorama, mediaImageSquare, mediaImageWide],
+        label: "Two columns",
+        detail: "image reads: a grid at the full measure; each row is as tall as its taller picture",
+        items: [readWide, readFlat, readNarrow, readWideSecond],
+        layout: { type: "columns", columns: 2 },
+    },
+    {
+        label: "A page-tall capture",
+        detail: "capped at 480 in a cell; past 200 wide it letterboxes instead of cropping",
+        items: [readTall, readWide],
+        layout: { type: "columns", columns: 2 },
+    },
+    {
+        label: "One column",
+        detail: "generated images, stacked at full width",
+        items: [generatedLandscape, generatedSquare, generatedPortrait],
+        layout: { type: "columns", columns: 1 },
+    },
+    {
+        label: "A tree the agent wrote",
+        detail: "captions and a two-up grid, drawn from typed nodes and measured off-screen",
+        items: treeTool.presentation?.type === "media" ? treeTool.presentation.items : [],
+        layout: treeLayout,
     },
     {
         label: "Missing dimensions",
@@ -105,9 +113,10 @@ const specimens: readonly {
         items: [mediaImageHashedOnly, mediaImageUnsized, mediaImageWide],
     },
     {
-        label: "Four screenshots in a narrow column",
-        detail: "the whole mosaic scales down uniformly below its 560px width",
-        items: mediaScreenshots,
+        label: "Two columns in a narrow column",
+        detail: "the same grid at Happy's minimum window",
+        items: [readWide, readFlat, readNarrow, readWideSecond],
+        layout: { type: "columns", columns: 2 },
         measure: NARROW_MEASURE,
     },
     {
@@ -121,7 +130,7 @@ export function ConversationMediaPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The files one tool call presented, beneath its transcript line: pictures first as one aspect-aware mosaic, then recordings, then a card per document or file."
+            summary="The files one tool call presented, beneath its transcript line: an agent-written tree, or pictures first as one uncropped flow (the producer's column grid, else justified rows), then recordings, then a card per document or file."
             title="ConversationMedia"
         >
             {specimens.map((specimen, index) => {
@@ -135,13 +144,21 @@ export function ConversationMediaPage() {
                         stage="surface"
                     >
                         <div
-                            data-reserved={conversationMediaHeight(specimen.items, measure)}
+                            data-reserved={conversationMediaHeight(
+                                specimen.items,
+                                measure,
+                                specimen.layout,
+                            )}
                             data-testid={`conversation-media-${String(index + 1)}`}
                             style={{ width: `${String(measure)}px` }}
                         >
-                            <ConversationMedia items={specimen.items} onItemOpen={() => {}} />
+                            <ConversationMedia
+                                items={specimen.items}
+                                {...(specimen.layout ? { layout: specimen.layout } : {})}
+                                onItemOpen={() => {}}
+                            />
                         </div>
-                        <DimensionRule label={sized(specimen.items, measure)} />
+                        <DimensionRule label={sized(specimen.items, measure, specimen.layout)} />
                     </Specimen>
                 );
             })}

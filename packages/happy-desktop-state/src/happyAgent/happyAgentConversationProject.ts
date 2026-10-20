@@ -1244,7 +1244,11 @@ function presentationProject(
                 ...(presentation.sources === undefined ? {} : { sources: presentation.sources }),
             };
         case "media":
-            return { type: "media", items: presentation.items };
+            return {
+                type: "media",
+                items: presentation.items,
+                ...(presentation.layout === undefined ? {} : { layout: presentation.layout }),
+            };
         case "artifact":
             return {
                 type: "artifact",

@@ -81,6 +81,7 @@ import { ScrollArea } from "./Scrollbar";
 import { Spinner } from "./Spinner";
 import { toolCallStillGlyph } from "./toolCallStillGlyph";
 import { WindowOverlay } from "./WindowOverlay";
+import { conversationMediaRunRows, conversationMediaRuns } from "./conversationMediaRuns";
 
 export type ConversationViewProps = {
     /**
@@ -589,6 +590,7 @@ export function ConversationView(props: ConversationViewProps) {
             setInlinePageGeneration((generation) => generation + 1);
         },
     };
+    const mediaRuns = conversationMediaRuns(transcript);
     const inlinePages = props.inlinePages;
     const inlineLeads = inlinePages ? conversationInlineArtifactLeads(transcript) : undefined;
     const inlinePageOf = (entry: ConversationEntry | undefined) =>
@@ -767,6 +769,11 @@ export function ConversationView(props: ConversationViewProps) {
             liveStatus: statusVisible,
             ...(props.references ? { references: props.references } : {}),
             ...(inlinePage ? { inlinePage: inlinePage.geometry } : {}),
+            ...((run) => (run ? { mediaRun: run } : {}))(
+                transcript[index] === undefined
+                    ? undefined
+                    : mediaRuns.get(entryKey(transcript[index])),
+            ),
             viewerId: props.viewerId,
             width,
         };
@@ -905,7 +912,7 @@ export function ConversationView(props: ConversationViewProps) {
                                 rowHeightCache,
                             )
                         }
-                        estimateRows={transcript}
+                        estimateRows={conversationMediaRunRows(transcript, mediaRuns)}
                         estimateRowWidth={contentWidth}
                         estimateVersion={textLayoutGeneration}
                         footer={
@@ -1036,6 +1043,9 @@ export function ConversationView(props: ConversationViewProps) {
                                     {...(props.onToolMediaOpen
                                         ? { onToolMediaOpen: props.onToolMediaOpen }
                                         : {})}
+                                    {...((run) => (run ? { mediaRun: run } : {}))(
+                                        mediaRuns.get(entryKey(entry)),
+                                    )}
                                     onDelegationSelect={props.onDelegationSelect}
                                     now={props.now}
                                     {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}

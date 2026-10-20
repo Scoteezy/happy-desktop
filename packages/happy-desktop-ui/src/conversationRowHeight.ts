@@ -4,6 +4,7 @@ import {
     type ConversationEntry,
     type ConversationErrorAssistance,
     type ConversationMediaItem,
+    type ConversationMediaLayout,
     type ConversationRequest,
     type HappyReference,
 } from "happy-desktop-state";
@@ -55,12 +56,18 @@ import {
     conversationFailureTargetKey,
 } from "./conversationFailureText";
 import {
-    MEDIA_SINGLE_MAX_W,
+    MESSAGE_MEDIA_LIMITS,
     MESSAGE_MEDIA_MAX,
-    mediaMosaicLayout,
-    messageMediaSingleBox,
-    type MediaMosaicImage,
-} from "./mediaMosaic";
+    MESSAGE_MEDIA_MAX_WIDTH,
+    conversationMediaPlan,
+    mediaColumnsPlan,
+    mediaFlowHeight,
+    mediaJustifiedPlan,
+    mediaVideoBox,
+    type MediaFlowImage,
+} from "./mediaLayout";
+import { mediaTreeHeight } from "./MediaTree";
+import { conversationMediaRunSignature, type ConversationMediaRun } from "./conversationMediaRuns";
 
 /**
  * Height of one conversation row, computed from the entry and the list's measure
@@ -110,6 +117,8 @@ export type ConversationRowContext = {
      * it sits, whether it is collapsed, and the height its page last reported.
      */
     readonly inlinePage?: InlinePageGeometry;
+    /** This row's part in a run of calls whose pictures form one grid. */
+    readonly mediaRun?: ConversationMediaRun;
 };
 export type ConversationFailureRowContext = {
     /** The conversation has not moved past this failure, so its actions are offered. */
@@ -389,17 +398,19 @@ export function contentWidth(width: number): number {
     return Math.min(width, CHAT_MEASURE);
 }
 /**
- * Painted height of a message's photos: at most four, laid out by
- * `mediaMosaicLayout` at the width the message's content column gives them,
- * which is also what `Message` paints.
+ * Painted height of a message's photos: at most four, in justified rows at
+ * the width the message's content column gives them, up to the bubble-sized
+ * `MESSAGE_MEDIA_MAX_WIDTH` — which is also what `Message` paints.
  */
-function mediaHeight(
-    images: readonly MediaMosaicImage[],
-    measure: number,
-    hasBody: boolean,
-): number {
+function mediaHeight(images: readonly MediaFlowImage[], measure: number, hasBody: boolean): number {
     const margin = hasBody ? MEDIA_MARGIN : MEDIA_MARGIN_BARE;
-    return margin + mediaMosaicLayout(images.slice(0, MESSAGE_MEDIA_MAX), measure).height;
+    return (
+        margin +
+        mediaFlowHeight(
+            mediaJustifiedPlan(images.slice(0, MESSAGE_MEDIA_MAX), MESSAGE_MEDIA_LIMITS),
+            Math.min(measure, MESSAGE_MEDIA_MAX_WIDTH),
+        )
+    );
 }
 /**
  * `.happy-conversation-media`: the blocks a tool call's presented files stack
@@ -409,35 +420,25 @@ function mediaHeight(
 const TOOL_MEDIA_GAP = 8;
 /** A file or document presented by a tool is one 64px `ResultCard`. */
 const RESULT_CARD_HEIGHT = 64;
-/** A recording whose producer stated no frame size takes a 16:9 box at the photo cap. */
-const MEDIA_VIDEO_FALLBACK_W = MEDIA_SINGLE_MAX_W;
-const MEDIA_VIDEO_FALLBACK_H = Math.round((MEDIA_SINGLE_MAX_W * 9) / 16);
-
-/** The box an inline recording is drawn in: its own frame like a photo, or 16:9. */
-export function conversationMediaVideoBox(item: {
-    readonly width?: number;
-    readonly height?: number;
-}): { readonly width: number; readonly height: number } {
-    if (!item.width || !item.height)
-        return { width: MEDIA_VIDEO_FALLBACK_W, height: MEDIA_VIDEO_FALLBACK_H };
-    return messageMediaSingleBox(item);
-}
 
 /**
  * Painted height of the files one tool call presented, laid out the way
- * `ConversationMedia` lays them out: every image together first, as one
- * `mediaMosaicLayout`, then each recording at its frame, then one card per
- * document or file.
+ * `ConversationMedia` lays them out: a tree the agent wrote, measured at this
+ * width; otherwise every image together first, as one flow, then each
+ * recording at its frame, then one card per document or file.
  */
 export function conversationMediaHeight(
     items: readonly ConversationMediaItem[],
     measure: number,
+    layout?: ConversationMediaLayout,
 ): number {
+    if (layout?.type === "tree") return mediaTreeHeight(layout.root, items, measure);
     const images = items.filter((item) => item.kind === "image");
     const blocks: number[] = [];
-    if (images.length > 0) blocks.push(mediaMosaicLayout(images, measure).height);
+    if (images.length > 0)
+        blocks.push(mediaFlowHeight(conversationMediaPlan(images, layout), measure));
     for (const item of items)
-        if (item.kind === "video") blocks.push(conversationMediaVideoBox(item).height);
+        if (item.kind === "video") blocks.push(mediaVideoBox(item).height);
         else if (item.kind !== "image") blocks.push(RESULT_CARD_HEIGHT);
     if (blocks.length === 0) return 0;
     return blocks.reduce((total, block) => total + block, 0) + (blocks.length - 1) * TOOL_MEDIA_GAP;
@@ -452,13 +453,32 @@ function toolResultHeight(
     entry: ConversationEntry,
     measure: number,
     inlinePage: InlinePageGeometry | undefined,
+    mediaRun: ConversationMediaRun | undefined,
 ): number {
     if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return 0;
     if (inlinePage !== undefined) return TOOL_MEDIA_GAP + inlinePageHeight(inlinePage);
     const tool = entry.activity.tool;
     const presentation = tool.presentation;
-    if (presentation?.type === "media" && presentation.items.length > 0)
-        return TOOL_MEDIA_GAP + conversationMediaHeight(presentation.items, measure);
+    if (presentation?.type === "media" && presentation.items.length > 0) {
+        /* A call in a run draws nothing under its line until the last one,
+           which draws the run's whole grid. */
+        if (mediaRun?.type === "deferred") return 0;
+        if (mediaRun?.type === "end")
+            return (
+                TOOL_MEDIA_GAP +
+                mediaFlowHeight(
+                    mediaColumnsPlan(
+                        mediaRun.members.map((member) => member.item),
+                        mediaRun.columns,
+                    ),
+                    measure,
+                )
+            );
+        return (
+            TOOL_MEDIA_GAP +
+            conversationMediaHeight(presentation.items, measure, presentation.layout)
+        );
+    }
     if (presentation?.type === "artifact" || presentation?.type === "page")
         return TOOL_MEDIA_GAP + RESULT_CARD_HEIGHT;
     return 0;
@@ -534,7 +554,7 @@ function messageContentMeasure(width: number, treatment: MessageTreatment): numb
 }
 /** Height of a message's photos at the measure its treatment leaves them. */
 export function messageMediaHeight(
-    images: readonly MediaMosaicImage[],
+    images: readonly MediaFlowImage[],
     width: number,
     treatment: MessageTreatment,
     hasBody: boolean,
@@ -828,7 +848,7 @@ export function conversationRowHeight(
         return rowHeightCached(
             cache,
             entry,
-            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${inlinePageSignature(context.inlinePage)}:${messageReferencesSignature(
+            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${inlinePageSignature(context.inlinePage)}:${conversationMediaRunSignature(context.mediaRun)}:${messageReferencesSignature(
                 conversationEntryReferences(entry),
                 context.references,
             )}`,
@@ -871,7 +891,12 @@ export function conversationRowHeight(
                               )
                             : entry.activity.kind === "tool"
                               ? ACTIVITY_HEIGHT.tool +
-                                toolResultHeight(entry, width - activityInset, context.inlinePage)
+                                toolResultHeight(
+                                    entry,
+                                    width - activityInset,
+                                    context.inlinePage,
+                                    context.mediaRun,
+                                )
                               : conversationActivityHeight(entry.activity.kind);
                 if (activityHeight === undefined) return undefined;
                 return startsGroup
@@ -1126,7 +1151,7 @@ export function conversationRowHeight(
                 (grouped
                     ? CONVERSATION_AGENT_PADDING_BOTTOM.grouped
                     : CONVERSATION_AGENT_PADDING_BOTTOM.leading);
-        const images: MediaMosaicImage[] = [];
+        const images: MediaFlowImage[] = [];
         let cards = 0;
         for (const attachment of message.attachments) {
             if (attachment.kind === "inlineImage") {

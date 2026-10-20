@@ -15,6 +15,7 @@ import type {
     SlashCommand,
     Task,
 } from "@slopus/happy-agent-client";
+import type { ConversationMediaLayout } from "../conversation/conversationEntry.js";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
 import type {
     HappyAgentAvatarImage,
@@ -97,6 +98,7 @@ export type ToolPresentation =
               /** The item's bytes on this connection's authenticated origin. */
               url: string;
           }[];
+          layout?: ConversationMediaLayout;
       }
     | {
           kind: "artifact";

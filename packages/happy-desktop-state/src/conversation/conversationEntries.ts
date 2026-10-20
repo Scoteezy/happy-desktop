@@ -663,6 +663,7 @@ function presentationEqual(
         );
     if (left.type === "media" && right.type === "media")
         return (
+            mediaLayoutEqual(left.layout, right.layout) &&
             left.items.length === right.items.length &&
             left.items.every((item, index) => mediaItemEqual(item, right.items[index]))
         );
@@ -679,6 +680,22 @@ function presentationEqual(
             left.url === right.url && left.title === right.title && left.display === right.display
         );
     return false;
+}
+
+/** Structural equality of two layouts: closed JSON trees, compared field by field. */
+function mediaLayoutEqual(left: unknown, right: unknown): boolean {
+    if (left === right) return true;
+    if (typeof left !== "object" || typeof right !== "object" || left === null || right === null)
+        return false;
+    if (Array.isArray(left) !== Array.isArray(right)) return false;
+    const leftKeys = Object.keys(left);
+    if (leftKeys.length !== Object.keys(right).length) return false;
+    return leftKeys.every((key) =>
+        mediaLayoutEqual(
+            (left as Record<string, unknown>)[key],
+            (right as Record<string, unknown>)[key],
+        ),
+    );
 }
 
 function mediaItemEqual(left: ConversationMediaItem, right: ConversationMediaItem | undefined) {

@@ -1,13 +1,9 @@
-import { useState, type CSSProperties } from "react";
-import type { ConversationMediaItem } from "happy-desktop-state";
+import { Fragment, useState, type CSSProperties } from "react";
+import type { ConversationMediaItem, ConversationMediaLayout } from "happy-desktop-state";
 import { artifactSizeText } from "./pages/artifacts/artifactPresentation";
-import { conversationMediaVideoBox } from "./conversationRowHeight";
-import {
-    MEDIA_MOSAIC_MAX_WIDTH,
-    mediaMosaicLayout,
-    mediaMosaicStyle,
-    mediaMosaicTileStyle,
-} from "./mediaMosaic";
+import { conversationMediaPlan, mediaVideoBox } from "./mediaLayout";
+import { MediaFlow } from "./MediaFlow";
+import { MediaTree } from "./MediaTree";
 import { FileTreeFamilyIcon, fileTreeFamily } from "./FileTree";
 import { Icon } from "./Icon";
 import { ResultCard } from "./ResultCard";
@@ -24,11 +20,13 @@ export type MediaImageTileProps = {
     /** What the picture is, for assistive technology and the open control. */
     alt: string;
     /**
-     * The box the tile reserves; the picture covers it once it loads. Absent,
-     * the tile fills the box its container gives it, as a mosaic tile does.
+     * The box the tile reserves; the picture fills it once it loads. Absent,
+     * `style` sizes the tile, as a flow or tree tile does.
      */
     width?: number;
     height?: number;
+    /** How the picture sits in its box: whole (the default), or covering it as a layout asked. */
+    fit?: "contain" | "cover";
     /** Opens the picture full size. Absent leaves the tile a picture, not a fake button. */
     onOpen?: () => void;
 };
@@ -91,6 +89,7 @@ export function MediaImageTile(props: MediaImageTileProps) {
     const shared = {
         className: ["happy-media-image-tile", props.className].filter(Boolean).join(" "),
         "data-happy-desktop-ui": "media-image-tile",
+        "data-fit": props.fit === "cover" ? "cover" : undefined,
         "data-state": state,
         "data-testid": props["data-testid"],
         style:
@@ -117,8 +116,9 @@ export type MediaVideoTileProps = {
     posterUrl?: string;
     /** What the recording is, for assistive technology. */
     name: string;
-    width: number;
-    height: number;
+    /** The box the player reserves. Absent, `style` sizes it, as a layout tree does. */
+    width?: number;
+    height?: number;
 };
 
 /**
@@ -132,7 +132,11 @@ export function MediaVideoTile(props: MediaVideoTileProps) {
             className={["happy-media-video-tile", props.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="media-video-tile"
             data-testid={props["data-testid"]}
-            style={{ ...props.style, width: `${props.width}px`, height: `${props.height}px` }}
+            style={
+                props.width === undefined || props.height === undefined
+                    ? props.style
+                    : { ...props.style, width: `${props.width}px`, height: `${props.height}px` }
+            }
         >
             {/* eslint-disable-next-line jsx-a11y/media-has-caption -- a presented file has no caption track to offer */}
             <video
@@ -154,6 +158,8 @@ export type ConversationMediaProps = {
     "data-testid"?: string;
     style?: CSSProperties;
     items: readonly ConversationMediaItem[];
+    /** How the producer asked the items to be arranged; absent, justified rows. */
+    layout?: ConversationMediaLayout;
     /** Opens one item by its position in `items`: a picture full size, a file in its preview. */
     onItemOpen?: (index: number) => void;
 };
@@ -174,58 +180,130 @@ function mediaTypeLabel(item: ConversationMediaItem): string {
  * C-294 ConversationMedia — the files one tool call put in front of the reader,
  * beneath its line in the transcript.
  *
- * Every picture comes first, together: one at its own box, several as one
- * `mediaMosaicLayout` mosaic shaped by their own aspect ratios. Each recording
- * follows at its frame, then one full width card per document or file. Every
- * box is known before a byte arrives — from the producer's dimensions and the
- * mosaic's arithmetic, which `conversationRowHeight` shares — so the
- * transcript reserves exactly the height this paints.
+ * A layout the agent wrote is drawn as its `MediaTree`. Otherwise every
+ * picture comes first, together, as one `MediaFlow`: the column grid the
+ * producer asked for, or justified rows. Each recording follows at its frame,
+ * then one full width card per document or file. Every box is known before a
+ * byte arrives — from the producer's dimensions and the layout's arithmetic,
+ * which `conversationRowHeight` shares — so the transcript reserves exactly
+ * the height this paints. Nothing is cropped unless a tree asks for it.
  */
 export function ConversationMedia(props: ConversationMediaProps) {
+    const open = props.onItemOpen;
+    const className = ["happy-conversation-media", props.className].filter(Boolean).join(" ");
+    const image = (tile: {
+        index: number;
+        style: CSSProperties;
+        fit?: "contain" | "cover";
+        alt?: string;
+        className?: string;
+    }) => {
+        const index = tile.index;
+        const item = props.items[index]!;
+        const placeholderUrl = item.thumbhash ? thumbhashDataUrl(item.thumbhash) : undefined;
+        return (
+            <MediaImageTile
+                alt={tile.alt ?? item.name}
+                {...(tile.className ? { className: tile.className } : {})}
+                {...(tile.fit ? { fit: tile.fit } : {})}
+                {...(placeholderUrl ? { placeholderUrl } : {})}
+                {...(open ? { onOpen: () => open(index) } : {})}
+                style={tile.style}
+                url={item.url}
+            />
+        );
+    };
+    const card = (index: number) => {
+        const item = props.items[index]!;
+        const family = fileTreeFamily({ kind: "file", name: item.name });
+        return (
+            <ResultCard
+                detail={`${mediaTypeLabel(item)} · ${artifactSizeText(item.size)}`}
+                glyph={
+                    <span className="happy-file-family-glyph" data-family={family}>
+                        <FileTreeFamilyIcon family={family} size={20} />
+                    </span>
+                }
+                {...(open ? { onOpen: () => open(index) } : {})}
+                title={item.name}
+            />
+        );
+    };
+    const layout = props.layout;
+    if (layout?.type === "tree")
+        return (
+            <div
+                className={className}
+                data-happy-desktop-ui="conversation-media"
+                data-layout="tree"
+                data-testid={props["data-testid"]}
+                style={props.style}
+            >
+                <MediaTree
+                    items={props.items}
+                    renderItem={(rendered) => {
+                        const item = props.items[rendered.index]!;
+                        if (item.kind === "image")
+                            return image({
+                                index: rendered.index,
+                                style: rendered.style,
+                                fit: rendered.fit,
+                                ...(rendered.alt === undefined ? {} : { alt: rendered.alt }),
+                                className: "happy-media-tree__item",
+                            });
+                        if (item.kind === "video") {
+                            const posterUrl = item.thumbhash
+                                ? thumbhashDataUrl(item.thumbhash)
+                                : undefined;
+                            return (
+                                <MediaVideoTile
+                                    className="happy-media-tree__item"
+                                    name={rendered.alt ?? item.name}
+                                    {...(posterUrl ? { posterUrl } : {})}
+                                    style={rendered.style}
+                                    url={item.url}
+                                />
+                            );
+                        }
+                        return (
+                            <div className={rendered.className} style={rendered.style}>
+                                {card(rendered.index)}
+                            </div>
+                        );
+                    }}
+                    root={layout.root}
+                />
+            </div>
+        );
     const indexed = props.items.map((item, index) => ({ item, index }));
     const images = indexed.filter(({ item }) => item.kind === "image");
-    /* Laid out at full size; a narrower column scales the frame, and the tiles
-       with it, exactly as the row model scales this layout to its measure. */
-    const mosaic = mediaMosaicLayout(
+    const plan = conversationMediaPlan(
         images.map(({ item }) => item),
-        MEDIA_MOSAIC_MAX_WIDTH,
+        layout,
     );
-    const open = props.onItemOpen;
     return (
         <div
-            className={["happy-conversation-media", props.className].filter(Boolean).join(" ")}
+            className={className}
             data-happy-desktop-ui="conversation-media"
+            data-layout={layout?.type === "columns" ? `columns-${String(layout.columns)}` : "auto"}
             data-testid={props["data-testid"]}
             style={props.style}
         >
             {images.length > 0 ? (
-                <div
-                    className="happy-conversation-media__images"
-                    data-count={images.length}
-                    data-happy-desktop-ui="conversation-media-images"
-                    style={mediaMosaicStyle(mosaic)}
-                >
-                    {images.map(({ item, index }, position) => {
-                        const placeholderUrl = item.thumbhash
-                            ? thumbhashDataUrl(item.thumbhash)
-                            : undefined;
-                        return (
-                            <MediaImageTile
-                                alt={item.name}
-                                key={index}
-                                {...(placeholderUrl ? { placeholderUrl } : {})}
-                                {...(open ? { onOpen: () => open(index) } : {})}
-                                style={mediaMosaicTileStyle(mosaic, mosaic.tiles[position]!)}
-                                url={item.url}
-                            />
-                        );
-                    })}
-                </div>
+                <MediaFlow
+                    data-testid={
+                        props["data-testid"] ? `${props["data-testid"]}-images` : undefined
+                    }
+                    plan={plan}
+                    renderTile={(position, style) =>
+                        image({ index: images[position]!.index, style })
+                    }
+                />
             ) : null}
             {indexed.map(({ item, index }) => {
                 if (item.kind === "image") return null;
                 if (item.kind === "video") {
-                    const box = conversationMediaVideoBox(item);
+                    const box = mediaVideoBox(item);
                     const posterUrl = item.thumbhash ? thumbhashDataUrl(item.thumbhash) : undefined;
                     return (
                         <MediaVideoTile
@@ -238,20 +316,7 @@ export function ConversationMedia(props: ConversationMediaProps) {
                         />
                     );
                 }
-                const family = fileTreeFamily({ kind: "file", name: item.name });
-                return (
-                    <ResultCard
-                        detail={`${mediaTypeLabel(item)} · ${artifactSizeText(item.size)}`}
-                        glyph={
-                            <span className="happy-file-family-glyph" data-family={family}>
-                                <FileTreeFamilyIcon family={family} size={20} />
-                            </span>
-                        }
-                        key={index}
-                        {...(open ? { onOpen: () => open(index) } : {})}
-                        title={item.name}
-                    />
-                );
+                return <Fragment key={index}>{card(index)}</Fragment>;
             })}
         </div>
     );

@@ -1,6 +1,7 @@
 /*
- * C-292–C-294 — the files a tool call presented, beneath its transcript line.
- * Every box here is the one `conversationRowHeight` reserves; change both.
+ * C-292–C-294, C-303, C-304 — the files a tool call presented, beneath its
+ * transcript line. Every box here is the one `conversationRowHeight` reserves;
+ * change both.
  */
 
 .happy-conversation-media {
@@ -13,27 +14,172 @@
     min-width: 0;
 }
 
-/* The pictures as one mosaic: `mediaMosaicStyle` sizes this box and
-   `mediaMosaicTileStyle` places each tile in it. Outer corners keep the
-   tile's radius; corners between tiles close to a small one. */
-.happy-conversation-media__images {
-    --happy-media-mosaic-radius: var(--happy-radius-window);
-    --happy-media-mosaic-inner-radius: 4px;
-
-    position: relative;
-    flex: none;
-}
-
-.happy-conversation-media__images > .happy-media-image-tile {
-    /* Absolute: a mosaic tile's frame is computed from every picture's aspect
-       ratio, spanning rows in one place and columns in another, which neither
-       one flex axis nor a track grid can express. */
-    position: absolute;
+.happy-conversation-media > .happy-media-flow {
+    align-self: stretch;
 }
 
 .happy-conversation-media > .happy-result-card {
     align-self: stretch;
     width: auto;
+}
+
+/* ---- MediaFlow -------------------------------------------------------- */
+
+/* Rows of pictures at their own shapes. `MediaFlow` sizes each tile with
+   inline flex and aspect-ratio values from its plan, and
+   `mediaFlowGeometry` runs the same arithmetic for the row model. */
+.happy-media-flow {
+    box-sizing: border-box;
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+}
+
+.happy-media-flow__row {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-media-flow[data-align="end"] > .happy-media-flow__row {
+    justify-content: flex-end;
+}
+
+/* A cell is one column: its width is fixed by its basis, so the columns of
+   every row line up whatever the pictures in them. */
+.happy-media-flow__cell {
+    display: flex;
+    flex-grow: 0;
+    flex-shrink: 0;
+    align-items: flex-start;
+    min-width: 0;
+}
+
+.happy-media-flow[data-align="end"] .happy-media-flow__cell {
+    justify-content: flex-end;
+}
+
+.happy-media-flow__row > *,
+.happy-media-flow__cell > * {
+    min-width: 0;
+}
+
+.happy-media-flow__cell > * {
+    flex: none;
+}
+
+/* ---- MediaTree -------------------------------------------------------- */
+
+/* A layout the agent wrote. It is contained: it cannot paint outside its
+   box, reach the transcript's stacking, or grow past the transcript's width
+   or the height the row model caps it at (`MEDIA_TREE_MAX_HEIGHT`). Its
+   element defaults are reset to plain blocks and inline runs, so only the
+   typed style fields it carries shape it. */
+.happy-media-tree {
+    box-sizing: border-box;
+    display: block;
+    flex: none;
+    align-self: stretch;
+    width: 100%;
+    max-width: 100%;
+    max-height: 1200px;
+    overflow: hidden;
+    contain: layout paint;
+    isolation: isolate;
+    font-family: var(--happy-font-ui);
+    font-size: 14px;
+    font-weight: 400;
+    font-style: normal;
+    line-height: 20px;
+    letter-spacing: normal;
+    word-spacing: normal;
+    text-transform: none;
+    font-synthesis: none;
+    color: var(--text);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: left;
+}
+
+.happy-media-tree :where(div, section, figure, figcaption, p) {
+    box-sizing: border-box;
+    display: block;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.happy-media-tree :where(span, strong, em, code) {
+    margin: 0;
+    padding: 0;
+}
+
+.happy-media-tree strong {
+    font-weight: 700;
+}
+
+.happy-media-tree em {
+    font-style: italic;
+}
+
+.happy-media-tree code {
+    font-family: var(--happy-font-mono);
+    font-size: 0.9em;
+}
+
+.happy-media-tree [data-font-size="small"] {
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.happy-media-tree [data-font-size="normal"] {
+    font-size: 14px;
+    line-height: 20px;
+}
+
+.happy-media-tree [data-font-size="large"] {
+    font-size: 16px;
+    line-height: 24px;
+}
+
+.happy-media-tree [data-font-size="title"] {
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 28px;
+}
+
+.happy-media-tree [data-tone="default"] {
+    color: var(--text);
+}
+
+.happy-media-tree [data-tone="muted"] {
+    color: var(--text-secondary);
+}
+
+.happy-media-tree [data-tone="accent"] {
+    color: var(--text-link);
+}
+
+/* An item fills its container's width at its own shape unless the layout
+   says otherwise; a picture too tall for the transcript letterboxes. */
+.happy-media-tree .happy-media-tree__item {
+    box-sizing: border-box;
+    flex: 0 1 auto;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    max-height: 640px;
+}
+
+.happy-media-tree .happy-media-tree__card {
+    display: flex;
+    flex-direction: column;
+    max-height: none;
 }
 
 /* ---- MediaImageTile --------------------------------------------------- */
@@ -47,9 +193,22 @@
     margin: 0;
     padding: 0;
     background: var(--surface-pressed);
-    border: 1px solid var(--divider);
+    border: 0;
     border-radius: var(--happy-radius-window);
     appearance: none;
+}
+
+/* The hairline is drawn over the picture, not around it: a border would
+   shrink the picture's box by two pixels on each axis, which for a 7:1
+   strip is enough to letterbox it visibly. */
+.happy-media-image-tile::after {
+    /* Absolute: the hairline is an overlay of the tile's own box. */
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--divider);
+    border-radius: inherit;
+    pointer-events: none;
+    content: "";
     transition: border-color 120ms ease;
 }
 
@@ -57,7 +216,7 @@ button.happy-media-image-tile {
     cursor: zoom-in;
 }
 
-button.happy-media-image-tile:hover {
+button.happy-media-image-tile:hover::after {
     border-color: var(--surface-selected);
 }
 
@@ -78,19 +237,31 @@ button.happy-media-image-tile:focus-visible {
     height: 100%;
 }
 
+/* Contained, not covered: the tile is drawn at the picture's own shape, so
+   the two agree, and a tile capped shorter than its picture letterboxes it
+   rather than cutting it. Only a layout that asks for `cover` crops. */
 .happy-media-image-tile__placeholder {
     background-position: center;
+    background-repeat: no-repeat;
+    background-size: contain;
+}
+
+.happy-media-image-tile[data-fit="cover"] .happy-media-image-tile__placeholder {
     background-size: cover;
 }
 
 .happy-media-image-tile__image {
     display: block;
-    object-fit: cover;
+    object-fit: contain;
     opacity: 0;
     transition: opacity 160ms ease;
     -webkit-user-drag: none;
     -webkit-user-select: none;
     user-select: none;
+}
+
+.happy-media-image-tile[data-fit="cover"] .happy-media-image-tile__image {
+    object-fit: cover;
 }
 
 .happy-media-image-tile[data-state="loaded"] .happy-media-image-tile__image {
