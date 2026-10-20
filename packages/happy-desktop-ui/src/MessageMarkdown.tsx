@@ -31,6 +31,7 @@ import {
     markdownTableCodeKeepsLine,
     markdownTableLayoutAt,
     messageTextLayoutFontGenerationSubscribe,
+    type MessageTextLayoutCache,
 } from "./messageTextLayout";
 import { ScrollArea } from "./Scrollbar";
 import { ShimmerText } from "./ShimmerText";
@@ -186,6 +187,10 @@ const MarkdownGenerationStatusContext = createContext<MessageGenerationStatus | 
 const MarkdownSourceContext = createContext("");
 /** Whether the phrasing being rendered sits in a table cell. */
 const MarkdownTableContext = createContext(false);
+/** Reuse the parsed trees and cell measurements that sized the surrounding list. */
+export const MarkdownLayoutCacheContext = createContext<MessageTextLayoutCache | undefined>(
+    undefined,
+);
 type MarkdownImageProps = ComponentPropsWithoutRef<"img"> & ExtraProps;
 /**
  * A Markdown image is rendered as a safe labelled link, never an `<img>`: an
@@ -484,13 +489,30 @@ function markdownTableColumnCount(node: ExtraProps["node"]): number {
         ? row.children.filter((child) => child.type === "element").length
         : 0;
 }
+type MarkdownTableSolve = {
+    readonly viewport: HTMLElement;
+    readonly apply: (measure: number) => void;
+};
+const markdownTablesPending = new Set<MarkdownTableSolve>();
+/**
+ * Read all newly mounted table measures before writing any column widths.
+ * Scroll-height and marker readers flush this batch before measuring; standalone
+ * tables use their ResizeObserver. Both paths solve before the first paint.
+ */
+export function markdownTablesSolve(): void {
+    if (markdownTablesPending.size === 0) return;
+    const pending = [...markdownTablesPending];
+    markdownTablesPending.clear();
+    const measures = pending.map(({ viewport }) =>
+        Number.parseFloat(getComputedStyle(viewport).width),
+    );
+    for (const [index, table] of pending.entries()) table.apply(measures[index]!);
+}
 /**
  * A table wraps its cells at column widths solved by `markdownTableLayoutAt`,
  * the same solve the virtual list sized this row with. The solve needs the
- * scrollport's real measure, which only exists once it is laid out. Its
- * ResizeObserver reports that measure after layout and before the first
- * paint, so the widths land without a forced layout per mounted table, and
- * again whenever that measure or the installed font changes.
+ * scrollport's real measure, which only exists once it is laid out. A commit
+ * batch or ResizeObserver supplies it before paint and again when it changes.
  */
 const MarkdownTable = ({
     children,
@@ -498,6 +520,7 @@ const MarkdownTable = ({
     ...props
 }: ComponentPropsWithoutRef<"table"> & ExtraProps) => {
     const source = useContext(MarkdownSourceContext);
+    const sized = useContext(MarkdownLayoutCacheContext);
     const offset = node?.position?.start.offset;
     const columns = markdownTableColumnCount(node);
     const tableRef = (table: HTMLTableElement | null) => {
@@ -507,9 +530,9 @@ const MarkdownTable = ({
         let solved = 0;
         let applied = "";
         const apply = (measure: number) => {
-            if (!(measure > 0)) return;
+            if (!(measure > 0) || measure === solved) return;
             solved = measure;
-            const layout = markdownTableLayoutAt(source, offset, measure);
+            const layout = markdownTableLayoutAt(source, offset, measure, sized);
             if (!layout) return;
             const key = layout.columnWidths.join(",");
             if (key === applied) return;
@@ -521,17 +544,21 @@ const MarkdownTable = ({
                 col.style.width = `${String(layout.columnWidths[index] ?? 0)}px`;
             table.dataset.layout = "solved";
         };
+        const pending: MarkdownTableSolve = { viewport, apply };
+        markdownTablesPending.add(pending);
         const observer = new ResizeObserver((entries) => {
-            const measure = entries.at(-1)?.contentBoxSize[0]?.inlineSize ?? 0;
-            // The same measure solves to the same widths; skip the solve.
-            if (measure !== solved) apply(measure);
+            markdownTablesPending.delete(pending);
+            apply(entries.at(-1)?.contentBoxSize[0]?.inlineSize ?? 0);
         });
         observer.observe(viewport);
         const unsubscribe = messageTextLayoutFontGenerationSubscribe(() => {
+            const measure = solved;
+            solved = 0;
             applied = "";
-            apply(solved);
+            apply(measure);
         });
         return () => {
+            markdownTablesPending.delete(pending);
             observer.disconnect();
             unsubscribe();
         };

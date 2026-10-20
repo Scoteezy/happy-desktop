@@ -40,6 +40,7 @@ import {
     type MessageListDisclosureAnchor,
 } from "./messageListDisclosureAnchor";
 import {
+    markdownTablesSolve,
     renderMessageMarkdown,
     type LinkOpenHandler,
     type LinkOpenPlacement,
@@ -414,6 +415,7 @@ export function Message(props: MessageProps) {
         const bodyElement = body.current;
         const marker = generationMarker.current;
         if (!bodyElement || !marker) return;
+        markdownTablesSolve();
         const position = () => {
             const textNodes = document.createTreeWalker(bodyElement, NodeFilter.SHOW_TEXT);
             let textRect: DOMRect | undefined;
@@ -1727,6 +1729,8 @@ export function MessageList(props: MessageListProps) {
     // eslint-disable-next-line happy-react/no-layout-effect -- streaming React commits publish a new modeled scrollHeight; a follower must pin in this same pre-paint commit
     useLayoutEffect(() => {
         rowSizeModelRefineCurrent.current = rowSizeModelRefine;
+        // Scroll-height reads must see this commit's tables at their solved widths.
+        markdownTablesSolve();
         overscanRequireCurrent.current = overscanRequire;
         mountedKeys.current = new Set(virtualItems.map((item) => item.key));
         const element = list.current;

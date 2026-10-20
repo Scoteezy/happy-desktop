@@ -1,6 +1,10 @@
 import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
 import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
-import type { LinkOpenHandler, LinkOpenPlacement } from "./MessageMarkdown";
+import {
+    MarkdownLayoutCacheContext,
+    type LinkOpenHandler,
+    type LinkOpenPlacement,
+} from "./MessageMarkdown";
 import type { MessageReferences } from "./messageReferences";
 import {
     entryKey,
@@ -752,7 +756,9 @@ export function ConversationView(props: ConversationViewProps) {
         return {
             activityTreatment: props.activityTreatment,
             errorAssistance: errorAssistanceFor(transcript[index]),
-            ...((failure) => failure ? { failure: failureRowContext(failure) } : {})(failureFor(transcript[index])),
+            ...((failure) => (failure ? { failure: failureRowContext(failure) } : {}))(
+                failureFor(transcript[index]),
+            ),
             expanded: transcript[index] === undefined ? false : rowExpanded(transcript[index]),
             surface: "conversation",
             liveStatus: statusVisible,
@@ -848,203 +854,210 @@ export function ConversationView(props: ConversationViewProps) {
                     {activityFallback}
                 </ScrollArea>
             ) : (
-                <MessageList
-                    /* Inputs every row's estimate may read. The live status is
+                <MarkdownLayoutCacheContext.Provider value={rowHeightCache.text}>
+                    <MessageList
+                        /* Inputs every row's estimate may read. The live status is
                        not one: only the final row reads it, as its successor,
                        and the list asks that row again with the footer. */
-                    estimateDependencies={[
-                        props.errorAssistance,
-                        props.errorAssistanceUnavailable,
-                        // Which actions a card offers sizes it; their identity does not.
-                        props.failureActions?.onRetry === undefined,
-                        props.failureActions?.onNewChat === undefined,
-                        props.failureActions?.onSwitch === undefined,
-                        props.failureClock,
-                        failureTargets,
-                        currentFailureId,
-                        props.viewerId,
-                        props.activityTreatment,
-                        rowExpansion,
-                        conversationReferencesSignature(transcript, props.references),
-                        inlinePageGeneration,
-                        inlinePages?.artifacts,
-                        inlinePages?.artifactRender === undefined,
-                        inlinePages?.pageRender === undefined,
-                    ]}
-                    estimateRowSize={(index, width) =>
-                        conversationRowHeight(
-                            transcript,
-                            index,
-                            rowContext(index, width),
-                            rowHeightCache,
-                        )
-                    }
-                    cachedRowSize={(index, width) =>
-                        conversationRowHeightCached(
-                            transcript,
-                            index,
-                            rowContext(index, width),
-                            rowHeightCache,
-                        )
-                    }
-                    estimateRows={transcript}
-                    estimateRowWidth={contentWidth}
-                    estimateVersion={textLayoutGeneration}
-                    footer={
-                        <>
-                            {workingStatusRow}
-                            {queued.length > 0 ? (
-                                <div
-                                    className="happy-conversation__queued"
-                                    data-happy-desktop-ui="conversation-queued"
-                                >
-                                    {queued.map((entry) => (
-                                        <ConversationEntryView
-                                            entry={entry}
-                                            key={
-                                                entry.kind === "message"
-                                                    ? entry.message.id
-                                                    : entry.id
-                                            }
-                                            {...(props.references
+                        estimateDependencies={[
+                            props.errorAssistance,
+                            props.errorAssistanceUnavailable,
+                            // Which actions a card offers sizes it; their identity does not.
+                            props.failureActions?.onRetry === undefined,
+                            props.failureActions?.onNewChat === undefined,
+                            props.failureActions?.onSwitch === undefined,
+                            props.failureClock,
+                            failureTargets,
+                            currentFailureId,
+                            props.viewerId,
+                            props.activityTreatment,
+                            rowExpansion,
+                            conversationReferencesSignature(transcript, props.references),
+                            inlinePageGeneration,
+                            inlinePages?.artifacts,
+                            inlinePages?.artifactRender === undefined,
+                            inlinePages?.pageRender === undefined,
+                        ]}
+                        estimateRowSize={(index, width) =>
+                            conversationRowHeight(
+                                transcript,
+                                index,
+                                rowContext(index, width),
+                                rowHeightCache,
+                            )
+                        }
+                        cachedRowSize={(index, width) =>
+                            conversationRowHeightCached(
+                                transcript,
+                                index,
+                                rowContext(index, width),
+                                rowHeightCache,
+                            )
+                        }
+                        estimateRows={transcript}
+                        estimateRowWidth={contentWidth}
+                        estimateVersion={textLayoutGeneration}
+                        footer={
+                            <>
+                                {workingStatusRow}
+                                {queued.length > 0 ? (
+                                    <div
+                                        className="happy-conversation__queued"
+                                        data-happy-desktop-ui="conversation-queued"
+                                    >
+                                        {queued.map((entry) => (
+                                            <ConversationEntryView
+                                                entry={entry}
+                                                key={
+                                                    entry.kind === "message"
+                                                        ? entry.message.id
+                                                        : entry.id
+                                                }
+                                                {...(props.references
+                                                    ? { references: props.references }
+                                                    : {})}
+                                                viewerId={props.viewerId}
+                                            />
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </>
+                        }
+                        footerHeight={(width) =>
+                            Math.max(
+                                workingStatusHeight,
+                                props.activityControl
+                                    ? HAPPY_AGENT_ACTIVITY_CONTROL_TRANSCRIPT_HEIGHT
+                                    : 0,
+                            ) +
+                            queued.reduce(
+                                (total, entry, index) =>
+                                    total +
+                                    (conversationRowHeight(
+                                        queued,
+                                        index,
+                                        {
+                                            activityTreatment: props.activityTreatment,
+                                            expanded:
+                                                queued[index] === undefined
+                                                    ? false
+                                                    : rowExpanded(queued[index]),
+                                            surface: "conversation",
+                                            ...(props.references
                                                 ? { references: props.references }
-                                                : {})}
-                                            viewerId={props.viewerId}
-                                        />
-                                    ))}
-                                </div>
-                            ) : null}
-                        </>
-                    }
-                    footerHeight={(width) =>
-                        Math.max(
-                            workingStatusHeight,
-                            props.activityControl
-                                ? HAPPY_AGENT_ACTIVITY_CONTROL_TRANSCRIPT_HEIGHT
-                                : 0,
-                        ) +
-                        queued.reduce(
-                            (total, entry, index) =>
-                                total +
-                                (conversationRowHeight(
-                                    queued,
-                                    index,
-                                    {
-                                        activityTreatment: props.activityTreatment,
-                                        expanded:
-                                            queued[index] === undefined
-                                                ? false
-                                                : rowExpanded(queued[index]),
-                                        surface: "conversation",
-                                        ...(props.references
-                                            ? { references: props.references }
-                                            : {}),
-                                        viewerId: props.viewerId,
-                                        width,
-                                    },
-                                    rowHeightCache,
-                                ) ?? 0),
-                            0,
-                        )
-                    }
-                    initialScrollPosition={props.scrollPosition}
-                    // The conversation is this list's lifetime: switching to
-                    // another one mounts its own list, which is what lets each
-                    // restore its own position instead of inheriting one.
-                    key={props.conversationId}
-                    onScrollPositionChange={props.onScrollPositionChange}
-                    onStartReached={props.onStartReached}
-                    paddingEnd={24}
-                    virtualize
-                >
-                    {transcript.map((entry, index) => {
-                        const submission =
-                            entry.kind === "request"
-                                ? props.requestSubmissions?.find(
-                                      (candidate) =>
-                                          candidate.requestId === entry.request.requestId,
-                                  )
-                                : undefined;
-                        const inlinePage = inlinePageOf(entry);
-                        return (
-                            <ConversationEntryView
-                                /* The key leads the spread props below so React
+                                                : {}),
+                                            viewerId: props.viewerId,
+                                            width,
+                                        },
+                                        rowHeightCache,
+                                    ) ?? 0),
+                                0,
+                            )
+                        }
+                        initialScrollPosition={props.scrollPosition}
+                        // The conversation is this list's lifetime: switching to
+                        // another one mounts its own list, which is what lets each
+                        // restore its own position instead of inheriting one.
+                        key={props.conversationId}
+                        onScrollPositionChange={props.onScrollPositionChange}
+                        onStartReached={props.onStartReached}
+                        paddingEnd={24}
+                        virtualize
+                    >
+                        {transcript.map((entry, index) => {
+                            const submission =
+                                entry.kind === "request"
+                                    ? props.requestSubmissions?.find(
+                                          (candidate) =>
+                                              candidate.requestId === entry.request.requestId,
+                                      )
+                                    : undefined;
+                            const inlinePage = inlinePageOf(entry);
+                            return (
+                                <ConversationEntryView
+                                    /* The key leads the spread props below so React
                                    takes its direct element path for each of the
                                    transcript's rows instead of copying props. */
-                                key={entry.kind === "message" ? entry.message.id : entry.id}
-                                {...(inlinePage ? { inlinePage: inlinePage.props } : {})}
-                                errorAssistance={errorAssistanceFor(entry)}
-                                failure={failureFor(entry)}
-                                onErrorAssistanceRequest={props.onErrorAssistanceRequest}
-                                activityMotion={props.motion}
-                                activityTreatment={props.activityTreatment}
-                                {...(props.streamingCaret === undefined
-                                    ? {}
-                                    : { streamingCaret: props.streamingCaret })}
-                                {...(entry.kind === "message" && entry.contextNote !== undefined
-                                    ? { contextNote: entry.contextNote }
-                                    : {})}
-                                activityAuthor={
-                                    props.agentAuthor &&
-                                    (conversationAgentRowStartsGroup(transcript, index) ||
-                                        conversationTurnStatusStartsGroup(transcript, index))
-                                        ? props.agentAuthor
-                                        : undefined
-                                }
-                                className={conversationRowClassName(
-                                    transcript,
-                                    index,
-                                    statusVisible,
-                                )}
-                                entry={entry}
-                                grouped={
-                                    entry.kind === "message"
-                                        ? conversationMessageGrouped(transcript, index)
-                                        : undefined
-                                }
-                                onImageOpen={props.onImageOpen}
-                                onAttachmentOpen={props.onAttachmentOpen}
-                                onRequestAnswer={props.onRequestAnswer}
-                                onRequestSelectionChange={props.onRequestSelectionChange}
-                                onRowExpandedChange={(expanded) =>
-                                    rowExpandedChange(entry, expanded)
-                                }
-                                requestSelection={
-                                    entry.kind === "request"
-                                        ? props.requestSelections?.get(entry.request.requestId)
-                                        : undefined
-                                }
-                                onToolSelect={props.onToolSelect}
-                                {...(props.onToolMediaOpen
-                                    ? { onToolMediaOpen: props.onToolMediaOpen }
-                                    : {})}
-                                onDelegationSelect={props.onDelegationSelect}
-                                now={props.now}
-                                {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
-                                {...(props.onFileLinkOpen
-                                    ? { onFileLinkOpen: props.onFileLinkOpen }
-                                    : {})}
-                                {...(props.onLinkOpen ? { onLinkOpen: props.onLinkOpen } : {})}
-                                {...(props.references ? { references: props.references } : {})}
-                                {...(props.linkOpenDefault
-                                    ? { linkOpenDefault: props.linkOpenDefault }
-                                    : {})}
-                                onTraceToggle={props.onTraceToggle}
-                                /* Either kind of row can be the one a turn hung
+                                    key={entry.kind === "message" ? entry.message.id : entry.id}
+                                    {...(inlinePage ? { inlinePage: inlinePage.props } : {})}
+                                    errorAssistance={errorAssistanceFor(entry)}
+                                    failure={failureFor(entry)}
+                                    onErrorAssistanceRequest={props.onErrorAssistanceRequest}
+                                    activityMotion={props.motion}
+                                    activityTreatment={props.activityTreatment}
+                                    {...(props.streamingCaret === undefined
+                                        ? {}
+                                        : { streamingCaret: props.streamingCaret })}
+                                    {...(entry.kind === "message" && entry.contextNote !== undefined
+                                        ? { contextNote: entry.contextNote }
+                                        : {})}
+                                    activityAuthor={
+                                        props.agentAuthor &&
+                                        (conversationAgentRowStartsGroup(transcript, index) ||
+                                            conversationTurnStatusStartsGroup(transcript, index))
+                                            ? props.agentAuthor
+                                            : undefined
+                                    }
+                                    className={conversationRowClassName(
+                                        transcript,
+                                        index,
+                                        statusVisible,
+                                    )}
+                                    entry={entry}
+                                    grouped={
+                                        entry.kind === "message"
+                                            ? conversationMessageGrouped(transcript, index)
+                                            : undefined
+                                    }
+                                    onImageOpen={props.onImageOpen}
+                                    onAttachmentOpen={props.onAttachmentOpen}
+                                    onRequestAnswer={props.onRequestAnswer}
+                                    onRequestSelectionChange={props.onRequestSelectionChange}
+                                    onRowExpandedChange={(expanded) =>
+                                        rowExpandedChange(entry, expanded)
+                                    }
+                                    requestSelection={
+                                        entry.kind === "request"
+                                            ? props.requestSelections?.get(entry.request.requestId)
+                                            : undefined
+                                    }
+                                    onToolSelect={props.onToolSelect}
+                                    {...(props.onToolMediaOpen
+                                        ? { onToolMediaOpen: props.onToolMediaOpen }
+                                        : {})}
+                                    onDelegationSelect={props.onDelegationSelect}
+                                    now={props.now}
+                                    {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
+                                    {...(props.onFileLinkOpen
+                                        ? { onFileLinkOpen: props.onFileLinkOpen }
+                                        : {})}
+                                    {...(props.onLinkOpen ? { onLinkOpen: props.onLinkOpen } : {})}
+                                    {...(props.references ? { references: props.references } : {})}
+                                    {...(props.linkOpenDefault
+                                        ? { linkOpenDefault: props.linkOpenDefault }
+                                        : {})}
+                                    onTraceToggle={props.onTraceToggle}
+                                    /* Either kind of row can be the one a turn hung
                                    its control on: the answer when the turn is
                                    folded up, the row its work starts on when it
                                    is open. */
-                                traceOpen={conversationEntryTraceOpen(entry, props.expandedTurnIds)}
-                                requestError={
-                                    submission?.status === "failed" ? submission.error : undefined
-                                }
-                                requestPending={submission?.status === "pending"}
-                                rowExpanded={rowExpanded(entry)}
-                                viewerId={props.viewerId}
-                            />
-                        );
-                    })}
-                </MessageList>
+                                    traceOpen={conversationEntryTraceOpen(
+                                        entry,
+                                        props.expandedTurnIds,
+                                    )}
+                                    requestError={
+                                        submission?.status === "failed"
+                                            ? submission.error
+                                            : undefined
+                                    }
+                                    requestPending={submission?.status === "pending"}
+                                    rowExpanded={rowExpanded(entry)}
+                                    viewerId={props.viewerId}
+                                />
+                            );
+                        })}
+                    </MessageList>
+                </MarkdownLayoutCacheContext.Provider>
             )}
 
             <ConversationDock

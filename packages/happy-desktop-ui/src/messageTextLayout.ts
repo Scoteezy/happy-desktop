@@ -2157,7 +2157,10 @@ export function markdownTableLayoutAt(
     source: string,
     offset: number,
     measure: number,
+    sized?: MessageTextLayoutCache,
 ): MarkdownTableLayout | undefined {
+    if (sized && cacheReady(sized).markdownTrees[source] !== undefined)
+        return markdownTableLayoutIn(source, offset, measure, sized);
     if (tableRenderCache.markdownTrees[source] === undefined) {
         tableRenderSources += 1;
         tableRenderCharacters += source.length;
@@ -2170,7 +2173,14 @@ export function markdownTableLayoutAt(
             tableRenderCharacters = source.length;
         }
     }
-    const cache = cacheReady(tableRenderCache);
+    return markdownTableLayoutIn(source, offset, measure, cacheReady(tableRenderCache));
+}
+function markdownTableLayoutIn(
+    source: string,
+    offset: number,
+    measure: number,
+    cache: MessageTextLayoutCache,
+): MarkdownTableLayout | undefined {
     const tree = messageMarkdownTree(source, cache);
     const table = markdownTableAt(tree.children, offset);
     if (!table) return undefined;
