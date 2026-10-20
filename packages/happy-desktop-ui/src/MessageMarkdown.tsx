@@ -487,9 +487,10 @@ function markdownTableColumnCount(node: ExtraProps["node"]): number {
 /**
  * A table wraps its cells at column widths solved by `markdownTableLayoutAt`,
  * the same solve the virtual list sized this row with. The solve needs the
- * scrollport's real measure, which only exists once it is laid out, so the ref
- * writes the widths during commit — before the first paint — and again
- * whenever that measure or the installed font changes.
+ * scrollport's real measure, which only exists once it is laid out. Its
+ * ResizeObserver reports that measure after layout and before the first
+ * paint, so the widths land without a forced layout per mounted table, and
+ * again whenever that measure or the installed font changes.
  */
 const MarkdownTable = ({
     children,
@@ -503,10 +504,11 @@ const MarkdownTable = ({
         // ScrollArea renders its children directly in the scroll viewport.
         const viewport = table?.parentElement;
         if (!table || !viewport || offset === undefined) return;
+        let solved = 0;
         let applied = "";
-        const apply = () => {
-            const measure = Number.parseFloat(getComputedStyle(viewport).width);
+        const apply = (measure: number) => {
             if (!(measure > 0)) return;
+            solved = measure;
             const layout = markdownTableLayoutAt(source, offset, measure);
             if (!layout) return;
             const key = layout.columnWidths.join(",");
@@ -519,12 +521,15 @@ const MarkdownTable = ({
                 col.style.width = `${String(layout.columnWidths[index] ?? 0)}px`;
             table.dataset.layout = "solved";
         };
-        apply();
-        const observer = new ResizeObserver(apply);
+        const observer = new ResizeObserver((entries) => {
+            const measure = entries.at(-1)?.contentBoxSize[0]?.inlineSize ?? 0;
+            // The same measure solves to the same widths; skip the solve.
+            if (measure !== solved) apply(measure);
+        });
         observer.observe(viewport);
         const unsubscribe = messageTextLayoutFontGenerationSubscribe(() => {
             applied = "";
-            apply();
+            apply(solved);
         });
         return () => {
             observer.disconnect();
