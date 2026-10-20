@@ -19,7 +19,7 @@ it("releases old prepared runs while preserving exact warm and resized heights",
             cache,
         );
     }
-    expect(cache.preparedSourceSize).toBeLessThanOrEqual(128 * 1_024);
+    expect(cache.preparedBytes).toBeLessThanOrEqual(8 * 1_024 * 1_024);
     expect(markdownBodyHeight(original, 540, cache)).toBe(height);
     expect(monoOutputTextHeight(original, 540, cache)).toBe(monoHeight);
     expect(markdownBodyHeight(original, 320, cache)).toBe(

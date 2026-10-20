@@ -118,15 +118,32 @@ let fontGeneration = 0;
 const fontListeners = new Set<() => void>();
 type Dictionary<T> = Record<string, T | undefined>;
 const dictionaryCreate = <T>(): Dictionary<T> => Object.create(null) as Dictionary<T>;
-// Prepared glyph/segment objects can occupy over 100 times their source text.
-// Keep exact final heights, but bound the expensive width-independent preparation.
-const PREPARED_SOURCE_CAPACITY = 128 * 1_024;
-type PreparedCacheEntry = { readonly key: string; readonly font?: string; readonly size: number };
+/*
+ * Width-independent Pretext preparation is most of what laying text out costs,
+ * so each cache keeps it under one deliberate memory budget. Retained bytes are
+ * estimated from the source, calibrated against Chromium heap measurements of
+ * prepared runs: about 14 bytes per source character plus a fixed object graph
+ * per prepared run, and every rich-inline item is a prepared run of its own.
+ * The estimate is charged once, on a miss, and is an accounting budget rather
+ * than an exact heap claim; Pretext's process-global glyph metrics are separate.
+ */
+const PREPARED_BYTES_BUDGET = 8 * 1_024 * 1_024;
+const PREPARED_RUN_BYTES = 800;
+const PREPARED_CHAR_BYTES = 16;
+type PreparedValue = PreparedText | PreparedRichInline;
+type PreparedEntry = {
+    /** The dictionary holding this value, so eviction can delete its key. */
+    readonly table: Dictionary<PreparedValue>;
+    readonly key: string;
+    readonly bytes: number;
+};
 export interface MessageTextLayoutCache {
     /** Font generation this cache was measured against. */
     generation: number;
-    /** Width-independent Pretext preparation, grouped by font then source text. */
+    /** Width-independent Pretext preparation, grouped by font/white-space then source text. */
     prepared: Dictionary<Dictionary<PreparedText>>;
+    /** The same preparation with segment text, grouped the same way. */
+    preparedSegments: Dictionary<Dictionary<PreparedTextWithSegments>>;
     /** Final Markdown body heights, grouped by source text then wrapping measure. */
     markdownHeights: Dictionary<Dictionary<number>>;
     /** Intrinsic Beautiful Mermaid geometry, or null for an invalid fence. */
@@ -141,8 +158,10 @@ export interface MessageTextLayoutCache {
     richPrepared: Dictionary<PreparedRichInline>;
     /** Natural widths, grouped by font then source text. */
     naturalWidths: Dictionary<Dictionary<number>>;
-    preparedOrder: PreparedCacheEntry[];
-    preparedSourceSize: number;
+    /** Least recently used first; Map order is the LRU over every prepared value. */
+    preparedOrder: Map<PreparedValue, PreparedEntry>;
+    /** Estimated bytes `preparedOrder` retains, at most `PREPARED_BYTES_BUDGET`. */
+    preparedBytes: number;
     /** Where this cache's streaming text is measured; see `streamingCache`. */
     streaming?: MessageTextLayoutCache;
 }
@@ -157,6 +176,7 @@ export function messageTextLayoutCacheCreate(): MessageTextLayoutCache {
     return {
         generation: fontGeneration,
         prepared: dictionaryCreate(),
+        preparedSegments: dictionaryCreate(),
         markdownHeights: dictionaryCreate(),
         mermaidDimensions: dictionaryCreate(),
         markdownTrees: dictionaryCreate(),
@@ -164,8 +184,8 @@ export function messageTextLayoutCacheCreate(): MessageTextLayoutCache {
         runHeights: dictionaryCreate(),
         richPrepared: dictionaryCreate(),
         naturalWidths: dictionaryCreate(),
-        preparedOrder: [],
-        preparedSourceSize: 0,
+        preparedOrder: new Map(),
+        preparedBytes: 0,
     };
 }
 /** Standalone callers keep the old no-setup API; chat surfaces supply their own cache. */
@@ -211,12 +231,13 @@ export function messageTextLayoutCacheRefresh(cache: MessageTextLayoutCache): bo
     watchFonts();
     if (cache.generation === fontGeneration) return false;
     cache.prepared = dictionaryCreate();
+    cache.preparedSegments = dictionaryCreate();
     cache.markdownHeights = dictionaryCreate();
     cache.runHeights = dictionaryCreate();
     cache.richPrepared = dictionaryCreate();
     cache.naturalWidths = dictionaryCreate();
-    cache.preparedOrder = [];
-    cache.preparedSourceSize = 0;
+    cache.preparedOrder = new Map();
+    cache.preparedBytes = 0;
     cache.generation = fontGeneration;
     return true;
 }
@@ -273,19 +294,53 @@ function cacheReady(cache: MessageTextLayoutCache): MessageTextLayoutCache {
     messageTextLayoutCacheRefresh(cache);
     return cache;
 }
-/** Retain a bounded recent set; oversized runs are measured exactly and then released. */
-function preparationRetain(cache: MessageTextLayoutCache, key: string, font?: string): boolean {
-    const size = key.length + (font?.length ?? 0);
-    if (size > PREPARED_SOURCE_CAPACITY) return false;
-    while (cache.preparedSourceSize + size > PREPARED_SOURCE_CAPACITY) {
-        const oldest = cache.preparedOrder.shift()!;
-        if (oldest.font === undefined) delete cache.richPrepared[oldest.key];
-        else delete cache.prepared[oldest.font]?.[oldest.key];
-        cache.preparedSourceSize -= oldest.size;
+/** The cached preparation under `key`, marked most recently used. */
+function preparationHit<T extends PreparedValue>(
+    cache: MessageTextLayoutCache,
+    table: Dictionary<T>,
+    key: string,
+): T | undefined {
+    const hit = table[key];
+    if (hit === undefined) return undefined;
+    const entry = cache.preparedOrder.get(hit)!;
+    cache.preparedOrder.delete(hit);
+    cache.preparedOrder.set(hit, entry);
+    return hit;
+}
+/** Retains a new preparation, evicting the least recently used past the budget.
+ * A value larger than the whole budget is measured exactly and not retained. */
+function preparationRetain<T extends PreparedValue>(
+    cache: MessageTextLayoutCache,
+    table: Dictionary<T>,
+    key: string,
+    value: T,
+    bytes: number,
+): T {
+    if (bytes > PREPARED_BYTES_BUDGET) return value;
+    while (cache.preparedBytes + bytes > PREPARED_BYTES_BUDGET) {
+        const [oldest, entry] = cache.preparedOrder.entries().next().value!;
+        cache.preparedOrder.delete(oldest);
+        delete entry.table[entry.key];
+        cache.preparedBytes -= entry.bytes;
     }
-    cache.preparedOrder.push({ key, font, size });
-    cache.preparedSourceSize += size;
-    return true;
+    table[key] = value;
+    cache.preparedOrder.set(value, { table: table as Dictionary<PreparedValue>, key, bytes });
+    cache.preparedBytes += bytes;
+    return value;
+}
+/** The per-text table for one exact font and white-space mode. */
+function preparationTable<T>(
+    groups: Dictionary<Dictionary<T>>,
+    font: string,
+    whiteSpace: "normal" | "pre-wrap",
+): Dictionary<T> {
+    const key = `${font}\u0000${whiteSpace}`;
+    let table = groups[key];
+    if (!table) {
+        table = dictionaryCreate();
+        groups[key] = table;
+    }
+    return table;
 }
 function preparedText(
     text: string,
@@ -294,17 +349,36 @@ function preparedText(
     whiteSpace: "normal" | "pre-wrap" = "normal",
 ): PreparedText {
     const ready = cacheReady(cache);
-    const fontKey = whiteSpace === "normal" ? font : `${font}:pre-wrap`;
-    let byText = ready.prepared[fontKey];
-    if (!byText) {
-        byText = dictionaryCreate();
-        ready.prepared[fontKey] = byText;
-    }
-    const hit = byText[text];
-    if (hit !== undefined) return hit;
-    const value = prepare(text, font, { whiteSpace });
-    if (preparationRetain(ready, text, fontKey)) byText[text] = value;
-    return value;
+    const table = preparationTable(ready.prepared, font, whiteSpace);
+    return (
+        preparationHit(ready, table, text) ??
+        preparationRetain(
+            ready,
+            table,
+            text,
+            prepare(text, font, { whiteSpace }),
+            PREPARED_RUN_BYTES + text.length * PREPARED_CHAR_BYTES,
+        )
+    );
+}
+function preparedTextSegments(
+    text: string,
+    font: string,
+    cache: MessageTextLayoutCache,
+    whiteSpace: "normal" | "pre-wrap" = "normal",
+): PreparedTextWithSegments {
+    const ready = cacheReady(cache);
+    const table = preparationTable(ready.preparedSegments, font, whiteSpace);
+    return (
+        preparationHit(ready, table, text) ??
+        preparationRetain(
+            ready,
+            table,
+            text,
+            prepareWithSegments(text, font, { whiteSpace }),
+            PREPARED_RUN_BYTES + text.length * PREPARED_CHAR_BYTES,
+        )
+    );
 }
 /** Painted height of one wrapped run, never less than a single line box. */
 function runHeight(
@@ -365,11 +439,11 @@ function preparedRichItems(
             item.extraWidth ?? null,
         ]),
     );
-    const hit = ready.richPrepared[key];
+    const hit = preparationHit(ready, ready.richPrepared, key);
     if (hit !== undefined) return hit;
-    const value = prepareRichInline([...items]);
-    if (preparationRetain(ready, key)) ready.richPrepared[key] = value;
-    return value;
+    let bytes = key.length * 2;
+    for (const item of items) bytes += PREPARED_RUN_BYTES + item.text.length * PREPARED_CHAR_BYTES;
+    return preparationRetain(ready, ready.richPrepared, key, prepareRichInline([...items]), bytes);
 }
 function richItemsHeight(
     items: readonly MarkdownInlineItem[],
@@ -505,7 +579,7 @@ function markdownInlineFragmentItems(
         const firstExtraWidth = first ? startExtraWidth : 0;
         const finalAvailable = Math.max(1, measure - firstExtraWidth - endExtraWidth);
         const remaining = graphemes.slice(graphemeIndex).join("");
-        const prepared = prepareWithSegments(remaining, font, { whiteSpace: "normal" });
+        const prepared = preparedTextSegments(remaining, font, cache);
         let available = finalAvailable;
         let line = layoutNextLine(prepared, { graphemeIndex: 0, segmentIndex: 0 }, available);
         if (!line) break;
@@ -591,8 +665,7 @@ function markdownInlineItemsAppend(
                    emergency break. The pieces between such pieces stay one
                    item, which breaks where it may: separate items would not. */
                 let breakable = "";
-                for (const piece of prepareWithSegments(match[2]!, font, { whiteSpace: "normal" })
-                    .segments) {
+                for (const piece of preparedTextSegments(match[2]!, font, cache).segments) {
                     if (naturalTextWidth(piece, font, cache) <= measure + INLINE_MEASURE_EPSILON) {
                         breakable += piece;
                         continue;
@@ -669,7 +742,7 @@ function markdownInlineItemsAppend(
         const decoratedFlow =
             openingWidth + textWidth + (WEBKIT_INLINE_SLICE ? 5 : 10) >
             measure + INLINE_MEASURE_EPSILON;
-        const segments = prepareWithSegments(text, font, { whiteSpace: "normal" }).segments;
+        const segments = preparedTextSegments(text, font, cache).segments;
         for (const [index, segment] of segments.entries()) {
             const items = markdownInlineFragmentItems(
                 segment,
@@ -967,18 +1040,7 @@ function preparedPlainSegments(
     text: string,
     cache: MessageTextLayoutCache,
 ): PreparedTextWithSegments {
-    const ready = cacheReady(cache);
-    const fontKey = `${PLAIN_FONT}:pre-wrap-segments`;
-    let byText = ready.prepared[fontKey];
-    if (!byText) {
-        byText = dictionaryCreate();
-        ready.prepared[fontKey] = byText;
-    }
-    const hit = byText[text];
-    if (hit !== undefined) return hit as PreparedTextWithSegments;
-    const value = prepareWithSegments(text, PLAIN_FONT, { whiteSpace: "pre-wrap" });
-    if (preparationRetain(ready, text, fontKey)) byText[text] = value;
-    return value;
+    return preparedTextSegments(text, PLAIN_FONT, cache, "pre-wrap");
 }
 /** Pretext fuses the label and URL in `[label](https://…)`, hiding the
  * browser's break opportunity between closing and opening brackets. */
@@ -1755,9 +1817,7 @@ function markdownTableCellExtent(
                                 : (item.extraWidth ?? 0)),
                     );
             } else {
-                const prepared = prepareWithSegments(item.text, item.font, {
-                    whiteSpace: "normal",
-                });
+                const prepared = preparedTextSegments(item.text, item.font, cache);
                 let previous: string | undefined;
                 for (const [index, kind] of prepared.kinds.entries()) {
                     if (kind === "text" || kind === "glue") {
@@ -2155,7 +2215,12 @@ function naturalTextWidth(text: string, font: string, cache: MessageTextLayoutCa
     }
     const hit = byText[text];
     if (hit !== undefined) return hit;
-    const width = measureNaturalWidth(prepareWithSegments(text, font, { whiteSpace: "normal" }));
+    /* The width itself is what is kept. Reuse a retained preparation of the
+       same text, but do not retain one only to measure it once. */
+    const width = measureNaturalWidth(
+        preparationHit(ready, preparationTable(ready.preparedSegments, font, "normal"), text) ??
+            prepareWithSegments(text, font, { whiteSpace: "normal" }),
+    );
     byText[text] = width;
     return width;
 }
