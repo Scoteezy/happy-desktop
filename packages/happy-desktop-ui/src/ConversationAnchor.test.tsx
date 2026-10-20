@@ -8,6 +8,12 @@ import type {
 import { expect, it } from "vitest";
 import "./styles.css";
 import { ConversationView } from "./ConversationView";
+import {
+    conversationRowHeight,
+    conversationRowHeightCached,
+    conversationRowHeightCacheCreate,
+} from "./conversationRowHeight";
+import { messageTextLayoutCacheRefresh } from "./messageTextLayout";
 import type { MessageListLegacyScrollPosition, MessageListScrollPosition } from "./Message";
 import { createRenderer } from "./testing";
 import goldFiveMinuteLists from "./fixtures/gold-five-minute-lists.txt?raw";
@@ -119,6 +125,19 @@ type Harness = {
     ) => void;
     readonly reported: () => MessageListScrollPosition | undefined;
 };
+it("invalidates row heights even when another consumer has already refreshed the text cache", () => {
+    const cache = conversationRowHeightCacheCreate();
+    const context = { surface: "conversation", viewerId: reader.id, width: 720 } as const;
+    const height = conversationRowHeight(entries, 0, context, cache);
+    expect(conversationRowHeightCached(entries, 0, context, cache)).toBe(height);
+    // State at the font-generation boundary after the table renderer refreshed
+    // text geometry: row results still belong to the previous generation.
+    cache.generation -= 1;
+    expect(messageTextLayoutCacheRefresh(cache.text)).toBe(false);
+    expect(conversationRowHeightCached(entries, 0, context, cache)).toBeUndefined();
+    expect(conversationRowHeight(entries, 0, context, cache)).toBe(height);
+    expect(cache.generation).toBe(cache.text.generation);
+});
 function harnessRender(width: number): Harness {
     const view = createRenderer();
     let widthUpdate!: (width: number) => void;

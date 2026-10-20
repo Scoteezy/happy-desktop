@@ -1354,7 +1354,8 @@ export function messageMarkdownRenderTree(
     text: string,
     cache: MessageTextLayoutCache,
 ): MessageMarkdownAst {
-    const tree = cacheReady(cache).markdownTrees[text];
+    // Parsing is font-independent; a render lookup does not refresh geometry.
+    const tree = cache.markdownTrees[text];
     return tree === undefined ? messageMarkdownParse(text) : structuredClone(tree);
 }
 type MutableMarkdownFootnotes = {

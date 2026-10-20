@@ -137,6 +137,8 @@ type CachedEntryHeights = {
 };
 const dictionaryCreate = <T>(): Dictionary<T> => Object.create(null) as Dictionary<T>;
 export interface ConversationRowHeightCache {
+    /** Font generation of row results, independent of other text-cache consumers. */
+    generation: number;
     /** Immutable-entry results at every width this conversation has occupied. */
     rows: Dictionary<CachedEntryHeights>;
     /** Prepared text and final text-layout results owned by this conversation. */
@@ -144,9 +146,11 @@ export interface ConversationRowHeightCache {
 }
 /** Creates the row-layout cache for one conversation; the view bounds its lifetime. */
 export function conversationRowHeightCacheCreate(): ConversationRowHeightCache {
+    const text = messageTextLayoutCacheCreate();
     return {
+        generation: text.generation,
         rows: dictionaryCreate(),
-        text: messageTextLayoutCacheCreate(),
+        text,
     };
 }
 /* Set while `conversationRowHeightCached` asks: a miss is recorded, not laid out. */
@@ -158,7 +162,11 @@ function rowHeightCached(
     calculate: () => number | undefined,
 ): number | undefined {
     if (!cache) return calculate();
-    if (messageTextLayoutCacheRefresh(cache.text)) cache.rows = dictionaryCreate();
+    messageTextLayoutCacheRefresh(cache.text);
+    if (cache.generation !== cache.text.generation) {
+        cache.rows = dictionaryCreate();
+        cache.generation = cache.text.generation;
+    }
     const id = entryKey(entry);
     let cachedEntry = cache.rows[id];
     if (!cachedEntry || cachedEntry.entry !== entry) {
