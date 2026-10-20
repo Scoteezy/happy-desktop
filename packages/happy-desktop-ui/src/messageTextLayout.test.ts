@@ -1,9 +1,25 @@
 import { expect, it } from "vitest";
 import {
     markdownBodyHeight,
+    messageMarkdownRenderTree,
     messageTextLayoutCacheCreate,
     monoOutputTextHeight,
 } from "./messageTextLayout";
+
+it("gives render transforms a private sized tree without retaining streaming prefixes", () => {
+    const cache = messageTextLayoutCacheCreate();
+    const source = "Read `src/Message.tsx:42`, then solve $x^2$ and inspect **the result**.";
+    markdownBodyHeight(source, 540, cache);
+    const sized = cache.markdownTrees[source];
+    const rendered = messageMarkdownRenderTree(source, cache);
+    expect(rendered).toEqual(sized);
+    expect(rendered).not.toBe(sized);
+    rendered.children.length = 0;
+    expect(sized?.children.length).toBeGreaterThan(0);
+    const prefix = "A streaming prefix";
+    expect(messageMarkdownRenderTree(prefix, cache).children.length).toBeGreaterThan(0);
+    expect(cache.markdownTrees[prefix]).toBeUndefined();
+});
 
 it("releases old prepared runs while preserving exact warm and resized heights", () => {
     const cache = messageTextLayoutCacheCreate();

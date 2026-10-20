@@ -10,6 +10,7 @@ import {
 } from "react";
 import { happyAgentFileLinkParse } from "happy-desktop-state";
 import Markdown, { type Components, type ExtraProps, type UrlTransform } from "react-markdown";
+import type { Processor } from "unified";
 import { ContextMenu } from "./ContextMenu";
 import { filePreviewKind } from "./FilePreview";
 import { type MenuItem } from "./Menu";
@@ -30,6 +31,7 @@ import {
 import {
     markdownTableCodeKeepsLine,
     markdownTableLayoutAt,
+    messageMarkdownRenderTree,
     messageTextLayoutFontGenerationSubscribe,
     type MessageTextLayoutCache,
 } from "./messageTextLayout";
@@ -191,6 +193,22 @@ const MarkdownTableContext = createContext(false);
 export const MarkdownLayoutCacheContext = createContext<MessageTextLayoutCache | undefined>(
     undefined,
 );
+function remarkSizedTree(this: Processor, cache: MessageTextLayoutCache | undefined) {
+    if (cache) this.parser = (source) => messageMarkdownRenderTree(source, cache);
+}
+function SizedMarkdown({ children }: { children: string }) {
+    const cache = useContext(MarkdownLayoutCacheContext);
+    return (
+        <MemoMarkdown
+            components={markdownComponents}
+            urlTransform={messageUrlTransform}
+            remarkPlugins={[...MESSAGE_MARKDOWN_REMARK_PLUGINS, [remarkSizedTree, cache]]}
+            skipHtml
+        >
+            {children}
+        </MemoMarkdown>
+    );
+}
 type MarkdownImageProps = ComponentPropsWithoutRef<"img"> & ExtraProps;
 /**
  * A Markdown image is rendered as a safe labelled link, never an `<img>`: an
@@ -689,14 +707,7 @@ export function renderMessageMarkdown(
                             <MarkdownFileLinkOpenContext.Provider value={onFileLinkOpen}>
                                 <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
                                     <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
-                                        <MemoMarkdown
-                                            components={markdownComponents}
-                                            urlTransform={messageUrlTransform}
-                                            remarkPlugins={MESSAGE_MARKDOWN_REMARK_PLUGINS}
-                                            skipHtml
-                                        >
-                                            {text}
-                                        </MemoMarkdown>
+                                        <SizedMarkdown>{text}</SizedMarkdown>
                                     </MarkdownLinkDefaultContext.Provider>
                                 </MarkdownLinkOpenContext.Provider>
                             </MarkdownFileLinkOpenContext.Provider>

@@ -1345,6 +1345,18 @@ function messageMarkdownTree(text: string, cache: MessageTextLayoutCache): Messa
     cache.markdownTrees[text] = tree;
     return tree;
 }
+/**
+ * Render transforms mutate their tree (file links and math shaping). Give them
+ * a private copy of the settled tree already parsed for sizing. An uncached
+ * source, including a streaming prefix, is parsed without retaining it here.
+ */
+export function messageMarkdownRenderTree(
+    text: string,
+    cache: MessageTextLayoutCache,
+): MessageMarkdownAst {
+    const tree = cacheReady(cache).markdownTrees[text];
+    return tree === undefined ? messageMarkdownParse(text) : structuredClone(tree);
+}
 type MutableMarkdownFootnotes = {
     readonly counts: Map<string, number>;
     readonly definitions: Map<string, MarkdownFootnoteDefinition>;
