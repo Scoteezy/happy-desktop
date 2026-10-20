@@ -1893,6 +1893,74 @@ it("keeps only the latest page of a session that streams while nobody reads it",
     expect(daemon.callCount("getMessages")).toBe(loads);
 });
 
+it("lets a session on screen shed its oldest page only while its reader follows the newest", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a" });
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    let elements: readonly ChatElement[] = [];
+    let session: SessionState | undefined;
+    const reader = connection.connectSession({
+        sessionId: agent.id,
+        onChange(next, state) {
+            elements = next;
+            session = state;
+        },
+    });
+    await vi.waitFor(() => expect(session?.historyLoading).not.toBe(true));
+    let next = 0;
+    const stream = async (count: number): Promise<void> => {
+        for (const end = next + count; next < end; next += 1) {
+            const runId = `r${String(next)}`;
+            const message = fakeAgentMessage({
+                id: `a${String(next)}`,
+                createdAt: next + 1,
+                content: [{ type: "text", text: `answer ${String(next)}` }],
+            });
+            daemon.eventEmit("run.started", {
+                agentId: agent.id,
+                run: fakeRun({ id: runId, status: "running", startedAt: next + 1 }),
+                acceptedMessageIds: [],
+            });
+            daemon.eventEmit("message.created", { agentId: agent.id, message, runId });
+            daemon.eventEmit("run.finished", {
+                agentId: agent.id,
+                run: fakeRun({
+                    id: runId,
+                    status: "completed",
+                    startedAt: next + 1,
+                    endedAt: next + 2,
+                }),
+            });
+        }
+        await vi.waitFor(() =>
+            expect(agentTexts(elements).at(-1)?.text).toBe(`answer ${String(next - 1)}`),
+        );
+    };
+
+    // A reader who never said they follow, or who scrolled back, keeps everything.
+    await stream(250);
+    expect(agentTexts(elements)).toHaveLength(250);
+    reader.followingSet?.(false);
+    await stream(10);
+    expect(agentTexts(elements)).toHaveLength(260);
+
+    // Following again, the next finished run leaves the newest page, and the rest a scroll away.
+    reader.followingSet?.(true);
+    await stream(1);
+    const answers = agentTexts(elements).map((element) => element.text);
+    expect(answers).toHaveLength(100);
+    expect(answers[0]).toBe("answer 161");
+    expect(session?.transcriptComplete).toBe(false);
+    expect(session?.loadMoreToken).toBe("r161");
+
+    // It grows to two pages before it sheds again.
+    await stream(99);
+    expect(agentTexts(elements)).toHaveLength(199);
+    reader.close();
+});
+
 // --- lost cursor and full resync -------------------------------------------
 
 it("resyncs the catalog and every open chat when the hello reports a cursor gap", async () => {

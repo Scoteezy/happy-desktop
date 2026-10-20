@@ -25,6 +25,7 @@ export function happyAgentTranscriptConnectCreate(
         return {
             close: () => session.close(),
             loadMore: (token) => session.loadMore(token),
+            followingSet: (following) => session.followingSet?.(following),
         };
     };
 }

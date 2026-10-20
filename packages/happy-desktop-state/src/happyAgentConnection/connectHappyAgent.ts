@@ -143,6 +143,7 @@ function errorDetail(error: unknown): string {
 
 interface SessionSubscriber extends HappyAgentSessionSubscriptionOptions {
     closed: boolean;
+    following: boolean;
 }
 
 interface SessionEntry {
@@ -2038,7 +2039,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             case "run.finished":
                 updateRun(event.payload.agentId, event.payload.run);
                 recoverCorruptedMessages(event.payload.agentId);
-                trimUnwatchedHistory(event.payload.agentId);
+                trimHistory(event.payload.agentId);
                 if (agentOf(event.payload.agentId)?.parentAgentId === null) {
                     options.onTopLevelSessionFinished?.(event.payload.agentId);
                 }
@@ -2186,14 +2187,19 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     };
 
     /**
-     * A session nobody watches follows its stream, so its runs would pile up for as long as it
-     * works. Past a page, the oldest go, and are read again only if someone scrolls back to them.
+     * A session follows its stream whether or not anyone reads it, so its runs would pile up for
+     * as long as it works. Past a page, the oldest go, and are read again only if someone scrolls
+     * back to them. A session on screen keeps up to two pages, and lets go only while every
+     * reader is at its newest content and no older page is on its way, so nothing a reader is
+     * looking at, or is about to be shown, disappears.
      */
-    const trimUnwatchedHistory = (agentId: string): void => {
+    const trimHistory = (agentId: string): void => {
         const entry = sessions.get(agentId);
-        if (entry === undefined || entry.subscribers.size > 0) return;
+        if (entry === undefined || entry.loadingMore) return;
+        const watched = entry.subscribers.size > 0;
+        if (watched && [...entry.subscribers].some((subscriber) => !subscriber.following)) return;
         const ordered = runsOrderedOf(entry);
-        if (ordered.length <= DEFAULT_HISTORY_LIMIT) return;
+        if (ordered.length <= DEFAULT_HISTORY_LIMIT * (watched ? 2 : 1)) return;
         const dropped = new Set(
             ordered.slice(0, ordered.length - DEFAULT_HISTORY_LIMIT).map((run) => run.id),
         );
@@ -2211,6 +2217,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         entry.hasMore = true;
         clearUserIndex(entry);
         for (const { message } of entry.messages.values()) indexMessageUser(entry, message);
+        if (watched) publishSession(entry);
     };
 
     const updateMessage = (agentId: string, message: Message, runId: string | null): void => {
@@ -3484,7 +3491,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             const entry =
                 sessions.get(subscription.sessionId) ?? sessionEntryCreate(subscription.sessionId);
             const wasInactive = entry.subscribers.size === 0;
-            const subscriber: SessionSubscriber = { ...subscription, closed: false };
+            const subscriber: SessionSubscriber = {
+                ...subscription,
+                closed: false,
+                following: false,
+            };
             entry.subscribers.add(subscriber);
             if (
                 wasInactive &&
@@ -3507,6 +3518,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 session: () => connectedEntry.store.session(),
                 loadMore: (token) => {
                     void loadEarlier(connectedEntry, token);
+                },
+                followingSet: (following) => {
+                    subscriber.following = following;
                 },
                 close: () => {
                     subscriber.closed = true;

@@ -806,6 +806,12 @@ export interface HappyAgentSessionConnection {
     elements: () => readonly ChatElement[];
     session: () => SessionState;
     loadMore: (token: string) => void;
+    /**
+     * Whether this reader follows the newest content. While every reader of a session does, a
+     * session that keeps growing lets go of all but its latest page; one that has not said so is
+     * taken to be reading back.
+     */
+    followingSet?: (following: boolean) => void;
     close: () => void;
 }
 

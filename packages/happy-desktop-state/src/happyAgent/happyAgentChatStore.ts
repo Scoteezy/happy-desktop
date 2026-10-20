@@ -660,6 +660,8 @@ export interface HappyAgentChatStore {
     subscribe(listener: () => void): () => void;
     sessionRetry(): void;
     historyLoadMore(): void;
+    /** Whether the reader follows the newest content, which lets a growing transcript shed its oldest. */
+    historyFollowingSet(following: boolean): void;
     /**
      * Sends a message the moment it is handed over, resolving once it is on its
      * way. `refused` is called if the host then refuses it outright, so it was
@@ -759,6 +761,8 @@ export interface HappyAgentChatDeps {
 export interface HappyAgentChatTranscriptConnection {
     close(): void;
     loadMore(token: string): void;
+    /** Whether the reader follows the newest content; see `HappyAgentSessionConnection`. */
+    followingSet?(following: boolean): void;
 }
 
 export type HappyAgentChatTranscriptConnect = (options: {
@@ -827,6 +831,7 @@ export function happyAgentChatStoreCreate(
     let slashCommands: readonly HappyAgentSlashCommand[] = [];
     let transcriptAnsweredUserInputs: readonly HappyAgentAnsweredUserInput[] = [];
     let transcriptConnection: HappyAgentChatTranscriptConnection | undefined;
+    let readerFollowing = false;
     let detachedBackgroundProcessIds: ReadonlySet<number> = new Set();
     let mutationRejection: MutationRejectedDelta | undefined;
     const pendingMutationIds = new Set<string>();
@@ -1155,6 +1160,7 @@ export function happyAgentChatStoreCreate(
                 commit();
             },
         });
+        transcriptConnection.followingSet?.(readerFollowing);
     };
 
     const stop = (): void => {
@@ -1358,6 +1364,10 @@ export function happyAgentChatStoreCreate(
             error = undefined;
             start();
             commit();
+        },
+        historyFollowingSet(following) {
+            readerFollowing = following;
+            transcriptConnection?.followingSet?.(following);
         },
         historyLoadMore() {
             const token = transcriptSession?.loadMoreToken;

@@ -5207,6 +5207,10 @@ export function happyAgentWorkspaceStoreCreate(
                 acquiringId = undefined;
                 handle = acquired;
                 chatStore = acquired.store;
+                // A list with no saved position opens at its newest content.
+                acquired.store.historyFollowingSet(
+                    scrollPositions.get(conversationId)?.type !== "row",
+                );
                 const reconcileComposer = (): void => {
                     const state = acquired.store.get();
                     const currentComposer = composer;
@@ -8550,6 +8554,7 @@ export function happyAgentWorkspaceStoreCreate(
             // feeding it back through the snapshot would re-anchor a list the
             // reader is in the middle of scrolling. It is read once, on mount.
             scrollPositions = new Map(scrollPositions).set(conversationId, position);
+            if (conversationId === openId) chatStore?.historyFollowingSet(position.type !== "row");
         },
         [Symbol.dispose]() {
             if (disposed) return;
