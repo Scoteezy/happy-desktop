@@ -2515,7 +2515,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
 
     /**
      * Starts a connection in one round trip: the desktop bootstrap is read and the update feed
-     * opened at the same time, with no health check in front of either. A current daemon's
+     * opened right behind it, with no health check in front of either. A current daemon's
      * bootstrap carries its health; an older one's is read after it. Updates that arrive
      * before the bootstrap are held, and handed on only after it has been applied.
      *
@@ -2538,6 +2538,32 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         | "unanswered"
         | "gated"
     > => {
+        reportDebug({
+            level: "info",
+            message: "Reading desktop bootstrap beside the managed update feed",
+            source: "sync",
+        });
+        // The bootstrap is asked first and the feed opened only after it. Every connection of
+        // a window shares one proxy origin and the browser's few HTTP/1.1 connections to it,
+        // which take requests in the order they were sent; a feed holds its connection for
+        // good, so feeds sent ahead of the bootstraps could take them all and leave a
+        // bootstrap waiting behind them. Sent behind its own bootstrap, a feed only ever
+        // waits for one, as it did when it opened after the bootstrap had answered. A client
+        // with a fixed token, as every desktop connection's is, sends each request the moment
+        // it is called.
+        const reading: Promise<
+            { readonly bootstrap: DesktopBootstrapCurrent } | { readonly error: unknown }
+        > = client
+            .getDesktopBootstrap({
+                signal: AbortSignal.any([
+                    attemptSignal,
+                    AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
+                ]),
+            })
+            .then(
+                (bootstrap: DesktopBootstrapCurrent) => ({ bootstrap }),
+                (error: unknown) => ({ error }),
+            );
         const feedController = new AbortController();
         const iterator = client
             .updates({ signal: AbortSignal.any([attemptSignal, feedController.signal]) })
@@ -2554,24 +2580,6 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             // Ends the feed even where it rests on an update nobody will ask past.
             void iterator.return?.(undefined).catch(() => undefined);
         };
-        reportDebug({
-            level: "info",
-            message: "Reading desktop bootstrap beside the managed update feed",
-            source: "sync",
-        });
-        const reading: Promise<
-            { readonly bootstrap: DesktopBootstrapCurrent } | { readonly error: unknown }
-        > = client
-            .getDesktopBootstrap({
-                signal: AbortSignal.any([
-                    attemptSignal,
-                    AbortSignal.timeout(SNAPSHOT_RESPONSE_TIMEOUT_MS),
-                ]),
-            })
-            .then(
-                (bootstrap: DesktopBootstrapCurrent) => ({ bootstrap }),
-                (error: unknown) => ({ error }),
-            );
         let read: Awaited<typeof reading>;
         for (;;) {
             const pending = next;

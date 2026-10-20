@@ -8,6 +8,7 @@ import { MINIMUM_HAPPY_AGENT_VERSION } from "./compatibility.js";
 import {
     HAPPY_AGENT_PROTOCOL_VERSION,
     HappyAgentApiError,
+    HappyAgentClient,
     type Message,
     type MessageMode,
     type Question,
@@ -340,8 +341,8 @@ it("starts in one round trip: the bootstrap is read beside the feed, and nothing
     // The feed opened at the same time as the bootstrap, from the journal's head, and the
     // bootstrap was the health check: no health, onboarding, profile, or config read.
     expect(daemon.calls.slice(0, 2).map((call) => call.method)).toEqual([
-        "streamEvents",
         "getDesktopBootstrap",
+        "streamEvents",
     ]);
     expect(daemon.streamOpens).toEqual([undefined]);
     expect(daemon.callCount("getHealth")).toBe(0);
@@ -351,6 +352,171 @@ it("starts in one round trip: the bootstrap is read beside the feed, and nothing
     expect(connection.compatibility().status).toBe("compatible");
     expect(connection.sync.health()).toMatchObject({ ready: true });
     expect(connection.config()).toEqual(daemon.configGet());
+});
+
+/**
+ * The browser's HTTP/1.1 connections to the one proxy origin every connection of a window
+ * shares: a few at a time, taken by requests in the order they were sent. A response holds its
+ * connection until its body ends, so an event stream holds one for as long as it is open.
+ */
+function connectionSlotsCreate(slots: number): {
+    /** A fetch answering from one fake daemon through these shared connections. */
+    readonly fetch: (daemon: FakeHappyAgentDaemon) => typeof globalThis.fetch;
+    readonly open: () => { readonly streams: number; readonly waiting: readonly string[] };
+    /** Takes one connection for good, as a terminal's stream on the same origin does. */
+    readonly hold: () => void;
+} {
+    let busy = 0;
+    let streams = 0;
+    const waiting: { readonly path: string; readonly start: () => void }[] = [];
+    const release = (): void => {
+        busy -= 1;
+        const nextUp = waiting.shift();
+        if (nextUp === undefined) return;
+        busy += 1;
+        nextUp.start();
+    };
+    const take = (path: string, signal: AbortSignal | null | undefined): Promise<void> =>
+        new Promise((resolve, reject) => {
+            if (busy < slots) {
+                busy += 1;
+                resolve();
+                return;
+            }
+            const entry = { path, start: resolve };
+            waiting.push(entry);
+            signal?.addEventListener(
+                "abort",
+                () => {
+                    const index = waiting.indexOf(entry);
+                    if (index < 0) return;
+                    waiting.splice(index, 1);
+                    reject(signal.reason);
+                },
+                { once: true },
+            );
+        });
+    const sse = (name: string, data: unknown, id?: string): string =>
+        `${id === undefined ? "" : `id: ${id}\n`}event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+    return {
+        fetch: (daemon) => async (input, init) => {
+            const path = new URL(String(input)).pathname;
+            const signal = init?.signal;
+            // Queued as it is sent, before anything else here awaits.
+            await take(path, signal);
+            if (path.endsWith("/v0/events/stream")) {
+                streams += 1;
+                const after = new URL(String(input)).searchParams.get("after") ?? undefined;
+                const controller = new AbortController();
+                const frames = daemon.client
+                    .streamEvents({
+                        ...(after === undefined ? {} : { after }),
+                        signal: AbortSignal.any([controller.signal, ...(signal ? [signal] : [])]),
+                    })
+                    [Symbol.asyncIterator]();
+                let ended = false;
+                const end = (): void => {
+                    if (ended) return;
+                    ended = true;
+                    streams -= 1;
+                    controller.abort();
+                    release();
+                };
+                signal?.addEventListener("abort", end, { once: true });
+                const encoder = new TextEncoder();
+                const body = new ReadableStream<Uint8Array>({
+                    async pull(stream) {
+                        const step = await frames.next();
+                        if (step.done === true || ended) {
+                            end();
+                            stream.close();
+                            return;
+                        }
+                        const frame = step.value;
+                        stream.enqueue(
+                            encoder.encode(
+                                frame.kind === "hello"
+                                    ? sse("hello", frame.hello)
+                                    : frame.kind === "event"
+                                      ? sse(frame.event.type, frame.event, frame.cursor)
+                                      : sse(frame.frame.type, frame.frame.data),
+                            ),
+                        );
+                    },
+                    cancel: end,
+                });
+                return new Response(body, { headers: { "content-type": "text/event-stream" } });
+            }
+            try {
+                if (path.endsWith("/v0/bootstrap/desktop")) {
+                    await new Promise((resolve) => setTimeout(resolve, 10));
+                    return Response.json(await daemon.client.getDesktopBootstrap());
+                }
+                if (path.endsWith("/v0/health"))
+                    return Response.json(await daemon.client.getHealth());
+                return Response.json(
+                    { error: { code: "not_found", message: "Not found." } },
+                    { status: 404 },
+                );
+            } finally {
+                release();
+            }
+        },
+        open: () => ({ streams, waiting: waiting.map((entry) => entry.path) }),
+        hold: () => {
+            busy += 1;
+        },
+    };
+}
+
+function slotHarnessOpen(
+    slots: ReturnType<typeof connectionSlotsCreate>,
+    index: number,
+): { readonly connection: HappyAgentConnection; readonly groups: GroupsWatch } {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.projectSeed({ id: `project-${String(index)}` });
+    const endpoint = `http://proxy.test/connections/${String(index)}/`;
+    const connection = connectHappyAgent({
+        endpoint,
+        token: "token",
+        client: new HappyAgentClient({ endpoint, token: "token", fetch: slots.fetch(daemon) }),
+        wait: () => new Promise((resolve) => setTimeout(resolve, 0)),
+        now: () => 1_000,
+    });
+    openConnections.push(connection);
+    return { connection, groups: groupsWatch(connection) };
+}
+
+it("gets every bootstrap through when the connections starting together share six HTTP connections", async () => {
+    const slots = connectionSlotsCreate(6);
+    const started = Array.from({ length: 6 }, (_, index) => slotHarnessOpen(slots, index));
+
+    await vi.waitFor(() =>
+        expect(started.map(({ groups }) => groups.state.connection)).toEqual(
+            Array.from({ length: 6 }, () => "live"),
+        ),
+    );
+    await vi.waitFor(() => expect(slots.open().streams).toBe(6));
+    // Six feeds fill all six connections, so whatever is sent after them waits for one to
+    // close, but no bootstrap was ever left behind them.
+    expect(slots.open().waiting.filter((path) => !path.endsWith("/v0/git/watch"))).toEqual([]);
+    expect(started.map(({ groups }) => groups.projects.map((project) => project.id))).toEqual(
+        started.map((_, index) => [`project-${String(index)}`]),
+    );
+});
+
+it("gets every bootstrap through when a stream of another kind already holds one of the six", async () => {
+    const slots = connectionSlotsCreate(6);
+    slots.hold();
+    const started = Array.from({ length: 5 }, (_, index) => slotHarnessOpen(slots, index));
+
+    await vi.waitFor(() =>
+        expect(started.map(({ groups }) => groups.state.connection)).toEqual(
+            Array.from({ length: 5 }, () => "live"),
+        ),
+    );
+    await vi.waitFor(() => expect(slots.open().streams).toBe(5));
+    expect(slots.open().waiting.filter((path) => !path.endsWith("/v0/git/watch"))).toEqual([]);
 });
 
 it("asks an older daemon whose bootstrap carries no health for it apart, after the bootstrap", async () => {
