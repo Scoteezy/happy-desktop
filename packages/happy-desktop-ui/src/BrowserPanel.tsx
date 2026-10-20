@@ -41,6 +41,11 @@ export interface BrowserContentProps {
         readonly workspaceId: string;
         readonly agentId: string;
         readonly networkId?: string;
+        /**
+         * The live artifact this page is: it gets a browser profile of that
+         * artifact's own instead of the network's, shared with nothing else.
+         */
+        readonly artifactId?: string;
     };
     /** Initial location for the Chromium guest. Further navigation uses the controller. */
     readonly source: string;

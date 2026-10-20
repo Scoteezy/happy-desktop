@@ -403,9 +403,17 @@ export class DesktopBrowserView extends Component<BrowserContentProps> {
         // A page laid inline gets a profile of its own for as long as it is
         // mounted, never the workspace browser's, whose logins it must not see.
         // Each attempt names its own, so one abandoned midway is closed alone.
-        const page = this.props.fit ? `${this.inlinePage}-${String(generation)}` : undefined;
+        const artifactId = this.props.target?.artifactId;
+        const page =
+            artifactId === undefined && this.props.fit
+                ? `${this.inlinePage}-${String(generation)}`
+                : undefined;
         void window.happyDesktop
-            ?.browserNetworkProfileOpen?.({ connectionId, networkId, page })
+            ?.browserNetworkProfileOpen?.(
+                artifactId === undefined
+                    ? { connectionId, networkId, page }
+                    : { connectionId, networkId, artifactId },
+            )
             .then((partition) => {
                 if (generation === this.proxyGeneration) this.setState({ partition });
                 else if (page !== undefined) this.inlineProfileClose(partition);

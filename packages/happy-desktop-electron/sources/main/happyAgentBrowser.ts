@@ -22,6 +22,14 @@ export class HappyAgentBrowser {
      * and the page's name is part of its identity.
      */
     static partition(network: DesktopBrowserNetwork): string {
+        // A live artifact's profile is the artifact's: its network is fixed when
+        // the artifact is made, so the artifact alone names it.
+        if (network.artifactId !== undefined) {
+            const identity = createHash("sha256")
+                .update(JSON.stringify(["artifact", network.connectionId, network.artifactId]))
+                .digest("hex");
+            return `persist:happy-artifact-live-${identity}`;
+        }
         if (network.page !== undefined) {
             const identity = createHash("sha256")
                 .update(JSON.stringify([network.connectionId, network.networkId, network.page]))

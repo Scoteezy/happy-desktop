@@ -3,6 +3,7 @@ import {
     entryKey,
     type ConversationEntry,
     type HappyAgentArtifactId,
+    type HappyAgentInlineArtifactLive,
     type HappyAgentInlineArtifactsSnapshot,
 } from "happy-desktop-state";
 import { Icon } from "./Icon";
@@ -28,6 +29,16 @@ export interface ConversationInlinePages {
      * the browser shows — a potential vulnerability the host's sandbox bounds.
      */
     readonly pageRender?: (url: string, fit: InlinePageFit) => ReactNode;
+    /**
+     * Draws a live artifact's page through the network it was made on, in a
+     * browser profile of that artifact's own: its cookies and storage are
+     * never the workspace browser's or another artifact's.
+     */
+    readonly liveRender?: (
+        artifactId: HappyAgentArtifactId,
+        live: HappyAgentInlineArtifactLive,
+        fit: InlinePageFit,
+    ) => ReactNode;
     /** Opens an artifact beside the conversation, following its latest version. */
     artifactOpen(artifactId: HappyAgentArtifactId): void;
     /** Opens a web page beside the conversation. */
@@ -81,19 +92,21 @@ export function conversationInlinePage(
     if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return undefined;
     const presentation = entry.activity.tool.presentation;
     if (presentation?.type === "artifact") {
-        if (
-            presentation.shows !== "latest" ||
-            presentation.artifactType !== "html" ||
-            pages.artifactRender === undefined
-        )
+        if (presentation.shows !== "latest" || presentation.artifactType !== "html")
             return undefined;
-        const render = pages.artifactRender;
         const artifactId = presentation.artifactId;
         const artifact = pages.artifacts.get(artifactId);
         if (artifact === undefined) pages.artifactsRequest([artifactId]);
         if (artifact?.type === "missing" || artifact?.status === "deleted") return undefined;
-        if (artifact?.site?.type === "unavailable") return undefined;
-        const display = artifact?.display ?? null;
+        const live = artifact?.live;
+        const render = pages.artifactRender;
+        const liveRender = pages.liveRender;
+        if (live ? liveRender === undefined : render === undefined) return undefined;
+        if (!live && artifact?.site?.type === "unavailable") return undefined;
+        // The panel beside the chat shows an artifact's files, and a live
+        // artifact's are only a placeholder, so it stays in the chat for now.
+        const display =
+            live && artifact?.display === "side" ? "inline_compact" : (artifact?.display ?? null);
         const placement =
             display === "side" || leads.get(artifactId) !== entryKey(entry) ? "title" : "inline";
         const collapsed = local.collapsed(rowKey) ?? display === "inline_compact";
@@ -109,19 +122,34 @@ export function conversationInlinePage(
             geometry,
             props: {
                 title,
-                glyph: <ArtifactTypeGlyph size={16} type="html" />,
+                glyph: live ? (
+                    <Icon name="globe" size={16} />
+                ) : (
+                    <ArtifactTypeGlyph size={16} type="html" />
+                ),
                 geometry,
-                ...(site?.type === "opened"
-                    ? { page: { key: site.url, render: (fit) => render(site.url, fit) } }
-                    : {}),
+                ...(live && liveRender
+                    ? {
+                          page: {
+                              key: `${artifactId}:${live.networkId}:${live.url}`,
+                              render: (fit: InlinePageFit) => liveRender(artifactId, live, fit),
+                          },
+                      }
+                    : site?.type === "opened" && render
+                      ? { page: { key: site.url, render: (fit) => render(site.url, fit) } }
+                      : {}),
                 ...(artifact?.background ? { background: artifact.background } : {}),
                 onCollapsedChange: (next) => local.collapsedSet(rowKey, next),
-                onOpenSide: () => {
-                    // Opened beside the chat, it is not also open in it; closing
-                    // the panel leaves it collapsed until the reader expands it.
-                    if (placement === "inline") local.collapsedSet(rowKey, true);
-                    pages.artifactOpen(artifactId);
-                },
+                ...(live
+                    ? {}
+                    : {
+                          onOpenSide: () => {
+                              // Opened beside the chat, it is not also open in it; closing
+                              // the panel leaves it collapsed until the reader expands it.
+                              if (placement === "inline") local.collapsedSet(rowKey, true);
+                              pages.artifactOpen(artifactId);
+                          },
+                      }),
                 onHeightChange: (next) => local.heightSet(rowKey, next),
                 "data-testid": "conversation-inline-artifact",
             },

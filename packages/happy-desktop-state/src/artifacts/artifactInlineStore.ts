@@ -20,6 +20,16 @@ export type HappyAgentInlineArtifactSite =
     /** This host has no guest to run a page in, or could not serve this version. */
     | { readonly type: "unavailable" };
 
+/**
+ * A live artifact's page: a web address reached through the network of the
+ * agent that made it, never the reader's own. Its files are only an inert
+ * placeholder for older clients, so it is never served as a site.
+ */
+export interface HappyAgentInlineArtifactLive {
+    readonly url: string;
+    readonly networkId: string;
+}
+
 /** An artifact the transcript shows inline, as it is now. */
 export type HappyAgentInlineArtifact =
     | {
@@ -33,6 +43,8 @@ export type HappyAgentInlineArtifact =
           readonly background?: string;
           /** Only an HTML artifact is served as a page. */
           readonly site?: HappyAgentInlineArtifactSite;
+          /** Present for a live artifact, whose page is this address instead of its files. */
+          readonly live?: HappyAgentInlineArtifactLive;
       }
     /** No artifact has this id here, or this reader cannot see it. */
     | { readonly type: "missing" };
@@ -100,6 +112,8 @@ function readyEqual(left: Ready, right: Ready): boolean {
         left.latestVersion === right.latestVersion &&
         left.display === right.display &&
         left.background === right.background &&
+        left.live?.url === right.live?.url &&
+        left.live?.networkId === right.live?.networkId &&
         leftSite?.type === rightSite?.type &&
         (leftSite?.type !== "opening" ||
             (rightSite?.type === "opening" && leftSite.version === rightSite.version)) &&
@@ -149,7 +163,12 @@ export function happyAgentInlineArtifactsStoreCreate(
      */
     const siteEnsure = (artifactId: HappyAgentArtifactId, signal: AbortSignal): void => {
         const held = snapshot.get(artifactId);
-        if (held?.type !== "ready" || held.artifactType !== "html" || held.status !== "active")
+        if (
+            held?.type !== "ready" ||
+            held.artifactType !== "html" ||
+            held.status !== "active" ||
+            held.live !== undefined
+        )
             return;
         const version = held.latestVersion;
         if (held.site?.type === "unavailable") return;
@@ -221,6 +240,7 @@ export function happyAgentInlineArtifactsStoreCreate(
                     latestVersion: artifact.latestVersion,
                     display: displayProject(artifact.display),
                     ...(background === undefined ? {} : { background }),
+                    ...(artifact.live ? { live: artifact.live } : {}),
                     ...(held?.type === "ready" && held.site !== undefined
                         ? { site: held.site }
                         : {}),
@@ -270,6 +290,7 @@ export function happyAgentInlineArtifactsStoreCreate(
                     continue;
                 }
                 const changes = raw.type === "artifact.updated" ? raw.payload.changes : undefined;
+                const live = changes?.live === undefined ? held.live : (changes.live ?? undefined);
                 const background =
                     changes?.background === undefined
                         ? held.background
@@ -285,6 +306,7 @@ export function happyAgentInlineArtifactsStoreCreate(
                             ? held.display
                             : displayProject(changes.display),
                     ...(background === undefined ? {} : { background }),
+                    ...(live === undefined ? {} : { live }),
                     ...(held.site === undefined ? {} : { site: held.site }),
                 });
                 siteEnsure(event.artifactId, active.signal);

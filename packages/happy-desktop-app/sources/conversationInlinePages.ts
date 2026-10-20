@@ -99,6 +99,26 @@ export function conversationInlinePagesCreate(input: {
                           browserTitleChanged: ignore,
                           browserFailed: (failure) => fit.failed(browserFailureMessage(failure)),
                       }),
+                  liveRender: (artifactId, live, fit) =>
+                      browserContent({
+                          source: live.url,
+                          fit,
+                          // The network the artifact was made on, never the
+                          // reader's or the agent's current one: a missing
+                          // network fails closed.
+                          target: {
+                              connectionId: input.browserConnectionId,
+                              workspaceId: input.workspaceId,
+                              agentId: input.agentId,
+                              networkId: live.networkId,
+                              artifactId,
+                          },
+                          browserControllerReady: ignore,
+                          browserLoadingChanged: ignore,
+                          browserLocationChanged: ignore,
+                          browserTitleChanged: ignore,
+                          browserFailed: (failure) => fit.failed(browserFailureMessage(failure)),
+                      }),
               }
             : {}),
         artifactOpen: input.artifactOpen,

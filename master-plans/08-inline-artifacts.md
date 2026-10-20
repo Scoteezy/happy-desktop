@@ -86,8 +86,12 @@ changes. It measures in a second, invisible frame first, at the exact width
 the artifact is shown at, so the visible artifact never overlaps the content
 below it and nothing shifts afterwards.
 
-Any URL can be shown inline the same way. An artifact is just one such
-address: a URL that points at its `happy-artifact://` path.
+Any URL can be shown inline the same way, as an artifact too: a live
+artifact is one whose content is a web address instead of files, reached
+through the network of the agent that made it. It is versioned, reviewed, and
+shown like any other artifact, and `show_page` is deprecated in its favour.
+Its page runs in a browser profile of that artifact's own: its cookies and
+storage are never the workspace browser's or another artifact's.
 
 Pages may use the network for now. This is a potential vulnerability: it is
 marked as one here and in the code.

@@ -685,6 +685,12 @@ export interface DesktopBrowserNetwork {
      * it never sees the cookies, storage, or logins of the workspace browser.
      */
     readonly page?: string;
+    /**
+     * Names a live artifact the page is. It gets a profile of that artifact's
+     * own, kept across restarts and shared with no tab, page, or other
+     * artifact: its cookies and storage belong to the artifact alone.
+     */
+    readonly artifactId?: string;
 }
 
 /**
