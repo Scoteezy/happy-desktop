@@ -123,11 +123,13 @@ export interface DesktopDrainAgent {
 /**
  * Why the daemon is being taken down and brought back.
  *
- * Both are the same sequence and the same screen; only the words differ,
+ * All are the same sequence and the same screen; only the words differ,
  * because arriving on a newer version and arriving back on the one you were
- * already running are different things to be told.
+ * already running are different things to be told. `reload` is a restart this
+ * app did not start: `happy-agent reload`, run from a terminal or by an agent,
+ * reported through the `reload.json` it writes. It cannot be cut short here.
  */
-export type DesktopDaemonRestartReason = "install" | "restart";
+export type DesktopDaemonRestartReason = "install" | "restart" | "reload";
 
 /** One runtime component whose admitted work has not drained yet. */
 export interface DesktopDrainComponent {
@@ -165,6 +167,12 @@ export type DesktopDaemonInstall =
           readonly phase: "draining";
           readonly reason: DesktopDaemonRestartReason;
           readonly version: string;
+          /**
+           * When the whole restart began, in epoch milliseconds. Every running
+           * step carries it, so a window shows how long it has been going from
+           * the restart's own start rather than from when it began watching.
+           */
+          readonly startedAt?: number;
           readonly waitingFor: readonly DesktopDrainComponent[];
           /**
            * The most open work this drain has been holding at once.
@@ -189,6 +197,7 @@ export type DesktopDaemonInstall =
           readonly phase: "stopping";
           readonly reason: DesktopDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
           /** The drain was cut short, so work was interrupted rather than finished. */
           readonly killed: boolean;
       }
@@ -197,17 +206,25 @@ export type DesktopDaemonInstall =
           readonly phase: "starting";
           readonly reason: DesktopDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
       }
     /** The daemon answered and Happy is reconnecting to it. */
     | {
           readonly phase: "reconnecting";
           readonly reason: DesktopDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
+          /**
+           * When the restart itself finished, in epoch milliseconds, when it
+           * was reported: a reload says so in its `reload.json`.
+           */
+          readonly finishedAt?: number;
       }
     | {
           readonly phase: "error";
           readonly reason: DesktopDaemonRestartReason;
           readonly version: string;
+          readonly startedAt?: number;
           readonly message: string;
           /**
            * The step that was running when it failed. The sequence knows this;

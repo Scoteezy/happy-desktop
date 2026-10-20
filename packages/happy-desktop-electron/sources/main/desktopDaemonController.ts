@@ -10,6 +10,11 @@ import type {
 } from "../shared/desktopContract";
 import { happyAgentRestartRun } from "./happyAgentRestart";
 import {
+    happyAgentReloadStatusPath,
+    happyAgentReloadStatusWatch,
+    type HappyAgentReloadStatus,
+} from "./happyAgentReloadStatus";
+import {
     happyAgentVersionAllowed,
     happyAgentVersionKind,
     happyAgentVersionNewer as versionNewer,
@@ -40,6 +45,17 @@ const DAEMON_COMMAND_TIMEOUT_MS = 75_000;
 const MAXIMUM_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 /** How long the install screen waits for this window to reconnect before it lets go. */
 const RECONNECT_TIMEOUT_MS = 60_000;
+/**
+ * A reload whose report has not moved for this long is abandoned. Its writer
+ * rewrites the report at least every two seconds while it runs.
+ */
+const RELOAD_STALE_MS = 15_000;
+/** A finished reload first seen later than this after it finished is old news. */
+const RELOAD_FINISHED_FRESH_MS = 30_000;
+/** How often a reload on screen is checked for having been abandoned. */
+const RELOAD_ALIVE_CHECK_MS = 1_000;
+/** How many reloads are remembered as already shown or ignored. */
+const RELOAD_SEEN_LIMIT = 32;
 
 export interface DesktopDaemonControllerOptions {
     readonly channel?: HappyAgentUpdateChannel;
@@ -66,6 +82,15 @@ export class DesktopDaemonController {
     /** What the daemon reported when this window last connected to it. */
     private runningVersion?: string;
     private snapshotValue: DesktopDaemonSnapshot;
+    /**
+     * Every `happy-agent reload` this app has looked at, by operation: shown
+     * while it ran, shown finished, or passed over. Each is shown finished at
+     * most once.
+     */
+    private readonly reloadsSeen = new Map<string, "running" | "finished" | "ignored">();
+    /** The reload report last read, while one is on screen and running. */
+    private reloadRunning?: HappyAgentReloadStatus;
+    private reloadAliveTimer?: ReturnType<typeof setInterval>;
 
     private constructor(
         private readonly paths: HappyDaemonPaths,
@@ -391,9 +416,15 @@ export class DesktopDaemonController {
             // the first step: everything before the drain is preparation for it,
             // and a restart that never got that far got nowhere.
             let step: DesktopDaemonRestartStep = "draining";
+            // Every step carries when the restart began, so a window that
+            // opens part-way still counts from the start.
+            const startedAt = Date.now();
             const publishStep = (install: DesktopDaemonInstall): void => {
                 if (install.phase !== "idle" && install.phase !== "error") step = install.phase;
-                this.publish({ ...this.snapshotValue, install });
+                this.publish({
+                    ...this.snapshotValue,
+                    install: install.phase === "idle" ? install : { ...install, startedAt },
+                });
             };
             const killController = new AbortController();
             this.killController = killController;
@@ -410,6 +441,7 @@ export class DesktopDaemonController {
                         killable: false,
                         phase: "draining",
                         reason,
+                        startedAt,
                         version: selected,
                         waitingFor: [],
                         waitingPeak: 0,
@@ -476,7 +508,14 @@ export class DesktopDaemonController {
                             : this.snapshotValue,
                         error,
                     ),
-                    install: { failedAt: step, message, phase: "error", reason, version: selected },
+                    install: {
+                        failedAt: step,
+                        message,
+                        phase: "error",
+                        reason,
+                        startedAt,
+                        version: selected,
+                    },
                     operation: "idle",
                     updateAvailable:
                         installedVersion !== undefined && availableVersion !== undefined
@@ -489,6 +528,150 @@ export class DesktopDaemonController {
                 if (this.killController === killController) this.killController = undefined;
             }
         })();
+    }
+
+    /**
+     * Follows `happy-agent reload` run outside this app — from a terminal, or
+     * by an agent — through the `reload.json` it writes, and tells it on the
+     * same update card as a restart started here. Returns the function that
+     * stops following it.
+     */
+    reloadWatch(): () => void {
+        const stop = happyAgentReloadStatusWatch(happyAgentReloadStatusPath(this.paths), (status) =>
+            this.reloadApply(status),
+        );
+        return () => {
+            stop();
+            this.reloadAliveStop();
+        };
+    }
+
+    /**
+     * Puts one reload report on the update card, or leaves it off.
+     *
+     * A restart this app is running itself wins: its own report is the better
+     * one, and the reload is passed over for good. A running reload whose
+     * command has exited, or whose report stopped moving, has been abandoned:
+     * one already on the card ends there as failed, and one never shown is not
+     * shown at all. A finished reload is shown once, and not at all when it had
+     * finished long before this app first saw it.
+     */
+    private reloadApply(status: HappyAgentReloadStatus | undefined): void {
+        if (status === undefined) return;
+        const id = status.operationId;
+        const seen = this.reloadsSeen.get(id);
+        if (seen === "finished" || seen === "ignored") return;
+        const install = this.snapshotValue.install;
+        const ownBusy =
+            (install.phase !== "idle" && install.reason !== "reload") ||
+            this.snapshotValue.operation === "installing" ||
+            this.snapshotValue.operation === "upgrading";
+        if (ownBusy) {
+            this.reloadSeen(id, "ignored");
+            if (seen === "running") this.reloadAliveStop();
+            return;
+        }
+        const now = Date.now();
+        const base = {
+            reason: "reload" as const,
+            startedAt: status.startedAt,
+            version: status.version,
+        };
+        if (
+            status.phase === "draining" ||
+            status.phase === "stopping" ||
+            status.phase === "starting"
+        ) {
+            if (!processAlive(status.pid) || now - status.updatedAt > RELOAD_STALE_MS) {
+                this.reloadAliveStop();
+                if (seen !== "running") {
+                    this.reloadSeen(id, "ignored");
+                    return;
+                }
+                this.reloadSeen(id, "finished");
+                this.publish({
+                    ...this.snapshotValue,
+                    install: {
+                        ...base,
+                        failedAt: status.phase,
+                        message: "happy-agent reload stopped before it finished.",
+                        phase: "error",
+                    },
+                });
+                return;
+            }
+            this.reloadSeen(id, "running");
+            this.reloadRunning = status;
+            this.reloadAliveStart();
+            this.publish({
+                ...this.snapshotValue,
+                install:
+                    status.phase === "draining"
+                        ? {
+                              ...base,
+                              // Only the command that started a reload can
+                              // cut it short; this app cannot.
+                              killable: false,
+                              phase: "draining",
+                              waitingFor: status.waitingFor ?? [],
+                              waitingPeak: status.waitingPeak ?? 0,
+                          }
+                        : status.phase === "stopping"
+                          ? { ...base, killed: false, phase: "stopping" }
+                          : { ...base, phase: "starting" },
+            });
+            return;
+        }
+        this.reloadAliveStop();
+        const finishedAt = status.finishedAt ?? status.updatedAt;
+        if (seen !== "running" && now - finishedAt > RELOAD_FINISHED_FRESH_MS) {
+            this.reloadSeen(id, "ignored");
+            return;
+        }
+        this.reloadSeen(id, "finished");
+        if (status.phase === "failed") {
+            this.publish({
+                ...this.snapshotValue,
+                install: {
+                    ...base,
+                    failedAt: status.failedAt ?? "starting",
+                    message: status.message ?? "happy-agent reload failed.",
+                    phase: "error",
+                },
+            });
+            return;
+        }
+        // The daemon is back; the window is not talking to it yet. The card
+        // holds "Reconnecting" until it is, then says it is done.
+        const reconnecting: DesktopDaemonInstall = { ...base, finishedAt, phase: "reconnecting" };
+        this.publish({ ...this.snapshotValue, install: reconnecting });
+        void this.runtimeReadyAwait().then(() => {
+            if (this.snapshotValue.install !== reconnecting) return;
+            this.publish({ ...this.snapshotValue, install: { phase: "idle" } });
+        });
+    }
+
+    private reloadSeen(id: string, state: "running" | "finished" | "ignored"): void {
+        this.reloadsSeen.delete(id);
+        this.reloadsSeen.set(id, state);
+        while (this.reloadsSeen.size > RELOAD_SEEN_LIMIT)
+            this.reloadsSeen.delete(this.reloadsSeen.keys().next().value!);
+    }
+
+    /** Checks the reload on screen once a second, since an abandoned one writes nothing. */
+    private reloadAliveStart(): void {
+        if (this.reloadAliveTimer !== undefined) return;
+        this.reloadAliveTimer = setInterval(() => {
+            if (this.reloadRunning !== undefined) this.reloadApply(this.reloadRunning);
+        }, RELOAD_ALIVE_CHECK_MS);
+        this.reloadAliveTimer.unref?.();
+    }
+
+    private reloadAliveStop(): void {
+        this.reloadRunning = undefined;
+        if (this.reloadAliveTimer === undefined) return;
+        clearInterval(this.reloadAliveTimer);
+        this.reloadAliveTimer = undefined;
     }
 
     /**
@@ -921,4 +1104,14 @@ function failureProject(snapshot: DesktopDaemonSnapshot, error: unknown): Deskto
 
 function displayError(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+/** Whether a process is still running. One this app may not signal still is. */
+function processAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        return !(error instanceof Error && "code" in error && error.code === "ESRCH");
+    }
 }

@@ -1594,6 +1594,8 @@ void app
             if (window && !window.isDestroyed())
                 window.webContents.send(desktopIpc.daemonChanged, snapshot);
         });
+        // A `happy-agent reload` run outside the app is told on the same card.
+        daemonController.reloadWatch();
         const connector = localHappyAgentConnectorCreate({
             daemonBinary: daemonController,
             debug: desktopDebugLog,
