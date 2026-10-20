@@ -158,14 +158,6 @@ button.happy-agent-update-card__agent {
     text-overflow: ellipsis;
 }
 
-/* The name is what the reader looks for, so the status gives way first. */
-.happy-agent-update-card__agent-status {
-    flex: 0 1000 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
 .happy-agent-update-card__agent-go {
     flex: none;
     margin-left: 2px;

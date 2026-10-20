@@ -299,18 +299,14 @@ function DetailLine(props: {
                 </span>
             );
         case "agent": {
+            // Only the name is shown, so it gets the whole row; the stage is
+            // still read out to a screen reader.
+            const name = line.agent.name ?? "Agent";
             const status = STAGE_WORDS[line.agent.stage];
             const words = (
-                <>
-                    {line.agent.name === undefined ? null : (
-                        <span className="happy-agent-update-card__agent-name">
-                            {line.agent.name}
-                        </span>
-                    )}
-                    <span className="happy-agent-update-card__agent-status">
-                        {line.agent.name === undefined ? status : `· ${status}`}
-                    </span>
-                </>
+                <span className="happy-agent-update-card__agent-name" title={name}>
+                    {name}
+                </span>
             );
             return (
                 <span
@@ -319,7 +315,7 @@ function DetailLine(props: {
                 >
                     {line.agent.onSelect ? (
                         <button
-                            aria-label={`Open ${line.agent.name ?? "agent"} — ${status}`}
+                            aria-label={`Open ${name} — ${status}`}
                             className="happy-agent-update-card__agent"
                             data-happy-desktop-ui="agent-update-card-agent"
                             onClick={line.agent.onSelect}

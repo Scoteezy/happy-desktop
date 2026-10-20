@@ -80,7 +80,7 @@ const FAILED: Phase = {
 
 const PHASES: readonly Phase[] = [
     {
-        detail: "What is still running first: name · status, each opening its chat · Restart now below the list · the clock counts from the update's start",
+        detail: "What is still running first: each agent by name, opening its chat · Restart now below the list · the clock counts from the update's start",
         label: "Finishing work · 2 agents",
         restart: "available",
         view: {
