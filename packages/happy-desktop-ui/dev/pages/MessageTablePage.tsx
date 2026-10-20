@@ -11,9 +11,14 @@ export const componentNumber = "C-289";
 
 const cases: readonly { fixture: MarkdownTableFixture; label: string; detail: string }[] = [
     {
+        fixture: "agentComparison",
+        label: "Agent comparison",
+        detail: "A real reply: spaced code in the first column, long identifiers in the middle, the longest prose last",
+    },
+    {
         fixture: "fits",
         label: "Fits on one line per cell",
-        detail: "Columns at their one-line width, the leftover shared in proportion so the table fills the measure",
+        detail: "Every cell fits on one line, so the table keeps its natural width instead of stretching",
     },
     {
         fixture: "oneProseColumn",
@@ -23,12 +28,12 @@ const cases: readonly { fixture: MarkdownTableFixture; label: string; detail: st
     {
         fixture: "severalProseColumns",
         label: "Several prose columns",
-        detail: "Prose columns share the width by how much each wants beyond its widest word",
+        detail: "Prose columns grow to the same width above their floors, so none is left a narrow strip",
     },
     {
         fixture: "shortColumns",
         label: "Short ID and status columns",
-        detail: "Columns no wider than 140 px on one line keep that line; alignment is per column",
+        detail: "Columns narrower than the 136 px floor keep their one line; alignment is per column",
     },
     {
         fixture: "inlineFormatting",
@@ -43,7 +48,7 @@ const cases: readonly { fixture: MarkdownTableFixture; label: string; detail: st
     {
         fixture: "tooManyColumns",
         label: "Too many columns",
-        detail: "Every column at its widest word is still wider than the measure, so the table scrolls",
+        detail: "The column floors are wider than the measure, so the table scrolls at readable widths",
     },
     {
         fixture: "emptyCells",
@@ -53,7 +58,47 @@ const cases: readonly { fixture: MarkdownTableFixture; label: string; detail: st
     {
         fixture: "unbreakable",
         label: "Unbreakable tokens",
-        detail: "A column is never narrower than its widest word: long URLs scroll instead of splitting",
+        detail: "A word holds its column open only up to an equal share of the measure; longer URLs and words break",
+    },
+    {
+        fixture: "longCodeSpan",
+        label: "Long code identifier",
+        detail: "One unbroken identifier and one long code path beside a short notes column",
+    },
+    {
+        fixture: "keyValue",
+        label: "Key and value",
+        detail: "Short keys keep one line; the values take the rest of the measure",
+    },
+    {
+        fixture: "compactMatrix",
+        label: "Compact cells",
+        detail: "Marks and counts fit, so the columns share the leftover width in proportion",
+    },
+    {
+        fixture: "alignedFormatting",
+        label: "Alignment and inline formatting",
+        detail: "Left, centered, and right columns with bold, italic, links, code, and strikethrough",
+    },
+    {
+        fixture: "headerOnly",
+        label: "Header only",
+        detail: "A delimiter row with no body rows renders the header alone",
+    },
+    {
+        fixture: "oneRow",
+        label: "One column, one row",
+        detail: "A single cell fills the measure",
+    },
+    {
+        fixture: "longWords",
+        label: "Long paths and words",
+        detail: "A long path as text and as code, and long German and Russian words",
+    },
+    {
+        fixture: "tenColumns",
+        label: "Ten columns",
+        detail: "Ten columns with two prose columns at the end",
     },
 ];
 
@@ -93,23 +138,23 @@ export function MessageTablePage() {
                 >
                     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
                         {frame(
-                            760,
+                            860,
                             <Message
                                 agent
                                 author="Happy"
                                 body={markdownTableFixtures[item.fixture]}
                             />,
                         )}
-                        <DimensionRule label="760 px frame · agent body" />
+                        <DimensionRule label="860 px frame · 764 px body" />
                         {frame(
-                            440,
+                            500,
                             <Message
                                 agent
                                 author="Happy"
                                 body={markdownTableFixtures[item.fixture]}
                             />,
                         )}
-                        <DimensionRule label="440 px frame · agent body" />
+                        <DimensionRule label="500 px frame · 404 px body" />
                     </div>
                 </Specimen>
             ))}

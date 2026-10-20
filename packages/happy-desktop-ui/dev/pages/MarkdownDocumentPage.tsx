@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { MarkdownDocument } from "../../src/MarkdownDocument";
+import { markdownTableFixtures } from "../../src/fixtures/markdownTables";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
@@ -59,6 +60,21 @@ any width the panel is dragged to.
 3. Chat links reuse the same viewer
 `;
 
+const tables = [
+    "## Agent comparison",
+    markdownTableFixtures.agentComparison,
+    "## Long code identifier",
+    markdownTableFixtures.longCodeSpan,
+    "## Key and value",
+    markdownTableFixtures.keyValue,
+    "## Compact cells",
+    markdownTableFixtures.compactMatrix,
+    "## Long paths and words",
+    markdownTableFixtures.longWords,
+    "## Ten columns",
+    markdownTableFixtures.tenColumns,
+].join("\n\n");
+
 function frame(children: ReactNode, height: number, width: number) {
     return (
         <div
@@ -105,6 +121,20 @@ export function MarkdownDocumentPage() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
                     {frame(<MarkdownDocument text={short} />, 320, 360)}
                     <DimensionRule label="360 px wide · gutters hold at panel width" />
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="Every column keeps a readable width, long code and paths break inside their cell, short code keeps its line, and a table that cannot fit scrolls"
+                label="Tables"
+                number="03"
+                stage="surface"
+            >
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {frame(<MarkdownDocument text={tables} />, 2400, 880)}
+                    <DimensionRule label="880 px wide · 768 px measure" />
+                    {frame(<MarkdownDocument text={tables} />, 3000, 480)}
+                    <DimensionRule label="480 px wide · 416 px measure" />
                 </div>
             </Specimen>
         </ComponentPage>

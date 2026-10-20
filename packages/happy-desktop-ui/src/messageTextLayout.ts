@@ -61,12 +61,20 @@ const CODE_GAP = 12;
 const RULE_HEIGHT = 1;
 const TABLE_CELL_PADDING = 8;
 const TABLE_CELL_INLINE_PADDING = 24;
-/** A column no wider than this on one line (padding included) — an ID, a
- * status, a count — keeps that line while the wider prose columns wrap. */
-const TABLE_SHORT_COLUMN = 140;
+/** The narrowest a wrapping column gets (padding included): about 13
+ * characters of body copy, so no column collapses into a strip of single
+ * words. A table whose columns cannot all have this scrolls instead. */
+const TABLE_MIN_COLUMN = 136;
 /** A prose column's width (padding included) in a table that scrolls anyway:
  * about 28 characters of body copy per line. */
 const TABLE_READABLE_COLUMN = 240;
+/** The widest a single word holds a column open (padding included) in a
+ * table that scrolls anyway; a longer URL or identifier breaks. */
+const TABLE_SCROLL_WORD_COLUMN = 400;
+/** Inline code in a cell no wider than this — about 22 characters — keeps one
+ * line (`.happy-message__table-code-line`), so `agent = "claude"` never wraps at
+ * its spaces; longer code wraps like prose. */
+const TABLE_CODE_LINE = 185;
 /** `blockquote` — a 2px rule plus its 10px inset, taken off the measure. */
 const QUOTE_INSET = 12;
 /** `ul/ol` indent, and the extra leading between consecutive `li`. */
@@ -329,7 +337,13 @@ function runHeight(
  * item whose advance is its measured width and which carries its line-box
  * extents, so the line it lands on grows to fit it exactly as CSS does.
  */
-type MarkdownInlineItem = RichInlineItem & { math?: MathInlineBox };
+type MarkdownInlineItem = RichInlineItem & {
+    math?: MathInlineBox;
+    /** Inline code a table cell keeps on one line, which floors its column. */
+    keepsLine?: true;
+    /** Carries the next element's leading token in `extraWidth`. */
+    glued?: true;
+};
 /** Stand-in glyph for a formula item; its own advance is subtracted again. */
 const MATH_PLACEHOLDER = "x";
 function preparedRichItems(
@@ -446,6 +460,7 @@ function markdownInlineLeadingTokenAttach(
     )
         return text;
     previous.extraWidth = (previous.extraWidth ?? 0) + tokenWidth;
+    previous.glued = true;
     return text.slice(match[0].length);
 }
 /** Split one overlong decorated segment. Pretext chooses the grapheme
@@ -543,6 +558,7 @@ function markdownInlineItemsAppend(
     bindDecoratedPunctuation: boolean,
     fragmentLong = false,
     atomic = false,
+    tableCell = false,
 ): void {
     const current = () => runs[runs.length - 1]!;
     if (node.type === "text") {
@@ -616,6 +632,16 @@ function markdownInlineItemsAppend(
         const openingWidth =
             opening && previous ? naturalTextWidth(opening, previous.font, cache) : 0;
         if (opening && previous) previous.text = previous.text.slice(0, -opening.length);
+        if (tableCell && markdownTableCodeLineKeeps(node.value, cache)) {
+            current().push({
+                break: "never",
+                extraWidth: 10 + openingWidth,
+                font,
+                keepsLine: true,
+                text,
+            });
+            return;
+        }
         const textWidth = naturalTextWidth(text, font, cache);
         /* Gecko reserves sliced code padding while breaking continuation lines
            too: the closing 5px on every line the code fragments onto, the
@@ -696,6 +722,8 @@ function markdownInlineItemsAppend(
                 bindDecoratedPunctuation,
                 fragmentLong,
                 atomic,
+                /* `MathFormula` paints it, not the cell's code renderer. */
+                false,
             );
             return;
         }
@@ -753,6 +781,7 @@ function markdownInlineItemsAppend(
             bindDecoratedPunctuation,
             nestedFragmentLong,
             nestedAtomic,
+            tableCell,
         );
 }
 function markdownTrailingInlineApply(
@@ -821,6 +850,7 @@ function markdownInlineRuns(
     trailingExtraWidth: number,
     task: boolean,
     suffixText: string,
+    tableCell = false,
 ): readonly MarkdownInlineItem[][] {
     const baseFont = markdownInlineFont(style);
     const runs: MarkdownInlineItem[][] = [[]];
@@ -845,6 +875,8 @@ function markdownInlineRuns(
             measure,
             suffixText.length === 0,
             false,
+            false,
+            tableCell,
         );
     }
     const lastChild = children.at(-1);
@@ -870,6 +902,7 @@ function markdownInlineHeight(
     trailingExtraWidth = 0,
     task = false,
     suffixText = "",
+    tableCell = false,
 ): number {
     if (
         !markdownInlineHasLineBox(children) &&
@@ -887,6 +920,7 @@ function markdownInlineHeight(
         trailingExtraWidth,
         task,
         suffixText,
+        tableCell,
     );
     const height = runs.reduce(
         (total, items) => total + richItemsHeight(items, lineHeight, measure, cache),
@@ -1284,6 +1318,10 @@ type MarkdownTableCellExtent = {
     readonly min: number;
     /** Widest hard-broken run with no wrapping at all. */
     readonly max: number;
+    /** Widest word that must not break: short code keeping its line, or a
+     * word spanning several inline elements (`[label](` before a link), whose
+     * emergency break the model does not predict. A floor for its column. */
+    readonly hard: number;
     /** Line boxes the cell paints at any measure that fits `max`. */
     readonly lines: number;
 };
@@ -1396,8 +1434,18 @@ function tableCellLines(
     if (hit !== undefined) return hit;
     /* Lines in units of the body line: a formula can make one taller. */
     const lines =
-        markdownInlineHeight(cell.children, style, PARAGRAPH_LINE, content, cache, footnotes) /
-        PARAGRAPH_LINE;
+        markdownInlineHeight(
+            cell.children,
+            style,
+            PARAGRAPH_LINE,
+            content,
+            cache,
+            footnotes,
+            0,
+            false,
+            "",
+            true,
+        ) / PARAGRAPH_LINE;
     if (entry.lines.size >= TABLE_CELL_WIDTHS) entry.lines.delete(entry.lines.keys().next().value!);
     entry.lines.set(content, lines);
     return lines;
@@ -1408,7 +1456,7 @@ function markdownTableCellExtent(
     cache: MessageTextLayoutCache,
     footnotes: MarkdownFootnotes,
 ): MarkdownTableCellExtent {
-    if (!markdownInlineHasLineBox(cell.children)) return { min: 0, max: 0, lines: 0 };
+    if (!markdownInlineHasLineBox(cell.children)) return { min: 0, max: 0, hard: 0, lines: 0 };
     /* An unbounded measure never fragments a token, so these runs describe
        the cell's text alone. */
     const runs = markdownInlineRuns(
@@ -1420,9 +1468,11 @@ function markdownTableCellExtent(
         0,
         false,
         "",
+        true,
     );
     let min = 0;
     let max = 0;
+    let hard = 0;
     for (const items of runs) {
         if (items.length === 0) continue;
         max = Math.max(max, richItemsNaturalWidth(items, cache));
@@ -1431,21 +1481,43 @@ function markdownTableCellExtent(
            boundary. A column at least this wide never needs an emergency break,
            which is where engines disagree most about where a word splits. */
         let word = 0;
+        let wordKeeps = false;
+        let wordParts = 0;
+        let wordItem: MarkdownInlineItem | undefined;
+        const wordAdd = (item: MarkdownInlineItem, width: number) => {
+            /* Fragments of one code span break between themselves like prose,
+               and the code fragment model owns the brackets glued to it. */
+            if (
+                item !== wordItem &&
+                !(wordItem?.font === INLINE_CODE_FONT && item.font === INLINE_CODE_FONT)
+            )
+                wordParts += 1;
+            if (item.glued && item.font !== INLINE_CODE_FONT) wordParts += 1;
+            wordItem = item;
+            word += width;
+        };
         const wordEnd = () => {
             min = Math.max(min, word);
+            if (wordKeeps || wordParts > 1) hard = Math.max(hard, word);
             word = 0;
+            wordKeeps = false;
+            wordParts = 0;
+            wordItem = undefined;
         };
         for (const item of items) {
             if (/^\s/u.test(item.text)) wordEnd();
             if (item.break === "never") {
+                if (item.keepsLine) wordKeeps = true;
                 if (item.text.trim().length > 0)
-                    word +=
+                    wordAdd(
+                        item,
                         naturalTextWidth(item.text, item.font, cache) +
-                        /* Gecko reserves code padding on every line a code span
+                            /* Gecko reserves code padding on every line a code span
                            fragments onto, so each of its words needs both sides. */
-                        (GECKO_INLINE_SLICE && item.font === INLINE_CODE_FONT
-                            ? 10
-                            : (item.extraWidth ?? 0));
+                            (GECKO_INLINE_SLICE && item.font === INLINE_CODE_FONT && !item.keepsLine
+                                ? 10
+                                : (item.extraWidth ?? 0)),
+                    );
             } else {
                 const prepared = prepareWithSegments(item.text, item.font, {
                     whiteSpace: "normal",
@@ -1455,10 +1527,11 @@ function markdownTableCellExtent(
                     if (kind === "text" || kind === "glue") {
                         /* Pretext splits one item's text exactly where it may break. */
                         if (kind === "text" && previous === "text") wordEnd();
-                        word += prepared.widths[index]!;
+                        wordAdd(item, prepared.widths[index]!);
                     } else wordEnd();
                     previous = kind;
                 }
+                if (item.glued && item.font !== INLINE_CODE_FONT) wordParts += 1;
                 word += item.extraWidth ?? 0;
             }
             if (/\s$/u.test(item.text)) wordEnd();
@@ -1474,69 +1547,78 @@ function markdownTableCellExtent(
                 : 1),
         0,
     );
-    return { min, max, lines };
-}
-/** Adds `extra` whole pixels to `base` in proportion to `weights`, handing the
- * rounding remainder to the largest fractions so the sum stays exact. */
-function tableWidthsDistribute(
-    base: readonly number[],
-    weights: readonly number[],
-    extra: number,
-): number[] {
-    const total = weights.reduce((sum, weight) => sum + weight, 0);
-    const shares = base.map((_, index) =>
-        total > 0 ? (extra * weights[index]!) / total : extra / base.length,
-    );
-    const widths = base.map((width, index) => width + Math.floor(shares[index]!));
-    let remainder = extra - shares.reduce((sum, share) => sum + Math.floor(share), 0);
-    const order = shares
-        .map((share, index) => ({ fraction: share - Math.floor(share), index }))
-        .sort((a, b) => b.fraction - a.fraction || a.index - b.index);
-    for (const { index } of order) {
-        if (remainder <= 0) break;
-        widths[index]! += 1;
-        remainder -= 1;
-    }
-    return widths;
+    return { min, max, hard, lines };
 }
 /**
- * Column widths at one whole-pixel measure. A table that fits on one line per
- * cell fills the measure in proportion to its columns. Otherwise short columns
- * keep their single line and every wider column shares what is left in
- * proportion to how much it wants beyond its widest word. Only when that is
- * still too wide do the short columns give way too. When even every column at
- * its widest word is too wide, the table scrolls at readable widths.
+ * Column widths at one whole-pixel measure. A table whose cells all fit on
+ * one line keeps that natural width rather than stretching. Otherwise every
+ * column gets a floor: its one-line width when that is narrow, else at least
+ * `TABLE_MIN_COLUMN` and its widest word, but a word holds its column open
+ * only up to an equal share of the measure — a longer identifier or URL
+ * breaks the way it does in a paragraph instead of starving its neighbours.
+ * Only a word that must not break (`hard`) floors its column at full width.
+ * Above the floors, every column that wants more gets the same width (a
+ * water level), so the last column is not left with whatever remains. When
+ * even the floors are too wide, the table scrolls at readable widths.
  */
 function markdownTableColumnWidths(
     min: readonly number[],
     max: readonly number[],
+    hard: readonly number[],
     target: number,
 ): number[] {
     const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
-    const maxTotal = sum(max);
-    if (maxTotal <= target) return tableWidthsDistribute(max, max, target - maxTotal);
-    const short = max.map((width) => width <= TABLE_SHORT_COLUMN);
-    const pinned = max.map((width, index) => (short[index] ? width : min[index]!));
-    const pinnedTotal = sum(pinned);
-    if (pinnedTotal <= target)
-        return tableWidthsDistribute(
-            pinned,
-            max.map((width, index) => (short[index] ? 0 : width - min[index]!)),
-            target - pinnedTotal,
-        );
-    const minTotal = sum(min);
-    if (minTotal <= target)
-        return tableWidthsDistribute(
-            min,
-            max.map((width, index) => (short[index] ? width - min[index]! : 0)),
-            target - minTotal,
-        );
-    /* The table scrolls whatever the widths. Short columns keep their line and
-       prose columns get a readable measure instead of their widest word, which
-       would set prose one or two words to a line. */
-    return max.map((width, index) =>
-        short[index] ? width : Math.min(width, Math.max(min[index]!, TABLE_READABLE_COLUMN)),
+    if (sum(max) <= target) return [...max];
+    const share = Math.floor(target / Math.max(1, max.length));
+    const floor = max.map((width, index) =>
+        Math.min(width, Math.max(hard[index]!, TABLE_MIN_COLUMN, Math.min(min[index]!, share))),
     );
+    if (sum(floor) > target)
+        return max.map((width, index) =>
+            Math.max(
+                floor[index]!,
+                Math.min(
+                    width,
+                    Math.max(
+                        hard[index]!,
+                        TABLE_READABLE_COLUMN,
+                        Math.min(min[index]!, TABLE_SCROLL_WORD_COLUMN),
+                    ),
+                ),
+            ),
+        );
+    const at = (level: number) =>
+        max.map((width, index) => Math.min(width, Math.max(floor[index]!, level)));
+    /* The highest whole-pixel level that fits; the pixels it leaves go one
+       each to the columns still growing at that level, first to last. */
+    let low = 0;
+    let high = Math.max(...max);
+    while (low < high) {
+        const level = Math.ceil((low + high) / 2);
+        if (sum(at(level)) <= target) low = level;
+        else high = level - 1;
+    }
+    const widths = at(low);
+    let remainder = target - sum(widths);
+    for (const [index, width] of widths.entries()) {
+        if (remainder <= 0) break;
+        if (width === low && width < max[index]!) {
+            widths[index] = width + 1;
+            remainder -= 1;
+        }
+    }
+    return widths;
+}
+function markdownTableCodeLineKeeps(value: string, cache: MessageTextLayoutCache): boolean {
+    return (
+        naturalTextWidth(value.replace(/\r?\n|\r/gu, " "), INLINE_CODE_FONT, cache) <=
+        TABLE_CODE_LINE
+    );
+}
+/** Whether inline code in a table cell keeps one line; the renderer marks it
+ * with the same rule the column solve floors its column by. */
+export function markdownTableCodeKeepsLine(value: string): boolean {
+    return markdownTableCodeLineKeeps(value, cacheReady(sharedCache));
 }
 /** Lays one GFM table out at `measure`: shared by the row-height model and the renderer. */
 function markdownTableLayout(
@@ -1558,20 +1640,28 @@ function markdownTableLayout(
     });
     const min = Array.from({ length: columns }, () => 0);
     const max = Array.from({ length: columns }, () => 0);
+    const hard = Array.from({ length: columns }, () => 0);
     for (const row of rows)
         for (const [index, { entry }] of row.entries()) {
             min[index] = Math.max(min[index]!, entry.extent.min);
             max[index] = Math.max(max[index]!, entry.extent.max);
+            hard[index] = Math.max(hard[index]!, entry.extent.hard);
         }
     /* Whole pixels on both edges: the `<col>` widths the renderer writes are
        integers, and so is the scrollport width this measure stands for. */
     for (let index = 0; index < columns; index += 1) {
         max[index] = Math.ceil(max[index]!) + TABLE_CELL_INLINE_PADDING;
         min[index] = Math.min(max[index]!, Math.ceil(min[index]!) + TABLE_CELL_INLINE_PADDING);
+        if (hard[index]! > 0)
+            hard[index] = Math.min(
+                max[index]!,
+                Math.ceil(hard[index]!) + TABLE_CELL_INLINE_PADDING,
+            );
     }
     const columnWidths = markdownTableColumnWidths(
         min,
         max,
+        hard,
         Math.max(0, Math.floor(measure + INLINE_MEASURE_EPSILON)),
     );
     const rowLines = rows.map((row) =>

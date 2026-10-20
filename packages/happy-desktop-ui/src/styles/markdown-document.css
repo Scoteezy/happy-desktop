@@ -277,12 +277,33 @@
     overflow-y: hidden;
 }
 
+/* The browser lays these tables out automatically, so a cell's narrowest
+   unbreakable run sets its column's minimum. A short cell keeps its line
+   (`--line`). A longer one takes a readable floor and breaks anywhere
+   (`--wraps`), so a long word, path, or identifier never holds its column
+   open and leaves the prose beside it a strip of single words. Short code
+   keeps its line (`markdownTableCodeKeepsLine`). A table whose floors are
+   wider than the measure scrolls. */
 .happy-markdown-document__body th,
 .happy-markdown-document__body td {
     padding: 7px 12px;
     border: 1px solid var(--divider);
     text-align: left;
     vertical-align: top;
+}
+
+.happy-markdown-document__body .happy-markdown-document__cell--line {
+    white-space: nowrap;
+}
+
+.happy-markdown-document__body .happy-markdown-document__cell--wraps {
+    box-sizing: border-box;
+    min-width: 128px;
+    overflow-wrap: anywhere;
+}
+
+.happy-markdown-document__body .happy-markdown-document__table-code-line {
+    white-space: nowrap;
 }
 
 .happy-markdown-document__body th {

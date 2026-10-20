@@ -663,7 +663,8 @@
 /* `markdownTableLayout` solves whole-pixel column widths from the same text
    model that sizes the row, and the table renders exactly those `<col>`
    widths: a fixed layout, no stretching to the measure, and cells that wrap
-   the way body paragraphs do (`overflow-wrap: break-word` is inherited). */
+   the way body paragraphs do (`overflow-wrap: break-word` is inherited), so
+   a word longer than its column breaks instead of widening it. */
 .happy-message__body--markdown table[data-layout="solved"] {
     min-width: 0;
     table-layout: fixed;
@@ -783,6 +784,12 @@
     border-radius: 4px;
     padding: 0 5px;
     color: var(--text);
+}
+
+/* Short code in a table cell keeps one line; the column solve floors its
+   column at that line (`markdownTableCodeKeepsLine`). */
+.happy-message__body--markdown .happy-message__table-code-line {
+    white-space: nowrap;
 }
 
 /* Fenced code: a neutral raised card. The <pre> is the edge-to-edge scrollport

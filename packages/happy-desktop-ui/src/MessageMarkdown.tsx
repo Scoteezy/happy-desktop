@@ -28,6 +28,7 @@ import {
     type MessageReferences,
 } from "./messageReferences";
 import {
+    markdownTableCodeKeepsLine,
     markdownTableLayoutAt,
     messageTextLayoutFontGenerationSubscribe,
 } from "./messageTextLayout";
@@ -183,6 +184,8 @@ const MarkdownGenerationStatusContext = createContext<MessageGenerationStatus | 
 );
 /** The Markdown being rendered; a table re-reads its own AST from it by offset. */
 const MarkdownSourceContext = createContext("");
+/** Whether the phrasing being rendered sits in a table cell. */
+const MarkdownTableContext = createContext(false);
 type MarkdownImageProps = ComponentPropsWithoutRef<"img"> & ExtraProps;
 /**
  * A Markdown image is rendered as a safe labelled link, never an `<img>`: an
@@ -542,9 +545,34 @@ const MarkdownTable = ({
                         <col key={index} />
                     ))}
                 </colgroup>
-                {children}
+                <MarkdownTableContext.Provider value>{children}</MarkdownTableContext.Provider>
             </table>
         </ScrollArea>
+    );
+};
+/** Short inline code in a table cell keeps one line, by the same rule the
+ * column solve floors its column with, so `agent = "claude"` never wraps at
+ * its spaces. Longer code wraps like the prose around it. */
+const MarkdownCode = ({
+    children,
+    className,
+    node,
+    ...props
+}: ComponentPropsWithoutRef<"code"> & ExtraProps) => {
+    const inTable = useContext(MarkdownTableContext);
+    const text = node?.children.length === 1 ? node.children[0] : undefined;
+    const keepsLine = inTable && text?.type === "text" && markdownTableCodeKeepsLine(text.value);
+    return (
+        <code
+            {...props}
+            className={
+                keepsLine
+                    ? [className, "happy-message__table-code-line"].filter(Boolean).join(" ")
+                    : className
+            }
+        >
+            {children}
+        </code>
     );
 };
 /** Footnote references stay in normal inline flow so their AST label uses the
@@ -570,6 +598,7 @@ const headingOverride = (
 };
 const markdownComponents: Components = {
     a: MarkdownLink,
+    code: MarkdownCode,
     div: MarkdownDiv,
     img: MarkdownImage,
     p: MarkdownParagraph,

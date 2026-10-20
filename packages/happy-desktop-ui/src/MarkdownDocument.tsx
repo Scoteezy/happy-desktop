@@ -26,6 +26,7 @@ import {
 } from "./fileReference";
 import { markdownFence, markdownFenceIsMermaid } from "./markdownFence";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { markdownTableCodeKeepsLine } from "./messageTextLayout";
 import { ScrollArea } from "./Scrollbar";
 
 // react-markdown reparses the document when this plugin list changes identity.
@@ -430,6 +431,9 @@ const DocumentPre = ({
     );
 };
 
+/** Whether the phrasing being rendered sits in a table cell. */
+const DocumentTableContext = createContext(false);
+
 const DocumentTable = ({
     children,
     node: _node,
@@ -440,9 +444,79 @@ const DocumentTable = ({
         className="happy-markdown-document__table-scroll"
         viewportClassName="happy-markdown-document__table-scroll-viewport"
     >
-        <table {...props}>{children}</table>
+        <table {...props}>
+            <DocumentTableContext.Provider value>{children}</DocumentTableContext.Provider>
+        </table>
     </ScrollArea>
 );
+
+/** Characters of body copy a column floor holds on one line. */
+const DOCUMENT_TABLE_FLOOR_CHARACTERS = 14;
+
+type DocumentHastNode = NonNullable<ExtraProps["node"]>["children"][number];
+
+function documentCellText(node: DocumentHastNode | undefined): string {
+    if (!node) return "";
+    if (node.type === "text") return node.value;
+    return "children" in node ? node.children.map(documentCellText).join("") : "";
+}
+
+/** A cell no longer than the column floor holds on one line — a mark, a
+ * count, a status — keeps that line, so a compact table stays compact. A
+ * longer cell takes the floor and breaks anywhere, so its column never
+ * collapses into a strip of single words and a long token never holds it
+ * open. */
+const documentCell = (tag: "td" | "th") => {
+    const DocumentCell = ({
+        children,
+        className,
+        node,
+        ...props
+    }: ComponentPropsWithoutRef<"td"> & ExtraProps) =>
+        createElement(
+            tag,
+            {
+                ...props,
+                className: [
+                    className,
+                    documentCellText(node).trim().length > DOCUMENT_TABLE_FLOOR_CHARACTERS
+                        ? "happy-markdown-document__cell--wraps"
+                        : "happy-markdown-document__cell--line",
+                ]
+                    .filter(Boolean)
+                    .join(" "),
+            },
+            children,
+        );
+    return DocumentCell as NonNullable<Components[typeof tag]>;
+};
+
+/** Short inline code in a table cell keeps one line, by the same rule chat
+ * tables use, so `agent = "claude"` never wraps at its spaces. */
+const DocumentCode = ({
+    children,
+    className,
+    node,
+    ...props
+}: ComponentPropsWithoutRef<"code"> & ExtraProps) => {
+    const inTable = useContext(DocumentTableContext);
+    const text = node?.children.length === 1 ? node.children[0] : undefined;
+    const keepsLine = inTable && text?.type === "text" && markdownTableCodeKeepsLine(text.value);
+    return (
+        <code
+            {...props}
+            className={
+                keepsLine
+                    ? [className, "happy-markdown-document__table-code-line"]
+                          .filter(Boolean)
+                          .join(" ")
+                    : className
+            }
+        >
+            {children}
+        </code>
+    );
+};
 
 /**
  * Headings render with no generated `id`. A viewer shows one document at a
@@ -459,6 +533,9 @@ const headingOverride = (
 
 const documentComponents: Components = {
     a: DocumentLink,
+    code: DocumentCode,
+    td: documentCell("td"),
+    th: documentCell("th"),
     img: DocumentImage,
     pre: DocumentPre,
     table: DocumentTable,

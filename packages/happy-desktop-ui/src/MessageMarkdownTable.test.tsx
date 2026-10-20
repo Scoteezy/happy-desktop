@@ -86,10 +86,27 @@ for (const fixture of fixtures) {
                 source,
                 `${fixture} at ${String(widths[index])}px`,
             );
-            if ((fixture === "fits" && widths[index]! >= 520) || fixture === "oneProseColumn")
-                expect(layout.width).toBe(Math.floor(viewport.getBoundingClientRect().width));
+            const measure = Math.floor(viewport.getBoundingClientRect().width);
+            if (fixture === "oneProseColumn" && measure >= 400) expect(layout.width).toBe(measure);
+            /* A table whose cells all fit on one line keeps its natural width. */
+            if ((fixture === "fits" || fixture === "compactMatrix") && measure >= 500)
+                expect(layout.width).toBeLessThan(measure);
             if (fixture === "tooManyColumns" && widths[index]! <= 680)
                 expect(viewport.scrollWidth).toBeGreaterThan(viewport.clientWidth);
+            /* Long identifiers break instead of pushing the table into a
+               scroll, and no wrapping column collapses into a strip. */
+            if ((fixture === "agentComparison" || fixture === "longCodeSpan") && measure >= 760) {
+                expect(layout.width).toBe(measure);
+                expect(Math.min(...layout.columnWidths)).toBeGreaterThanOrEqual(136);
+            }
+            for (const code of body.querySelectorAll("td code, th code")) {
+                const keepsLine = code.classList.contains("happy-message__table-code-line");
+                expect(keepsLine, code.textContent ?? "").toBe(
+                    (code.textContent ?? "").length <= 22,
+                );
+                if (keepsLine)
+                    expect(code.getClientRects(), code.textContent ?? "").toHaveLength(1);
+            }
         }
         if (fixture === "oneProseColumn" || fixture === "severalProseColumns") {
             const rows = [...bodies[0]!.querySelectorAll("tr")];

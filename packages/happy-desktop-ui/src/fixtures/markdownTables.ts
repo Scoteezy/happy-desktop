@@ -65,6 +65,61 @@ export const markdownTableFixtures = {
         "| https://example.com/a/really/long/path/without/any/spaces/that/is/wider/than/its/column/on/every/measure | Broken anywhere, like body paragraphs |",
         "| Supercalifragilisticexpialidociouslyunbreakablewordthatkeepsgoing | Same rule for a long word |",
     ].join("\n"),
+    /* A real agent reply: code with spaces in a narrow first column, unbroken
+       identifiers in the middle, and the longest prose in the last column. */
+    agentComparison: [
+        "| Config today | What runs | Who launches it | Whose agent loop |",
+        "|---|---|---|---|",
+        "| `type = \"claude\"` (existing) | Claude Agent SDK, using Happy's bundled Claude Code binary | The SDK | **Happy's**: Claude's own tools and settings are switched off, and Happy's prompt and tools are used |",
+        '| `acp` + `agent = "claude"` (new) | **The same SDK, version and binary** (`resolveClaudeCodeExecutablePath()`) | The SDK. We only put the process in its own group so stop can kill its commands. `launch: {command: "claude"}` is leftover and only passes env vars | **Claude Code\'s**: its own prompt, tools, settings and sub-agents, with Happy\'s tools added over MCP |',
+        '| `type = "codex"` (existing) | Responses API calls with Codex credentials, no Codex binary | — | Happy\'s |',
+        '| `acp` + `agent = "codex"` (new) | `codex app-server`, driven by our own hand-typed JSON-RPC client | **By hand**: `npx -y @openai/codex@0.160.1 app-server` | Codex\'s |',
+        '| `acp` + `agent = "antigravity"` | Community ACP adapter, which drives `agy` | By hand: `npx -y antigravity-acp@1.2.0` (needs Bun) | Antigravity\'s |',
+    ].join("\n"),
+    longCodeSpan: [
+        "| Symbol | Where it lives | Notes |",
+        "|---|---|---|",
+        "| `resolveClaudeCodeExecutablePathFromBundledRuntimeDirectory()` | `packages/happy-agent/sources/runtime/claude/executable.ts` | Called once per session start. |",
+        "| `id` | `index.ts` | Short. |",
+    ].join("\n"),
+    keyValue: [
+        "| Key | Value |",
+        "|---|---|",
+        "| Model | Opus 5.5 with a one-million-token context window, routed through the shared provider account |",
+        "| Workspace | `/var/lib/happy-agent/happy/workspaces/happy-desktop/markdown-table-layout` |",
+        "| Status | Running |",
+        "| Started | 2026-10-20 09:41 |",
+    ].join("\n"),
+    compactMatrix: [
+        "| Engine | macOS | Linux | Windows | Tests | Retina |",
+        "|---|:-:|:-:|:-:|--:|:-:|",
+        "| Chromium | ✓ | ✓ | ✓ | 1 204 | ✓ |",
+        "| Firefox | ✓ | ✓ | — | 1 198 | ✓ |",
+        "| WebKit | ✓ | — | — | 1 187 | — |",
+    ].join("\n"),
+    alignedFormatting: [
+        "| Left | Center | Right |",
+        "|:---|:---:|---:|",
+        "| **Bold** label | [Release notes](https://example.com/releases/0.0.84) | `1.25 s` |",
+        "| *Italic* and `code` | ~~Removed~~ kept | **42** |",
+        "| A longer left cell that has to wrap onto a second line somewhere | Centered | 3 |",
+    ].join("\n"),
+    headerOnly: ["| Column | Another column | Third |", "|---|---|---|"].join("\n"),
+    oneRow: ["| Result |", "|---|", "| Everything passed. |"].join("\n"),
+    longWords: [
+        "| Kind | Text |",
+        "|---|---|",
+        "| Path | /var/lib/happy-agent/.config/happy-agent/credentials/bulka_happy_codex.json |",
+        "| Code path | `/var/lib/happy-agent/.config/happy-agent/credentials/bulka_happy_codex.json` |",
+        "| German | Rindfleischetikettierungsüberwachungsaufgabenübertragungsgesetz |",
+        "| Russian | Превысокомногорассмотрительствующий человек |",
+    ].join("\n"),
+    tenColumns: [
+        "| Run | Branch | Commit | Author | Started | Duration | Build | Unit | Browser | Result |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+        "| 812 | `main` | `356c1d48` | Kirill | 09:41 | 6 min 12 s | passed | passed | passed with two retried flaky screenshots | Shipped to preview |",
+        "| 813 | `worktree/markdown-table-layout` | `c6abc66c` | Happy | 10:02 | 4 min 55 s | passed | failed | skipped | Waiting for a fix to the table width solver |",
+    ].join("\n"),
 } as const;
 
 export type MarkdownTableFixture = keyof typeof markdownTableFixtures;
