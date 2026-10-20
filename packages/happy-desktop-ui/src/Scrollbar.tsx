@@ -437,7 +437,11 @@ export function scrollbarControllerCreate(axesValue: ScrollbarAxes): ScrollbarCo
                 track.removeEventListener("lostpointercapture", lost);
             });
         }
-        update();
+        /* No synchronous `update()`: connecting happens in React's commit, and
+           reading scroll extents there forces a layout per scrollport, which a
+           transcript mounting many code blocks and tables pays once each. The
+           observer's initial notification runs it after the frame's layout,
+           before paint, for every scrollport together. */
 
         disconnect = () => {
             resize.disconnect();
