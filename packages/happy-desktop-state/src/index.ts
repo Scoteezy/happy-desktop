@@ -30,6 +30,7 @@ export * from "./onboarding/welcomeStore.js";
 export * from "./onboarding/happyMobileOnboardingStore.js";
 export * from "./happyAgent/happyAgentChatStore.js";
 export * from "./happyAgent/happyAgentClient.js";
+export * from "./happyAgent/happyAgentConversationRetention.js";
 export * from "./happyAgent/happyAgentClock.js";
 export * from "./happyAgent/happyAgentConnection.js";
 export * from "./happyAgent/happyAgentConnectionsStore.js";

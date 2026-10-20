@@ -44,6 +44,12 @@ import type {
 } from "./happyAgentClient.js";
 import type { HappyAgentRecentTabMemory } from "./happyAgentWorkspaceMemory.js";
 import {
+    happyAgentConversationRetentionNormalize,
+    type HappyAgentConversationRetention,
+    type HappyAgentRetainedConversationsSnapshot,
+    type HappyAgentRetainedConversationsStore,
+} from "./happyAgentConversationRetention.js";
+import {
     HAPPY_AGENT_VIEW_PREFERENCES_EMPTY,
     happyAgentViewPreferencesParse,
     happyAgentViewPreferencesTiersUpdate,
@@ -1403,6 +1409,13 @@ export interface HappyAgentWorkspaceDeps {
      * window and no longer, which is what Blueprint and tests want.
      */
     readonly viewPreferences?: HappyAgentViewPreferencesPersistence;
+    /**
+     * How many of the conversations just left stay materialized for the window
+     * to keep their views, and how much those views may hold; see
+     * `happyAgentConversationRetentionFor`. Omitted keeps none, releasing each
+     * conversation the moment it is left.
+     */
+    readonly conversationRetention?: HappyAgentConversationRetention;
 }
 
 export interface HappyAgentWorkspaceNewChatInput {
@@ -1470,6 +1483,19 @@ export interface HappyAgentWorkspaceStore {
      * conversation read.
      */
     conversationOpen(conversationId: HappyAgentSessionId, groupId?: HappyAgentGroupId): void;
+    /**
+     * The conversations left most recently that are still materialized, so a
+     * window can keep their views mounted out of sight and show one again at
+     * once. Opening one takes it back without reading anything; the
+     * workspace's `conversationRetention` bounds how many there are.
+     */
+    readonly conversationsRetained: HappyAgentRetainedConversationsStore;
+    /**
+     * Reports how much one conversation's view holds while it is out of sight,
+     * in the unit `conversationRetention.size` is given in. Kept views that no
+     * longer fit together are released, the least recently left first.
+     */
+    conversationViewSizeUpdate(conversationId: HappyAgentSessionId, size: number): void;
     /**
      * The reader is likely to open this conversation next, such as by pointing at its row: load
      * it ahead so that opening it shows it at once. Only a hint; nothing visible changes.
@@ -2788,6 +2814,8 @@ export function happyAgentWorkspaceStoreCreate(
 
     const errorAssistanceProject = (
         chat: HappyAgentChatSnapshot,
+        /** What the projection replaces, kept when nothing in it moved. */
+        previous: readonly ConversationErrorAssistanceEntry[],
     ): readonly ConversationErrorAssistanceEntry[] => {
         const chief = list.get().bots.find((bot) => bot.systemKey === "chief_of_staff");
         const attempts = errorAssistanceAttempts.get(chat.sessionId);
@@ -2815,10 +2843,6 @@ export function happyAgentWorkspaceStoreCreate(
                           : (attempt ?? { status: "ready" }),
             });
         }
-        const previous =
-            conversation.type === "ready"
-                ? conversation.value.errorAssistance
-                : NO_ERROR_ASSISTANCE;
         return projected.length === previous.length &&
             projected.every((entry, index) => {
                 const old = previous[index]!;
@@ -2839,6 +2863,8 @@ export function happyAgentWorkspaceStoreCreate(
         draft: ComposerSnapshot,
         /** Stands in only until this session states its own; see `recompute`. */
         pendingMenus: HappyAgentMenusSnapshot | undefined,
+        /** The snapshot this one replaces, whose unchanged parts it keeps. */
+        previous: HappyAgentConversationSnapshot | undefined,
     ): HappyAgentConversationSnapshot => {
         const activityAvailable =
             chat.goal !== undefined ||
@@ -2852,7 +2878,10 @@ export function happyAgentWorkspaceStoreCreate(
             ...(chat.title ? { title: chat.title } : {}),
             ...(chat.cwd ? { subtitle: chat.cwd } : {}),
             entries: chat.entries,
-            errorAssistance: errorAssistanceProject(chat),
+            errorAssistance: errorAssistanceProject(
+                chat,
+                previous?.errorAssistance ?? NO_ERROR_ASSISTANCE,
+            ),
             composer: draft,
             running: chat.runStatus === "running",
             workingPhase: chat.workingPhase,
@@ -3027,7 +3056,12 @@ export function happyAgentWorkspaceStoreCreate(
             const pendingMenus =
                 conversationDelegated || models.type !== "ready" ? undefined : models.menus;
             const next = chat
-                ? conversationProject(chat, draft, pendingMenus)
+                ? conversationProject(
+                      chat,
+                      draft,
+                      pendingMenus,
+                      conversation.type === "ready" ? conversation.value : undefined,
+                  )
                 : conversationAcquiring(
                       openId,
                       draft,
@@ -4554,19 +4588,149 @@ export function happyAgentWorkspaceStoreCreate(
         return chatArrival ? chatArrival.then(run) : noOpenConversation();
     };
 
-    const releaseConversation = (): void => {
+    /**
+     * Lets go of the open conversation. Leaving one for another — rather than
+     * stopping, or failing it — keeps its lease among the retained ones when it
+     * is still listed, so returning to it is immediate.
+     */
+    const releaseConversation = (leaving?: HappyAgentSessionId): void => {
         mentionGeneration += 1;
-        if (composer?.getState().voiceDraft)
-            voiceComposers.set(composer.getState().scopeId as HappyAgentSessionId, composer);
+        const draft = composer?.getState();
+        if (draft?.voiceDraft) voiceComposers.set(draft.scopeId as HappyAgentSessionId, composer!);
         unsubscribeComposer?.();
         unsubscribeComposer = undefined;
         composer = undefined;
         unsubscribeChat?.();
         unsubscribeChat = undefined;
+        const left = handle;
         chatStore = undefined;
         chatArrival = undefined;
-        handle?.[Symbol.dispose]();
         handle = undefined;
+        if (left === undefined) return;
+        if (leaving !== undefined && draft !== undefined) retainedAdd(leaving, left, draft);
+        else left[Symbol.dispose]();
+    };
+
+    /*
+     * The conversations left most recently, still holding their leases so the
+     * window can keep their views mounted. Oldest first: a conversation left
+     * again moves to the end. Each follows its own chat store, which the client
+     * keeps live while leased, and is projected with the composer as it was
+     * left — its draft is the host's, read again by a fresh composer on return.
+     */
+    type RetainedConversation = {
+        readonly handle: HappyAgentChatHandle;
+        readonly draft: ComposerSnapshot;
+        readonly unsubscribe: () => void;
+        snapshot: HappyAgentConversationSnapshot;
+    };
+    const retention = happyAgentConversationRetentionNormalize(deps.conversationRetention);
+    const retained = new Map<HappyAgentSessionId, RetainedConversation>();
+    /** What each kept or open conversation's view holds, as its host last measured it. */
+    const viewSizes = new Map<HappyAgentSessionId, number>();
+    const retainedListeners = new Set<() => void>();
+    let retainedSnapshot: HappyAgentRetainedConversationsSnapshot = { conversations: [] };
+
+    const retainedPublish = (): void => {
+        const conversations = [...retained.values()].reverse().map((entry) => entry.snapshot);
+        if (
+            conversations.length === retainedSnapshot.conversations.length &&
+            conversations.every((value, index) => value === retainedSnapshot.conversations[index])
+        )
+            return;
+        retainedSnapshot = { conversations };
+        for (const listener of retainedListeners) listener();
+    };
+
+    const retainedRelease = (conversationId: HappyAgentSessionId): void => {
+        const entry = retained.get(conversationId);
+        if (!entry) return;
+        retained.delete(conversationId);
+        viewSizes.delete(conversationId);
+        entry.unsubscribe();
+        entry.handle[Symbol.dispose]();
+    };
+
+    /** Keeps the most recently left while they fit the count and the size; lets the rest go. */
+    const retainedTrim = (): void => {
+        let kept = 0;
+        let size = 0;
+        for (const conversationId of [...retained.keys()].reverse()) {
+            size += viewSizes.get(conversationId) ?? 0;
+            if (kept < retention.count && size <= retention.size) kept += 1;
+            else retainedRelease(conversationId);
+        }
+    };
+
+    const retainedAdd = (
+        conversationId: HappyAgentSessionId,
+        left: HappyAgentChatHandle,
+        draft: ComposerSnapshot,
+    ): void => {
+        // Only a conversation the reader can go back to through the list is
+        // worth keeping; anything else is let go as it always was.
+        if (retention.count === 0 || conversationSummaryFind(conversationId) === undefined) {
+            viewSizes.delete(conversationId);
+            left[Symbol.dispose]();
+            return;
+        }
+        retainedRelease(conversationId);
+        const entry: RetainedConversation = {
+            handle: left,
+            draft,
+            unsubscribe: left.store.subscribe(() => {
+                const next = conversationProject(
+                    left.store.get(),
+                    draft,
+                    undefined,
+                    entry.snapshot,
+                );
+                if (conversationEqual(entry.snapshot, next)) return;
+                entry.snapshot = next;
+                retainedPublish();
+            }),
+            snapshot: conversationProject(left.store.get(), draft, undefined, undefined),
+        };
+        retained.set(conversationId, entry);
+        retainedTrim();
+        retainedPublish();
+    };
+
+    /** Takes a kept conversation's lease back for it to be opened again, if it is kept. */
+    const retainedTake = (
+        conversationId: HappyAgentSessionId,
+    ): HappyAgentChatHandle | undefined => {
+        const entry = retained.get(conversationId);
+        if (!entry) return undefined;
+        retained.delete(conversationId);
+        entry.unsubscribe();
+        retainedPublish();
+        return entry.handle;
+    };
+
+    /** Lets go of kept conversations the list no longer has: archived, or gone. */
+    const retainedListApply = (): void => {
+        const before = retained.size;
+        for (const conversationId of [...retained.keys()])
+            if (conversationSummaryFind(conversationId) === undefined)
+                retainedRelease(conversationId);
+        if (retained.size !== before) retainedPublish();
+    };
+
+    const retainedClear = (): void => {
+        for (const conversationId of [...retained.keys()]) retainedRelease(conversationId);
+        viewSizes.clear();
+        retainedPublish();
+    };
+
+    const conversationsRetained: HappyAgentRetainedConversationsStore = {
+        get: () => retainedSnapshot,
+        subscribe(listener) {
+            retainedListeners.add(listener);
+            return () => {
+                retainedListeners.delete(listener);
+            };
+        },
     };
 
     /**
@@ -5033,8 +5197,6 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
             return;
         }
-        const current = ++acquisitionGeneration;
-        acquiringId = conversationId;
         // The composer is local: it is created and published in this same call
         // stack, so addressing a conversation puts a usable, focusable input on
         // screen immediately and the transcript fills in behind it. Anything
@@ -5044,6 +5206,20 @@ export function happyAgentWorkspaceStoreCreate(
             composer = composerCreate(conversationId);
             unsubscribeComposer = composer.subscribe(recompute);
         }
+        // A conversation left a moment ago still holds its lease, so it is
+        // taken back in this same call stack and published whole: the view
+        // kept for it is shown again as it was, never through an empty
+        // transcript waiting on a handle.
+        const kept = retainedTake(conversationId);
+        if (kept) {
+            acquisitionGeneration += 1;
+            acquiringId = undefined;
+            chatArrival = Promise.resolve(kept.store);
+            conversationAdopt(kept);
+            return;
+        }
+        const current = ++acquisitionGeneration;
+        acquiringId = conversationId;
         if (conversation.type === "error") conversation = { type: "loading" };
         recompute();
         const acquisition = client.chat(conversationId);
@@ -5067,40 +5243,7 @@ export function happyAgentWorkspaceStoreCreate(
                     return;
                 }
                 acquiringId = undefined;
-                handle = acquired;
-                chatStore = acquired.store;
-                const reconcileComposer = (): void => {
-                    const state = acquired.store.get();
-                    const currentComposer = composer;
-                    if (!currentComposer) return;
-                    currentComposer.getState().composerInput({
-                        type: "commandsReconciled",
-                        commands: composerCommandsProject(state.slashCommands),
-                    });
-                    if (!state.ready) return;
-                    // A send in flight has already cleared the stored draft, and
-                    // that empty draft arrives back here while the message is
-                    // still going out. Reconciling it would count as a new
-                    // revision of the composer, and the confirmation that
-                    // follows — the thing that drops the text and its
-                    // attachments together — is refused for a revision that has
-                    // moved on. The send clears this composer itself.
-                    if (currentComposer.getState().submission.status === "pending") return;
-                    const remoteUpdatedAt = state.draftUpdatedAt ?? 0;
-                    const localUpdatedAt = currentComposer.getState().textUpdatedAt ?? 0;
-                    if (remoteUpdatedAt < localUpdatedAt) return;
-                    const remote = state.draft ?? "";
-                    if (currentComposer.getState().text !== remote)
-                        currentComposer
-                            .getState()
-                            .composerInput({ type: "textReconciled", text: remote });
-                };
-                reconcileComposer();
-                unsubscribeChat = acquired.store.subscribe(() => {
-                    reconcileComposer();
-                    recompute();
-                });
-                recompute();
+                conversationAdopt(acquired);
             },
             (error: unknown) => {
                 if (
@@ -5115,6 +5258,42 @@ export function happyAgentWorkspaceStoreCreate(
                 recompute();
             },
         );
+    };
+
+    /** Makes an acquired chat handle the open conversation's, under its composer. */
+    const conversationAdopt = (acquired: HappyAgentChatHandle): void => {
+        handle = acquired;
+        chatStore = acquired.store;
+        const reconcileComposer = (): void => {
+            const state = acquired.store.get();
+            const currentComposer = composer;
+            if (!currentComposer) return;
+            currentComposer.getState().composerInput({
+                type: "commandsReconciled",
+                commands: composerCommandsProject(state.slashCommands),
+            });
+            if (!state.ready) return;
+            // A send in flight has already cleared the stored draft, and
+            // that empty draft arrives back here while the message is
+            // still going out. Reconciling it would count as a new
+            // revision of the composer, and the confirmation that
+            // follows — the thing that drops the text and its
+            // attachments together — is refused for a revision that has
+            // moved on. The send clears this composer itself.
+            if (currentComposer.getState().submission.status === "pending") return;
+            const remoteUpdatedAt = state.draftUpdatedAt ?? 0;
+            const localUpdatedAt = currentComposer.getState().textUpdatedAt ?? 0;
+            if (remoteUpdatedAt < localUpdatedAt) return;
+            const remote = state.draft ?? "";
+            if (currentComposer.getState().text !== remote)
+                currentComposer.getState().composerInput({ type: "textReconciled", text: remote });
+        };
+        reconcileComposer();
+        unsubscribeChat = acquired.store.subscribe(() => {
+            reconcileComposer();
+            recompute();
+        });
+        recompute();
     };
 
     /** Records where navigation has just pointed this workspace. */
@@ -5151,8 +5330,9 @@ export function happyAgentWorkspaceStoreCreate(
         }
         acquisitionGeneration += 1;
         acquiringId = undefined;
+        const left = openId;
         openId = conversationId;
-        releaseConversation();
+        releaseConversation(left);
         if (!conversationId) {
             conversation = { type: "unloaded" };
             recompute();
@@ -6311,6 +6491,7 @@ export function happyAgentWorkspaceStoreCreate(
             sessionCreateFailureApply();
             catalogAuthoritativeApply();
             subtasksRemovedApply();
+            retainedListApply();
             recompute();
         });
         // The tree already listed is where removals are counted from.
@@ -6389,6 +6570,9 @@ export function happyAgentWorkspaceStoreCreate(
         );
         releaseGroup();
         releaseConversation();
+        // Nothing is on screen to keep views for, and a lease held while
+        // nobody looks would keep its transcript streaming for nothing.
+        retainedClear();
         conversation = { type: "unloaded" };
         // Replaced without an announcement: a stopped surface has nobody left
         // to tell, and stopping has never notified.
@@ -6714,6 +6898,19 @@ export function happyAgentWorkspaceStoreCreate(
         },
 
         conversationPrefetch: (conversationId) => client.chatPrefetch(conversationId),
+
+        conversationsRetained,
+        conversationViewSizeUpdate(conversationId, size) {
+            // The open conversation's size is remembered too: a view hidden
+            // under a file and then left is measured only that once.
+            if (conversationId !== openId && !retained.has(conversationId)) return;
+            const measured = Number.isFinite(size) ? Math.max(0, size) : 0;
+            if (viewSizes.get(conversationId) === measured) return;
+            viewSizes.set(conversationId, measured);
+            if (!retained.has(conversationId)) return;
+            retainedTrim();
+            retainedPublish();
+        },
 
         conversationOpen: (conversationId, groupId) => {
             addressApply(groupId, conversationId);
@@ -7082,6 +7279,10 @@ export function happyAgentWorkspaceStoreCreate(
         conversationArchive: async (conversationId) => {
             await list.sessionArchive(conversationId);
             client.chatArchive(conversationId);
+            if (retained.has(conversationId)) {
+                retainedRelease(conversationId);
+                retainedPublish();
+            }
         },
         conversationRestore: async (conversationId) => {
             const result = await list.sessionRestore(conversationId);
