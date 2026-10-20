@@ -2090,6 +2090,45 @@ function markdownFootnotesHeight(
     }
     return total;
 }
+/** Warm settled background bodies in resumable, canonical block-sized steps.
+ * No partial height escapes: the caller still finishes with markdownBodyHeight.
+ * Parsing and a single block are indivisible; required visible rows never use
+ * this iterator. Cache generation is checked again by the final calculation. */
+export function* markdownBodyPrepare(
+    text: string,
+    measure: number,
+    cache: MessageTextLayoutCache = sharedCache,
+    trailingExtraWidth = 0,
+    mermaidEnabled = true,
+): Generator<void> {
+    const ready = cacheReady(cache);
+    const tree = messageMarkdownTree(text, ready);
+    yield;
+    const trailing =
+        trailingExtraWidth > 0
+            ? { endOffset: text.trimEnd().length, extraWidth: trailingExtraWidth }
+            : undefined;
+    const footnotes = messageMarkdownFootnotes(text, tree, ready);
+    for (const node of tree.children) {
+        if (node.type === "footnoteDefinition") continue;
+        markdownBlockHeight(node, measure, ready, footnotes, true, trailing, false, mermaidEnabled);
+        yield;
+    }
+    for (const identifier of footnotes.order) {
+        const definition = footnotes.definitions.get(identifier);
+        if (!definition) continue;
+        markdownFootnoteDefinitionHeight(
+            definition,
+            footnotes.counts.get(identifier) ?? 0,
+            measure,
+            ready,
+            footnotes,
+            mermaidEnabled,
+        );
+        yield;
+    }
+}
+
 /**
  * Painted height of a Markdown message body wrapped at `measure` px. Adjacent
  * block margins collapse to the larger of the two, exactly as they do in flow,

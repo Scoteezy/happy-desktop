@@ -52,6 +52,7 @@ import {
     conversationReferencesSignature,
     conversationRowHeight,
     conversationRowHeightCached,
+    conversationRowHeightPrepare,
     conversationRowHeightCacheCreate,
     type ConversationFailureRowContext,
     type ConversationRowContext,
@@ -888,6 +889,14 @@ export function ConversationView(props: ConversationViewProps) {
                         }
                         cachedRowSize={(index, width) =>
                             conversationRowHeightCached(
+                                transcript,
+                                index,
+                                rowContext(index, width),
+                                rowHeightCache,
+                            )
+                        }
+                        prepareRowSize={(index, width) =>
+                            conversationRowHeightPrepare(
                                 transcript,
                                 index,
                                 rowContext(index, width),

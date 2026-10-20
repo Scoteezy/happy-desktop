@@ -22,6 +22,7 @@ import {
     errorRichTextHeight,
     errorTextHeight,
     markdownBodyHeight,
+    markdownBodyPrepare,
     plainTextHeight,
     messageTextLayoutCacheCreate,
     messageTextLayoutCacheRefresh,
@@ -514,7 +515,7 @@ export function messageMediaHeight(
  * reactions are added by the caller, which is what knows how its own surface
  * projects them.
  */
-export function messageRowHeight(input: {
+type MessageRowHeightInput = {
     readonly body: string;
     readonly bodyFormat: MessageBodyFormat;
     readonly bodyVisible: boolean;
@@ -528,7 +529,8 @@ export function messageRowHeight(input: {
     readonly time: string;
     readonly treatment: MessageTreatment;
     readonly width: number;
-}): number {
+};
+export function messageRowHeight(input: MessageRowHeightInput): number {
     const [leading, tight] = MESSAGE_CHROME[input.surface][input.treatment];
     const chrome = input.grouped ? tight : leading;
     if (!input.bodyVisible) return chrome;
@@ -554,6 +556,74 @@ export function messageRowHeight(input: {
             input.streaming,
         )
     );
+}
+
+function conversationMessageHeightInput(
+    entry: Extract<ConversationEntry, { kind: "message" }>,
+    grouped: boolean,
+    context: ConversationRowContext,
+    cache: ConversationRowHeightCache | undefined,
+): MessageRowHeightInput {
+    const message = entry.message;
+    const agent = message.sender?.kind === "agent";
+    const own = message.sender !== undefined && message.sender.id === context.viewerId;
+    const trace = message.agentTrace;
+    const traceCollapsible =
+        trace !== undefined &&
+        trace.status !== "pending" &&
+        trace.status !== "running" &&
+        trace.entryCount > 0;
+    const time = messageTimeSample(message.createdAt);
+    return {
+        body: message.text,
+        bodyFormat: messageBodyFormat(message.sender),
+        bodyVisible:
+            (agent ? message.text.trim().length > 0 : message.text.length > 0) ||
+            message.generationStatus !== undefined ||
+            traceCollapsible,
+        grouped,
+        mermaidEnabled: message.generationStatus !== "streaming",
+        ...(context.references ? { references: context.references } : {}),
+        streaming: message.generationStatus === "streaming",
+        surface: context.surface,
+        textCache: cache?.text,
+        time,
+        trailingExtraWidth:
+            grouped && !own
+                ? groupedTrailingMetaWidth(time, traceCollapsible ? trace : undefined, cache?.text)
+                : 0,
+        treatment: agent ? "agent" : own ? "own" : "incoming",
+        width: contentWidth(context.width),
+    };
+}
+
+/** Background-only preparation. The final call writes the authoritative row
+ * cache; neither a yield nor a partially warmed body publishes row geometry. */
+export function* conversationRowHeightPrepare(
+    entries: readonly ConversationEntry[],
+    index: number,
+    context: ConversationRowContext,
+    cache: ConversationRowHeightCache,
+): Generator<void> {
+    if (conversationRowHeightCached(entries, index, context, cache) !== undefined) return;
+    const entry = entries[index];
+    if (entry?.kind === "message") {
+        const input = conversationMessageHeightInput(
+            entry,
+            conversationMessageGrouped(entries, index),
+            context,
+            cache,
+        );
+        if (input.bodyVisible && input.bodyFormat !== "plain" && !input.streaming)
+            yield* markdownBodyPrepare(
+                messageReferencesResolve(input.body, input.references, false),
+                messageBodyMeasure(input.width, input.treatment, input.time, input.textCache),
+                input.textCache,
+                input.trailingExtraWidth,
+                input.mermaidEnabled,
+            );
+    }
+    conversationRowHeight(entries, index, context, cache);
 }
 
 /** Width of the one non-wrapping run Message appends to a grouped reply. */
@@ -1009,29 +1079,9 @@ export function conversationRowHeight(
         messageReferencesSignature(conversationEntryReferences(entry), context.references),
     ].join(":");
     return rowHeightCached(cache, entry, cacheKey, () => {
-        const time = messageTimeSample(message.createdAt);
-        let height = messageRowHeight({
-            body: message.text,
-            bodyFormat: messageBodyFormat(message.sender),
-            bodyVisible: hasBody || message.generationStatus !== undefined || traceCollapsible,
-            grouped,
-            mermaidEnabled: message.generationStatus !== "streaming",
-            ...(context.references ? { references: context.references } : {}),
-            streaming: message.generationStatus === "streaming",
-            surface: context.surface,
-            textCache: cache?.text,
-            time,
-            trailingExtraWidth:
-                grouped && !own
-                    ? groupedTrailingMetaWidth(
-                          time,
-                          traceCollapsible ? trace : undefined,
-                          cache?.text,
-                      )
-                    : 0,
-            treatment,
-            width,
-        });
+        let height = messageRowHeight(
+            conversationMessageHeightInput(entry, grouped, context, cache),
+        );
         if (resumesAfterActivity)
             height +=
                 RESUMED_PADDING_TOP -

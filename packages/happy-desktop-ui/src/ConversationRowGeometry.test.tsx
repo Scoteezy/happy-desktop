@@ -13,6 +13,8 @@ import {
     contentWidth,
     conversationRowHeight,
     conversationRowHeightCacheCreate,
+    conversationRowHeightCached,
+    conversationRowHeightPrepare,
 } from "./conversationRowHeight";
 import {
     conversationAgentRowStartsGroup,
@@ -104,6 +106,49 @@ function incomingMessage(id: string, text: string): ConversationMessageEntry {
         },
     };
 }
+
+it("publishes a background row only after canonical preparation completes", () => {
+    const entries = [
+        message("prepare-first", "agent", "First message"),
+        message("prepare-body", "agent", "# Heading\n\nParagraph with **words**.\n\n- One\n- Two"),
+    ];
+    const cache = conversationRowHeightCacheCreate();
+    for (const width of [1200, 800, 420, 1200]) {
+        const context = { width, surface: "conversation" as const };
+        const work = conversationRowHeightPrepare(entries, 1, context, cache);
+        const alreadyCached = conversationRowHeightCached(entries, 1, context, cache);
+        let steps = 0;
+        while (!work.next().done) {
+            steps += 1;
+            expect(conversationRowHeightCached(entries, 1, context, cache)).toBeUndefined();
+        }
+        expect(steps).toBe(alreadyCached === undefined ? 4 : 0);
+        expect(conversationRowHeightCached(entries, 1, context, cache)).toBe(
+            conversationRowHeight(entries, 1, context, conversationRowHeightCacheCreate()),
+        );
+        expect(conversationRowHeightCached(entries, 1, context, cache)).toBe(
+            conversationRowHeight(entries, 1, { ...context, width: contentWidth(width) }),
+        );
+    }
+});
+
+it("finishes interrupted font-generation preparation with fresh canonical row geometry", () => {
+    const entries = [message("prepare-font", "agent", "# Heading\n\nText with **styled words**.")];
+    const context = { width: 540, surface: "conversation" as const };
+    const cache = conversationRowHeightCacheCreate();
+    const work = conversationRowHeightPrepare(entries, 0, context, cache);
+    expect(work.next().done).toBe(false);
+    expect(work.next().done).toBe(false);
+    cache.text.generation -= 1;
+    cache.generation -= 1;
+    while (!work.next().done) {
+        /* Finish without publishing interim geometry. */
+    }
+    expect(conversationRowHeightCached(entries, 0, context, cache)).toBe(
+        conversationRowHeight(entries, 0, context, conversationRowHeightCacheCreate()),
+    );
+    expect(cache.generation).toBe(cache.text.generation);
+});
 
 const richText = [
     "# Release **verification** with `inline-code`",

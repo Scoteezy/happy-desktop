@@ -774,6 +774,9 @@ export type MessageListProps = {
      * instead of leaving them to idle refinement.
      */
     cachedRowSize?: (index: number, width: number) => number | undefined;
+    /** Background-only steps that warm the same cache as estimateRowSize.
+     * Visible rows remain synchronous; unfinished preparation is never published. */
+    prepareRowSize?: (index: number, width: number) => Iterator<void>;
     /**
      * Converts the full scrollport width to the width rows actually occupy.
      * Centered, max-width content uses this so growing chrome beyond its readable
@@ -1112,7 +1115,13 @@ export function MessageList(props: MessageListProps) {
            yet published, a contiguous range around `center`, and when the
            first of them was laid out. Any model update discards it. */
         refined: undefined as
-            | { center: number; first: number; last: number; since: number }
+            | {
+                  center: number;
+                  first: number;
+                  last: number;
+                  since: number;
+                  active?: { index: number; work: Iterator<void> };
+              }
             | undefined,
     }));
     /**
@@ -1500,9 +1509,9 @@ export function MessageList(props: MessageListProps) {
     }
     /**
      * One idle refinement slice. It lays pending rows out into the caller's
-     * size cache, nearest the reader first, without touching the model: a row
-     * is the indivisible unit of work, and the model and DOM must never
-     * disagree between slices. When every pending row is laid out, or the
+     * size cache, nearest the reader first, without touching the model. A row
+     * may prepare across slices, but only complete rows can be published: the
+     * model and DOM must never disagree. When every pending row is laid out, or the
      * oldest has waited `ROW_REFINE_COMMIT_MS`, one synchronous commit
      * publishes them all — the model, the DOM, and the reader's position
      * change together, and the rows it asks again are cache hits.
@@ -1522,18 +1531,64 @@ export function MessageList(props: MessageListProps) {
             refined = { center, first: center, last: center, since: sliceStart };
             rowSizeModel.refined = refined;
         }
-        const warm = (index: number) => {
-            if (!rowSizeModel.exact[index]) estimateItemSize(index, rowWidth);
+        const warm = (index: number): boolean => {
+            if (rowSizeModel.exact[index]) return true;
+            if (props.prepareRowSize) {
+                const active = (refined.active ??= {
+                    index,
+                    work: props.prepareRowSize(index, rowWidth),
+                });
+                do {
+                    if (active.work.next().done) {
+                        refined.active = undefined;
+                        return true;
+                    }
+                } while (performance.now() < deadline);
+                return false;
+            }
+            estimateItemSize(index, rowWidth);
+            return true;
         };
-        warm(refined.center);
+        /* Retain the iterator across idle callbacks. Its boundary is included
+           only once complete, so a timed publication cannot synchronously size
+           an unfinished row. Input/width changes discard the whole refinement. */
+        if (refined.active) {
+            const index = refined.active.index;
+            if (!warm(index)) {
+                refinementSchedule();
+                return;
+            }
+            refined.first = Math.min(refined.first, index);
+            refined.last = Math.max(refined.last, index);
+        } else if (!warm(refined.center)) {
+            refinementSchedule();
+            return;
+        }
         while (refined.first > 0 || refined.last < count - 1) {
-            if (performance.now() >= deadline) break;
-            if (refined.first > 0) warm((refined.first -= 1));
-            if (performance.now() >= deadline) break;
-            if (refined.last < count - 1) warm((refined.last += 1));
+            if (
+                performance.now() >= deadline ||
+                performance.now() - refined.since >= ROW_REFINE_COMMIT_MS
+            )
+                break;
+            if (refined.first > 0) {
+                if (!warm(refined.first - 1)) break;
+                refined.first -= 1;
+            }
+            if (
+                performance.now() >= deadline ||
+                performance.now() - refined.since >= ROW_REFINE_COMMIT_MS
+            )
+                break;
+            if (refined.last < count - 1) {
+                if (!warm(refined.last + 1)) break;
+                refined.last += 1;
+            }
         }
         const complete = refined.first === 0 && refined.last === count - 1;
-        if (!complete && performance.now() - refined.since < ROW_REFINE_COMMIT_MS) {
+        if (
+            refined.active ||
+            (!complete && performance.now() - refined.since < ROW_REFINE_COMMIT_MS)
+        ) {
             refinementSchedule();
             return;
         }
