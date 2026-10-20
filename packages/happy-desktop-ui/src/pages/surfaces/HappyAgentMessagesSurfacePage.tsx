@@ -146,6 +146,7 @@ export function HappyAgentMessagesSurfacePage(props: HappyAgentMessagesSurfacePa
         const deleted = row.kind === "message" && row.message.status === "deleted";
         return messageRowHeight({
             body: deleted ? DELETED_TEXT : row.message.text,
+            bodyFormat: "markdown",
             bodyVisible: true,
             grouped: grouped(index),
             surface: "conversation",

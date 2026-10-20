@@ -28,6 +28,7 @@ import {
     type MediaMosaicLayout,
     type MediaMosaicTile,
 } from "./mediaMosaic";
+import { messagePlainTextNormalize, type MessageBodyFormat } from "./messagePlainText";
 import type { MessageReferences } from "./messageReferences";
 import {
     MessageListDisclosureAnchorProvider,
@@ -160,6 +161,8 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     metaAccessory?: ReactNode;
     author: string;
     body: string | MessageSegment[];
+    /** Format of a string body. Human messages use plain text. */
+    bodyFormat?: MessageBodyFormat;
     /** Attachment cards (runs, approvals, events) rendered below the body. */
     children?: ReactNode;
     /** Follow-up message: no avatar/author row, time sits in the gutter. */
@@ -301,6 +304,23 @@ function hasRenderableChild(value: ReactNode): boolean {
  */
 const GUTTER_MARK_PIXELS = 12;
 
+/** Literal text with the same 16px/24px body type as agent paragraphs. */
+function renderMessagePlainText(source: string, trailing: ReactNode): ReactNode {
+    const text = messagePlainTextNormalize(source);
+    if (text.length === 0) return null;
+    return (
+        <p className="happy-message__plain-text" data-happy-desktop-ui="message-plain-text">
+            {text}
+            {trailing === null || trailing === undefined ? null : (
+                <>
+                    {"\u00a0"}
+                    {trailing}
+                </>
+            )}
+        </p>
+    );
+}
+
 export function Message(props: MessageProps) {
     const [local, rest] = partitionComponentProps(props, [
         "agent",
@@ -309,6 +329,7 @@ export function Message(props: MessageProps) {
         "author",
         "avatarSessionId",
         "body",
+        "bodyFormat",
         "children",
         "className",
         "compact",
@@ -342,7 +363,8 @@ export function Message(props: MessageProps) {
     const generationMarker = useRef<HTMLSpanElement>(null);
     const segments = (): MessageSegment[] =>
         typeof local.body === "string" ? [{ kind: "text", text: local.body }] : local.body;
-    const isMarkdownBody = () => typeof local.body === "string";
+    const isStringBody = () => typeof local.body === "string";
+    const plainBody = () => local.bodyFormat === "plain";
     const hasAttachments = () => hasRenderableChild(attachments);
     const grouped = () => local.grouped || local.compact;
     const showIncomingIdentity = () => !local.own && !grouped();
@@ -472,26 +494,32 @@ export function Message(props: MessageProps) {
     const bodyNode =
         !local.body &&
         local.emptyText === undefined &&
-        local.generationStatus === undefined ? null : isMarkdownBody() ? (
+        local.generationStatus === undefined ? null : isStringBody() ? (
             <div
-                className="happy-message__body happy-message__body--markdown"
-                data-markdown=""
+                className={
+                    plainBody()
+                        ? "happy-message__body happy-message__body--plain"
+                        : "happy-message__body happy-message__body--markdown"
+                }
+                data-markdown={plainBody() ? undefined : ""}
                 data-happy-desktop-ui="message-body"
                 ref={body}
             >
                 {ownAutomatedLine}
-                {typeof local.body === "string"
-                    ? renderMessageMarkdown(
-                          local.body,
-                          inlineIncomingHoverMeta ?? undefined,
-                          local.onFileOpen,
-                          local.generationStatus,
-                          local.onLinkOpen,
-                          local.linkOpenDefault,
-                          local.references,
-                          local.onFileLinkOpen,
-                      )
-                    : null}
+                {typeof local.body === "string" && plainBody()
+                    ? renderMessagePlainText(local.body, inlineIncomingHoverMeta)
+                    : typeof local.body === "string"
+                      ? renderMessageMarkdown(
+                            local.body,
+                            inlineIncomingHoverMeta ?? undefined,
+                            local.onFileOpen,
+                            local.generationStatus,
+                            local.onLinkOpen,
+                            local.linkOpenDefault,
+                            local.references,
+                            local.onFileLinkOpen,
+                        )
+                      : null}
                 {/* An empty generated reply keeps a non-breaking-space line box
                     so generation-state changes cannot collapse the message row. */}
                 {!local.body && local.emptyText !== undefined ? (

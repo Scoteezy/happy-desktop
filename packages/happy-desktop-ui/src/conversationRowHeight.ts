@@ -20,6 +20,7 @@ import {
     asideTimeWidth,
     errorTextHeight,
     markdownBodyHeight,
+    plainTextHeight,
     messageTextLayoutCacheCreate,
     messageTextLayoutCacheRefresh,
     monoOutputTextHeight,
@@ -35,6 +36,7 @@ import {
     messageReferencesSignature,
     type MessageReferences,
 } from "./messageReferences";
+import { messageBodyFormat, type MessageBodyFormat } from "./messagePlainText";
 import { SYSTEM_NOTIFICATION_HEIGHT } from "./systemNotification";
 import { agentTraceMetaStats, agentTraceMetaTitle } from "./agentTraceMeta";
 import { conversationErrorTitle } from "./conversationErrorTitle";
@@ -432,6 +434,7 @@ export function messageMediaHeight(
  */
 export function messageRowHeight(input: {
     readonly body: string;
+    readonly bodyFormat: MessageBodyFormat;
     readonly bodyVisible: boolean;
     readonly grouped: boolean;
     readonly mermaidEnabled?: boolean;
@@ -448,6 +451,10 @@ export function messageRowHeight(input: {
     const chrome = input.grouped ? tight : leading;
     if (!input.bodyVisible) return chrome;
     const measure = messageBodyMeasure(input.width, input.treatment, input.time, input.textCache);
+    if (input.bodyFormat === "plain")
+        return (
+            chrome + plainTextHeight(input.body, measure, input.textCache, input.trailingExtraWidth)
+        );
     /* Grouped incoming/agent rows append their hover time to the final word in
        one non-wrapping inline run. Include that run in the text model: at a
        narrow width it can move the final word and timestamp onto the next line. */
@@ -788,7 +795,7 @@ export function conversationRowHeight(
         trace.status !== "pending" &&
         trace.status !== "running" &&
         trace.entryCount > 0;
-    const hasBody = message.text.trim().length > 0;
+    const hasBody = agent ? message.text.trim().length > 0 : message.text.length > 0;
     const resumesAfterActivity =
         agent &&
         context.surface === "conversation" &&
@@ -816,6 +823,7 @@ export function conversationRowHeight(
         const time = messageTimeSample(message.createdAt);
         let height = messageRowHeight({
             body: message.text,
+            bodyFormat: messageBodyFormat(message.sender),
             bodyVisible: hasBody || message.generationStatus !== undefined || traceCollapsible,
             grouped,
             mermaidEnabled: message.generationStatus !== "streaming",

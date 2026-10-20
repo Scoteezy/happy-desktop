@@ -12,6 +12,7 @@ import type {
     ConversationToolCall,
     UserError,
 } from "happy-desktop-state";
+import { messageBodyFormat } from "./messagePlainText";
 import { AgentActivityRow, type ActivityMotion, type ActivityTreatment } from "./AgentActivityRow";
 import { ConversationComputeEvent } from "./ConversationComputeEvent";
 import { ConversationErrorCard } from "./ConversationErrorCard";
@@ -432,6 +433,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                 (author?.avatar ? thumbhashDataUrl(author.avatar.thumbhash) : undefined)
             }
             body={message.text}
+            bodyFormat={messageBodyFormat(author)}
             className={props.className}
             {...(props.contextNote === undefined ? {} : { contextNote: props.contextNote })}
             data-testid={props["data-testid"]}

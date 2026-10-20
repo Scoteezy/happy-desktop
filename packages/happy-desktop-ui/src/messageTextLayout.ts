@@ -2,10 +2,14 @@ import {
     clearCache,
     layout,
     layoutNextLine,
+    layoutNextLineRange,
+    materializeLineRange,
     measureNaturalWidth,
     prepare,
     prepareWithSegments,
+    type LayoutCursor,
     type PreparedText,
+    type PreparedTextWithSegments,
 } from "@chenglou/pretext";
 import {
     measureRichInlineStats,
@@ -29,6 +33,7 @@ import {
     type MermaidDiagramDimensions,
 } from "./mermaidDiagramRender";
 import { messageMarkdownParse, type MessageMarkdownAst } from "./messageMarkdownAst";
+import { messagePlainTextNormalize } from "./messagePlainText";
 
 /**
  * Height of chat body copy, resolved from the font and the measure instead of
@@ -954,6 +959,188 @@ function markdownInlineHasLineBox(children: readonly MarkdownPhrasing[]): boolea
             return true;
         return markdownInlineHasLineBox(node.children);
     });
+}
+
+/** `.happy-message__plain-text`: the body copy, preserved as typed. */
+const PLAIN_FONT = `${String(PARAGRAPH_SIZE)}px ${UI_FAMILY}`;
+function preparedPlainSegments(
+    text: string,
+    cache: MessageTextLayoutCache,
+): PreparedTextWithSegments {
+    const ready = cacheReady(cache);
+    const fontKey = `${PLAIN_FONT}:pre-wrap-segments`;
+    let byText = ready.prepared[fontKey];
+    if (!byText) {
+        byText = dictionaryCreate();
+        ready.prepared[fontKey] = byText;
+    }
+    const hit = byText[text];
+    if (hit !== undefined) return hit as PreparedTextWithSegments;
+    const value = prepareWithSegments(text, PLAIN_FONT, { whiteSpace: "pre-wrap" });
+    if (preparationRetain(ready, text, fontKey)) byText[text] = value;
+    return value;
+}
+/** Pretext fuses the label and URL in `[label](https://…)`, hiding the
+ * browser's break opportunity between closing and opening brackets. */
+const BRACKET_BREAK = /(?<=[\])}])(?=[([{])/gu;
+
+/** Gecko skips a tab stop less than half a `ch` ahead. Pretext only models
+ * the next stop. Resolve tab advances from this line's origin without
+ * changing the text that the browser renders or the reader can copy. */
+function plainTabStopsApply(
+    prepared: PreparedTextWithSegments,
+    cursor: LayoutCursor,
+    cache: MessageTextLayoutCache,
+): PreparedTextWithSegments {
+    if (!GECKO_INLINE_SLICE || prepared.kinds.indexOf("tab", cursor.segmentIndex) < 0)
+        return prepared;
+    const widths = [...prepared.widths];
+    const kinds = [...prepared.kinds];
+    const lineEndFitAdvances = [...prepared.lineEndFitAdvances];
+    const lineEndPaintAdvances = [...prepared.lineEndPaintAdvances];
+    const minimum = naturalTextWidth("0", PLAIN_FONT, cache) / 2;
+    const stop = prepared.tabStopAdvance;
+    let advance = 0;
+    for (let index = cursor.segmentIndex; index < widths.length; index += 1) {
+        if (kinds[index] === "tab") {
+            let width = stop - (advance % stop);
+            if (width < minimum - INLINE_MEASURE_EPSILON) width += stop;
+            widths[index] = width;
+            kinds[index] = "preserved-space";
+            lineEndFitAdvances[index] = 0;
+            lineEndPaintAdvances[index] = width;
+        }
+        advance += widths[index]!;
+    }
+    return { ...prepared, widths, kinds, lineEndFitAdvances, lineEndPaintAdvances };
+}
+/** Advance of plain text with its spaces preserved. */
+function plainTextWidth(text: string, cache: MessageTextLayoutCache): number {
+    return measureNaturalWidth(
+        plainTabStopsApply(
+            preparedPlainSegments(text, cache),
+            { segmentIndex: 0, graphemeIndex: 0 },
+            cache,
+        ),
+    );
+}
+/** Where a Pretext cursor falls in the text it was prepared from. */
+function plainCursorOffset(prepared: PreparedTextWithSegments, cursor: LayoutCursor): number {
+    let offset = 0;
+    for (let index = 0; index < cursor.segmentIndex; index += 1)
+        offset += prepared.segments[index]!.length;
+    if (cursor.graphemeIndex > 0) {
+        let graphemes = 0;
+        for (const { segment } of GRAPHEME_SEGMENTER.segment(
+            prepared.segments[cursor.segmentIndex] ?? "",
+        )) {
+            if (graphemes === cursor.graphemeIndex) break;
+            offset += segment.length;
+            graphemes += 1;
+        }
+    }
+    return offset;
+}
+/**
+ * Lines under `pre-wrap` and `overflow-wrap: anywhere`. Pretext does not
+ * emergency-break symbol runs and gives URLs preferred break points the
+ * browser does not use. Fill overlong runs by grapheme, then prepare the
+ * remainder so normal break opportunities apply again on the next line.
+ */
+function plainLineBoxes(line: string, measure: number, cache: MessageTextLayoutCache): string[] {
+    if (line.length === 0) return [""];
+    const boxes: string[] = [];
+    let rest = inlineBreaksMark(line).replace(BRACKET_BREAK, "\u200b");
+    for (;;) {
+        const prepared = preparedPlainSegments(rest, cache);
+        let cursor: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 };
+        let overflow: { readonly start: number; readonly text: string } | undefined;
+        for (;;) {
+            const range = layoutNextLineRange(
+                plainTabStopsApply(prepared, cursor, cache),
+                cursor,
+                measure,
+            );
+            if (!range) break;
+            const text = materializeLineRange(prepared, range).text;
+            /* Trailing spaces hang past the edge of a wrapped line. */
+            if (
+                range.end.graphemeIndex > 0 ||
+                (range.width > measure + INLINE_MEASURE_EPSILON &&
+                    plainTextWidth(text.replace(/\s+$/u, ""), cache) >
+                        measure + INLINE_MEASURE_EPSILON)
+            ) {
+                const start = plainCursorOffset(prepared, range.start);
+                overflow = { start, text: rest.slice(start) };
+                break;
+            }
+            boxes.push(text);
+            cursor = range.end;
+        }
+        if (!overflow) return boxes.length > 0 ? boxes : [""];
+        const graphemes = [...GRAPHEME_SEGMENTER.segment(overflow.text)].map(
+            (part) => part.segment,
+        );
+        let low = 1;
+        let high = graphemes.length;
+        while (low < high) {
+            const count = Math.ceil((low + high) / 2);
+            if (
+                plainTextWidth(graphemes.slice(0, count).join(""), cache) <=
+                measure + INLINE_MEASURE_EPSILON
+            )
+                low = count;
+            else high = count - 1;
+        }
+        const fitted = graphemes.slice(0, low).join("");
+        boxes.push(fitted);
+        rest = rest.slice(overflow.start + fitted.length);
+        if (rest.length === 0) return boxes;
+    }
+}
+/** Height of literal human text, including any grouped hover metadata. */
+export function plainTextHeight(
+    source: string,
+    measure: number,
+    cache: MessageTextLayoutCache = sharedCache,
+    trailingExtraWidth = 0,
+): number {
+    const text = messagePlainTextNormalize(source);
+    if (text.length === 0) return 0;
+    const ready = cacheReady(cache);
+    const fontKey = `${PLAIN_FONT}:plain-body`;
+    let byText = ready.runHeights[fontKey];
+    if (!byText) {
+        byText = dictionaryCreate();
+        ready.runHeights[fontKey] = byText;
+    }
+    let byMeasure = byText[text];
+    if (!byMeasure) {
+        byMeasure = dictionaryCreate();
+        byText[text] = byMeasure;
+    }
+    const key = `${String(measure)}:${String(trailingExtraWidth)}`;
+    const hit = byMeasure[key];
+    if (hit !== undefined) return hit;
+    const lines = text.split("\n");
+    /* A final newline terminates the last line; it creates another line box
+       only if the grouped timestamp follows it. */
+    if (text.endsWith("\n") && trailingExtraWidth === 0) lines.pop();
+    let count = 0;
+    for (const [index, line] of lines.entries()) {
+        const boxes = plainLineBoxes(line, measure, ready);
+        count += boxes.length;
+        if (
+            index === lines.length - 1 &&
+            trailingExtraWidth > 0 &&
+            plainTextWidth(boxes.at(-1)!, ready) + trailingExtraWidth >
+                measure + INLINE_MEASURE_EPSILON
+        )
+            count += 1;
+    }
+    const height = count * PARAGRAPH_LINE;
+    byMeasure[key] = height;
+    return height;
 }
 
 /** Height of one ordinary UI-font run at an explicit type ramp and measure. */

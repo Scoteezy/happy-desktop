@@ -586,6 +586,23 @@
     white-space: nowrap;
 }
 
+/* Literal human text keeps the existing body typography. */
+.happy-message__body--plain > * {
+    margin: 0;
+    min-width: 0;
+}
+
+.happy-message__body--plain > * + * {
+    margin-top: 8px;
+}
+
+.happy-message__plain-text {
+    font-size: 16px;
+    line-height: 24px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .happy-message__body--markdown h1,
 .happy-message__body--markdown h2,
 .happy-message__body--markdown h3,
