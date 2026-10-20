@@ -137,11 +137,21 @@ const dictionaryCreate = <T>(): Dictionary<T> => Object.create(null) as Dictiona
  * prepared runs: about 14 bytes per source character plus a fixed object graph
  * per prepared run, and every rich-inline item is a prepared run of its own.
  * The estimate is charged once, on a miss, and is an accounting budget rather
- * than an exact heap claim; Pretext's process-global glyph metrics are separate.
+ * than an exact heap claim; Pretext's process-global glyph metrics are bounded
+ * apart, below.
  */
 const PREPARED_BYTES_BUDGET = 8 * 1_024 * 1_024;
 const PREPARED_RUN_BYTES = 800;
 const PREPARED_CHAR_BYTES = 16;
+/*
+ * Pretext keeps one process-global map of segment widths per font and never
+ * evicts it, so every distinct word ever prepared stayed for the life of the
+ * window. The widths are exact and cheap to measure again, so once preparation
+ * has charged four times one budget since the map last emptied, it is dropped
+ * and refills from the text still being laid out.
+ */
+const GLYPH_METRICS_CLEAR_AFTER_BYTES = 4 * PREPARED_BYTES_BUDGET;
+let glyphMetricsBytes = 0;
 type PreparedValue = PreparedText | PreparedRichInline;
 type PreparedEntry = {
     /** The dictionary holding this value, so eviction can delete its key. */
@@ -224,6 +234,7 @@ function watchFonts() {
 }
 function fontGenerationAdvance() {
     fontGeneration += 1;
+    glyphMetricsBytes = 0;
     clearCache();
     mathLayoutClear();
     for (const listener of fontListeners) listener();
@@ -334,6 +345,13 @@ function preparationHit<T extends PreparedValue>(
     cache.preparedOrder.set(hit, entry);
     return hit;
 }
+/** Counts a new preparation against Pretext's global segment widths, dropping them past their bound. */
+function glyphMetricsCharge(bytes: number): void {
+    glyphMetricsBytes += bytes;
+    if (glyphMetricsBytes < GLYPH_METRICS_CLEAR_AFTER_BYTES) return;
+    glyphMetricsBytes = 0;
+    clearCache();
+}
 /** Retains a new preparation, evicting the least recently used past the budget.
  * A value larger than the whole budget is measured exactly and not retained. */
 function preparationRetain<T extends PreparedValue>(
@@ -343,6 +361,7 @@ function preparationRetain<T extends PreparedValue>(
     value: T,
     bytes: number,
 ): T {
+    glyphMetricsCharge(bytes);
     if (bytes > PREPARED_BYTES_BUDGET) return value;
     while (cache.preparedBytes + bytes > PREPARED_BYTES_BUDGET) {
         const [oldest, entry] = cache.preparedOrder.entries().next().value!;
@@ -2317,10 +2336,16 @@ function naturalTextWidth(text: string, font: string, cache: MessageTextLayoutCa
     if (hit !== undefined) return hit;
     /* The width itself is what is kept. Reuse a retained preparation of the
        same text, but do not retain one only to measure it once. */
-    const width = measureNaturalWidth(
-        preparationHit(ready, preparationTable(ready.preparedSegments, font, "normal"), text) ??
-            prepareWithSegments(text, font, { whiteSpace: "normal" }),
+    let prepared = preparationHit(
+        ready,
+        preparationTable(ready.preparedSegments, font, "normal"),
+        text,
     );
+    if (prepared === undefined) {
+        glyphMetricsCharge(PREPARED_RUN_BYTES + text.length * PREPARED_CHAR_BYTES);
+        prepared = prepareWithSegments(text, font, { whiteSpace: "normal" });
+    }
+    const width = measureNaturalWidth(prepared);
     byText[text] = width;
     return width;
 }
