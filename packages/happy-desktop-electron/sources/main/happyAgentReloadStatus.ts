@@ -92,16 +92,22 @@ export function happyAgentReloadStatusParse(text: string): HappyAgentReloadStatu
     };
 }
 
+/** A followed `reload.json`: read it again now, or stop following it. */
+export interface HappyAgentReloadStatusWatcher {
+    readonly read: () => void;
+    readonly stop: () => void;
+}
+
 /**
  * Follows `reload.json`: reports what it says now, then again whenever it
- * changes. It is polled rather than watched through the directory, because
- * the directory may not exist until the first reload makes it, and a rename
- * over the file is what every write is. Returns the function that stops it.
+ * changes, and whenever `read` asks. It is polled rather than watched through
+ * the directory, because the directory may not exist until the first reload
+ * makes it, and a rename over the file is what every write is.
  */
 export function happyAgentReloadStatusWatch(
     path: string,
     onStatus: (status: HappyAgentReloadStatus | undefined) => void,
-): () => void {
+): HappyAgentReloadStatusWatcher {
     let stopped = false;
     let reading = 0;
     const read = (): void => {
@@ -114,9 +120,12 @@ export function happyAgentReloadStatusWatch(
     const changed = (): void => read();
     watchFile(path, { interval: RELOAD_STATUS_POLL_MS, persistent: false }, changed);
     read();
-    return () => {
-        stopped = true;
-        unwatchFile(path, changed);
+    return {
+        read,
+        stop: () => {
+            stopped = true;
+            unwatchFile(path, changed);
+        },
     };
 }
 

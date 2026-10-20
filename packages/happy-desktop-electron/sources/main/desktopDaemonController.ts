@@ -88,8 +88,8 @@ export class DesktopDaemonController {
      * most once.
      */
     private readonly reloadsSeen = new Map<string, "running" | "finished" | "ignored">();
-    /** The reload report last read, while one is on screen and running. */
-    private reloadRunning?: HappyAgentReloadStatus;
+    /** Rereads `reload.json`, while it is being followed. */
+    private reloadRead?: () => void;
     private reloadAliveTimer?: ReturnType<typeof setInterval>;
 
     private constructor(
@@ -537,11 +537,14 @@ export class DesktopDaemonController {
      * stops following it.
      */
     reloadWatch(): () => void {
-        const stop = happyAgentReloadStatusWatch(happyAgentReloadStatusPath(this.paths), (status) =>
-            this.reloadApply(status),
+        const watcher = happyAgentReloadStatusWatch(
+            happyAgentReloadStatusPath(this.paths),
+            (status) => this.reloadApply(status),
         );
+        this.reloadRead = watcher.read;
         return () => {
-            stop();
+            watcher.stop();
+            this.reloadRead = undefined;
             this.reloadAliveStop();
         };
     }
@@ -601,7 +604,6 @@ export class DesktopDaemonController {
                 return;
             }
             this.reloadSeen(id, "running");
-            this.reloadRunning = status;
             this.reloadAliveStart();
             this.publish({
                 ...this.snapshotValue,
@@ -658,17 +660,19 @@ export class DesktopDaemonController {
             this.reloadsSeen.delete(this.reloadsSeen.keys().next().value!);
     }
 
-    /** Checks the reload on screen once a second, since an abandoned one writes nothing. */
+    /**
+     * Checks the reload on screen once a second, since an abandoned one writes
+     * nothing. Each check reads the file again rather than reusing the last
+     * report: a reload writes "done" and exits at once, and judging the exited
+     * command by a report older than its last one would call it abandoned.
+     */
     private reloadAliveStart(): void {
         if (this.reloadAliveTimer !== undefined) return;
-        this.reloadAliveTimer = setInterval(() => {
-            if (this.reloadRunning !== undefined) this.reloadApply(this.reloadRunning);
-        }, RELOAD_ALIVE_CHECK_MS);
+        this.reloadAliveTimer = setInterval(() => this.reloadRead?.(), RELOAD_ALIVE_CHECK_MS);
         this.reloadAliveTimer.unref?.();
     }
 
     private reloadAliveStop(): void {
-        this.reloadRunning = undefined;
         if (this.reloadAliveTimer === undefined) return;
         clearInterval(this.reloadAliveTimer);
         this.reloadAliveTimer = undefined;
