@@ -423,6 +423,54 @@ function GeometrySpecimen(props: Specimen & { readonly width: number }) {
     );
 }
 
+/* Idle refinement has laid out and published every pending row: the list
+   stops changing for longer than one batched refinement commit waits. */
+const settled = async () => {
+    let previous = "";
+    let since = performance.now();
+    for (let index = 0; index < 400; index += 1) {
+        await new Promise<void>((resolve) =>
+            requestIdleCallback(() => resolve(), { timeout: 100 }),
+        );
+        await nextFrame();
+        const rows = [
+            ...document.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+        ];
+        const current = rows.map((row) => `${row.dataset.index}:${row.style.transform}`).join();
+        if (current !== previous) {
+            previous = current;
+            since = performance.now();
+        } else if (performance.now() - since > 600) return;
+    }
+};
+/**
+ * The frame contract: every row the scrollport shows is mounted and painted
+ * at its modeled height. Rows offscreen may still be pending idle layout.
+ */
+function expectVisibleRowsMatchPaint(container: Element, label: string) {
+    const scrollport = container.querySelector<HTMLElement>("[data-scrollbar-viewport]")!;
+    const viewport = scrollport.getBoundingClientRect();
+    const rows = [
+        ...container.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+    ].sort((a, b) => Number(a.dataset.index) - Number(b.dataset.index));
+    let covered = viewport.top;
+    for (const [position, row] of rows.entries()) {
+        const bounds = row.getBoundingClientRect();
+        if (bounds.bottom <= viewport.top || bounds.top >= viewport.bottom) continue;
+        expect(
+            bounds.top,
+            `${label} row ${row.dataset.index} leaves no gap above it`,
+        ).toBeLessThanOrEqual(covered + GEOMETRY_TOLERANCE);
+        covered = Math.max(covered, bounds.bottom);
+        const next = rows[position + 1];
+        if (!next || Number(next.dataset.index) !== Number(row.dataset.index) + 1) continue;
+        const modeledHeight = next.getBoundingClientRect().top - bounds.top;
+        expect(
+            Math.abs(bounds.height - modeledHeight),
+            `${label} visible row ${row.dataset.index}: painted ${String(bounds.height)}px, modeled ${String(modeledHeight)}px`,
+        ).toBeLessThanOrEqual(GEOMETRY_TOLERANCE);
+    }
+}
 function expectModeledRowsMatchPaint(container: Element, count: number, label: string) {
     for (let index = 0; index < count; index += 1) {
         const row = container.querySelector<HTMLElement>(
@@ -469,17 +517,23 @@ it.skipIf(server.browser === "firefox")(
 
         const container = view.$('[data-testid="live-completion-boundary-container"]').element;
         flushSync(() => entriesUpdate([completionLeading]));
-        expectModeledRowsMatchPaint(container, 1, "final agent message");
+        expectVisibleRowsMatchPaint(container, "final agent message");
+        await settled();
+        expectModeledRowsMatchPaint(container, 1, "settled final agent message");
 
         flushSync(() => entriesUpdate([completionLeading, completionStatus]));
-        expectModeledRowsMatchPaint(container, 2, "settled completion");
+        expectVisibleRowsMatchPaint(container, "settled completion");
         await nextFrame();
-        expectModeledRowsMatchPaint(container, 2, "first painted completion frame");
+        expectVisibleRowsMatchPaint(container, "first painted completion frame");
+        await settled();
+        expectModeledRowsMatchPaint(container, 2, "settled completion rows");
 
         flushSync(() => entriesUpdate([agentPrelude, completionWithTrace, completionStatus]));
-        expectModeledRowsMatchPaint(container, 3, "grouped traced completion");
+        expectVisibleRowsMatchPaint(container, "grouped traced completion");
         await nextFrame();
-        expectModeledRowsMatchPaint(container, 3, "first painted traced-completion frame");
+        expectVisibleRowsMatchPaint(container, "first painted traced-completion frame");
+        await settled();
+        expectModeledRowsMatchPaint(container, 3, "settled traced completion");
     },
 );
 

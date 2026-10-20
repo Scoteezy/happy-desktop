@@ -1,6 +1,11 @@
 import { partitionComponentProps } from "./componentProps";
 import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
-import { useVirtualizer, type Virtualizer } from "@tanstack/react-virtual";
+import {
+    observeElementOffset,
+    useVirtualizer,
+    type Range,
+    type Virtualizer,
+} from "@tanstack/react-virtual";
 import {
     Children,
     isValidElement,
@@ -760,6 +765,14 @@ export type MessageListProps = {
      */
     estimateRowSize?: (index: number, width: number) => number | undefined;
     /**
+     * The same height, only when the caller already holds it for this width,
+     * without laying anything out; `undefined` when it would have to. A list
+     * returning to a width it has laid out before reads its rows back this
+     * way, so a round trip restores every row and the scroll offset exactly
+     * instead of leaving them to idle refinement.
+     */
+    cachedRowSize?: (index: number, width: number) => number | undefined;
+    /**
      * Converts the full scrollport width to the width rows actually occupy.
      * Centered, max-width content uses this so growing chrome beyond its readable
      * measure neither creates cache variants nor invalidates virtual estimates.
@@ -785,7 +798,7 @@ export type MessageListProps = {
      */
     estimateRows?: readonly unknown[];
     /** Restores a previously detached reader position on this list's first layout. */
-    initialScrollPosition?: MessageListScrollPosition;
+    initialScrollPosition?: MessageListScrollPosition | MessageListLegacyScrollPosition;
     /** Reports user scrolling and the final position before this list detaches. */
     onScrollPositionChange?: (position: MessageListScrollPosition) => void;
     /**
@@ -809,10 +822,29 @@ export type MessageListProps = {
      */
     virtualize?: boolean;
 };
-export interface MessageListScrollPosition {
+/**
+ * Where a reader is, as the list's fixed point rather than a pixel offset. A
+ * follower is held by the bottom. A parked reader is held by one row: the
+ * point `offset` px below that row's top stays `VIRTUAL_ANCHOR_INSET` px above
+ * the viewport's lower edge, whatever the rows above it measure, so a restore
+ * needs only that row and its viewport laid out.
+ */
+export type MessageListScrollPosition =
+    | { readonly type: "bottom" }
+    | {
+          readonly type: "row";
+          /** The row's React key within this list. */
+          readonly rowKey: string;
+          readonly offset: number;
+      };
+/**
+ * The pixel position lists used to report, accepted only as a restore input. A
+ * parked offset is placed by every row above it, so restoring one lays out
+ * that whole prefix.
+ */
+export interface MessageListLegacyScrollPosition {
     readonly scrollTop: number;
     readonly following: boolean;
-    /** Effective row width associated with `scrollTop`. */
     readonly rowWidth?: number;
 }
 /** A reader returning this close to the bottom (px) can resume following. */
@@ -833,16 +865,25 @@ const MESSAGE_LIST_PADDING_END_DEFAULT = 8;
 const VIRTUAL_ANCHOR_INSET = 32;
 /** Row height used only when a virtualized caller supplies no model for a row. */
 const ROW_SIZE_FALLBACK = 72;
-/** Rows TanStack mounts beyond the visible range on each side. */
+/** Rows TanStack mounts beyond the visible range on each side, once laid out. */
 const MESSAGE_LIST_OVERSCAN = 12;
 /**
- * Longest one model update spends laying out rows the reader cannot see (ms).
- * Rows past it keep a placeholder size and are laid out in idle slices of at
- * most `ROW_REFINE_SLICE_MS`, so a cold history of thousands of rows never
- * blocks the main thread for all of them at once.
+ * Longest one idle slice spends laying out rows the reader cannot see (ms),
+ * even when the browser offers a longer idle period: input arriving during a
+ * slice waits for it. A row is never split, so one slice can overrun by the
+ * row in progress.
  */
-const ROW_LAYOUT_BUDGET_MS = 12;
-const ROW_REFINE_SLICE_MS = 24;
+const ROW_REFINE_SLICE_MS = 8;
+/** Longest one model update spends reading already laid-out rows back (ms). */
+const ROW_CACHE_LOOKUP_MS = 2;
+/** The slice an overdue idle callback, or a browser without one, still gets. */
+const ROW_REFINE_FORCED_MS = 4;
+/**
+ * Longest laid-out rows wait in the size cache before one batched commit
+ * publishes them. Rows are laid out in many short slices, but each commit
+ * re-renders the list, so the model takes them together.
+ */
+const ROW_REFINE_COMMIT_MS = 200;
 /** Reserved stable entity key for the optional final footer row. */
 const MESSAGE_LIST_FOOTER_KEY = "__happy_message_list_footer__";
 function messageListRowWidth(
@@ -858,10 +899,15 @@ function messageListRowWidth(
 type MessageListLayoutFocus =
     /** A follower reads the newest rows, up from the end. */
     | { readonly type: "end" }
-    /** A restored scrollTop is placed by every row above it, so all of them. */
+    /** A legacy restored scrollTop is placed by every row above it, so all of them. */
     | { readonly type: "offset"; readonly offset: number }
-    /** A parked reader: the rows within a viewport of the row it reads. */
-    | { readonly type: "row"; readonly index: number }
+    /** A parked reader: its anchor row, and the rows its viewport shows around it. */
+    | {
+          readonly type: "anchor";
+          readonly index: number;
+          readonly itemOffset: number;
+          readonly viewportInset: number;
+      }
     /** Rows already rendered. */
     | { readonly type: "rows"; readonly first: number; readonly last: number };
 type MessageListVirtualAnchor =
@@ -896,8 +942,11 @@ export function MessageList(props: MessageListProps) {
        the reader is actively scrolling. Restoring is a lifetime event, and the
        lifetime boundary is the caller's `key`. */
     const restore = useRef(props.initialScrollPosition);
-    const following = useRef(restore.current?.following ?? true);
-    const escapedFromFollow = useRef(!(restore.current?.following ?? true));
+    const restoredFollowing =
+        restore.current === undefined ||
+        ("type" in restore.current ? restore.current.type === "bottom" : restore.current.following);
+    const following = useRef(restoredFollowing);
+    const escapedFromFollow = useRef(!restoredFollowing);
     const positionChange = useRef(props.onScrollPositionChange);
     positionChange.current = props.onScrollPositionChange;
     const startReached = useRef(props.onStartReached);
@@ -911,11 +960,14 @@ export function MessageList(props: MessageListProps) {
        row model. Writing it earlier would clamp it against placeholder
        geometry. */
     const initialPositionApplied = useRef(false);
-    /* A restored scrollTop translated to the current row width, when the
-       position was saved at another one. */
+    /* Where the restored anchor puts the reader in the opening model. */
     const openingScrollTop = useRef<number | undefined>(undefined);
     const scrollHeightBaseline = useRef(0);
-    const readerScrollTop = useRef(restore.current?.scrollTop ?? 0);
+    const readerScrollTop = useRef(
+        restore.current !== undefined && !("type" in restore.current)
+            ? restore.current.scrollTop
+            : 0,
+    );
     const viewportGeometry = useRef({ height: 0, width: 0 });
     const viewportGeometryCommitCurrent = useRef((_width: number, _height: number) => {});
     const readerAnchor = useRef<MessageListVirtualAnchor | undefined>(undefined);
@@ -930,11 +982,18 @@ export function MessageList(props: MessageListProps) {
     >(undefined);
     /* Cancels the scheduled idle refinement slice, if one is waiting. */
     const refinementCancel = useRef<(() => void) | undefined>(undefined);
-    const rowSizeModelRefineCurrent = useRef((_budget: number) => {});
+    const rowSizeModelRefineCurrent = useRef((_slice: number) => {});
+    const overscanRequireCurrent = useRef(() => {});
+    /* TanStack's own offset listener, so a programmatic write reaches its
+       range in the commit that made it rather than at the next scroll event. */
+    const virtualOffsetReport = useRef<
+        ((offset: number, isScrolling: boolean) => void) | undefined
+    >(undefined);
     const scrollTopWrite = (element: HTMLElement, value: number) => {
         element.scrollTop = value;
         expectedScrollTop.current = element.scrollTop;
         readerScrollTop.current = element.scrollTop;
+        virtualOffsetReport.current?.(element.scrollTop, virtualizer.isScrolling);
     };
     const sparseInsetHold = () => {
         const spacerElement = spacer.current;
@@ -1029,8 +1088,9 @@ export function MessageList(props: MessageListProps) {
      * may be a placeholder: a row that is not `exact` keeps its last size, or the
      * mean of the rows already laid out, until idle time lays it out for real. A
      * pending row is never painted — any that TanStack renders is laid out
-     * before that commit can reach the screen — and refining rows the reader
-     * cannot see keeps a parked reader's anchor, or a follower's tail, fixed.
+     * before that commit can reach the screen, and overscan mounts only exact
+     * rows — and refining rows the reader cannot see keeps a parked reader's
+     * anchor, or a follower's tail, fixed.
      */
     const [rowSizeModel] = useState(() => ({
         /* Index-aligned with `items` after every model update. */
@@ -1042,22 +1102,24 @@ export function MessageList(props: MessageListProps) {
         /* How many rows are still placeholders. */
         pending: 0,
         width: undefined as number | undefined,
+        /* Advances whenever any row's size or exactness may have changed. */
+        version: 0,
+        /* The rows idle time has laid out into the caller's size cache but not
+           yet published, a contiguous range around `center`, and when the
+           first of them was laid out. Any model update discards it. */
+        refined: undefined as
+            | { center: number; first: number; last: number; since: number }
+            | undefined,
     }));
     /**
      * Updates the model at `rowWidth`, in place. Rows before `from` kept their
-     * inputs and keep their size; every later row is asked again. The rows
-     * `focus` names are laid out exactly, then rows outward from them until
-     * `budget` runs out, and whatever is left becomes pending. Offsets are
-     * rewritten only from the first row whose size or position moved.
+     * inputs and keep their size; every later row is asked again. Only the rows
+     * `focus` names — what the reader sees in the commit this update produces —
+     * are laid out now; every other row that changed becomes pending, for idle
+     * time to lay out nearest the reader first. Offsets are rewritten only from
+     * the first row whose size or position moved.
      */
-    function rowSizeModelLayout(
-        rowWidth: number,
-        from: number,
-        focus: MessageListLayoutFocus,
-        budget: number,
-    ) {
-        /* A list that is not virtualized mounts every row, so it models them all. */
-        const deadline = virtualized ? performance.now() + budget : Infinity;
+    function rowSizeModelLayout(rowWidth: number, from: number, focus: MessageListLayoutFocus) {
         const model = rowSizeModel;
         const { keys, sizes, starts, exact } = model;
         const count = items.length;
@@ -1110,45 +1172,62 @@ export function MessageList(props: MessageListProps) {
             layout(footerIndex);
         }
         const viewportHeight = viewportGeometry.current.height || list.current?.clientHeight || 0;
+        /* The rows the reader's viewport covers in the commit this produces. */
         let first = 0;
         let last = count - 1;
-        let center = count - 1;
         if (focus.type === "end") {
             let covered = 0;
             let index = count - 1;
             for (; index >= 0 && covered < viewportHeight; index -= 1) covered += layout(index);
-            first = index + 1 - MESSAGE_LIST_OVERSCAN;
+            first = index + 1;
         } else if (focus.type === "offset") {
             let start = MESSAGE_LIST_PADDING_START;
             let index = 0;
-            for (; index < count && start < focus.offset + viewportHeight; index += 1) {
-                if (start <= focus.offset) center = index;
+            for (; index < count && start < focus.offset + viewportHeight; index += 1)
                 start += layout(index);
-            }
-            last = index - 1 + MESSAGE_LIST_OVERSCAN;
-        } else if (focus.type === "row") {
-            center = focus.index;
-            let covered = 0;
-            let index = focus.index;
-            for (; index >= 0 && covered < viewportHeight; index -= 1) covered += layout(index);
-            first = index + 1 - MESSAGE_LIST_OVERSCAN;
-            covered = 0;
-            for (index = focus.index + 1; index < count && covered < viewportHeight; index += 1)
-                covered += layout(index);
-            last = index - 1 + MESSAGE_LIST_OVERSCAN;
+            last = index - 1;
+        } else if (focus.type === "anchor") {
+            /* The anchor's point sits `viewportInset` above the viewport's lower
+               edge; the viewport spans that far below it and the rest above. */
+            const size = layout(focus.index);
+            const point = Math.min(focus.itemOffset, size);
+            let above = viewportHeight - focus.viewportInset - point;
+            let index = focus.index - 1;
+            for (; index >= 0 && above > 0; index -= 1) above -= layout(index);
+            first = index + 1;
+            let below = focus.viewportInset - (size - point);
+            for (index = focus.index + 1; index < count && below > 0; index += 1)
+                below -= layout(index);
+            last = index - 1;
         } else {
             first = focus.first;
             last = focus.last;
-            center = focus.first;
+        }
+        /* A list that is not virtualized mounts every row, so it models them all. */
+        if (!virtualized) {
+            first = 0;
+            last = count - 1;
         }
         for (let index = Math.max(0, first); index <= Math.min(count - 1, last); index += 1)
             layout(index);
-        for (let distance = 1; pending > 0 && performance.now() < deadline; distance += 1) {
-            const above = center - distance;
-            const below = center + distance;
+        /* Any other row the caller already holds at this width is exact for
+           the price of a lookup, nearest the reader first. */
+        const cached = props.cachedRowSize;
+        const lookupDeadline = performance.now() + ROW_CACHE_LOOKUP_MS;
+        for (let distance = 1; cached && pending > 0; distance += 1) {
+            const above = first - distance;
+            const below = last + distance;
             if (above < 0 && below >= count) break;
-            if (above >= 0) layout(above);
-            if (below < count) layout(below);
+            if (performance.now() >= lookupDeadline) break;
+            for (const index of [above, below]) {
+                if (index < 0 || index >= count || exact[index]) continue;
+                const size = cached(index, rowWidth);
+                if (size === undefined) continue;
+                if (size !== sizes[index]) moved = Math.min(moved, index);
+                sizes[index] = size;
+                exact[index] = true;
+                pending -= 1;
+            }
         }
         if (unsized) {
             /* A row never sized before and not reached in this update takes the
@@ -1177,6 +1256,8 @@ export function MessageList(props: MessageListProps) {
         }
         model.pending = pending;
         model.width = rowWidth;
+        model.version += 1;
+        model.refined = undefined;
         if (virtualized) virtualizer.measure();
         if (pending > 0) refinementSchedule();
     }
@@ -1184,19 +1265,23 @@ export function MessageList(props: MessageListProps) {
     const refinementSchedule = () => {
         const targetWindow = list.current?.ownerDocument.defaultView;
         if (refinementCancel.current || !targetWindow) return;
-        const run = (budget: number) => {
+        const run = (slice: number) => {
             refinementCancel.current = undefined;
-            rowSizeModelRefineCurrent.current(budget);
+            rowSizeModelRefineCurrent.current(slice);
         };
         if (typeof targetWindow.requestIdleCallback === "function") {
             const id = targetWindow.requestIdleCallback(
                 (deadline) =>
-                    run(Math.min(ROW_REFINE_SLICE_MS, Math.max(8, deadline.timeRemaining()))),
+                    run(
+                        deadline.didTimeout
+                            ? ROW_REFINE_FORCED_MS
+                            : Math.min(ROW_REFINE_SLICE_MS, deadline.timeRemaining()),
+                    ),
                 { timeout: 250 },
             );
             refinementCancel.current = () => targetWindow.cancelIdleCallback(id);
         } else {
-            const id = targetWindow.setTimeout(() => run(ROW_REFINE_SLICE_MS), 16);
+            const id = targetWindow.setTimeout(() => run(ROW_REFINE_FORCED_MS), 16);
             refinementCancel.current = () => targetWindow.clearTimeout(id);
         }
     };
@@ -1215,17 +1300,28 @@ export function MessageList(props: MessageListProps) {
      * box and the row model exists, so its first range is the one painted.
      */
     const initialScrollTop = () =>
-        following.current || restore.current === undefined
+        following.current
             ? Math.max(0, estimatedContentHeight() - viewportGeometry.current.height)
-            : (openingScrollTop.current ?? restore.current.scrollTop);
+            : (openingScrollTop.current ?? readerScrollTop.current);
+    /** The reader's fixed point, as it is saved: the anchor it holds, not its pixel offset. */
+    function positionCurrent(element: HTMLElement): MessageListScrollPosition {
+        if (following.current) return { type: "bottom" };
+        const held = readerAnchor.current;
+        const anchor =
+            held?.type === "item" &&
+            held.viewportInset === Math.min(VIRTUAL_ANCHOR_INSET, element.clientHeight)
+                ? held
+                : /* A disclosure's own inset, or a raw scrollTop, is read back
+                     as the row at the standard anchor point. */
+                  modelAnchorCapture(element.clientHeight, element.scrollTop);
+        return anchor?.type === "item"
+            ? { type: "row", rowKey: String(anchor.key), offset: anchor.itemOffset }
+            : { type: "bottom" };
+    }
     const positionReport = () => {
         const element = list.current;
-        if (!element) return;
-        positionChange.current?.({
-            scrollTop: element.scrollTop,
-            following: following.current,
-            ...(rowSizeModel.width === undefined ? {} : { rowWidth: rowSizeModel.width }),
-        });
+        if (!element || !positionChange.current) return;
+        positionChange.current(positionCurrent(element));
     };
     /* Model lookups use the model's own row order, which matches `items`
        except inside the commit that changed them, before the model follows. */
@@ -1256,15 +1352,26 @@ export function MessageList(props: MessageListProps) {
             if (itemKeyAt(index) === key) return index;
         return undefined;
     }
-    /** The rows a model update must lay out for where the reader is now. */
+    /**
+     * The rows a model update must lay out for where the reader is now: the
+     * anchor the reader holds, or the one their scroll offset names.
+     */
     function readerFocus(viewportHeight: number): MessageListLayoutFocus {
         if (following.current) return { type: "end" };
-        const inset = Math.min(VIRTUAL_ANCHOR_INSET, viewportHeight);
-        const item = modeledItemAtOffset(
-            readerScrollTop.current + Math.max(0, viewportHeight - inset),
-        );
-        const index = item === undefined ? undefined : itemIndexOf(item.key, item.index);
-        return index === undefined ? { type: "end" } : { type: "row", index };
+        const held = readerAnchor.current;
+        const anchor =
+            held?.type === "item"
+                ? held
+                : modelAnchorCapture(viewportHeight, readerScrollTop.current);
+        const index = anchor?.type === "item" ? itemIndexOf(anchor.key, anchor.index) : undefined;
+        return anchor?.type === "item" && index !== undefined
+            ? {
+                  type: "anchor",
+                  index,
+                  itemOffset: anchor.itemOffset,
+                  viewportInset: Math.min(anchor.viewportInset, viewportHeight),
+              }
+            : { type: "end" };
     }
     function modelAnchorCapture(
         viewportHeight: number,
@@ -1313,7 +1420,13 @@ export function MessageList(props: MessageListProps) {
     }
     const disclosureRowAnchorCurrent = useRef(disclosureRowAnchor);
     disclosureRowAnchorCurrent.current = disclosureRowAnchor;
-    /** Where an item anchor puts the reader in the current model. */
+    /**
+     * Where an item anchor puts the reader in the current model. A row
+     * shorter than the anchor's offset holds its lower edge at the anchor
+     * point, but the anchor keeps its own offset: a width that shrank the
+     * row and then a width that restores it return the reader to the same
+     * pixel, rather than to wherever the shorter row clamped it.
+     */
     function modelAnchorPlace(
         anchor: Extract<MessageListVirtualAnchor, { type: "item" }>,
         viewportHeight: number,
@@ -1321,11 +1434,12 @@ export function MessageList(props: MessageListProps) {
         const index = itemIndexOf(anchor.key, anchor.index);
         const item = index === undefined ? undefined : modeledItemAtIndex(index);
         if (index === undefined || !item) return undefined;
-        const itemOffset = Math.min(anchor.itemOffset, item.size);
         return {
             index,
-            itemOffset,
-            scrollTop: item.start + itemOffset - Math.max(0, viewportHeight - anchor.viewportInset),
+            scrollTop:
+                item.start +
+                Math.min(anchor.itemOffset, item.size) -
+                Math.max(0, viewportHeight - anchor.viewportInset),
         };
     }
     function modelAnchorRestore(anchor: MessageListVirtualAnchor, viewportHeight: number) {
@@ -1342,30 +1456,88 @@ export function MessageList(props: MessageListProps) {
             return false;
         }
         scrollTopWrite(element, place.scrollTop);
-        readerAnchor.current = { ...anchor, index: place.index, itemOffset: place.itemOffset };
+        readerAnchor.current = { ...anchor, index: place.index };
         return true;
     }
     /**
-     * One idle refinement slice. It is its own layout transaction: the model,
-     * the DOM, and the reader's position change together in one synchronous
-     * commit, so a scroll arriving between slices never sees them disagree.
+     * Lays out every pending row within overscan of the viewport, in one
+     * synchronous commit, before a gesture that could scroll one into view
+     * takes effect. Idle refinement normally got there first.
      */
-    function rowSizeModelRefine(budget: number) {
+    function overscanRequire() {
+        const element = list.current;
+        const rowWidth = rowSizeModel.width;
+        if (!virtualized || !element || rowWidth === undefined || rowSizeModel.pending === 0)
+            return;
+        const count = rowSizeModel.keys.length;
+        const top = modeledItemAtOffset(element.scrollTop)?.index ?? 0;
+        const bottom =
+            modeledItemAtOffset(element.scrollTop + element.clientHeight)?.index ?? count - 1;
+        const first = Math.max(0, top - MESSAGE_LIST_OVERSCAN);
+        const last = Math.min(count - 1, bottom + MESSAGE_LIST_OVERSCAN);
+        let pending = false;
+        for (let index = first; index <= last && !pending; index += 1)
+            pending = !rowSizeModel.exact[index];
+        if (!pending) return;
+        const viewportHeight = viewportGeometry.current.height || element.clientHeight;
+        flushSync(() => {
+            const scrollTopAnchor = readerAnchor.current?.type === "scrollTop";
+            const anchor = following.current
+                ? undefined
+                : refinementAnchor(element, viewportHeight);
+            rowSizeModelLayout(rowWidth, items.length, { type: "rows", first, last });
+            if (anchor) pendingAnchor.current = { anchor, viewportHeight, scrollTopAnchor };
+        });
+    }
+    /** The anchor a refinement holds still: the reader's own, or the one their offset names. */
+    function refinementAnchor(element: HTMLElement, viewportHeight: number) {
+        const held = readerAnchor.current;
+        return held?.type === "item" ? held : modelAnchorCapture(viewportHeight, element.scrollTop);
+    }
+    /**
+     * One idle refinement slice. It lays pending rows out into the caller's
+     * size cache, nearest the reader first, without touching the model: a row
+     * is the indivisible unit of work, and the model and DOM must never
+     * disagree between slices. When every pending row is laid out, or the
+     * oldest has waited `ROW_REFINE_COMMIT_MS`, one synchronous commit
+     * publishes them all — the model, the DOM, and the reader's position
+     * change together, and the rows it asks again are cache hits.
+     */
+    function rowSizeModelRefine(slice: number) {
         const element = list.current;
         const rowWidth = rowSizeModel.width;
         if (!element || rowWidth === undefined || rowSizeModel.pending === 0) return;
         const viewportHeight = viewportGeometry.current.height || element.clientHeight;
+        const sliceStart = performance.now();
+        const deadline = sliceStart + slice;
+        const count = rowSizeModel.keys.length;
+        let refined = rowSizeModel.refined;
+        if (!refined) {
+            const focus = readerFocus(viewportHeight);
+            const center = focus.type === "anchor" ? focus.index : Math.max(0, count - 1);
+            refined = { center, first: center, last: center, since: sliceStart };
+            rowSizeModel.refined = refined;
+        }
+        const warm = (index: number) => {
+            if (!rowSizeModel.exact[index]) estimateItemSize(index, rowWidth);
+        };
+        warm(refined.center);
+        while (refined.first > 0 || refined.last < count - 1) {
+            if (performance.now() >= deadline) break;
+            if (refined.first > 0) warm((refined.first -= 1));
+            if (performance.now() >= deadline) break;
+            if (refined.last < count - 1) warm((refined.last += 1));
+        }
+        const complete = refined.first === 0 && refined.last === count - 1;
+        if (!complete && performance.now() - refined.since < ROW_REFINE_COMMIT_MS) {
+            refinementSchedule();
+            return;
+        }
+        const { first, last } = refined;
         flushSync(() => {
             const scrollTopAnchor = readerAnchor.current?.type === "scrollTop";
-            const anchor = modelAnchorCapture(viewportHeight, element.scrollTop);
-            const focus = readerFocus(viewportHeight);
-            const center = focus.type === "row" ? focus.index : Math.max(0, items.length - 1);
-            rowSizeModelLayout(
-                rowWidth,
-                items.length,
-                { type: "rows", first: center, last: center },
-                budget,
-            );
+            const anchor = refinementAnchor(element, viewportHeight);
+            rowSizeModelLayout(rowWidth, items.length, { type: "rows", first, last });
             if (anchor) pendingAnchor.current = { anchor, viewportHeight, scrollTopAnchor };
         });
     }
@@ -1380,40 +1552,38 @@ export function MessageList(props: MessageListProps) {
             if (nextRowWidth <= 0) return;
             viewportGeometry.current = { height: nextHeight, width: nextWidth };
             const opening = following.current ? undefined : restore.current;
-            if (
-                opening?.rowWidth !== undefined &&
-                opening.rowWidth > 0 &&
-                opening.rowWidth !== nextRowWidth
-            ) {
-                /* The position was saved at another width, where its scrollTop
-                   named a row. Find that row at the saved width, then reopen on
-                   it at this one, so the reader returns to what they were
-                   reading rather than to the same pixel offset. */
-                rowSizeModelLayout(
-                    opening.rowWidth,
-                    0,
-                    { type: "offset", offset: opening.scrollTop },
-                    0,
+            if (opening !== undefined && "type" in opening) {
+                /* A saved anchor names its row by key. Lay out that row and the
+                   viewport around it; the rows above it are laid out later
+                   without moving the reader, so the restore never waits for
+                   the history above what the reader was reading. */
+                const rowKey = opening.type === "row" ? opening.rowKey : undefined;
+                const index = items.findIndex(
+                    (_item, candidate) => String(itemKeyAt(candidate)) === rowKey,
                 );
-                const anchor = modelAnchorCapture(nextHeight, opening.scrollTop);
-                if (anchor?.type === "item") {
-                    rowSizeModelLayout(
-                        nextRowWidth,
-                        0,
-                        { type: "row", index: anchor.index },
-                        ROW_LAYOUT_BUDGET_MS,
-                    );
+                if (opening.type === "row" && index >= 0) {
+                    const anchor: Extract<MessageListVirtualAnchor, { type: "item" }> = {
+                        type: "item",
+                        index,
+                        itemOffset: opening.offset,
+                        key: itemKeyAt(index),
+                        viewportInset: Math.min(VIRTUAL_ANCHOR_INSET, nextHeight),
+                    };
+                    readerAnchor.current = anchor;
+                    rowSizeModelLayout(nextRowWidth, 0, readerFocus(nextHeight));
                     openingScrollTop.current = modelAnchorPlace(anchor, nextHeight)?.scrollTop;
                     return;
                 }
+                /* The row is gone: the reader returns to the newest content. */
+                following.current = true;
+                escapedFromFollow.current = false;
             }
             rowSizeModelLayout(
                 nextRowWidth,
                 0,
-                opening === undefined
+                opening === undefined || "type" in opening
                     ? { type: "end" }
                     : { type: "offset", offset: opening.scrollTop },
-                ROW_LAYOUT_BUDGET_MS,
             );
             return;
         }
@@ -1424,7 +1594,7 @@ export function MessageList(props: MessageListProps) {
         viewportGeometry.current = { height: nextHeight, width: nextWidth };
         if (anchor) pendingAnchor.current = { anchor, viewportHeight: nextHeight };
         if (widthChanged) {
-            rowSizeModelLayout(nextRowWidth, 0, focus, ROW_LAYOUT_BUDGET_MS);
+            rowSizeModelLayout(nextRowWidth, 0, focus);
             return;
         }
         const element = list.current;
@@ -1472,6 +1642,41 @@ export function MessageList(props: MessageListProps) {
             observer?.unobserve(element);
         };
     };
+    /*
+     * Overscan mounts a row beyond the visible range only once it is laid out,
+     * and keeps a row it already mounted. Laying out overscan before the commit
+     * that first shows the viewport would make every row near it mandatory
+     * work; idle refinement lays them out instead, nearest first, and the
+     * commit that publishes them mounts them. A mounted overscan row a new
+     * width made pending stays mounted, offscreen, so a resize never remounts
+     * the rows around the reader; any gesture that could scroll one into view
+     * lays them out first (`overscanRequire`). The model version is this
+     * function's identity, because TanStack recomputes the range only when
+     * that or the visible range changes.
+     */
+    const mountedKeys = useRef<ReadonlySet<Key>>(new Set());
+    const rangeExtractor = useRef<
+        { readonly version: number; readonly extract: (range: Range) => number[] } | undefined
+    >(undefined);
+    if (rangeExtractor.current?.version !== rowSizeModel.version)
+        rangeExtractor.current = {
+            version: rowSizeModel.version,
+            extract: (range) => {
+                const indexes: number[] = [];
+                const first = Math.max(0, range.startIndex - range.overscan);
+                const last = Math.min(range.count - 1, range.endIndex + range.overscan);
+                for (let index = first; index <= last; index += 1) {
+                    const key = itemKeyAtCurrent.current(index);
+                    if (
+                        (index >= range.startIndex && index <= range.endIndex) ||
+                        (rowSizeModel.exact[index] === true && rowSizeModel.keys[index] === key) ||
+                        mountedKeys.current.has(key)
+                    )
+                        indexes.push(index);
+                }
+                return indexes;
+            },
+        };
     // TanStack Virtual deliberately owns mutable measurement functions; this leaf
     // remains outside compiler memoization while every rendered row stays eligible.
     // eslint-disable-next-line react-hooks/incompatible-library
@@ -1487,6 +1692,14 @@ export function MessageList(props: MessageListProps) {
                 : ROW_SIZE_FALLBACK,
         getItemKey: virtualItemKey,
         getScrollElement: () => list.current,
+        observeElementOffset: (instance, report) => {
+            virtualOffsetReport.current = report;
+            const unobserve = observeElementOffset(instance, report);
+            return () => {
+                virtualOffsetReport.current = undefined;
+                unobserve?.();
+            };
+        },
         observeElementRect: observeScrollportRect,
         /* Opening a conversation lands on its newest content, which means the
            first offset has to be the height of everything above it. Counting
@@ -1497,6 +1710,7 @@ export function MessageList(props: MessageListProps) {
            exists, which is what keeps TanStack from asking for this early. */
         initialOffset: virtualized ? initialScrollTop : 0,
         overscan: MESSAGE_LIST_OVERSCAN,
+        rangeExtractor: rangeExtractor.current.extract,
         /*
          * These are the same visual clearances the non-virtual list owns in CSS.
          * Keeping them here makes row starts, total size, scrollTop, anchoring,
@@ -1513,6 +1727,8 @@ export function MessageList(props: MessageListProps) {
     // eslint-disable-next-line happy-react/no-layout-effect -- streaming React commits publish a new modeled scrollHeight; a follower must pin in this same pre-paint commit
     useLayoutEffect(() => {
         rowSizeModelRefineCurrent.current = rowSizeModelRefine;
+        overscanRequireCurrent.current = overscanRequire;
+        mountedKeys.current = new Set(virtualItems.map((item) => item.key));
         const element = list.current;
         if (!element || !modelRendered) return;
         if (!initialPositionApplied.current) {
@@ -1521,11 +1737,9 @@ export function MessageList(props: MessageListProps) {
             if (following.current)
                 scrollTopWrite(element, element.scrollHeight - element.clientHeight);
             else {
-                scrollTopWrite(
-                    element,
-                    openingScrollTop.current ?? restore.current?.scrollTop ?? 0,
-                );
-                readerAnchor.current = modelAnchorCapture(element.clientHeight);
+                scrollTopWrite(element, openingScrollTop.current ?? readerScrollTop.current);
+                /* A restored anchor is the reader's fixed point already. */
+                readerAnchor.current ??= modelAnchorCapture(element.clientHeight);
             }
         } else if (following.current) {
             pendingAnchor.current = undefined;
@@ -1627,24 +1841,29 @@ export function MessageList(props: MessageListProps) {
         if (from < items.length) {
             const anchor = readerAnchor.current ?? modelAnchorCapture(viewportHeight);
             if (anchor) pendingAnchor.current = { anchor, viewportHeight };
-            rowSizeModelLayout(rowWidth, from, readerFocus(viewportHeight), ROW_LAYOUT_BUDGET_MS);
+            rowSizeModelLayout(rowWidth, from, readerFocus(viewportHeight));
             return;
         }
-        /* A pending row TanStack has just rendered is laid out now, before this
-           commit can paint it at its placeholder size. */
+        /* A pending row TanStack has just rendered in view is laid out now,
+           before this commit can paint it at its placeholder size. A pending
+           overscan row stays offscreen until idle time or a scroll gesture. */
         if (rowSizeModel.pending === 0) return;
+        const top = element.scrollTop;
+        const bottom = top + viewportHeight;
         let first = -1;
         let last = -1;
         for (const item of virtualItems) {
             if (rowSizeModel.keys[item.index] !== item.key || rowSizeModel.exact[item.index])
                 continue;
+            const start = rowSizeModel.starts[item.index]!;
+            if (start >= bottom || start + rowSizeModel.sizes[item.index]! <= top) continue;
             if (first < 0) first = item.index;
             last = item.index;
         }
         if (first < 0) return;
         const scrollTopAnchor = readerAnchor.current?.type === "scrollTop";
-        const anchor = modelAnchorCapture(viewportHeight, element.scrollTop);
-        rowSizeModelLayout(rowWidth, items.length, { type: "rows", first, last }, 0);
+        const anchor = refinementAnchor(element, viewportHeight);
+        rowSizeModelLayout(rowWidth, items.length, { type: "rows", first, last });
         if (anchor) pendingAnchor.current = { anchor, viewportHeight, scrollTopAnchor };
     });
     // eslint-disable-next-line happy-react/no-layout-effect -- the transcript owns live scroll position, ResizeObserver, and scroll listeners whose initial restoration and cleanup must align with the committed list DOM
@@ -1656,6 +1875,7 @@ export function MessageList(props: MessageListProps) {
         };
         const onGeometryScrollIntent = () => {
             expectedScrollTop.current = undefined;
+            overscanRequireCurrent.current();
         };
         const onWheel = (event: WheelEvent) => {
             onGeometryScrollIntent();
@@ -1707,7 +1927,10 @@ export function MessageList(props: MessageListProps) {
              * offset captured against the previous viewport height.
              */
             const viewportHeight = viewportGeometry.current.height || element.clientHeight;
-            if (element.clientHeight !== viewportHeight) {
+            if (
+                element.clientHeight !== viewportHeight ||
+                element.clientWidth !== viewportGeometry.current.width
+            ) {
                 previousScrollTop = element.scrollTop;
                 scrollHeightBaseline.current = currentScrollHeight;
                 return;
@@ -1744,9 +1967,16 @@ export function MessageList(props: MessageListProps) {
             positionReport();
             startReachedReport(element);
         };
-        element.addEventListener("scroll", onScroll, { passive: true });
+        /* Capture runs before TanStack's own scroll listener on this element,
+           whose range change can commit synchronously: the commit must see
+           whether the reader left the tail, or it pins them back to it. */
+        element.addEventListener("scroll", onScroll, { capture: true, passive: true });
         element.addEventListener("scrollend", positionReport);
         element.addEventListener("pointerdown", onGeometryScrollIntent);
+        /* Keyboard scrolling moves the viewport too; it is not a reason to
+           read the next scroll event as the reader's. */
+        const onKeyDown = () => overscanRequireCurrent.current();
+        element.addEventListener("keydown", onKeyDown);
         element.addEventListener("touchstart", onGeometryScrollIntent, { passive: true });
         /* This is the one viewport wheel listener that may cancel a default:
            Chromium/WebKit can otherwise consume the last 1–2px at the chat
@@ -1768,9 +1998,10 @@ export function MessageList(props: MessageListProps) {
             pendingAnchor.current = undefined;
             readerAnchor.current = undefined;
             expectedScrollTop.current = undefined;
-            element.removeEventListener("scroll", onScroll);
+            element.removeEventListener("scroll", onScroll, { capture: true });
             element.removeEventListener("scrollend", positionReport);
             element.removeEventListener("pointerdown", onGeometryScrollIntent);
+            element.removeEventListener("keydown", onKeyDown);
             element.removeEventListener("touchstart", onGeometryScrollIntent);
             element.removeEventListener("wheel", onWheel);
         };

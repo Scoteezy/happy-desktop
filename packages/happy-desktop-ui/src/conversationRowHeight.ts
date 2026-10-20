@@ -149,6 +149,8 @@ export function conversationRowHeightCacheCreate(): ConversationRowHeightCache {
         text: messageTextLayoutCacheCreate(),
     };
 }
+/* Set while `conversationRowHeightCached` asks: a miss is recorded, not laid out. */
+let cacheProbe: { missed: boolean } | undefined;
 function rowHeightCached(
     cache: ConversationRowHeightCache | undefined,
     entry: ConversationEntry,
@@ -165,6 +167,10 @@ function rowHeightCached(
     }
     const hit = cachedEntry.variants[key];
     if (hit) return hit.value;
+    if (cacheProbe) {
+        cacheProbe.missed = true;
+        return undefined;
+    }
     const value = calculate();
     cachedEntry.variants[key] = { value };
     return value;
@@ -671,6 +677,26 @@ function computeNoticeHeight(
  * Height of one row, or `undefined` when a future entry kind has no explicit
  * model yet and should take MessageList's fixed fallback.
  */
+/**
+ * The row's height only when `cache` already holds it for this exact context,
+ * without laying anything out; `undefined` when it would have to. A list
+ * returning to a width it has already laid out reads every row back this way.
+ */
+export function conversationRowHeightCached(
+    entries: readonly ConversationEntry[],
+    index: number,
+    context: ConversationRowContext,
+    cache: ConversationRowHeightCache,
+): number | undefined {
+    const probe = { missed: false };
+    cacheProbe = probe;
+    try {
+        const height = conversationRowHeight(entries, index, context, cache);
+        return probe.missed ? undefined : height;
+    } finally {
+        cacheProbe = undefined;
+    }
+}
 export function conversationRowHeight(
     entries: readonly ConversationEntry[],
     index: number,

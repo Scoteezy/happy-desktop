@@ -912,16 +912,20 @@ export interface HappyAgentMenusSnapshot {
 export type HappyAgentCurrentAccount = "available" | "hidden" | "disabled" | "missing";
 
 /**
- * Where a conversation is being read. `following` distinguishes a reader parked
- * at the newest message — who should stay there as more arrives — from one who
- * has scrolled up to a fixed point and expects to find it again.
+ * Where a conversation is being read, as its fixed point rather than a pixel
+ * offset. A reader at the newest message is held by the bottom and stays there
+ * as more arrives. A reader who scrolled up is held by one transcript row: the
+ * point `offset` px into that row keeps its place in the viewport, whatever the
+ * rows above it measure at the width it is reopened at.
  */
-export interface HappyAgentScrollPosition {
-    readonly scrollTop: number;
-    readonly following: boolean;
-    /** Effective centered row width associated with `scrollTop`. */
-    readonly rowWidth?: number;
-}
+export type HappyAgentScrollPosition =
+    | { readonly type: "bottom" }
+    | {
+          readonly type: "row";
+          /** The transcript row's list key. */
+          readonly rowKey: string;
+          readonly offset: number;
+      };
 
 /** One physical child of a checkout directory. Symlinks are file-like leaves. */
 export interface HappyAgentWorkspaceFileTreeEntry {

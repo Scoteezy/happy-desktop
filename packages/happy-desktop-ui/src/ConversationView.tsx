@@ -47,8 +47,10 @@ import {
     contentWidth,
     conversationReferencesSignature,
     conversationRowHeight,
+    conversationRowHeightCached,
     conversationRowHeightCacheCreate,
     type ConversationFailureRowContext,
+    type ConversationRowContext,
     type ConversationRowHeightCache,
 } from "./conversationRowHeight";
 import {
@@ -58,7 +60,12 @@ import {
     type ConversationInlinePages,
 } from "./conversationInlinePages";
 import { EmptyState } from "./EmptyState";
-import { Message, MessageList, type MessageListScrollPosition } from "./Message";
+import {
+    Message,
+    MessageList,
+    type MessageListLegacyScrollPosition,
+    type MessageListScrollPosition,
+} from "./Message";
 import {
     messageTextLayoutFontGenerationGet,
     messageTextLayoutFontGenerationSubscribe,
@@ -161,7 +168,7 @@ export type ConversationViewProps = {
      * Where this conversation was last being read, restored on mount. Absent
      * means the newest content, which is where a conversation opens.
      */
-    scrollPosition?: MessageListScrollPosition;
+    scrollPosition?: MessageListScrollPosition | MessageListLegacyScrollPosition;
     /** Reports the reading position, including the final one before unmount. */
     onScrollPositionChange?: (position: MessageListScrollPosition) => void;
     /**
@@ -740,6 +747,21 @@ export function ConversationView(props: ConversationViewProps) {
             {props.activityControl}
         </div>
     ) : null;
+    const rowContext = (index: number, width: number): ConversationRowContext => {
+        const inlinePage = inlinePageOf(transcript[index]);
+        return {
+            activityTreatment: props.activityTreatment,
+            errorAssistance: errorAssistanceFor(transcript[index]),
+            ...((failure) => failure ? { failure: failureRowContext(failure) } : {})(failureFor(transcript[index])),
+            expanded: transcript[index] === undefined ? false : rowExpanded(transcript[index]),
+            surface: "conversation",
+            liveStatus: statusVisible,
+            ...(props.references ? { references: props.references } : {}),
+            ...(inlinePage ? { inlinePage: inlinePage.geometry } : {}),
+            viewerId: props.viewerId,
+            width,
+        };
+    };
     const workingStatusHeight = statusVisible
         ? workingStatusStartsGroup
             ? 68
@@ -849,32 +871,22 @@ export function ConversationView(props: ConversationViewProps) {
                         inlinePages?.artifactRender === undefined,
                         inlinePages?.pageRender === undefined,
                     ]}
-                    estimateRowSize={(index, width) => {
-                        const inlinePage = inlinePageOf(transcript[index]);
-                        return conversationRowHeight(
+                    estimateRowSize={(index, width) =>
+                        conversationRowHeight(
                             transcript,
                             index,
-                            {
-                                activityTreatment: props.activityTreatment,
-                                errorAssistance: errorAssistanceFor(transcript[index]),
-                                ...((failure) =>
-                                    failure ? { failure: failureRowContext(failure) } : {})(
-                                    failureFor(transcript[index]),
-                                ),
-                                expanded:
-                                    transcript[index] === undefined
-                                        ? false
-                                        : rowExpanded(transcript[index]),
-                                surface: "conversation",
-                                liveStatus: statusVisible,
-                                ...(props.references ? { references: props.references } : {}),
-                                ...(inlinePage ? { inlinePage: inlinePage.geometry } : {}),
-                                viewerId: props.viewerId,
-                                width,
-                            },
+                            rowContext(index, width),
                             rowHeightCache,
-                        );
-                    }}
+                        )
+                    }
+                    cachedRowSize={(index, width) =>
+                        conversationRowHeightCached(
+                            transcript,
+                            index,
+                            rowContext(index, width),
+                            rowHeightCache,
+                        )
+                    }
                     estimateRows={transcript}
                     estimateRowWidth={contentWidth}
                     estimateVersion={textLayoutGeneration}

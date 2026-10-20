@@ -5,7 +5,14 @@ import { expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
 import { FileAttachment } from "./FileAttachment";
 import { AgentTraceRow } from "./AgentTraceRow";
-import { DayDivider, Message, MessageList, SystemNotice } from "./Message";
+import {
+    DayDivider,
+    Message,
+    MessageList,
+    SystemNotice,
+    type MessageListLegacyScrollPosition,
+    type MessageListScrollPosition,
+} from "./Message";
 import { happyLogoBlackUrl } from "./assets";
 import { createRenderer, type RenderedElement } from "./testing";
 /* Fixtures render on the app surface color so screenshots are representative. */
@@ -1494,7 +1501,8 @@ it("follows the newest content in MessageList unless the reader scrolled up", as
 });
 it("restores each virtualized MessageList position across keyed lifetimes", async () => {
     const view = createRenderer();
-    const positions = new Map([
+    /* Pixel positions are the legacy restore input; the list reports anchors. */
+    const positions = new Map<string, MessageListScrollPosition | MessageListLegacyScrollPosition>([
         ["chat-1", { scrollTop: 176, following: false }],
         ["chat-2", { scrollTop: 264, following: false }],
         ["chat-3", { scrollTop: 0, following: true }],
@@ -1531,7 +1539,7 @@ it("restores each virtualized MessageList position across keyed lifetimes", asyn
     list().scrollTop = 88;
     list().dispatchEvent(new Event("scroll"));
     await nextFrame();
-    expect(positions.get("chat-1")).toMatchObject({ scrollTop: 88, following: false });
+    expect(positions.get("chat-1")).toMatchObject({ type: "row" });
 
     flushSync(() => chatSelect("chat-2"));
     await nextFrame();
