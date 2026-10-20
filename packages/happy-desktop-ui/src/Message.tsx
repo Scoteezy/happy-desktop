@@ -984,6 +984,8 @@ export function MessageList(props: MessageListProps) {
     >(undefined);
     /* Cancels the scheduled idle refinement slice, if one is waiting. */
     const refinementCancel = useRef<(() => void) | undefined>(undefined);
+    const overscanMountCancel = useRef<(() => void) | undefined>(undefined);
+    const overscanMountCurrent = useRef(() => {});
     const rowSizeModelRefineCurrent = useRef((_slice: number) => {});
     const overscanRequireCurrent = useRef(() => {});
     /* TanStack's own offset listener, so a programmatic write reaches its
@@ -1649,7 +1651,8 @@ export function MessageList(props: MessageListProps) {
      * and keeps a row it already mounted. Laying out overscan before the commit
      * that first shows the viewport would make every row near it mandatory
      * work; idle refinement lays them out instead, nearest first, and the
-     * commit that publishes them mounts them. A mounted overscan row a new
+     * commits after publication mount them one at a time during idle periods.
+     * A mounted overscan row a new
      * width made pending stays mounted, offscreen, so a resize never remounts
      * the rows around the reader; any gesture that could scroll one into view
      * lays them out first (`overscanRequire`). The model version is this
@@ -1657,12 +1660,23 @@ export function MessageList(props: MessageListProps) {
      * that or the visible range changes.
      */
     const mountedKeys = useRef<ReadonlySet<Key>>(new Set());
+    const admittedKeys = useRef<ReadonlySet<Key>>(new Set());
+    const [overscanMountVersion, setOverscanMountVersion] = useState(0);
     const rangeExtractor = useRef<
-        { readonly version: number; readonly extract: (range: Range) => number[] } | undefined
+        | {
+              readonly version: number;
+              readonly mountVersion: number;
+              readonly extract: (range: Range) => number[];
+          }
+        | undefined
     >(undefined);
-    if (rangeExtractor.current?.version !== rowSizeModel.version)
+    if (
+        rangeExtractor.current?.version !== rowSizeModel.version ||
+        rangeExtractor.current.mountVersion !== overscanMountVersion
+    )
         rangeExtractor.current = {
             version: rowSizeModel.version,
+            mountVersion: overscanMountVersion,
             extract: (range) => {
                 const indexes: number[] = [];
                 const first = Math.max(0, range.startIndex - range.overscan);
@@ -1671,7 +1685,9 @@ export function MessageList(props: MessageListProps) {
                     const key = itemKeyAtCurrent.current(index);
                     if (
                         (index >= range.startIndex && index <= range.endIndex) ||
-                        (rowSizeModel.exact[index] === true && rowSizeModel.keys[index] === key) ||
+                        (admittedKeys.current.has(key) &&
+                            rowSizeModel.exact[index] === true &&
+                            rowSizeModel.keys[index] === key) ||
                         mountedKeys.current.has(key)
                     )
                         indexes.push(index);
@@ -1721,6 +1737,42 @@ export function MessageList(props: MessageListProps) {
         paddingEnd,
         paddingStart: MESSAGE_LIST_PADDING_START,
     });
+    /** Exact geometry can be published without mounting every newly ready row.
+     * Mount one offscreen neighbour per idle callback: a burst of table/Markdown
+     * mounts otherwise spends an entire task in React commit and forced layout. */
+    function nextOverscanMount(): Key | undefined {
+        const range = virtualizer.range;
+        if (!virtualized || !range) return undefined;
+        for (let distance = 1; distance <= MESSAGE_LIST_OVERSCAN; distance += 1) {
+            for (const index of [range.startIndex - distance, range.endIndex + distance]) {
+                if (index < 0 || index >= items.length) continue;
+                const key = itemKeyAt(index);
+                if (
+                    !mountedKeys.current.has(key) &&
+                    rowSizeModel.exact[index] &&
+                    rowSizeModel.keys[index] === key
+                )
+                    return key;
+            }
+        }
+        return undefined;
+    }
+    function overscanMountSchedule() {
+        const targetWindow = list.current?.ownerDocument.defaultView;
+        if (overscanMountCancel.current || !targetWindow || nextOverscanMount() === undefined)
+            return;
+        const run = () => {
+            overscanMountCancel.current = undefined;
+            overscanMountCurrent.current();
+        };
+        if (typeof targetWindow.requestIdleCallback === "function") {
+            const id = targetWindow.requestIdleCallback(run, { timeout: 250 });
+            overscanMountCancel.current = () => targetWindow.cancelIdleCallback(id);
+        } else {
+            const id = targetWindow.setTimeout(run, 16);
+            overscanMountCancel.current = () => targetWindow.clearTimeout(id);
+        }
+    }
     /* Whether this render's DOM carries the row model. A virtual list's first
        render has no width to model rows at, so it paints no rows and must not
        position the reader against that placeholder. */
@@ -1733,6 +1785,14 @@ export function MessageList(props: MessageListProps) {
         markdownTablesSolve();
         overscanRequireCurrent.current = overscanRequire;
         mountedKeys.current = new Set(virtualItems.map((item) => item.key));
+        admittedKeys.current = mountedKeys.current;
+        overscanMountCurrent.current = () => {
+            const next = nextOverscanMount();
+            if (next === undefined) return;
+            admittedKeys.current = new Set([...mountedKeys.current, next]);
+            flushSync(() => setOverscanMountVersion((version) => version + 1));
+        };
+        overscanMountSchedule();
         const element = list.current;
         if (!element || !modelRendered) return;
         if (!initialPositionApplied.current) {
@@ -1998,6 +2058,8 @@ export function MessageList(props: MessageListProps) {
             positionReport();
             refinementCancel.current?.();
             refinementCancel.current = undefined;
+            overscanMountCancel.current?.();
+            overscanMountCancel.current = undefined;
             observer?.disconnect();
             pendingAnchor.current = undefined;
             readerAnchor.current = undefined;
