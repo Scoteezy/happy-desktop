@@ -7,6 +7,7 @@ import {
 } from "@slopus/happy-agent-client";
 import { createStore } from "zustand/vanilla";
 import type { UserError } from "../types.js";
+import type { HappyAgentCloudSignInFailure } from "./happyAgentChiefOfStaffRequest.js";
 import { happyAgentUserError } from "./happyAgentSupport.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
@@ -42,9 +43,23 @@ export interface HappyAgentCloudStore {
     [Symbol.dispose](): void;
 }
 
+/**
+ * How handing one browser callback to Happy Agent ended, from the daemon's
+ * typed answer. `connected` carries no account detail; the store's snapshot
+ * has it.
+ */
+export type HappyAgentCloudAuthOutcome =
+    | { readonly kind: "connected" }
+    | {
+          readonly kind: "failed";
+          readonly reason: Exclude<HappyAgentCloudSignInFailure, "unmatched" | "teamsUnreadable">;
+      };
+
 export interface HappyAgentCloudHost {
     cloudAuthCallbackSubscribe(listener: () => void): () => void;
     cloudAuthCallbackTake(): Promise<string | undefined>;
+    /** Told once for every callback this store took and handed to Happy Agent. */
+    cloudAuthCallbackSettle?(outcome: HappyAgentCloudAuthOutcome): void;
     cloudAuthConfigurationGet(): Promise<{
         readonly environment: CloudEnvironment;
         readonly redirectUri: string;
@@ -120,18 +135,25 @@ export function happyAgentCloudStoreCreate(deps: HappyAgentCloudStoreDeps): Happ
     const callbackForward = async (): Promise<void> => {
         if (disposed || callbackReading) return;
         callbackReading = true;
+        let callbackUrl: string | undefined;
         try {
-            const callbackUrl = await deps.host.cloudAuthCallbackTake();
+            callbackUrl = await deps.host.cloudAuthCallbackTake();
             if (!callbackUrl || disposed) return;
             store.setState({ authorizationCompleting: true, error: undefined }, false);
             const response = await deps.client.completeCloudAuthorization({ callbackUrl });
             if (disposed) return;
             cloudAdopt(response.cloud);
             store.setState({ authorizationCompleting: false }, false);
+            deps.host.cloudAuthCallbackSettle?.({ kind: "connected" });
         } catch (error) {
             if (disposed) return;
             const authoritativeCloud = cloudApiErrorSnapshot(error);
             if (authoritativeCloud) cloudAdopt(authoritativeCloud);
+            if (callbackUrl)
+                deps.host.cloudAuthCallbackSettle?.({
+                    kind: "failed",
+                    reason: cloudCompletionFailure(error, authoritativeCloud, callbackUrl),
+                });
             store.setState(
                 {
                     authorizationCompleting: false,
@@ -296,6 +318,40 @@ export function happyAgentCloudStoreCreate(deps: HappyAgentCloudStoreDeps): Happ
 }
 
 type CloudApiErrorBody = ApiErrorBody & { readonly cloud?: Cloud };
+
+/**
+ * Why Happy Agent refused one callback, read from its error code and the
+ * authoritative snapshot it returned. The single OAuth field read from the
+ * callback is `error`. It is the provider's explicit report that the reader
+ * cancelled, which the daemon returns under the same code as rejected
+ * credentials.
+ */
+function cloudCompletionFailure(
+    error: unknown,
+    cloud: Cloud | undefined,
+    callbackUrl: string,
+): Extract<HappyAgentCloudAuthOutcome, { kind: "failed" }>["reason"] {
+    if (!(error instanceof HappyAgentApiError)) return "failed";
+    if (cloud?.status === "disconnected" && cloud.error?.code === "authorization_expired")
+        return "expired";
+    switch (error.code) {
+        case "invalid_request":
+            return "notWaiting";
+        case "cloud_unauthorized": {
+            let providerError: string | null = null;
+            try {
+                providerError = new URL(callbackUrl).searchParams.get("error");
+            } catch {
+                /* An unreadable callback was never the provider's cancellation. */
+            }
+            return providerError === "access_denied" ? "declined" : "rejected";
+        }
+        case "cloud_unavailable":
+            return "unavailable";
+        default:
+            return "failed";
+    }
+}
 
 /** Cloud operation errors carry the authoritative snapshot in their API error body. */
 function cloudApiErrorSnapshot(error: unknown): Cloud | undefined {

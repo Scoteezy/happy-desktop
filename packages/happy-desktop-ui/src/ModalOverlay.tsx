@@ -12,6 +12,12 @@ export type ModalOverlayProps = {
      */
     onDismiss?: () => void;
     /**
+     * Called on Escape inside the overlay; defaults to `onDismiss`. A surface
+     * that must not be lost to a stray click on the dim, but that the reader
+     * may still close from the keyboard, wires only this.
+     */
+    onEscape?: () => void;
+    /**
      * `center` (default) hosts dialogs and forms in the standard modal
      * location. `top` anchors transient type-ahead surfaces below the adaptive
      * top gutter; it is not a form placement. `fill` drops the gutter and gives
@@ -44,6 +50,7 @@ export function ModalOverlay(props: ModalOverlayProps) {
         "style",
         "children",
         "onDismiss",
+        "onEscape",
         "placement",
     ]);
     const overlayEl = useRef<HTMLDivElement>(null);
@@ -82,7 +89,7 @@ export function ModalOverlay(props: ModalOverlayProps) {
                     local.onDismiss();
             }}
             onKeyDown={(event) => {
-                if (event.key === "Escape") local.onDismiss?.();
+                if (event.key === "Escape") (local.onEscape ?? local.onDismiss)?.();
             }}
             ref={overlayEl}
             style={local.style}

@@ -6,6 +6,8 @@ export interface HappyAgentConnectionItem {
     readonly id: string;
     readonly name: string;
     readonly remoteId?: string;
+    /** The WorkOS organization a team connection authenticates to, as the daemon reports it. */
+    readonly organizationId?: string;
 }
 
 export interface HappyAgentConnectionsSnapshot {
@@ -58,10 +60,17 @@ export function happyAgentConnectionsStoreCreate(
         for (const connection of result.connections) {
             const id = `connection:${connection.id}`;
             const previous = snapshot.items.find((item) => item.id === id);
+            const organizationId =
+                connection.authentication === "workos" ? connection.organizationId : undefined;
             items.push(
-                previous?.name === connection.name
+                previous?.name === connection.name && previous.organizationId === organizationId
                     ? previous
-                    : { id, remoteId: connection.id, name: connection.name },
+                    : {
+                          id,
+                          remoteId: connection.id,
+                          name: connection.name,
+                          ...(organizationId === undefined ? {} : { organizationId }),
+                      },
             );
         }
         confirmedItems = items;

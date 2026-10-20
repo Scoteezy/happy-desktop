@@ -39,6 +39,8 @@ const NO_TASK_FAILURES: HappyAgentSessionListSnapshot["taskFailures"] = new Map(
 export interface HappyAgentDirectoryEntry {
     readonly id: string;
     readonly remoteId?: string;
+    /** The WorkOS organization this team connection authenticates to, from the roster. */
+    readonly organizationId?: string;
     readonly label: string;
     /** What this Happy Agent's own daemon says it is called and looks like, once known. */
     readonly node?: HappyAgentNodeIdentity;
@@ -582,6 +584,9 @@ export function happyAgentDirectoryStoreCreate(
                             entry: {
                                 id: item.id,
                                 remoteId: item.remoteId,
+                                ...(item.organizationId === undefined
+                                    ? {}
+                                    : { organizationId: item.organizationId }),
                                 label: item.name,
                                 bots: [],
                                 botsCreating: [],
@@ -600,8 +605,19 @@ export function happyAgentDirectoryStoreCreate(
                             client.connection(item.remoteId),
                             `${base}/connections/${item.remoteId}`,
                         );
-                    } else if (remote.entry.label !== item.name)
-                        remote.entry = { ...remote.entry, label: item.name };
+                    } else if (
+                        remote.entry.label !== item.name ||
+                        remote.entry.organizationId !== item.organizationId
+                    ) {
+                        const { organizationId: _previous, ...entry } = remote.entry;
+                        remote.entry = {
+                            ...entry,
+                            label: item.name,
+                            ...(item.organizationId === undefined
+                                ? {}
+                                : { organizationId: item.organizationId }),
+                        };
+                    }
                 }
                 publish();
             });

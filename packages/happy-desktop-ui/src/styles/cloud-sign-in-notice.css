@@ -1,0 +1,69 @@
+/*
+ * C-301 CloudSignInNoticeDialog — a Happy account sign-in notice in the medium
+ * modal card, centered on the shared overlay. The body is a 12px-gap column
+ * of paragraphs, banners, and a team list. Each team row is its name over its
+ * connection status, followed by one trailing small button, with 8px gaps
+ * between rows.
+ */
+
+.cloud-sign-in-notice__body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.cloud-sign-in-notice__text {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 400;
+    line-height: 20px;
+}
+
+.cloud-sign-in-notice__teams {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.cloud-sign-in-notice__team {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    min-height: 40px;
+}
+
+.cloud-sign-in-notice__team-text {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.cloud-sign-in-notice__team-name,
+.cloud-sign-in-notice__team-status {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cloud-sign-in-notice__team-name {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 20px;
+}
+
+.cloud-sign-in-notice__team-status {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 16px;
+}

@@ -72,6 +72,7 @@ import {
     WelcomeScreen,
     ZoomIndicator,
     ConnectionShell,
+    CloudSignInNoticeDialog,
     ConnectionSurface,
     happyAgentSurfaceBackdropsPreload,
     type BrowserContentRenderer,
@@ -124,7 +125,11 @@ import { desktopHistoryPersistence } from "./desktopHistory";
 import { desktopConnectionUiCreate, type DesktopConnectionUi } from "./desktopConnectionUi";
 import { desktopConnectionPreferencesCreate } from "./desktopConnectionPreferences";
 import { desktopModelPreferencesCreate } from "./desktopModelPreferences";
-import { desktopCloudAuthRouterCreate } from "./desktopCloudAuthRouter";
+import { desktopCloudAuthRouterCreate, type DesktopCloudAuthEvent } from "./desktopCloudAuthRouter";
+import {
+    desktopCloudSignInNoticeStoreCreate,
+    type DesktopCloudSignInNoticeStore,
+} from "./desktopCloudSignInNoticeStore";
 import { desktopDebugStoreCreate } from "./desktopDebugStore";
 import { desktopProfilerStoreCreate } from "./desktopProfilerStore";
 import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
@@ -1017,6 +1022,24 @@ const zoomSubscribe = (listener: () => void) => {
     });
 };
 
+/** The window's one Happy account sign-in notice, centered over everything else. */
+function DesktopCloudSignInNotice(props: { store: DesktopCloudSignInNoticeStore }): ReactNode {
+    const notice = useSyncExternalStore(props.store.subscribe, props.store.get, props.store.get);
+    if (!notice) return null;
+    return (
+        <CloudSignInNoticeDialog
+            chiefOfStaff={notice.chiefOfStaff}
+            onAccountSettingsOpen={props.store.accountSettingsOpen}
+            onChiefOfStaffAsk={props.store.chiefOfStaffAsk}
+            onClose={props.store.noticeClose}
+            onConnectionOpen={props.store.connectionOpen}
+            onSignIn={props.store.signInStart}
+            onTeamsCheck={props.store.teamsCheck}
+            view={notice.view}
+        />
+    );
+}
+
 function DesktopZoomIndicator(): ReactNode {
     const asks = useSyncExternalStore(zoomSubscribe, () => zoomAsks);
     return asks === 0 ? undefined : <ZoomIndicator key={asks} percent={zoomPercent} />;
@@ -1183,11 +1206,14 @@ if (mediaPreviewBridge) {
         // open palette is a question in progress, not a place to come back to.
         const commandPalette = commandPaletteStoreCreate();
         const connectionUis = new Map<string, DesktopConnectionUi>();
-        const auth = desktopCloudAuthRouterCreate(desktopBridge, (id) => {
-            happyAgents.happyAgentActivate(id);
-            const history = connectionUis.get(id)?.router.history;
-            if (history && history.location.pathname !== "/settings/account")
-                history.replace("/settings/account");
+        // Every sign-in that comes back to the window becomes one centered
+        // notice. A callback read before that notice's store exists, such as
+        // the one that launched the app, waits here for it.
+        let signInNotice: DesktopCloudSignInNoticeStore | undefined;
+        const signInEventsEarly: DesktopCloudAuthEvent[] = [];
+        const auth = desktopCloudAuthRouterCreate(desktopBridge, (event) => {
+            if (signInNotice) signInNotice.authEventReceive(event);
+            else signInEventsEarly.push(event);
         });
         appDisposers.push(auth.dispose);
         const modelPreferences = new Map<
@@ -1309,6 +1335,17 @@ if (mediaPreviewBridge) {
             sidebarVisibility,
             happyAgents,
         });
+        const notices = desktopCloudSignInNoticeStoreCreate({
+            happyAgents,
+            accountSettingsOpen(id) {
+                happyAgents.happyAgentActivate(id);
+                const history = connectionUis.get(id)?.router.history;
+                if (history && history.location.pathname !== "/settings/account")
+                    history.replace("/settings/account");
+            },
+        });
+        signInNotice = notices;
+        for (const event of signInEventsEarly.splice(0)) notices.authEventReceive(event);
         // The update card outlives the main process's report of the update
         // until this window has reconnected and read the catalog again.
         const agentUpdate = desktopAgentUpdateStoreCreate({
@@ -1456,6 +1493,7 @@ if (mediaPreviewBridge) {
         root.render(
             <DesktopAppearance appearance={appearance}>
                 <DesktopZoomIndicator />
+                <DesktopCloudSignInNotice store={notices} />
                 <CodeHighlightWorkers>
                     <DesktopRenderer
                         connectionUis={connectionUis}
