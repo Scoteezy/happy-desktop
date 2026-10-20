@@ -2,7 +2,12 @@ import { Activity, memo, useCallback, type ReactNode } from "react";
 
 export type RetainedView = {
     readonly id: string;
-    readonly content: ReactNode;
+    /**
+     * What the view shows. Only the view on screen is drawn from it: one out
+     * of sight keeps what it last drew, whatever it is given, until it is shown
+     * again. A view first mounted out of sight is drawn from it once, at idle.
+     */
+    readonly content?: ReactNode;
 };
 
 export type RetainedViewsProps = {
@@ -30,9 +35,12 @@ export type RetainedViewsProps = {
  * `display: none`, so it takes no space and nothing in it can be focused,
  * clicked, typed into, found, or read by assistive technology; its effects and
  * refs are disconnected, so no listener of its own answers the keyboard or the
- * window; and it re-renders only at idle priority. Its DOM, including where
- * each scrollport was scrolled to, is left exactly as it was. A view given
- * out of sight before it was ever shown is only built once the page is idle.
+ * window, and no store it reads re-renders it. Its DOM, including where each
+ * scrollport was scrolled to, is left exactly as it was.
+ *
+ * A view out of sight does no work at all: it is frozen as it was last drawn,
+ * and whatever its owner hands it meanwhile is not rendered, not even at idle
+ * priority. Showing it again draws it once from the content it is given then.
  *
  * Views are placed in the order of their ids rather than of the list, so a view
  * never moves in the DOM — moving one would lose its scroll position — whatever
@@ -45,54 +53,101 @@ export function RetainedViews(props: RetainedViewsProps) {
     return (
         <>
             {views.map((view) => (
-                <Activity key={view.id} mode={view.id === props.activeId ? "visible" : "hidden"}>
-                    <RetainedViewFrame id={view.id} onHide={props.onViewHide}>
-                        {view.content}
-                    </RetainedViewFrame>
-                </Activity>
+                <RetainedViewEntry
+                    active={view.id === props.activeId}
+                    content={view.content}
+                    id={view.id}
+                    key={view.id}
+                    onHide={props.onViewHide}
+                />
             ))}
         </>
     );
 }
 
-/*
- * Memoized for a performance contract: a hidden view's owner hands back the
- * same content element while nothing in it changed, and this frame is what
- * lets React stop there instead of walking a hidden transcript at idle
- * priority on every render of the surface around it.
- */
-const RetainedViewFrame = memo(function RetainedViewFrame(props: {
+type RetainedViewEntryProps = {
+    active: boolean;
+    content: ReactNode;
     id: string;
     onHide: RetainedViewsProps["onViewHide"];
-    children: ReactNode;
-}) {
-    const { id, onHide } = props;
-    // React detaches a ref when its Activity hides, before the view is taken
-    // off screen, so the cleanup is the moment the view leaves and is still
-    // there to be counted. Kept stable so an ordinary render never re-measures.
-    const frame = useCallback(
-        (element: HTMLDivElement | null) => {
-            if (!element) return;
-            return () => {
-                // A control taken off screen can stay the focused element, and
-                // keys would keep going to it — and the view shown next would be
-                // refused the caret as if the reader were writing elsewhere. The
-                // focus leaves with the view.
-                const focused = element.ownerDocument.activeElement;
-                if (focused instanceof HTMLElement && element.contains(focused)) focused.blur();
-                onHide?.(id, element.getElementsByTagName("*").length);
-            };
-        },
-        [id, onHide],
-    );
-    return (
-        <div
-            className="happy-retained-views__view"
-            data-happy-desktop-ui="retained-view"
-            data-view-id={id}
-            ref={frame}
-        >
-            {props.children}
-        </div>
-    );
-});
+};
+
+/*
+ * Memoized for a performance contract: once a view is out of sight, renders
+ * around it stop here, before a new `Activity` element would have React walk
+ * the hidden subtree at idle priority. It renders again only to be shown or
+ * hidden.
+ */
+const RetainedViewEntry = memo(
+    function RetainedViewEntry(props: RetainedViewEntryProps) {
+        return (
+            <Activity mode={props.active ? "visible" : "hidden"}>
+                <RetainedViewFrame
+                    content={props.content}
+                    hidden={!props.active}
+                    id={props.id}
+                    onHide={props.onHide}
+                />
+            </Activity>
+        );
+    },
+    (previous, next) =>
+        previous.active === next.active &&
+        previous.id === next.id &&
+        previous.onHide === next.onHide &&
+        (!next.active || previous.content === next.content),
+);
+
+type RetainedViewFrameProps = {
+    content: ReactNode;
+    /** Freezes the frame as it was last drawn; see the comparison below. */
+    hidden: boolean;
+    id: string;
+    onHide: RetainedViewsProps["onViewHide"];
+};
+
+/*
+ * Memoized for a performance contract: a frame being hidden, or out of sight,
+ * counts as unchanged whatever it is given, so React keeps the content it last
+ * drew instead of drawing a hidden transcript again. Shown, it compares as
+ * usual against what it last drew.
+ */
+const RetainedViewFrame = memo(
+    function RetainedViewFrame(props: RetainedViewFrameProps) {
+        const { id, onHide } = props;
+        // React detaches a ref when its Activity hides, before the view is taken
+        // off screen, so the cleanup is the moment the view leaves and is still
+        // there to be counted. Kept stable so an ordinary render never re-measures.
+        const frame = useCallback(
+            (element: HTMLDivElement | null) => {
+                if (!element) return;
+                return () => {
+                    // A control taken off screen can stay the focused element, and
+                    // keys would keep going to it — and the view shown next would be
+                    // refused the caret as if the reader were writing elsewhere. The
+                    // focus leaves with the view.
+                    const focused = element.ownerDocument.activeElement;
+                    if (focused instanceof HTMLElement && element.contains(focused)) focused.blur();
+                    onHide?.(id, element.getElementsByTagName("*").length);
+                };
+            },
+            [id, onHide],
+        );
+        return (
+            <div
+                className="happy-retained-views__view"
+                data-happy-desktop-ui="retained-view"
+                data-view-id={id}
+                ref={frame}
+            >
+                {props.content}
+            </div>
+        );
+    },
+    (previous, next) =>
+        next.hidden ||
+        (previous.hidden === next.hidden &&
+            previous.content === next.content &&
+            previous.id === next.id &&
+            previous.onHide === next.onHide),
+);

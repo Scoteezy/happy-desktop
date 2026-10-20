@@ -1,5 +1,5 @@
 import "./styles.css";
-import { useSyncExternalStore } from "react";
+import { Profiler, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import type { ComposerSnapshot, ConversationEntry } from "happy-desktop-state";
 import { expect, it } from "vitest";
@@ -214,4 +214,69 @@ it("hides every view while none is active, and unmounts a view its owner lets go
             (element) => element.getAttribute("data-view-id"),
         ),
     ).toEqual(["a", "c"]);
+});
+
+it("does no work for a view out of sight, and draws it once from what it is given when shown", async () => {
+    type Ticking = Shown & { readonly tick: number };
+    let snapshot: Ticking = { activeId: "a", ids: ["a", "b"], tick: 0 };
+    const listeners = new Set<() => void>();
+    const set = (next: Ticking) => {
+        snapshot = next;
+        flushSync(() => {
+            for (const listener of listeners) listener();
+        });
+    };
+    const subscribe = (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+    };
+    const get = () => snapshot;
+    const renders = new Map<string, number>();
+    const counted = (id: string) => renders.set(id, (renders.get(id) ?? 0) + 1);
+    function Harness() {
+        const shown = useSyncExternalStore(subscribe, get, get);
+        return (
+            <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+                <RetainedViews
+                    {...(shown.activeId === undefined ? {} : { activeId: shown.activeId })}
+                    views={shown.ids.map((id) => ({
+                        id,
+                        content: (
+                            <Profiler id={id} onRender={() => counted(id)}>
+                                <p data-view-text={id}>{`${id} at ${String(shown.tick)}`}</p>
+                            </Profiler>
+                        ),
+                    }))}
+                />
+            </div>
+        );
+    }
+    const view = createRenderer().render(() => <Harness />, size);
+    await view.ready();
+    const textOf = (id: string) =>
+        view.container.querySelector(`[data-view-text="${id}"]`)?.textContent;
+    const idle = () => new Promise<void>((resolve) => setTimeout(resolve, 100));
+    set({ activeId: "b", ids: ["a", "b"], tick: 0 });
+    await frame();
+    await idle();
+    const hiddenRenders = renders.get("a");
+
+    // The owner keeps handing the hidden view new content; none of it is drawn,
+    // not even once the page is idle.
+    for (const tick of [1, 2, 3]) {
+        set({ activeId: "b", ids: ["a", "b"], tick });
+        await frame();
+    }
+    await idle();
+    expect(renders.get("a")).toBe(hiddenRenders);
+    expect(textOf("a")).toBe("a at 0");
+    expect(textOf("b")).toBe("b at 3");
+
+    // Shown again, it is drawn once, from what it is given now.
+    set({ activeId: "a", ids: ["a", "b"], tick: 4 });
+    await frame();
+    await idle();
+    expect(renders.get("a")).toBe(hiddenRenders! + 1);
+    expect(textOf("a")).toBe("a at 4");
+    expect(textOf("b")).toBe("b at 3");
 });
