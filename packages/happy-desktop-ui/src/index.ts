@@ -833,6 +833,10 @@ export {
     type HappyAgentSettingsShellProps,
 } from "./pages/settings/HappyAgentSettingsShell";
 export {
+    HappyAgentTaskSettings,
+    type HappyAgentTaskSettingsProps,
+} from "./pages/settings/HappyAgentTaskSettings";
+export {
     HappyAgentGeneralSettings,
     type HappyAgentAppearanceChoice,
     type HappyAgentGeneralSettingsProps,

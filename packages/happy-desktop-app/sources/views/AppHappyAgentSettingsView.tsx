@@ -19,6 +19,7 @@ import type {
     HappyAgentSettingsSnapshot,
     HappyAgentSettingsStore,
     HappyAgentThinkingLevel,
+    HappyAgentTaskSettingsSnapshot,
     HappyAgentSidebarVisibilityStore,
     HappyAgentWindowStore,
     KeepAwakeStore,
@@ -73,6 +74,7 @@ import {
     HappyAgentProfileSettings,
     HappyAgentSecretSettings,
     HappyAgentSettingsShell,
+    HappyAgentTaskSettings,
     GptLiveSettings,
     HappyAgentStateSettings,
     HappyAgentUsageSettings,
@@ -90,11 +92,16 @@ import {
     appMobileRelayFromLink,
 } from "../components/AppMobilePairing";
 import type { SelectOption } from "happy-desktop-ui";
-import { hostHappyAgent, type AppHappyAgentDirectoryStore } from "../AppHappyAgentView";
+import {
+    hostHappyAgent,
+    type AppHappyAgentDirectoryStore,
+    type AppHappyAgentEntry,
+} from "../AppHappyAgentView";
 
 /** The categories the local settings window offers, in the order they are listed. */
 export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
+    { icon: "check-circle", id: "tasks", label: "Tasks" },
     // Local author identity and the optional WorkOS account share one category.
     { icon: "users", id: "account", label: "Account" },
     // How each project's changes are split into tiers in the Changes listing.
@@ -302,6 +309,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     voice: "Voice calls, controller, and prompt",
     debug: "Inspect live state, Happy and Happy Agent debugger endpoints, and renderer profiles",
     general: "How this window looks and what a new session starts with",
+    tasks: "Which tasks you automatically join on each connection",
     "mobile-access": "This Happy Agent's connection to Happy Mobile",
     account: "Local author identity and Happy account connection",
     "file-tiers": "Which changed files every project lists apart, below the rest of a change",
@@ -919,6 +927,10 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         supported={profiler.status !== "unavailable"}
                     />
                 </>
+            ) : section === "tasks" ? (
+                directory.happyAgents.map((entry) => (
+                    <AppHappyAgentTaskSettings key={entry.id} entry={entry} />
+                ))
             ) : section === "account" ? (
                 // The local author identity and optional WorkOS connection.
                 <>
@@ -1338,6 +1350,47 @@ const INSTRUCTIONS_PATH = "~/Happy/Config/AGENTS.md";
 const SECURITY_POLICY_PATH = "~/Happy/Config/SECURITY.md";
 
 const noSubscribe = () => () => undefined;
+const taskSettingsLoading: HappyAgentTaskSettingsSnapshot = { status: "loading" };
+const taskSettingsUnloaded = () => taskSettingsLoading;
+
+/** Each connection owns one preference store and one coarse subscription while this page is open. */
+function AppHappyAgentTaskSettings(props: { readonly entry: AppHappyAgentEntry }) {
+    const { entry } = props;
+    const store = entry.session?.taskSettings?.();
+    const snapshot = useSyncExternalStore(
+        store?.subscribe ?? noSubscribe,
+        store?.get ?? taskSettingsUnloaded,
+        store?.get ?? taskSettingsUnloaded,
+    );
+    const availability = entry.session
+        ? happyAgentAvailabilityProject(entry.session.connection.get(), true, {
+              status: entry.status,
+              ...(entry.message === undefined ? {} : { message: entry.message }),
+          })
+        : undefined;
+    const unavailable =
+        availability?.online === false
+            ? (availability.refusal ?? availability.message)
+            : store === undefined
+              ? "This connection is unavailable."
+              : snapshot.status === "ready" && !snapshot.online
+                ? "Reconnecting to this connection’s user settings."
+                : undefined;
+    return (
+        <HappyAgentTaskSettings
+            connectionLabel={entry.label}
+            status={snapshot.status}
+            autoJoinEnabled={snapshot.status === "ready" ? snapshot.autoJoinEnabled : undefined}
+            saving={snapshot.status === "ready" && snapshot.saving}
+            error={snapshot.status !== "unsupported" ? snapshot.error?.message : undefined}
+            saveError={snapshot.status === "ready" ? snapshot.saveError?.message : undefined}
+            unavailable={unavailable}
+            onAutoJoinChange={(enabled) => {
+                if (availability?.online) store?.taskAutoJoinUpdate(enabled);
+            }}
+        />
+    );
+}
 const changeTiersEmpty: HappyAgentChangeTiersSnapshot = { tiers: [] };
 const changeTiersNone = (): HappyAgentChangeTiersSnapshot => changeTiersEmpty;
 

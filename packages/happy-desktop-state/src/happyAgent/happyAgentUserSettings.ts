@@ -37,6 +37,10 @@ export interface HappyAgentUserSettingsSource {
 }
 interface Projection<T> {
     readonly choices: T;
+    readonly support: "unknown" | "supported" | "unsupported";
+    readonly online: boolean;
+    readonly saving: boolean;
+    readonly readError?: UserError;
     readonly saveError?: UserError;
 }
 interface Options<T> {
@@ -56,6 +60,7 @@ interface ConnectionRecord<T> {
     device: T;
     settings: Map<string, StoredUserSetting>;
     writes: Map<string, HappyAgentUserSettingsWrite>;
+    readError?: UserError;
     saveError?: UserError;
 }
 interface Follower {
@@ -194,16 +199,21 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
     })();
     const followers = new Map<string, Follower>();
     const listeners = new Set<() => void>();
-    const projectionOf = (record: ConnectionRecord<T>): Projection<T> | undefined => {
+    const projectionOf = (connectionId: string, record: ConnectionRecord<T>): Projection<T> => {
         const choices = choicesOf(record);
-        if (record.saveError) return { choices, saveError: record.saveError };
-        return options.equal(choices, options.empty) ? undefined : { choices };
+        return {
+            choices,
+            support: record.support,
+            online: followers.get(connectionId)?.online ?? false,
+            saving: record.writes.size > 0,
+            ...(record.readError ? { readError: record.readError } : {}),
+            ...(record.saveError ? { saveError: record.saveError } : {}),
+        };
     };
     let snapshot: { readonly connections: ReadonlyMap<string, Projection<T>> } = (() => {
         const connections = new Map<string, Projection<T>>();
         for (const [id, record] of records) {
-            const projection = projectionOf(record);
-            if (projection) connections.set(id, projection);
+            connections.set(id, projectionOf(id, record));
         }
         return { connections };
     })();
@@ -215,11 +225,15 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
         }
         const record = records.get(connectionId);
         const previous = snapshot.connections.get(connectionId);
-        const next = record ? projectionOf(record) : undefined;
+        const next = record ? projectionOf(connectionId, record) : undefined;
         if (
             previous === next ||
             (previous !== undefined &&
                 next !== undefined &&
+                previous.support === next.support &&
+                previous.online === next.online &&
+                previous.saving === next.saving &&
+                previous.readError === next.readError &&
                 previous.saveError === next.saveError &&
                 options.equal(previous.choices, next.choices))
         )
@@ -375,13 +389,17 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
                     throw error;
                 }
             },
-            () => {
+            (error) => {
                 follower.readFailed = true;
+                follower.online = false;
+                recordEnsure(connectionId).readError = happyAgentUserError(error);
+                commit(connectionId);
             },
         );
         if (follower.signal.aborted) return;
         follower.readFailed = false;
         follower.online = true;
+        delete recordEnsure(connectionId).readError;
         settingsReplace(connectionId, response?.settings, undefined);
         flushStart(connectionId);
     };
@@ -393,11 +411,14 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
             if (input.kind === "error") {
                 follower.online = false;
                 follower.readFailed = true;
+                recordEnsure(connectionId).readError = happyAgentUserError(input.error);
+                commit(connectionId);
                 continue;
             }
             if (input.kind === "bootstrap") {
                 follower.online = true;
                 follower.readFailed = false;
+                delete recordEnsure(connectionId).readError;
                 settingsReplace(
                     connectionId,
                     input.bootstrap.userSettings,
@@ -414,9 +435,14 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
             if (update.kind === "connected") {
                 follower.online = true;
                 if (follower.readFailed) await settingsRead(connectionId, follower);
-                else flushStart(connectionId);
-            } else if (update.kind === "disconnected") follower.online = false;
-            else if (update.kind === "event" && update.event.type === "user_settings.updated")
+                else {
+                    commit(connectionId);
+                    flushStart(connectionId);
+                }
+            } else if (update.kind === "disconnected") {
+                follower.online = false;
+                commit(connectionId);
+            } else if (update.kind === "event" && update.event.type === "user_settings.updated")
                 settingAdopt(
                     connectionId,
                     update.event.payload.setting,
@@ -461,13 +487,18 @@ export function happyAgentUserSettingsCreate<T>(options: Options<T>) {
                 signal: active.signal,
                 stop: () => {
                     active.abort();
-                    if (followers.get(connectionId) === follower) followers.delete(connectionId);
+                    if (followers.get(connectionId) === follower) {
+                        followers.delete(connectionId);
+                        commit(connectionId);
+                    }
                 },
                 online: false,
                 flushing: false,
                 readFailed: false,
             };
             followers.set(connectionId, follower);
+            recordEnsure(connectionId);
+            commit(connectionId);
             void follow(connectionId, follower).catch(() => undefined);
             return follower.stop;
         },
