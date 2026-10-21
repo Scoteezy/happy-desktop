@@ -263,15 +263,13 @@ it("truncates a long account name in its header without widening the model list"
     await open(LONG);
     // The list is as wide as its model names make it, whatever the account is called.
     expect(part(LONG, "composer-model-control-models").bounds().width).toBe(shortWidth);
-    expect(shortWidth).toBe(192);
-    // The service, both parentheses, and the chevron stay whole; only the name gives way.
+    expect(shortWidth).toBe(216);
+    // The service and the chevron stay whole; only the name gives way.
     const header = part(LONG, "composer-model-control-account-label");
     const name = header.element.querySelector<HTMLElement>(
         ".happy-composer-model-control__account-name",
     )!;
-    expect(
-        header.element.querySelector(".happy-composer-model-control__account-text")?.textContent,
-    ).toBe(`(${LONG})`);
+    expect(name.textContent).toBe(LONG);
     expect(name.scrollWidth).toBeGreaterThan(name.clientWidth);
     expect(getComputedStyle(name).textOverflow).toBe("ellipsis");
     const chevron = header.element.querySelector(".happy-composer-model-control__account-chevron")!;

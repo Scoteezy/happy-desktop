@@ -248,14 +248,15 @@ export function happyAgentComposerModelUsageProject(
     return usage;
 }
 
-/** Ages are told again this often while the menu is open, so "3 min ago" keeps counting. */
+/** Ages are told again this often while the picker is mounted, so "3 min ago" keeps counting. */
 const USAGE_AGE_TICK_MS = 15_000;
 
 /**
  * Feeds the picker's accounts from the provider-usage store. The picker holds
- * the subscription while its menu is open: the store answers at once with the
- * reading it already holds, follows the daemon's changes, and passes the
- * picker's refresh requests on to the daemon.
+ * the subscription for as long as it is mounted, so its closed pill can warn of
+ * a running-out account: the store answers at once with the reading it already
+ * holds, follows the daemon's changes, and passes on the refresh requests the
+ * picker makes as its menu opens.
  */
 export function happyAgentComposerModelUsageWatch(
     store: HappyAgentProviderUsageStore,

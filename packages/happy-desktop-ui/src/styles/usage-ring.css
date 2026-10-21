@@ -24,7 +24,12 @@
     stroke: var(--warning-critical);
 }
 
-/* A spent window has no arc left to colour, so its track carries the red. */
+/* Under a short red arc the track is tinted, so the arc still reads apart from it. */
 .happy-usage-ring[data-tone="critical"] .happy-usage-ring__track {
     stroke: color-mix(in srgb, var(--warning-critical) 40%, transparent);
+}
+
+/* A spent window has no arc left to colour, so its whole track is the red. */
+.happy-usage-ring[data-tone="critical"][data-left="0"] .happy-usage-ring__track {
+    stroke: var(--warning-critical);
 }

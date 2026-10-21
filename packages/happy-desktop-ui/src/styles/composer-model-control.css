@@ -30,7 +30,8 @@
     height: 32px;
     margin: 0;
     padding: 0 12px;
-    overflow: hidden;
+    /* Not clipped: the usage warning's label rises out of the pill. The
+       summary clips and ellipsizes the model name on its own. */
     border: 0;
     border-radius: 999px;
     background: transparent;
@@ -76,6 +77,28 @@
 
 .happy-composer-model-control__effort {
     color: var(--text-secondary);
+}
+
+/* The usage warning: one ring before the model name, present only while the
+ * selected account runs low, so a quiet pill reserves no room for it. The
+ * ring's 12px box sits on the pill's centre line with the name's 18px line. */
+.happy-composer-model-control__warning {
+    flex: none;
+}
+
+/* Its label answers the whole pill, not only the 12px ring, after the
+ * Tooltip's usual dwell. */
+.happy-composer-model-control__trigger:hover:not(:disabled) .happy-tooltip__bubble {
+    opacity: 1;
+    transform: translateX(-50%);
+    transition-delay: var(--happy-tooltip-delay);
+}
+
+/* The open menu covers where the label would rise, and says more. */
+.happy-composer-model-control[data-open]
+    .happy-composer-model-control__warning
+    .happy-tooltip__bubble {
+    display: none;
 }
 
 .happy-composer-model-control__menu,
@@ -156,9 +179,10 @@
 
 /* The model list's inset lives on its content and footer instead of the
  * panel, so an overflowing list sets its scrollbar beside the rows, that
- * inset away. */
+ * inset away. Its least width leaves a header with both usage rings room to
+ * name the start of its account. */
 .happy-composer-model-control__models {
-    min-width: 192px;
+    min-width: 216px;
     max-width: 256px;
     padding: 6px 0;
     /* The measured cap comes from the control itself; this is the fallback for a
@@ -320,12 +344,15 @@
     font-weight: 600;
 }
 
-/* The parentheses stay whole around an account name that ends in an ellipsis. */
-.happy-composer-model-control__account-text {
-    display: flex;
-    flex: 0 1 auto;
-    min-width: 0;
-    white-space: nowrap;
+/* The account follows its service in lighter type, with no brackets to keep
+ * whole, so a long one simply ends in an ellipsis. It is capped well short of
+ * the row, so a header stays a compact label however long the name is. The
+ * room it leaves goes to its right, which puts the chevron on the row's
+ * trailing edge. */
+.happy-composer-model-control__account-label > .happy-composer-model-control__account-name {
+    max-width: 112px;
+    margin-right: auto;
+    font-weight: 400;
 }
 
 /* A service header is a text button coloured like the effort in the pill.
@@ -396,12 +423,60 @@
     cursor: default;
 }
 
-/* The header reads "Claude (default account) ›": the service, its account in
- * parentheses, and a chevron, because it opens a panel of its own. */
+/* The header reads "Claude work@example.com  63% ◔  88% ◕ ›": the service,
+ * its account, what is left of its week and session, and a chevron, because it
+ * opens a panel of its own. The button is the whole header line, so all of it
+ * is one target and the chevron ends on the same inset as every line's right
+ * edge; its highlight is painted like a row's, 2px inside the line. */
 .happy-composer-model-control__account-label {
+    flex: 1 1 auto;
+    align-self: stretch;
     align-items: center;
     gap: 4px;
+    margin: 0 -10px;
+    padding: 0 10px;
     font-size: 12px;
+}
+
+.happy-composer-model-control__account-label::before {
+    inset: 2px 0;
+    border-radius: 8px;
+}
+
+/* A header sits above the rows after it, so a usage label it opens downward is
+ * painted over them rather than under. */
+.happy-composer-model-control__service-header:has(> .happy-composer-model-control__account-label) {
+    z-index: 1;
+}
+
+/* It keeps to the trailing edge whether or not the account is named before it. */
+.happy-composer-model-control__header-usage {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding-left: 2px;
+}
+
+/* A ring's label opens below its header and ends on the header's right edge,
+ * not centred on the ring, so it stays inside the list that clips it. It is
+ * placed against the header's button rather than the ring's own wrapper, and
+ * wraps rather than overflowing a narrow list. */
+.happy-composer-model-control__header-usage .happy-tooltip {
+    position: static;
+}
+
+.happy-composer-model-control__header-usage .happy-tooltip > .happy-tooltip__bubble {
+    right: 0;
+    left: auto;
+    max-width: 100%;
+    transform: translateY(calc(-1 * var(--happy-tooltip-rise)));
+}
+
+.happy-composer-model-control__header-usage .happy-tooltip:hover > .happy-tooltip__bubble,
+.happy-composer-model-control__header-usage .happy-tooltip[data-open] > .happy-tooltip__bubble {
+    transform: none;
 }
 
 /* A box-centred chevron sits on the cap-height middle, but the header is mostly

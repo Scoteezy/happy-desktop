@@ -64,7 +64,7 @@ export type ComposerModelAccountUsage = {
 export type ComposerModelUsage = {
     /** Keyed by account id; an account missing here has no reading. */
     accounts: ReadonlyMap<string, ComposerModelAccountUsage>;
-    /** Now, in milliseconds. It moves on while the menu stays open, so ages keep counting. */
+    /** Now, in milliseconds. It moves on while the control is mounted, so ages keep counting. */
     now: number;
 };
 export type ComposerModelAccount = {
@@ -106,11 +106,12 @@ export type ComposerModelAccountNotice =
           onAsk(): Promise<void>;
       };
 /**
- * Live account usage for the menu. The control subscribes when the menu
- * appears and releases when it goes, so nothing is followed while nobody
- * looks. Opening the menu asks for a refresh of every account it lists, and
- * moving the selection onto another account asks for that one; the owner
- * decides what is actually worth reading again.
+ * Live account usage for the pill and its menu. The control holds one
+ * subscription for as long as it is mounted, so the closed pill warns as the
+ * selected account runs low; it only follows what the owner already reads and
+ * never asks for a refresh while closed. Opening the menu asks for a refresh
+ * of every account it lists, and moving the selection onto another account
+ * asks for that one; the owner decides what is actually worth reading again.
  */
 export type ComposerModelUsageWatch = {
     subscribe(listener: (usage: ComposerModelUsage) => void): () => void;
@@ -137,6 +138,8 @@ export type ComposerModelControlPreview = {
     accountFocus?: string;
     /** The account notice's tooltip or popover, shown open. */
     accountNoticeOpen?: boolean;
+    /** The pill's usage warning label, shown open. */
+    usageWarningOpen?: boolean;
 };
 export type ComposerModelControlProps = {
     className?: string;
@@ -355,6 +358,42 @@ function usageLeft(window: ComposerModelUsageWindow) {
     return Math.round(Math.min(100, Math.max(0, 100 - window.usedPercent)));
 }
 
+/** Which of an account's windows a reading is, by the field it came from. */
+type UsageWindowKind = "week" | "session";
+
+const USAGE_WINDOW_NAMES: Record<UsageWindowKind, string> = { week: "Weekly", session: "Session" };
+
+/** A ring's hover label: which window it reads and when that starts over, "Weekly · resets Thu 6:00 PM". */
+function usageWindowResetsLabel(kind: UsageWindowKind, window: ComposerModelUsageWindow) {
+    return [USAGE_WINDOW_NAMES[kind], window.resets].filter(Boolean).join(" · ");
+}
+
+/**
+ * The one window the pill warns about, once the selected account runs low:
+ * the week when it is low, otherwise the session. A window holding a spent
+ * account back is critical whatever its number says.
+ */
+function pillWarning(usage: ComposerModelAccountUsage | undefined) {
+    const candidates = (["week", "session"] as const).flatMap((kind) => {
+        const window = usage?.[kind];
+        if (window === undefined) return [];
+        const left = usageLeft(window);
+        const tone = usageRingTone(left, window.blocking === true);
+        return tone === "ample" ? [] : [{ kind, window, left, tone }];
+    });
+    const warning = candidates[0];
+    if (warning === undefined) return undefined;
+    const name = `${USAGE_WINDOW_NAMES[warning.kind]} limit`;
+    const resets = warning.window.resets ? ` · ${warning.window.resets}` : "";
+    return {
+        ...warning,
+        label:
+            warning.window.blocking === true
+                ? `${name} reached${resets}`
+                : `${name} · ${String(warning.left)}% left${resets}`,
+    };
+}
+
 /**
  * The share of a window left, as the native menu bar draws it: the number,
  * then a small ring that drains as the window is spent. It turns yellow when
@@ -486,6 +525,40 @@ function UsageLine(props: { window: ComposerModelUsageWindow; primary?: boolean 
                 window={window}
             />
         </div>
+    );
+}
+
+/** An account's windows that have a reading, week first. */
+function usageWindows(usage: ComposerModelAccountUsage | undefined) {
+    const windows: { kind: UsageWindowKind; window: ComposerModelUsageWindow }[] = [];
+    if (usage?.week) windows.push({ kind: "week", window: usage.week });
+    if (usage?.session) windows.push({ kind: "session", window: usage.session });
+    return windows;
+}
+
+/**
+ * A service header's glance at its account: what is left of the week, then of
+ * the session, each naming its window and reset time on hover. The rings sit
+ * inside the header's button, so pointing at one still opens the accounts.
+ */
+function HeaderUsage(props: { usage: ComposerModelAccountUsage | undefined }) {
+    const windows = usageWindows(props.usage);
+    if (windows.length === 0) return null;
+    return (
+        <span
+            className="happy-composer-model-control__header-usage"
+            data-happy-desktop-ui="composer-model-control-header-usage"
+        >
+            {windows.map(({ kind, window }) => (
+                <Tooltip key={kind} label={usageWindowResetsLabel(kind, window)} placement="bottom">
+                    <UsageGauge
+                        blocked={window.blocking === true}
+                        text={`${String(usageLeft(window))}%`}
+                        window={window}
+                    />
+                </Tooltip>
+            ))}
+        </span>
     );
 }
 
@@ -732,15 +805,19 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
             service.accounts.some((account) => account.models.length > 0),
         );
     const usageWatch = props.usageWatch;
-    // Identity contract: the watch runs exactly as long as the menu is open, so
-    // usage is on hand before the account panel opens. This callback
-    // may only change when the watch itself does — an ordinary re-render must
-    // not restart the owner's usage reads.
-    const usageLease = useCallback(
-        (node: HTMLDivElement | null) => {
-            if (node === null || usageWatch === undefined) return;
-            const release = usageWatch.subscribe(setLiveUsage);
+    const root = useRef<HTMLDivElement>(null);
+    // Identity contract: the watch runs exactly as long as the control is
+    // mounted, so the closed pill can warn of a running-out account and the
+    // menu opens on usage already at hand. This callback may only change when
+    // the watch itself does — an ordinary re-render must not restart the
+    // owner's usage reads.
+    const rootAttach = useCallback(
+        (node: HTMLDivElement) => {
+            root.current = node;
+            const release = usageWatch?.subscribe(setLiveUsage);
             return () => {
+                root.current = null;
+                if (release === undefined) return;
                 release();
                 setLiveUsage(null);
             };
@@ -750,7 +827,6 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     // A removed catalog closes the picker; restoring it must not reopen an old menu.
     if (!hasModels && panel !== null) setPanel(null);
     const open = panel !== null;
-    const root = useRef<HTMLDivElement>(null);
     const trigger = useRef<HTMLButtonElement>(null);
     // eslint-disable-next-line happy-react/no-layout-effect -- an open model menu owns a document-level outside-pointer listener that is attached after commit and completely removed when it closes
     useLayoutEffect(() => {
@@ -819,6 +895,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         : (selectedModel?.label ?? selection?.model ?? "");
     const effortCurrent = selectedRow ? effortIndex(selectedRow) : -1;
     const effortLabel = selectedRow?.model.efforts[effortCurrent]?.label;
+    const warning = selection ? pillWarning(liveUsage?.accounts.get(selection.account)) : undefined;
 
     const close = () => {
         setPanel(null);
@@ -944,12 +1021,20 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     /** An account says that it is one: the service's own is its default, any other is its id. */
     const accountName = (account: ComposerModelAccount) =>
         account.default ? "Default account" : account.label;
-    /** The header only names the account, after its service; its usage belongs to the account panel. */
+    /** The header names the account after its service; its full usage belongs to the account panel. */
     const accountSummary = (service: ComposerModelService) => {
         const account = service.accounts.find((candidate) => candidate.id === accountOf(service));
         if (account === undefined) return accountOf(service);
         return account.default ? "default account" : account.label;
     };
+    /** What the header's button is called: its account, then each window it shows. */
+    const headerLabel = (service: ComposerModelService) =>
+        [
+            `${service.label} account: ${accountSummary(service)}`,
+            ...usageWindows(liveUsage?.accounts.get(accountOf(service))).map(
+                ({ kind, window }) => `${kind} ${String(usageLeft(window))}% left`,
+            ),
+        ].join(", ");
 
     const renderRow = (row: Row) => (
         <button
@@ -1085,7 +1170,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                     trigger.current?.focus();
                 }
             }}
-            ref={root}
+            ref={rootAttach}
             style={props.style}
         >
             {props.accountNotice ? (
@@ -1096,7 +1181,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                 aria-haspopup={hasModels ? "dialog" : undefined}
                 aria-label={
                     hasModels
-                        ? `Model: ${modelLabel}.${effortLabel ? ` Effort: ${effortLabel}.` : ""}`
+                        ? `Model: ${modelLabel}.${effortLabel ? ` Effort: ${effortLabel}.` : ""}${warning ? ` ${warning.label}.` : ""}`
                         : modelLabel
                 }
                 className="happy-composer-model-control__trigger"
@@ -1107,6 +1192,19 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                 ref={trigger}
                 type="button"
             >
+                {warning ? (
+                    <Tooltip
+                        className="happy-composer-model-control__warning"
+                        label={warning.label}
+                        open={preview?.usageWarningOpen}
+                    >
+                        <UsageRing
+                            className="happy-composer-model-control__warning-ring"
+                            left={warning.left}
+                            tone={warning.tone}
+                        />
+                    </Tooltip>
+                ) : null}
                 <span className="happy-composer-model-control__summary">
                     <span>{modelLabel}</span>
                     {hasModels && effortLabel ? (
@@ -1120,7 +1218,6 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                     aria-label="Model configuration"
                     className="happy-composer-model-control__menu"
                     data-happy-desktop-ui="composer-model-control-menu"
-                    ref={usageLease}
                     role="dialog"
                 >
                     <Setting
@@ -1204,7 +1301,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                                         <button
                                                             aria-expanded={accountsOpen}
                                                             aria-haspopup="menu"
-                                                            aria-label={`${service.label} account: ${accountSummary(service)}`}
+                                                            aria-label={headerLabel(service)}
                                                             className="happy-composer-model-control__text-button happy-composer-model-control__account-label"
                                                             data-focus-visible={
                                                                 preview?.accountFocus === service.id
@@ -1241,13 +1338,14 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                                             <span className="happy-composer-model-control__service-name">
                                                                 {service.label}
                                                             </span>
-                                                            <span className="happy-composer-model-control__account-text">
-                                                                (
-                                                                <span className="happy-composer-model-control__account-name">
-                                                                    {accountSummary(service)}
-                                                                </span>
-                                                                )
+                                                            <span className="happy-composer-model-control__account-name">
+                                                                {accountSummary(service)}
                                                             </span>
+                                                            <HeaderUsage
+                                                                usage={liveUsage?.accounts.get(
+                                                                    accountOf(service),
+                                                                )}
+                                                            />
                                                             {props.accountsReadOnly ? null : (
                                                                 <span className="happy-composer-model-control__account-chevron">
                                                                     <Icon

@@ -459,6 +459,53 @@ const LONG_ACCOUNT_SERVICES: readonly ComposerModelService[] = SERVICES.map((ser
 );
 const OPUS_LONG_ACCOUNT: ComposerModelSelection = { ...OPUS_MEDIUM, account: LONG_ACCOUNT };
 
+/* Claude on a long address whose week is running low and whose session is nearly spent. */
+const EMAIL_ACCOUNT = "kirill2003deforsms@gmail.com";
+const EMAIL_ACCOUNT_SERVICES: readonly ComposerModelService[] = SERVICES.map((service) =>
+    service.id === "claude"
+        ? {
+              ...service,
+              accounts: [
+                  ...service.accounts,
+                  { id: EMAIL_ACCOUNT, label: EMAIL_ACCOUNT, models: CLAUDE_MODELS },
+              ],
+          }
+        : service,
+);
+const OPUS_EMAIL_ACCOUNT: ComposerModelSelection = { ...OPUS_MEDIUM, account: EMAIL_ACCOUNT };
+const emailAccountLow = usageWith(EMAIL_ACCOUNT, {
+    week: { label: "Week", usedPercent: 82, resets: "resets Thu 6:00 PM" },
+    session: { label: "Session", usedPercent: 95, resets: "resets 11:10 PM" },
+    updatedAt: NOW - 2 * MINUTE,
+});
+
+/* The selected Claude account running low on its week, its session, or spent. */
+const claudeWeekLow = usageWith("claude", {
+    ...CLAUDE,
+    week: { label: "Week", usedPercent: 88, resets: "resets Thu 6:00 PM" },
+});
+const claudeSessionLow = usageWith("claude", {
+    ...CLAUDE,
+    session: { label: "Session", usedPercent: 85, resets: "resets 6:20 PM" },
+});
+const claudeWeekSpent = usageWith("claude", {
+    ...CLAUDE,
+    week: { label: "Week", usedPercent: 100, resets: "resets Thu 6:00 PM", blocking: true },
+    limit: { resets: "Thu 6:00 PM" },
+});
+
+/** The closed pill on Opus, with room above it for its label. */
+function Pill(props: {
+    preview?: ComposerModelControlPreview;
+    usageWatch?: ComposerModelUsageWatch;
+}) {
+    return (
+        <Anchor height={72} width={360}>
+            <Picker preview={props.preview} selection={OPUS_MEDIUM} usageWatch={props.usageWatch} />
+        </Anchor>
+    );
+}
+
 export function ComposerModelControlPage() {
     const [configured, configuredSet] = useState(false);
     const [selection, selectionSet] = useState(ASTRA);
@@ -521,7 +568,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="06"
                 label="Header hovered"
-                detail="Pointing at a header highlights just that button, the way a project's settings gear does in the sidebar."
+                detail="The whole header is one button: pointing anywhere on it, rings included, highlights the line the way a hovered model row is highlighted."
                 stage="surface"
             >
                 <Open preview={{ accountButtonHover: "claude" }} />
@@ -559,7 +606,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09"
                 label="Default account and a named one"
-                detail="Codex runs on Current CLI. Claude runs on work@example.com, the configured account's friendly name. Headers never show usage; usage lives in the account panel."
+                detail="Codex runs on Current CLI. Claude runs on work@example.com, the configured account's friendly name. Each header shows what is left of its account's week, then its session; the rest of the usage lives in the account panel."
                 stage="surface"
             >
                 <Open selection={OPUS_EXTRA} />
@@ -567,10 +614,22 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09b"
                 label="Long account name"
-                detail="Claude runs on claude_kirill_for_sms_gmail. The header keeps Claude, the parentheses, and the chevron, and the account ends in an ellipsis, so the list stays as wide as its model names make it. The full name is in the account panel."
+                detail="Claude runs on claude_kirill_for_sms_gmail, which has no reading: its header shows no rings and saves no room for them. The account ends in an ellipsis well before the chevron, which stays on the right edge, so the list keeps its width. The full name is in the account panel."
                 stage="surface"
             >
                 <Open selection={OPUS_LONG_ACCOUNT} services={LONG_ACCOUNT_SERVICES} />
+            </Specimen>
+            <Specimen
+                number="09d"
+                label="Header usage running low"
+                detail="Claude runs on a long address with 18% of its week left, in yellow, and 5% of its session, in red. The address ends in an ellipsis; the rings and the chevron keep the right edge, level with every line's. Pointing at a ring names its window and when it starts over. Grok has no reading, so its header has no rings."
+                stage="surface"
+            >
+                <Open
+                    selection={OPUS_EMAIL_ACCOUNT}
+                    services={EMAIL_ACCOUNT_SERVICES}
+                    usageWatch={emailAccountLow}
+                />
             </Specimen>
             <Specimen
                 number="09c"
@@ -871,6 +930,46 @@ export function ComposerModelControlPage() {
                     usageWatch={claudeNeverRead}
                     width={1140}
                 />
+            </Specimen>
+            <Specimen
+                number="29"
+                label="Pill with room left"
+                detail="The selected account has plenty of its week and session left, so the closed pill shows no ring and keeps no room for one."
+                stage="surface"
+            >
+                <Pill />
+            </Specimen>
+            <Specimen
+                number="30"
+                label="Pill, week running low"
+                detail="12% of the week is left: a yellow ring before the model name. The week wins over the session whenever it is low."
+                stage="surface"
+            >
+                <Pill usageWatch={claudeWeekLow} />
+            </Specimen>
+            <Specimen
+                number="31"
+                label="Pill, session running low"
+                detail="Only the session is low, 15% left, so the ring reads the session."
+                stage="surface"
+            >
+                <Pill usageWatch={claudeSessionLow} />
+            </Specimen>
+            <Specimen
+                number="32"
+                label="Pill, week spent"
+                detail="The week is spent and holds the account back: an empty red ring until it resets."
+                stage="surface"
+            >
+                <Pill usageWatch={claudeWeekSpent} />
+            </Specimen>
+            <Specimen
+                number="33"
+                label="Pill warning label"
+                detail="Pointing at the pill names the window, what is left, and when it resets, in local time."
+                stage="surface"
+            >
+                <Pill preview={{ usageWarningOpen: true }} usageWatch={claudeWeekLow} />
             </Specimen>
         </ComponentPage>
     );
