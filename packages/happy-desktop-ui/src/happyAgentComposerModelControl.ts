@@ -23,7 +23,7 @@ import type {
     ComposerModelUsageWatch,
     ComposerModelUsageWindow,
 } from "./ComposerModelControl";
-import { localClockTime, localDayTime, localWeekdayShort } from "./localTime";
+import { localDayTime } from "./localTime";
 
 function choiceOf(option: HappyAgentModelOption): ComposerModelChoice {
     return {
@@ -157,36 +157,43 @@ export function happyAgentComposerModelControlProps(
     };
 }
 
+/** A reported window, its reset told in the viewer's local time. */
 function usageWindow(
-    id: string,
     label: string,
     window: HappyAgentProviderUsageWindow | undefined,
-    resets: (at: number) => string,
-): ComposerModelUsageWindow {
+    blocking: readonly HappyAgentProviderUsageWindow[],
+    now: number,
+): ComposerModelUsageWindow | undefined {
+    if (window === undefined) return undefined;
     return {
-        id,
         label,
-        ...(window === undefined ? {} : { usedPercent: window.usedPercent }),
-        ...(window?.resetsAt === undefined ? {} : { resets: resets(window.resetsAt) }),
-        ...(window?.capturedAt === undefined ? {} : { capturedAt: window.capturedAt }),
+        usedPercent: window.usedPercent,
+        ...(window.resetsAt === undefined
+            ? {}
+            : { resets: `resets ${localDayTime(window.resetsAt, now)}` }),
+        ...(window.capturedAt === undefined ? {} : { capturedAt: window.capturedAt }),
+        ...(blocking.includes(window) ? { blocking: true } : {}),
     };
 }
 
 /**
- * When a spent account can be used again: the latest reset among the windows
- * that are full, since the account stays blocked until every one of them has
- * started over. An account the vendor blocked with no full window waits on
- * its fullest one.
+ * The windows holding a spent account back: every one that is full, since the
+ * account stays blocked until each has started over. An account the vendor
+ * blocked with no full window waits on its fullest one.
  */
-function limitResetsAt(reading: HappyAgentProviderUsageReading): number | undefined {
+function blockingWindows(reading: HappyAgentProviderUsageReading) {
+    if (reading.exhausted !== true) return [];
     const windows = [reading.fiveHour, reading.weekly, reading.monthly].filter(
         (window): window is HappyAgentProviderUsageWindow => window !== undefined,
     );
     const full = windows.filter((window) => window.usedPercent >= 100);
-    const blocking =
-        full.length > 0
-            ? full
-            : [...windows].sort((left, right) => right.usedPercent - left.usedPercent).slice(0, 1);
+    return full.length > 0
+        ? full
+        : [...windows].sort((left, right) => right.usedPercent - left.usedPercent).slice(0, 1);
+}
+
+/** When a spent account can be used again: the latest reset among the windows holding it back. */
+function limitResetsAt(blocking: readonly HappyAgentProviderUsageWindow[]): number | undefined {
     const resets = blocking.flatMap((window) =>
         window.resetsAt === undefined ? [] : [window.resetsAt],
     );
@@ -194,9 +201,9 @@ function limitResetsAt(reading: HappyAgentProviderUsageReading): number | undefi
 }
 
 /**
- * Plan windows and their freshness per provider account. An account with no
- * plan reading is left unknown, unless it is being read or its read failed,
- * which the picker says beneath the unknown bar.
+ * Week and session windows and their freshness per provider account. An
+ * account with no plan reading is left unknown, unless it is being read or its
+ * read failed, which the picker says in place of its windows.
  */
 export function happyAgentComposerModelUsageProject(
     snapshot: HappyAgentProviderUsageSnapshot,
@@ -216,26 +223,15 @@ export function happyAgentComposerModelUsageProject(
         // Before protocol 29 the daemon's own failed read is the only failure there is.
         const refreshError = entry.refreshError ?? entry.error;
         if (!hasPlan && !entry.refreshing && refreshError === undefined) continue;
-        const limitResets =
-            hasPlan && reading.exhausted === true ? limitResetsAt(reading) : undefined;
+        const blocking = hasPlan ? blockingWindows(reading) : [];
+        const week = hasPlan ? usageWindow("Week", reading.weekly, blocking, now) : undefined;
+        const session = hasPlan
+            ? usageWindow("Session", reading.fiveHour, blocking, now)
+            : undefined;
+        const limitResets = limitResetsAt(blocking);
         usage.set(entry.providerId, {
-            ...(reading?.planName === undefined ? {} : { plan: reading.planName }),
-            windows: hasPlan
-                ? [
-                      usageWindow(
-                          "fiveHour",
-                          "5h",
-                          reading.fiveHour,
-                          (at) => `resets ${localClockTime(at)}`,
-                      ),
-                      usageWindow(
-                          "weekly",
-                          "Weekly",
-                          reading.weekly,
-                          (at) => `resets ${localWeekdayShort(at)} ${localClockTime(at)}`,
-                      ),
-                  ]
-                : [],
+            ...(week === undefined ? {} : { week }),
+            ...(session === undefined ? {} : { session }),
             ...(updatedAt === undefined ? {} : { updatedAt }),
             ...(entry.refreshing ? { refreshing: true } : {}),
             ...(refreshError === undefined ? {} : { refreshError }),

@@ -1,0 +1,30 @@
+/*
+ * UsageRing: the share of a usage window left, as a draining arc. The track is
+ * the quiet inactive grey; the arc speaks only when little is left.
+ */
+
+.happy-usage-ring {
+    display: block;
+    flex: none;
+}
+
+.happy-usage-ring__track {
+    stroke: var(--radio-inactive);
+}
+
+.happy-usage-ring__arc {
+    stroke: var(--text-secondary);
+}
+
+.happy-usage-ring[data-tone="low"] .happy-usage-ring__arc {
+    stroke: var(--box-warning-text);
+}
+
+.happy-usage-ring[data-tone="critical"] .happy-usage-ring__arc {
+    stroke: var(--warning-critical);
+}
+
+/* A spent window has no arc left to colour, so its track carries the red. */
+.happy-usage-ring[data-tone="critical"] .happy-usage-ring__track {
+    stroke: color-mix(in srgb, var(--warning-critical) 40%, transparent);
+}

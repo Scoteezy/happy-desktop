@@ -53,10 +53,9 @@ const CLAUDE: HappyAgentProviderUsageEntry = {
 it("dates an account by its last successful read and carries each window's own time", () => {
     const claude = happyAgentComposerModelUsageProject(snapshot([CLAUDE]), NOW).get("claude");
     expect(claude?.updatedAt).toBe(NOW - 3 * MINUTE);
-    expect(claude?.plan).toBe("Max");
-    expect(claude?.windows.map((window) => [window.id, window.capturedAt])).toEqual([
-        ["fiveHour", NOW - 3 * MINUTE],
-        ["weekly", NOW - 90 * MINUTE],
+    expect([claude?.session?.capturedAt, claude?.week?.capturedAt]).toEqual([
+        NOW - 3 * MINUTE,
+        NOW - 90 * MINUTE,
     ]);
     expect(claude?.refreshing).toBeUndefined();
     expect(claude?.refreshError).toBeUndefined();
@@ -95,7 +94,7 @@ it("reports a refresh in progress and a failed one beside the kept reading", () 
         refreshError: "Claude did not answer.",
         updatedAt: NOW - 3 * MINUTE,
     });
-    expect(projected.get("claude_new")).toEqual({ windows: [], refreshing: true });
+    expect(projected.get("claude_new")).toEqual({ refreshing: true });
     expect(projected.has("grok_api")).toBe(false);
 });
 
@@ -129,7 +128,7 @@ it("says when a spent account's limit lifts, and drops it once the account is us
         "claude",
     );
     expect(usable?.limit).toBeUndefined();
-    expect(usable?.windows[0]?.usedPercent).toBe(0);
+    expect(usable?.session?.usedPercent).toBe(0);
     expect(usable?.updatedAt).toBe(NOW + 6 * MINUTE);
 });
 
@@ -227,7 +226,7 @@ function Fixture(props: { usageWatch: ComposerModelUsageWatch }) {
 }
 
 it("asks for fresh usage on opening and on switching account, and dates what it shows", async () => {
-    const reading = { windows: [{ id: "fiveHour", label: "5h", usedPercent: 42 }] };
+    const reading = { session: { label: "Session", usedPercent: 42 } };
     const fake = watchCreate(
         new Map([
             ["claude", { ...reading, updatedAt: NOW - 3 * MINUTE }],

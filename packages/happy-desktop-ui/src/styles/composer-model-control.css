@@ -93,11 +93,11 @@
 }
 
 /* The menu is two rows, Model and Effort, above the pill at the composer's
- * trailing edge. */
+ * trailing edge. They keep the panel's 4px gap, so a hovered row and an open
+ * one stay as far apart as two highlights in the lists beside it. */
 .happy-composer-model-control__menu {
     bottom: calc(100% + 8px);
     right: 0;
-    gap: 0;
     width: 192px;
 }
 
@@ -171,8 +171,10 @@
     z-index: 32;
 }
 
+/* Wide enough that a window's line holds its name, its longest reset time, and
+ * "100% left" whole; an account name takes whatever its row leaves. */
 .happy-composer-model-control__accounts {
-    width: 232px;
+    width: 288px;
 }
 
 .happy-composer-model-control__list {
@@ -565,8 +567,8 @@
     content: "";
 }
 
-/* One right-aligned plan column down the account panel, wide enough for any
- * reported plan, so every row ends on the same edge. */
+/* The conversation switcher's right-aligned usage column, wide enough for a
+ * dash, so every row ends on the same edge. */
 .happy-composer-model-control__account-plan {
     display: flex;
     flex: 0 0 auto;
@@ -582,90 +584,94 @@
     opacity: 0.56;
 }
 
+/* What is left of a window, as the native menu bar draws it: the number right
+ * beside a small ring, so rings line up down the account list at its right
+ * edge. It takes only its own width; an account without a reading has none. */
+.happy-composer-model-control__usage-gauge {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Under the account list: the week, then the session, each on one line. */
 .happy-composer-model-control__usage {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 4px;
     padding: 6px 10px;
 }
 
 .happy-composer-model-control__usage-window {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.happy-composer-model-control__usage-head {
-    display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
+    min-width: 0;
+    color: var(--text-secondary);
     font-size: 12px;
     line-height: 16px;
 }
 
-.happy-composer-model-control__usage-label {
-    flex: 1 1 auto;
-    min-width: 0;
+/* The week is what matters most, so it reads first and in full ink. */
+.happy-composer-model-control__usage-window[data-primary] {
     color: var(--text);
+    font-size: 13px;
+    line-height: 20px;
+}
+
+.happy-composer-model-control__usage-window[data-primary]
+    .happy-composer-model-control__usage-label {
     font-weight: 600;
 }
 
+.happy-composer-model-control__usage-window[data-primary]
+    .happy-composer-model-control__usage-gauge:not([data-tone="critical"]) {
+    color: var(--text);
+}
+
+/* Almost nothing left, or the window holding a spent account back. */
+.happy-composer-model-control__usage-gauge[data-tone="critical"] {
+    color: var(--warning-critical);
+}
+
+/* Wide enough for "Session", so both lines' reset times start on one edge. */
+.happy-composer-model-control__usage-label {
+    flex: 0 0 auto;
+    min-width: 48px;
+}
+
 .happy-composer-model-control__usage-resets {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     color: var(--text-secondary);
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.happy-composer-model-control__usage-value {
-    flex: 0 0 auto;
-    color: var(--text);
-    font-variant-numeric: tabular-nums;
-}
-
-.happy-composer-model-control__usage-value[data-unknown] {
-    color: var(--text-secondary);
-    font-style: italic;
-}
-
-.happy-composer-model-control__usage-bar {
-    display: flex;
-    height: 4px;
-    overflow: hidden;
-    border-radius: 999px;
-    background: var(--surface-selected);
-}
-
-.happy-composer-model-control__usage-bar > span {
-    flex: 0 0 auto;
-    border-radius: 999px;
-    background: var(--text-secondary);
-}
-
-.happy-composer-model-control__usage-bar[data-high] > span {
-    background: var(--warning-critical);
-}
-
-/* Unknown usage is an empty, dashed groove: nothing measured, not zero used. */
-.happy-composer-model-control__usage-bar[data-unknown] {
-    background: transparent;
-    border: 1px dashed var(--radio-inactive);
-}
-
-/* How current the numbers are: a quiet caption under the bars, in the reset times' grey. */
-.happy-composer-model-control__usage-freshness {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-top: -2px;
+.happy-composer-model-control__usage-unknown {
     color: var(--text-secondary);
     font-size: 12px;
     line-height: 16px;
 }
 
-/* A spent account says when it can be used again, in the colour of a full bar. */
+/* How current the numbers are: a quiet caption under the windows, in the reset times' grey. */
+.happy-composer-model-control__usage-freshness {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/* A spent account says when it can be used again, in the colour of its ring. */
 .happy-composer-model-control__usage-limit {
     color: var(--warning-critical);
 }

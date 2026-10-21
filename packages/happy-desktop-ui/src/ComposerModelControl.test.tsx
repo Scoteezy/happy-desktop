@@ -67,7 +67,7 @@ function Fixture() {
 
 it("composes the controlled model picker into the composer and navigates its menu", async () => {
     const view = createRenderer().render(() => <Fixture />, {
-        width: 760,
+        width: 800,
         height: 500,
         padding: 20,
     });

@@ -135,11 +135,19 @@ const BASE_PADDING = 8;
 const DEFAULT_INDENT = 16;
 /** Every drawn row is this tall, which is also what the virtualizer measures. */
 const ROW_HEIGHT = 28;
+/**
+ * The space between neighbouring rows, so two highlighted rows never touch. The
+ * sidebar's rows keep the same 2px, and the plain column's CSS gap repeats it.
+ */
+const ROW_GAP = 2;
 /** The space a section heading keeps above it, so each section is a block of its own. */
 const SECTION_GAP = 16;
-/** How much of the listing a row takes: its own height, and a separated heading's gap. */
+/**
+ * How much of the listing a row's slot takes: its own height, plus a separated
+ * heading's gap less the row gap the virtualizer already puts ahead of it.
+ */
 function rowExtent(row: FileTreeRow | undefined): number {
-    return row?.separated ? ROW_HEIGHT + SECTION_GAP : ROW_HEIGHT;
+    return row?.separated ? ROW_HEIGHT + SECTION_GAP - ROW_GAP : ROW_HEIGHT;
 }
 /**
  * The kind of thing a file is, which is what its row's icon and icon colour say.
@@ -785,6 +793,7 @@ export function FileTree(props: FileTreeProps) {
     const virtualizer = useVirtualizer({
         count: virtualized ? model.rows.length : 0,
         estimateSize: (index) => rowExtent(model.rows[index]),
+        gap: ROW_GAP,
         getItemKey: (index) => model.rows[index]?.id ?? index,
         getScrollElement: () => scrollElement.current,
         initialRect: { width: 0, height: 480 },

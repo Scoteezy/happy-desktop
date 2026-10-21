@@ -1,10 +1,11 @@
 /*
  * C-052 FileTree — code-editor file/folder explorer.
  *
- * A column of 28px rows. Each row is a fixed 16px disclosure slot (chevron for
- * directories) followed by a flexible entry button: a 14px file-type icon
- * coloured by its family, the file's name at full contrast with its directory
- * dimmed beside it, then the row's diff stat and a single-letter git decoration.
+ * A column of 28px rows 2px apart, so two highlighted rows never touch. Each
+ * row is a fixed 16px disclosure slot (chevron for directories) followed by a
+ * flexible entry button: a 14px file-type icon coloured by its family, the
+ * file's name at full contrast with its directory dimmed beside it, then the
+ * row's diff stat and a single-letter git decoration.
  * Depth is expressed as left padding on the row (8px base + 16px per level), so
  * nested names align under their parent's name.
  *
@@ -28,9 +29,12 @@
     user-select: none;
 }
 
+/* The gap is ROW_GAP in FileTree.tsx: the virtualizer places its rows with the
+   same 2px between them, so both listings keep one rhythm. */
 .happy-file-tree__viewport {
     display: flex;
     flex-direction: column;
+    gap: 2px;
     width: 100%;
 }
 
@@ -79,15 +83,15 @@
     height: 28px;
 }
 
-/* A section heading after other rows keeps a 16px gap above it: its slot is
-   that much taller, and the heading sits at the slot's foot. */
+/* A section heading after other rows keeps a 16px gap above it: the 2px row
+   gap, then a slot 14px taller than a row with the heading at its foot. */
 .happy-file-tree__virtual-row[data-separated],
 .happy-file-tree__section-frame {
     display: flex;
     flex: none;
     flex-direction: column;
     justify-content: flex-end;
-    height: 44px;
+    height: 42px;
 }
 
 /* ---- Row -------------------------------------------------------------- */

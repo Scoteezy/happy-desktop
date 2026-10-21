@@ -12,6 +12,7 @@ import { Button } from "./Button";
 import { Icon } from "./Icon";
 import { ScrollArea } from "./Scrollbar";
 import { Tooltip } from "./Tooltip";
+import { UsageRing, usageRingTone } from "./UsageRing";
 import { Octicon } from "./vectorIcons/VectorIcon";
 
 export type ComposerModelEffort = {
@@ -28,23 +29,25 @@ export type ComposerModelChoice = {
     disabled?: boolean;
 };
 export type ComposerModelUsageWindow = {
-    id: string;
-    /** Short window name, such as "5h" or "Weekly". */
+    /** Short window name, such as "Week" or "Session". */
     label: string;
-    /** Absent when the service has not reported it; shown as unknown, never as zero. */
-    usedPercent?: number;
-    /** Already-formatted reset moment, such as "resets 4:10 PM". */
+    /** The share already spent, 0–100. The picker shows what is left. */
+    usedPercent: number;
+    /** Already-formatted local reset moment, such as "resets 4:10 PM". */
     resets?: string;
     /**
      * When the service last reported this window, in milliseconds. A window
      * much older than the rest of the account's reading says when it is from.
      */
     capturedAt?: number;
+    /** The account cannot be used until this window starts over. */
+    blocking?: boolean;
 };
 export type ComposerModelAccountUsage = {
-    /** The plan the service reports for the account, such as "Max". */
-    plan?: string;
-    windows: readonly ComposerModelUsageWindow[];
+    /** The weekly window, the one each account's row shows. Absent when the service has not reported it. */
+    week?: ComposerModelUsageWindow;
+    /** The short session window, such as five hours, shown beneath the week. */
+    session?: ComposerModelUsageWindow;
     /** When the account was last read successfully, in milliseconds. */
     updatedAt?: number;
     /** The account is being read now. */
@@ -341,37 +344,52 @@ function Setting(props: {
     );
 }
 
-function UsageWindow(props: { window: ComposerModelUsageWindow }) {
-    const used = props.window.usedPercent;
-    const known = used !== undefined;
+/** The whole share of a window still left, as the rings and their numbers read it. */
+function usageLeft(window: ComposerModelUsageWindow) {
+    return Math.round(Math.min(100, Math.max(0, 100 - window.usedPercent)));
+}
+
+/**
+ * The share of a window left, as the native menu bar draws it: the number,
+ * then a small ring that drains as the window is spent. It turns yellow when
+ * little is left, and red when almost nothing is or the account is blocked.
+ */
+function UsageGauge(props: {
+    window: ComposerModelUsageWindow;
+    blocked: boolean;
+    text: string;
+    title?: string;
+}) {
+    const tone = usageRingTone(usageLeft(props.window), props.blocked);
+    return (
+        <span
+            className="happy-composer-model-control__usage-gauge"
+            data-happy-desktop-ui="composer-model-control-usage-gauge"
+            data-tone={tone}
+            title={props.title}
+        >
+            <span className="happy-composer-model-control__usage-value">{props.text}</span>
+            <UsageRing left={usageLeft(props.window)} tone={tone} />
+        </span>
+    );
+}
+
+/** One window under the account list: its name, when it starts over, and what is left. */
+function UsageLine(props: { window: ComposerModelUsageWindow; primary?: boolean }) {
+    const window = props.window;
     return (
         <div
             className="happy-composer-model-control__usage-window"
             data-happy-desktop-ui="composer-model-control-usage"
+            data-primary={props.primary ? "" : undefined}
         >
-            <div className="happy-composer-model-control__usage-head">
-                <span className="happy-composer-model-control__usage-label">
-                    {props.window.label}
-                </span>
-                {props.window.resets ? (
-                    <span className="happy-composer-model-control__usage-resets">
-                        {props.window.resets}
-                    </span>
-                ) : null}
-                <span
-                    className="happy-composer-model-control__usage-value"
-                    data-unknown={known ? undefined : ""}
-                >
-                    {known ? `${Math.round(used)}%` : "unknown"}
-                </span>
-            </div>
-            <div
-                className="happy-composer-model-control__usage-bar"
-                data-high={known && used >= 90 ? "" : undefined}
-                data-unknown={known ? undefined : ""}
-            >
-                {known ? <span style={{ width: `${Math.max(0, Math.min(100, used))}%` }} /> : null}
-            </div>
+            <span className="happy-composer-model-control__usage-label">{window.label}</span>
+            <span className="happy-composer-model-control__usage-resets">{window.resets}</span>
+            <UsageGauge
+                blocked={window.blocking === true}
+                text={`${String(usageLeft(window))}% left`}
+                window={window}
+            />
         </div>
     );
 }
@@ -397,7 +415,7 @@ function usageAge(at: number, now: number) {
 }
 
 /**
- * How current an account's numbers are, in one quiet line under its bars: how
+ * How current an account's numbers are, in one quiet line under its windows: how
  * long ago it was read, that it is being read now, or when it was last read
  * and that the latest attempt failed. A window left behind from an earlier
  * reading than the rest is named with its own time, so an old number is never
@@ -405,11 +423,14 @@ function usageAge(at: number, now: number) {
  */
 function UsageFreshness(props: { usage: ComposerModelAccountUsage; now: number }) {
     const { usage, now } = props;
+    const windows = [usage.week, usage.session].filter(
+        (window): window is ComposerModelUsageWindow => window !== undefined,
+    );
     const newest = Math.max(
         usage.updatedAt ?? 0,
-        ...usage.windows.map((window) => window.capturedAt ?? 0),
+        ...windows.map((window) => window.capturedAt ?? 0),
     );
-    const behind = usage.windows.filter(
+    const behind = windows.filter(
         (window) =>
             window.capturedAt !== undefined && newest - window.capturedAt > USAGE_WINDOW_STALE_MS,
     );
@@ -450,7 +471,7 @@ function UsageFreshness(props: { usage: ComposerModelAccountUsage; now: number }
                 <span
                     className="happy-composer-model-control__usage-updated"
                     data-happy-desktop-ui="composer-model-control-usage-window-age"
-                    key={window.id}
+                    key={window.label}
                 >
                     {`${window.label} as of ${clockTime(window.capturedAt ?? 0, now)}`}
                 </span>
@@ -617,7 +638,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
         );
     const usageWatch = props.usageWatch;
     // Identity contract: the watch runs exactly as long as the menu is open, so
-    // plans and usage are on hand before the account panel opens. This callback
+    // usage is on hand before the account panel opens. This callback
     // may only change when the watch itself does — an ordinary re-render must
     // not restart the owner's usage reads.
     const usageLease = useCallback(
@@ -834,7 +855,7 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
     /** An account says that it is one: the service's own is its default, any other is its id. */
     const accountName = (account: ComposerModelAccount) =>
         account.default ? "Default account" : account.label;
-    /** The header only names the account, after its service; its plan belongs to the account panel. */
+    /** The header only names the account, after its service; its usage belongs to the account panel. */
     const accountSummary = (service: ComposerModelService) => {
         const account = service.accounts.find((candidate) => candidate.id === accountOf(service));
         if (account === undefined) return accountOf(service);
@@ -876,7 +897,9 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
             >
                 <div className="happy-composer-model-control__account-list">
                     {service.accounts.map((account) => {
-                        const plan = usageOf(account)?.plan;
+                        const usage = usageOf(account);
+                        // The row reads the week; a service without one reads what it has.
+                        const window = usage?.week ?? usage?.session;
                         const current = account.id === accountOf(service);
                         return (
                             <button
@@ -904,15 +927,16 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                     </span>
                                     {current ? <Check /> : null}
                                 </span>
-                                {/* Every account has a plan cell. One the daemon could not read (a
-                                    setup token, an API key) says so with a dash, never a guess. */}
-                                <span
-                                    className="happy-composer-model-control__account-plan"
-                                    data-happy-desktop-ui="composer-model-control-account-plan"
-                                    data-unknown={plan ? undefined : ""}
-                                >
-                                    {plan ?? "—"}
-                                </span>
+                                {/* An account without a reading (an API key, one never read)
+                                    shows nothing here, so its name keeps the whole row. */}
+                                {window && usage ? (
+                                    <UsageGauge
+                                        blocked={usage.limit !== undefined}
+                                        text={`${String(usageLeft(window))}%`}
+                                        title={`${window.label}: ${String(usageLeft(window))}% left`}
+                                        window={window}
+                                    />
+                                ) : null}
                             </button>
                         );
                     })}
@@ -922,12 +946,15 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                 ) : null}
                 {shown ? (
                     <div className="happy-composer-model-control__usage">
-                        {shownUsage === undefined || shownUsage.windows.length === 0 ? (
-                            <UsageWindow window={{ id: "usage", label: "Usage" }} />
-                        ) : (
-                            shownUsage.windows.map((window) => (
-                                <UsageWindow key={window.id} window={window} />
-                            ))
+                        {shownUsage?.week ? <UsageLine primary window={shownUsage.week} /> : null}
+                        {shownUsage?.session ? <UsageLine window={shownUsage.session} /> : null}
+                        {shownUsage?.week || shownUsage?.session ? null : (
+                            <span
+                                className="happy-composer-model-control__usage-unknown"
+                                data-happy-desktop-ui="composer-model-control-usage-unknown"
+                            >
+                                Usage unknown
+                            </span>
                         )}
                         {shownUsage && liveUsage ? (
                             <UsageFreshness now={liveUsage.now} usage={shownUsage} />

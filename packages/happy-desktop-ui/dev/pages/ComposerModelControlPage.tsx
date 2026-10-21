@@ -126,42 +126,33 @@ const NOW = new Date(new Date().setHours(15, 0, 0, 0)).getTime();
 const MINUTE = 60_000;
 
 /*
- * Usage as the provider-usage feed reports it. A full login (codex, claude)
- * reports its plan; claude_extra runs on a `claude setup-token` token, which
- * cannot read the plan, so its 5h and weekly windows come from rate-limit
- * headers and it has no plan. grok has no reading and grok_api, an API key,
- * has no usage API at all, so both read unknown.
+ * Usage as the provider-usage feed reports it: each account's week and session
+ * windows, already in local time. claude_extra runs on a `claude setup-token`
+ * token, whose windows come from rate-limit headers. grok has no reading and
+ * grok_api, an API key, has no usage API at all, so both read unknown.
  */
 const USAGE: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
     [
         "codex",
         {
-            plan: "Pro",
-            windows: [
-                { id: "fiveHour", label: "5h", usedPercent: 42, resets: "resets 4:10 PM" },
-                { id: "weekly", label: "Weekly", usedPercent: 18, resets: "resets Mon 9:00 AM" },
-            ],
+            week: { label: "Week", usedPercent: 18, resets: "resets Mon 9:00 AM" },
+            session: { label: "Session", usedPercent: 42, resets: "resets 4:10 PM" },
             updatedAt: NOW - 3 * MINUTE,
         },
     ],
     [
         "claude",
         {
-            plan: "Max",
-            windows: [
-                { id: "fiveHour", label: "5h", usedPercent: 12, resets: "resets 5:50 PM" },
-                { id: "weekly", label: "Weekly", usedPercent: 64, resets: "resets Thu 8:00 PM" },
-            ],
+            week: { label: "Week", usedPercent: 64, resets: "resets Thu 8:00 PM" },
+            session: { label: "Session", usedPercent: 12, resets: "resets 5:50 PM" },
             updatedAt: NOW - 3 * MINUTE,
         },
     ],
     [
         "claude_extra",
         {
-            windows: [
-                { id: "fiveHour", label: "5h", usedPercent: 91, resets: "resets 2:35 PM" },
-                { id: "weekly", label: "Weekly", usedPercent: 37, resets: "resets Fri 6:00 AM" },
-            ],
+            week: { label: "Week", usedPercent: 37, resets: "resets Fri 6:00 AM" },
+            session: { label: "Session", usedPercent: 93, resets: "resets 3:35 PM" },
             updatedAt: NOW - 40 * 1_000,
         },
     ],
@@ -189,37 +180,87 @@ function usageWith(account: string, reading: ComposerModelAccountUsage): Compose
     return heldUsage(new Map([...USAGE, [account, reading]]));
 }
 
-const CLAUDE_WINDOWS = USAGE.get("claude")!.windows;
+const CLAUDE = USAGE.get("claude")!;
 
 /* The default Claude account at each point of a refresh, and a spent one. */
 const claudeUpdating = usageWith("claude", {
-    plan: "Max",
-    windows: CLAUDE_WINDOWS,
+    ...CLAUDE,
     updatedAt: NOW - 47 * MINUTE,
     refreshing: true,
 });
 const claudeRefreshFailed = usageWith("claude", {
-    plan: "Max",
-    windows: CLAUDE_WINDOWS,
+    ...CLAUDE,
     updatedAt: NOW - 19 * MINUTE,
     refreshError: "Claude did not answer the usage request in time.",
 });
 const claudeWeeklyBehind = usageWith("claude", {
-    plan: "Max",
-    windows: [
-        { ...CLAUDE_WINDOWS[0]!, capturedAt: NOW - 2 * MINUTE },
-        { ...CLAUDE_WINDOWS[1]!, capturedAt: NOW - 108 * MINUTE },
-    ],
+    week: { ...CLAUDE.week!, capturedAt: NOW - 108 * MINUTE },
+    session: { ...CLAUDE.session!, capturedAt: NOW - 2 * MINUTE },
     updatedAt: NOW - 2 * MINUTE,
 });
 const claudeExtraSpent = usageWith("claude_extra", {
-    windows: [
-        { id: "fiveHour", label: "5h", usedPercent: 100, resets: "resets 3:05 PM" },
-        { id: "weekly", label: "Weekly", usedPercent: 41, resets: "resets Fri 6:00 AM" },
-    ],
-    updatedAt: NOW - 6 * MINUTE,
-    limit: { resets: "3:05 PM" },
+    week: { label: "Week", usedPercent: 100, resets: "resets Wed 6:00 PM", blocking: true },
+    session: { label: "Session", usedPercent: 0, resets: "resets 11:10 PM" },
+    updatedAt: NOW - 18 * MINUTE,
+    limit: { resets: "Wed 6:00 PM" },
 });
+const claudeNeverRead = usageWith("claude", { refreshing: true });
+
+/*
+ * Claude with every kind of account side by side: one with room, one running
+ * low, one whose week is spent until Wednesday, one under a long address, and
+ * an API key with no reading at all.
+ */
+const MANY_ACCOUNTS = "personal.backup.account.for.sms@gmail.com";
+const MANY_ACCOUNT_SERVICES: readonly ComposerModelService[] = SERVICES.map((service) =>
+    service.id === "claude"
+        ? {
+              ...service,
+              accounts: [
+                  { id: "claude", label: "Current CLI", models: CLAUDE_MODELS },
+                  { id: "claude_extra", label: "Extra", models: CLAUDE_MODELS },
+                  { id: "claude_low", label: "team@example.com", models: CLAUDE_MODELS },
+                  { id: "claude_long", label: MANY_ACCOUNTS, models: CLAUDE_MODELS },
+                  { id: "claude_api", label: "api-key", models: CLAUDE_MODELS },
+              ],
+          }
+        : service,
+);
+const manyAccountsUsage = heldUsage(
+    new Map([
+        ...USAGE,
+        [
+            "claude_extra",
+            {
+                week: {
+                    label: "Week",
+                    usedPercent: 100,
+                    resets: "resets Wed 6:00 PM",
+                    blocking: true,
+                },
+                session: { label: "Session", usedPercent: 0, resets: "resets 11:10 PM" },
+                updatedAt: NOW - 18 * MINUTE,
+                limit: { resets: "Wed 6:00 PM" },
+            },
+        ],
+        [
+            "claude_low",
+            {
+                week: { label: "Week", usedPercent: 81, resets: "resets Sat 10:00 AM" },
+                session: { label: "Session", usedPercent: 30, resets: "resets 6:20 PM" },
+                updatedAt: NOW - 2 * MINUTE,
+            },
+        ],
+        [
+            "claude_long",
+            {
+                week: { label: "Week", usedPercent: 45, resets: "resets Tue 9:00 AM" },
+                session: { label: "Session", usedPercent: 5, resets: "resets 7:45 PM" },
+                updatedAt: NOW - 5 * MINUTE,
+            },
+        ],
+    ]),
+);
 
 const LONG_SERVICES: readonly ComposerModelService[] = [
     ...SERVICES,
@@ -518,7 +559,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09"
                 label="Default account and a named one"
-                detail="Codex runs on Current CLI. Claude runs on work@example.com, the configured account's friendly name. Headers never show a plan; plans live in the account panel."
+                detail="Codex runs on Current CLI. Claude runs on work@example.com, the configured account's friendly name. Headers never show usage; usage lives in the account panel."
                 stage="surface"
             >
                 <Open selection={OPUS_EXTRA} />
@@ -534,7 +575,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="09c"
                 label="Long account name, account panel"
-                detail="The same account in the panel beside the list, truncated the same way."
+                detail="The same account in the panel beside the list. It has no reading, so nothing sits beside it and the name keeps the whole row before it ends in an ellipsis."
                 stage="surface"
             >
                 <Open
@@ -546,8 +587,8 @@ export function ComposerModelControlPage() {
             </Specimen>
             <Specimen
                 number="10"
-                label="Usage without a plan"
-                detail="claude_extra runs on a setup token: its 5h and weekly usage are real, read from rate-limit headers, but it cannot see its plan, so its plan cell reads a muted dash."
+                label="Session running low"
+                detail="claude_extra runs on a setup token, its windows read from rate-limit headers. Its week has plenty left, but only 7% of its session is: that ring and number turn red."
                 stage="surface"
             >
                 <Open
@@ -559,7 +600,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="11"
                 label="API-key account without usage"
-                detail="grok_api is an API key, and the Grok API has no usage endpoint: its plan cell reads a dash and its usage reads unknown, never 0%. The grok CLI account reports no plan either."
+                detail="grok_api is an API key, and the Grok API has no usage endpoint: its row shows no ring, and its usage reads unknown, never 0% left. The grok CLI account has no reading either."
                 stage="surface"
             >
                 <Open preview={{ accounts: "grok", accountHover: "grok_api" }} width={1140} />
@@ -743,7 +784,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="22"
                 label="Usage freshness"
-                detail="Under the bars, a quiet line says how long ago the account was read. It counts on while the menu stays open; opening the menu asks for a fresh reading of every account it lists."
+                detail="Each account's row shows how much of its week is left beside a small ring. Under the list, the hovered account's week and session, each with its local reset time, then a quiet line saying how long ago the account was read. It counts on while the menu stays open; opening the menu asks for a fresh reading of every account it lists."
                 stage="surface"
             >
                 <Open
@@ -781,7 +822,7 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="25"
                 label="Window from an earlier reading"
-                detail="The 5h window was just read, but the weekly one is from nearly two hours ago, so it is named with its own time."
+                detail="The session was just read, but the week is from nearly two hours ago, so it is named with its own time."
                 stage="surface"
             >
                 <Open
@@ -794,13 +835,40 @@ export function ComposerModelControlPage() {
             <Specimen
                 number="26"
                 label="Spent account"
-                detail="claude_extra has used its whole 5h window. The line leads with when the limit lifts; once the daemon reads the account again after that, the line goes without anyone asking."
+                detail="claude_extra has used its whole week: its ring is empty and red, in the list and below it. The red line says when the limit lifts; once the daemon reads the account again after that, it goes without anyone asking."
                 stage="surface"
             >
                 <Open
                     preview={{ accounts: "claude", accountHover: "claude_extra" }}
                     selection={OPUS_EXTRA}
                     usageWatch={claudeExtraSpent}
+                    width={1140}
+                />
+            </Specimen>
+            <Specimen
+                number="27"
+                label="Several accounts"
+                detail="Every account's week at a glance: plenty left in grey, little left in yellow, a spent week in red. The long address takes all the room up to its number before it ends in an ellipsis; the API key has no reading, so nothing sits beside it."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: "claude_low" }}
+                    selection={OPUS_MEDIUM}
+                    services={MANY_ACCOUNT_SERVICES}
+                    usageWatch={manyAccountsUsage}
+                    width={1140}
+                />
+            </Specimen>
+            <Specimen
+                number="28"
+                label="Never read"
+                detail="The account has no reading yet and is being read for the first time: no ring in its row, usage unknown below, and Updating… until the first numbers arrive."
+                stage="surface"
+            >
+                <Open
+                    preview={{ accounts: "claude", accountHover: "claude" }}
+                    selection={OPUS_MEDIUM}
+                    usageWatch={claudeNeverRead}
                     width={1140}
                 />
             </Specimen>

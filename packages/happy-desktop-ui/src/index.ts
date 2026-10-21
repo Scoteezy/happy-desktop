@@ -475,6 +475,7 @@ export {
     type ShimmerTextSweep,
     type ShimmerTextTone,
 } from "./ShimmerText";
+export { UsageRing, type UsageRingProps, type UsageRingTone, usageRingTone } from "./UsageRing";
 export { WaitRing, type WaitRingProps, waitFinishDateLabel, waitRemainingLabel } from "./WaitRing";
 export { WorkspaceLifecycleLane, type WorkspaceLifecycleLaneProps } from "./WorkspaceLifecycleLane";
 export {
