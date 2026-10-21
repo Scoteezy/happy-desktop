@@ -129,6 +129,7 @@ it("offers mobile setup on a fresh machine's project stage", async () => {
     const store = localOnboardingStoreCreate(bridge, {
         chiefOfStaff: { get: () => handle.get()?.workspace, subscribe: () => () => undefined },
         chiefOfStaffPrepare: () => new Promise(() => undefined),
+        localConnected: { get: () => true, subscribe: () => () => undefined },
         happyMobile: {
             get: () => handle.setup?.onboarding.mobile,
             subscribe: () => () => undefined,
@@ -172,6 +173,7 @@ it("lets mobile setup be skipped before the local connection offers it", async (
     const store = localOnboardingStoreCreate(bridge, {
         chiefOfStaff: { get: () => undefined, subscribe: () => () => undefined },
         chiefOfStaffPrepare: () => new Promise(() => undefined),
+        localConnected: { get: () => true, subscribe: () => () => undefined },
         happyMobile: { get: () => undefined, subscribe: () => () => undefined },
     });
     unsubscribes.push(store.subscribe(() => undefined));

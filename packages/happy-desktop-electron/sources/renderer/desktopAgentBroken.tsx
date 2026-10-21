@@ -11,6 +11,14 @@ import type { DesktopRuntimeStore } from "./runtimeStore";
  */
 const BROKEN_HOLD_MS = 3_000;
 
+/**
+ * How long a restart asked for here keeps waiting for this window to reach the
+ * agent again once the host says the agent is back up. The host gives up on the
+ * same reconnect after as long; past it the button is offered again rather than
+ * spinning on an agent that is not coming back.
+ */
+const RECONNECT_WAIT_MS = 60_000;
+
 const HAPPY_URL = "https://happy.engineering";
 const HAPPY_AGENT_REPOSITORY_URL = "https://github.com/slopus/happy-agent";
 
@@ -25,6 +33,12 @@ export interface DesktopAgentBrokenSnapshot {
     readonly restartable: boolean;
     /** The restart's own progress, from the host's report. */
     readonly install: AppHappyAgentDaemonInstall;
+    /**
+     * A restart asked for here has finished on the host, and this window is
+     * still waiting to reach the agent again. The restart is not over for the
+     * person looking at it until it does.
+     */
+    readonly reconnecting: boolean;
 }
 
 export interface DesktopAgentBrokenStore {
@@ -40,6 +54,7 @@ const hidden: DesktopAgentBrokenSnapshot = {
     visible: false,
     restartable: false,
     install: { phase: "idle" },
+    reconnecting: false,
 };
 
 /**
@@ -52,8 +67,11 @@ const hidden: DesktopAgentBrokenSnapshot = {
  * screen of its own, and a restart someone started elsewhere keeps its update
  * card — unless it fails, which is a broken agent again.
  *
- * A restart asked for from this screen keeps the screen until the agent is
- * connected again, so the window does not drop back to the layout mid-restart.
+ * A restart asked for from this screen keeps the screen, and keeps saying it
+ * is restarting, until the agent is connected again: the host reports the
+ * restart done as soon as the agent is running, which is seconds before this
+ * window is talking to it, and a button offered again in that gap reads as a
+ * restart that did nothing.
  */
 export function desktopAgentBrokenStoreCreate(input: {
     readonly daemon: AppHappyAgentDaemonStore;
@@ -66,6 +84,7 @@ export function desktopAgentBrokenStoreCreate(input: {
     let brokenSince: number | undefined;
     let holdTimer: ReturnType<typeof setTimeout> | undefined;
     let requested = false;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let unsubscribes: (() => void)[] = [];
 
     const holdClear = (): void => {
@@ -73,12 +92,27 @@ export function desktopAgentBrokenStoreCreate(input: {
         holdTimer = undefined;
     };
 
+    const reconnectClear = (): void => {
+        if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+    };
+
     const read = (): DesktopAgentBrokenSnapshot => {
         const directory = input.happyAgents.get();
         const local = directory.happyAgents.find((entry) => entry.id === LOCAL_HAPPY_AGENT_ID);
         const daemon = input.daemon.get();
         const runtime = input.runtime.get();
-        if (local?.status === "connected") requested = false;
+        if (local?.status === "connected" || daemon.install.phase === "error") {
+            requested = false;
+            reconnectClear();
+        }
+        const reconnecting = requested && daemon.install.phase === "idle";
+        if (reconnecting && reconnectTimer === undefined)
+            reconnectTimer = setTimeout(() => {
+                reconnectTimer = undefined;
+                requested = false;
+                reconcile();
+            }, RECONNECT_WAIT_MS);
         const mounted =
             runtime?.phase === "ready" ||
             directory.happyAgents.some((entry) => entry.session !== undefined);
@@ -109,6 +143,7 @@ export function desktopAgentBrokenStoreCreate(input: {
             ...(version ? { version } : {}),
             restartable: daemon.managed && daemon.installedVersion !== undefined,
             install: daemon.install,
+            reconnecting,
         };
     };
 
@@ -139,12 +174,16 @@ export function desktopAgentBrokenStoreCreate(input: {
                 for (const unsubscribe of unsubscribes) unsubscribe();
                 unsubscribes = [];
                 holdClear();
+                reconnectClear();
                 brokenSince = undefined;
             };
         },
         restart() {
-            requested = true;
+            reconnectClear();
             input.daemon.daemonRestart();
+            // Only a restart the daemon store actually started is waited on;
+            // one it turned away leaves nothing to wait for.
+            requested = input.daemon.get().install.phase !== "idle";
             reconcile();
         },
         kill() {
@@ -204,7 +243,9 @@ export function DesktopAgentBrokenGate(props: {
 }) {
     const snapshot = useSyncExternalStore(props.store.subscribe, props.store.get, props.store.get);
     if (!snapshot.visible) return <>{props.children}</>;
-    const status = restartStatus(snapshot.install);
+    const status = snapshot.reconnecting
+        ? { label: "Starting Happy Agent…", busy: true }
+        : restartStatus(snapshot.install);
     const restarting = status?.busy === true;
     return (
         <SetupPage

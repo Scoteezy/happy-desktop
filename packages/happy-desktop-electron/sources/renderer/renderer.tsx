@@ -1421,6 +1421,12 @@ if (mediaPreviewBridge) {
                         location,
                     );
             },
+            localConnected: {
+                get: () =>
+                    happyAgents.get().happyAgents.find((entry) => entry.id === LOCAL_HAPPY_AGENT_ID)
+                        ?.status === "connected",
+                subscribe: happyAgents.subscribe,
+            },
             // Mobile setup is offered with the connection itself, not once the
             // workspace loads, so a slow or failing catalog cannot hold it back.
             happyMobile: {

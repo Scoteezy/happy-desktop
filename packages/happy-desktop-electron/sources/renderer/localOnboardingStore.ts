@@ -102,6 +102,15 @@ export interface LocalOnboardingStoreOptions {
         get(): HappyMobileOnboardingStore | undefined;
         subscribe(listener: () => void): () => void;
     };
+    /**
+     * Whether this window is talking to the local Happy Agent right now. The
+     * runtime's connection outlives the agent behind it, so this is how setup
+     * learns that an agent which went away has come back.
+     */
+    readonly localConnected: {
+        get(): boolean;
+        subscribe(listener: () => void): () => void;
+    };
     /** True when the welcome was acknowledged before this window opened. */
     readonly agentSetupActive?: boolean;
 }
@@ -171,6 +180,11 @@ export function localOnboardingStoreCreate(
     let chiefOfStaffUnsubscribe: (() => void) | undefined;
     let chiefOfStaffSourceUnsubscribe: (() => void) | undefined;
     let chiefOfStaffAttempted = false;
+    let localConnectedUnsubscribe: (() => void) | undefined;
+    /** The runtime connection under which the local agent was last seen gone. */
+    let localLostOn: number | undefined;
+    /** The runtime connection setup has already asked to be made again once. */
+    let reconnectRequestedFor: number | undefined;
     let inFlight = 0;
     let agentSetupActive = options.agentSetupActive === true;
 
@@ -345,6 +359,41 @@ export function localOnboardingStoreCreate(
         providerAuthenticationSynchronize();
         happyMobileSynchronize();
         chiefOfStaffSynchronize();
+        reconnectSynchronize();
+    }
+
+    /**
+     * Picks setup back up after the local agent went away and came back.
+     *
+     * The runtime's connection to the agent survives the agent restarting
+     * behind it — the window's own connection reconnects on its own — so a
+     * setup step that failed to reach the agent while it was gone has nothing
+     * telling it the agent is back, and "Can't reach Happy Agent" would stay up
+     * over a healthy agent until somebody pressed "Try again". Seeing this
+     * window reach the agent again under the same runtime connection is that
+     * news, and setup answers it by doing exactly what "Try again" does, once
+     * per connection, so a step that keeps failing for another reason still
+     * ends on its button rather than in a loop.
+     */
+    function reconnectSynchronize() {
+        const runtime = snapshot.runtime;
+        if (listeners.size === 0 || runtime?.phase !== "ready" || runtime.mode !== "local") {
+            localLostOn = undefined;
+            return;
+        }
+        if (!options.localConnected.get()) {
+            localLostOn = runtime.connectionId;
+            return;
+        }
+        if (
+            localLostOn !== runtime.connectionId ||
+            reconnectRequestedFor === runtime.connectionId ||
+            snapshot.onboarding?.stage !== "connectFailed"
+        )
+            return;
+        localLostOn = undefined;
+        reconnectRequestedFor = runtime.connectionId;
+        attempt(bridge.runtimeRetry(), "Happy could not ask Happy Agent to start again.");
     }
 
     const chiefOfStaffRead = () => {
@@ -618,9 +667,14 @@ export function localOnboardingStoreCreate(
                     customCheck(),
                     ...assistants.map(async (assistant) => {
                         if (!current()) return;
-                        const credentials = scan?.providers.find(
-                            (provider) => provider.providerId === assistant.id,
-                        )?.credentials;
+                        // A completed scan lists every provider this Happy Agent
+                        // has. One it does not list cannot work here at all, which
+                        // is an answer rather than a check that could not be made.
+                        const credentials = scan
+                            ? (scan.providers.find(
+                                  (provider) => provider.providerId === assistant.id,
+                              )?.credentials ?? "missing")
+                            : undefined;
                         if (credentials === "missing") {
                             verificationRetryAt.delete(assistant.id);
                             resultPublish(assistant.id, "invalid");
@@ -727,6 +781,7 @@ export function localOnboardingStoreCreate(
                     options.chiefOfStaff.subscribe(chiefOfStaffSynchronize);
                 happyMobileSourceUnsubscribe =
                     options.happyMobile.subscribe(happyMobileSynchronize);
+                localConnectedUnsubscribe = options.localConnected.subscribe(reconnectSynchronize);
                 eventReceived = false;
                 bridgeUnsubscribe = bridge.onboardingSubscribe((next) => {
                     eventReceived = true;
@@ -799,6 +854,9 @@ export function localOnboardingStoreCreate(
                 happyMobileSourceUnsubscribe = undefined;
                 chiefOfStaffSourceUnsubscribe?.();
                 chiefOfStaffSourceUnsubscribe = undefined;
+                localConnectedUnsubscribe?.();
+                localConnectedUnsubscribe = undefined;
+                localLostOn = undefined;
                 chiefOfStaffSynchronize();
                 providerRecheckStop();
                 verificationAbort?.abort();
