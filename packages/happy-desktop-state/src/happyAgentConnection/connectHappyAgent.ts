@@ -3599,7 +3599,6 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                             {
                                 name: input.name,
                                 projectId,
-                                ...(input.secret === undefined ? {} : { secret: input.secret }),
                                 source: input.source,
                             },
                             { signal: rootController.signal },

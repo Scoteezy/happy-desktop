@@ -631,7 +631,6 @@ export interface ProjectGroup {
     initializationError?: string;
     initializationStatus: "initializing" | "ready" | "failed";
     remoteSource?: { kind: "github"; repository: string } | { kind: "git"; url: string };
-    requiredSecretKind?: "github";
     avatar?: { height: number; url: string; width: number };
     git?: GitChangeSnapshot;
     usage: { totalTokens: number };
@@ -931,7 +930,6 @@ export interface ProjectAddOptions {
 export interface CreateRemoteProjectInput {
     name: string;
     projectId?: string;
-    secret?: { kind: "github" };
     source: { kind: "github"; repository: string } | { kind: "git"; url: string };
 }
 

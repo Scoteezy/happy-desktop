@@ -540,8 +540,6 @@ export interface HappyAgentProject {
     readonly error?: string;
     /** Repository source for a project whose checkout Happy Agent owns. */
     readonly remoteSource?: HappyAgentProjectRemoteSource;
-    /** Native credential Happy Agent needs refreshed for Git operations on this managed project. */
-    readonly requiredSecretKind?: "github";
     readonly avatar?: HappyAgentProjectAvatar;
     /** Current changed-file total for this checkout, omitted until Git state is available. */
     /** Explicit scan state; unavailable totals must not look like a clean checkout. */

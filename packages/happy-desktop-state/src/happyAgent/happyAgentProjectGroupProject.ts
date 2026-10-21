@@ -108,8 +108,6 @@ export interface HappyAgentProjectGroup {
     readonly lifecycle: HappyAgentProjectLifecycle;
     /** Repository source for a managed project Happy Agent cloned. */
     readonly remoteSource?: HappyAgentProject["remoteSource"];
-    /** Native credential required for Git operations on this managed project. */
-    readonly requiredSecretKind?: HappyAgentProject["requiredSecretKind"];
     readonly avatar?: HappyAgentProjectAvatar;
     /** Sessions in the project itself, i.e. not in one of its worktrees. */
     readonly conversations: readonly ConversationSummary[];
@@ -282,9 +280,6 @@ function projectGroup(
         conversations,
         ...(projectRefusal === undefined ? {} : { writeRefusal: projectRefusal }),
         ...(project.remoteSource === undefined ? {} : { remoteSource: project.remoteSource }),
-        ...(project.requiredSecretKind === undefined
-            ? {}
-            : { requiredSecretKind: project.requiredSecretKind }),
         worktrees,
         // A project and each of its worktrees are independent destinations.
         // Child activity belongs on the child row rather than bubbling upward.

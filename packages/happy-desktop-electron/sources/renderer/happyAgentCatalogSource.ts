@@ -232,9 +232,6 @@ function projectProject(group: ProjectGroup, baseUrl: string): HappyAgentProject
         presence: group.presence,
         ...(group.initializationError === undefined ? {} : { error: group.initializationError }),
         ...(group.remoteSource === undefined ? {} : { remoteSource: group.remoteSource }),
-        ...(group.requiredSecretKind === undefined
-            ? {}
-            : { requiredSecretKind: group.requiredSecretKind }),
         ...(avatar ? { avatar } : {}),
         ...gitProject(group.git),
     };

@@ -1989,9 +1989,6 @@ export function happyAgentSessionListStoreCreate(
                         : { permissionMode: input.permissionMode }),
                     ...(project === undefined ? {} : { projectId: project.id }),
                     ...(input.worktreeId === undefined ? {} : { workspaceId: input.worktreeId }),
-                    ...(project?.requiredSecretKind === "github"
-                        ? { gitSecret: { kind: "github" as const } }
-                        : {}),
                 },
                 checkoutReady,
             ),
@@ -2200,7 +2197,6 @@ export function happyAgentSessionListStoreCreate(
             return connectMutationTrack(
                 deps.connectActions.projects.clone({
                     name,
-                    secret: { kind: "github" },
                     source: { kind: "github", repository },
                 }),
             ) as HappyAgentProjectId;
@@ -2296,7 +2292,6 @@ export function happyAgentSessionListStoreCreate(
                 // refusal withdraws the row and arrives as a rejection rather
                 // than as a thrown error, which is why it is tracked below.
                 const { catalog } = internal.getState();
-                const project = catalog.projects.find((entry) => entry.id === projectId);
                 return connectMutationTrack(
                     deps.connectActions.createWorkspace({
                         // No base is named: a ref given here is taken as a
@@ -2304,9 +2299,6 @@ export function happyAgentSessionListStoreCreate(
                         // it out has Happy Agent fork the project's trunk.
                         name: happyAgentWorkspaceGeneratedName(catalog, projectId),
                         projectId,
-                        ...(project?.requiredSecretKind === "github"
-                            ? { secret: { kind: "github" as const } }
-                            : {}),
                     }),
                 ) as HappyAgentWorktreeId;
             }),
