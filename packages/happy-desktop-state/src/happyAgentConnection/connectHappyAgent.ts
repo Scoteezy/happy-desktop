@@ -286,6 +286,15 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const agentDrafts = new Map<string, AgentDraftSnapshot>();
     const agentModes = new Map<string, MessageMode | null>();
     const modeRevisions = new Map<string, number>();
+    const pendingSwitchRevisions = new Map<string, number>();
+    const adoptedSwitchMessages = new Set<string>();
+    const rememberAdoptedSwitchMessage = (key: string): void => {
+        adoptedSwitchMessages.delete(key);
+        adoptedSwitchMessages.add(key);
+        while (adoptedSwitchMessages.size > 1024) {
+            adoptedSwitchMessages.delete(adoptedSwitchMessages.values().next().value!);
+        }
+    };
     const knownUserMessageIds = new Set<string>();
     const rememberUserMessageId = (messageId: string): void => {
         knownUserMessageIds.delete(messageId);
@@ -1135,6 +1144,37 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             unhydratedDraftSaves.set(agentId, { ...unhydrated, draft: reconciled });
         }
         replaceDraft(agentId, reconciled);
+    };
+
+    const reconcileSwitchedDraftMode = (agentId: string, mode: MessageMode): void => {
+        const current = agentDrafts.get(agentId);
+        if (current === undefined) return;
+        if (
+            pendingDraftSaves.has(agentId) ||
+            heldDraftSaves.has(agentId) ||
+            unhydratedDraftSaves.has(agentId) ||
+            unhydratedDraftModes.has(agentId) ||
+            current.value === null
+        ) {
+            reconcileUnhydratedDraftMode(agentId, mode);
+            return;
+        }
+        if (modesEqual(current.value, mode)) return;
+        const updatedAt = Math.max(now(), current.updatedAt ?? 0);
+        const reconciled: AgentDraftSnapshot = {
+            value: { ...mode, text: current.value.text },
+            updatedAt,
+        };
+        const revision = (draftRevisions.get(agentId) ?? 0) + 1;
+        draftRevisions.set(agentId, revision);
+        replaceDraft(agentId, reconciled);
+        draftSave(agentId, {
+            draft: reconciled,
+            mutationId: nextId(),
+            previousDraft: current,
+            revision,
+            updatedAt,
+        });
     };
 
     const unhydratedDraftSaveFlush = (sessionId: string): void => {
@@ -2360,7 +2400,16 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         if (watched) publishSession(entry);
     };
 
-    const modeRefetches = new Map<string, { again: boolean }>();
+    interface ModeRefetchOptions {
+        readonly expectedRoute?: {
+            readonly providerId: string;
+            readonly modelId: string;
+        };
+        readonly modeRevision?: number;
+        readonly reconcileDraft?: boolean;
+    }
+
+    const modeRefetches = new Map<string, { again: boolean; options?: ModeRefetchOptions }>();
 
     const adoptMessageMode = (agentId: string, mode: MessageMode | null): void => {
         const entry = sessions.get(agentId);
@@ -2388,45 +2437,186 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         publishGroups();
     };
 
-    // Accepting a non-user message costs one GET /v0/agents/:id/mode read (coalesced per
-    // agent) because run.started and run.boundary carry acceptedMessageIds without the
-    // resulting stored mode.
-    const refetchAgentMode = (agentId: string): void => {
+    // Accepting a non-user message or resolving a failure card with a route switch costs one
+    // GET /v0/agents/:id/mode read (coalesced per agent) because run.started, run.boundary,
+    // and switchAndContinue do not inline the resulting stored mode.
+    const refetchAgentMode = (agentId: string, options?: ModeRefetchOptions): void => {
         const active = modeRefetches.get(agentId);
         if (active !== undefined) {
             active.again = true;
+            if (options !== undefined) {
+                active.options = {
+                    ...options,
+                    modeRevision: options.modeRevision ?? modeRevisions.get(agentId),
+                };
+            }
             return;
         }
-        const state = { again: false };
+        const state: { again: boolean; options?: ModeRefetchOptions } = { again: false };
         modeRefetches.set(agentId, state);
-        const modeRevision = modeRevisions.get(agentId);
+        const modeRevision = options?.modeRevision ?? modeRevisions.get(agentId);
         background(
             client
                 .getAgentMode(agentId, { signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS) })
                 .then(({ mode }) => {
                     if (closed || rootController.signal.aborted) return;
+                    // An older daemon that has not picked up the switchAndContinue
+                    // lastMode fix still answers GET /v0/agents/:id/mode with the
+                    // pre-switch route; keep the client's computed switched mode
+                    // until every supported daemon writes lastMode on switch.
+                    if (
+                        options?.expectedRoute !== undefined &&
+                        (mode === null ||
+                            mode.providerId !== options.expectedRoute.providerId ||
+                            mode.modelId !== options.expectedRoute.modelId)
+                    ) {
+                        return;
+                    }
                     if (
                         modeRevisions.get(agentId) === modeRevision ||
                         (mode !== null && agentModes.get(agentId) == null)
                     ) {
                         adoptMessageMode(agentId, mode);
+                        if (
+                            options?.reconcileDraft === true &&
+                            mode !== null &&
+                            !intendedModes.has(agentId)
+                        ) {
+                            reconcileSwitchedDraftMode(agentId, mode);
+                            const entry = sessions.get(agentId);
+                            if (entry !== undefined) publishSession(entry);
+                            publishGroups();
+                        }
                     }
                 })
                 .finally(() => {
                     if (modeRefetches.get(agentId) === state) {
                         modeRefetches.delete(agentId);
                         if (state.again && !closed && !rootController.signal.aborted) {
-                            refetchAgentMode(agentId);
+                            refetchAgentMode(agentId, state.options);
                         }
                     }
                 }),
         );
     };
 
+    const switchedModeOf = (
+        agentId: string,
+        message: Message,
+        runId: string | null,
+        providerId: string,
+        modelId: string,
+    ): MessageMode | undefined => {
+        const entry = sessions.get(agentId);
+        let base: MessageMode | undefined;
+        let latestCreatedAt = -Infinity;
+        if (entry !== undefined) {
+            for (const candidate of entry.messages.values()) {
+                if (
+                    candidate.message.role === "user" &&
+                    (runId === null || candidate.runId === runId) &&
+                    candidate.message.createdAt <= message.createdAt &&
+                    candidate.message.createdAt >= latestCreatedAt
+                ) {
+                    latestCreatedAt = candidate.message.createdAt;
+                    base = candidate.message.mode;
+                }
+            }
+        }
+        base ??=
+            agentModes.get(agentId) ??
+            agentDrafts.get(agentId)?.value ??
+            (config !== undefined ? defaultMode(config) : undefined);
+        if (base === undefined) return undefined;
+        const reference = config?.providers[providerId]?.models.find(
+            (candidate) => candidate.id === modelId,
+        );
+        const definition = config?.models[modelId];
+        const efforts = reference?.efforts ?? definition?.efforts;
+        const defaultEffort = reference?.defaultEffort ?? definition?.defaultEffort;
+        const effort =
+            efforts !== undefined && efforts.includes(base.effort)
+                ? base.effort
+                : (defaultEffort ?? base.effort);
+        const tierSupported =
+            base.serviceTier !== null &&
+            (reference?.serviceTierOptions !== undefined
+                ? reference.serviceTierOptions.some((option) => option.id === base.serviceTier)
+                : definition?.serviceTierOptions !== undefined
+                  ? definition.serviceTierOptions.some((option) => option.id === base.serviceTier)
+                  : (definition?.serviceTiers ?? []).includes(base.serviceTier));
+        return {
+            effort,
+            modelId,
+            permissionMode: base.permissionMode,
+            providerId,
+            serviceTier: tierSupported ? base.serviceTier : null,
+        };
+    };
+
+    const adoptFailureSwitch = (
+        agentId: string,
+        message: Message,
+        runId: string | null,
+        wasUnresolvedFailure: boolean,
+    ): void => {
+        if (message.role !== "service") return;
+        const resolution = message.failure?.resolution;
+        if (
+            resolution?.action !== "switched" ||
+            !("providerId" in resolution) ||
+            !("modelId" in resolution)
+        ) {
+            return;
+        }
+        const switchKey = `${agentId}:${message.id}`;
+        if (adoptedSwitchMessages.has(switchKey)) return;
+        const switchRevision = pendingSwitchRevisions.get(switchKey);
+        if (switchRevision === undefined && !wasUnresolvedFailure) {
+            return;
+        }
+        pendingSwitchRevisions.delete(switchKey);
+        rememberAdoptedSwitchMessage(switchKey);
+        if (
+            (switchRevision !== undefined &&
+                (modeRevisions.get(agentId) ?? 0) !== switchRevision) ||
+            intendedModes.has(agentId)
+        ) {
+            return;
+        }
+        intendedModes.delete(agentId);
+        const switched = switchedModeOf(
+            agentId,
+            message,
+            runId,
+            resolution.providerId,
+            resolution.modelId,
+        );
+        if (switched !== undefined) {
+            adoptMessageMode(agentId, switched);
+            reconcileSwitchedDraftMode(agentId, switched);
+            const entry = sessions.get(agentId);
+            if (entry !== undefined) publishSession(entry);
+            publishGroups();
+        }
+        refetchAgentMode(agentId, {
+            expectedRoute: {
+                providerId: resolution.providerId,
+                modelId: resolution.modelId,
+            },
+            modeRevision: modeRevisions.get(agentId),
+            reconcileDraft: true,
+        });
+    };
+
     const updateMessage = (agentId: string, message: Message, runId: string | null): void => {
         if (message.role === "user") sendConfirmations.get(message.id)?.();
         const entry = sessions.get(agentId);
         const current = entry?.messages.get(message.id)?.message;
+        const wasUnresolvedFailure =
+            current?.role === "service" &&
+            current.failure !== undefined &&
+            current.failure.resolution === undefined;
         // HTTP replies and stream events can arrive independently. Acceptance
         // is final for a message ID: a late send reply must not put it back in
         // the pending tail after run.started or run.boundary already took it.
@@ -2441,6 +2631,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         if (message.role === "user") {
             rememberUserMessageId(message.id);
             adoptMessageMode(agentId, message.mode);
+        } else if (
+            message.role === "service" &&
+            message.failure?.resolution?.action === "switched"
+        ) {
+            adoptFailureSwitch(agentId, message, runId, wasUnresolvedFailure);
         } else if (
             message.role === "agent" &&
             message.metadata.senderAgentId !== undefined &&
@@ -2463,7 +2658,10 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     ): void => {
         adoptAgent(agent);
         const entry = sessions.get(agentId);
-        if (entry === undefined) return;
+        if (entry === undefined) {
+            adoptFailureSwitch(agentId, message, null, false);
+            return;
+        }
         updateMessage(agentId, message, entry.messages.get(message.id)?.runId ?? null);
     };
 
@@ -3628,6 +3826,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             value: { ...mode, text: previousDraft.value?.text ?? "" },
             updatedAt,
         };
+        modeRevisions.set(sessionId, (modeRevisions.get(sessionId) ?? 0) + 1);
         intendedModes.set(sessionId, mode);
         unhydratedDraftModes.delete(sessionId);
         const revision = (draftRevisions.get(sessionId) ?? 0) + 1;
@@ -4377,6 +4576,13 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         },
         switchAndContinue(sessionId, messageId, target) {
             const mutationId = nextId();
+            const switchKey = `${sessionId}:${messageId}`;
+            const previousIntended = intendedModes.get(sessionId);
+            const previousRevision = modeRevisions.get(sessionId);
+            intendedModes.delete(sessionId);
+            const switchRevision = (previousRevision ?? 0) + 1;
+            modeRevisions.set(sessionId, switchRevision);
+            pendingSwitchRevisions.set(switchKey, switchRevision);
             return mutation(
                 "switch_and_continue",
                 mutationId,
@@ -4391,7 +4597,22 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     return response;
                 },
                 (response) => failureResolutionAdopt(sessionId, response),
-                undefined,
+                () => {
+                    pendingSwitchRevisions.delete(switchKey);
+                    if (modeRevisions.get(sessionId) === switchRevision) {
+                        if (previousRevision === undefined) modeRevisions.delete(sessionId);
+                        else modeRevisions.set(sessionId, previousRevision);
+                        if (previousIntended !== undefined && !intendedModes.has(sessionId)) {
+                            intendedModes.set(sessionId, previousIntended);
+                            const entry = sessions.get(sessionId);
+                            if (entry !== undefined) {
+                                publishSession(entry);
+                                settleSessionIfIdle(entry);
+                            }
+                            publishGroups();
+                        }
+                    }
+                },
                 sessionId,
                 `agent:${sessionId}`,
             );
@@ -4985,6 +5206,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             intendedModes.clear();
             agentModes.clear();
             modeRevisions.clear();
+            pendingSwitchRevisions.clear();
+            adoptedSwitchMessages.clear();
             modeRefetches.clear();
             knownUserMessageIds.clear();
             agentDrafts.clear();

@@ -452,11 +452,61 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             if (failed === undefined) continue;
             if (failed.role !== "service" || failed.failure === undefined)
                 throw new Error(`Message ${messageId} is not a failure.`);
+            if (failed.failure.resolution !== undefined)
+                throw new HappyAgentApiError(
+                    409,
+                    "This failure has already been resolved.",
+                    "conflict",
+                    null,
+                );
             const message: ServiceMessage = {
                 ...failed,
                 failure: { ...failed.failure, resolution },
             };
             run.messages[index] = message;
+            if (
+                resolution.action === "switched" &&
+                "providerId" in resolution &&
+                "modelId" in resolution
+            ) {
+                let baseMode: MessageMode | undefined;
+                for (let cursor = index; cursor >= 0; cursor -= 1) {
+                    const candidate = run.messages[cursor];
+                    if (candidate?.role === "user") {
+                        baseMode = candidate.mode;
+                        break;
+                    }
+                }
+                baseMode ??= modes.get(agentId) ?? drafts.get(agentId)?.value ?? MODE;
+                const reference = config.providers[resolution.providerId]?.models.find(
+                    (candidate) => candidate.id === resolution.modelId,
+                );
+                const definition = config.models[resolution.modelId];
+                const efforts = reference?.efforts ?? definition?.efforts;
+                const defaultEffort = reference?.defaultEffort ?? definition?.defaultEffort;
+                const effort =
+                    efforts !== undefined && efforts.includes(baseMode.effort)
+                        ? baseMode.effort
+                        : (defaultEffort ?? baseMode.effort);
+                const tierSupported =
+                    baseMode.serviceTier !== null &&
+                    (reference?.serviceTierOptions !== undefined
+                        ? reference.serviceTierOptions.some(
+                              (option) => option.id === baseMode.serviceTier,
+                          )
+                        : definition?.serviceTierOptions !== undefined
+                          ? definition.serviceTierOptions.some(
+                                (option) => option.id === baseMode.serviceTier,
+                            )
+                          : (definition?.serviceTiers ?? []).includes(baseMode.serviceTier));
+                modes.set(agentId, {
+                    effort,
+                    modelId: resolution.modelId,
+                    permissionMode: baseMode.permissionMode,
+                    providerId: resolution.providerId,
+                    serviceTier: tierSupported ? baseMode.serviceTier : null,
+                });
+            }
             return { agent: agentBump(agentId), message, cursor: latestCursor };
         }
         throw new Error(`Unknown message ${messageId}.`);
