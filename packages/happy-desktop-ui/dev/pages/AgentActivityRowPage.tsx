@@ -308,7 +308,7 @@ export function AgentActivityRowPage() {
                             kind: "agentMessage",
                             agentId: "v2eibi1k9zgwde56wwuhrbku",
                             agentName: "Retry policy rewrite",
-                            agentFace: { kind: "generated", seed: "v2eibi1k9zgwde56wwuhrbku" },
+                            agentFace: { kind: "initials", initials: "RP" },
                             text: AGENT_MESSAGE_TEXT,
                         }}
                     />
@@ -317,7 +317,7 @@ export function AgentActivityRowPage() {
                             kind: "agentMessage",
                             agentId: "v2eibi1k9zgwde56wwuhrbku",
                             agentName: "Retry policy rewrite",
-                            agentFace: { kind: "generated", seed: "v2eibi1k9zgwde56wwuhrbku" },
+                            agentFace: { kind: "initials", initials: "RP" },
                             text: AGENT_MESSAGE_TEXT,
                         }}
                         defaultExpanded

@@ -1,5 +1,5 @@
 import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
-import { AvatarBrutalist } from "./AvatarBrutalist";
+import { Avatar } from "./Avatar";
 import { ContextMenu } from "./ContextMenu";
 import { Icon } from "./Icon";
 import type { MenuItem } from "./Menu";
@@ -43,7 +43,14 @@ function ConnectionShellTile(props: { readonly item: ConnectionShellItem }) {
         );
     }
     if (item.local) return <Icon name="home" size={20} />;
-    return <AvatarBrutalist id={item.id} size={36} style={{ borderRadius: "10px" }} />;
+    return (
+        <Avatar
+            initials={item.label.slice(0, 1).toUpperCase()}
+            size="md"
+            style={{ width: 36, height: 36, borderRadius: 10 }}
+            type="agent"
+        />
+    );
 }
 
 /** The connection switcher stays outside every connection's workspace and setup. */

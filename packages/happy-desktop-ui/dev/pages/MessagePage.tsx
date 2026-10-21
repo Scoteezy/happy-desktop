@@ -806,13 +806,11 @@ export function MessagePage() {
                     <>
                         <Message
                             author="Inspect workspace status"
-                            avatarSessionId="rj3ssbvts1t0wqrn39af3prx"
                             body="Background work completed."
                             time="9:14"
                         />
                         <Message
                             author="Migrate the plugin permission table"
-                            avatarSessionId="cm4x81kq0000zt6hf2b9d7we"
                             body="Background work completed."
                             time="9:16"
                         />

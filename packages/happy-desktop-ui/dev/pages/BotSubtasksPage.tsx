@@ -5,7 +5,7 @@ import { ComponentPage, DimensionRule, Specimen } from "../kit";
 export const componentNumber = "C-009b";
 
 const items: SidebarItem[] = [
-    { id: "chief", kind: "project", label: "Chief of Staff", avatarId: "chief", status: "working" },
+    { id: "chief", kind: "project", label: "Chief of Staff", initials: "CS", status: "working" },
     {
         id: "trip",
         depth: 1,
@@ -45,7 +45,7 @@ const items: SidebarItem[] = [
         kind: "workspace",
         label: "Collect receipts",
     },
-    { id: "builder", kind: "project", label: "Builder", avatarId: "builder" },
+    { id: "builder", kind: "project", label: "Builder", initials: "B" },
     {
         id: "research",
         depth: 1,

@@ -13,7 +13,6 @@ import type {
 } from "happy-desktop-state";
 import { compactCount, changeCountLabel } from "./countText";
 import { Avatar } from "./Avatar";
-import { AvatarBrutalist } from "./AvatarBrutalist";
 import { ConversationMedia } from "./ConversationMedia";
 import { CopyButton } from "./CopyButton";
 import { DiffSnippet, type DiffLine } from "./DiffSnippet";
@@ -1414,8 +1413,6 @@ const AGENT_MESSAGE_FACE_SIZE = 14;
  */
 function AgentMessageFace(props: { face: ConversationAgentFace }) {
     const face = props.face;
-    if (face.kind === "generated")
-        return <AvatarBrutalist id={face.seed} size={AGENT_MESSAGE_FACE_SIZE} />;
     return (
         <Avatar
             {...(face.kind === "image" ? { imageUrl: face.url } : {})}

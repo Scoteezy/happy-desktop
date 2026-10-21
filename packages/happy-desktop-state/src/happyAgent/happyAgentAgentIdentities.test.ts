@@ -100,10 +100,10 @@ it("names a bot, a task, and a subtask the way their own rows do", () => {
         name: "Release helper",
         face: { kind: "image", url: "http://happy-agent.test/v0/bots/bot_helper/avatar" },
     });
-    // A bot without a picture wears the mark generated from the bot, as its row does.
+    // A bot without a picture wears its initials, as its row does.
     expect(index.get("agent_plain")).toEqual({
         name: "Plain",
-        face: { kind: "generated", seed: "bot_plain" },
+        face: { kind: "initials", initials: "P" },
     });
     expect(index.get("agent_team")).toEqual({
         name: "Fix invoice rounding",
@@ -116,7 +116,7 @@ it("names a bot, a task, and a subtask the way their own rows do", () => {
     });
     expect(index.get("agent_subtask")).toEqual({
         name: "Write the changelog",
-        face: { kind: "generated", seed: "agent_subtask" },
+        face: { kind: "initials", initials: "WT" },
     });
 });
 
@@ -144,7 +144,7 @@ it("asks the host once for an agent nothing lists, and leaves one it refuses unn
     await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1));
     expect(source.lookup("agent_far")).toEqual({
         name: "Nightly triage",
-        face: { kind: "generated", seed: "agent_far" },
+        face: { kind: "initials", initials: "NT" },
     });
 
     source.request("agent_gone");
@@ -220,7 +220,7 @@ it("puts the sender's name and face on the row and leaves the id in the message"
             kind: "agentMessage",
             agentId: "agent_subtask",
             agentName: "Write the changelog",
-            agentFace: { kind: "generated", seed: "agent_subtask" },
+            agentFace: { kind: "initials", initials: "WT" },
             text: envelope("agent_subtask"),
         },
         // Nobody can name it: no name and no face, so the row shows its id.

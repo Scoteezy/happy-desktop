@@ -947,14 +947,7 @@ function botSidebarItem(
         kind: "project",
         label: bot.name,
         labelShimmer: titleShimmerEnabled,
-        // A bot without a picture wears the same generated mark a session tab
-        // does — a circle, hashed from the bot's own id — rather than the first
-        // letter of its name. A column of bots is picked out by shape and color
-        // long before it is read, an initials plaque gives every one of them the
-        // same grey square, and hashing the id rather than the name keeps the
-        // face the reader learned through every rename. A picture the bot
-        // actually has still outranks it.
-        avatarId: bot.id,
+        initials: ownerInitials(bot.name),
         ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
         ...sidebarActivity(bot.conversation.activity),
         ...(bot.conversation.unread ? { unread: true } : {}),
@@ -977,7 +970,7 @@ function botCreatingSidebarItem(
         kind: "project",
         label: bot.name,
         labelShimmer: titleShimmerEnabled,
-        avatarId: bot.id,
+        initials: ownerInitials(bot.name),
         ...(bot.avatar ? { imageUrl: bot.avatar.url } : {}),
         lifecycle: "creating",
         lifecycleLabel: "creating",
@@ -985,9 +978,7 @@ function botCreatingSidebarItem(
 }
 
 /** A task's face, as its row wears it: the owner's, or a glyph on a standalone machine. */
-function taskFace(
-    task: HappyAgentTask,
-): Pick<SidebarItem, "icon" | "imageUrl" | "initials" | "avatarId"> {
+function taskFace(task: HappyAgentTask): Pick<SidebarItem, "icon" | "imageUrl" | "initials"> {
     const owner = task.owner;
     if (owner === null) return { icon: "tasks" };
     const initials =
@@ -999,7 +990,7 @@ function taskFace(
         ...(initials !== undefined
             ? { initials }
             : owner.avatar === undefined
-              ? { avatarId: task.id }
+              ? { icon: "tasks" }
               : {}),
     };
 }
@@ -1582,8 +1573,7 @@ function sessionTabs(
         id: summary.id,
         label: summary.title,
         labelShimmer: titleShimmerEnabled,
-        // The session's own id, so the mark survives every rename of the title.
-        ...(hideAvatar ? {} : { avatarId: summary.id }),
+        ...(hideAvatar ? {} : { icon: "chat" as const }),
         // Both are stated even when false: a session tab holds its leading lane
         // open, so work starting or finishing makes the mark appear and go
         // without sliding the title sideways under the reader.
@@ -2574,14 +2564,17 @@ function surfaceLabel(surface: HappyAgentSurface): string {
 function surfaceFace(
     surface: HappyAgentSurface,
     places: SurfacePlaces,
-): Pick<SidebarItem, "icon" | "imageUrl" | "initials" | "avatarId" | "archived"> {
+): Pick<SidebarItem, "icon" | "imageUrl" | "initials" | "archived"> {
     const target = surface.target;
     const glyph = { icon: surfaceTypeIcon(surface.type) };
     if (target?.state === "unavailable") return { ...glyph, archived: true };
     if (surface.type.kind === "task") return glyph;
     if (target?.kind === "bot") {
         const bot = places.bots.find((entry) => entry.id === target.id);
-        return { avatarId: target.id, ...(bot?.avatar ? { imageUrl: bot.avatar.url } : {}) };
+        return {
+            initials: ownerInitials(bot?.name ?? surface.name),
+            ...(bot?.avatar ? { imageUrl: bot.avatar.url } : {}),
+        };
     }
     if (surface.image) return { imageUrl: surface.image.url };
     if (target?.kind === "artifact" && target.hasImage) return { icon: "image" };

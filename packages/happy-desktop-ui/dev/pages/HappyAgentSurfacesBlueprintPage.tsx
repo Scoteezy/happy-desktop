@@ -595,7 +595,7 @@ interface MockSurface {
  */
 interface MockReference {
     readonly view: HappyAgentSurfaceReferenceView;
-    readonly face: Pick<SidebarItem, "archived" | "avatarId" | "icon" | "imageUrl" | "initials">;
+    readonly face: Pick<SidebarItem, "archived" | "icon" | "imageUrl" | "initials">;
     /** The row in Artifacts, Bots, or Tasks it opens; absent when it cannot be opened. */
     readonly opens?: string;
 }
@@ -625,7 +625,7 @@ const SURFACES: readonly MockSurface[] = [
     { id: "house", joined: true, view: HOUSE },
     { id: "weekend", joined: true, view: MESSAGES_SURFACE },
     reference("ref-chief", "Chief of Staff", "bot", {
-        face: { avatarId: "chief-of-staff" },
+        face: { initials: "CS" },
         opens: "chief",
         view: { phase: "available", kind: "bot", name: "Chief of Staff", action: "open" },
     }),
@@ -718,8 +718,8 @@ const ARTIFACTS: SidebarItem = {
 };
 
 const BOTS: readonly SidebarItem[] = [
-    { avatarId: "chief-of-staff", id: "chief", kind: "agent", label: "Chief of Staff" },
-    { avatarId: "release-notes", id: "notes", kind: "agent", label: "Release notes" },
+    { initials: "CS", id: "chief", kind: "agent", label: "Chief of Staff" },
+    { initials: "RN", id: "notes", kind: "agent", label: "Release notes" },
 ];
 
 const TASKS: readonly SidebarItem[] = [

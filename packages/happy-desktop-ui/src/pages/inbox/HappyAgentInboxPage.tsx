@@ -5,7 +5,7 @@ import type {
     HappyAgentInboxSubmission,
     UserError,
 } from "happy-desktop-state";
-import { AvatarBrutalist } from "../../AvatarBrutalist";
+import { Avatar } from "../../Avatar";
 import { Banner } from "../../Banner";
 import { Button } from "../../Button";
 import { Composer } from "../../Composer";
@@ -268,11 +268,13 @@ function InboxItemHeader(props: InboxItemHeaderProps & { status?: string }) {
                 {/* The asking session's own mark, the same one its tab wears, so
                     a question read here and the session it came from are the
                     same thing at a glance rather than two titles to match up. */}
-                <AvatarBrutalist
+                <Avatar
                     aria-label={title}
                     className="happy-agent-inbox__item-avatar"
-                    id={props.item.sessionId}
-                    size={20}
+                    initials={title.slice(0, 1).toUpperCase()}
+                    size="xs"
+                    type="agent"
+                    style={{ width: 20, height: 20 }}
                 />
                 <span className="happy-agent-inbox__item-title">{title}</span>
                 {props.location ? (

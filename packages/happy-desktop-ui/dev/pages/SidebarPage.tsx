@@ -163,7 +163,7 @@ const agentSections: SidebarSection[] = [
     {
         action: { icon: "plus", label: "New bot", reveal: "always" },
         id: "agent-bots",
-        items: [{ avatarId: "bot-nova", id: "bot-nova", kind: "project", label: "Nova" }],
+        items: [{ initials: "N", id: "bot-nova", kind: "project", label: "Nova" }],
         label: "Bots",
     },
     {
@@ -195,7 +195,7 @@ const agentSections: SidebarSection[] = [
             },
             {
                 action: { icon: "close", label: "Leave Triage nightly failures", reveal: "hover" },
-                avatarId: "task-orphan",
+                icon: "tasks",
                 id: "task-orphan",
                 kind: "project",
                 label: "Triage nightly failures",
@@ -392,14 +392,14 @@ const treatmentSections: SidebarSection[] = [
                 tone: "mint",
             },
             {
-                avatarId: "bot-nova",
+                initials: "N",
                 id: "kind-project-generated",
                 initials: "N",
                 kind: "project",
                 label: "Bot — generated avatar",
             },
             {
-                avatarId: "bot-atlas",
+                initials: "A",
                 id: "kind-project-generated-busy",
                 initials: "A",
                 kind: "project",
@@ -408,7 +408,7 @@ const treatmentSections: SidebarSection[] = [
                 unread: true,
             },
             {
-                avatarId: "bot-orion",
+                initials: "O",
                 id: "kind-project-generated-photo",
                 imageUrl: PHOTO,
                 initials: "O",
@@ -711,7 +711,7 @@ function QuietBotsDemo() {
                             id: "bots",
                             items: QUIET_BOTS.filter((bot) => !hidden.has(bot.id)).map(
                                 (bot): SidebarItem => ({
-                                    avatarId: bot.id,
+                                    initials: bot.label.slice(0, 1).toUpperCase(),
                                     id: bot.id,
                                     kind: "project",
                                     label: bot.label,
@@ -1201,7 +1201,7 @@ const SHORTCUT_TARGETS = [
 
 function InlineRenameDemo() {
     const [items, setItems] = useState<SidebarItem[]>([
-        { id: "rename-task", kind: "agent", label: "Sidebar polish", avatarId: "rename-task" },
+        { id: "rename-task", kind: "agent", label: "Sidebar polish", initials: "SP" },
         { id: "rename-unread", kind: "agent", label: "Unread task", unread: true },
         { id: "rename-working", kind: "agent", label: "Working task", status: "working" },
         { id: "rename-project", kind: "project", label: "Happy desktop" },

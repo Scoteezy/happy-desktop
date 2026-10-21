@@ -113,7 +113,6 @@ export {
     type AvatarType,
     type ToneName,
 } from "./Avatar";
-export { AvatarBrutalist, type AvatarBrutalistProps } from "./AvatarBrutalist";
 export { StemCell, type StemCellMark, type StemCellProps } from "./StemCell";
 export {
     BotFace,

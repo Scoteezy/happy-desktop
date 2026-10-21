@@ -8,7 +8,6 @@ import {
     type MouseEvent,
     type PointerEvent as ReactPointerEvent,
 } from "react";
-import { AvatarBrutalist } from "./AvatarBrutalist";
 import { CountBadge } from "./Badge";
 import { haptic } from "./haptics";
 import { FileKindIcon } from "./FileKindIcon";
@@ -68,13 +67,6 @@ export type TabItem = {
     dirty?: boolean;
     /** Marks the tab as carrying unread activity with a dot on its leading mark. */
     unread?: boolean;
-    /**
-     * Gives the tab a generated brutalist mark derived from this string, so a
-     * tab that has no icon still has a face the reader can aim at. Supply the
-     * entity's own id — the session's, the project's — and the mark stays the
-     * same for as long as the entity does. `icon` outranks it.
-     */
-    avatarId?: string;
     /** Unframed artwork for an explicitly opened entity. */
     imageMark?: { src: string; alt?: string };
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
@@ -122,8 +114,6 @@ function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
         <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />
     ) : tab.icon ? (
         <Icon name={tab.icon} size={iconSize} />
-    ) : tab.avatarId !== undefined ? (
-        <AvatarBrutalist id={tab.avatarId} size={iconSize} />
     ) : null;
     if (mark === null && !tab.unread && !tabHoldsLeadingLane(tab)) return null;
     return (

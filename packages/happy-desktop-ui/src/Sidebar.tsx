@@ -13,7 +13,6 @@ import {
     type ReactNode,
 } from "react";
 import { Avatar, type ToneName } from "./Avatar";
-import { AvatarBrutalist } from "./AvatarBrutalist";
 import { ChangeStats } from "./ChangeStats";
 import { haptic } from "./haptics";
 import { CountBadge, KeyCap } from "./Badge";
@@ -81,20 +80,10 @@ export type SidebarItem = {
      * mark the reader picked outranks the one the caller fell back to.
      */
     emoji?: string;
-    /**
-     * Gives a `person`/`agent`/`project` row a generated brutalist mark derived
-     * from this string instead of an initials tile, so an entity that has no
-     * picture of its own still has a face the reader can pick out of the column.
-     * Supply the entity's own id — the bot's, the session's — and the mark
-     * survives every rename. A `imageUrl` outranks it, and so does `icon`: both
-     * are marks something chose, and this one is only ever a stand-in.
-     */
-    avatarId?: string;
     /** Small owner/location avatars in the leading lane, rather than the row's own face. */
     contextAvatars?: readonly {
         id: string;
         label: string;
-        avatarId?: string;
         imageUrl?: string;
         initials?: string;
         icon?: IconName;
@@ -334,7 +323,6 @@ export type SidebarSection = {
     label?: string;
     /** Static space identity separating global rows from the space's sections. */
     spaceHeading?: {
-        avatarId?: string;
         icon?: IconName;
         imageMark?: { src: string; alt?: string };
         label: string;
@@ -1531,12 +1519,6 @@ function SidebarRow({
      * same box, so which one a row wears never moves its name.
      */
     const identityMark = () => {
-        const generated =
-            item().imageUrl === undefined && item().icon === undefined
-                ? item().avatarId
-                : undefined;
-        if (generated !== undefined)
-            return <AvatarBrutalist id={generated} size={SIDEBAR_AVATAR_SIZE} />;
         return (
             <Avatar
                 icon={item().icon}
@@ -1728,18 +1710,16 @@ function SidebarRow({
                                 className="happy-sidebar__item-context-avatar"
                                 data-happy-desktop-ui="sidebar-item-context-avatar"
                             >
-                                {avatar.avatarId !== undefined && avatar.imageUrl === undefined ? (
-                                    <AvatarBrutalist id={avatar.avatarId} size={16} />
-                                ) : (
-                                    <Avatar
-                                        imageUrl={avatar.imageUrl}
-                                        initials={avatar.initials ?? ""}
-                                        icon={avatar.icon}
-                                        size="xs"
-                                        style={{ width: 16, height: 16, borderRadius: 4 }}
-                                        type="agent"
-                                    />
-                                )}
+                                <Avatar
+                                    imageUrl={avatar.imageUrl}
+                                    initials={
+                                        avatar.initials ?? avatar.label.slice(0, 1).toUpperCase()
+                                    }
+                                    icon={avatar.icon}
+                                    size="xs"
+                                    style={{ width: 16, height: 16, borderRadius: 4 }}
+                                    type="agent"
+                                />
                             </span>
                         ))
                     ) : !showsLeadingSlot(item()) ? null : item().kind === "person" ||
@@ -3435,11 +3415,6 @@ export function Sidebar(props: SidebarProps) {
                                                 alt={section.spaceHeading.imageMark.alt ?? ""}
                                                 className="happy-sidebar__image-mark"
                                                 src={section.spaceHeading.imageMark.src}
-                                            />
-                                        ) : section.spaceHeading.avatarId ? (
-                                            <AvatarBrutalist
-                                                id={section.spaceHeading.avatarId}
-                                                size={20}
                                             />
                                         ) : section.spaceHeading.icon ? (
                                             <Icon name={section.spaceHeading.icon} size={20} />

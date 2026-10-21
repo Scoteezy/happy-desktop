@@ -26,7 +26,7 @@ const laneTabs = (state: {
     ["one", "two", "three"].map((id, index) => ({
         id,
         label: ["Migrate the table", "Rewrite the header", "Connect a Happy Agent"][index]!,
-        avatarId: state.avatar === true ? `ses_${id}` : undefined,
+        icon: state.avatar === true ? "chat" : undefined,
         busy: state.busy === true,
         waiting: state.waiting === true,
         awaitingInput: state.awaitingInput === true,

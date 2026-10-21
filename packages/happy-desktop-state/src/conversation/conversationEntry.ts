@@ -100,8 +100,7 @@ export interface ConversationMessageProjection {
 export type ConversationAgentFace =
     | { readonly kind: "image"; readonly url: string }
     | { readonly kind: "initials"; readonly initials: string }
-    | { readonly kind: "task" }
-    | { readonly kind: "generated"; readonly seed: string };
+    | { readonly kind: "task" };
 
 /** A known agent as a transcript names it. */
 export interface ConversationAgentIdentity {

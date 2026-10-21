@@ -19,7 +19,6 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { Avatar, type AvatarSize, type ToneName } from "./Avatar";
-import { AvatarBrutalist } from "./AvatarBrutalist";
 import { happyLogoBlackUrl } from "./assets";
 import { AutomatedTag } from "./AutomatedTag";
 import { ReactionChip } from "./Badge";
@@ -200,14 +199,6 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     imageMark?: { src: string; alt?: string };
     /** Unformed item identity, retained until its artwork is assigned. */
     stemCell?: StemCellMark;
-    /**
-     * A session this message speaks for rather than a person: the avatar becomes
-     * that session's generated mark instead of initials. It is what separates a
-     * message that arrived from another session from one written here — and the
-     * mark matches the one that session wears in the tab strip, so the two read
-     * as the same thing. An `imageUrl` still wins over it.
-     */
-    avatarSessionId?: string;
     /** Inline photo attachments rendered as a clickable thumbnail grid. */
     images?: MessageImage[];
     /** Opens an image (by id) — wire to a web-modal lightbox, never a new tab. */
@@ -335,7 +326,6 @@ export function Message(props: MessageProps) {
         "audienceLabel",
         "automated",
         "author",
-        "avatarSessionId",
         "body",
         "bodyFormat",
         "children",
@@ -392,8 +382,6 @@ export function Message(props: MessageProps) {
                 className="happy-message__image-mark"
                 src={local.imageMark.src}
             />
-        ) : local.avatarSessionId !== undefined && local.imageUrl === undefined && !happyAgent() ? (
-            <AvatarBrutalist id={local.avatarSessionId} size={GUTTER_MARK_PIXELS} />
         ) : (
             <Avatar
                 imageTheme={happyAgent() ? "brand" : undefined}

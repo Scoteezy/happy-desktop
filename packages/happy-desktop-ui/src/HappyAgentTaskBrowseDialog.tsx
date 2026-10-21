@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import { Avatar } from "./Avatar";
-import { AvatarBrutalist } from "./AvatarBrutalist";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
@@ -113,13 +112,13 @@ export function HappyAgentTaskBrowseDialog(props: HappyAgentTaskBrowseDialogProp
                                     data-happy-desktop-ui="happy-agent-task-browse-dialog-row"
                                     key={task.id}
                                 >
-                                    {task.owner === undefined ? null : task.owner.imageUrl ===
-                                          undefined && task.owner.name === undefined ? (
-                                        <AvatarBrutalist id={task.id} size={28} />
-                                    ) : (
+                                    {task.owner === undefined ? null : (
                                         <Avatar
                                             imageUrl={task.owner.imageUrl}
                                             initials={ownerInitials(task.owner.name ?? "")}
+                                            icon={
+                                                task.owner.name === undefined ? "tasks" : undefined
+                                            }
                                             size="sm"
                                         />
                                     )}

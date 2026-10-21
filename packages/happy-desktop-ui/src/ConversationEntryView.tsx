@@ -490,7 +490,6 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
         <Message
             agent={author?.kind === "agent"}
             author={author?.displayName ?? "Unknown"}
-            {...(author?.sessionId === undefined ? {} : { avatarSessionId: author.sessionId })}
             imageUrl={
                 author?.imageUrl ??
                 (author?.avatar ? thumbhashDataUrl(author.avatar.thumbhash) : undefined)

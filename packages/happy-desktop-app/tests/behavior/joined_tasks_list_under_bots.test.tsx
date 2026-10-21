@@ -302,11 +302,10 @@ it("wears the owner's photo, then their initials, then the bot placeholder", () 
             ?.textContent,
     ).toBe("BD");
     const orphan = row(container, "ws_orphan");
-    expect(orphan.querySelector('[data-happy-desktop-ui="avatar-brutalist"]')).not.toBeNull();
-    expect(orphan.querySelector('[data-happy-desktop-ui="avatar"]')).toBeNull();
+    expect(orphan.querySelector('[data-happy-desktop-ui="avatar-glyph"]')).not.toBeNull();
     // A bot without a picture wears the same placeholder.
     expect(
-        row(container, "ws_helper").querySelector('[data-happy-desktop-ui="avatar-brutalist"]'),
+        row(container, "ws_helper").querySelector('[data-happy-desktop-ui="avatar-initials"]'),
     ).not.toBeNull();
 });
 
@@ -401,7 +400,6 @@ it("shows no owner face on a standalone machine, only the plain tasks glyph", ()
         const face = row(container, id);
         expect(face.querySelector('[data-happy-desktop-ui="avatar-image"]')).toBeNull();
         expect(face.querySelector('[data-happy-desktop-ui="avatar-initials"]')).toBeNull();
-        expect(face.querySelector('[data-happy-desktop-ui="avatar-brutalist"]')).toBeNull();
         expect(face.querySelector('[data-happy-desktop-ui="avatar-glyph"]')).not.toBeNull();
     }
 });
@@ -418,9 +416,7 @@ it("lists tasks in Browse without a face or name on a standalone machine, and wi
         ];
         const read = rows.map((node) => ({
             text: node.textContent,
-            faces: node.querySelectorAll(
-                '[data-happy-desktop-ui="avatar"], [data-happy-desktop-ui="avatar-brutalist"]',
-            ).length,
+            faces: node.querySelectorAll('[data-happy-desktop-ui="avatar"]').length,
         }));
         unmount();
         return read;

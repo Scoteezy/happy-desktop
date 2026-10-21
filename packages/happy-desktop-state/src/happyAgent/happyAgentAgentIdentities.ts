@@ -46,7 +46,7 @@ function taskFace(task: HappyAgentTask): ConversationAgentFace {
     if (owner === null) return { kind: "task" };
     if (owner.avatar !== undefined) return { kind: "image", url: owner.avatar.url };
     const initials = owner.name === undefined ? "" : initialsOf(owner.name);
-    return initials === "" ? { kind: "generated", seed: task.id } : { kind: "initials", initials };
+    return initials === "" ? { kind: "task" } : { kind: "initials", initials };
 }
 
 /**
@@ -63,7 +63,7 @@ export function happyAgentAgentIdentitiesIndex(
         if (conversation.title.trim().length === 0) return;
         index.set(conversation.id, {
             name: conversation.title,
-            face: { kind: "generated", seed: conversation.id },
+            face: { kind: "initials", initials: initialsOf(conversation.title) },
         });
     };
     if (list.projects.type === "ready")
@@ -80,7 +80,7 @@ export function happyAgentAgentIdentitiesIndex(
             name: bot.name,
             face:
                 bot.avatar === undefined
-                    ? { kind: "generated", seed: bot.id }
+                    ? { kind: "initials", initials: initialsOf(bot.name) }
                     : { kind: "image", url: bot.avatar.url },
         });
     return index;
@@ -125,7 +125,7 @@ export function happyAgentAgentIdentitySourceCreate(deps: {
                     if (!title) return;
                     fetched.set(agentId, {
                         name: title,
-                        face: { kind: "generated", seed: agentId },
+                        face: { kind: "initials", initials: initialsOf(title) },
                     });
                     notify();
                 },
