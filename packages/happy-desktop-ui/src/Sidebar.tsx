@@ -290,6 +290,12 @@ export type SidebarSearch = {
 export type SidebarSectionActionSource = "heading" | "secondary" | "empty";
 
 export type SidebarSection = {
+    /**
+     * Whether a row dragged from another section may land here. Only read when
+     * `itemDragAcrossSections` is set; a section that refuses keeps its rows'
+     * own order arrangeable but takes none from elsewhere.
+     */
+    acceptsDrops?: boolean;
     /** Make the label and trailing chevron one disclosure button. */
     headingDisclosure?: boolean;
     /** Plain context, visible below open and folded headings. */
@@ -389,6 +395,11 @@ export interface SidebarReorder {
 export type SidebarActivityPlacement = "leading" | "trailing";
 
 export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
+    /** Gesture attention ends outside this surface too, and on disposal. */
+    onInteractionChange?: (interacting: boolean) => void;
+    /** The pointer gesture's lifetime, independent of hover and menus. */
+    onDragChange?: (dragging: boolean) => void;
+    interactionEnabled?: boolean;
     /** Keep the identity lane intact when a row folds. Defaults to leading. */
     foldControlPlacement?: "leading" | "trailing";
     /** Reveal section and row fold controls only on hover or keyboard focus. */
@@ -490,6 +501,13 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
      * changes.
      */
     onItemReorder?: (sectionId: string, move: SidebarReorder) => void;
+    /**
+     * Lets a top-level row be carried into another section as well as along its
+     * own. The drag then leaves the other rows where they are and draws a line
+     * where the row will land; the move is reported to `onItemReorder` with the
+     * section it landed in. A nested row still never leaves its parent.
+     */
+    itemDragAcrossSections?: boolean;
     /**
      * Invoked by a foldable row's disclosure control, with the row that was
      * folded or unfolded. Whether it is now open is the caller's to record and
@@ -722,6 +740,36 @@ interface SidebarDrag {
     readonly parentId?: string;
     /** False until the pointer passes the threshold, so a click still selects. */
     readonly moved: boolean;
+    /**
+     * Set when the row may land in any section: where it may land, and where
+     * the pointer has it landing now. Rows then hold still and a line marks the
+     * landing instead of a gap opening.
+     */
+    readonly across?: {
+        readonly slots: readonly SidebarDropSlot[];
+        readonly target?: SidebarDropSlot;
+        /** The slot the row already stands in; landing there moves nothing. */
+        readonly home?: SidebarDropSlot;
+    };
+}
+
+/** One place a carried row can land: a section, the row it follows, and the line's y. */
+interface SidebarDropSlot {
+    readonly sectionId: string;
+    readonly afterId: string | null;
+    /** In the body content's own coordinates. */
+    readonly y: number;
+}
+
+/** The slot nearest the pointer, read in the body content's coordinates. */
+function dropSlotNearest(
+    slots: readonly SidebarDropSlot[],
+    y: number,
+): SidebarDropSlot | undefined {
+    let best: SidebarDropSlot | undefined;
+    for (const slot of slots)
+        if (best === undefined || Math.abs(slot.y - y) < Math.abs(best.y - y)) best = slot;
+    return best;
 }
 
 /**
@@ -889,7 +937,7 @@ function dragDeltaWithinPeers(drag: SidebarDrag, deltaY: number): number {
  * height, which is what makes the gap follow the pointer.
  */
 function blockShift(drag: SidebarDrag, index: number): number {
-    if (index === drag.from) return 0;
+    if (index === drag.from || drag.across) return 0;
     const height = drag.heights[drag.from] ?? 0;
     if (drag.from < drag.to && index > drag.from && index <= drag.to) return -height;
     if (drag.to < drag.from && index >= drag.to && index < drag.from) return height;
@@ -1076,6 +1124,7 @@ function SidebarDragSurface(props: { readonly drag: SidebarDrag; readonly carrie
             className="happy-sidebar__tree-drag-surface"
             data-happy-desktop-ui="sidebar-tree-drag-surface"
             data-carried={props.carried ? "" : undefined}
+            data-across={props.drag.across ? "" : undefined}
             style={{
                 height: `${String((last - first) * rowPitch + SIDEBAR_ROW_HEIGHT)}px`,
                 top: `${String(first * rowPitch + rowDragShift(props.drag, first))}px`,
@@ -1518,6 +1567,8 @@ function SidebarRow({
             : controls * SIDEBAR_SLOT_CELL + (controls - 1) * SIDEBAR_CONTROL_GAP;
     };
     const foldInBranch = () => !showsLeadingSlot(item()) && !activityLeading();
+    // A trailing fold puts the row in fixed lanes: name and marks, then controls, then the fold.
+    const lanes = props.foldControlPlacement === "trailing";
     // The row is already a button, so its pointer disclosure stays a span.
     const foldControl = () =>
         props.onCollapseToggle ? (
@@ -1736,133 +1787,167 @@ function SidebarRow({
                     {props.foldControlPlacement !== "trailing" ? foldControl() : null}
                 </span>
             ) : null}
-            <span
-                aria-label={props.rename ? `Rename ${props.rename.initialValue}` : undefined}
-                aria-multiline={props.rename ? false : undefined}
-                className={
-                    props.rename
-                        ? "happy-sidebar__item-label happy-sidebar__item-rename"
-                        : "happy-sidebar__item-label"
-                }
-                contentEditable={props.rename ? "plaintext-only" : undefined}
-                data-happy-desktop-ui="sidebar-item-label"
-                onBlur={
-                    props.rename
-                        ? (event) => renameFinish(event.currentTarget.textContent ?? "")
-                        : undefined
-                }
-                onClick={props.rename ? (event) => event.stopPropagation() : undefined}
-                onContextMenu={props.rename ? (event) => event.stopPropagation() : undefined}
-                onPointerDown={props.rename ? (event) => event.stopPropagation() : undefined}
-                onPaste={
-                    props.rename
-                        ? (event) => {
-                              event.preventDefault();
-                              // insertText preserves the browser's undo history for single-line paste.
-                              document.execCommand(
-                                  "insertText",
-                                  false,
-                                  event.clipboardData
-                                      .getData("text/plain")
-                                      .replace(/[\r\n]+/g, " "),
-                              );
-                          }
-                        : undefined
-                }
-                onKeyDown={
-                    props.rename
-                        ? (event) => {
-                              event.stopPropagation();
-                              if (event.nativeEvent.isComposing) return;
-                              if (event.key === "Enter" || event.key === "Escape") {
-                                  event.preventDefault();
-                                  if (event.repeat) return;
-                                  renameRestoreFocus.current = true;
-                                  renameFinish(
-                                      event.key === "Enter"
-                                          ? (event.currentTarget.textContent ?? "")
-                                          : undefined,
-                                  );
-                              }
-                          }
-                        : undefined
-                }
-                ref={props.rename ? renameLabelRef : undefined}
-                role={props.rename ? "textbox" : undefined}
-                suppressContentEditableWarning={props.rename !== undefined}
-                tabIndex={props.rename ? 0 : undefined}
-            >
-                {/* The row's own colour, with a near-white band wiping through
+            {((marks: ReactNode) =>
+                /* With trailing folds, what the row is doing follows its name: the
+                   name gives up its width first, so the mark is never pushed off
+                   or under the chevron, and the controls at the far edge hold one
+                   column whatever the name says. */
+                lanes ? (
+                    <span
+                        className="happy-sidebar__item-main"
+                        data-happy-desktop-ui="sidebar-item-main"
+                    >
+                        {marks}
+                    </span>
+                ) : (
+                    marks
+                ))(
+                <>
+                    <span
+                        aria-label={
+                            props.rename ? `Rename ${props.rename.initialValue}` : undefined
+                        }
+                        aria-multiline={props.rename ? false : undefined}
+                        className={
+                            props.rename
+                                ? "happy-sidebar__item-label happy-sidebar__item-rename"
+                                : "happy-sidebar__item-label"
+                        }
+                        contentEditable={props.rename ? "plaintext-only" : undefined}
+                        data-happy-desktop-ui="sidebar-item-label"
+                        onBlur={
+                            props.rename
+                                ? (event) => renameFinish(event.currentTarget.textContent ?? "")
+                                : undefined
+                        }
+                        onClick={props.rename ? (event) => event.stopPropagation() : undefined}
+                        onContextMenu={
+                            props.rename ? (event) => event.stopPropagation() : undefined
+                        }
+                        onPointerDown={
+                            props.rename ? (event) => event.stopPropagation() : undefined
+                        }
+                        onPaste={
+                            props.rename
+                                ? (event) => {
+                                      event.preventDefault();
+                                      // insertText preserves the browser's undo history for single-line paste.
+                                      document.execCommand(
+                                          "insertText",
+                                          false,
+                                          event.clipboardData
+                                              .getData("text/plain")
+                                              .replace(/[\r\n]+/g, " "),
+                                      );
+                                  }
+                                : undefined
+                        }
+                        onKeyDown={
+                            props.rename
+                                ? (event) => {
+                                      event.stopPropagation();
+                                      if (event.nativeEvent.isComposing) return;
+                                      if (event.key === "Enter" || event.key === "Escape") {
+                                          event.preventDefault();
+                                          if (event.repeat) return;
+                                          renameRestoreFocus.current = true;
+                                          renameFinish(
+                                              event.key === "Enter"
+                                                  ? (event.currentTarget.textContent ?? "")
+                                                  : undefined,
+                                          );
+                                      }
+                                  }
+                                : undefined
+                        }
+                        ref={props.rename ? renameLabelRef : undefined}
+                        role={props.rename ? "textbox" : undefined}
+                        suppressContentEditableWarning={props.rename !== undefined}
+                        tabIndex={props.rename ? 0 : undefined}
+                    >
+                        {/* The row's own colour, with a near-white band wiping through
                         it. Busy is a passing state, so it may not restyle the name:
                         an unread row is already heavier and darker than its
                         neighbours, and painting the name again here would stack a
                         second emphasis on top of one the row had already earned.
                         Only the travelling band is new. */}
-                {props.rename ? (
-                    props.rename.initialValue
-                ) : shimmerLabel() ? (
-                    <ShimmerText sweep="sheen" tone="inherit">
-                        {item().label}
-                    </ShimmerText>
-                ) : (
-                    item().label
-                )}
-            </span>
-            {item().voiceFocus ? (
-                <span
-                    aria-label="Voice focus"
-                    className="happy-sidebar__item-voice"
-                    data-happy-desktop-ui="sidebar-item-voice"
-                    role="img"
-                >
-                    <Icon name="mic" size={12} />
-                </span>
-            ) : null}
-            {props.shortcut ? (
-                <KeyCap
-                    className="happy-sidebar__item-shortcut"
-                    decorative
-                    keys={props.shortcut.caps}
-                />
-            ) : null}
-            {unreadDot() && !unreadOnLeading() && !mentioned() ? (
-                <span
-                    aria-label="Unread"
-                    className="happy-sidebar__item-unread"
-                    data-happy-desktop-ui="sidebar-item-unread"
-                />
-            ) : null}
-            {mentioned() ? (
-                <CountBadge className="happy-sidebar__item-badge" count={item().badge!} />
-            ) : null}
-
-            {showLifecycle() ? (
-                <span
-                    className="happy-sidebar__item-lifecycle"
-                    data-happy-desktop-ui="sidebar-item-lifecycle"
-                    data-lifecycle={lifecycle()}
-                >
-                    {item().lifecycleLabel}
-                </span>
-            ) : null}
-            {showStatus() ? (
-                <>
-                    {item().status === "working" ? (
+                        {props.rename ? (
+                            props.rename.initialValue
+                        ) : shimmerLabel() ? (
+                            <ShimmerText sweep="sheen" tone="inherit">
+                                {item().label}
+                            </ShimmerText>
+                        ) : (
+                            item().label
+                        )}
+                    </span>
+                    {item().voiceFocus ? (
                         <span
-                            className="happy-sidebar__item-working"
-                            data-happy-desktop-ui="sidebar-item-working"
+                            aria-label="Voice focus"
+                            className="happy-sidebar__item-voice"
+                            data-happy-desktop-ui="sidebar-item-voice"
+                            role="img"
                         >
-                            working
+                            <Icon name="mic" size={12} />
                         </span>
                     ) : null}
-                    <span
-                        aria-hidden="true"
-                        className="happy-sidebar__item-status"
-                        data-happy-desktop-ui="sidebar-item-status"
-                        data-status={item().status}
-                    />
-                </>
-            ) : null}
+                    {props.shortcut ? (
+                        <KeyCap
+                            className="happy-sidebar__item-shortcut"
+                            decorative
+                            keys={props.shortcut.caps}
+                        />
+                    ) : null}
+                    {unreadDot() && !unreadOnLeading() && !mentioned() ? (
+                        <span
+                            aria-label="Unread"
+                            className="happy-sidebar__item-unread"
+                            data-happy-desktop-ui="sidebar-item-unread"
+                        />
+                    ) : null}
+                    {mentioned() ? (
+                        <CountBadge className="happy-sidebar__item-badge" count={item().badge!} />
+                    ) : null}
+
+                    {showLifecycle() ? (
+                        <span
+                            className="happy-sidebar__item-lifecycle"
+                            data-happy-desktop-ui="sidebar-item-lifecycle"
+                            data-lifecycle={lifecycle()}
+                        >
+                            {item().lifecycleLabel}
+                        </span>
+                    ) : null}
+                    {showStatus() ? (
+                        <>
+                            {item().status === "working" ? (
+                                <span
+                                    className="happy-sidebar__item-working"
+                                    data-happy-desktop-ui="sidebar-item-working"
+                                >
+                                    working
+                                </span>
+                            ) : null}
+                            <span
+                                aria-hidden="true"
+                                className="happy-sidebar__item-status"
+                                data-happy-desktop-ui="sidebar-item-status"
+                                data-status={item().status}
+                            />
+                        </>
+                    ) : null}
+                    {lanes && showCount() ? (
+                        <span
+                            className="happy-sidebar__item-count"
+                            data-happy-desktop-ui="sidebar-item-count"
+                        >
+                            {String(item().count)}
+                        </span>
+                    ) : null}
+                    {lanes && !activityLeading() ? activityMark() : null}
+                </>,
+            )}
+
             {showMeta() && item().trailingWidth === undefined ? (
                 <span
                     className="happy-sidebar__item-meta"
@@ -1894,7 +1979,7 @@ function SidebarRow({
                         data-swaps={controls && swaps ? "" : undefined}
                         style={{
                             columnGap: SIDEBAR_TRAILING_GAP,
-                            minWidth: trailingLaneMinWidth(),
+                            minWidth: lanes ? 0 : trailingLaneMinWidth(),
                             ...(item().trailingWidth !== undefined
                                 ? { width: item().trailingWidth, minWidth: item().trailingWidth }
                                 : {}),
@@ -1928,13 +2013,26 @@ function SidebarRow({
                         {controls ? trailingLane() : null}
                     </span>
                 ) : null)(
-                activityLeading() ? undefined : activity(),
+                lanes || activityLeading() ? undefined : activity(),
                 trailingActions().length > 0,
                 hasChangeStats() ? item().changeStats! : undefined,
-                swapsTrailing(),
-                showCount() ? item().count : undefined,
+                // Beside a trailing fold the controls take a place of their own:
+                // nothing a row reports is covered while the pointer is on it.
+                !lanes && swapsTrailing(),
+                !lanes && showCount() ? item().count : undefined,
             )}
-            {props.foldControlPlacement === "trailing" ? foldControl() : null}
+            {/* The fold's column is kept on every row, so whatever ends a row
+                that has nothing to fold still ends where the others do. */}
+            {lanes
+                ? (foldControl() ?? (
+                      <span
+                          aria-hidden="true"
+                          className="happy-sidebar__item-fold"
+                          data-empty=""
+                          data-happy-desktop-ui="sidebar-item-fold"
+                      />
+                  ))
+                : null}
         </Row>
     );
 }
@@ -1979,6 +2077,10 @@ export function Sidebar(props: SidebarProps) {
         "onItemMenuSelect",
         "onItemCollapseToggle",
         "onItemReorder",
+        "itemDragAcrossSections",
+        "onInteractionChange",
+        "onDragChange",
+        "interactionEnabled",
         "numberShortcuts",
         "numberShortcutTargets",
         "onSectionAction",
@@ -1992,6 +2094,7 @@ export function Sidebar(props: SidebarProps) {
         "title",
         "treeConnectors",
     ]);
+    const interactionEnabled = props.interactionEnabled !== false;
     const menuRoot = useRef<HTMLDivElement>(null);
     const [renaming, setRenaming] = useState<{ id: string; initialValue: string }>();
     const renameStart = (item: SidebarItem): boolean => {
@@ -2092,6 +2195,8 @@ export function Sidebar(props: SidebarProps) {
     const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const [dragPaint, setDragPaint] = useState<{ listId: SidebarListId; drag: SidebarDrag }>();
     const dragSet = (next: { listId: SidebarListId; drag: SidebarDrag } | undefined): void => {
+        if ((dragRef.current !== undefined) !== (next !== undefined))
+            local.onDragChange?.(next !== undefined);
         dragRef.current = next;
         setDragPaint(next);
     };
@@ -2131,7 +2236,88 @@ export function Sidebar(props: SidebarProps) {
     // Rows keep their objects across equal snapshots, so a store update that changes nothing
     // the sidebar shows leaves every row's memoized render standing. See the reuser.
     const [sectionsReuse] = useState(sidebarSectionsReuser);
-    const sections = sectionsReuse(local.sections);
+    const stableSections = sectionsReuse(local.sections);
+    // Cross-section moves use the same measured units and settling animation as
+    // production reordering, while previewing the actual eventual row order.
+    const sections = (() => {
+        const current = dragPaint;
+        const target = current?.drag.moved ? current.drag.across?.target : undefined;
+        if (!current || !target) return stableSections;
+        const id = current.drag.peers[current.drag.from];
+        const source = stableSections.find((section) => section.id === current.listId);
+        const first = source?.items.findIndex((item) => item.id === id) ?? -1;
+        if (!source || first < 0) return stableSections;
+        let end = first + 1;
+        while (end < source.items.length && (source.items[end]!.depth ?? 0) > 0) end++;
+        const block = source.items.slice(first, end);
+        const ids = new Set(block.map((item) => item.id));
+        return stableSections.map((section) => {
+            const items =
+                section.id === source.id
+                    ? section.items.filter((item) => !ids.has(item.id))
+                    : [...section.items];
+            if (section.id !== target.sectionId)
+                return section.id === source.id ? { ...section, items } : section;
+            const after =
+                target.afterId === null
+                    ? -1
+                    : items.findIndex((item) => item.id === target.afterId);
+            let at = after + 1;
+            while (after >= 0 && at < items.length && (items[at]!.depth ?? 0) > 0) at++;
+            items.splice(at, 0, ...block);
+            return { ...section, items };
+        });
+    })();
+    const previewRoot = useRef<HTMLDivElement>(null);
+    const previewFirsts = useRef<Map<string, number> | undefined>(undefined);
+    const previewHeldTops = useRef<Map<string, number>>(new Map());
+    const previewHeldNodes = useRef<HTMLElement[]>([]);
+    const previewNodes = (): [string, HTMLElement][] => {
+        const root = previewRoot.current;
+        if (!root) return [];
+        return [
+            ...root.querySelectorAll<HTMLElement>(
+                '[data-happy-desktop-ui="sidebar-item"], [data-happy-desktop-ui="sidebar-section-head"]',
+            ),
+        ].map((node) => [
+            node.dataset.itemId
+                ? `row:${node.dataset.itemId}`
+                : `head:${node.closest<HTMLElement>("[data-section-id]")?.dataset.sectionId}`,
+            node,
+        ]);
+    };
+    const previewCapture = (): void => {
+        previewFirsts.current = new Map(
+            previewNodes().map(([id, node]) => [id, node.getBoundingClientRect().top]),
+        );
+    };
+    // eslint-disable-next-line happy-react/no-layout-effect -- Reordering changes DOM geometry; the production FLIP animation and the held row's pointer position must be applied before paint.
+    useLayoutEffect(() => {
+        for (const node of previewHeldNodes.current) node.style.transform = "";
+        previewHeldNodes.current = [];
+        const current = dragRef.current;
+        const across = current?.drag.moved && current.drag.across;
+        for (const [id, node] of previewNodes()) {
+            const heldTop = previewHeldTops.current.get(id);
+            if (across && heldTop !== undefined) {
+                node.getAnimations().forEach((animation) => animation.cancel());
+                const delta = heldTop + current.drag.deltaY - node.getBoundingClientRect().top;
+                node.style.transform = `translateY(${delta}px)`;
+                previewHeldNodes.current.push(node);
+                continue;
+            }
+            const first = previewFirsts.current?.get(id);
+            if (first === undefined) continue;
+            node.getAnimations().forEach((animation) => animation.cancel());
+            const delta = first - node.getBoundingClientRect().top;
+            if (Math.abs(delta) > 0.1 && !reducedMotion())
+                node.animate(
+                    [{ transform: `translateY(${delta}px)` }, { transform: "translateY(0)" }],
+                    { duration: SETTLE_MS, easing: SETTLE_EASING },
+                );
+        }
+        previewFirsts.current = undefined;
+    });
     const onItemSelect = local.onItemSelect;
     const shortcutRows = numberShortcuts
         ? shortcutRowsOf(sections, local.numberShortcutTargets, local.activeItemId)
@@ -2183,6 +2369,85 @@ export function Sidebar(props: SidebarProps) {
         setAnnouncements(slot === 0 ? [text, ""] : ["", text]);
     };
 
+    /**
+     * Every place a carried top-level row can land, measured once as the drag
+     * begins: before each other top-level row of every section that takes drops,
+     * after the last, and under the heading of a section with none showing. The
+     * row's own children travel with it, so they are never a landing place.
+     */
+    const dropSlotsOf = (
+        row: HTMLElement,
+        listId: string,
+        heldId: string,
+    ): NonNullable<SidebarDrag["across"]> | undefined => {
+        const content = row.closest<HTMLElement>('[data-happy-desktop-ui="sidebar-body-content"]');
+        if (!content) return undefined;
+        const origin = content.getBoundingClientRect().top;
+        const slots: SidebarDropSlot[] = [];
+        let home: SidebarDropSlot | undefined;
+        for (const section of local.sections) {
+            if (section.id !== listId && section.acceptsDrops === false) continue;
+            const element = [
+                ...content.querySelectorAll<HTMLElement>(
+                    '[data-happy-desktop-ui="sidebar-section"]',
+                ),
+            ].find((candidate) => candidate.dataset.sectionId === section.id);
+            if (!element) continue;
+            const tree = element.querySelector<HTMLElement>(
+                '[data-happy-desktop-ui="sidebar-tree"]',
+            );
+            const rows = tree
+                ? [
+                      ...tree.querySelectorAll<HTMLElement>(
+                          ':scope > [data-happy-desktop-ui="sidebar-item"]',
+                      ),
+                  ]
+                : [];
+            // Each top-level row with the bottom of the last row it carries.
+            const blocks: { id: string; top: number; bottom: number }[] = [];
+            for (const node of rows) {
+                const bounds = node.getBoundingClientRect();
+                if (node.dataset.depth === undefined)
+                    blocks.push({
+                        id: node.dataset.itemId ?? "",
+                        top: bounds.top - origin,
+                        bottom: bounds.bottom - origin,
+                    });
+                else if (blocks.length > 0)
+                    blocks[blocks.length - 1]!.bottom = bounds.bottom - origin;
+            }
+            let afterId: string | null = null;
+            let previousBottom: number | undefined;
+            for (const block of blocks) {
+                if (block.id === heldId) {
+                    home = { sectionId: section.id, afterId, y: block.top };
+                    continue;
+                }
+                slots.push({
+                    sectionId: section.id,
+                    afterId,
+                    y:
+                        previousBottom === undefined
+                            ? block.top - 1
+                            : (previousBottom + block.top) / 2,
+                });
+                afterId = block.id;
+                previousBottom = block.bottom;
+            }
+            const head = element.querySelector<HTMLElement>(
+                '[data-happy-desktop-ui="sidebar-section-head"]',
+            );
+            const end =
+                previousBottom !== undefined
+                    ? previousBottom + 1
+                    : head
+                      ? head.getBoundingClientRect().bottom - origin + 2
+                      : undefined;
+            if (end !== undefined) slots.push({ sectionId: section.id, afterId, y: end });
+        }
+        return { slots, ...(home ? { home } : {}) };
+    };
+
     const dragStart = (
         event: ReactPointerEvent<HTMLElement>,
         listId: SidebarListId,
@@ -2193,7 +2458,12 @@ export function Sidebar(props: SidebarProps) {
         const blocks = units;
         const blockIndex = units.findIndex((unit) => unit.includes(rowIndex));
         dragClick.current = false;
-        if (!reorderOf(listId) || event.button !== 0 || blocks.length < 2) return;
+        if (
+            !reorderOf(listId) ||
+            event.button !== 0 ||
+            blocks.length < (local.itemDragAcrossSections ? 1 : 2)
+        )
+            return;
         // A pointer-down on the row's own control is that control's, not a drag.
         if ((event.target as HTMLElement).closest('[data-happy-desktop-ui="sidebar-item-action"]'))
             return;
@@ -2224,10 +2494,26 @@ export function Sidebar(props: SidebarProps) {
                 ? top(index + 1) - top(index)
                 : bottom(block) - top(index) + gap,
         );
+        const across =
+            local.itemDragAcrossSections && listId !== ACTIONS_LIST && parentId === undefined
+                ? dropSlotsOf(event.currentTarget, listId, items[rowIndex]!.id)
+                : undefined;
+        previewHeldTops.current.clear();
+        if (across) {
+            for (const index of blocks[blockIndex] ?? []) {
+                const node = rows[index];
+                if (node)
+                    previewHeldTops.current.set(
+                        `row:${items[index]!.id}`,
+                        node.getBoundingClientRect().top,
+                    );
+            }
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
         dragSet({
             listId,
             drag: {
+                ...(across ? { across } : {}),
                 deltaY: 0,
                 from: blockIndex,
                 heights,
@@ -2249,6 +2535,50 @@ export function Sidebar(props: SidebarProps) {
         if (!current || event.pointerId !== current.drag.pointerId) return;
         const pointerDeltaY = event.clientY - current.drag.startY;
         if (!current.drag.moved && Math.abs(pointerDeltaY) < DRAG_THRESHOLD) return;
+        const across = current.drag.across;
+        if (across) {
+            // Keep ordinary clicks on their row. Only a real drag transfers its
+            // capture to the parent that survives moving the row between sections.
+            if (!current.drag.moved) previewRoot.current?.setPointerCapture(event.pointerId);
+            // The row follows the hand wherever it goes; the line says where it lands.
+            const content = event.currentTarget.closest<HTMLElement>(
+                '[data-happy-desktop-ui="sidebar-body-content"]',
+            );
+            const y = content ? event.clientY - content.getBoundingClientRect().top : 0;
+            let target = dropSlotNearest(
+                [...across.slots, ...(across.home ? [across.home] : [])],
+                y,
+            );
+            let to = current.drag.to;
+            if (target?.sectionId === current.listId) {
+                to = dragTargetIndex(
+                    current.drag,
+                    dragDeltaWithinPeers(current.drag, pointerDeltaY),
+                );
+                const remaining = current.drag.peers.filter(
+                    (_, index) => index !== current.drag.from,
+                );
+                target = { ...target, afterId: to === 0 ? null : (remaining[to - 1] ?? null) };
+            }
+            if (
+                target?.sectionId !== across.target?.sectionId ||
+                target?.afterId !== across.target?.afterId
+            ) {
+                haptic("selection");
+                previewCapture();
+            }
+            dragSet({
+                ...current,
+                drag: {
+                    ...current.drag,
+                    across: { ...across, ...(target ? { target } : {}) },
+                    deltaY: pointerDeltaY,
+                    moved: true,
+                    to,
+                },
+            });
+            return;
+        }
         const deltaY = dragDeltaWithinPeers(current.drag, pointerDeltaY);
         const to = dragTargetIndex(current.drag, deltaY);
         // A tick each time the row crosses into a new slot, so the arrangement
@@ -2333,9 +2663,32 @@ export function Sidebar(props: SidebarProps) {
             dragSet(undefined);
             return;
         }
+        // The release's click, if the browser fires one, comes before any timer.
+        // A drag released away from its row gets none, and an unclaimed flag
+        // would swallow the next click on any row.
         dragClick.current = true;
+        window.setTimeout(() => {
+            dragClick.current = false;
+        });
         const movedId = drag.peers[drag.from];
-        if (!reducedMotion() && movedId !== undefined)
+        if (drag.across) {
+            previewCapture();
+            dragSet(undefined);
+            const target = drag.across.target;
+            const home = drag.across.home;
+            if (
+                target === undefined ||
+                movedId === undefined ||
+                (home !== undefined &&
+                    target.sectionId === home.sectionId &&
+                    target.afterId === home.afterId)
+            )
+                return;
+            haptic("impact");
+            local.onItemReorder?.(target.sectionId, { id: movedId, afterId: target.afterId });
+            return;
+        }
+        if (!reducedMotion() && drag.from !== drag.to && movedId !== undefined)
             settleCapture({
                 carried: true,
                 expected: orderAfterMove(drag.peers, drag.from, drag.to),
@@ -2368,6 +2721,12 @@ export function Sidebar(props: SidebarProps) {
     const dragCancel = (event: ReactPointerEvent<HTMLElement>): void => {
         const current = dragRef.current;
         if (!current || event.pointerId !== current.drag.pointerId) return;
+        if (
+            event.type === "lostpointercapture" &&
+            current.drag.across &&
+            previewRoot.current?.hasPointerCapture(event.pointerId)
+        )
+            return;
         // Interrupted is still let go of: the rows snap back to the order they
         // were already in, and the lift over them goes out the way it would have
         // if the gesture had finished.
@@ -2388,20 +2747,32 @@ export function Sidebar(props: SidebarProps) {
      * a legitimate move away.
      */
     const dragLive = dragPaint !== undefined;
+    const dragAbandon = useEffectEvent(() => {
+        if (dragRef.current) dragSet(undefined);
+    });
     // eslint-disable-next-line happy-react/no-layout-effect -- a capture lost with its own element is announced only to the document, which no declarative boundary exposes; the listener lives for one gesture and must be removed imperatively
     useLayoutEffect(() => {
-        if (!dragLive) return;
+        if (!dragLive || !interactionEnabled) {
+            dragAbandon();
+            return;
+        }
         const lost = (event: Event): void => {
             const current = dragRef.current;
             if (!current || (event as PointerEvent).pointerId !== current.drag.pointerId) return;
+            if (
+                current.drag.across &&
+                previewRoot.current?.hasPointerCapture(current.drag.pointerId)
+            )
+                return;
             liftFadeStart(current);
             dragSet(undefined);
         };
         document.addEventListener("lostpointercapture", lost);
         return () => {
             document.removeEventListener("lostpointercapture", lost);
+            dragAbandon();
         };
-    }, [dragLive]);
+    }, [dragLive, interactionEnabled]);
 
     /**
      * Arranging by keyboard, for a reader who is not holding a pointer. Option
@@ -2567,6 +2938,69 @@ export function Sidebar(props: SidebarProps) {
         // teardown would abort the drop animation on the next unrelated render.
     });
 
+    /** A heading's own controls, the same buttons in either heading layout. */
+    const sectionActionButtons = (section: SidebarSection): ReactNode =>
+        (
+            [
+                ["secondary", section.secondaryAction],
+                ["heading", section.action],
+            ] as const
+        ).map(([source, action]) =>
+            action ? (
+                <button
+                    aria-busy={action.busy ? true : undefined}
+                    aria-keyshortcuts={action.shortcut?.aria}
+                    aria-label={action.label}
+                    className="happy-sidebar__section-action"
+                    data-busy={action.busy ? "" : undefined}
+                    data-shortcut-hint={action.shortcut ? "" : undefined}
+                    data-happy-desktop-ui={
+                        source === "heading"
+                            ? "sidebar-section-action"
+                            : "sidebar-section-secondary-action"
+                    }
+                    data-reveal={action.reveal ?? "hover"}
+                    data-slot={source}
+                    disabled={action.busy || action.disabled}
+                    aria-haspopup={action.menuItems ? "menu" : undefined}
+                    key={source}
+                    onClick={(event) => {
+                        if (!action.menuItems) {
+                            local.onSectionAction?.(section.id, source);
+                            return;
+                        }
+                        // Opened under the control and
+                        // hung from its trailing edge,
+                        // so it stays over the column.
+                        const bounds = event.currentTarget.getBoundingClientRect();
+                        setItemMenu({
+                            target: {
+                                kind: "section",
+                                sectionId: section.id,
+                                source,
+                            },
+                            items: action.menuItems,
+                            x: bounds.right - SIDEBAR_MENU_WIDTH,
+                            y: bounds.bottom + 4,
+                        });
+                    }}
+                    type="button"
+                >
+                    {action.busy ? (
+                        <Spinner size={12} tone="muted" />
+                    ) : (
+                        <Icon name={action.icon} size={12} />
+                    )}
+                    {action.shortcut ? (
+                        <KeyCap
+                            className="happy-shortcut-hint--floating"
+                            decorative
+                            keys={action.shortcut.caps}
+                        />
+                    ) : null}
+                </button>
+            ) : null,
+        );
     const openItemMenu = (item: SidebarItem, event: MouseEvent<HTMLElement>) => {
         const items = local.itemMenuItems?.(item) ?? [];
         if (!items.some((entry) => entry.kind === "item")) {
@@ -2810,6 +3244,22 @@ export function Sidebar(props: SidebarProps) {
                 <div
                     className="happy-sidebar__body-content"
                     data-happy-desktop-ui="sidebar-body-content"
+                    ref={previewRoot}
+                    onPointerMove={(event) => {
+                        if (event.target === event.currentTarget) dragMove(event);
+                    }}
+                    onPointerUp={(event) => {
+                        const current = dragRef.current;
+                        if (event.target === event.currentTarget && current)
+                            dragEnd(
+                                event,
+                                local.sections.find((section) => section.id === current.listId)
+                                    ?.items ?? [],
+                            );
+                    }}
+                    onPointerCancel={(event) => {
+                        if (event.target === event.currentTarget) dragCancel(event);
+                    }}
                 >
                     {local.searchRow ? (
                         <SidebarRow
@@ -2947,7 +3397,9 @@ export function Sidebar(props: SidebarProps) {
                         // node to come up in — and to the fading remains of the
                         // last one after that. It is one element either way, so
                         // the same node carries the shadow in and back out again.
-                        const sectionLift = sectionDrag ?? liftFadeOf(section.id);
+                        const sectionLift = sectionDrag?.across
+                            ? undefined
+                            : (sectionDrag ?? liftFadeOf(section.id));
                         // Who paints the lift in this tree. The surface owns it
                         // for the whole of a carried move, including the travel
                         // after the shadow has gone out: a row that took its own
@@ -3000,7 +3452,86 @@ export function Sidebar(props: SidebarProps) {
                                         </span>
                                     </div>
                                 ) : null}
-                                {section.label ? (
+                                {section.label && local.foldControlPlacement === "trailing" ? (
+                                    /* The heading in the rows' lanes: its name and what
+                                       is waiting inside, then its controls with the fold
+                                       last, on the column every row's chevron uses. Both
+                                       controls only show while the pointer is on it. */
+                                    <div
+                                        className="happy-sidebar__section-head"
+                                        data-happy-desktop-ui="sidebar-section-head"
+                                        data-lanes=""
+                                    >
+                                        <button
+                                            className="happy-sidebar__section-disclosure"
+                                            data-happy-desktop-ui="sidebar-section-disclosure"
+                                            aria-expanded={
+                                                section.collapsed === undefined
+                                                    ? undefined
+                                                    : !section.collapsed
+                                            }
+                                            aria-label={
+                                                section.collapsed === undefined
+                                                    ? undefined
+                                                    : `${section.collapsed ? "Expand" : "Collapse"} ${section.label}`
+                                            }
+                                            disabled={section.collapsed === undefined}
+                                            onClick={() =>
+                                                local.onSectionCollapseToggle?.(section.id)
+                                            }
+                                            type="button"
+                                        >
+                                            <span
+                                                className="happy-sidebar__section-label"
+                                                data-happy-desktop-ui="sidebar-section-label"
+                                            >
+                                                {section.label}
+                                            </span>
+                                            {section.attentionCount ? (
+                                                <span
+                                                    className="happy-sidebar__section-attention"
+                                                    aria-label={`${section.attentionCount} waiting on you`}
+                                                    data-happy-desktop-ui="sidebar-section-attention"
+                                                    role="status"
+                                                >
+                                                    <Icon name="question" size={12} />
+                                                    {section.attentionCount}
+                                                </span>
+                                            ) : null}
+                                        </button>
+                                        <span
+                                            className="happy-sidebar__section-actions"
+                                            data-happy-desktop-ui="sidebar-section-actions"
+                                            style={{ columnGap: SIDEBAR_CONTROL_GAP }}
+                                        >
+                                            {sectionActionButtons(section)}
+                                            {section.collapsed !== undefined ? (
+                                                // The heading itself is the disclosure for
+                                                // the keyboard; this is its pointer target.
+                                                <button
+                                                    aria-hidden="true"
+                                                    className="happy-sidebar__section-action"
+                                                    data-happy-desktop-ui="sidebar-section-fold"
+                                                    data-reveal="hover"
+                                                    onClick={() =>
+                                                        local.onSectionCollapseToggle?.(section.id)
+                                                    }
+                                                    tabIndex={-1}
+                                                    type="button"
+                                                >
+                                                    <Icon
+                                                        name={
+                                                            section.collapsed
+                                                                ? "chevron-right"
+                                                                : "chevron-down"
+                                                        }
+                                                        size={12}
+                                                    />
+                                                </button>
+                                            ) : null}
+                                        </span>
+                                    </div>
+                                ) : section.label ? (
                                     <div
                                         className="happy-sidebar__section-head"
                                         data-happy-desktop-ui="sidebar-section-head"
@@ -3112,88 +3643,7 @@ export function Sidebar(props: SidebarProps) {
                                                 data-happy-desktop-ui="sidebar-section-actions"
                                                 style={{ columnGap: SIDEBAR_CONTROL_GAP }}
                                             >
-                                                {(
-                                                    [
-                                                        ["secondary", section.secondaryAction],
-                                                        ["heading", section.action],
-                                                    ] as const
-                                                ).map(([source, action]) =>
-                                                    action ? (
-                                                        <button
-                                                            aria-busy={
-                                                                action.busy ? true : undefined
-                                                            }
-                                                            aria-keyshortcuts={
-                                                                action.shortcut?.aria
-                                                            }
-                                                            aria-label={action.label}
-                                                            className="happy-sidebar__section-action"
-                                                            data-busy={action.busy ? "" : undefined}
-                                                            data-shortcut-hint={
-                                                                action.shortcut ? "" : undefined
-                                                            }
-                                                            data-happy-desktop-ui={
-                                                                source === "heading"
-                                                                    ? "sidebar-section-action"
-                                                                    : "sidebar-section-secondary-action"
-                                                            }
-                                                            data-reveal={action.reveal ?? "hover"}
-                                                            data-slot={source}
-                                                            disabled={
-                                                                action.busy || action.disabled
-                                                            }
-                                                            aria-haspopup={
-                                                                action.menuItems
-                                                                    ? "menu"
-                                                                    : undefined
-                                                            }
-                                                            key={source}
-                                                            onClick={(event) => {
-                                                                if (!action.menuItems) {
-                                                                    local.onSectionAction?.(
-                                                                        section.id,
-                                                                        source,
-                                                                    );
-                                                                    return;
-                                                                }
-                                                                // Opened under the control and
-                                                                // hung from its trailing edge,
-                                                                // so it stays over the column.
-                                                                const bounds =
-                                                                    event.currentTarget.getBoundingClientRect();
-                                                                setItemMenu({
-                                                                    target: {
-                                                                        kind: "section",
-                                                                        sectionId: section.id,
-                                                                        source,
-                                                                    },
-                                                                    items: action.menuItems,
-                                                                    x:
-                                                                        bounds.right -
-                                                                        SIDEBAR_MENU_WIDTH,
-                                                                    y: bounds.bottom + 4,
-                                                                });
-                                                            }}
-                                                            type="button"
-                                                        >
-                                                            {action.busy ? (
-                                                                <Spinner size={12} tone="muted" />
-                                                            ) : (
-                                                                <Icon
-                                                                    name={action.icon}
-                                                                    size={12}
-                                                                />
-                                                            )}
-                                                            {action.shortcut ? (
-                                                                <KeyCap
-                                                                    className="happy-shortcut-hint--floating"
-                                                                    decorative
-                                                                    keys={action.shortcut.caps}
-                                                                />
-                                                            ) : null}
-                                                        </button>
-                                                    ) : null,
-                                                )}
+                                                {sectionActionButtons(section)}
                                             </span>
                                         ) : null}
                                     </div>
@@ -3272,7 +3722,6 @@ export function Sidebar(props: SidebarProps) {
                                                       unit.includes(index),
                                                   )
                                                 : -1;
-                                            const held = dragging && unitIndex === drag.from;
                                             const key = rowKey(section.id, item.id);
                                             rowTargets.set(key, {
                                                 index,
@@ -3280,6 +3729,13 @@ export function Sidebar(props: SidebarProps) {
                                                 items: shownItems,
                                                 listId: section.id,
                                             });
+                                            const acrossHeld =
+                                                dragPaint?.drag.moved &&
+                                                dragPaint.drag.across &&
+                                                previewHeldTops.current.has(`row:${item.id}`);
+                                            const held = dragPaint?.drag.across
+                                                ? Boolean(acrossHeld)
+                                                : dragging && unitIndex === drag.from;
                                             return (
                                                 <SidebarListRow
                                                     handlers={rowHandlers}
@@ -3325,7 +3781,7 @@ export function Sidebar(props: SidebarProps) {
                                                     shortcutActive={numberShortcutNavigation}
                                                     shortcut={shortcut}
                                                     shift={
-                                                        dragging && unitIndex >= 0
+                                                        dragging && !drag?.across && unitIndex >= 0
                                                             ? rowDragShift(drag, index)
                                                             : undefined
                                                     }

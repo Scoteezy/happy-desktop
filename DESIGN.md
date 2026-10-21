@@ -271,6 +271,15 @@ between every representative pair of adjacent children. Tests for a flow with
 optional content must render both the present and absent states and prove that
 all remaining adjacent pairs keep the declared gap.
 
+### Stable positions
+
+An element keeps one position. The same control or status sits in the same
+place in every row and in every state: a row's fold is on one column whether
+the row is open or shut, hovered or not, and a section heading's controls share
+that column. Hover, focus and state changes reveal, dim or recolour; they never
+move an element, resize it, or swap it for another. Reserve the box of anything
+that can appear, and fade it in.
+
 ### Full-bleed scrollports
 
 An element that owns scrolling (`overflow: auto` or `overflow: scroll`) fills
