@@ -996,6 +996,12 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             await record("getAgent", [agentId, ...rest]);
             return { agent: agentRequired(agentId) };
         },
+        async getAgentMode(agentId: string, ...rest: unknown[]) {
+            const mode = modes.get(agentId) ?? null;
+            await record("getAgentMode", [agentId, ...rest]);
+            agentRequired(agentId);
+            return { mode };
+        },
         async getAgentActivity(agentId: string, ...rest: unknown[]) {
             await record("getAgentActivity", [agentId, ...rest]);
             return { subagents: [], processes: [] };

@@ -1,8 +1,21 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { connectHappyAgent } from "./connectHappyAgent.js";
-import type { HappyAgentConnection, MutationRejectedDelta, TaskGroup } from "./types.js";
 import {
+    HappyAgentApiError,
+    type Message,
+    type MessageMode,
+    type ServiceMessage,
+} from "@slopus/happy-agent-client";
+import { connectHappyAgent } from "./connectHappyAgent.js";
+import type {
+    HappyAgentConnection,
+    MutationRejectedDelta,
+    SessionState,
+    TaskGroup,
+} from "./types.js";
+import {
+    fakeAgentMessage,
     fakeHappyAgentDaemonCreate,
+    fakeRun,
     type FakeHappyAgentDaemon,
 } from "../testing/fakeHappyAgentDaemon.js";
 
@@ -284,4 +297,642 @@ it("renames against the task's version and says so when the version moved", asyn
     expect(rejections[0]).toMatchObject({ action: "rename_task" });
     expect(rejections[0]!.message).toContain("changed while you were renaming it");
     expect(taskIn(watch.tasks, "task_a")?.name).toBe("Alpha prime");
+});
+
+const ANTIGRAVITY_FLASH_MODE: MessageMode = {
+    effort: "high",
+    modelId: "antigravity/gemini-3.8-flash",
+    permissionMode: "auto",
+    providerId: "antigravity",
+    serviceTier: null,
+};
+
+function antigravityCatalogSeed(daemon: FakeHappyAgentDaemon): void {
+    const base = daemon.configGet();
+    daemon.configSet({
+        ...base,
+        models: {
+            ...base.models,
+            "antigravity/gemini-3.8-flash": {
+                autoCompactWindow: 800_000,
+                contextWindow: 1_000_000,
+                defaultEffort: "high",
+                efforts: ["low", "medium", "high"],
+                name: "Gemini 3.8 Flash",
+                serviceTiers: [],
+                serviceTierOptions: [{ id: null, label: "Regular" }],
+            },
+        },
+        providers: {
+            ...base.providers,
+            antigravity: {
+                enabled: true,
+                models: [{ enabled: true, id: "antigravity/gemini-3.8-flash" }],
+                type: "antigravity",
+            },
+            antigravity_alias: {
+                enabled: true,
+                models: [{ enabled: true, id: "antigravity/gemini-3.8-flash" }],
+                type: "antigravity",
+            },
+        },
+    });
+}
+
+function configurationServiceMessage(
+    id: string,
+    after: MessageMode,
+    beforeMessageId: string | null = null,
+): ServiceMessage {
+    return {
+        content: [
+            {
+                after,
+                before: null,
+                beforeMessageId,
+                type: "configuration",
+            },
+        ],
+        createdAt: 2,
+        id,
+        metadata: {},
+        role: "service",
+    };
+}
+
+function sessionWatch(connection: HappyAgentConnection, sessionId: string) {
+    const state: { current: SessionState | undefined } = { current: undefined };
+    const subscription = connection.connectSession({
+        sessionId,
+        onChange(_elements, session) {
+            state.current = session;
+        },
+    });
+    return {
+        close: () => subscription.close(),
+        session: () => state.current ?? subscription.session(),
+    };
+}
+
+it("keeps an Antigravity task's selected model before and after a first agent-role message across open, reopen, and reconnect", async () => {
+    for (const teamMode of [false, true]) {
+        const daemon = fakeHappyAgentDaemonCreate();
+        antigravityCatalogSeed(daemon);
+        if (teamMode) daemon.profileSet({ userId: "usr_me", name: "Me" });
+
+        // Case (a): task created with an explicit Antigravity Flash creation draft.
+        // At ebb73c25, first agent-role acceptance writes lastMode and clears internal
+        // initialMode, while the creation draft itself persists.
+        const taskWithDraft = daemon.taskSeed({
+            id: "task_ag_draft",
+            name: "Antigravity Task With Draft",
+            ownerUserId: teamMode ? "usr_me" : null,
+            joinedKey: "a1",
+        });
+        const draftAgentId = taskWithDraft.agent.id;
+        daemon.modeSeed(draftAgentId, null);
+        const creationDraft = {
+            value: { ...ANTIGRAVITY_FLASH_MODE, text: "" },
+            updatedAt: 100,
+        } as const;
+        daemon.draftSeed(draftAgentId, creationDraft);
+
+        // Case (b): task with no draft (no model chosen at creation, or legacy) where
+        // bootstrap.mode starts null and the daemon writes lastMode = Flash on the
+        // first agent-role delivery.
+        const taskWithoutDraft = daemon.taskSeed({
+            id: "task_ag_nodraft",
+            name: "Antigravity Task Without Draft",
+            ownerUserId: teamMode ? "usr_me" : null,
+            joinedKey: "a2",
+        });
+        const noDraftAgentId = taskWithoutDraft.agent.id;
+        daemon.modeSeed(noDraftAgentId, null);
+        daemon.draftSeed(noDraftAgentId, { value: null, updatedAt: null });
+
+        const { connection, watch } = harnessOpen(daemon);
+        await vi.waitFor(() => expect(taskIn(watch.tasks, "task_ag_draft")).toBeDefined());
+        await vi.waitFor(() => expect(taskIn(watch.tasks, "task_ag_nodraft")).toBeDefined());
+        await vi.waitFor(() => expect(daemon.streamLiveCount()).toBe(1));
+
+        if (teamMode) {
+            // Team creation transactionally emits the owner's creation draft.
+            daemon.eventEmit("agent.draft.updated", {
+                agentId: draftAgentId,
+                draft: creationDraft,
+            });
+            await vi.waitFor(() =>
+                expect(taskIn(watch.tasks, "task_ag_draft")?.session).toMatchObject({
+                    effort: "high",
+                    modelId: "antigravity/gemini-3.8-flash",
+                    providerId: "antigravity",
+                }),
+            );
+        }
+
+        // Open both tasks while idle (before first message).
+        const openWithDraft = sessionWatch(connection, draftAgentId);
+        const openWithoutDraft = sessionWatch(connection, noDraftAgentId);
+        await vi.waitFor(() => expect(openWithDraft.session().historyLoading).not.toBe(true));
+        await vi.waitFor(() => expect(openWithoutDraft.session().historyLoading).not.toBe(true));
+        expect(openWithDraft.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+            selectionKnown: true,
+        });
+        expect(taskIn(watch.tasks, "task_ag_draft")?.session).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+        });
+
+        // Deliver first accepted message in role: "agent" (e.g. Chief of Staff) to both tasks.
+        // The daemon writes lastMode = ANTIGRAVITY_FLASH_MODE on acceptance; on taskWithDraft
+        // the creation draft persists (no agent.draft.updated { value: null }).
+        for (const [agentId, taskId] of [
+            [draftAgentId, "task_ag_draft"],
+            [noDraftAgentId, "task_ag_nodraft"],
+        ] as const) {
+            const inbound = fakeAgentMessage({
+                content: [{ type: "text", text: "Run on Antigravity Flash" }],
+                id: `msg_inbound_${taskId}`,
+                metadata: { senderAgentId: "agent_chief" },
+            });
+            const reply = fakeAgentMessage({
+                content: [{ type: "text", text: "Done on Flash." }],
+                id: `msg_reply_${taskId}`,
+            });
+            const run = fakeRun({
+                id: `run_${taskId}`,
+                messages: [inbound, reply],
+                status: "completed",
+            });
+            daemon.modeSeed(agentId, ANTIGRAVITY_FLASH_MODE);
+            daemon.historySet(agentId, [run]);
+
+            daemon.eventEmit("run.started", {
+                acceptedMessageIds: [inbound.id],
+                agentId,
+                run: { ...run, endedAt: null, status: "running" },
+            });
+            daemon.eventEmit("message.created", { agentId, message: inbound, runId: run.id });
+            daemon.eventEmit("message.created", { agentId, message: reply, runId: run.id });
+            daemon.eventEmit("run.finished", { agentId, run });
+        }
+
+        // Both open sessions and the task list must show Antigravity Flash (not "test-model").
+        await vi.waitFor(() =>
+            expect(openWithoutDraft.session()).toMatchObject({
+                effort: "high",
+                modelId: "antigravity/gemini-3.8-flash",
+                providerId: "antigravity",
+                selectionKnown: true,
+            }),
+        );
+        expect(openWithDraft.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+            selectionKnown: true,
+        });
+        expect(taskIn(watch.tasks, "task_ag_draft")?.session).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+        });
+        expect(taskIn(watch.tasks, "task_ag_nodraft")?.session).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+        });
+
+        // Close and reopen without a new bootstrap fetch: cached entries retain Antigravity Flash.
+        openWithDraft.close();
+        openWithoutDraft.close();
+        const reopenedWithDraft = sessionWatch(connection, draftAgentId);
+        const reopenedWithoutDraft = sessionWatch(connection, noDraftAgentId);
+        expect(reopenedWithDraft.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+            selectionKnown: true,
+        });
+        expect(reopenedWithoutDraft.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+            selectionKnown: true,
+        });
+
+        // Reconnect with a stream gap: full reconciliation preserves Antigravity Flash for both.
+        daemon.gapOnNextStream();
+        daemon.streamDropAll();
+        await vi.waitFor(() =>
+            expect(
+                daemon.calls.filter(
+                    (call) =>
+                        call.method === "getAgentBootstrap" && call.args[0] === noDraftAgentId,
+                ).length,
+            ).toBeGreaterThanOrEqual(2),
+        );
+        await vi.waitFor(() => expect(reopenedWithDraft.session().historyLoading).not.toBe(true));
+        await vi.waitFor(() =>
+            expect(reopenedWithoutDraft.session().historyLoading).not.toBe(true),
+        );
+        expect(reopenedWithDraft.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+            selectionKnown: true,
+        });
+        expect(reopenedWithoutDraft.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+            selectionKnown: true,
+        });
+        reopenedWithDraft.close();
+        reopenedWithoutDraft.close();
+        connection.close();
+    }
+});
+
+it("re-reads stored mode via getAgentMode on non-user acceptance and never overwrites stored mode or routing aliases from configuration blocks or stale mode reads", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    antigravityCatalogSeed(daemon);
+    const task = daemon.taskSeed({ id: "task_cfg_isolation", joinedKey: "a1" });
+    const agentId = task.agent.id;
+    daemon.modeSeed(agentId, null);
+    daemon.draftSeed(agentId, { value: null, updatedAt: null });
+
+    const { connection, watch } = harnessOpen(daemon);
+    await vi.waitFor(() => expect(taskIn(watch.tasks, "task_cfg_isolation")).toBeDefined());
+    await vi.waitFor(() => expect(daemon.streamLiveCount()).toBe(1));
+
+    const opened = sessionWatch(connection, agentId);
+    await vi.waitFor(() => expect(opened.session().historyLoading).not.toBe(true));
+
+    // 1. Non-user message accepted on run.boundary updates stored mode via getAgentMode.
+    const inbound = fakeAgentMessage({
+        content: [{ type: "text", text: "Subtask instruction" }],
+        id: "msg_agent_in_1",
+        metadata: { senderAgentId: "agent_chief" },
+    });
+    const run0 = fakeRun({ id: "run_0", messages: [], status: "completed" });
+    const run1 = fakeRun({ id: "run_1", messages: [inbound], status: "running", endedAt: null });
+    daemon.modeSeed(agentId, ANTIGRAVITY_FLASH_MODE);
+    daemon.eventEmit("run.boundary", {
+        acceptedMessageIds: [inbound.id],
+        agentId,
+        finishedRun: run0,
+        startedRun: run1,
+    });
+    await vi.waitFor(() =>
+        expect(opened.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity",
+            selectionKnown: true,
+        }),
+    );
+
+    // 2. A user message whose providerId is a routing alias ("antigravity_alias") followed by
+    // a service configuration row with the concrete providerId ("antigravity") keeps the alias.
+    const aliasMode: MessageMode = {
+        ...ANTIGRAVITY_FLASH_MODE,
+        providerId: "antigravity_alias",
+    };
+    const userAliasMsg: Message = {
+        content: [{ text: "Use alias route", type: "text" }],
+        createdAt: 10,
+        delivery: "steer",
+        id: "msg_user_alias",
+        metadata: {},
+        mode: aliasMode,
+        role: "user",
+        runId: run1.id,
+        status: "accepted",
+    };
+    daemon.modeSeed(agentId, aliasMode);
+    daemon.eventEmit("message.created", { agentId, message: userAliasMsg, runId: run1.id });
+    const concreteConfigMsg = configurationServiceMessage(
+        "msg_cfg_concrete",
+        ANTIGRAVITY_FLASH_MODE,
+        userAliasMsg.id,
+    );
+    daemon.eventEmit("message.created", { agentId, message: concreteConfigMsg, runId: run1.id });
+    const postConcreteReply = fakeAgentMessage({
+        content: [{ type: "text", text: "Routed via concrete provider" }],
+        id: "msg_reply_concrete",
+    });
+    daemon.eventEmit("message.created", { agentId, message: postConcreteReply, runId: run1.id });
+    await vi.waitFor(() =>
+        expect(opened.session()).toMatchObject({
+            effort: "high",
+            modelId: "antigravity/gemini-3.8-flash",
+            providerId: "antigravity_alias",
+            selectionKnown: true,
+        }),
+    );
+    expect(taskIn(watch.tasks, "task_cfg_isolation")?.session).toMatchObject({
+        effort: "high",
+        modelId: "antigravity/gemini-3.8-flash",
+        providerId: "antigravity_alias",
+    });
+
+    // 3. A mid-run configuration row (beforeMessageId: null, e.g. account/fallback switch)
+    // does not move the picker.
+    const fallbackConfigMsg = configurationServiceMessage(
+        "msg_cfg_fallback",
+        {
+            effort: "medium",
+            modelId: "test-model",
+            permissionMode: "auto",
+            providerId: "test-provider",
+            serviceTier: null,
+        },
+        null,
+    );
+    daemon.eventEmit("message.created", { agentId, message: fallbackConfigMsg, runId: run1.id });
+    const postFallbackReply = fakeAgentMessage({
+        content: [{ type: "text", text: "Continued after mid-run config" }],
+        id: "msg_reply_fallback",
+    });
+    daemon.eventEmit("message.created", { agentId, message: postFallbackReply, runId: run1.id });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(opened.session()).toMatchObject({
+        effort: "high",
+        modelId: "antigravity/gemini-3.8-flash",
+        providerId: "antigravity_alias",
+        selectionKnown: true,
+    });
+
+    // 4. Stale getAgentMode response in flight does not overwrite a newer user message mode.
+    const releaseModeRead = daemon.pause("getAgentMode");
+    const run2 = fakeRun({ id: "run_2", messages: [], status: "running", endedAt: null });
+    daemon.modeSeed(agentId, ANTIGRAVITY_FLASH_MODE);
+    daemon.eventEmit("run.boundary", {
+        acceptedMessageIds: ["msg_agent_in_2"],
+        agentId,
+        finishedRun: { ...run1, endedAt: 15, status: "completed" },
+        startedRun: run2,
+    });
+    await vi.waitFor(() =>
+        expect(daemon.calls.filter((call) => call.method === "getAgentMode").length).toBe(2),
+    );
+    const newerUserMode: MessageMode = {
+        effort: "medium",
+        modelId: "test-model",
+        permissionMode: "auto",
+        providerId: "test-provider",
+        serviceTier: null,
+    };
+    daemon.modeSeed(agentId, newerUserMode);
+    daemon.eventEmit("message.created", {
+        agentId,
+        message: {
+            content: [{ text: "Switch to test-model", type: "text" }],
+            createdAt: 20,
+            delivery: "steer",
+            id: "msg_user_newer",
+            metadata: {},
+            mode: newerUserMode,
+            role: "user",
+            runId: run2.id,
+            status: "accepted",
+        },
+        runId: run2.id,
+    });
+    await vi.waitFor(() =>
+        expect(opened.session()).toMatchObject({
+            modelId: "test-model",
+            providerId: "test-provider",
+        }),
+    );
+    // Re-seed the stale mode before releasing the paused read so the in-flight response
+    // resolves with ANTIGRAVITY_FLASH_MODE; modeRevisions must reject it.
+    daemon.modeSeed(agentId, ANTIGRAVITY_FLASH_MODE);
+    releaseModeRead();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(opened.session()).toMatchObject({
+        modelId: "test-model",
+        providerId: "test-provider",
+    });
+
+    opened.close();
+    connection.close();
+});
+
+it("holds a pre-bootstrap draft save past the 300ms debounce window while loading, flushes on bootstrap failure + view close or drain recovery, and sends the reconciled creation mode", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    antigravityCatalogSeed(daemon);
+    const task = daemon.taskSeed({ id: "task_draft_race", joinedKey: "a1" });
+    const agentId = task.agent.id;
+    daemon.modeSeed(agentId, null);
+    daemon.draftSeed(agentId, {
+        value: { ...ANTIGRAVITY_FLASH_MODE, text: "" },
+        updatedAt: 100,
+    });
+    const failedTask = daemon.taskSeed({ id: "task_draft_fail", joinedKey: "a2" });
+    const failedAgentId = failedTask.agent.id;
+    daemon.modeSeed(failedAgentId, null);
+    const retryTask = daemon.taskSeed({ id: "task_draft_retry", joinedKey: "a3" });
+    const retryAgentId = retryTask.agent.id;
+    daemon.modeSeed(retryAgentId, null);
+    daemon.draftSeed(retryAgentId, {
+        value: { ...ANTIGRAVITY_FLASH_MODE, text: "" },
+        updatedAt: 100,
+    });
+
+    const { connection, watch } = harnessOpen(daemon);
+    await vi.waitFor(() => expect(taskIn(watch.tasks, "task_draft_race")).toBeDefined());
+    await vi.waitFor(() => expect(taskIn(watch.tasks, "task_draft_fail")).toBeDefined());
+    await vi.waitFor(() => expect(taskIn(watch.tasks, "task_draft_retry")).toBeDefined());
+    await vi.waitFor(() => expect(daemon.streamLiveCount()).toBe(1));
+
+    // Hold getAgentBootstrap past the 300ms debounce window while the user types a draft.
+    const releaseBootstrap = daemon.pause("getAgentBootstrap");
+    const opened = sessionWatch(connection, agentId);
+    const saveMutationId = connection.setDraft(agentId, {
+        draft: "User words typed early",
+        updatedAt: 500,
+    });
+    expect(opened.session().draft).toBe("User words typed early");
+
+    await new Promise((resolve) => setTimeout(resolve, 360));
+    // While bootstrap is still in flight and mode is unhydrated, saveAgentDraft must not
+    // be sent with the default mode even after the 300ms debounce timer fires.
+    expect(daemon.calls.filter((call) => call.method === "saveAgentDraft")).toHaveLength(0);
+
+    // If the first saveAgentDraft after hydration hits a 503 draining refusal, the reconciled
+    // save is held (never dropped or sent twice) and flushed once with the same mutationId.
+    daemon.failOnce(
+        "saveAgentDraft",
+        new HappyAgentApiError(503, "Happy Agent is draining.", "draining", null),
+    );
+
+    // Release bootstrap: the held draft save is reconciled to Antigravity Flash and attempted.
+    releaseBootstrap();
+    await vi.waitFor(() => expect(opened.session().historyLoading).not.toBe(true));
+    await vi.waitFor(() =>
+        expect(daemon.calls.filter((call) => call.method === "saveAgentDraft")).toHaveLength(1),
+    );
+
+    // Reconnect after the draining refusal: the held reconciled save flushes once.
+    daemon.daemonReplace({ version: "0.4.75" });
+    await vi.waitFor(() =>
+        expect(daemon.calls.filter((call) => call.method === "saveAgentDraft")).toHaveLength(2),
+    );
+    const draftSaveCalls = daemon.calls.filter((call) => call.method === "saveAgentDraft");
+    for (const call of draftSaveCalls) {
+        expect(call.args[0]).toBe(agentId);
+        expect(call.args[1]).toMatchObject({
+            draft: {
+                ...ANTIGRAVITY_FLASH_MODE,
+                text: "User words typed early",
+            },
+            mutationId: saveMutationId,
+            updatedAt: 500,
+        });
+    }
+    expect(opened.session()).toMatchObject({
+        draft: "User words typed early",
+        draftUpdatedAt: 500,
+        effort: "high",
+        modelId: "antigravity/gemini-3.8-flash",
+        providerId: "antigravity",
+        selectionKnown: true,
+    });
+
+    // Stale creation draft event (updatedAt: 100 < 500) must not overwrite the newer user draft.
+    daemon.eventEmit("agent.draft.updated", {
+        agentId,
+        draft: {
+            value: { ...ANTIGRAVITY_FLASH_MODE, text: "" },
+            updatedAt: 100,
+        },
+    });
+    expect(opened.session().draft).toBe("User words typed early");
+
+    // Explicit user model change (intended -> draft) wins over stored mode and survives reopen.
+    connection.switchModel(agentId, { modelId: "test-model", providerId: "test-provider" });
+    await vi.waitFor(() =>
+        expect(opened.session()).toMatchObject({
+            draft: "User words typed early",
+            modelId: "test-model",
+            providerId: "test-provider",
+        }),
+    );
+    opened.close();
+    const reopened = sessionWatch(connection, agentId);
+    expect(reopened.session()).toMatchObject({
+        draft: "User words typed early",
+        modelId: "test-model",
+        providerId: "test-provider",
+    });
+    reopened.close();
+
+    // D4: If getAgentBootstrap fails once with the view still open, the held draft save
+    // must keep waiting for the scheduled retry rather than flushing the default mode and
+    // overwriting the task's Flash creation draft on the daemon.
+    const releaseFirstAttempt = daemon.pause("getAgentBootstrap");
+    daemon.failOnce(
+        "getAgentBootstrap",
+        new HappyAgentApiError(500, "Bootstrap failed once.", null, null),
+    );
+    const retryOpen = sessionWatch(connection, retryAgentId);
+    connection.setDraft(retryAgentId, {
+        draft: "Words typed before transient bootstrap failure",
+        updatedAt: 600,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 360));
+    expect(
+        daemon.calls.filter(
+            (call) => call.method === "saveAgentDraft" && call.args[0] === retryAgentId,
+        ),
+    ).toHaveLength(0);
+    releaseFirstAttempt();
+    const releaseRetryAttempt = daemon.pause("getAgentBootstrap");
+    await vi.waitFor(() =>
+        expect(
+            daemon.calls.filter(
+                (call) => call.method === "getAgentBootstrap" && call.args[0] === retryAgentId,
+            ),
+        ).toHaveLength(2),
+    );
+    expect(
+        daemon.calls.filter(
+            (call) => call.method === "saveAgentDraft" && call.args[0] === retryAgentId,
+        ),
+    ).toHaveLength(0);
+    releaseRetryAttempt();
+    await vi.waitFor(() => expect(retryOpen.session().historyLoading).not.toBe(true));
+    await vi.waitFor(() =>
+        expect(
+            daemon.calls.filter(
+                (call) => call.method === "saveAgentDraft" && call.args[0] === retryAgentId,
+            ),
+        ).toHaveLength(1),
+    );
+    const retrySaveCall = daemon.calls.find(
+        (call) => call.method === "saveAgentDraft" && call.args[0] === retryAgentId,
+    );
+    expect(retrySaveCall?.args[1]).toMatchObject({
+        draft: {
+            ...ANTIGRAVITY_FLASH_MODE,
+            text: "Words typed before transient bootstrap failure",
+        },
+        updatedAt: 600,
+    });
+    expect(retryOpen.session()).toMatchObject({
+        draft: "Words typed before transient bootstrap failure",
+        draftUpdatedAt: 600,
+        effort: "high",
+        modelId: "antigravity/gemini-3.8-flash",
+        providerId: "antigravity",
+        selectionKnown: true,
+    });
+    retryOpen.close();
+
+    // D2: If getAgentBootstrap rejects and the reader closes the view, the held draft save
+    // is still flushed with the user's text rather than lost.
+    const releaseFailedBootstrap = daemon.pause("getAgentBootstrap");
+    daemon.failOnce(
+        "getAgentBootstrap",
+        new HappyAgentApiError(500, "Bootstrap failed.", null, null),
+    );
+    const failedOpen = sessionWatch(connection, failedAgentId);
+    connection.setDraft(failedAgentId, {
+        draft: "Words typed before bootstrap failed",
+        updatedAt: 700,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 360));
+    expect(
+        daemon.calls.filter(
+            (call) => call.method === "saveAgentDraft" && call.args[0] === failedAgentId,
+        ),
+    ).toHaveLength(0);
+    releaseFailedBootstrap();
+    failedOpen.close();
+    await vi.waitFor(() =>
+        expect(
+            daemon.calls.filter(
+                (call) => call.method === "saveAgentDraft" && call.args[0] === failedAgentId,
+            ),
+        ).toHaveLength(1),
+    );
+    const failedSaveCall = daemon.calls.find(
+        (call) => call.method === "saveAgentDraft" && call.args[0] === failedAgentId,
+    );
+    expect(failedSaveCall?.args[1]).toMatchObject({
+        draft: {
+            modelId: "test-model",
+            providerId: "test-provider",
+            text: "Words typed before bootstrap failed",
+        },
+        updatedAt: 700,
+    });
+
+    connection.close();
 });

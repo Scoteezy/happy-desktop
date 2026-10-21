@@ -272,14 +272,31 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     ): void => {
         ingestHistory(entry, runs, pending);
         for (const run of runs)
-            for (const message of run.messages) indexMessageUser(entry, message);
-        for (const message of pending) indexMessageUser(entry, message);
+            for (const message of run.messages) {
+                if (message.role === "user") rememberUserMessageId(message.id);
+                indexMessageUser(entry, message);
+            }
+        for (const message of pending) {
+            if (message.role === "user") rememberUserMessageId(message.id);
+            indexMessageUser(entry, message);
+        }
     };
     const groupSubscribers = new Set<GroupsSubscriber>();
     const intendedModes = new Map<string, MessageMode>();
     const agentDrafts = new Map<string, AgentDraftSnapshot>();
     const agentModes = new Map<string, MessageMode | null>();
+    const modeRevisions = new Map<string, number>();
+    const knownUserMessageIds = new Set<string>();
+    const rememberUserMessageId = (messageId: string): void => {
+        knownUserMessageIds.delete(messageId);
+        knownUserMessageIds.add(messageId);
+        while (knownUserMessageIds.size > 1024) {
+            knownUserMessageIds.delete(knownUserMessageIds.values().next().value!);
+        }
+    };
     const draftRevisions = new Map<string, number>();
+    const unhydratedDraftModes = new Set<string>();
+    const unhydratedDraftSaves = new Map<string, DraftSave>();
     const pendingDraftSaves = new Map<string, PendingDraftSave>();
     /*
      * Routine writes the window makes while someone simply reads and types —
@@ -297,6 +314,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     let admitting = true;
     const draftSaveCancel = (sessionId: string): void => {
         heldDraftSaves.delete(sessionId);
+        unhydratedDraftSaves.delete(sessionId);
         const pending = pendingDraftSaves.get(sessionId);
         if (pending === undefined) return;
         clearTimeout(pending.timer);
@@ -916,7 +934,19 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             heldDraftSaves.delete(agentId);
             if (draftRevisions.get(agentId) === held.revision) draftRevisions.delete(agentId);
         }
+        const unhydrated = unhydratedDraftSaves.get(agentId);
+        if (
+            unhydrated !== undefined &&
+            draft.updatedAt !== null &&
+            draft.updatedAt >= unhydrated.updatedAt
+        ) {
+            unhydratedDraftSaves.delete(agentId);
+            if (draftRevisions.get(agentId) === unhydrated.revision) draftRevisions.delete(agentId);
+        }
+        unhydratedDraftModes.delete(agentId);
         replaceDraft(agentId, draft);
+        const entry = sessions.get(agentId);
+        if (entry !== undefined) settleSessionIfIdle(entry);
         return true;
     };
 
@@ -960,10 +990,23 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
      */
     const settleSessionIfIdle = (entry: SessionEntry): void => {
         if (
+            !closed &&
+            !rootController.signal.aborted &&
+            entry.subscribers.size === 0 &&
+            entry.loading === undefined
+        ) {
+            // Flushing on view close sends the default mode, matching base behavior.
+            if (unhydratedDraftModes.has(entry.id)) draftSaveFlush(entry.id);
+            unhydratedDraftSaveFlush(entry.id);
+        }
+        if (
             entry.subscribers.size > 0 ||
             entry.loading !== undefined ||
             entry.questionRecovery !== undefined ||
-            (sessionMutationCounts.get(entry.id) ?? 0) > 0
+            (sessionMutationCounts.get(entry.id) ?? 0) > 0 ||
+            pendingDraftSaves.has(entry.id) ||
+            heldDraftSaves.has(entry.id) ||
+            unhydratedDraftSaves.has(entry.id)
         ) {
             return;
         }
@@ -1072,6 +1115,87 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         entry.loadRetry = retry;
     };
 
+    const reconcileUnhydratedDraftMode = (agentId: string, mode: MessageMode): void => {
+        const current = agentDrafts.get(agentId);
+        if (current === undefined) return;
+        const reconciled: AgentDraftSnapshot = {
+            value: current.value === null ? null : { ...mode, text: current.value.text },
+            updatedAt: current.updatedAt,
+        };
+        const pending = pendingDraftSaves.get(agentId);
+        if (pending !== undefined) {
+            pendingDraftSaves.set(agentId, { ...pending, draft: reconciled });
+        }
+        const held = heldDraftSaves.get(agentId);
+        if (held !== undefined) {
+            heldDraftSaves.set(agentId, { ...held, draft: reconciled });
+        }
+        const unhydrated = unhydratedDraftSaves.get(agentId);
+        if (unhydrated !== undefined) {
+            unhydratedDraftSaves.set(agentId, { ...unhydrated, draft: reconciled });
+        }
+        replaceDraft(agentId, reconciled);
+    };
+
+    const unhydratedDraftSaveFlush = (sessionId: string): void => {
+        const held = unhydratedDraftSaves.get(sessionId);
+        if (held === undefined) return;
+        unhydratedDraftSaves.delete(sessionId);
+        if (pendingDraftSaves.has(sessionId)) return;
+        draftSave(sessionId, held);
+    };
+
+    const reconcileLoadedSelection = (
+        entry: SessionEntry,
+        draftRevision: number | undefined,
+        modeRevision: number | undefined,
+        bootstrapDraft: AgentDraftSnapshot,
+        storedMode: MessageMode | null,
+    ): void => {
+        if (
+            modeRevisions.get(entry.id) === modeRevision ||
+            (storedMode !== null && agentModes.get(entry.id) == null)
+        ) {
+            modeRevisions.set(entry.id, (modeRevisions.get(entry.id) ?? 0) + 1);
+            agentModes.set(entry.id, storedMode);
+            entry.mode = storedMode;
+        }
+        const effectiveMode = agentModes.get(entry.id) ?? null;
+        if (unhydratedDraftModes.has(entry.id) && !intendedModes.has(entry.id)) {
+            unhydratedDraftModes.delete(entry.id);
+            const current = agentDrafts.get(entry.id);
+            if (
+                current?.updatedAt !== null &&
+                current?.updatedAt !== undefined &&
+                (bootstrapDraft.updatedAt === null || bootstrapDraft.updatedAt < current.updatedAt)
+            ) {
+                const reconciledMode =
+                    config !== undefined
+                        ? modeOf(config, bootstrapDraft, effectiveMode)
+                        : bootstrapDraft.value !== null
+                          ? {
+                                effort: bootstrapDraft.value.effort,
+                                modelId: bootstrapDraft.value.modelId,
+                                permissionMode: bootstrapDraft.value.permissionMode,
+                                providerId: bootstrapDraft.value.providerId,
+                                serviceTier: bootstrapDraft.value.serviceTier,
+                            }
+                          : effectiveMode;
+                if (reconciledMode !== null) {
+                    reconcileUnhydratedDraftMode(entry.id, reconciledMode);
+                }
+                unhydratedDraftSaveFlush(entry.id);
+            } else {
+                unhydratedDraftSaves.delete(entry.id);
+                adoptDraft(entry.id, bootstrapDraft);
+            }
+        } else if (draftRevisions.get(entry.id) === draftRevision && !intendedModes.has(entry.id)) {
+            unhydratedDraftSaves.delete(entry.id);
+            adoptDraft(entry.id, bootstrapDraft);
+        }
+        entry.draft = agentDrafts.get(entry.id);
+    };
+
     const loadSession = (entry: SessionEntry): Promise<void> => {
         if (entry.loading !== undefined) return entry.loading;
         // An agent this connection has named but not yet created has no history
@@ -1090,6 +1214,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         entry.hydrating = true;
         const revision = entry.loadRequestedRevision;
         const draftRevision = draftRevisions.get(entry.id);
+        const modeRevision = modeRevisions.get(entry.id);
         const signal = deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS);
         const loading = Promise.all([
             client.getMessages(
@@ -1104,11 +1229,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 // Keep local draft edits made while this snapshot was in flight.
                 entry.agent = bootstrap.agent;
                 entry.workspace = workspaceOf(bootstrap.agent.workspaceId);
-                agentModes.set(entry.id, bootstrap.mode);
-                entry.mode = bootstrap.mode;
-                if (draftRevisions.get(entry.id) === draftRevision && !intendedModes.has(entry.id))
-                    adoptDraft(entry.id, bootstrap.draft);
-                entry.draft = agentDrafts.get(entry.id);
+                reconcileLoadedSelection(
+                    entry,
+                    draftRevision,
+                    modeRevision,
+                    bootstrap.draft,
+                    bootstrap.mode,
+                );
+                publishGroups();
                 publishSession(entry, true);
                 return bootstrap;
             }),
@@ -1206,6 +1334,16 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                         sessions.get(entry.id) === entry
                     ) {
                         background(loadSession(entry));
+                    } else if (
+                        !closed &&
+                        !rootController.signal.aborted &&
+                        (entry.subscribers.size === 0 || entry.loadRetry === undefined)
+                    ) {
+                        // While the view stays open and loadRetry keeps retrying, the unhydrated draft stays in
+                        // memory until hydration succeeds or the view closes (closing the connection discards it,
+                        // matching base for pending debounced saves). When no retry will run, flushing sends the
+                        // default mode, also matching base.
+                        unhydratedDraftSaveFlush(entry.id);
                     }
                 }
                 settleSessionIfIdle(entry);
@@ -2058,6 +2196,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 appendMessageDelta(event.payload);
                 return;
             case "message.deleted": {
+                knownUserMessageIds.delete(event.payload.messageId);
                 const entry = sessions.get(event.payload.agentId);
                 entry?.messages.delete(event.payload.messageId);
                 if (entry !== undefined) {
@@ -2210,6 +2349,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         for (const [id, message] of entry.messages) {
             if (message.runId === null || !dropped.has(message.runId)) continue;
             entry.messages.delete(id);
+            knownUserMessageIds.delete(id);
             entry.messageBlockOffsets.delete(id);
             entry.corruptedMessageIds.delete(id);
         }
@@ -2220,11 +2360,73 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         if (watched) publishSession(entry);
     };
 
+    const modeRefetches = new Map<string, { again: boolean }>();
+
+    const adoptMessageMode = (agentId: string, mode: MessageMode | null): void => {
+        const entry = sessions.get(agentId);
+        if (entry === undefined && agentOf(agentId) === undefined) return;
+        modeRevisions.set(agentId, (modeRevisions.get(agentId) ?? 0) + 1);
+        if (entry !== undefined) entry.mode = mode;
+        agentModes.set(agentId, mode);
+        if (mode !== null) {
+            if (unhydratedDraftModes.has(agentId) && !intendedModes.has(agentId)) {
+                unhydratedDraftModes.delete(agentId);
+                reconcileUnhydratedDraftMode(
+                    agentId,
+                    config !== undefined ? modeOf(config, agentDrafts.get(agentId), mode) : mode,
+                );
+                unhydratedDraftSaveFlush(agentId);
+            } else {
+                unhydratedDraftModes.delete(agentId);
+            }
+            const intended = intendedModes.get(agentId);
+            if (intended !== undefined && modesEqual(intended, mode)) {
+                intendedModes.delete(agentId);
+            }
+        }
+        if (entry !== undefined) publishSession(entry);
+        publishGroups();
+    };
+
+    // Accepting a non-user message costs one GET /v0/agents/:id/mode read (coalesced per
+    // agent) because run.started and run.boundary carry acceptedMessageIds without the
+    // resulting stored mode.
+    const refetchAgentMode = (agentId: string): void => {
+        const active = modeRefetches.get(agentId);
+        if (active !== undefined) {
+            active.again = true;
+            return;
+        }
+        const state = { again: false };
+        modeRefetches.set(agentId, state);
+        const modeRevision = modeRevisions.get(agentId);
+        background(
+            client
+                .getAgentMode(agentId, { signal: deadlineSignal(SNAPSHOT_RESPONSE_TIMEOUT_MS) })
+                .then(({ mode }) => {
+                    if (closed || rootController.signal.aborted) return;
+                    if (
+                        modeRevisions.get(agentId) === modeRevision ||
+                        (mode !== null && agentModes.get(agentId) == null)
+                    ) {
+                        adoptMessageMode(agentId, mode);
+                    }
+                })
+                .finally(() => {
+                    if (modeRefetches.get(agentId) === state) {
+                        modeRefetches.delete(agentId);
+                        if (state.again && !closed && !rootController.signal.aborted) {
+                            refetchAgentMode(agentId);
+                        }
+                    }
+                }),
+        );
+    };
+
     const updateMessage = (agentId: string, message: Message, runId: string | null): void => {
         if (message.role === "user") sendConfirmations.get(message.id)?.();
         const entry = sessions.get(agentId);
-        if (entry === undefined) return;
-        const current = entry.messages.get(message.id)?.message;
+        const current = entry?.messages.get(message.id)?.message;
         // HTTP replies and stream events can arrive independently. Acceptance
         // is final for a message ID: a late send reply must not put it back in
         // the pending tail after run.started or run.boundary already took it.
@@ -2236,17 +2438,20 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         ) {
             return;
         }
+        if (message.role === "user") {
+            rememberUserMessageId(message.id);
+            adoptMessageMode(agentId, message.mode);
+        } else if (
+            message.role === "agent" &&
+            message.metadata.senderAgentId !== undefined &&
+            runId !== null &&
+            agentModes.get(agentId) == null
+        ) {
+            refetchAgentMode(agentId);
+        }
+        if (entry === undefined) return;
         entry.messages.set(message.id, { message, runId });
         indexMessageUser(entry, message);
-        if (message.role === "user") {
-            entry.mode = message.mode;
-            agentModes.set(agentId, message.mode);
-            const intended = intendedModes.get(agentId);
-            if (intended !== undefined && modesEqual(intended, message.mode)) {
-                intendedModes.delete(agentId);
-            }
-            publishGroups();
-        }
         publishSession(entry);
     };
 
@@ -2306,6 +2511,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             if (current.pendingSend && message.role === "user") {
                 updateMessage(agentId, message, runId);
             } else if (message.role === "user") {
+                rememberUserMessageId(message.id);
                 sendConfirmations.get(message.id)?.();
             }
             return;
@@ -2319,21 +2525,26 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         messageIds: readonly string[],
         runId: string,
     ): void => {
+        if (messageIds.length === 0) return;
         const entry = sessions.get(agentId);
-        if (entry === undefined || messageIds.length === 0) return;
+        let nonUserAccepted = false;
         for (const messageId of messageIds) {
-            const current = entry.messages.get(messageId);
-            if (current?.message.role !== "user") continue;
-            entry.messages.set(messageId, {
-                message: {
-                    ...current.message,
-                    status: "accepted",
+            const current = entry?.messages.get(messageId);
+            if (current?.message.role === "user") {
+                entry!.messages.set(messageId, {
+                    message: {
+                        ...current.message,
+                        status: "accepted",
+                        runId,
+                    },
                     runId,
-                },
-                runId,
-            });
+                });
+                continue;
+            }
+            if (!knownUserMessageIds.has(messageId)) nonUserAccepted = true;
         }
-        publishSession(entry);
+        if (nonUserAccepted) refetchAgentMode(agentId);
+        if (entry !== undefined) publishSession(entry);
     };
 
     const appendMessageDelta = (
@@ -3367,6 +3578,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             const pending = pendingDraftSaves.get(sessionId);
             if (pending?.mutationId !== save.mutationId) return;
             pendingDraftSaves.delete(sessionId);
+            const entry = sessions.get(sessionId);
+            if (
+                unhydratedDraftModes.has(sessionId) &&
+                (entry?.loading !== undefined || entry?.loadRetry !== undefined)
+            ) {
+                unhydratedDraftSaves.set(sessionId, pending);
+                return;
+            }
             draftSave(sessionId, pending);
         }, DRAFT_SAVE_DEBOUNCE_MS);
         pendingDraftSaves.set(sessionId, { ...save, timer });
@@ -3395,7 +3614,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         }
         // Preserve the agent lane's existing text-then-mode ordering when a
         // selection changes during the debounce window.
-        draftSaveFlush(sessionId);
+        if (unhydratedDraftModes.has(sessionId)) {
+            draftSaveCancel(sessionId);
+        } else {
+            draftSaveFlush(sessionId);
+        }
         const previousMode = intendedModes.get(sessionId);
         const previousDraft =
             agentDrafts.get(sessionId) ?? ({ value: null, updatedAt: null } as const);
@@ -3406,6 +3629,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             updatedAt,
         };
         intendedModes.set(sessionId, mode);
+        unhydratedDraftModes.delete(sessionId);
         const revision = (draftRevisions.get(sessionId) ?? 0) + 1;
         draftRevisions.set(sessionId, revision);
         replaceDraft(sessionId, draft);
@@ -3910,6 +4134,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 confirmSend = resolve;
             });
             sendConfirmations.set(mutationId, confirmSend);
+            rememberUserMessageId(mutationId);
             const entry = sessions.get(sessionId);
             if (entry !== undefined) {
                 entry.messages.set(mutationId, {
@@ -4183,6 +4408,12 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 return mutationId;
             }
             const value: DraftUpdate = typeof update === "string" ? { draft: update } : update;
+            const modeKnown =
+                unannouncedAgents.has(sessionId) ||
+                intendedModes.has(sessionId) ||
+                agentModes.has(sessionId) ||
+                (agentDrafts.has(sessionId) && !unhydratedDraftModes.has(sessionId));
+            if (!modeKnown) unhydratedDraftModes.add(sessionId);
             const mode = modeOf(
                 config,
                 agentDrafts.get(sessionId),
@@ -4205,6 +4436,14 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 return mutationId;
             }
             draftSaveCancel(sessionId);
+            const entry = sessions.get(sessionId);
+            if (
+                unhydratedDraftModes.has(sessionId) &&
+                (entry?.loading !== undefined || entry?.loadRetry !== undefined)
+            ) {
+                unhydratedDraftSaves.set(sessionId, save);
+                return mutationId;
+            }
             return draftSave(sessionId, save);
         },
         async draftAppendConfirmed(sessionId, text, updatedAt) {
@@ -4734,6 +4973,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             retryWake = undefined;
             for (const pending of pendingDraftSaves.values()) clearTimeout(pending.timer);
             pendingDraftSaves.clear();
+            heldDraftSaves.clear();
+            unhydratedDraftSaves.clear();
+            unhydratedDraftModes.clear();
             if (quietPublishTimer !== undefined) clearTimeout(quietPublishTimer);
             publishConnection("closed");
             groupSubscribers.clear();
@@ -4742,6 +4984,9 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             userSessions.clear();
             intendedModes.clear();
             agentModes.clear();
+            modeRevisions.clear();
+            modeRefetches.clear();
+            knownUserMessageIds.clear();
             agentDrafts.clear();
             sendConfirmations.clear();
             draftRevisions.clear();
