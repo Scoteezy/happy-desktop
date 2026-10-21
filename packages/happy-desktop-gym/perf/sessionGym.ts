@@ -104,7 +104,12 @@ function daemon<T>(method: string, path: string, body?: unknown): Promise<T> {
                 res.setEncoding("utf8");
                 res.on("data", (chunk: string) => (data += chunk));
                 res.on("end", () => {
-                    if ((res.statusCode ?? 500) >= 300) reject(new Error(`${method} ${path} ${String(res.statusCode)} ${data.slice(0, 300)}`));
+                    if ((res.statusCode ?? 500) >= 300)
+                        reject(
+                            new Error(
+                                `${method} ${path} ${String(res.statusCode)} ${data.slice(0, 300)}`,
+                            ),
+                        );
                     else resolve((data.length === 0 ? undefined : JSON.parse(data)) as T);
                 });
             },
@@ -150,9 +155,13 @@ async function busiestRun(sourceAgentId: string): Promise<ApiRun> {
     let before: string | undefined;
     for (let page = 0; page < 4; page += 1) {
         const query = `limit=60&omitToolData=false${before === undefined ? "" : `&before=${before}`}`;
-        const history = await daemon<{ runs: ApiRun[]; hasMore: boolean }>("GET", `/v0/agents/${sourceAgentId}/messages?${query}`);
+        const history = await daemon<{ runs: ApiRun[]; hasMore: boolean }>(
+            "GET",
+            `/v0/agents/${sourceAgentId}/messages?${query}`,
+        );
         for (const run of history.runs) {
-            const tools = (r: ApiRun) => r.messages.flatMap((m) => m.content).filter((b) => b.type === "tool_call").length;
+            const tools = (r: ApiRun) =>
+                r.messages.flatMap((m) => m.content).filter((b) => b.type === "tool_call").length;
             if (best === undefined || tools(run) > tools(best)) best = run;
         }
         if (!history.hasMore || history.runs[0] === undefined) break;
@@ -167,10 +176,18 @@ async function writeReplay(
     agentId: string,
     sourceAgentId: string,
     pace: { readonly chunk?: number; readonly delayMs?: number } = {},
+    /** Text the run's final answer ends with, so the run can be found in history afterwards. */
+    finalText?: string,
 ): Promise<number> {
     const best = await busiestRun(sourceAgentId);
-    const { agent } = await daemon<{ agent: { workspaceId: string } }>("GET", `/v0/agents/${agentId}`);
-    const { workspace } = await daemon<{ workspace: { compute: { path?: string } } }>("GET", `/v0/workspaces/${agent.workspaceId}`);
+    const { agent } = await daemon<{ agent: { workspaceId: string } }>(
+        "GET",
+        `/v0/agents/${agentId}`,
+    );
+    const { workspace } = await daemon<{ workspace: { compute: { path?: string } } }>(
+        "GET",
+        `/v0/workspaces/${agent.workspaceId}`,
+    );
     const cwd = workspace.compute.path;
     if (cwd === undefined) throw new Error("The stream target has no workspace path.");
     await mkdir(join(cwd, ".perf-replay"), { recursive: true });
@@ -180,25 +197,55 @@ async function writeReplay(
         if (message.role === "user") continue;
         const blocks = [];
         for (const block of message.content) {
-            if ((block.type === "text" || block.type === "reasoning") && typeof block.text === "string" && block.text.length > 0) {
+            if (
+                (block.type === "text" || block.type === "reasoning") &&
+                typeof block.text === "string" &&
+                block.text.length > 0
+            ) {
                 blocks.push({ text: block.text, type: block.type });
             } else if (block.type === "tool_call") {
                 const output = block.presentation?.output ?? block.result ?? "";
                 const file = `.perf-replay/${String(outputs++)}.txt`;
-                await writeFile(join(cwd, file), typeof output === "string" ? output : JSON.stringify(output, null, 2));
+                await writeFile(
+                    join(cwd, file),
+                    typeof output === "string" ? output : JSON.stringify(output, null, 2),
+                );
                 blocks.push({ command: `cat ${file}`, type: "command" });
             }
         }
         if (blocks.length > 0) inferences.push({ blocks });
     }
+    if (finalText !== undefined) {
+        // A run ends with the first inference that calls no tool, so every recorded message without
+        // one joins the next, and the last inference, the run's answer, ends with the text.
+        const joined: typeof inferences = [];
+        let pending: (typeof inferences)[number]["blocks"] = [];
+        for (const inference of inferences) {
+            pending.push(...inference.blocks);
+            if (!inference.blocks.some((block) => block.type === "command")) continue;
+            joined.push({ blocks: pending });
+            pending = [];
+        }
+        joined.push({ blocks: [...pending, { text: finalText, type: "text" }] });
+        inferences.splice(0, inferences.length, ...joined);
+    }
     await mkdir(join(scratch, "replay"), { recursive: true });
-    await writeFile(join(scratch, "replay", `${agentId}.json`), JSON.stringify({ inferences, ...pace }));
+    await writeFile(
+        join(scratch, "replay", `${agentId}.json`),
+        JSON.stringify({ inferences, ...pace }),
+    );
     return inferences.length;
 }
 
 async function sendReplay(agentId: string): Promise<void> {
     await daemon("POST", `/v0/agents/${agentId}/send`, {
-        mode: { effort: "medium", modelId: "anthropic/opus-5-5", permissionMode: "full_access", providerId: "claude", serviceTier: null },
+        mode: {
+            effort: "medium",
+            modelId: "anthropic/opus-5-5",
+            permissionMode: "full_access",
+            providerId: "claude",
+            serviceTier: null,
+        },
         text: "Replay the recorded run.",
     });
 }
@@ -206,7 +253,10 @@ async function sendReplay(agentId: string): Promise<void> {
 async function waitIdle(agentId: string, timeoutMs: number): Promise<void> {
     const started = Date.now();
     while (Date.now() - started < timeoutMs) {
-        const { agent } = await daemon<{ agent: { status: string } }>("GET", `/v0/agents/${agentId}`);
+        const { agent } = await daemon<{ agent: { status: string } }>(
+            "GET",
+            `/v0/agents/${agentId}`,
+        );
         if (agent.status === "idle") return;
         await new Promise((resolve) => setTimeout(resolve, 250));
     }
@@ -239,8 +289,20 @@ function instrument(): void {
         alternate: Fiber | null;
     };
     const nameOf = (fiber: Fiber): string => {
-        const type = fiber.type as { displayName?: string; name?: string; type?: { displayName?: string; name?: string }; render?: { name?: string } } | null;
-        return type?.displayName ?? type?.name ?? type?.type?.displayName ?? type?.type?.name ?? type?.render?.name ?? "Anonymous";
+        const type = fiber.type as {
+            displayName?: string;
+            name?: string;
+            type?: { displayName?: string; name?: string };
+            render?: { name?: string };
+        } | null;
+        return (
+            type?.displayName ??
+            type?.name ??
+            type?.type?.displayName ??
+            type?.type?.name ??
+            type?.render?.name ??
+            "Anonymous"
+        );
     };
     const rendered = (fiber: Fiber, mount: boolean): void => {
         if (!COMPONENT_TAGS.has(fiber.tag)) return;
@@ -300,7 +362,9 @@ function instrument(): void {
         new PerformanceObserver((list) => {
             for (const entry of list.getEntries()) {
                 perf.loafs += 1;
-                perf.loafBlockingMs += (entry as unknown as { blockingDuration: number }).blockingDuration;
+                perf.loafBlockingMs += (
+                    entry as unknown as { blockingDuration: number }
+                ).blockingDuration;
             }
         }).observe({ type: "long-animation-frame", buffered: true });
     } catch {
@@ -328,17 +392,50 @@ interface PageCounters {
 
 async function pageCounters(page: Page): Promise<PageCounters> {
     return await page.evaluate(() => {
-        const perf = (window as unknown as { __perf: Omit<PageCounters, "components" | "origins"> & { components: Map<string, number>; origins: Map<string, number> } }).__perf;
-        if (perf === undefined) return { commits: 0, components: [], origins: [], frames: 0, loafBlockingMs: 0, loafs: 0, longTaskMs: 0, longTasks: 0, mounts: 0, renders: 0 };
+        const perf = (
+            window as unknown as {
+                __perf: Omit<PageCounters, "components" | "origins"> & {
+                    components: Map<string, number>;
+                    origins: Map<string, number>;
+                };
+            }
+        ).__perf;
+        if (perf === undefined)
+            return {
+                commits: 0,
+                components: [],
+                origins: [],
+                frames: 0,
+                loafBlockingMs: 0,
+                loafs: 0,
+                longTaskMs: 0,
+                longTasks: 0,
+                mounts: 0,
+                renders: 0,
+            };
         return { ...perf, components: [...perf.components], origins: [...perf.origins] };
     });
 }
 
-const CDP_METRICS = ["TaskDuration", "ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "JSHeapUsedSize", "Nodes", "LayoutCount", "RecalcStyleCount", "JSEventListeners"] as const;
+const CDP_METRICS = [
+    "TaskDuration",
+    "ScriptDuration",
+    "LayoutDuration",
+    "RecalcStyleDuration",
+    "JSHeapUsedSize",
+    "Nodes",
+    "LayoutCount",
+    "RecalcStyleCount",
+    "JSEventListeners",
+] as const;
 
 async function cdpMetrics(cdp: CDPSession): Promise<Record<string, number>> {
     const { metrics } = await cdp.send("Performance.getMetrics");
-    return Object.fromEntries(metrics.filter((m) => (CDP_METRICS as readonly string[]).includes(m.name)).map((m) => [m.name, m.value]));
+    return Object.fromEntries(
+        metrics
+            .filter((m) => (CDP_METRICS as readonly string[]).includes(m.name))
+            .map((m) => [m.name, m.value]),
+    );
 }
 
 // ---------------------------------------------------------------- measurement windows
@@ -383,10 +480,13 @@ async function measure<T>(
         await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
         await cdp.send("Profiler.start");
     }
-    const daemonProfile = daemonPid !== undefined && (process.env.PERF_DAEMON_PROFILE ?? "").split(",").includes(name);
+    const daemonProfile =
+        daemonPid !== undefined &&
+        (process.env.PERF_DAEMON_PROFILE ?? "").split(",").includes(name);
     if (daemonProfile) process.kill(Number(daemonPid), "SIGUSR2");
     // With PERF_SQL_STATS on the daemon, SIGUSR1 dumps and resets its per-statement totals.
-    const sqlStats = daemonPid !== undefined && (process.env.PERF_SQL_WINDOWS ?? "").split(",").includes(name);
+    const sqlStats =
+        daemonPid !== undefined && (process.env.PERF_SQL_WINDOWS ?? "").split(",").includes(name);
     if (sqlStats) process.kill(Number(daemonPid), "SIGUSR1");
     const started = performance.now();
     const value = await work();
@@ -399,7 +499,10 @@ async function measure<T>(
     if (profile) {
         const { profile: cpu } = await cdp.send("Profiler.stop");
         profileCount += 1;
-        await writeFile(join(scratch, `renderer-${label}-${name}-${String(profileCount)}.cpuprofile`), JSON.stringify(cpu));
+        await writeFile(
+            join(scratch, `renderer-${label}-${name}-${String(profileCount)}.cpuprofile`),
+            JSON.stringify(cpu),
+        );
     }
     const afterCounters = await pageCounters(page);
     const afterMetrics = await cdpMetrics(cdp);
@@ -418,7 +521,10 @@ async function measure<T>(
         }
         return {
             live: document.getElementsByTagName("*").length,
-            top: [...named].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, nodes]) => `${name} ${String(nodes)}`),
+            top: [...named]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([name, nodes]) => `${name} ${String(nodes)}`),
         };
     });
     // Detached nodes still alive after a full collection are retained by something: a leak.
@@ -426,11 +532,15 @@ async function measure<T>(
     const retainedNodes = (await cdpMetrics(cdp)).Nodes;
     const afterCpu = daemonCpuMs();
     const components = new Map(afterCounters.components);
-    for (const [component, count] of beforeCounters.components) components.set(component, (components.get(component) ?? 0) - count);
+    for (const [component, count] of beforeCounters.components)
+        components.set(component, (components.get(component) ?? 0) - count);
     const origins = new Map(afterCounters.origins);
-    for (const [component, count] of beforeCounters.origins) origins.set(component, (origins.get(component) ?? 0) - count);
-    const delta = (key: keyof Omit<PageCounters, "components" | "origins">) => Math.round((afterCounters[key] - beforeCounters[key]) * 10) / 10;
-    const ms = (key: string) => Math.round(((afterMetrics[key] ?? 0) - (beforeMetrics[key] ?? 0)) * 10000) / 10;
+    for (const [component, count] of beforeCounters.origins)
+        origins.set(component, (origins.get(component) ?? 0) - count);
+    const delta = (key: keyof Omit<PageCounters, "components" | "origins">) =>
+        Math.round((afterCounters[key] - beforeCounters[key]) * 10) / 10;
+    const ms = (key: string) =>
+        Math.round(((afterMetrics[key] ?? 0) - (beforeMetrics[key] ?? 0)) * 10000) / 10;
     return {
         value,
         window: {
@@ -440,8 +550,14 @@ async function measure<T>(
                 reactCommits: delta("commits"),
                 reactRenders: delta("renders"),
                 reactMounts: delta("mounts"),
-                topComponents: [...components].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]).slice(0, 12),
-                updateOrigins: [...origins].filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]).slice(0, 8),
+                topComponents: [...components]
+                    .filter(([, c]) => c > 0)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 12),
+                updateOrigins: [...origins]
+                    .filter(([, c]) => c > 0)
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 8),
                 longTasks: delta("longTasks"),
                 longTaskMs: delta("longTaskMs"),
                 longAnimationFrames: delta("loafs"),
@@ -453,7 +569,11 @@ async function measure<T>(
                 cpuStyleMs: ms("RecalcStyleDuration"),
                 layouts: (afterMetrics.LayoutCount ?? 0) - (beforeMetrics.LayoutCount ?? 0),
                 heapMB: Math.round((afterMetrics.JSHeapUsedSize ?? 0) / 1e5) / 10,
-                heapDeltaMB: Math.round(((afterMetrics.JSHeapUsedSize ?? 0) - (beforeMetrics.JSHeapUsedSize ?? 0)) / 1e5) / 10,
+                heapDeltaMB:
+                    Math.round(
+                        ((afterMetrics.JSHeapUsedSize ?? 0) - (beforeMetrics.JSHeapUsedSize ?? 0)) /
+                            1e5,
+                    ) / 10,
                 domNodes: afterMetrics.Nodes,
                 domLive: dom.live,
                 domAfterGc: retainedNodes,
@@ -462,8 +582,15 @@ async function measure<T>(
                 requests: requests.count,
                 requestKB: Math.round(requests.bytes / 1024),
                 requestLog: requests.log.slice(0, 60),
-                routes: [...requests.routes].sort((a, b) => b[1].bytes - a[1].bytes).slice(0, 10).map(([route, r]) => `${route} x${String(r.count)} ${String(Math.round(r.bytes / 1024))}KB ${String(Math.round(r.ms))}ms`),
-                daemonCpuMs: beforeCpu === undefined || afterCpu === undefined ? null : afterCpu - beforeCpu,
+                routes: [...requests.routes]
+                    .sort((a, b) => b[1].bytes - a[1].bytes)
+                    .slice(0, 10)
+                    .map(
+                        ([route, r]) =>
+                            `${route} x${String(r.count)} ${String(Math.round(r.bytes / 1024))}KB ${String(Math.round(r.ms))}ms`,
+                    ),
+                daemonCpuMs:
+                    beforeCpu === undefined || afterCpu === undefined ? null : afterCpu - beforeCpu,
             },
         },
     };
@@ -474,7 +601,8 @@ async function measure<T>(
  * session's own row: a workspace row can carry the same title, and pressing it starts a new chat.
  */
 function sessionRows(page: Page, title: string, agentId?: string): Locator {
-    if (agentId !== undefined) return page.locator(`[data-happy-desktop-ui="sidebar-item"][data-item-id$="/${agentId}"]`);
+    if (agentId !== undefined)
+        return page.locator(`[data-happy-desktop-ui="sidebar-item"][data-item-id$="/${agentId}"]`);
     const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return page.getByRole("button", { name: new RegExp(`(^|\\s)${escaped}$`) });
 }
@@ -484,7 +612,13 @@ function sessionRows(page: Page, title: string, agentId?: string): Locator {
  * snippet the daemon already had when the click happened, also time until the transcript shows it:
  * a live cache shows it at once, a stale one only once fresh history lands.
  */
-async function switchTo(page: Page, title: string, fresh?: string, hoverMs = HOVER_MS, agentId?: string): Promise<Record<string, unknown>> {
+async function switchTo(
+    page: Page,
+    title: string,
+    fresh?: string,
+    hoverMs = HOVER_MS,
+    agentId?: string,
+): Promise<Record<string, unknown>> {
     const row = sessionRows(page, title, agentId).first();
     await row.scrollIntoViewIfNeeded();
     await switchWatch(page, "click", fresh);
@@ -501,7 +635,11 @@ async function switchTo(page: Page, title: string, fresh?: string, hoverMs = HOV
  * Open a session from the command palette the way a reader does: type its title, glance at the
  * highlighted result for `dwellMs`, press Enter. Timed from the Enter.
  */
-async function paletteSwitchTo(page: Page, title: string, dwellMs: number): Promise<Record<string, unknown>> {
+async function paletteSwitchTo(
+    page: Page,
+    title: string,
+    dwellMs: number,
+): Promise<Record<string, unknown>> {
     await page.keyboard.press("Meta+K");
     await page
         .getByPlaceholder("Search chats, workspaces, and settings…")
@@ -523,101 +661,189 @@ async function paletteSwitchTo(page: Page, title: string, dwellMs: number): Prom
 }
 
 /** Start timing, in page, from the next `trigger` event until the transcript on screen changes. */
-async function switchWatch(page: Page, trigger: "click" | "keydown", fresh?: string): Promise<void> {
-    await page.evaluate(([fresh, trigger]) => {
-        // Every connection keeps its own window mounted; only the one on screen counts.
-        const shown = (part: string) =>
-            [...document.querySelectorAll(`[data-happy-desktop-ui="${part}"]`)].find((element) => element.checkVisibility());
-        const content = () => shown("message-list-content")?.textContent ?? "";
-        const previous = content();
-        const state: {
-            clickAt?: number;
-            readyAt?: number;
-            spinnerAt?: number;
-            spinnerEndAt?: number;
-            freshAt?: number;
-        } = {};
-        const normalized = (text: string) => text.replace(/\s+/g, " ");
-        (window as unknown as { __switch: Promise<typeof state> }).__switch = new Promise((resolve) => {
-            // Timed from the click, when the row is selected (the press before it is the reader's
-            // own), or from the key that commits a palette row.
-            document.addEventListener(trigger, () => (state.clickAt = performance.now()), { capture: true, once: true });
-            const poll = (): void => {
-                if (state.clickAt !== undefined) {
-                    const loading = shown("conversation-loading");
-                    // A spinner counts once a reader can see it, not while its reveal is held back.
-                    const spinner = loading?.querySelector('[data-happy-desktop-ui="spinner"]')?.checkVisibility({ visibilityProperty: true }) === true;
-                    if (spinner && state.spinnerAt === undefined) state.spinnerAt = performance.now();
-                    if (!spinner && state.spinnerAt !== undefined && state.spinnerEndAt === undefined) state.spinnerEndAt = performance.now();
-                    const text = content();
-                    const empty = shown("conversation-empty") !== undefined;
-                    if (state.readyAt === undefined && loading === undefined && ((text.length > 0 && text !== previous) || empty)) {
-                        state.readyAt = performance.now();
-                    }
-                    if (state.readyAt !== undefined && fresh !== null && state.freshAt === undefined && normalized(text).includes(fresh)) {
-                        state.freshAt = performance.now();
-                    }
-                    if (state.readyAt !== undefined && (fresh === null || state.freshAt !== undefined || performance.now() - state.clickAt > 3000)) {
-                        resolve(state);
-                        return;
-                    }
-                    if (performance.now() - state.clickAt > 15_000) {
-                        resolve(state);
-                        return;
-                    }
-                }
-                requestAnimationFrame(poll);
-            };
-            requestAnimationFrame(poll);
-        });
-    }, [fresh ?? null, trigger] as const);
+async function switchWatch(
+    page: Page,
+    trigger: "click" | "keydown",
+    fresh?: string,
+): Promise<void> {
+    await page.evaluate(
+        ([fresh, trigger]) => {
+            // Every connection keeps its own window mounted; only the one on screen counts.
+            const shown = (part: string) =>
+                [...document.querySelectorAll(`[data-happy-desktop-ui="${part}"]`)].find(
+                    (element) => element.checkVisibility(),
+                );
+            const content = () => shown("message-list-content")?.textContent ?? "";
+            const previous = content();
+            const state: {
+                clickAt?: number;
+                readyAt?: number;
+                spinnerAt?: number;
+                spinnerEndAt?: number;
+                freshAt?: number;
+            } = {};
+            const normalized = (text: string) => text.replace(/\s+/g, " ");
+            (window as unknown as { __switch: Promise<typeof state> }).__switch = new Promise(
+                (resolve) => {
+                    // Timed from the click, when the row is selected (the press before it is the reader's
+                    // own), or from the key that commits a palette row.
+                    document.addEventListener(trigger, () => (state.clickAt = performance.now()), {
+                        capture: true,
+                        once: true,
+                    });
+                    const poll = (): void => {
+                        if (state.clickAt !== undefined) {
+                            const loading = shown("conversation-loading");
+                            // A spinner counts once a reader can see it, not while its reveal is held back.
+                            const spinner =
+                                loading
+                                    ?.querySelector('[data-happy-desktop-ui="spinner"]')
+                                    ?.checkVisibility({ visibilityProperty: true }) === true;
+                            if (spinner && state.spinnerAt === undefined)
+                                state.spinnerAt = performance.now();
+                            if (
+                                !spinner &&
+                                state.spinnerAt !== undefined &&
+                                state.spinnerEndAt === undefined
+                            )
+                                state.spinnerEndAt = performance.now();
+                            const text = content();
+                            const empty = shown("conversation-empty") !== undefined;
+                            if (
+                                state.readyAt === undefined &&
+                                loading === undefined &&
+                                ((text.length > 0 && text !== previous) || empty)
+                            ) {
+                                state.readyAt = performance.now();
+                            }
+                            if (
+                                state.readyAt !== undefined &&
+                                fresh !== null &&
+                                state.freshAt === undefined &&
+                                normalized(text).includes(fresh)
+                            ) {
+                                state.freshAt = performance.now();
+                            }
+                            if (
+                                state.readyAt !== undefined &&
+                                (fresh === null ||
+                                    state.freshAt !== undefined ||
+                                    performance.now() - state.clickAt > 3000)
+                            ) {
+                                resolve(state);
+                                return;
+                            }
+                            if (performance.now() - state.clickAt > 15_000) {
+                                resolve(state);
+                                return;
+                            }
+                        }
+                        requestAnimationFrame(poll);
+                    };
+                    requestAnimationFrame(poll);
+                },
+            );
+        },
+        [fresh ?? null, trigger] as const,
+    );
 }
 
-async function switchResult(page: Page, title: string, fresh?: string): Promise<Record<string, unknown>> {
-    const state = await page.evaluate(() => (window as unknown as { __switch: Promise<Record<string, number | undefined>> }).__switch);
+async function switchResult(
+    page: Page,
+    title: string,
+    fresh?: string,
+): Promise<Record<string, unknown>> {
+    const state = await page.evaluate(
+        () =>
+            (window as unknown as { __switch: Promise<Record<string, number | undefined>> })
+                .__switch,
+    );
     const clickAt = state.clickAt ?? 0;
     return {
         title,
         switchMs: state.readyAt === undefined ? null : Math.round(state.readyAt - clickAt),
         spinner: state.spinnerAt !== undefined,
-        spinnerMs: state.spinnerAt === undefined ? 0 : Math.round((state.spinnerEndAt ?? state.readyAt ?? clickAt) - state.spinnerAt),
-        ...(fresh === undefined ? {} : { freshMs: state.freshAt === undefined ? null : Math.round(state.freshAt - clickAt) }),
+        spinnerMs:
+            state.spinnerAt === undefined
+                ? 0
+                : Math.round((state.spinnerEndAt ?? state.readyAt ?? clickAt) - state.spinnerAt),
+        ...(fresh === undefined
+            ? {}
+            : {
+                  freshMs: state.freshAt === undefined ? null : Math.round(state.freshAt - clickAt),
+              }),
     };
 }
 
 /** Press Enter in the focused composer and time, in page, until `prompt` and then `marker` are on screen. */
-async function timeFirstResponse(page: Page, prompt: string, marker: string): Promise<Record<string, number | null>> {
-    await page.evaluate(([prompt, marker]) => {
-        // Kept conversations stay mounted out of sight; only the one on screen counts.
-        const text = () => ([...document.querySelectorAll('[data-happy-desktop-ui="message-list-content"]')].find((element) => element.checkVisibility())?.textContent ?? "").replace(/\s+/g, " ");
-        const state: { pressAt?: number; echoAt?: number; markerAt?: number } = {};
-        (window as unknown as { __send: Promise<typeof state> }).__send = new Promise((resolve) => {
-            document.addEventListener("keydown", (event) => { if (event.key === "Enter") state.pressAt = performance.now(); }, { capture: true, once: true });
-            const poll = (): void => {
-                if (state.pressAt !== undefined) {
-                    const now = text();
-                    if (state.echoAt === undefined && now.includes(prompt)) state.echoAt = performance.now();
-                    if (state.markerAt === undefined && now.includes(marker.slice(0, 16))) state.markerAt = performance.now();
-                    if ((state.echoAt !== undefined && state.markerAt !== undefined) || performance.now() - state.pressAt > 20_000) {
-                        resolve(state);
-                        return;
-                    }
-                }
-                requestAnimationFrame(poll);
-            };
-            requestAnimationFrame(poll);
-        });
-    }, [prompt, marker] as const);
+async function timeFirstResponse(
+    page: Page,
+    prompt: string,
+    marker: string,
+): Promise<Record<string, number | null>> {
+    await page.evaluate(
+        ([prompt, marker]) => {
+            // Kept conversations stay mounted out of sight; only the one on screen counts.
+            const text = () =>
+                (
+                    [
+                        ...document.querySelectorAll(
+                            '[data-happy-desktop-ui="message-list-content"]',
+                        ),
+                    ].find((element) => element.checkVisibility())?.textContent ?? ""
+                ).replace(/\s+/g, " ");
+            const state: { pressAt?: number; echoAt?: number; markerAt?: number } = {};
+            (window as unknown as { __send: Promise<typeof state> }).__send = new Promise(
+                (resolve) => {
+                    document.addEventListener(
+                        "keydown",
+                        (event) => {
+                            if (event.key === "Enter") state.pressAt = performance.now();
+                        },
+                        { capture: true, once: true },
+                    );
+                    const poll = (): void => {
+                        if (state.pressAt !== undefined) {
+                            const now = text();
+                            if (state.echoAt === undefined && now.includes(prompt))
+                                state.echoAt = performance.now();
+                            if (state.markerAt === undefined && now.includes(marker.slice(0, 16)))
+                                state.markerAt = performance.now();
+                            if (
+                                (state.echoAt !== undefined && state.markerAt !== undefined) ||
+                                performance.now() - state.pressAt > 20_000
+                            ) {
+                                resolve(state);
+                                return;
+                            }
+                        }
+                        requestAnimationFrame(poll);
+                    };
+                    requestAnimationFrame(poll);
+                },
+            );
+        },
+        [prompt, marker] as const,
+    );
     await page.keyboard.press("Enter");
-    const state = await page.evaluate(() => (window as unknown as { __send: Promise<Record<string, number | undefined>> }).__send);
-    const at = (key: string) => (state[key] === undefined || state.pressAt === undefined ? null : Math.round(state[key]! - state.pressAt));
+    const state = await page.evaluate(
+        () => (window as unknown as { __send: Promise<Record<string, number | undefined>> }).__send,
+    );
+    const at = (key: string) =>
+        state[key] === undefined || state.pressAt === undefined
+            ? null
+            : Math.round(state[key]! - state.pressAt);
     return { echoMs: at("echoAt"), firstTokenMs: at("markerAt") };
 }
 
 /** The text of the conversation on screen, its queued messages included, as plain words. */
 async function visibleConversationText(page: Page): Promise<string> {
     return await page.evaluate(() =>
-        [...document.querySelectorAll('[data-happy-desktop-ui="message-list-content"], [data-happy-desktop-ui="conversation-queued"]')]
+        [
+            ...document.querySelectorAll(
+                '[data-happy-desktop-ui="message-list-content"], [data-happy-desktop-ui="conversation-queued"]',
+            ),
+        ]
             .filter((element) => element.checkVisibility())
             .map((element) => element.textContent ?? "")
             .join(" ")
@@ -629,11 +855,24 @@ async function visibleConversationText(page: Page): Promise<string> {
 async function timeEcho(page: Page, prompt: string): Promise<{ echoMs: number | null }> {
     await page.evaluate((prompt) => {
         const shown = () =>
-            [...document.querySelectorAll('[data-happy-desktop-ui="message-list-content"], [data-happy-desktop-ui="conversation-queued"]')]
-                .some((element) => element.checkVisibility() && (element.textContent ?? "").replace(/\s+/g, " ").includes(prompt));
+            [
+                ...document.querySelectorAll(
+                    '[data-happy-desktop-ui="message-list-content"], [data-happy-desktop-ui="conversation-queued"]',
+                ),
+            ].some(
+                (element) =>
+                    element.checkVisibility() &&
+                    (element.textContent ?? "").replace(/\s+/g, " ").includes(prompt),
+            );
         const state: { pressAt?: number; echoAt?: number } = {};
         (window as unknown as { __echo: Promise<typeof state> }).__echo = new Promise((resolve) => {
-            document.addEventListener("keydown", (event) => { if (event.key === "Enter") state.pressAt = performance.now(); }, { capture: true, once: true });
+            document.addEventListener(
+                "keydown",
+                (event) => {
+                    if (event.key === "Enter") state.pressAt = performance.now();
+                },
+                { capture: true, once: true },
+            );
             const poll = (): void => {
                 if (state.pressAt !== undefined) {
                     if (shown()) state.echoAt = performance.now();
@@ -648,8 +887,17 @@ async function timeEcho(page: Page, prompt: string): Promise<{ echoMs: number | 
         });
     }, prompt);
     await page.keyboard.press("Enter");
-    const state = await page.evaluate(() => (window as unknown as { __echo: Promise<{ pressAt?: number; echoAt?: number }> }).__echo);
-    return { echoMs: state.echoAt === undefined || state.pressAt === undefined ? null : Math.round(state.echoAt - state.pressAt) };
+    const state = await page.evaluate(
+        () =>
+            (window as unknown as { __echo: Promise<{ pressAt?: number; echoAt?: number }> })
+                .__echo,
+    );
+    return {
+        echoMs:
+            state.echoAt === undefined || state.pressAt === undefined
+                ? null
+                : Math.round(state.echoAt - state.pressAt),
+    };
 }
 
 /**
@@ -661,7 +909,12 @@ async function timeTyping(page: Page, text: string): Promise<Record<string, unkn
     await composer.click();
     await composer.fill("");
     await page.evaluate(() => {
-        const state = { latencies: [] as number[], slow: [] as number[], stop: new AbortController(), observer: undefined as PerformanceObserver | undefined };
+        const state = {
+            latencies: [] as number[],
+            slow: [] as number[],
+            stop: new AbortController(),
+            observer: undefined as PerformanceObserver | undefined,
+        };
         (window as unknown as { __typing: typeof state }).__typing = state;
         document.addEventListener(
             "keydown",
@@ -676,14 +929,24 @@ async function timeTyping(page: Page, text: string): Promise<Record<string, unkn
             { capture: true, signal: state.stop.signal },
         );
         state.observer = new PerformanceObserver((list) => {
-            for (const entry of list.getEntries()) if (entry.name === "keydown") state.slow.push(entry.duration);
+            for (const entry of list.getEntries())
+                if (entry.name === "keydown") state.slow.push(entry.duration);
         });
         state.observer.observe({ type: "event", durationThreshold: 16 } as PerformanceObserverInit);
     });
     await page.keyboard.type(text, { delay: TYPING_DELAY_MS });
     await page.waitForTimeout(500);
     const measured = await page.evaluate(() => {
-        const state = (window as unknown as { __typing: { latencies: number[]; slow: number[]; stop: AbortController; observer?: PerformanceObserver } }).__typing;
+        const state = (
+            window as unknown as {
+                __typing: {
+                    latencies: number[];
+                    slow: number[];
+                    stop: AbortController;
+                    observer?: PerformanceObserver;
+                };
+            }
+        ).__typing;
         state.stop.abort();
         state.observer?.disconnect();
         return { latencies: state.latencies, slow: state.slow };
@@ -691,7 +954,8 @@ async function timeTyping(page: Page, text: string): Promise<Record<string, unkn
     const typed = await composer.inputValue();
     await composer.fill("");
     const times = [...measured.latencies].sort((a, b) => a - b);
-    const at = (q: number) => Math.round(times[Math.min(times.length - 1, Math.floor(q * times.length))] ?? 0);
+    const at = (q: number) =>
+        Math.round(times[Math.min(times.length - 1, Math.floor(q * times.length))] ?? 0);
     return {
         keys: text.length,
         keyMedianMs: at(0.5),
@@ -705,7 +969,11 @@ async function timeTyping(page: Page, text: string): Promise<Record<string, unkn
 }
 
 /** Like switchTo, but a session the sidebar does not show right now is skipped. */
-async function trySwitch(page: Page, title: string, agentId?: string): Promise<Record<string, unknown> | undefined> {
+async function trySwitch(
+    page: Page,
+    title: string,
+    agentId?: string,
+): Promise<Record<string, unknown> | undefined> {
     if ((await sessionRows(page, title, agentId).count()) === 0) return undefined;
     const started = performance.now();
     const fresh = agentId === undefined ? undefined : await latestSnippet(agentId);
@@ -719,16 +987,34 @@ async function trySwitch(page: Page, title: string, agentId?: string): Promise<R
                 .filter((element) => element.checkVisibility())
                 .map((element) => (element.textContent ?? "").replace(/\s+/g, " ").slice(-400)),
         );
-        console.log(`STALE ${title}: wanted "${fresh}"; ${shot}\n  shown: ${JSON.stringify(shown)}`);
+        console.log(
+            `STALE ${title}: wanted "${fresh}"; ${shot}\n  shown: ${JSON.stringify(shown)}`,
+        );
     }
     if (agentId !== undefined) {
         // History reads the switch itself caused: a live cache needs none.
-        result.historyReads = requestTimeline.filter((e) => e.at >= started && e.phase === "start" && e.path === `/v0/agents/${agentId}/messages`).length;
+        result.historyReads = requestTimeline.filter(
+            (e) =>
+                e.at >= started &&
+                e.phase === "start" &&
+                e.path === `/v0/agents/${agentId}/messages`,
+        ).length;
     }
-    if (process.env.PERF_SLOW_SWITCH_MS !== undefined && Number(result.switchMs) > Number(process.env.PERF_SLOW_SWITCH_MS)) {
+    if (
+        process.env.PERF_SLOW_SWITCH_MS !== undefined &&
+        Number(result.switchMs) > Number(process.env.PERF_SLOW_SWITCH_MS)
+    ) {
         const ended = performance.now();
         const seen = requestTimeline.filter((e) => e.at >= started - 2000 && e.at <= ended + 200);
-        console.log(`SLOW ${title} ${String(result.switchMs)}ms\n` + seen.map((e) => `  ${String(Math.round(e.at - started))} ${e.phase} ${e.path}${e.timing ?? ""}`).join("\n"));
+        console.log(
+            `SLOW ${title} ${String(result.switchMs)}ms\n` +
+                seen
+                    .map(
+                        (e) =>
+                            `  ${String(Math.round(e.at - started))} ${e.phase} ${e.path}${e.timing ?? ""}`,
+                    )
+                    .join("\n"),
+        );
     }
     return result;
 }
@@ -739,10 +1025,14 @@ async function trySwitch(page: Page, title: string, agentId?: string): Promise<R
  */
 function catchUpStats(returns: readonly Record<string, unknown>[]): Record<string, number> {
     const measured = returns.filter((s) => s.freshMs !== undefined);
-    const times = measured.map((s) => (s.freshMs === null ? 3000 : Number(s.freshMs))).sort((a, b) => a - b);
+    const times = measured
+        .map((s) => (s.freshMs === null ? 3000 : Number(s.freshMs)))
+        .sort((a, b) => a - b);
     return {
         streamReturns: measured.length,
-        staleReturns: measured.filter((s) => s.freshMs === null || Number(s.freshMs) - Number(s.switchMs) > STALE_LAG_MS).length,
+        staleReturns: measured.filter(
+            (s) => s.freshMs === null || Number(s.freshMs) - Number(s.switchMs) > STALE_LAG_MS,
+        ).length,
         freshMedianMs: times[Math.floor(times.length / 2)] ?? 0,
         freshP95Ms: times[Math.min(times.length - 1, Math.floor(0.95 * times.length))] ?? 0,
         freshMaxMs: times.at(-1) ?? 0,
@@ -751,19 +1041,27 @@ function catchUpStats(returns: readonly Record<string, unknown>[]): Record<strin
 
 /** The tail of the newest agent text the daemon holds for a session, as plain words. */
 async function latestSnippet(agentId: string): Promise<string | undefined> {
-    const page = await daemon<{ runs: { messages: { role: string; content: { type: string; text?: string }[] }[] }[] }>(
-        "GET",
-        `/v0/agents/${agentId}/messages?limit=1&omitToolData=true`,
-    );
-    const texts = page.runs.flatMap((run) => run.messages).filter((m) => m.role === "agent").flatMap((m) => m.content).filter((b) => b.type === "text" && b.text !== undefined);
+    const page = await daemon<{
+        runs: { messages: { role: string; content: { type: string; text?: string }[] }[] }[];
+    }>("GET", `/v0/agents/${agentId}/messages?limit=1&omitToolData=true`);
+    const texts = page.runs
+        .flatMap((run) => run.messages)
+        .filter((m) => m.role === "agent")
+        .flatMap((m) => m.content)
+        .filter((b) => b.type === "text" && b.text !== undefined);
     const text = texts.at(-1)?.text ?? "";
     // Markdown renders differently from its source; a run of plain words renders as itself.
     const words = text.match(/[A-Za-z0-9][A-Za-z0-9 ,]{23,}/g)?.at(-1);
     return words?.trim().replace(/\s+/g, " ").slice(-24);
 }
 
-function switchStats(switches: readonly Record<string, unknown>[]): Record<string, number | undefined> {
-    const times = switches.map((s) => s.switchMs as number | null).filter((t): t is number => t !== null).sort((a, b) => a - b);
+function switchStats(
+    switches: readonly Record<string, unknown>[],
+): Record<string, number | undefined> {
+    const times = switches
+        .map((s) => s.switchMs as number | null)
+        .filter((t): t is number => t !== null)
+        .sort((a, b) => a - b);
     const at = (q: number) => times[Math.min(times.length - 1, Math.floor(q * times.length))];
     return {
         switches: switches.length,
@@ -809,7 +1107,8 @@ async function reloadDaemon(command: string): Promise<Record<string, number | nu
         const health = await daemon<Health>("GET", "/v0/health").catch(() => undefined);
         if (health !== undefined) answered ??= performance.now();
         if (health?.ready === true) break;
-        if (performance.now() - exited > 120_000) throw new Error("The restarted daemon never became ready.");
+        if (performance.now() - exited > 120_000)
+            throw new Error("The restarted daemon never became ready.");
         await sleep(10);
     }
     const ready = performance.now();
@@ -825,12 +1124,19 @@ async function reloadDaemon(command: string): Promise<Record<string, number | nu
     const messagesPath = `/v0/agents/${STREAM_TARGET.agentId}/messages`;
     while (performance.now() - ready < 60_000) {
         bootstrapped = after((e) => e.phase === "end" && e.path === "/v0/bootstrap/desktop");
-        streaming = after((e) => e.phase === "start" && e.path === "/v0/events/stream" && e.at >= (bootstrapped ?? Infinity));
+        streaming = after(
+            (e) =>
+                e.phase === "start" &&
+                e.path === "/v0/events/stream" &&
+                e.at >= (bootstrapped ?? Infinity),
+        );
         sessionLoaded = after((e) => e.phase === "end" && e.path === messagesPath);
-        if (bootstrapped !== undefined && streaming !== undefined && sessionLoaded !== undefined) break;
+        if (bootstrapped !== undefined && streaming !== undefined && sessionLoaded !== undefined)
+            break;
         await sleep(10);
     }
-    const ms = (to: number | undefined, from: number) => (to === undefined ? null : Math.round(to - from));
+    const ms = (to: number | undefined, from: number) =>
+        to === undefined ? null : Math.round(to - from);
     const live = streaming === undefined ? undefined : Math.max(streaming, bootstrapped ?? 0);
     return {
         drainMs: Math.round(drained - started),
@@ -839,9 +1145,14 @@ async function reloadDaemon(command: string): Promise<Record<string, number | nu
         startMs: Math.round(ready - exited),
         reconnectMs: ms(live, ready),
         sessionReloadMs: ms(sessionLoaded, ready),
-        restartTotalMs: ms(live === undefined ? undefined : Math.max(live, sessionLoaded ?? 0), drained),
+        restartTotalMs: ms(
+            live === undefined ? undefined : Math.max(live, sessionLoaded ?? 0),
+            drained,
+        ),
         // Every daemon request from the old process exiting on, in ms after the new one was ready.
-        timeline: requestTimeline.filter((e) => e.at >= exited).map((e) => `${String(Math.round(e.at - ready))} ${e.phase} ${e.path}`) as never,
+        timeline: requestTimeline
+            .filter((e) => e.at >= exited)
+            .map((e) => `${String(Math.round(e.at - ready))} ${e.phase} ${e.path}`) as never,
     };
 }
 
@@ -861,7 +1172,10 @@ await page.addInitScript(instrument);
 // When the first row the gym looks for enters the DOM, in navigation time: Playwright polls with backoff,
 // so its own detection lands up to a few hundred milliseconds late.
 await page.addInitScript((title: string) => {
-    const seen = (): boolean => [...document.querySelectorAll("button")].some((button) => button.textContent?.endsWith(title) === true);
+    const seen = (): boolean =>
+        [...document.querySelectorAll("button")].some(
+            (button) => button.textContent?.endsWith(title) === true,
+        );
     const observer = new MutationObserver(() => {
         if (!seen()) return;
         (globalThis as { __rowSeenAt?: number }).__rowSeenAt = performance.now();
@@ -877,10 +1191,17 @@ await cdp.send("Performance.enable");
 const requests: Requests = { bytes: 0, count: 0, log: [], routes: new Map() };
 const requestStarts = new WeakMap<object, number>();
 /** Every daemon request the page starts and finishes, for timing the reconnect after a reload. */
-const requestTimeline: { readonly at: number; readonly path: string; readonly phase: "start" | "end"; readonly timing?: string }[] = [];
+const requestTimeline: {
+    readonly at: number;
+    readonly path: string;
+    readonly phase: "start" | "end";
+    readonly timing?: string;
+}[] = [];
 const daemonPath = (raw: string): string | undefined => {
     const path = new URL(raw).pathname;
-    return path.startsWith("/__happy_local_happy_agent") ? path.slice("/__happy_local_happy_agent".length) : undefined;
+    return path.startsWith("/__happy_local_happy_agent")
+        ? path.slice("/__happy_local_happy_agent".length)
+        : undefined;
 };
 page.on("request", (req) => {
     requestStarts.set(req, performance.now());
@@ -891,7 +1212,12 @@ page.on("requestfinished", (req) => {
     const path = daemonPath(req.url());
     if (path === undefined) return;
     const t = req.timing();
-    requestTimeline.push({ at: performance.now(), path, phase: "end", timing: ` send@${String(Math.round(t.requestStart))} first@${String(Math.round(t.responseStart))} end@${String(Math.round(t.responseEnd))}` });
+    requestTimeline.push({
+        at: performance.now(),
+        path,
+        phase: "end",
+        timing: ` send@${String(Math.round(t.requestStart))} first@${String(Math.round(t.responseStart))} end@${String(Math.round(t.responseEnd))}`,
+    });
 });
 page.on("requestfinished", (req) => {
     void (async () => {
@@ -911,6 +1237,41 @@ page.on("requestfinished", (req) => {
     })();
 });
 
+// PERF_MODE=leak: a long randomized mix of everything below, with memory verdicts; see perf/leakMode.ts.
+if (process.env.PERF_MODE === "leak") {
+    // Nothing reads the request log in this mode; keep the gym's own memory flat.
+    setInterval(() => {
+        requestTimeline.splice(0, Math.max(0, requestTimeline.length - 2000));
+        requests.log = [];
+        requests.routes.clear();
+    }, 10_000).unref();
+    const { leakRun } = await import("./leakMode.ts");
+    const code = await leakRun({
+        busiestRun,
+        cdp,
+        daemon,
+        daemonPidSet: (pid) => (daemonPid = pid),
+        hoverMs: HOVER_MS,
+        label,
+        out: env("PERF_OUT"),
+        page,
+        paletteDwellMs: PALETTE_DWELL_MS,
+        paletteSessions: PALETTE_SESSIONS,
+        paletteTypeDelayMs: PALETTE_TYPE_DELAY_MS,
+        scratch,
+        sessionRows,
+        sessions: [...SWITCH_SESSIONS, ...DIRECT_SESSIONS, ...PALETTE_SESSIONS],
+        streamSource: STREAM_SOURCE,
+        streams: STRESS_STREAMS,
+        switchTo,
+        url,
+        visibleConversationText,
+        writeReplay,
+    });
+    await context.close();
+    process.exit(code);
+}
+
 const windows: Window[] = [];
 const switches: Record<string, unknown>[] = [];
 
@@ -921,18 +1282,46 @@ const startup = await measure("startup", page, cdp, requests, async () => {
     await page.goto(url);
     const row = page.getByRole("button", { name: new RegExp(`${SWITCH_SESSIONS[0]}$`) }).first();
     let rowAttachedMs: number | undefined;
-    void row.waitFor({ state: "attached", timeout: 30_000 }).then(() => { rowAttachedMs = Date.now() - started; });
+    void row.waitFor({ state: "attached", timeout: 30_000 }).then(() => {
+        rowAttachedMs = Date.now() - started;
+    });
     await row.waitFor({ timeout: 30_000 });
     const sidebarMs = Date.now() - started;
     const navigation = await page.evaluate(() => {
-        const entry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-        const scripts = performance.getEntriesByType("resource").filter((r) => r.name.endsWith(".js") || r.name.endsWith(".css") || r.name.endsWith(".woff2")).map((r) => String(Math.round(r.startTime)) + "-" + String(Math.round(r.responseEnd)) + " " + r.name.split("/").pop());
-        return entry === undefined ? { scripts } : { domInteractiveMs: Math.round(entry.domInteractive), domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd), loadMs: Math.round(entry.loadEventEnd), scripts };
+        const entry = performance.getEntriesByType("navigation")[0] as
+            | PerformanceNavigationTiming
+            | undefined;
+        const scripts = performance
+            .getEntriesByType("resource")
+            .filter(
+                (r) =>
+                    r.name.endsWith(".js") || r.name.endsWith(".css") || r.name.endsWith(".woff2"),
+            )
+            .map(
+                (r) =>
+                    String(Math.round(r.startTime)) +
+                    "-" +
+                    String(Math.round(r.responseEnd)) +
+                    " " +
+                    r.name.split("/").pop(),
+            );
+        return entry === undefined
+            ? { scripts }
+            : {
+                  domInteractiveMs: Math.round(entry.domInteractive),
+                  domContentLoadedMs: Math.round(entry.domContentLoadedEventEnd),
+                  loadMs: Math.round(entry.loadEventEnd),
+                  scripts,
+              };
     });
     await page.waitForTimeout(1500);
     // Every daemon request from navigation on, in ms after it started, for reading what the sidebar waited on.
-    const timeline = requestTimeline.filter((e) => e.at >= from).map((e) => String(Math.round(e.at - from)) + " " + e.phase + " " + e.path);
-    const rowInDomMs = await page.evaluate(() => Math.round((globalThis as { __rowSeenAt?: number }).__rowSeenAt ?? -1));
+    const timeline = requestTimeline
+        .filter((e) => e.at >= from)
+        .map((e) => String(Math.round(e.at - from)) + " " + e.phase + " " + e.path);
+    const rowInDomMs = await page.evaluate(() =>
+        Math.round((globalThis as { __rowSeenAt?: number }).__rowSeenAt ?? -1),
+    );
     return { sidebarMs, rowAttachedMs, rowInDomMs, ...navigation, timeline: timeline as never };
 });
 windows.push({ name: "startup", result: { ...startup.window.result, ...startup.value } });
@@ -968,8 +1357,14 @@ for (const title of DIRECT_SESSIONS) {
 const remoteId = process.env.PERF_REMOTE_ID;
 if (remoteId !== undefined) {
     const opened = performance.now();
-    await page.locator("button[data-connection-id=" + JSON.stringify("connection:" + remoteId) + "]").click();
-    await page.getByRole("button").filter({ hasText: DIRECT_SESSIONS[0]! }).first().waitFor({ timeout: 30_000 });
+    await page
+        .locator("button[data-connection-id=" + JSON.stringify("connection:" + remoteId) + "]")
+        .click();
+    await page
+        .getByRole("button")
+        .filter({ hasText: DIRECT_SESSIONS[0]! })
+        .first()
+        .waitFor({ timeout: 30_000 });
     console.log("remote sidebar after " + String(Math.round(performance.now() - opened)) + " ms");
     for (const title of DIRECT_SESSIONS) {
         const measured = await measure("switch-remote", page, cdp, requests, async () => {
@@ -980,7 +1375,11 @@ if (remoteId !== undefined) {
         switches.push({ pass: "remote", ...measured.value, ...measured.window.result });
     }
     await page.locator("button[data-local]").click();
-    await page.getByRole("button").filter({ hasText: SWITCH_SESSIONS[0]! }).first().waitFor({ timeout: 30_000 });
+    await page
+        .getByRole("button")
+        .filter({ hasText: SWITCH_SESSIONS[0]! })
+        .first()
+        .waitFor({ timeout: 30_000 });
 }
 
 for (const title of PALETTE_SESSIONS) {
@@ -1000,7 +1399,10 @@ const background = await measure("background-stream", page, cdp, requests, async
     await sendReplay(STREAM_TARGET.agentId);
     await page.waitForTimeout(streamMs);
 });
-windows.push({ name: "background-stream", result: { ...background.window.result, inferences: replayed } });
+windows.push({
+    name: "background-stream",
+    result: { ...background.window.result, inferences: replayed },
+});
 await waitIdle(STREAM_TARGET.agentId, 120_000);
 
 // The same replay streaming in the session on screen.
@@ -1015,12 +1417,20 @@ windows.push({ name: "foreground-stream", result: foreground.window.result });
 await waitIdle(STREAM_TARGET.agentId, 120_000);
 
 // Idle: nothing happens; the app should do nothing.
-const idle = await measure("idle", page, cdp, requests, async () => await page.waitForTimeout(5000));
+const idle = await measure(
+    "idle",
+    page,
+    cdp,
+    requests,
+    async () => await page.waitForTimeout(5000),
+);
 windows.push({ name: "idle", result: idle.window.result });
 
 // Stress: several real sessions stream at once, sibling subagents of one parent among them, while the
 // reader keeps switching between sessions, streaming ones included.
-const stressReplays = await Promise.all(STRESS_STREAMS.map(async (target) => await writeReplay(target.agentId, STREAM_SOURCE)));
+const stressReplays = await Promise.all(
+    STRESS_STREAMS.map(async (target) => await writeReplay(target.agentId, STREAM_SOURCE)),
+);
 await trySwitch(page, IDLE_VIEW);
 await page.waitForTimeout(1000);
 const stressSwitches: Record<string, unknown>[] = [];
@@ -1033,7 +1443,8 @@ const stress = await measure("stress", page, cdp, requests, async () => {
         // Coming back to a session that kept streaming is timed until it shows what it had streamed.
         const streaming = STRESS_STREAMS.find((target) => target.title === title);
         const switched = await trySwitch(page, title, streaming?.agentId);
-        if (switched !== undefined) stressSwitches.push({ ...switched, streaming: streaming !== undefined });
+        if (switched !== undefined)
+            stressSwitches.push({ ...switched, streaming: streaming !== undefined });
         await page.waitForTimeout(STRESS_DWELL_MS);
     }
 });
@@ -1043,7 +1454,10 @@ windows.push({
         ...stress.window.result,
         ...switchStats(stressSwitches),
         ...catchUpStats(stressSwitches.filter((s) => s.streaming === true)),
-        switchLog: stressSwitches.map((s) => `${String(s.title)} ${String(s.switchMs)}ms spinner ${String(s.spinnerMs)}ms${s.streaming === true ? ` fresh ${String(s.freshMs)}ms` : ""}`) as never,
+        switchLog: stressSwitches.map(
+            (s) =>
+                `${String(s.title)} ${String(s.switchMs)}ms spinner ${String(s.spinnerMs)}ms${s.streaming === true ? ` fresh ${String(s.freshMs)}ms` : ""}`,
+        ) as never,
         streams: STRESS_STREAMS.length,
         inferences: stressReplays.reduce((a, b) => a + b, 0),
     },
@@ -1060,10 +1474,25 @@ const responding = await measure("first-response", page, cdp, requests, async ()
         const marker = `Reply marker ${String(index)} ${String(Date.now() % 100000)} begins here`;
         await writeFile(
             join(scratch, "replay", `${STREAM_TARGET.agentId}.json`),
-            JSON.stringify({ inferences: [{ blocks: [{ text: `${marker}. The rest of a short answer follows.`, type: "text" }] }], chunk: 400, delayMs: 0 }),
+            JSON.stringify({
+                inferences: [
+                    {
+                        blocks: [
+                            {
+                                text: `${marker}. The rest of a short answer follows.`,
+                                type: "text",
+                            },
+                        ],
+                    },
+                ],
+                chunk: 400,
+                delayMs: 0,
+            }),
         );
         const prompt = `Perf prompt ${String(index)} ${String(Date.now() % 100000)}`;
-        const composer = page.locator('[data-happy-desktop-ui="composer-textarea"]:visible').first();
+        const composer = page
+            .locator('[data-happy-desktop-ui="composer-textarea"]:visible')
+            .first();
         await composer.click();
         await composer.fill(prompt);
         firstResponses.push(await timeFirstResponse(page, prompt, marker));
@@ -1071,7 +1500,11 @@ const responding = await measure("first-response", page, cdp, requests, async ()
         await page.waitForTimeout(500);
     }
 });
-const timesOf = (key: string) => firstResponses.map((r) => r[key]).filter((v): v is number => v !== null && v !== undefined).sort((a, b) => a - b);
+const timesOf = (key: string) =>
+    firstResponses
+        .map((r) => r[key])
+        .filter((v): v is number => v !== null && v !== undefined)
+        .sort((a, b) => a - b);
 windows.push({
     name: "first-response",
     result: {
@@ -1081,14 +1514,18 @@ windows.push({
         echoMaxMs: timesOf("echoMs").at(-1),
         firstTokenMedianMs: timesOf("firstTokenMs")[Math.floor(timesOf("firstTokenMs").length / 2)],
         firstTokenMaxMs: timesOf("firstTokenMs").at(-1),
-        sendLog: firstResponses.map((r) => `echo ${String(r.echoMs)}ms first words ${String(r.firstTokenMs)}ms`) as never,
+        sendLog: firstResponses.map(
+            (r) => `echo ${String(r.echoMs)}ms first words ${String(r.firstTokenMs)}ms`,
+        ) as never,
     },
 });
 
 // Typing: the reader writes into the composer while six sessions stream, first with a quiet session on
 // screen and then with one of the streaming sessions on screen. Every keystroke is timed until the next
 // frame after it, and the composer must end up holding exactly what was typed.
-await Promise.all(STRESS_STREAMS.map(async (target) => await writeReplay(target.agentId, STREAM_SOURCE)));
+await Promise.all(
+    STRESS_STREAMS.map(async (target) => await writeReplay(target.agentId, STREAM_SOURCE)),
+);
 await trySwitch(page, IDLE_VIEW);
 await page.waitForTimeout(1000);
 const typings: Record<string, unknown>[] = [];
@@ -1100,7 +1537,10 @@ const typing = await measure("typing-stream", page, cdp, requests, async () => {
     await page.waitForTimeout(500);
     typings.push({ view: "streaming", ...(await timeTyping(page, TYPED_TEXT)) });
 });
-windows.push({ name: "typing-stream", result: { ...typing.window.result, typings: typings as never } });
+windows.push({
+    name: "typing-stream",
+    result: { ...typing.window.result, typings: typings as never },
+});
 await Promise.all(STRESS_STREAMS.map(async (target) => await waitIdle(target.agentId, 120_000)));
 
 // Rapid sends: the reader sends a message into one session after another without waiting for any reply,
@@ -1110,16 +1550,32 @@ await Promise.all(STRESS_STREAMS.map(async (target) => await waitIdle(target.age
 // ones, then the heavy top-level ones, each known by the agent its own row opens.
 const rapidTargets: { readonly agentId: string; readonly title: string }[] = [];
 for (const target of STRESS_STREAMS) {
-    if (rapidTargets.length < RAPID_SESSIONS && (await sessionRows(page, target.title, target.agentId).count()) > 0) rapidTargets.push(target);
+    if (
+        rapidTargets.length < RAPID_SESSIONS &&
+        (await sessionRows(page, target.title, target.agentId).count()) > 0
+    )
+        rapidTargets.push(target);
 }
 for (const title of SWITCH_SESSIONS) {
     if (rapidTargets.length >= RAPID_SESSIONS) break;
-    for (const itemId of await sessionRows(page, title).evaluateAll((rows) => rows.map((row) => row.closest("[data-item-id]")?.getAttribute("data-item-id") ?? ""))) {
+    for (const itemId of await sessionRows(page, title).evaluateAll((rows) =>
+        rows.map((row) => row.closest("[data-item-id]")?.getAttribute("data-item-id") ?? ""),
+    )) {
         const agentId = itemId.split("/").at(-1) ?? "";
-        const found = await daemon<{ agent: { title: string | null } }>("GET", `/v0/agents/${agentId}`).catch(() => undefined);
-        if (found?.agent.title !== title || rapidTargets.some((target) => target.agentId === agentId)) continue;
+        const found = await daemon<{ agent: { title: string | null } }>(
+            "GET",
+            `/v0/agents/${agentId}`,
+        ).catch(() => undefined);
+        if (
+            found?.agent.title !== title ||
+            rapidTargets.some((target) => target.agentId === agentId)
+        )
+            continue;
         // The gym serves only the replayed provider; a session set to another is refused.
-        const { mode } = await daemon<{ mode: { providerId: string } | null }>("GET", `/v0/agents/${agentId}/bootstrap`);
+        const { mode } = await daemon<{ mode: { providerId: string } | null }>(
+            "GET",
+            `/v0/agents/${agentId}/bootstrap`,
+        );
         if (mode !== null && mode.providerId !== "claude") continue;
         rapidTargets.push({ agentId, title });
         break;
@@ -1127,21 +1583,39 @@ for (const title of SWITCH_SESSIONS) {
 }
 const rapidRun = Date.now() % 100000;
 for (const [index, target] of rapidTargets.entries()) {
-    const reply = (round: string) => ({ blocks: [{ text: `Rapid reply ${round}${String(index)} ${String(rapidRun)} begins. ${"A sentence of the reply streaming in. ".repeat(30)}`, type: "text" }] });
-    await writeFile(join(scratch, "replay", `${target.agentId}.json`), JSON.stringify({ inferences: [reply("A"), reply("B")], chunk: 12, delayMs: 20 }));
+    const reply = (round: string) => ({
+        blocks: [
+            {
+                text: `Rapid reply ${round}${String(index)} ${String(rapidRun)} begins. ${"A sentence of the reply streaming in. ".repeat(30)}`,
+                type: "text",
+            },
+        ],
+    });
+    await writeFile(
+        join(scratch, "replay", `${target.agentId}.json`),
+        JSON.stringify({ inferences: [reply("A"), reply("B")], chunk: 12, delayMs: 20 }),
+    );
 }
 const rapidSends: Record<string, unknown>[] = [];
 const rapid = await measure("rapid-sends", page, cdp, requests, async () => {
     for (const round of ["A", "B"]) {
         for (const [index, target] of rapidTargets.entries()) {
             await switchTo(page, target.title, undefined, 0, target.agentId);
-            const composer = page.locator('[data-happy-desktop-ui="composer-textarea"]:visible').first();
+            const composer = page
+                .locator('[data-happy-desktop-ui="composer-textarea"]:visible')
+                .first();
             const leftover = await composer.inputValue();
             await composer.click();
             const prompt = `Rapid prompt ${round}${String(index)} ${String(rapidRun)}`;
             await page.keyboard.type(prompt, { delay: 15 });
             const sent = await timeEcho(page, prompt);
-            rapidSends.push({ round, title: target.title, leftover: leftover.length, cleared: (await composer.inputValue()).length === 0, ...sent });
+            rapidSends.push({
+                round,
+                title: target.title,
+                leftover: leftover.length,
+                cleared: (await composer.inputValue()).length === 0,
+                ...sent,
+            });
         }
     }
 });
@@ -1149,8 +1623,14 @@ await Promise.all(rapidTargets.map(async (target) => await waitIdle(target.agent
 await page.waitForTimeout(1000);
 const rapidChecks: Record<string, unknown>[] = [];
 for (const [index, target] of rapidTargets.entries()) {
-    const history = await daemon<{ runs: { messages: { role: string; content: unknown[] }[] }[] }>("GET", `/v0/agents/${target.agentId}/messages?limit=6&omitToolData=true`);
-    const users = history.runs.flatMap((run) => run.messages).filter((message) => message.role === "user").map((message) => JSON.stringify(message.content));
+    const history = await daemon<{ runs: { messages: { role: string; content: unknown[] }[] }[] }>(
+        "GET",
+        `/v0/agents/${target.agentId}/messages?limit=6&omitToolData=true`,
+    );
+    const users = history.runs
+        .flatMap((run) => run.messages)
+        .filter((message) => message.role === "user")
+        .map((message) => JSON.stringify(message.content));
     await switchTo(page, target.title, undefined, 0, target.agentId);
     await page.waitForTimeout(300);
     const shown = await visibleConversationText(page);
@@ -1164,7 +1644,10 @@ for (const [index, target] of rapidTargets.entries()) {
         });
     }
 }
-const echoTimes = rapidSends.map((s) => s.echoMs).filter((t): t is number => typeof t === "number").sort((a, b) => a - b);
+const echoTimes = rapidSends
+    .map((s) => s.echoMs)
+    .filter((t): t is number => typeof t === "number")
+    .sort((a, b) => a - b);
 windows.push({
     name: "rapid-sends",
     result: {
@@ -1179,8 +1662,13 @@ windows.push({
         duplicated: rapidChecks.filter((c) => Number(c.stored) > 1 || Number(c.shown) > 1).length,
         notShown: rapidChecks.filter((c) => c.shown === 0).length,
         repliesNotShown: rapidChecks.filter((c) => c.replyShown !== true).length,
-        sendLog: rapidSends.map((s) => `${String(s.round)} ${String(s.title)} echo ${String(s.echoMs)}ms`) as never,
-        checks: rapidChecks.map((c) => `${String(c.prompt)} stored ${String(c.stored)} shown ${String(c.shown)} reply ${String(c.replyShown)}`) as never,
+        sendLog: rapidSends.map(
+            (s) => `${String(s.round)} ${String(s.title)} echo ${String(s.echoMs)}ms`,
+        ) as never,
+        checks: rapidChecks.map(
+            (c) =>
+                `${String(c.prompt)} stored ${String(c.stored)} shown ${String(c.shown)} reply ${String(c.replyShown)}`,
+        ) as never,
     },
 });
 
@@ -1218,9 +1706,13 @@ const scrolling = await measure("scroll-large", page, cdp, requests, async () =>
         await page.waitForTimeout(16);
     }
     await page.waitForTimeout(1500);
-    const flick = (await page.evaluate(String.raw`(() => { const s = window.__scroll; const r = { waits: [...s.waits], stuck: s.waitAt === undefined ? 0 : performance.now() - s.waitAt, slowFrames: s.slowFrames, frames: s.frames }; s.slowFrames = 0; s.frames = 0; return r; })()`)) as { waits: number[]; stuck: number; slowFrames: number; frames: number };
+    const flick = (await page.evaluate(
+        String.raw`(() => { const s = window.__scroll; const r = { waits: [...s.waits], stuck: s.waitAt === undefined ? 0 : performance.now() - s.waitAt, slowFrames: s.slowFrames, frames: s.frames }; s.slowFrames = 0; s.frames = 0; return r; })()`,
+    )) as { waits: number[]; stuck: number; slowFrames: number; frames: number };
     // Drag the thumb from the bottom of the track to the top.
-    await page.evaluate(String.raw`(() => { const v = [...document.querySelectorAll('[data-happy-desktop-ui="message-list"] .happy-message-list__viewport')].find((e) => e.checkVisibility()); v.scrollTop = v.scrollHeight; })()`);
+    await page.evaluate(
+        String.raw`(() => { const v = [...document.querySelectorAll('[data-happy-desktop-ui="message-list"] .happy-message-list__viewport')].find((e) => e.checkVisibility()); v.scrollTop = v.scrollHeight; })()`,
+    );
     await page.waitForTimeout(500);
     // The track takes the pointer only while the bar shows, so scroll a notch first, as a reader would.
     await list.hover();
@@ -1238,9 +1730,16 @@ const scrolling = await measure("scroll-large", page, cdp, requests, async () =>
         }
         await page.mouse.up();
         await page.waitForTimeout(500);
-        drag = (await page.evaluate(String.raw`(() => { const s = window.__scroll; s.stop = true; return { lags: s.lags, slowFrames: s.slowFrames, frames: s.frames }; })()`)) as typeof drag;
+        drag = (await page.evaluate(
+            String.raw`(() => { const s = window.__scroll; s.stop = true; return { lags: s.lags, slowFrames: s.slowFrames, frames: s.frames }; })()`,
+        )) as typeof drag;
     }
-    const pct = (values: number[], q: number) => Math.round([...values].sort((a, b) => a - b)[Math.min(values.length - 1, Math.floor(q * values.length))] ?? 0);
+    const pct = (values: number[], q: number) =>
+        Math.round(
+            [...values].sort((a, b) => a - b)[
+                Math.min(values.length - 1, Math.floor(q * values.length))
+            ] ?? 0,
+        );
     return {
         pageWaits: flick.waits.length,
         pageWaitMedianMs: pct(flick.waits, 0.5),
@@ -1259,7 +1758,10 @@ windows.push({ name: "scroll-large", result: { ...scrolling.window.result, ...sc
 // Return: one session streams slowly for a long time while the reader looks elsewhere, then comes
 // back mid-stream, again and again. The transcript should be current the moment it is on screen.
 const returnSwitches: Record<string, unknown>[] = [];
-const returnRun = await writeReplay(STREAM_TARGET.agentId, STREAM_SOURCE, { chunk: 1, delayMs: 40 });
+const returnRun = await writeReplay(STREAM_TARGET.agentId, STREAM_SOURCE, {
+    chunk: 1,
+    delayMs: 40,
+});
 await trySwitch(page, STREAM_TARGET.title);
 await page.waitForTimeout(1000);
 const returning = await measure("return", page, cdp, requests, async () => {
@@ -1282,7 +1784,10 @@ windows.push({
         ...switchStats(returnSwitches),
         ...catchUpStats(returnSwitches),
         historyReads: returnSwitches.reduce((total, s) => total + Number(s.historyReads ?? 0), 0),
-        switchLog: returnSwitches.map((s) => `${String(s.title)} ${String(s.switchMs)}ms fresh ${String(s.freshMs)}ms reads ${String(s.historyReads)}`) as never,
+        switchLog: returnSwitches.map(
+            (s) =>
+                `${String(s.title)} ${String(s.switchMs)}ms fresh ${String(s.freshMs)}ms reads ${String(s.historyReads)}`,
+        ) as never,
         inferences: returnRun,
     },
 });
@@ -1293,12 +1798,20 @@ await waitIdle(STREAM_TARGET.agentId, 300_000);
 const daemonStart = process.env.PERF_DAEMON_START;
 if (daemonStart !== undefined) {
     const reloadStreams = STRESS_STREAMS.slice(0, 4);
-    await Promise.all(reloadStreams.map(async (target) => await writeReplay(target.agentId, STREAM_SOURCE)));
+    await Promise.all(
+        reloadStreams.map(async (target) => await writeReplay(target.agentId, STREAM_SOURCE)),
+    );
     await trySwitch(page, STREAM_TARGET.title);
     await page.waitForTimeout(1000);
     await Promise.all(reloadStreams.map(async (target) => await sendReplay(target.agentId)));
     await page.waitForTimeout(3000);
-    const reload = await measure("reload", page, cdp, requests, async () => await reloadDaemon(daemonStart));
+    const reload = await measure(
+        "reload",
+        page,
+        cdp,
+        requests,
+        async () => await reloadDaemon(daemonStart),
+    );
     windows.push({ name: "reload", result: { ...reload.window.result, ...reload.value } });
 }
 
@@ -1315,7 +1828,10 @@ await context.close();
 
 const summary = (pass: string) => {
     const rows = switches.filter((s) => s.pass === pass);
-    const times = rows.map((s) => s.switchMs as number).filter((t) => t !== null).sort((a, b) => a - b);
+    const times = rows
+        .map((s) => s.switchMs as number)
+        .filter((t) => t !== null)
+        .sort((a, b) => a - b);
     const sum = (key: string) => rows.reduce((total, s) => total + ((s[key] as number) ?? 0), 0);
     return {
         switchMedianMs: times[Math.floor(times.length / 2)],
@@ -1330,7 +1846,19 @@ const summary = (pass: string) => {
         daemonCpuMs: sum("daemonCpuMs"),
     };
 };
-const results = { label, at: new Date().toISOString(), summary: { cold: summary("cold"), warm: summary("warm"), palette: summary("palette"), direct: summary("direct"), remote: summary("remote") }, windows, switches };
+const results = {
+    label,
+    at: new Date().toISOString(),
+    summary: {
+        cold: summary("cold"),
+        warm: summary("warm"),
+        palette: summary("palette"),
+        direct: summary("direct"),
+        remote: summary("remote"),
+    },
+    windows,
+    switches,
+};
 await writeFile(env("PERF_OUT"), JSON.stringify(results, null, 2));
 
 const line = (name: string, r: Record<string, unknown>) =>
@@ -1340,6 +1868,12 @@ console.log("cold", JSON.stringify(results.summary.cold));
 console.log("warm", JSON.stringify(results.summary.warm));
 console.log("palette", JSON.stringify(results.summary.palette));
 console.log("direct", JSON.stringify(results.summary.direct));
-for (const s of switches) console.log(`${String(s.pass).padEnd(5)} ${String(s.title).padEnd(26)} switch ${String(s.switchMs).padStart(5)}ms spinner ${String(s.spinnerMs).padStart(5)}ms | ${line("", s)}`);
+for (const s of switches)
+    console.log(
+        `${String(s.pass).padEnd(5)} ${String(s.title).padEnd(26)} switch ${String(s.switchMs).padStart(5)}ms spinner ${String(s.spinnerMs).padStart(5)}ms | ${line("", s)}`,
+    );
 for (const w of windows) console.log(line(w.name, w.result));
-for (const w of windows) console.log(`${w.name} top: ${JSON.stringify(w.result.topComponents)}\n${w.name} origins: ${JSON.stringify(w.result.updateOrigins)}`);
+for (const w of windows)
+    console.log(
+        `${w.name} top: ${JSON.stringify(w.result.topComponents)}\n${w.name} origins: ${JSON.stringify(w.result.updateOrigins)}`,
+    );

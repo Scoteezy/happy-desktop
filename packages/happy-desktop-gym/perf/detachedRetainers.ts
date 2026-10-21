@@ -7,7 +7,14 @@
 import { readFile } from "node:fs/promises";
 
 const snapshot = JSON.parse(await readFile(process.argv[2]!, "utf8")) as {
-    snapshot: { meta: { node_fields: string[]; edge_fields: string[]; node_types: [string[]]; edge_types: [string[]] } };
+    snapshot: {
+        meta: {
+            node_fields: string[];
+            edge_fields: string[];
+            node_types: [string[]];
+            edge_types: [string[]];
+        };
+    };
     nodes: number[];
     edges: number[];
     strings: string[];
@@ -26,7 +33,8 @@ const edgeToOffset = meta.edge_fields.indexOf("to_node");
 const nodeTypes = meta.node_types[0];
 const edgeTypes = meta.edge_types[0];
 const nodeCount = snapshot.nodes.length / nodeFieldCount;
-const name = (node: number) => snapshot.strings[snapshot.nodes[node * nodeFieldCount + nameOffset]!]!;
+const name = (node: number) =>
+    snapshot.strings[snapshot.nodes[node * nodeFieldCount + nameOffset]!]!;
 // Reverse edges, skipping weak ones, so each node's retainers can be walked toward the roots.
 const retainers: number[][] = Array.from({ length: nodeCount }, () => []);
 const retainerEdge: string[][] = Array.from({ length: nodeCount }, () => []);
@@ -38,7 +46,10 @@ for (let node = 0; node < nodeCount; node++) {
         if (type === "weak") continue;
         const to = snapshot.edges[edge + edgeToOffset]! / nodeFieldCount;
         retainers[to]!.push(node);
-        const label = type === "element" || type === "hidden" ? `[${String(snapshot.edges[edge + edgeNameOffset])}]` : snapshot.strings[snapshot.edges[edge + edgeNameOffset]!]!;
+        const label =
+            type === "element" || type === "hidden"
+                ? `[${String(snapshot.edges[edge + edgeNameOffset])}]`
+                : snapshot.strings[snapshot.edges[edge + edgeNameOffset]!]!;
         retainerEdge[to]!.push(label);
     }
 }
@@ -61,7 +72,12 @@ for (const start of detached) {
                 seen.add(from);
                 const fromName = name(from);
                 const fromType = nodeTypes[snapshot.nodes[from * nodeFieldCount + typeOffset]!];
-                if (snapshot.nodes[from * nodeFieldCount + detachedOffset] !== 2 && fromType !== "hidden" && fromType !== "native" && fromName !== "(system)") {
+                if (
+                    snapshot.nodes[from * nodeFieldCount + detachedOffset] !== 2 &&
+                    fromType !== "hidden" &&
+                    fromType !== "native" &&
+                    fromName !== "(system)"
+                ) {
                     found = `${fromType} ${fromName.slice(0, 60)} .${retainerEdge[node]![index]!}`;
                     break;
                 }
@@ -74,7 +90,8 @@ for (const start of detached) {
     const key = found ?? "(no JS retainer within 12 hops)";
     owners.set(key, (owners.get(key) ?? 0) + 1);
 }
-for (const [owner, count] of [...owners].sort((a, b) => b[1] - a[1]).slice(0, 25)) console.log(String(count).padStart(7), owner);
+for (const [owner, count] of [...owners].sort((a, b) => b[1] - a[1]).slice(0, 25))
+    console.log(String(count).padStart(7), owner);
 
 // PATHS=1: the shortest strong retaining path from the root to a sample detached node of each kind.
 if (process.env.PATHS === "1") {
@@ -82,7 +99,9 @@ if (process.env.PATHS === "1") {
     const parentEdge: string[] = new Array(nodeCount);
     const firstEdge = new Int32Array(nodeCount + 1);
     for (let node = 0; node < nodeCount; node++) {
-        firstEdge[node + 1] = firstEdge[node]! + snapshot.nodes[node * nodeFieldCount + edgeCountOffset]! * edgeFieldCount;
+        firstEdge[node + 1] =
+            firstEdge[node]! +
+            snapshot.nodes[node * nodeFieldCount + edgeCountOffset]! * edgeFieldCount;
     }
     parent[0] = 0;
     let queue = [0];
@@ -95,7 +114,10 @@ if (process.env.PATHS === "1") {
                 const to = snapshot.edges[e + edgeToOffset]! / nodeFieldCount;
                 if (parent[to] !== -1) continue;
                 parent[to] = node;
-                parentEdge[to] = type === "element" || type === "hidden" ? `[${String(snapshot.edges[e + edgeNameOffset])}]` : snapshot.strings[snapshot.edges[e + edgeNameOffset]!]!;
+                parentEdge[to] =
+                    type === "element" || type === "hidden"
+                        ? `[${String(snapshot.edges[e + edgeNameOffset])}]`
+                        : snapshot.strings[snapshot.edges[e + edgeNameOffset]!]!;
                 next.push(to);
             }
         }
@@ -104,7 +126,11 @@ if (process.env.PATHS === "1") {
     const shown = new Set<string>();
     for (const start of detached) {
         const path: string[] = [];
-        for (let node = start; node !== 0 && parent[node]! >= 0 && path.length < 30; node = parent[node]!) {
+        for (
+            let node = start;
+            node !== 0 && parent[node]! >= 0 && path.length < 30;
+            node = parent[node]!
+        ) {
             path.push(`${name(parent[node]!).slice(0, 48)}.${parentEdge[node]!}`);
         }
         const key = path.slice(-6).join("|");

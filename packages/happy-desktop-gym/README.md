@@ -383,6 +383,93 @@ pnpm --dir packages/happy-desktop-gym gym:electron clean --root <printed-run-roo
 without the Gym ownership marker. Keep a run for inspection, or clean it
 explicitly after collecting the artifacts.
 
+## Session gym leak mode
+
+`perf/sessionGym.ts` drives the production renderer in Chromium against a perf
+daemon over a copied installation. `PERF_MODE=leak` turns it into a long memory
+and correctness test that nobody has to watch in DevTools. It is the check to run
+before a production release (see `docs/releases.md`). It is opt-in only: it is
+not part of `pnpm test`, `pnpm check`, CI or the normal gym runs.
+`perf/leakGym.sh` clones the fixture, starts the daemon and the web host with
+`perf/leakProbe.ts` preloaded, and runs it:
+
+```sh
+PERF_FIXTURE=/path/to/data PERF_AGENT_REPO=/path/to/happy-agent \
+PERF_RENDERER_DIR=/path/to/renderer-build PERF_RUN_DIR=$PWD/.context/lk/a \
+PERF_PORT=5741 PERF_SEED=424242 \
+  packages/happy-desktop-gym/perf/leakGym.sh
+```
+
+`PERF_FIXTURE` holds `pristine/` (the two SQLite files), `home/`, `fakefs/` and
+`browser-profile/`. Build the renderer with `perf/vite.names.config.ts`, which
+keeps component names. Keep `PERF_RUN_DIR` short, because the daemon socket
+lives in it.
+
+For a release, the duration is fixed: the defaults give 20 minutes of measurement
+(`PERF_LEAK_MINUTES`) after a warm-up of about 25 minutes. The run passes when
+every line is `PASS` or `PLATEAU` and the last line reads
+`leak verdict: PASS`. The script exits non-zero otherwise.
+
+- **Warm-up.** Growth is judged only once every bounded store is full. Otherwise
+  a cache filling to its bound looks like a leak. The warm-up fills each store
+  with the same kind of content the mix produces:
+    - it reloads the page and restarts the daemon
+    - it replays 105 recorded runs into each stream target, past the 100 runs a
+      session nobody reads keeps, which also turns over the daemon's event buffer
+    - it tours every heavy session, which evicts the kept views
+    - it fills the home chat's prepared-text cache to its budget with paragraphs
+      seen once each
+    - it sends 230 runs into the home chat, past the 200 at which a followed chat
+      sheds its oldest
+    - it runs three minutes of the mix
+- **Load.** A seeded mix weighted like a person working in one main chat:
+    - follow bursts into the open chat
+    - composer sends and rapid sends with replayed recorded runs
+    - drafts kept across switches
+    - glances by sidebar, palette and direct click
+    - flicks through history up to the top
+    - streams out of sight, and returns to them
+    - rapid switching
+
+    Every action ends in the home chat, so the layout cache of the chat a reader
+    keeps open is never evicted. The seed fixes the action sequence and is printed
+    first, so a failing run can be replayed exactly. Replies are real recorded text
+    plus a unique marker.
+
+- **Samples.** One sample every 30 s. Each one waits for every run to finish and
+  walks a fixed route through seven empty peers and the home chat. That route also
+  evicts kept views each time, and it leaves the same views and layout caches at
+  every sample. It then collects garbage and reads:
+    - the renderer's JS heap, DOM nodes, listeners and React fibers
+    - the home chat's settled Markdown trees
+    - RSS, heap and handles for the daemon and the web host, from their probes
+
+    The probe also caps the gym's scripted-inference request log. Otherwise that
+    log keeps every inference context, and the daemon verdict measures the harness
+    instead of the product.
+
+- **Verdict.** There is one line per component. Its slope is a Theil–Sen
+  estimate with a 95% interval, in units per hour and per 1,000 actions, plus
+  the start and end values. A slope above its limit (`PERF_LEAK_LIMIT_*`) fails
+  unless the last 40% of the run is flat (`PLATEAU`). The run also fails on any
+  of these:
+    - the daemon restarts after measuring, and the open chat does not show its
+      newest reply again
+    - the persistence audit, read from the restarted daemon, finds a marked prompt
+      or reply stored other than exactly once, or a reply outside its prompt's run
+    - a draft is lost or a sent prompt is never shown
+    - a page error or a 5xx response
+- **Cause.** For each process that grew, the gym compares the heap snapshot taken
+  as measuring starts with one taken at the end, object by object. The first
+  snapshot comes before the first sample, because a process keeps the memory a
+  snapshot took. It prints:
+    - the constructors that grew
+    - the deepest objects whose retained size grew by a share of the total, each
+      with the path that keeps it alive. A buffer whose contents only turn over
+      does not show up.
+    - the allocation sites of what was allocated and is still alive, from the
+      sampling heap profiler
+
 ## Real GPT-Live call
 
 The opt-in `live-voice` command launches a separate owned daemon and Electron
