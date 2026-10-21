@@ -82,6 +82,7 @@ export function ContextMenu(props: ContextMenuProps) {
                 className="happy-context-menu"
                 data-happy-desktop-ui="context-menu"
                 data-testid={props["data-testid"]}
+                onClick={(event) => event.stopPropagation()}
                 onKeyDown={(event) => {
                     if (event.key === "Escape") {
                         event.preventDefault();

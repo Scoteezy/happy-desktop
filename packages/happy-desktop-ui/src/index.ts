@@ -359,6 +359,7 @@ export {
 export { ConversationEntryView, type ConversationEntryViewProps } from "./ConversationEntryView";
 export { DelegatedAgentActivity, type DelegatedAgentActivityProps } from "./DelegatedAgentActivity";
 export { ContextMenu, type ContextMenuProps } from "./ContextMenu";
+export { LinkContextMenu, type LinkContextMenuProps } from "./LinkContextMenu";
 export { ContextMeter, type ContextMeterProps } from "./ContextMeter";
 export {
     fileTreeBuild,

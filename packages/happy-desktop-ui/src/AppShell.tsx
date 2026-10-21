@@ -11,6 +11,7 @@ import {
 } from "react";
 import { KeyCap } from "./Badge";
 import { Icon } from "./Icon";
+import { LinkContextMenu } from "./LinkContextMenu";
 import {
     commandModifier,
     commandModifierHeld,
@@ -324,6 +325,7 @@ function ResizeHandle(props: {
  */
 export function AppShell(props: AppShellProps) {
     const shell = useRef<HTMLDivElement>(null);
+    const [linkMenu, setLinkMenu] = useState<{ x: number; y: number; href: string }>();
     const [panelNode, setPanelNode] = useState<HTMLElement | null>(null);
     const [focusedPaneOwner, setFocusedPaneOwner] = useState<HTMLElement | null>(null);
     // The overlay lane below, held as state rather than in a ref because the
@@ -655,6 +657,18 @@ export function AppShell(props: AppShellProps) {
                 data-window-controls={local.windowControls ? "" : undefined}
                 data-window-full-screen={local.windowFullScreen ? "" : undefined}
                 data-connection-rail={local.connectionRail ? "" : undefined}
+                onContextMenu={(event) => {
+                    rest.onContextMenu?.(event);
+                    if (event.defaultPrevented || !(event.target instanceof Element)) return;
+                    const link = event.target.closest("a[href]");
+                    const href = link?.getAttribute("href");
+                    if (!href) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    // Keep the link's own destination: resolving a workspace-relative
+                    // file against the renderer URL would invent a different target.
+                    setLinkMenu({ x: event.clientX, y: event.clientY, href });
+                }}
                 onFocusCapture={(event) => {
                     rest.onFocusCapture?.(event);
                     paneFocusRead(event.currentTarget, event.target);
@@ -853,6 +867,14 @@ export function AppShell(props: AppShellProps) {
                         ref={setOverlayHost}
                     />
                 )}
+                {linkMenu ? (
+                    <LinkContextMenu
+                        href={linkMenu.href}
+                        onClose={() => setLinkMenu(undefined)}
+                        x={linkMenu.x}
+                        y={linkMenu.y}
+                    />
+                ) : null}
             </div>
         </WindowOverlayHostContext.Provider>
     );

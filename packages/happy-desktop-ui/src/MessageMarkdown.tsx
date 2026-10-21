@@ -11,7 +11,7 @@ import {
 import { happyAgentFileLinkParse } from "happy-desktop-state";
 import Markdown, { type Components, type ExtraProps, type UrlTransform } from "react-markdown";
 import type { Processor } from "unified";
-import { ContextMenu } from "./ContextMenu";
+import { LinkContextMenu } from "./LinkContextMenu";
 import { filePreviewKind } from "./FilePreview";
 import { type MenuItem } from "./Menu";
 import { markdownFence, markdownFenceIsMermaid } from "./markdownFence";
@@ -314,7 +314,7 @@ const MarkdownLink = ({
                 className="happy-message__md-link happy-message__md-file"
                 data-happy-desktop-ui="message-md-file"
                 data-path={target.path}
-                href={target.path}
+                href={href}
                 onClick={(event) => {
                     event.preventDefault();
                     onFileOpen(target.path, target.selection);
@@ -347,6 +347,7 @@ const MarkdownLink = ({
                     menuOffered
                         ? (event) => {
                               event.preventDefault();
+                              event.stopPropagation();
                               setMenuAt({ x: event.clientX, y: event.clientY });
                           }
                         : undefined
@@ -357,8 +358,9 @@ const MarkdownLink = ({
                 <MarkdownLinkContext.Provider value={true}>{children}</MarkdownLinkContext.Provider>
             </a>
             {menuOffered && menuAt !== undefined ? (
-                <ContextMenu
+                <LinkContextMenu
                     data-testid="message-md-link-menu"
+                    href={webUrl}
                     items={linkMenuItems(linkOpenDefault)}
                     onClose={() => setMenuAt(undefined)}
                     onSelect={(id) => {
@@ -677,7 +679,7 @@ const messageUrlTransform: UrlTransform = (url, key, node) =>
  * a workspace file into a click that opens Happy's own viewer instead of an
  * inert anchor, and `onFileLinkOpen` does the same for a `happy-file:` link
  * into another agent's or workspace's folder. `onLinkOpen` gives a web link a context menu offering the
- * machine's browser or the side panel. `references` resolves the Happy
+ * machine's browser, the side panel, or copying its destination. `references` resolves the Happy
  * reference tags an agent wrote to their live titles; without it each reads as
  * inert placeholder text, and a tag never shows raw.
  */

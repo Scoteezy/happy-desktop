@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ContextMenu } from "../../src/ContextMenu";
+import { AppShell } from "../../src/AppShell";
+import { LinkContextMenu } from "../../src/LinkContextMenu";
 import { Menu, type MenuItem } from "../../src/Menu";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
 
@@ -101,7 +102,8 @@ function ContextMenuSpecimen() {
         >
             {chosen === undefined ? "Right-click anywhere in this box" : `Chose: ${chosen}`}
             {menuAt ? (
-                <ContextMenu
+                <LinkContextMenu
+                    href="https://example.com/destination?from=menu#details"
                     items={linkPlaces}
                     onClose={() => setMenuAt(undefined)}
                     onSelect={(id) => {
@@ -112,6 +114,31 @@ function ContextMenuSpecimen() {
                     y={menuAt.y}
                 />
             ) : null}
+        </div>
+    );
+}
+
+function LinkMenuSpecimen() {
+    const [clicks, setClicks] = useState(0);
+    return (
+        <div style={{ width: "360px", height: "192px" }}>
+            <AppShell embedded onClick={() => setClicks((count) => count + 1)}>
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "16px",
+                        padding: "24px",
+                    }}
+                >
+                    <a href="https://example.com/destination?from=menu#details">
+                        <strong>Right-click this link label</strong>
+                    </a>
+                    <a href="happy-file://agents/example/docs/plan.md#L12-L15">Happy file link</a>
+                    <a href="docs/plan.md#L12-L15">Workspace file link</a>
+                    <output>Shell clicks: {clicks}</output>
+                </div>
+            </AppShell>
         </div>
     );
 }
@@ -196,6 +223,15 @@ export function MenuPage() {
                     <div style={{ padding: "28px" }}>
                         <Menu items={taskRow} width={200} />
                     </div>
+                </Specimen>
+
+                <Specimen
+                    detail="right-click a link or its nested label · copy its destination · custom schemes and file fragments stay intact"
+                    label="Copy link in the app shell"
+                    number="M-08"
+                    stage="app"
+                >
+                    <LinkMenuSpecimen />
                 </Specimen>
 
                 <Specimen
