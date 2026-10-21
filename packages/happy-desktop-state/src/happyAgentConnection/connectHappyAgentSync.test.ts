@@ -1961,6 +1961,108 @@ it("lets a session on screen shed its oldest page only while its reader follows 
     reader.close();
 });
 
+it("lets a session its reader left shed every page but the newest, however far they scrolled", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agent = daemon.agentSeed(project.id, { id: "agent-a" });
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    let elements: readonly ChatElement[] = [];
+    let session: SessionState | undefined;
+    const reader = connection.connectSession({
+        sessionId: agent.id,
+        onChange(next, state) {
+            elements = next;
+            session = state;
+        },
+    });
+    await vi.waitFor(() => expect(session?.historyLoading).not.toBe(true));
+    // A reader scrolled back keeps everything while they read.
+    reader.followingSet?.(false);
+    for (let index = 0; index < 260; index += 1) {
+        const runId = `r${String(index)}`;
+        daemon.eventEmit("run.started", {
+            agentId: agent.id,
+            run: fakeRun({ id: runId, status: "running", startedAt: index + 1 }),
+            acceptedMessageIds: [],
+        });
+        daemon.eventEmit("message.created", {
+            agentId: agent.id,
+            message: fakeAgentMessage({
+                id: `a${String(index)}`,
+                createdAt: index + 1,
+                content: [{ type: "text", text: `answer ${String(index)}` }],
+            }),
+            runId,
+        });
+        daemon.eventEmit("run.finished", {
+            agentId: agent.id,
+            run: fakeRun({
+                id: runId,
+                status: "completed",
+                startedAt: index + 1,
+                endedAt: index + 2,
+            }),
+        });
+    }
+    await vi.waitFor(() => expect(agentTexts(elements)).toHaveLength(260));
+
+    // Once they leave, it is cached like a session nobody opened: one page, the rest a scroll away.
+    reader.close();
+    const reopened = sessionWatch(connection, agent.id);
+    const answers = agentTexts(reopened.elements).map((element) => element.text);
+    expect(answers).toHaveLength(100);
+    expect(answers[0]).toBe("answer 160");
+    expect(reopened.session?.loadMoreToken).toBe("r160");
+});
+
+it("keeps only the sessions its reader left most recently cached", async () => {
+    const { connection, daemon } = harnessOpen();
+    const project = daemon.projectSeed({ id: "project-a" });
+    const agents = Array.from({ length: 18 }, (_, index) =>
+        daemon.agentSeed(project.id, { id: `agent-${String(index)}` }),
+    );
+    for (const agent of agents) {
+        daemon.historySet(agent.id, [
+            fakeRun({
+                id: `run-${agent.id}`,
+                status: "completed",
+                endedAt: 2,
+                messages: [
+                    fakeUserMessage({
+                        id: `m-${agent.id}`,
+                        content: [{ type: "text", text: agent.id }],
+                    }),
+                ],
+            }),
+        ]);
+    }
+    const groups = groupsWatch(connection);
+    await vi.waitFor(() => expect(groups.state.connection).toBe("live"));
+    for (const agent of agents) {
+        let loaded = false;
+        const reader = connection.connectSession({
+            sessionId: agent.id,
+            onChange(elements) {
+                loaded = userMessages(elements).length === 1;
+            },
+        });
+        await vi.waitFor(() => expect(loaded).toBe(true));
+        reader.close();
+    }
+    const reads = daemon.callCount("getMessages");
+
+    // The sixteen left last open at once; the two left first are read again.
+    const recent = sessionWatch(connection, agents[17]!.id);
+    expect(userMessages(recent.elements).map((element) => element.text)).toEqual(["agent-17"]);
+    const oldest = sessionWatch(connection, agents[0]!.id);
+    expect(oldest.elements).toHaveLength(0);
+    await vi.waitFor(() => expect(daemon.callCount("getMessages")).toBe(reads + 1));
+    await vi.waitFor(() =>
+        expect(userMessages(oldest.elements).map((element) => element.text)).toEqual(["agent-0"]),
+    );
+});
+
 // --- lost cursor and full resync -------------------------------------------
 
 it("resyncs the catalog and every open chat when the hello reports a cursor gap", async () => {

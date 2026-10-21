@@ -84,6 +84,8 @@ const REPLACEMENT_RECONNECT_WINDOW_MS = 2 * 60_000;
 const DEFAULT_HISTORY_LIMIT = 100;
 /** Sessions loaded ahead of an open and never opened that stay cached; older ones are dropped. */
 const PREFETCHED_SESSION_LIMIT = 6;
+/** Sessions a reader opened and then left that stay cached for a quick return; older ones are dropped. */
+const RELEASED_SESSION_LIMIT = 16;
 /** How long after a snapshot lands the read-ahead waits, so the first paint and opens come first. */
 const PRELOAD_DELAY_MS = 1_500;
 /** How often the read-ahead looks again while another session is loading. */
@@ -1433,6 +1435,44 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 clearUserIndex(stale);
                 sessions.delete(oldest);
             }
+        }
+    };
+
+    /** Sessions a reader opened and has since left, least recently left first. */
+    const releasedSessions = new Set<string>();
+
+    /**
+     * A session someone left keeps only its newest page, as one nobody opened does, and only the
+     * last few left stay cached at all, so a long day of switching holds a bounded set rather
+     * than everything ever opened and scrolled through. One still loading, being changed, or among
+     * the sessions the read-ahead keeps warm stays until a later sweep.
+     */
+    const releaseSession = (entry: SessionEntry): void => {
+        trimHistory(entry.id);
+        releasedSessions.delete(entry.id);
+        releasedSessions.add(entry.id);
+        if (releasedSessions.size <= RELEASED_SESSION_LIMIT) return;
+        const warm = new Set(recentAgents(options.preloadedSessions ?? 0).map((agent) => agent.id));
+        for (const id of releasedSessions) {
+            if (releasedSessions.size <= RELEASED_SESSION_LIMIT) break;
+            const stale = sessions.get(id);
+            if (stale === undefined) {
+                releasedSessions.delete(id);
+                continue;
+            }
+            if (
+                warm.has(id) ||
+                stale.subscribers.size > 0 ||
+                stale.loading !== undefined ||
+                stale.loadingMore ||
+                stale.questionRecovery !== undefined ||
+                (sessionMutationCounts.get(id) ?? 0) > 0
+            ) {
+                continue;
+            }
+            releasedSessions.delete(id);
+            clearUserIndex(stale);
+            sessions.delete(id);
         }
     };
 
@@ -3923,6 +3963,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             if (closed) throw new Error("This Happy Agent connection is closed.");
             prefetchedSessions.delete(subscription.sessionId);
             preloadedSessions.delete(subscription.sessionId);
+            releasedSessions.delete(subscription.sessionId);
             const entry =
                 sessions.get(subscription.sessionId) ?? sessionEntryCreate(subscription.sessionId);
             const wasInactive = entry.subscribers.size === 0;
@@ -3964,6 +4005,12 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                     // held is applied now and marks it to reconcile once it lands.
                     if (connectedEntry.hydrating) drainHydrationBroadcastEvents();
                     settleSessionIfIdle(connectedEntry);
+                    if (
+                        connectedEntry.subscribers.size === 0 &&
+                        sessions.get(connectedEntry.id) === connectedEntry
+                    ) {
+                        releaseSession(connectedEntry);
+                    }
                 },
             };
         },
@@ -5258,6 +5305,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         } finally {
             entry.loadingMore = false;
             publishSession(entry);
+            // A page that lands after its reader left is let go again with the rest.
+            if (entry.subscribers.size === 0) trimHistory(entry.id);
         }
     }
 
