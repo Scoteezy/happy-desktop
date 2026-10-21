@@ -45,7 +45,7 @@ export function conversationFailureMessage(
             return failure.command === null || failure.product === null
                 ? [
                       text(
-                          `${failure.provider.label} has no credentials. Check its settings, then retry.`,
+                          `${failure.provider.label} couldn't authenticate. Check its sign-in settings, then retry.`,
                       ),
                   ]
                 : [

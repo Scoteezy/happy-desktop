@@ -95,7 +95,7 @@ it("writes every kind's text itself, and the daemon's only for an unknown kind",
             product: null,
             command: null,
         }),
-    ).toBe("work_bedrock has no credentials. Check its settings, then retry.");
+    ).toBe("work_bedrock couldn't authenticate. Check its sign-in settings, then retry.");
     expect(
         text({
             ...base,
