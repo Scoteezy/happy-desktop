@@ -6,35 +6,56 @@ import {
 import { LOCAL_HAPPY_AGENT_ID, type HappyAgentDirectorySnapshot } from "./happyAgentDirectoryStore";
 import { happyAgentDirectoryNotifies } from "./happyAgentListed";
 
+let completionChimeContext: AudioContext | undefined;
+let completionChimeBuffer: AudioBuffer | undefined;
+
 /**
- * Plays a short two-note completion chime. The oscillator keeps the sound local
- * and avoids shipping or decoding an asset for a sub-second desktop cue.
+ * Plays a short two-note completion chime. The samples are computed here, once,
+ * and played from one shared context. An OscillatorNode would build its sine
+ * table with an inverse FFT on the renderer's main thread in every new context,
+ * and Accelerate runs that FFT in SME streaming mode on newer Apple Silicon,
+ * where a signal arriving mid-FFT crashed the renderer with SIGILL.
  */
 export function completionChimePlay(): void {
     try {
-        const AudioContextConstructor = window.AudioContext;
-        const context = new AudioContextConstructor();
-        const gain = context.createGain();
-        gain.connect(context.destination);
-        gain.gain.setValueAtTime(0.0001, context.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.12, context.currentTime + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.42);
+        completionChimeContext ??= new window.AudioContext();
+        const context = completionChimeContext;
+        completionChimeBuffer ??= completionChimeRender(context);
+        if (context.state === "suspended") void context.resume();
+        const source = context.createBufferSource();
+        source.buffer = completionChimeBuffer;
+        source.connect(context.destination);
+        // Release the audio device once the chime ends; the next chime resumes it.
+        source.onended = () => void context.suspend();
+        source.start();
+    } catch {
+        // A missing or policy-blocked audio device must not interrupt reconciliation.
+    }
+}
 
+/** Renders the chime: two sine notes under a 15 ms attack and an exponential decay to 0.42 s. */
+function completionChimeRender(context: AudioContext): AudioBuffer {
+    const sampleRate = context.sampleRate;
+    const buffer = context.createBuffer(1, Math.ceil(sampleRate * 0.42), sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let index = 0; index < samples.length; index += 1) {
+        const time = index / sampleRate;
+        const envelope =
+            time < 0.015
+                ? 0.0001 * Math.pow(0.12 / 0.0001, time / 0.015)
+                : 0.12 * Math.pow(0.0001 / 0.12, (time - 0.015) / (0.42 - 0.015));
+        let value = 0;
         for (const [frequency, delay] of [
             [659.25, 0],
             [880, 0.11],
         ] as const) {
-            const oscillator = context.createOscillator();
-            oscillator.type = "sine";
-            oscillator.frequency.value = frequency;
-            oscillator.connect(gain);
-            oscillator.start(context.currentTime + delay);
-            oscillator.stop(context.currentTime + delay + 0.28);
+            if (time >= delay && time < delay + 0.28) {
+                value += Math.sin(2 * Math.PI * frequency * (time - delay));
+            }
         }
-        window.setTimeout(() => void context.close(), 500);
-    } catch {
-        // A missing or policy-blocked audio device must not interrupt reconciliation.
+        samples[index] = value * envelope;
     }
+    return buffer;
 }
 
 /**
