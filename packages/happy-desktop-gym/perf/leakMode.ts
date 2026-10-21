@@ -680,15 +680,40 @@ export async function leakRun(gym: LeakGym): Promise<number> {
 
     // ------------------------------------------------------------ warm-up steps
 
-    /** Opens every heavy session in a row, so the views kept for the earlier ones are let go. */
+    /**
+     * Reads the open session back to its first message, or for a minute at most, so the older
+     * pages glances and scrolls load later are pages a reader has already loaded and left.
+     */
+    async function pageToTop(): Promise<void> {
+        await viewport().hover();
+        let height = -1;
+        let still = 0;
+        for (let attempt = 0; attempt < 120 && still < 6; attempt += 1) {
+            await page.mouse.wheel(0, -1_000_000);
+            await page.waitForTimeout(500);
+            const now = await viewport().evaluate((element) =>
+                element.scrollTop <= 2 ? element.scrollHeight : -1,
+            );
+            still = now !== -1 && now === height ? still + 1 : 0;
+            height = now;
+        }
+    }
+    /**
+     * Opens every heavy session in a row and reads each back to its start, so the views kept for
+     * the earlier ones are let go and every session has already held its older pages once.
+     */
     async function tour(): Promise<void> {
         const order = [...heavy].sort(() => random() - 0.5);
         for (const agent of order) {
-            await open(agent, how()).catch(async (error: unknown) => {
+            try {
+                await open(agent, how());
+                await pageToTop();
+                await bottom();
+            } catch (error) {
                 harnessErrors.push(`tour: ${failure(error)} (${agent.title})`);
                 console.log(`leak: ${harnessErrors.at(-1)!}`);
                 await page.keyboard.press("Escape");
-            });
+            }
         }
         await open(home, "direct");
         await bottom();
