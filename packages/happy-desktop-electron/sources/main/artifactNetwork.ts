@@ -1,114 +1,17 @@
 import { randomBytes } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { createServer, request as httpRequest, type IncomingHttpHeaders } from "node:http";
-import { BlockList, connect, isIP, type AddressInfo, type Socket } from "node:net";
+import { artifactAddressPublic } from "@slopus/happy-agent-client";
+import { connect, isIP, type AddressInfo, type Socket } from "node:net";
 import { pipeline } from "node:stream/promises";
 import { artifactSiteScheme } from "./artifactSite";
 
-/**
- * Every address range an artifact page may not reach: this machine, the local
- * network it sits on, and the ranges that only ever name one of those or
- * nothing at all, for IPv4. IPv6 is admitted by range instead; see
- * `artifactAddressPublic`.
+/*
+ * Which addresses an artifact page may reach is the client package's: the
+ * daemon's restricted proxy and this one judge every address by the same
+ * function, so the two can never disagree.
  */
-const refusedAddresses = (() => {
-    const list = new BlockList();
-    for (const [network, prefix] of [
-        ["0.0.0.0", 8],
-        ["10.0.0.0", 8],
-        ["100.64.0.0", 10],
-        ["127.0.0.0", 8],
-        ["169.254.0.0", 16],
-        ["172.16.0.0", 12],
-        ["192.0.0.0", 24],
-        ["192.0.2.0", 24],
-        ["192.88.99.0", 24],
-        ["192.168.0.0", 16],
-        ["198.18.0.0", 15],
-        ["198.51.100.0", 24],
-        ["203.0.113.0", 24],
-        ["224.0.0.0", 4],
-        ["240.0.0.0", 4],
-    ] as const)
-        list.addSubnet(network, prefix, "ipv4");
-    return list;
-})();
-
-/** The sixteen bytes of an IPv6 address `isIP` already accepted, in any textual form. */
-function ipv6Bytes(address: string): number[] {
-    let text = address.toLowerCase();
-    const zone = text.indexOf("%");
-    if (zone >= 0) text = text.slice(0, zone);
-    let quad: number[] | undefined;
-    const dotted = /(\d+\.\d+\.\d+\.\d+)$/u.exec(text);
-    if (dotted) {
-        quad = dotted[1]!.split(".").map(Number);
-        text = `${text.slice(0, -dotted[1]!.length)}0:0`;
-    }
-    const halves = text.split("::");
-    const groupsOf = (part: string | undefined) => (part ? part.split(":") : []);
-    const head = groupsOf(halves[0]);
-    const tail = groupsOf(halves[1]);
-    const groups = [
-        ...head,
-        ...Array<string>(halves.length === 2 ? 8 - head.length - tail.length : 0).fill("0"),
-        ...tail,
-    ];
-    const bytes = groups.flatMap((group) => {
-        const value = Number.parseInt(group, 16);
-        return [value >> 8, value & 255];
-    });
-    if (quad) bytes.splice(12, 4, ...quad);
-    return bytes;
-}
-
-/**
- * IPv6 that is public only by being an IPv4 address in disguise — mapped,
- * translated (RFC 6145), or the well-known NAT64 prefix — is judged by that
- * IPv4 address. Every other IPv6 address must be global unicast outside the
- * special-purpose ranges; anything else, including 6to4, Teredo, and
- * IPv4-compatible addresses, is refused.
- */
-const ipv6SpecialPurpose = (() => {
-    const list = new BlockList();
-    for (const [network, prefix] of [
-        ["2001::", 23],
-        ["2001:db8::", 32],
-        ["2002::", 16],
-        ["3fff::", 20],
-    ] as const)
-        list.addSubnet(network, prefix, "ipv6");
-    return list;
-})();
-
-/** The IPv4 address an IPv6 one carries as mapped, translated, or well-known NAT64. */
-function ipv6Embedded(bytes: readonly number[]): string | undefined {
-    const zero = (from: number, to: number) => bytes.slice(from, to).every((value) => value === 0);
-    const quad = bytes.slice(12, 16).join(".");
-    if (zero(0, 10) && bytes[10] === 255 && bytes[11] === 255) return quad;
-    if (zero(0, 8) && bytes[8] === 255 && bytes[9] === 255 && zero(10, 12)) return quad;
-    if (
-        bytes[0] === 0 &&
-        bytes[1] === 0x64 &&
-        bytes[2] === 0xff &&
-        bytes[3] === 0x9b &&
-        zero(4, 12)
-    )
-        return quad;
-    return undefined;
-}
-
-/** Whether an artifact page may open a connection to this IP address. */
-export function artifactAddressPublic(address: string): boolean {
-    const family = isIP(address);
-    if (family === 4) return !refusedAddresses.check(address, "ipv4");
-    if (family !== 6) return false;
-    const bytes = ipv6Bytes(address);
-    const embedded = ipv6Embedded(bytes);
-    if (embedded !== undefined) return !refusedAddresses.check(embedded, "ipv4");
-    const unzoned = address.replace(/%.*$/u, "");
-    return (bytes[0]! & 0xe0) === 0x20 && !ipv6SpecialPurpose.check(unzoned, "ipv6");
-}
+export { artifactAddressPublic };
 
 /**
  * Host names that only ever mean this machine or Happy itself, refused before
