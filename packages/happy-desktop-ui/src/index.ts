@@ -660,6 +660,7 @@ export {
     type SetupAssistantsProps,
 } from "./SetupAssistants";
 export { SetupCommand, type SetupCommandProps } from "./SetupCommand";
+export { SetupPrompt, type SetupPromptProps } from "./SetupPrompt";
 export { AssistantMark, type AssistantMarkName, type AssistantMarkProps } from "./AssistantMark";
 export {
     SetupHandoff,

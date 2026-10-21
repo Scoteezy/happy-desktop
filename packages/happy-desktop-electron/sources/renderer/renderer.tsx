@@ -146,6 +146,11 @@ import { DesktopBootGate, desktopBootSkip } from "./DesktopBootGate";
 import { desktopAnalyticsCreate } from "./desktopAnalytics";
 import { desktopAgentUpdateStoreCreate } from "./desktopAgentUpdateStore";
 import {
+    DesktopAgentBrokenGate,
+    desktopAgentBrokenStoreCreate,
+    type DesktopAgentBrokenStore,
+} from "./desktopAgentBroken";
+import {
     DesktopMediaPreviewWindow,
     desktopMediaPreviewEscapeBind,
     desktopMediaPreviewStoreCreate,
@@ -589,6 +594,8 @@ interface DesktopRendererProps {
     surfaceWindowState: HappyAgentWindowStore;
     /** The local agent's update as the footer card tells it, held until it is connected again. */
     agentUpdate: AppHappyAgentUpdateStore;
+    /** Whether the local Happy Agent is broken badly enough to own the whole window. */
+    agentBroken: DesktopAgentBrokenStore;
 }
 
 /**
@@ -672,107 +679,117 @@ function DesktopScreens(props: DesktopRendererProps) {
     const surfaceWindowState = props.surfaceWindowState;
     // An update of the local daemon does not take the window: the shell stays
     // usable, and the update is told on a card in the local sidebar's footer.
+    // A local Happy Agent that is broken does take it: every machine reaches
+    // this window through it, so nothing in the layout would work.
     return (
-        <ConnectionShell
-            items={directory.happyAgents.map((entry) => {
-                // Muted bots remain listed and working; hidden bots leave this set.
-                const listed = happyAgentListedConversations(entry, projectsVisibility, attention);
-                return {
-                    id: entry.id,
-                    // The rail names a machine the way its own daemon does. The
-                    // host's roster name stands in until that daemon has answered.
-                    label: entry.node?.name ?? entry.label,
-                    local: entry.id === LOCAL_HAPPY_AGENT_ID,
-                    status: entry.status,
-                    working: listed.some((conversation) => conversation.activity === "running"),
-                    unread: happyAgentEntryUnreadCount(entry, projectsVisibility, attention) > 0,
-                    ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
-                    // A call pointing into a machine not on screen is said on its
-                    // rail button, the one place that machine is visible.
-                    ...(voiceFocusConnectionId === entry.id &&
-                    entry.id !== (directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID)
-                        ? { voiceFocus: true }
-                        : {}),
-                };
-            })}
-            selectedId={directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID}
-            onSelect={props.happyAgents.happyAgentActivate}
-            itemMenuItems={(item) =>
-                completionSoundMenuItems(
-                    happyAgentAttentionConnection(attention, item.id).completionSound,
-                )
-            }
-            onItemMenuSelect={(id, actionId) => {
-                const sound = completionSoundOf(actionId);
-                if (sound) props.attention.completionSoundUpdate(id, sound);
-            }}
-            onReorder={
-                directory.happyAgents.some(
-                    (entry) => entry.id === LOCAL_HAPPY_AGENT_ID && entry.status === "connected",
-                )
-                    ? props.happyAgents.happyAgentReorder
-                    : undefined
-            }
-            reordering={directory.reordering}
-            reorderError={directory.reorderError}
-            windowControls={props.platform === "desktop"}
-            collapsed={sidebarVisibility.hidden}
-            error={directory.error}
-        >
-            <ConnectionSurface
-                key={LOCAL_HAPPY_AGENT_ID}
-                active={
-                    !directory.activeHappyAgentId ||
-                    directory.activeHappyAgentId === LOCAL_HAPPY_AGENT_ID
-                }
-            >
-                <DesktopLocalScreens
-                    {...props}
-                    happyAgents={main?.directory ?? props.happyAgents}
-                    windowState={surfaceWindowState}
-                />
-            </ConnectionSurface>
-            {directory.happyAgents
-                .filter((entry) => entry.id !== LOCAL_HAPPY_AGENT_ID)
-                .map((entry) => {
-                    const ui = props.connectionUis.get(entry.id);
-                    if (!ui) return null;
-                    return (
-                        <ConnectionSurface
-                            key={entry.id}
-                            active={directory.activeHappyAgentId === entry.id}
-                        >
-                            <HappyAgentBoundary
-                                appearance={props.appearance}
-                                bridge={props.bridge}
-                                browserContent={props.browserContent}
-                                commandPalette={ui.commandPalette}
-                                connectionOnboarding
-                                experiments={props.experiments}
-                                projectsVisibility={props.projectsVisibility}
-                                statusBar={props.statusBar}
-                                gptLive={props.gptLive}
-                                usageAnalytics={props.usageAnalytics}
-                                keepAwake={props.keepAwake}
-                                htmlPreview={props.htmlPreview}
-                                artifactPage={props.artifactPage}
-                                mediaWindow={props.mediaWindow}
-                                navigationOrder={ui.navigationOrder}
-                                sidebarCollapse={ui.sidebarCollapse}
-                                sidebarSearch={ui.sidebarSearch}
-                                sidebarVisibility={ui.sidebarVisibility}
-                                attention={props.attention}
-                                platform={props.platform}
-                                router={ui.router}
-                                happyAgents={ui.directory}
-                                settings={ui.settings}
-                                titleShimmer={props.titleShimmer}
-                                windowState={surfaceWindowState}
-                            />
-                        </ConnectionSurface>
+        <DesktopAgentBrokenGate store={props.agentBroken}>
+            <ConnectionShell
+                items={directory.happyAgents.map((entry) => {
+                    // Muted bots remain listed and working; hidden bots leave this set.
+                    const listed = happyAgentListedConversations(
+                        entry,
+                        projectsVisibility,
+                        attention,
                     );
+                    return {
+                        id: entry.id,
+                        // The rail names a machine the way its own daemon does. The
+                        // host's roster name stands in until that daemon has answered.
+                        label: entry.node?.name ?? entry.label,
+                        local: entry.id === LOCAL_HAPPY_AGENT_ID,
+                        status: entry.status,
+                        working: listed.some((conversation) => conversation.activity === "running"),
+                        unread:
+                            happyAgentEntryUnreadCount(entry, projectsVisibility, attention) > 0,
+                        ...(entry.node?.avatar ? { avatar: entry.node.avatar } : {}),
+                        // A call pointing into a machine not on screen is said on its
+                        // rail button, the one place that machine is visible.
+                        ...(voiceFocusConnectionId === entry.id &&
+                        entry.id !== (directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID)
+                            ? { voiceFocus: true }
+                            : {}),
+                    };
                 })}
-        </ConnectionShell>
+                selectedId={directory.activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID}
+                onSelect={props.happyAgents.happyAgentActivate}
+                itemMenuItems={(item) =>
+                    completionSoundMenuItems(
+                        happyAgentAttentionConnection(attention, item.id).completionSound,
+                    )
+                }
+                onItemMenuSelect={(id, actionId) => {
+                    const sound = completionSoundOf(actionId);
+                    if (sound) props.attention.completionSoundUpdate(id, sound);
+                }}
+                onReorder={
+                    directory.happyAgents.some(
+                        (entry) =>
+                            entry.id === LOCAL_HAPPY_AGENT_ID && entry.status === "connected",
+                    )
+                        ? props.happyAgents.happyAgentReorder
+                        : undefined
+                }
+                reordering={directory.reordering}
+                reorderError={directory.reorderError}
+                windowControls={props.platform === "desktop"}
+                collapsed={sidebarVisibility.hidden}
+                error={directory.error}
+            >
+                <ConnectionSurface
+                    key={LOCAL_HAPPY_AGENT_ID}
+                    active={
+                        !directory.activeHappyAgentId ||
+                        directory.activeHappyAgentId === LOCAL_HAPPY_AGENT_ID
+                    }
+                >
+                    <DesktopLocalScreens
+                        {...props}
+                        happyAgents={main?.directory ?? props.happyAgents}
+                        windowState={surfaceWindowState}
+                    />
+                </ConnectionSurface>
+                {directory.happyAgents
+                    .filter((entry) => entry.id !== LOCAL_HAPPY_AGENT_ID)
+                    .map((entry) => {
+                        const ui = props.connectionUis.get(entry.id);
+                        if (!ui) return null;
+                        return (
+                            <ConnectionSurface
+                                key={entry.id}
+                                active={directory.activeHappyAgentId === entry.id}
+                            >
+                                <HappyAgentBoundary
+                                    appearance={props.appearance}
+                                    bridge={props.bridge}
+                                    browserContent={props.browserContent}
+                                    commandPalette={ui.commandPalette}
+                                    connectionOnboarding
+                                    experiments={props.experiments}
+                                    projectsVisibility={props.projectsVisibility}
+                                    statusBar={props.statusBar}
+                                    gptLive={props.gptLive}
+                                    usageAnalytics={props.usageAnalytics}
+                                    keepAwake={props.keepAwake}
+                                    htmlPreview={props.htmlPreview}
+                                    artifactPage={props.artifactPage}
+                                    mediaWindow={props.mediaWindow}
+                                    navigationOrder={ui.navigationOrder}
+                                    sidebarCollapse={ui.sidebarCollapse}
+                                    sidebarSearch={ui.sidebarSearch}
+                                    sidebarVisibility={ui.sidebarVisibility}
+                                    attention={props.attention}
+                                    platform={props.platform}
+                                    router={ui.router}
+                                    happyAgents={ui.directory}
+                                    settings={ui.settings}
+                                    titleShimmer={props.titleShimmer}
+                                    windowState={surfaceWindowState}
+                                />
+                            </ConnectionSurface>
+                        );
+                    })}
+            </ConnectionShell>
+        </DesktopAgentBrokenGate>
     );
 }
 
@@ -1353,6 +1370,11 @@ if (mediaPreviewBridge) {
             daemon: daemon ?? unavailableDaemonStore,
             happyAgents,
         });
+        const agentBroken = desktopAgentBrokenStoreCreate({
+            daemon: daemon ?? unavailableDaemonStore,
+            happyAgents,
+            runtime: runtimeStore,
+        });
         function activeRouter(): HappyAgentRouter {
             return (
                 connectionUis.get(happyAgents.get().activeHappyAgentId ?? LOCAL_HAPPY_AGENT_ID)
@@ -1537,6 +1559,7 @@ if (mediaPreviewBridge) {
                         windowState={windowState}
                         surfaceWindowState={surfaceWindowState}
                         agentUpdate={agentUpdate}
+                        agentBroken={agentBroken}
                     />
                 </CodeHighlightWorkers>
             </DesktopAppearance>,

@@ -1,0 +1,40 @@
+/*
+ * C-306 SetupPrompt — a paragraph to paste into another assistant.
+ *
+ * A quiet well on the raised surface, at the setup column's full measure. The
+ * text wraps and is selectable; the copy action sits under it on the right so
+ * the paragraph keeps the whole width. Every dimension is on the 4px grid.
+ */
+
+.happy-setup-prompt,
+.happy-setup-prompt__text {
+    box-sizing: border-box;
+}
+
+.happy-setup-prompt {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    padding: 12px 12px 4px 16px;
+    border: 1px solid var(--divider);
+    border-radius: var(--happy-radius-md);
+    background: var(--surface-high);
+}
+
+.happy-setup-prompt__text {
+    margin: 0;
+    color: var(--text);
+    font-size: 13px;
+    line-height: 20px;
+    text-align: left;
+    overflow-wrap: anywhere;
+    user-select: text;
+}
+
+.happy-setup-prompt__actions {
+    display: flex;
+    flex: none;
+    justify-content: flex-end;
+}

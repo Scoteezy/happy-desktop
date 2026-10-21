@@ -126,6 +126,7 @@
 @import "./styles/setup-choice.css";
 @import "./styles/setup-assistants.css";
 @import "./styles/setup-command.css";
+@import "./styles/setup-prompt.css";
 @import "./styles/agent-update-card.css";
 @import "./styles/setup-option-card.css";
 @import "./styles/default-agent-form.css";
