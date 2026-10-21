@@ -161,8 +161,8 @@ it("keeps the Voice category visible before experimental opt-in and calls disabl
             (view.$('[aria-label="Enable GPT-Live voice"]').element as HTMLButtonElement).disabled,
         ).toBe(true);
         expect(document.querySelector('[aria-label="Voice account"]')).not.toBeNull();
-        await userEvent.click(category("General")!);
-        const control = view.$('[aria-label="Enable experimental features"]').element;
+        await userEvent.click(category("Experimental")!);
+        const control = view.$('[aria-label="Voice calls"]').element;
         await userEvent.click(control);
         expect(category("Voice")).toBeDefined();
         expect(document.querySelector('[aria-label="Enable GPT-Live voice"]')).toBeNull();
@@ -190,8 +190,8 @@ it("keeps the Voice category visible before experimental opt-in and calls disabl
             (view.$('[aria-label="Enable GPT-Live voice"]').element as HTMLButtonElement).disabled,
         ).toBe(false);
         await view.screenshot("GptLiveSettings.experimental-voice.test");
-        await userEvent.click(category("General")!);
-        await userEvent.click(view.$('[aria-label="Enable experimental features"]').element);
+        await userEvent.click(category("Experimental")!);
+        await userEvent.click(view.$('[aria-label="Voice calls"]').element);
         expect(category("Voice")).toBeDefined();
         expect(document.querySelector(".happy-gpt-live__bar")).toBeNull();
         expect(document.querySelector('[aria-label="Enable GPT-Live voice"]')).toBeNull();

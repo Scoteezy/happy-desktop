@@ -28,6 +28,7 @@ import type {
     UsageAnalyticsStore,
 } from "happy-desktop-state";
 import {
+    EXPERIMENTAL_FEATURES,
     HAPPY_AGENT_CHANGE_TIERS_MAX,
     HAPPY_AGENT_INSTRUCTIONS_MAX_BYTES,
     HAPPY_AGENT_SECURITY_POLICY_MAX_BYTES,
@@ -64,6 +65,7 @@ import {
     DesktopMobileSetup,
     HappyAgentAccountSettings,
     HappyAgentGeneralSettings,
+    HappyAgentExperimentalSettings,
     HappyAgentDebugLogPanel,
     HappyAgentDebugSettings,
     HappyAgentFileTierSettings,
@@ -116,6 +118,7 @@ export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategor
     { icon: "zap", id: "usage", label: "Usage" },
     { icon: "call", id: "voice", label: "Voice" },
     { icon: "mobile", id: "mobile-access", label: "Mobile Access" },
+    { icon: "zap", id: "experimental", label: "Experimental" },
     { icon: "code", id: "debug", label: "Dev Tools" },
 ];
 
@@ -308,6 +311,7 @@ export interface AppHappyAgentProfilerStore {
 }
 
 const CATEGORY_DESCRIPTIONS: Record<string, string> = {
+    experimental: "Work that is still being built. Kept on this machine only.",
     voice: "Voice calls, controller, and prompt",
     debug: "Inspect live state, Happy and Happy Agent debugger endpoints, and renderer profiles",
     general: "How this window looks and what a new session starts with",
@@ -678,7 +682,18 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             connectionRail={windowState.connectionRail}
             sidebarWidth={props.sidebarVisibility?.get().width}
         >
-            {section === "voice" ? (
+            {section === "experimental" ? (
+                <HappyAgentExperimentalSettings
+                    features={EXPERIMENTAL_FEATURES.map((feature) => ({
+                        ...feature,
+                        enabled: experiments[feature.id],
+                    }))}
+                    onFeatureChange={(id, enabled) => {
+                        const feature = EXPERIMENTAL_FEATURES.find((feature) => feature.id === id);
+                        if (feature) experimentsStore.featureUpdate(feature.id, enabled);
+                    }}
+                />
+            ) : section === "voice" ? (
                 props.gptLive ? (
                     <>
                         <GptLiveSettings
@@ -688,14 +703,14 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                             checking={gptLive.status === "checking"}
                             accountsVisible
                             callsUnavailable={
-                                experiments.experimentalFeaturesEnabled
+                                experiments.voice
                                     ? undefined
-                                    : "Enable experimental features in General to turn on voice calls."
+                                    : "Enable Voice calls in Experimental to turn on voice calls."
                             }
                             onAccountSelect={gptLiveStore.accountSelect}
                             onAccountsRead={gptLiveStore.availabilityRead}
                             onEnabledChange={(enabled) => {
-                                if (experimentsStore.get().experimentalFeaturesEnabled)
+                                if (experimentsStore.get().voice)
                                     gptLiveStore.gptLiveEnabledUpdate(enabled);
                             }}
                         />
@@ -1135,7 +1150,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                         value: level,
                     }))}
                     error={models.type === "error" ? models.error.message : undefined}
-                    experimentalFeaturesEnabled={experiments.experimentalFeaturesEnabled}
                     {...(props.usageAnalytics
                         ? {
                               usageAnalyticsEnabled: usageAnalytics.usageAnalyticsEnabled,
@@ -1173,9 +1187,6 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     }
                     linkOpenPlacement={settings.linkOpenPlacement}
                     onLinkOpenPlacementChange={props.settings.linkOpenPlacementUpdate}
-                    onExperimentalFeaturesChange={(enabled) =>
-                        experimentsStore.experimentalFeaturesUpdate(enabled)
-                    }
                     onTitleShimmerChange={(enabled) =>
                         titleShimmerStore.titleShimmerUpdate(enabled)
                     }

@@ -35,8 +35,6 @@ export type HappyAgentGeneralSettingsProps = {
     error?: string;
     /** Why daemon-backed defaults cannot currently be changed. Appearance remains local. */
     unavailable?: string;
-    /** Whether this window offers the features that are not finished yet. */
-    experimentalFeaturesEnabled: boolean;
     /** Whether active session, project, and workspace titles shimmer. */
     titleShimmerEnabled: boolean;
     /**
@@ -94,7 +92,6 @@ export type HappyAgentGeneralSettingsProps = {
     onAppearanceChange: (appearance: HappyAgentAppearanceChoice) => void;
     onScrollbarVisibilityChange: (visibility: HappyAgentScrollbarVisibilityChoice) => void;
     onLinkOpenPlacementChange: (placement: HappyAgentLinkOpenPlacementChoice) => void;
-    onExperimentalFeaturesChange: (enabled: boolean) => void;
     onTitleShimmerChange: (enabled: boolean) => void;
     onDefaultModelChange: (key: string) => void;
     onEffortChange: (effort: string) => void;
@@ -543,25 +540,6 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                     />
                 </HappyAgentSettingsSection>
             ) : null}
-            <HappyAgentSettingsSection
-                description="Work that is still being built. It can change or disappear between releases."
-                title="Experimental features"
-            >
-                <FormRow
-                    control={
-                        <Switch
-                            aria-label="Enable experimental features"
-                            checked={props.experimentalFeaturesEnabled}
-                            id="happy-agent-settings-experimental-features"
-                            onChange={props.onExperimentalFeaturesChange}
-                            size="small"
-                        />
-                    }
-                    description="Reveals Experimental settings, Inbox, and Folders. Kept on this machine only."
-                    htmlFor="happy-agent-settings-experimental-features"
-                    label="Enable experimental features"
-                />
-            </HappyAgentSettingsSection>
             {props.usageAnalyticsEnabled !== undefined && props.onUsageAnalyticsChange ? (
                 <HappyAgentProductAnalyticsSettings
                     enabled={props.usageAnalyticsEnabled}

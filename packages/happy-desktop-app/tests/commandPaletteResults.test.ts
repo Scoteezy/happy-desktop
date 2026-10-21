@@ -18,7 +18,6 @@ it.each([false, true])(
             scrollbarVisibility: "automatic",
             linkOpenPlacement: "panel",
             titleShimmerEnabled: false,
-            experimentalFeaturesEnabled,
         });
         const voice = result.rows.find(
             (row) => row.kind === "command" && row.id === "settings:voice",

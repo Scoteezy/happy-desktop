@@ -6,6 +6,7 @@ import {
     HappyAgentDebugSettings,
     HappyAgentFileTierSettings,
     HappyAgentGeneralSettings,
+    HappyAgentExperimentalSettings,
     HappyAgentInstructionsSettings,
     HappyAgentMobileSettings,
     HappyAgentProviderSettings,
@@ -663,7 +664,6 @@ export function HappyAgentSettingsBlueprintPage() {
                         defaultModelKey="codex:openai/gpt-5.6-sol"
                         effort="medium"
                         effortOptions={effortOptions}
-                        experimentalFeaturesEnabled
                         modelOptions={modelOptions}
                         onAppearanceChange={noop}
                         statusBar={{
@@ -684,7 +684,6 @@ export function HappyAgentSettingsBlueprintPage() {
                         previewUpdatesEnabled
                         onUsageAnalyticsChange={noop}
                         usageAnalyticsEnabled
-                        onExperimentalFeaturesChange={noop}
                         onDefaultModelChange={noop}
                         onEffortChange={noop}
                         onPermissionModeChange={noop}
@@ -703,7 +702,7 @@ export function HappyAgentSettingsBlueprintPage() {
             </FullScreenSpecimen>
             <FullScreenSpecimen
                 label="Happy Agent settings — Experimental"
-                detail="Revealed only after enabling experimental features in General"
+                detail="Independent choices for each unfinished feature"
                 number="01x"
             >
                 <HappyAgentSettingsShell
@@ -717,7 +716,16 @@ export function HappyAgentSettingsBlueprintPage() {
                     onCategorySelect={noop}
                     onClose={noop}
                 >
-                    <GptLiveSettings enabled={false} onEnabledChange={noop} />
+                    <HappyAgentExperimentalSettings
+                        features={[
+                            { id: "spacesSidebar", label: "Spaces sidebar", enabled: true },
+                            { id: "stemCells", label: "Stem cells", enabled: true },
+                            { id: "batchNotes", label: "Sidebar batch notes", enabled: false },
+                            { id: "inbox", label: "Inbox", enabled: false },
+                            { id: "voice", label: "Voice calls", enabled: false },
+                        ]}
+                        onFeatureChange={noop}
+                    />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>
             <FullScreenSpecimen
@@ -1232,12 +1240,10 @@ export function HappyAgentSettingsBlueprintPage() {
                         defaultModelKey="codex:openai/gpt-5.6-sol"
                         effort="medium"
                         effortOptions={effortOptions}
-                        experimentalFeaturesEnabled={false}
                         modelOptions={modelOptions}
                         onAppearanceChange={noop}
                         onDefaultModelChange={noop}
                         onEffortChange={noop}
-                        onExperimentalFeaturesChange={noop}
                         onPermissionModeChange={noop}
                         onScrollbarVisibilityChange={noop}
                         onLinkOpenPlacementChange={noop}

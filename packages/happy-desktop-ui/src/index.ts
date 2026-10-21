@@ -860,6 +860,10 @@ export {
     type HappyAgentScrollbarVisibilityChoice,
 } from "./pages/settings/HappyAgentGeneralSettings";
 export {
+    HappyAgentExperimentalSettings,
+    type HappyAgentExperimentalSettingsProps,
+} from "./pages/settings/HappyAgentExperimentalSettings";
+export {
     HappyAgentProductAnalyticsSettings,
     type HappyAgentProductAnalyticsSettingsProps,
 } from "./pages/settings/HappyAgentProductAnalyticsSettings";

@@ -113,14 +113,14 @@ const cases: readonly BenchmarkCase[] = [
     },
     {
         module: "experiments/experimentsStore",
-        operation: "experimentalFeaturesUpdate",
+        operation: "featureUpdate",
         minimumChangedReferences: 1,
         create: () => {
             const store = experimentsStoreCreate();
             return {
                 snapshot: store.get,
-                change: () => store.experimentalFeaturesUpdate(true),
-                noChange: () => store.experimentalFeaturesUpdate(false),
+                change: () => store.featureUpdate("voice", true),
+                noChange: () => store.featureUpdate("voice", false),
             };
         },
     },

@@ -110,8 +110,8 @@ it("shows Voice settings while calls are off and preserves the experimental opt-
         "false",
     );
     expect(view.getByText("Test Model")).toBeTruthy();
-    fireEvent.click(view.getByRole("button", { name: "General" }));
-    fireEvent.click(view.getByRole("switch", { name: "Enable experimental features" }));
+    fireEvent.click(view.getByRole("button", { name: "Experimental" }));
+    fireEvent.click(view.getByRole("switch", { name: "Voice calls" }));
     fireEvent.click(view.getByRole("button", { name: "Voice" }));
     const control = view.getByRole("switch", { name: "Enable GPT-Live voice" });
     expect(control.getAttribute("aria-checked")).toBe("false");
@@ -124,10 +124,10 @@ it("shows Voice settings while calls are off and preserves the experimental opt-
     fireEvent.click(control);
     expect(gptLive.get().gptLiveEnabled).toBe(false);
     expect(gptLiveStoreCreate(persistence).get().gptLiveEnabled).toBe(false);
-    expect(experiments.get().experimentalFeaturesEnabled).toBe(true);
-    fireEvent.click(view.getByRole("button", { name: "General" }));
+    expect(experiments.get().voice).toBe(true);
+    fireEvent.click(view.getByRole("button", { name: "Experimental" }));
     expect(view.queryByRole("switch", { name: "Enable GPT-Live voice" })).toBeNull();
-    fireEvent.click(view.getByRole("switch", { name: "Enable experimental features" }));
+    fireEvent.click(view.getByRole("switch", { name: "Voice calls" }));
     expect(view.getByRole("button", { name: "Voice" })).toBeTruthy();
     view.unmount();
     voiceSettings[Symbol.dispose]();

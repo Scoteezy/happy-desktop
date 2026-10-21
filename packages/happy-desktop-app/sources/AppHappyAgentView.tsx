@@ -3183,7 +3183,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         experimentsStore.subscribe,
         experimentsStore.get,
         experimentsStore.get,
-    ).experimentalFeaturesEnabled;
+    );
     // Whether the reader asked in settings for the Projects sections to be
     // left out. It is the window's own choice, so it applies to every
     // connection at once and changes the sidebar the moment it is made.
@@ -3423,7 +3423,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // machine is reachable: a queue of questions is meaningless from a Happy Agent that
     // cannot say what it is waiting on.
     const pinnedOffered: SidebarItem[] =
-        experimental && active?.session?.inbox
+        experimental.inbox && active?.session?.inbox
             ? [
                   {
                       badge: inboxPending,
@@ -3526,7 +3526,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 addressedProject?.id,
             )}
             activeItemId={
-                experimental && props.inboxOpen
+                experimental.inbox && props.inboxOpen
                     ? INBOX_ITEM
                     : props.artifactsOpen
                       ? ARTIFACTS_ITEM
@@ -4231,7 +4231,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
 
         // The inbox belongs to the addressed machine, so it is shown only while that
         // machine has stores to answer through.
-        if (experimental && props.inboxOpen && active?.session?.inbox)
+        if (experimental.inbox && props.inboxOpen && active?.session?.inbox)
             return (
                 <>
                     {desktop ? <WindowDragRegion /> : null}
@@ -4716,11 +4716,6 @@ function HappyAgentCommandPalette(
         props.appearance.get,
         props.appearance.get,
     );
-    const experiments = useSyncExternalStore(
-        props.experiments.subscribe,
-        props.experiments.get,
-        props.experiments.get,
-    );
     const titleShimmer = useSyncExternalStore(
         props.titleShimmer.subscribe,
         props.titleShimmer.get,
@@ -4733,7 +4728,6 @@ function HappyAgentCommandPalette(
     );
     const results = commandPaletteResults({
         ...paletteContext(props, props.facts),
-        experimentalFeaturesEnabled: experiments.experimentalFeaturesEnabled,
         query: palette.query,
         scrollbarVisibility: appearance.scrollbarVisibility,
         themeMode: appearance.mode,
@@ -4943,25 +4937,6 @@ function paletteSettingControl(
                     label={row.label}
                 />
             );
-        case "experimentalFeatures":
-            return (
-                <FormRow
-                    control={
-                        <Switch
-                            aria-label={row.label}
-                            checked={row.control.checked}
-                            id={row.controlId}
-                            onChange={(checked) =>
-                                actions.experiments.experimentalFeaturesUpdate(checked)
-                            }
-                            size="small"
-                        />
-                    }
-                    description={row.description}
-                    htmlFor={row.controlId}
-                    label={row.label}
-                />
-            );
     }
 }
 
@@ -4984,9 +4959,6 @@ function paletteSettingCommit(row: CommandPaletteSettingRow, actions: HappyAgent
             return;
         case "linkOpenPlacement":
             actions.settings.linkOpenPlacementUpdate(row.control.next);
-            return;
-        case "experimentalFeatures":
-            actions.experiments.experimentalFeaturesUpdate(row.control.next);
             return;
     }
 }

@@ -78,7 +78,7 @@ describe("GPT-Live call lifetime", () => {
             store.callStart();
             expect(live.daemon.calls).toHaveLength(0);
             expect(live.stats.permissionStarts).toBe(0);
-            experiments.experimentalFeaturesUpdate(true);
+            experiments.featureUpdate("voice", true);
             store.gptLiveEnabledUpdate(true);
             store.panelOpen();
             await vi.waitFor(() => expect(store.get().availability?.supported).toBe(true));
@@ -89,7 +89,7 @@ describe("GPT-Live call lifetime", () => {
             live.mediaReady();
             live.active();
             await vi.waitFor(() => expect(store.get().status).toBe("active"));
-            experiments.experimentalFeaturesUpdate(false);
+            experiments.featureUpdate("voice", false);
             expect(store.get().gptLiveEnabled).toBe(false);
             expect(store.get().panelVisible).toBe(false);
             expect(live.stats.mediaSilences).toBe(1);

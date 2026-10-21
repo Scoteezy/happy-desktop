@@ -128,14 +128,6 @@ export type CommandPaletteSettingRow =
               readonly checked: boolean;
               readonly next: boolean;
           };
-      })
-    | (CommandPaletteSettingRowBase & {
-          readonly setting: "experimentalFeatures";
-          readonly control: {
-              readonly kind: "switch";
-              readonly checked: boolean;
-              readonly next: boolean;
-          };
       });
 
 export interface CommandPaletteSettingRowBase {
@@ -225,7 +217,6 @@ export interface CommandPaletteInput extends CommandPaletteContext {
     readonly scrollbarVisibility: ScrollbarVisibility;
     readonly linkOpenPlacement: HappyAgentLinkOpenPlacement;
     readonly titleShimmerEnabled: boolean;
-    readonly experimentalFeaturesEnabled: boolean;
 }
 
 /** How many rows a typed query's section shows before it stops. */
@@ -281,7 +272,7 @@ const SETTINGS_JUMPS: readonly {
         section: "general",
         sectionLabel: "General",
         icon: "settings",
-        keywords: "appearance theme scrollbars new sessions experimental",
+        keywords: "appearance theme scrollbars new sessions",
     },
     {
         id: "settings:account",
@@ -290,6 +281,14 @@ const SETTINGS_JUMPS: readonly {
         sectionLabel: "Account",
         icon: "users",
         keywords: "profile name email photo happy account connect disconnect workos",
+    },
+    {
+        id: "settings:experimental",
+        title: "Settings › Experimental",
+        section: "experimental",
+        sectionLabel: "Experimental",
+        icon: "zap",
+        keywords: "spaces sidebar stem cells batch notes inbox",
     },
     {
         id: "settings:file-tiers",
@@ -725,19 +724,6 @@ function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
                 next: !input.titleShimmerEnabled,
             },
         },
-        {
-            kind: "setting",
-            setting: "experimentalFeatures",
-            id: "setting:experimental-features",
-            label: "Enable experimental features",
-            description: "Shows Inbox and Folders in the sidebar. Kept on this machine only.",
-            controlId: "happy-agent-palette-experimental-features",
-            control: {
-                kind: "switch",
-                checked: input.experimentalFeaturesEnabled,
-                next: !input.experimentalFeaturesEnabled,
-            },
-        },
     ];
 }
 
@@ -750,7 +736,6 @@ function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
  * are stated here rather than folded into either.
  */
 const SETTINGS_INLINE_SECTIONS: Record<CommandPaletteSettingRow["setting"], string> = {
-    experimentalFeatures: "Settings General Experimental features",
     linkOpenPlacement: "Settings General Links",
     scrollbarVisibility: "Settings General Appearance",
     themeMode: "Settings General Appearance",

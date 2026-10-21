@@ -13,7 +13,7 @@ export function AppGptLivePhone(props: { store: GptLiveStore; experiments?: Expe
         experiments.subscribe,
         experiments.get,
         experiments.get,
-    ).experimentalFeaturesEnabled;
+    ).voice;
     return experimental && state.gptLiveEnabled ? (
         <GptLivePhone state={state} onStart={props.store.callStart} onEnd={props.store.callEnd} />
     ) : null;

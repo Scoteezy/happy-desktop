@@ -92,7 +92,7 @@ export function gptLiveStoreCreate(
     experiments?: Pick<ExperimentsStore, "get">,
     promptRevisionRead: () => number = () => 0,
 ): GptLiveStore {
-    const allowed = () => experiments?.get().experimentalFeaturesEnabled ?? true;
+    const allowed = () => experiments?.get().voice ?? true;
     let snapshot = DISABLED;
     try {
         // Local storage is an external, editable boundary. Only literal true
@@ -496,7 +496,7 @@ export function gptLiveExperimentsConnect(
     experiments: ExperimentsStore,
 ): () => void {
     const reconcile = () => {
-        if (!experiments.get().experimentalFeaturesEnabled) store.gptLiveEnabledUpdate(false);
+        if (!experiments.get().voice) store.gptLiveEnabledUpdate(false);
     };
     reconcile();
     return experiments.subscribe(reconcile);
