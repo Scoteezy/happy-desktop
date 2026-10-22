@@ -90,6 +90,7 @@ export type {
 export type { HappyAgentArtifacts } from "./artifacts/artifacts.js";
 export type {
     HappyAgentInlineArtifact,
+    HappyAgentInlineArtifactContent,
     HappyAgentInlineArtifactLive,
     HappyAgentInlineArtifactSite,
     HappyAgentInlineArtifactsSnapshot,

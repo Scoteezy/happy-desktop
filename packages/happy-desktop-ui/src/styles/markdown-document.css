@@ -35,7 +35,8 @@
     width: 100%;
     max-width: 768px;
     margin: 0 auto;
-    padding: 24px 32px 64px;
+    padding: var(--happy-document-inset);
+    padding-bottom: 64px;
     font-size: 15px;
     line-height: 24px;
 }
@@ -322,4 +323,18 @@
     height: 1px;
     border: 0;
     background: var(--divider);
+}
+
+/* ---- Laid inline --------------------------------------------------------- */
+
+/* A document laid into a reply reads on the reply's own surface, at its full
+   height, lined up with the text around it. */
+.happy-markdown-document[data-flow="inline"] {
+    background: transparent;
+}
+
+.happy-markdown-document[data-flow="inline"] > .happy-markdown-document__body {
+    max-width: none;
+    margin: 0;
+    padding: 0;
 }

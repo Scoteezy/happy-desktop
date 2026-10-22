@@ -1,5 +1,4 @@
 import { useState, type CSSProperties } from "react";
-import { happyAgentArtifactTypeLabel } from "happy-desktop-state";
 import type {
     ConversationActivity,
     ConversationActivityPresentation,
@@ -19,11 +18,11 @@ import { DiffSnippet, type DiffLine } from "./DiffSnippet";
 import { filePreviewKind } from "./FilePreview";
 import { Icon, type IconName } from "./Icon";
 import { InlinePage, type InlinePageProps } from "./InlinePage";
+import type { InlinePageGeometry } from "./inlinePageFit";
 import { useMessageListDisclosureAnchor } from "./messageListDisclosureAnchor";
 import { renderMessageMarkdown } from "./MessageMarkdown";
 import { messageReferencesPlainText, type MessageReferences } from "./messageReferences";
 import { ArtifactTypeGlyph } from "./pages/artifacts/artifactPresentation";
-import { ResultCard } from "./ResultCard";
 import { ScrollingText } from "./ScrollingText";
 import { Spinner } from "./Spinner";
 import { toolCallStillGlyph } from "./toolCallStillGlyph";
@@ -1062,11 +1061,12 @@ function AgentToolActivity(props: {
             {props.inlinePage ? (
                 <InlinePage {...props.inlinePage} />
             ) : presentation?.type === "artifact" ? (
-                <ArtifactResultCard presentation={presentation} references={props.references} />
+                <ArtifactTitleRow presentation={presentation} references={props.references} />
             ) : presentation?.type === "page" ? (
-                <ResultCard
-                    detail={presentation.url}
-                    glyph={<Icon name="globe" size={20} />}
+                <InlinePage
+                    geometry={TITLE_ONLY}
+                    glyph={<Icon name="globe" size={16} />}
+                    onHeightChange={ignoreHeight}
                     title={presentation.title}
                 />
             ) : null}
@@ -1197,36 +1197,42 @@ function AgentToolActivity(props: {
     );
 }
 
+/** A row that is only its title: nothing under it to expand or measure. */
+const TITLE_ONLY: InlinePageGeometry = { placement: "title", collapsed: true };
+const ignoreHeight = (): void => undefined;
+
 /**
- * The artifact a call published, as a card that opens it the way a reference
- * to it in a message does. It reads the live title through the same
- * references, keeping the title the call published while that is still being
- * read; an artifact the reader cannot open stays a plain record.
+ * The artifact a call published, where the transcript has no artifacts of its
+ * own to show inline: the same row as every other artifact in a reply, at its
+ * title, which opens it the way a reference to it in a message does. It reads
+ * the live title through the same references, keeping the title the call
+ * published while that is still being read; an artifact the reader cannot open
+ * stays a plain title.
  */
-function ArtifactResultCard(props: {
+function ArtifactTitleRow(props: {
     presentation: Extract<ConversationActivityPresentation, { type: "artifact" }>;
     references?: MessageReferences;
 }) {
     const { presentation, references } = props;
     // Only a creation makes version 1, and an agent writes a new artifact's
-    // files after the call that created it, so that card follows the artifact
+    // files after the call that created it, so that row follows the artifact
     // instead of opening the entry it started from.
-    const created = presentation.version === 1;
-    const reference = created
-        ? { kind: "artifact", id: presentation.artifactId }
-        : { kind: "artifact", id: presentation.artifactId, version: presentation.version };
+    const reference =
+        presentation.version === 1 || presentation.shows === "latest"
+            ? { kind: "artifact", id: presentation.artifactId }
+            : { kind: "artifact", id: presentation.artifactId, version: presentation.version };
     const view = references?.view(reference);
     const title =
         view === undefined || (view.type === "link" && view.reading === true)
             ? presentation.title || "Untitled artifact"
             : view.label;
-    const typeLabel = happyAgentArtifactTypeLabel(presentation.artifactType);
     return (
-        <ResultCard
-            detail={created ? typeLabel : `${typeLabel} · Version ${String(presentation.version)}`}
-            glyph={<ArtifactTypeGlyph size={20} type={presentation.artifactType} />}
+        <InlinePage
+            geometry={TITLE_ONLY}
+            glyph={<ArtifactTypeGlyph size={16} type={presentation.artifactType} />}
+            onHeightChange={ignoreHeight}
             {...(references !== undefined && view?.type === "link"
-                ? { onOpen: () => references.open(reference) }
+                ? { onOpenSide: () => references.open(reference) }
                 : {})}
             title={title}
         />

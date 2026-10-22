@@ -1,6 +1,7 @@
 /*
- * A page laid into a reply. Every box here is the one `inlinePageHeight`
- * reserves: a 28px title line, then an 8px gap and the page's measured height.
+ * An artifact in a reply. Every box here is the one `inlinePageHeight`
+ * reserves: a 28px title line, then an 8px gap and the content's measured
+ * height when it is expanded.
  */
 
 .happy-inline-page {
@@ -25,13 +26,46 @@
     line-height: 22px;
 }
 
+/* The glyph and the title are one target: it opens the artifact beside the
+   chat. It reads as the reply's own text until the pointer finds it. */
+.happy-inline-page__opener {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+
+button.happy-inline-page__opener {
+    cursor: pointer;
+}
+
+button.happy-inline-page__opener:hover .happy-inline-page__title {
+    text-decoration: underline;
+    text-decoration-color: var(--text-secondary);
+    text-underline-offset: 3px;
+}
+
+button.happy-inline-page__opener:focus-visible {
+    outline: 2px solid var(--text-link);
+    outline-offset: 2px;
+    border-radius: var(--happy-radius-sm);
+}
+
 .happy-inline-page__glyph {
     display: flex;
     flex: none;
     align-items: center;
     justify-content: center;
     width: 20px;
-    margin-right: 4px;
     color: var(--text-secondary);
 }
 
@@ -41,6 +75,11 @@
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.happy-inline-page__status {
+    flex: none;
+    color: var(--text-secondary);
 }
 
 .happy-inline-page__title-line > .happy-button {
@@ -89,4 +128,18 @@
     color: var(--text-secondary);
     font-size: 13px;
     line-height: 24px;
+}
+
+/* Content other than a page fills its frame; what it measures is its own
+   height, inside. */
+.happy-artifact-inline-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.happy-artifact-inline-content__measure {
+    flex: none;
+    width: 100%;
+    min-width: 0;
 }

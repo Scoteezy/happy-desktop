@@ -250,6 +250,12 @@ export {
     type InlinePagePlacement,
     type InlinePageRender,
 } from "./inlinePageFit";
+export {
+    artifactPageHostObserve,
+    artifactPageHostStyle,
+    artifactPageScheme,
+    type ArtifactPagePlacement,
+} from "./artifactPageHost";
 export { InlinePage, type InlinePageProps } from "./InlinePage";
 export type { ConversationInlinePages } from "./conversationInlinePages";
 export type { MediaWindowOpener, MediaWindowRequest } from "./mediaWindow";

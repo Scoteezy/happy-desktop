@@ -18,6 +18,7 @@ export const inlineArtifactsStoreNoop: HappyAgentInlineArtifactsStore = {
     get: () => INLINE_EMPTY,
     subscribe: () => () => undefined,
     request: () => undefined,
+    contentRequest: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
 
@@ -46,7 +47,7 @@ function browserFailureMessage(failure: BrowserFailure): string {
 const ignore = (): void => undefined;
 
 /**
- * What a conversation needs to show its artifacts and pages inline: the
+ * What a conversation needs to show its artifacts and pages in a reply: the
  * artifacts it follows, the host's engines bound to this conversation, and
  * where a page opens beside it.
  *
@@ -63,7 +64,7 @@ export function conversationInlinePagesCreate(input: {
     readonly browserConnectionId: string | null;
     readonly workspaceId: string;
     readonly agentId: string;
-    readonly artifactOpen: (artifactId: HappyAgentArtifactId) => void;
+    readonly artifactOpen: (artifactId: HappyAgentArtifactId, version?: number) => void;
     readonly pageOpen: (url: string) => void;
 }): ConversationInlinePages {
     const artifactPage = input.artifactPage;
@@ -71,6 +72,7 @@ export function conversationInlinePagesCreate(input: {
     return {
         artifacts: input.artifacts,
         artifactsRequest: (artifactIds) => input.store.request(artifactIds),
+        artifactsContentRequest: (artifactIds) => input.store.contentRequest(artifactIds),
         ...(artifactPage
             ? {
                   artifactRender: (url, fit) =>

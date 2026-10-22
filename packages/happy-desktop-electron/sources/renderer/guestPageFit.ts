@@ -1,11 +1,11 @@
-import type { InlinePageFit } from "happy-desktop-ui";
+import { artifactPageHostObserve, artifactPageScheme, type InlinePageFit } from "happy-desktop-ui";
 import { guestFitScript, guestFitHeight } from "../shared/guestFitScript";
 
 /** The guest calls a fitted page needs: its own document's styles and scripts. */
 export interface FitGuestElement extends HTMLElement {
     executeJavaScript(code: string): Promise<unknown>;
     getWebContentsId(): number;
-    insertCSS(css: string): Promise<string>;
+    insertCSS(css: string, options?: { readonly cssOrigin?: "user" | "author" }): Promise<string>;
     removeInsertedCSS(key: string): Promise<void>;
 }
 
@@ -16,23 +16,13 @@ export interface FitGuestElement extends HTMLElement {
  * that follows `light dark` is drawn in the conversation's, and the page is
  * laid out at its content height: a root or body sized to the viewport would
  * otherwise measure as whatever height it was last given, and nothing inside
- * an inline page ever scrolls. Happy's standard styles inset a page shown on a
- * surface of its own; inline, it lines up with the reply around it instead.
+ * an inline page ever scrolls.
  */
 function fitStyles(scheme: "light" | "dark"): string {
     return [
-        `:root { color-scheme: ${scheme} !important; --happy-page-inset: 0px; }`,
+        `:root { color-scheme: ${scheme} !important; }`,
         "html, body { height: auto !important; min-height: 0 !important; max-height: none !important; overflow: hidden !important; }",
     ].join("\n");
-}
-
-/** The colour scheme the conversation around a guest is drawn in. */
-function hostColorScheme(element: HTMLElement): "light" | "dark" {
-    const declared = getComputedStyle(element).colorScheme;
-    const dark = declared.includes("dark");
-    const light = declared.includes("light");
-    if (dark !== light) return dark ? "dark" : "light";
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 /**
@@ -58,11 +48,8 @@ export class GuestPageFit {
     private generation = 0;
     private guest?: FitGuestElement;
     private stylesKey?: string;
-    /**
-     * Followed from the first document on, not from construction: a view is
-     * also rendered where there is no window, as markup for a test's guest.
-     */
-    private schemeQuery?: MediaQueryList;
+    /** Follows the conversation's appearance while a guest is fitted. */
+    private unobserve?: () => void;
 
     /** `fit` is read each time a height arrives, so it is always the view's current one. */
     constructor(private readonly fit: () => InlinePageFit | undefined) {}
@@ -70,9 +57,9 @@ export class GuestPageFit {
     /** A new document is ready in `guest`: style it and follow its height. */
     documentReady(guest: FitGuestElement): void {
         const generation = ++this.generation;
-        if (!this.schemeQuery) {
-            this.schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
-            this.schemeQuery.addEventListener("change", this.schemeChanged);
+        if (this.guest !== guest) {
+            this.unobserve?.();
+            this.unobserve = artifactPageHostObserve(guest, this.schemeChanged);
         }
         this.guest = guest;
         this.stylesKey = undefined;
@@ -101,17 +88,17 @@ export class GuestPageFit {
         this.generation += 1;
         this.guest = undefined;
         this.stylesKey = undefined;
+        this.unobserve?.();
+        this.unobserve = undefined;
     }
 
     dispose(): void {
         this.stop();
-        this.schemeQuery?.removeEventListener("change", this.schemeChanged);
-        this.schemeQuery = undefined;
     }
 
     private stylesApply(guest: FitGuestElement, generation: number): void {
         const previous = this.stylesKey;
-        guest.insertCSS(fitStyles(hostColorScheme(guest))).then(
+        guest.insertCSS(fitStyles(artifactPageScheme(guest))).then(
             (key) => {
                 if (generation !== this.generation) return;
                 this.stylesKey = key;

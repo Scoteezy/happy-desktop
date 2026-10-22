@@ -1,0 +1,111 @@
+import figtreeFont from "@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2?inline";
+import monoFont from "@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2?inline";
+
+/**
+ * Where an artifact's page is shown: laid into a reply, or on a surface of its
+ * own — beside the chat or as a page. The page is the same either way; only
+ * its inset differs.
+ */
+export type ArtifactPagePlacement = "inline" | "panel";
+
+/**
+ * The values a host hands an artifact's page, as `--happy-host-<input>`, each
+ * read from the theme token it mirrors. Happy's standard styles
+ * (`/api/v1/style.css`) take every public `--happy-<input>` from these and fall
+ * back to their own values without them; a page that sets `--happy-<input>`
+ * itself wins over both.
+ */
+const ARTIFACT_PAGE_HOST_TOKENS: readonly (readonly [input: string, token: string])[] = [
+    ["text", "--text"],
+    ["muted", "--text-secondary"],
+    ["faint", "--input-placeholder"],
+    ["border", "--divider"],
+    /* The sunk surface code sits on, as inline code in a reply does. */
+    ["surface", "--input-background"],
+    ["accent", "--text-link"],
+    ["added", "--git-added-text"],
+    ["removed", "--git-removed-text"],
+    ["diff-added", "--diff-added-border"],
+    ["diff-removed", "--diff-removed-border"],
+    ["font", "--happy-font-ui"],
+    ["mono", "--happy-font-mono"],
+    /* A native bar cannot fade the way the app's own does, so the page's thumb
+       always shows at the quiet strength and takes the interaction one under
+       the pointer. */
+    ["scrollbar-size", "--happy-scrollbar-track"],
+    ["scrollbar-thumb", "--happy-scrollbar-quiet-color"],
+    ["scrollbar-thumb-hover", "--happy-scrollbar-interaction-color"],
+];
+
+/**
+ * The app's own typefaces, carried into the page as data: a page is another
+ * origin, which cannot load the app's files.
+ */
+const ARTIFACT_PAGE_FONT_FACES = [
+    `@font-face { font-family: "happy Figtree"; font-style: normal; font-display: block; font-weight: 300 900; src: url("${figtreeFont}") format("woff2-variations"); }`,
+    `@font-face { font-family: "happy Mono"; font-style: normal; font-display: block; font-weight: 100 800; src: url("${monoFont}") format("woff2-variations"); }`,
+].join("\n");
+
+/** The colour scheme the surface around `host` is drawn in. */
+export function artifactPageScheme(host: Element): "light" | "dark" {
+    const declared = getComputedStyle(host).colorScheme;
+    const dark = declared.includes("dark");
+    const light = declared.includes("light");
+    if (dark !== light) return dark ? "dark" : "light";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+/**
+ * The styles a host gives an artifact's page so it reads as part of the
+ * surface around `host`: that surface's resolved colours, typefaces,
+ * scrollbar, colour scheme, and the inset `placement` calls for.
+ *
+ * Meant for the page's user origin, which every rule the page writes outranks
+ * whatever its specificity: these are defaults, never overrides. They are read
+ * from the theme at the moment they are asked for, so a host asks again when
+ * the appearance changes (see `artifactPageHostObserve`).
+ */
+export function artifactPageHostStyle(host: Element, placement: ArtifactPagePlacement): string {
+    const computed = getComputedStyle(host);
+    const scheme = artifactPageScheme(host);
+    const inset =
+        placement === "inline"
+            ? "0px"
+            : computed.getPropertyValue("--happy-document-inset").trim() || "0px";
+    const declarations: string[] = [];
+    for (const [input, token] of ARTIFACT_PAGE_HOST_TOKENS) {
+        const value = computed.getPropertyValue(token).trim();
+        if (value) declarations.push(`--happy-host-${input}: ${value};`);
+    }
+    declarations.push(
+        `--happy-host-page-inset: ${inset};`,
+        `--happy-host-color-scheme: ${scheme};`,
+        // What standard styles from before host inputs read the inset from.
+        `--happy-page-inset: ${inset};`,
+    );
+    const rules = [ARTIFACT_PAGE_FONT_FACES, `:root { ${declarations.join(" ")} }`];
+    // A guest has no backdrop of its own. A page that names no colour scheme
+    // is drawn in the light one — black text — which is unreadable on a dark
+    // surface, so it gets the paper it was written for; a page that follows
+    // the host's scheme resolves this to `transparent` and keeps the surface.
+    if (placement === "panel" && scheme === "dark")
+        rules.push(":where(:root) { background-color: light-dark(Canvas, transparent); }");
+    return rules.join("\n");
+}
+
+/**
+ * Calls `changed` whenever the appearance `host` is drawn in may have
+ * changed: the system's light or dark, or the app's own override of it on the
+ * `ThemeScope` around `host`. Returns the unsubscribe.
+ */
+export function artifactPageHostObserve(host: Element, changed: () => void): () => void {
+    const query = window.matchMedia("(prefers-color-scheme: dark)");
+    query.addEventListener("change", changed);
+    const scope = host.closest('[data-happy-desktop-ui="theme-scope"]');
+    const observer = scope ? new MutationObserver(changed) : undefined;
+    if (scope) observer?.observe(scope, { attributes: true, attributeFilter: ["class"] });
+    return () => {
+        query.removeEventListener("change", changed);
+        observer?.disconnect();
+    };
+}

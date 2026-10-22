@@ -43,7 +43,11 @@ import {
     type MessageReferences,
 } from "./messageReferences";
 import { messageBodyFormat, type MessageBodyFormat } from "./messagePlainText";
-import { inlinePageHeight, type InlinePageGeometry } from "./inlinePageFit";
+import {
+    INLINE_PAGE_TITLE_HEIGHT,
+    inlinePageHeight,
+    type InlinePageGeometry,
+} from "./inlinePageFit";
 import { SYSTEM_NOTIFICATION_HEIGHT } from "./systemNotification";
 import { agentTraceMetaStats, agentTraceMetaTitle } from "./agentTraceMeta";
 import { conversationErrorTitle } from "./conversationErrorTitle";
@@ -489,8 +493,9 @@ function toolResultHeight(
             conversationMediaHeight(presentation.items, measure, presentation.layout)
         );
     }
+    // Without the transcript's own artifacts, a call's artifact is its title.
     if (presentation?.type === "artifact" || presentation?.type === "page")
-        return TOOL_MEDIA_GAP + RESULT_CARD_HEIGHT;
+        return TOOL_MEDIA_GAP + INLINE_PAGE_TITLE_HEIGHT;
     return 0;
 }
 

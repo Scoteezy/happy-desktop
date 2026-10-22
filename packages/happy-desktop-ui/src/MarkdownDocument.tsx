@@ -137,6 +137,13 @@ export type MarkdownDocumentProps = {
      * reader clicked.
      */
     sourceOffsets?: boolean;
+    /**
+     * `scroll`, the default, reads the document on a surface of its own: a
+     * scrollport with the document gutter. `inline` lays it into the flow
+     * around it at its full height, with no gutter, surface, or scrolling of
+     * its own, as an artifact shown in a reply is.
+     */
+    flow?: "scroll" | "inline";
 };
 
 /**
@@ -571,7 +578,47 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
         "onFileLinkOpen",
         "references",
         "sourceOffsets",
+        "flow",
     ]);
+    const body = (
+        <article
+            className="happy-markdown-document__body"
+            data-happy-desktop-ui="markdown-document-body"
+        >
+            <MarkdownCacheKeyContext.Provider value={local.cacheKey}>
+                <MarkdownReferencesContext.Provider value={local.references}>
+                    <FileOpenContext.Provider value={local.onFileOpen}>
+                        <FileLinkOpenContext.Provider value={local.onFileLinkOpen}>
+                            <MemoMarkdown
+                                components={documentComponents}
+                                urlTransform={markdownFileUrlTransform}
+                                rehypePlugins={
+                                    local.sourceOffsets
+                                        ? MARKDOWN_REHYPE_PLUGINS_SOURCE_OFFSETS
+                                        : MARKDOWN_REHYPE_PLUGINS_NONE
+                                }
+                                remarkPlugins={MARKDOWN_REMARK_PLUGINS}
+                            >
+                                {local.text}
+                            </MemoMarkdown>
+                        </FileLinkOpenContext.Provider>
+                    </FileOpenContext.Provider>
+                </MarkdownReferencesContext.Provider>
+            </MarkdownCacheKeyContext.Provider>
+        </article>
+    );
+    if (local.flow === "inline")
+        return (
+            <div
+                className={["happy-markdown-document", local.className].filter(Boolean).join(" ")}
+                data-flow="inline"
+                data-happy-desktop-ui="markdown-document"
+                data-testid={local["data-testid"]}
+                style={local.style}
+            >
+                {body}
+            </div>
+        );
     return (
         <ScrollArea
             axes="both"
@@ -581,31 +628,7 @@ export function MarkdownDocument(props: MarkdownDocumentProps) {
             style={local.style}
             viewportClassName="happy-markdown-document__viewport"
         >
-            <article
-                className="happy-markdown-document__body"
-                data-happy-desktop-ui="markdown-document-body"
-            >
-                <MarkdownCacheKeyContext.Provider value={local.cacheKey}>
-                    <MarkdownReferencesContext.Provider value={local.references}>
-                        <FileOpenContext.Provider value={local.onFileOpen}>
-                            <FileLinkOpenContext.Provider value={local.onFileLinkOpen}>
-                                <MemoMarkdown
-                                    components={documentComponents}
-                                    urlTransform={markdownFileUrlTransform}
-                                    rehypePlugins={
-                                        local.sourceOffsets
-                                            ? MARKDOWN_REHYPE_PLUGINS_SOURCE_OFFSETS
-                                            : MARKDOWN_REHYPE_PLUGINS_NONE
-                                    }
-                                    remarkPlugins={MARKDOWN_REMARK_PLUGINS}
-                                >
-                                    {local.text}
-                                </MemoMarkdown>
-                            </FileLinkOpenContext.Provider>
-                        </FileOpenContext.Provider>
-                    </MarkdownReferencesContext.Provider>
-                </MarkdownCacheKeyContext.Provider>
-            </article>
+            {body}
         </ScrollArea>
     );
 }

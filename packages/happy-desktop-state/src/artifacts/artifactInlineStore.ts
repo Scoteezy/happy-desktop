@@ -1,17 +1,24 @@
 import { HappyAgentApiError, type HappyAgentClient } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
+import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
+import type { UserError } from "../types.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import type { HappyAgentArtifactSiteOpening } from "../happyAgent/happyAgentHostServices.js";
 import {
     HAPPY_AGENT_ARTIFACT_EVENT_TYPES,
     happyAgentArtifactEventProject,
 } from "./artifactCatalog.js";
-import { happyAgentArtifactBackground, happyAgentArtifactTypeProject } from "./artifactProject.js";
+import {
+    happyAgentArtifactBackground,
+    happyAgentArtifactTypeProject,
+    happyAgentArtifactVersionProject,
+} from "./artifactProject.js";
 import type {
     HappyAgentArtifactDisplay,
     HappyAgentArtifactId,
     HappyAgentArtifactType,
 } from "./artifactTypes.js";
+import type { HappyAgentArtifactFileLink } from "./artifactViewerStore.js";
 
 /** Where an HTML artifact's latest version is served as a page, once it is. */
 export type HappyAgentInlineArtifactSite =
@@ -30,6 +37,36 @@ export interface HappyAgentInlineArtifactLive {
     readonly networkId: string;
 }
 
+/**
+ * What an artifact other than a page shows inline, at the version it was read
+ * for. A Markdown document is its text; an image, image series, video, or
+ * document is its files.
+ */
+export type HappyAgentInlineArtifactContent =
+    | {
+          readonly type: "markdown";
+          readonly version: number;
+          readonly entryPath: string;
+          readonly text: string;
+          /** Every file of the version by path, so the entry's references resolve to it. */
+          readonly files: ReadonlyMap<string, string>;
+      }
+    | {
+          readonly type: "files";
+          readonly version: number;
+          readonly files: readonly HappyAgentArtifactFileLink[];
+      }
+    | { readonly type: "failed"; readonly version: number; readonly error: UserError };
+
+/** The artifact types whose content a transcript can show inline from the store. */
+const CONTENT_TYPES: ReadonlySet<HappyAgentArtifactType> = new Set([
+    "markdown",
+    "image",
+    "image_series",
+    "video",
+    "document",
+]);
+
 /** An artifact the transcript shows inline, as it is now. */
 export type HappyAgentInlineArtifact =
     | {
@@ -45,6 +82,8 @@ export type HappyAgentInlineArtifact =
           readonly site?: HappyAgentInlineArtifactSite;
           /** Present for a live artifact, whose page is this address instead of its files. */
           readonly live?: HappyAgentInlineArtifactLive;
+          /** Any other type's latest content, once a row asked to show it. */
+          readonly content?: HappyAgentInlineArtifactContent;
       }
     /** No artifact has this id here, or this reader cannot see it. */
     | { readonly type: "missing" };
@@ -74,11 +113,20 @@ export interface HappyAgentInlineArtifactsStore {
     subscribe(listener: () => void): () => void;
     /** Owner input: the artifacts the visible transcript shows inline. */
     request(artifactIds: readonly HappyAgentArtifactId[]): void;
+    /**
+     * Owner input: the artifacts whose content the transcript shows expanded.
+     * Their latest content is read, and read again as new versions arrive; it
+     * never publishes in this call.
+     */
+    contentRequest(artifactIds: readonly HappyAgentArtifactId[]): void;
     [Symbol.dispose](): void;
 }
 
 export interface HappyAgentInlineArtifactsDeps {
-    readonly client: Pick<HappyAgentClient, "getArtifact">;
+    readonly client: Pick<
+        HappyAgentClient,
+        "getArtifact" | "getArtifactVersion" | "getArtifactFile" | "artifactFileUrl"
+    >;
     readonly sync: HappyAgentSync;
     /** Serves an HTML version as a live site, where the host has a guest to show it in. */
     readonly siteOpen?: (
@@ -114,6 +162,7 @@ function readyEqual(left: Ready, right: Ready): boolean {
         left.background === right.background &&
         left.live?.url === right.live?.url &&
         left.live?.networkId === right.live?.networkId &&
+        left.content === right.content &&
         leftSite?.type === rightSite?.type &&
         (leftSite?.type !== "opening" ||
             (rightSite?.type === "opening" && leftSite.version === rightSite.version)) &&
@@ -133,6 +182,9 @@ export function happyAgentInlineArtifactsStoreCreate(
     let snapshot = EMPTY;
     const wanted = new Set<HappyAgentArtifactId>();
     const reading = new Set<HappyAgentArtifactId>();
+    const contentWanted = new Set<HappyAgentArtifactId>();
+    /** Content being read now, as `<id>:<version>`. */
+    const contentReading = new Set<string>();
     /** Versions being served as pages now, as `<id>:<version>`. */
     const opening = new Set<string>();
     let following: AbortController | undefined;
@@ -209,6 +261,64 @@ export function happyAgentInlineArtifactsStoreCreate(
                 },
             );
     };
+    /**
+     * Reads the latest content of an artifact a row shows expanded, unless it
+     * is read already or being read. A newer version arriving meanwhile wins:
+     * an answer for an older one is dropped.
+     */
+    const contentEnsure = (artifactId: HappyAgentArtifactId, signal: AbortSignal): void => {
+        const held = snapshot.get(artifactId);
+        if (
+            !contentWanted.has(artifactId) ||
+            held?.type !== "ready" ||
+            held.status !== "active" ||
+            !CONTENT_TYPES.has(held.artifactType)
+        )
+            return;
+        const version = held.latestVersion;
+        if (held.content !== undefined && held.content.version === version) return;
+        const key = `${artifactId}:${String(version)}`;
+        if (contentReading.has(key)) return;
+        // What is on screen stays until the next version's content is read.
+        contentReading.add(key);
+        const contentLand = (content: HappyAgentInlineArtifactContent): void => {
+            if (signal.aborted) return;
+            const current = snapshot.get(artifactId);
+            if (current?.type !== "ready" || current.latestVersion !== version) return;
+            artifactSet(artifactId, { ...current, content });
+        };
+        void (async (): Promise<HappyAgentInlineArtifactContent> => {
+            const manifest = happyAgentArtifactVersionProject(
+                (await deps.client.getArtifactVersion(artifactId, version, { signal })).version,
+            );
+            const link = (path: string): string =>
+                deps.client.artifactFileUrl(artifactId, version, path);
+            if (held.artifactType !== "markdown")
+                return {
+                    type: "files",
+                    version,
+                    files: manifest.files.map((file) => ({ file, url: link(file.path) })),
+                };
+            const entry = await deps.client.getArtifactFile(
+                artifactId,
+                version,
+                manifest.entry.path,
+                { signal },
+            );
+            if (entry === null) throw new Error("The artifact file could not be read.");
+            return {
+                type: "markdown",
+                version,
+                entryPath: manifest.entry.path,
+                text: new TextDecoder().decode(entry.data),
+                files: new Map(manifest.files.map((file) => [file.path, link(file.path)])),
+            };
+        })()
+            .then(contentLand, (error: unknown) =>
+                contentLand({ type: "failed", version, error: happyAgentUserError(error) }),
+            )
+            .finally(() => contentReading.delete(key));
+    };
     const artifactRead = (artifactId: HappyAgentArtifactId, signal: AbortSignal): void => {
         if (reading.has(artifactId)) return;
         reading.add(artifactId);
@@ -244,8 +354,12 @@ export function happyAgentInlineArtifactsStoreCreate(
                     ...(held?.type === "ready" && held.site !== undefined
                         ? { site: held.site }
                         : {}),
+                    ...(held?.type === "ready" && held.content !== undefined
+                        ? { content: held.content }
+                        : {}),
                 });
                 siteEnsure(artifactId, signal);
+                contentEnsure(artifactId, signal);
             })
             .catch(() => undefined)
             .finally(() => reading.delete(artifactId));
@@ -308,8 +422,10 @@ export function happyAgentInlineArtifactsStoreCreate(
                     ...(background === undefined ? {} : { background }),
                     ...(live === undefined ? {} : { live }),
                     ...(held.site === undefined ? {} : { site: held.site }),
+                    ...(held.content === undefined ? {} : { content: held.content }),
                 });
                 siteEnsure(event.artifactId, active.signal);
+                contentEnsure(event.artifactId, active.signal);
             }
         })()
             .catch(() => undefined)
@@ -323,6 +439,7 @@ export function happyAgentInlineArtifactsStoreCreate(
         following?.abort();
         following = undefined;
         reading.clear();
+        contentReading.clear();
         if (retry) clearTimeout(retry);
         retry = undefined;
     };
@@ -347,6 +464,14 @@ export function happyAgentInlineArtifactsStoreCreate(
                 if (wanted.has(artifactId)) continue;
                 wanted.add(artifactId);
                 if (following) artifactRead(artifactId, following.signal);
+            }
+        },
+        contentRequest(artifactIds) {
+            if (disposed) return;
+            for (const artifactId of artifactIds) {
+                if (contentWanted.has(artifactId)) continue;
+                contentWanted.add(artifactId);
+                if (following) contentEnsure(artifactId, following.signal);
             }
         },
         [Symbol.dispose]() {

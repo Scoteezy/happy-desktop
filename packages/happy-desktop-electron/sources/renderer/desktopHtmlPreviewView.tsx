@@ -2,27 +2,12 @@ import { Component, createElement } from "react";
 import type { HtmlPreviewProps } from "happy-desktop-ui";
 import type { DesktopPreviewNavigation } from "../shared/desktopContract";
 import { GuestPageFit, type FitGuestElement } from "./guestPageFit";
+import { GuestPageStyle, type StyleGuestElement } from "./guestPageStyle";
 
-interface HtmlPreviewWebViewElement extends FitGuestElement {
+interface HtmlPreviewWebViewElement extends FitGuestElement, StyleGuestElement {
     getWebContentsId(): number;
     reload(): void;
 }
-
-/**
- * The canvas a page written for a light window is given in a dark one, when
- * nothing is painted under the guest.
- *
- * A guest has no backdrop of its own: what shows through a page that leaves its
- * background alone is whatever the embedder paints. A page that names no colour
- * scheme is drawn in the browser's light one — black text — which is unreadable
- * on a dark surface. This gives such a page the paper it was written for, the
- * same canvas the engine gives a frame whose scheme differs from its embedder's.
- * A page that declares `light dark` is drawn dark in a dark window, resolves to
- * `transparent`, and keeps the surface under it. `:where` has no specificity, so
- * any background the page gives its own root outranks this.
- */
-const PREVIEW_CANVAS_DARK =
-    "@media (prefers-color-scheme: dark) { :where(:root) { background-color: light-dark(Canvas, transparent); } }";
 
 /**
  * How many steps are held while this view still has no guest id.
@@ -73,8 +58,8 @@ export interface DesktopHtmlPreviewViewProps extends HtmlPreviewProps {
     /**
      * What is painted under the guest. `paper` is the white a workspace
      * document assumes, already painted by the region around it. `none` is an
-     * artifact's slot, which paints nothing, so the guest itself gives a page
-     * written for a light window the paper it needs in a dark one.
+     * artifact's slot, which paints nothing: the page is laid on the app's own
+     * surface, and given the app's look as its defaults (see `GuestPageStyle`).
      */
     readonly canvas: "paper" | "none";
 }
@@ -100,6 +85,10 @@ export class DesktopHtmlPreviewView extends Component<DesktopHtmlPreviewViewProp
     private refused = false;
     /** Lays the page inline while the owner asks for that; see `HtmlPreviewProps.fit`. */
     private readonly fitter = new GuestPageFit(() => this.props.fit);
+    /** Gives an artifact's page the app's look; see `canvas`. */
+    private readonly styler = new GuestPageStyle(() => (this.props.fit ? "inline" : "panel"));
+    /** Whether the document now in the guest was styled when it was committed. */
+    private styled = false;
 
     componentDidMount(): void {
         this.unsubscribe = window.happyDesktop?.previewNavigationSubscribe(this.receive);
@@ -118,6 +107,7 @@ export class DesktopHtmlPreviewView extends Component<DesktopHtmlPreviewViewProp
         this.elementApply(null);
         this.pending = [];
         this.fitter.dispose();
+        this.styler.stop();
     }
 
     private readonly receive = (step: DesktopPreviewNavigation): void => {
@@ -217,29 +207,42 @@ export class DesktopHtmlPreviewView extends Component<DesktopHtmlPreviewViewProp
     };
 
     /**
+     * A document was committed in the guest, before it is parsed: the moment
+     * an artifact's page is given the app's look, so it is drawn in it from
+     * its first frame.
+     */
+    private readonly documentCommitted = (): void => {
+        if (this.props.canvas !== "none" || !this.element) return;
+        this.styled = true;
+        this.styler.documentStarted(this.element);
+    };
+
+    /**
      * Every document the guest parses, including each reload. A stylesheet
      * inserted into a guest belongs to the document it was inserted into, so
-     * each new one is given its canvas again.
+     * each new one is styled again.
      */
     private readonly documentReady = (): void => {
-        // A page laid inline is given the conversation's own colour scheme,
-        // which is the canvas it needs.
-        if (this.props.fit && this.element) {
-            this.fitter.documentReady(this.element);
-            return;
-        }
-        if (this.props.canvas !== "none") return;
-        // A guest that is already gone has no document left to style.
-        this.element?.insertCSS(PREVIEW_CANVAS_DARK).catch(() => undefined);
+        // A document whose commit was not reported is styled now instead.
+        if (this.props.canvas === "none" && this.element && !this.styled)
+            this.styler.documentStarted(this.element);
+        this.styled = false;
+        // A page laid inline is given the conversation's own colour scheme and
+        // laid out at its content height.
+        if (this.props.fit && this.element) this.fitter.documentReady(this.element);
     };
 
     private readonly elementApply = (view: HtmlPreviewWebViewElement | null): void => {
         if (view === this.element) return;
         this.element?.removeEventListener("did-attach", this.attached);
+        this.element?.removeEventListener("did-navigate", this.documentCommitted);
         this.element?.removeEventListener("dom-ready", this.documentReady);
         this.element = view ?? undefined;
         this.fitter.stop();
+        this.styler.stop();
+        this.styled = false;
         this.element?.addEventListener("did-attach", this.attached);
+        this.element?.addEventListener("did-navigate", this.documentCommitted);
         this.element?.addEventListener("dom-ready", this.documentReady);
         // A different element is a different guest, and everything this view
         // believed about a page belongs to the one it no longer holds.

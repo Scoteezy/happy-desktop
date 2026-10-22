@@ -2,25 +2,33 @@ import type { ReactNode } from "react";
 import {
     entryKey,
     type ConversationEntry,
+    type HappyAgentArtifactDisplay,
     type HappyAgentArtifactId,
+    type HappyAgentArtifactType,
     type HappyAgentInlineArtifactLive,
     type HappyAgentInlineArtifactsSnapshot,
 } from "happy-desktop-state";
 import { Icon } from "./Icon";
 import type { InlinePageProps } from "./InlinePage";
 import type { InlinePageFit, InlinePageGeometry } from "./inlinePageFit";
+import { ArtifactInlineContent } from "./pages/artifacts/ArtifactInlineContent";
 import { ArtifactTypeGlyph } from "./pages/artifacts/artifactPresentation";
 
 /**
- * What a transcript needs from its owner to show pages inline: the artifacts it
- * follows, as they are now, the host's engines to draw a page, and where a page
- * opens beside the conversation. Absent, every call keeps its card.
+ * What a transcript needs from its owner to show artifacts in a reply: the
+ * artifacts it follows, as they are now, the host's engines to draw a page,
+ * and where an artifact opens beside the conversation.
  */
 export interface ConversationInlinePages {
-    /** The artifacts the transcript shows inline, as the owner's store holds them. */
+    /** The artifacts the transcript shows, as the owner's store holds them. */
     readonly artifacts: HappyAgentInlineArtifactsSnapshot;
     /** Asks the owner's store for these artifacts; it never publishes in this call. */
     artifactsRequest(artifactIds: readonly HappyAgentArtifactId[]): void;
+    /**
+     * Asks the owner's store for the content of artifacts shown expanded that
+     * are not pages; it never publishes in this call.
+     */
+    artifactsContentRequest(artifactIds: readonly HappyAgentArtifactId[]): void;
     /** Draws an artifact's page served at `url`; absent where the host has no engine. */
     readonly artifactRender?: (url: string, fit: InlinePageFit) => ReactNode;
     /**
@@ -33,19 +41,22 @@ export interface ConversationInlinePages {
         live: HappyAgentInlineArtifactLive,
         fit: InlinePageFit,
     ) => ReactNode;
-    /** Opens an artifact beside the conversation, following its latest version. */
-    artifactOpen(artifactId: HappyAgentArtifactId): void;
+    /**
+     * Opens an artifact beside the conversation: the numbered version a call
+     * recorded, or without one its latest version, followed as it changes.
+     */
+    artifactOpen(artifactId: HappyAgentArtifactId, version?: number): void;
     /** Opens a web page beside the conversation. */
     pageOpen(url: string): void;
 }
 
-/** One row's inline page: its geometry for the row model and the props that draw it. */
+/** One row's artifact: its geometry for the row model and the props that draw it. */
 export interface ConversationInlinePage {
     readonly geometry: InlinePageGeometry;
     readonly props: InlinePageProps;
 }
 
-/** What the reader did to an inline page here; local to this reader and window. */
+/** What the reader did to an artifact in a reply here; local to this reader and window. */
 export interface ConversationInlinePageLocal {
     collapsed(key: string): boolean | undefined;
     collapsedSet(key: string, collapsed: boolean): void;
@@ -54,9 +65,9 @@ export interface ConversationInlinePageLocal {
 }
 
 /**
- * The newest call that follows each artifact. An artifact a conversation
- * follows is shown inline once, where it was last taken up; the calls before
- * that keep only its title.
+ * The newest call that shows each artifact. An artifact a conversation shows
+ * starts expanded only there, where it was last taken up; the calls before
+ * that start folded to its title, and can be expanded the same way.
  */
 export function conversationInlineArtifactLeads(
     entries: readonly ConversationEntry[],
@@ -65,16 +76,34 @@ export function conversationInlineArtifactLeads(
     for (const entry of entries) {
         if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") continue;
         const presentation = entry.activity.tool.presentation;
-        if (presentation?.type !== "artifact" || presentation.shows !== "latest") continue;
+        if (presentation?.type !== "artifact") continue;
         leads.set(presentation.artifactId, entryKey(entry));
     }
     return leads;
 }
 
 /**
- * The page a transcript row shows inline, or `undefined` when it shows none:
- * an HTML artifact a call follows, or a web page a call showed, drawn by an
- * engine the host supplies. Anything else keeps its card.
+ * Whether an artifact starts expanded where it was last taken up. Its author's
+ * display preference decides: `inline_expanded` starts open, `inline_compact`
+ * and `side` start at their title. Without one, what reads at a glance — a
+ * page, a picture, a recording — starts open, and a document someone reads
+ * through starts at its title.
+ */
+function artifactStartsExpanded(
+    display: HappyAgentArtifactDisplay | null,
+    type: HappyAgentArtifactType,
+): boolean {
+    if (display !== null) return display === "inline_expanded";
+    return type === "html" || type === "image" || type === "image_series" || type === "video";
+}
+
+/**
+ * The row a transcript shows for a call's artifact or web page, or `undefined`
+ * for any other call. Every artifact is the same row, whatever its type and
+ * however often the conversation names it: its title, which opens it beside
+ * the conversation, and its content under it once expanded — a page drawn by
+ * an engine the host supplies, or a document, picture, or recording drawn
+ * here. Only where it starts differs.
  */
 export function conversationInlinePage(
     entry: ConversationEntry,
@@ -86,32 +115,98 @@ export function conversationInlinePage(
     if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return undefined;
     const presentation = entry.activity.tool.presentation;
     if (presentation?.type === "artifact") {
-        if (presentation.shows !== "latest" || presentation.artifactType !== "html")
-            return undefined;
         const artifactId = presentation.artifactId;
-        const artifact = pages.artifacts.get(artifactId);
-        if (artifact === undefined) pages.artifactsRequest([artifactId]);
-        if (artifact?.type === "missing" || artifact?.status === "deleted") return undefined;
+        const held = pages.artifacts.get(artifactId);
+        if (held === undefined) pages.artifactsRequest([artifactId]);
+        const artifact = held?.type === "ready" ? held : undefined;
+        const gone = held?.type === "missing" || artifact?.status === "deleted";
+        const type = artifact?.artifactType ?? presentation.artifactType;
         const live = artifact?.live;
-        const render = pages.artifactRender;
-        const liveRender = pages.liveRender;
-        if (live ? liveRender === undefined : render === undefined) return undefined;
-        if (!live && artifact?.site?.type === "unavailable") return undefined;
-        // The panel beside the chat shows an artifact's files, and a live
-        // artifact's are only a placeholder, so it stays in the chat for now.
-        const display =
-            live && artifact?.display === "side" ? "inline_compact" : (artifact?.display ?? null);
-        const placement =
-            display === "side" || leads.get(artifactId) !== entryKey(entry) ? "title" : "inline";
-        const collapsed = local.collapsed(rowKey) ?? display === "inline_compact";
+        const site = artifact?.site;
+        const lead = leads.get(artifactId) === entryKey(entry);
+        const collapsed =
+            local.collapsed(rowKey) ??
+            !(lead && artifactStartsExpanded(artifact?.display ?? null, type));
+        // What it can be expanded into here. A page needs the host's engine,
+        // and a document is read beside the chat, where it has a viewer.
+        const expandable =
+            !gone &&
+            (type === "html"
+                ? live
+                    ? pages.liveRender !== undefined
+                    : pages.artifactRender !== undefined && site?.type !== "unavailable"
+                : type === "markdown" ||
+                  type === "image" ||
+                  type === "image_series" ||
+                  type === "video");
+        const placement = expandable ? "inline" : "title";
+        if (placement === "inline" && !collapsed && type !== "html" && artifact)
+            pages.artifactsContentRequest([artifactId]);
         const height = local.height(rowKey);
         const geometry: InlinePageGeometry = {
             placement,
             collapsed,
             ...(height === undefined ? {} : { height }),
         };
-        const site = artifact?.site;
-        const title = artifact?.title ?? presentation.title;
+        const title = artifact?.title || presentation.title || "Untitled artifact";
+        // A call that recorded one version names it, and opens that version,
+        // once it is no longer the latest; a call that follows the artifact
+        // always shows its latest.
+        const latest = artifact?.latestVersion;
+        const recorded =
+            presentation.shows === "version" &&
+            latest !== undefined &&
+            presentation.version !== latest
+                ? presentation.version
+                : undefined;
+        const status = gone
+            ? held?.type === "missing"
+                ? "Unavailable"
+                : "Deleted"
+            : recorded === undefined || latest === undefined
+              ? undefined
+              : placement === "inline" && !collapsed
+                ? `Version ${String(recorded)} · showing the latest, ${String(latest)}`
+                : `Version ${String(recorded)}`;
+        // A live artifact's files are only a placeholder, so the panel beside
+        // the chat has nothing of it to show yet: it is read in the chat.
+        const openSide =
+            gone || live
+                ? undefined
+                : () => {
+                      // Opened beside the chat, it is not also open in it; closing
+                      // the panel leaves it collapsed until the reader expands it.
+                      if (placement === "inline") local.collapsedSet(rowKey, true);
+                      pages.artifactOpen(artifactId, recorded);
+                  };
+        const liveRender = pages.liveRender;
+        const render = pages.artifactRender;
+        const content = artifact?.content;
+        const page =
+            !expandable || artifact === undefined
+                ? undefined
+                : live && liveRender
+                  ? {
+                        key: `${artifactId}:${live.networkId}:${live.url}`,
+                        render: (fit: InlinePageFit) => liveRender(artifactId, live, fit),
+                    }
+                  : type === "html"
+                    ? site?.type === "opened" && render
+                        ? { key: site.url, render: (fit: InlinePageFit) => render(site.url, fit) }
+                        : undefined
+                    : content
+                      ? {
+                            key: `${artifactId}:${String(content.version)}`,
+                            render: (fit: InlinePageFit) => (
+                                <ArtifactInlineContent
+                                    artifactType={type}
+                                    content={content}
+                                    fit={fit}
+                                    {...(openSide ? { onOpen: openSide } : {})}
+                                />
+                            ),
+                        }
+                      : undefined;
         return {
             geometry,
             props: {
@@ -119,31 +214,18 @@ export function conversationInlinePage(
                 glyph: live ? (
                     <Icon name="globe" size={16} />
                 ) : (
-                    <ArtifactTypeGlyph size={16} type="html" />
+                    <ArtifactTypeGlyph size={16} type={type} />
                 ),
                 geometry,
-                ...(live && liveRender
-                    ? {
-                          page: {
-                              key: `${artifactId}:${live.networkId}:${live.url}`,
-                              render: (fit: InlinePageFit) => liveRender(artifactId, live, fit),
-                          },
-                      }
-                    : site?.type === "opened" && render
-                      ? { page: { key: site.url, render: (fit) => render(site.url, fit) } }
-                      : {}),
-                ...(artifact?.background ? { background: artifact.background } : {}),
-                onCollapsedChange: (next) => local.collapsedSet(rowKey, next),
-                ...(live
-                    ? {}
-                    : {
-                          onOpenSide: () => {
-                              // Opened beside the chat, it is not also open in it; closing
-                              // the panel leaves it collapsed until the reader expands it.
-                              if (placement === "inline") local.collapsedSet(rowKey, true);
-                              pages.artifactOpen(artifactId);
-                          },
-                      }),
+                ...(page ? { page } : {}),
+                ...(status ? { status } : {}),
+                ...(artifact?.background && type === "html"
+                    ? { background: artifact.background }
+                    : {}),
+                ...(expandable
+                    ? { onCollapsedChange: (next: boolean) => local.collapsedSet(rowKey, next) }
+                    : {}),
+                ...(openSide ? { onOpenSide: openSide } : {}),
                 onHeightChange: (next) => local.heightSet(rowKey, next),
                 "data-testid": "conversation-inline-artifact",
             },

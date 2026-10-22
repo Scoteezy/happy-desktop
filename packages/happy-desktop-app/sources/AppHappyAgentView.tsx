@@ -9265,7 +9265,8 @@ function HappyAgentConversationSurface(props: {
               browserConnectionId: inlineEngines.browserConnectionId,
               workspaceId: props.groupId,
               agentId: conversation.conversationId,
-              artifactOpen: (artifactId) => workspace.panel.artifactViewOpen(artifactId),
+              artifactOpen: (artifactId, version) =>
+                  workspace.panel.artifactViewOpen(artifactId, version),
               pageOpen: (url) => workspace.panel.browserAdd(url),
           })
         : undefined;

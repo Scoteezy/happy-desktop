@@ -24,8 +24,11 @@ export interface InlinePageProps {
     readonly page?: { readonly key: string; readonly render: InlinePageRender };
     /** The canvas behind the page, when its author named one; otherwise the chat shows through. */
     readonly background?: string;
+    /** A note after the controls: that it was deleted, or which version it shows. */
+    readonly status?: string;
+    /** Present where the page can be expanded inline: the reader toggled it. */
     onCollapsedChange?(collapsed: boolean): void;
-    /** Opens the page beside the conversation. */
+    /** Opens the page beside the conversation; the title opens it too. */
     onOpenSide?(): void;
     /** Every height the page on screen settles on, for the transcript's row model. */
     onHeightChange(height: number): void;
@@ -35,10 +38,13 @@ export interface InlinePageProps {
 type Shown = { readonly key: string; readonly render: InlinePageRender };
 
 /**
- * A page laid into a reply: its title as one line of the reply, with no
- * background, border, or header of its own, and the page under it at its full
- * height on the chat's own surface. Beside the title sit the two controls,
- * which never move when the page collapses or expands under them.
+ * An artifact in a reply: its type's glyph and its title as one line of the
+ * reply, with no background, border, or header of its own, and the artifact
+ * under it at its full height on the chat's own surface when it is expanded.
+ * Every artifact a reply shows is this one row, whichever way it starts: the
+ * title opens it beside the conversation, and the chevron after it lays it
+ * into the reply or folds it back to its title. The controls never move when
+ * the content collapses or expands under them.
  *
  * Its height is the transcript's: the row reserves `geometry`, and the page
  * reports what it measures through `onHeightChange`. A page is first drawn in
@@ -75,6 +81,20 @@ export function InlinePage(props: InlinePageProps) {
     });
     const failed = failure !== undefined && failure.key === shown?.key ? failure : undefined;
     const height = geometry.height ?? 0;
+    const onCollapsedChange = props.onCollapsedChange;
+    const toggle =
+        geometry.placement === "inline" && onCollapsedChange
+            ? () => onCollapsedChange(!geometry.collapsed)
+            : undefined;
+    const opener = props.onOpenSide ?? toggle;
+    const label = (
+        <>
+            <span aria-hidden="true" className="happy-inline-page__glyph">
+                {props.glyph}
+            </span>
+            <span className="happy-inline-page__title">{props.title}</span>
+        </>
+    );
     return (
         <div
             className="happy-inline-page"
@@ -87,22 +107,38 @@ export function InlinePage(props: InlinePageProps) {
                 className="happy-inline-page__title-line"
                 data-happy-desktop-ui="inline-page-title"
             >
-                <span aria-hidden="true" className="happy-inline-page__glyph">
-                    {props.glyph}
-                </span>
-                <span className="happy-inline-page__title">{props.title}</span>
-                {geometry.placement === "inline" && props.onCollapsedChange ? (
+                {opener ? (
+                    <button
+                        aria-label={
+                            props.onOpenSide
+                                ? `Open ${props.title} beside the chat`
+                                : `${geometry.collapsed ? "Expand" : "Collapse"} ${props.title}`
+                        }
+                        className="happy-inline-page__opener"
+                        data-happy-desktop-ui="inline-page-opener"
+                        onClick={(event) => {
+                            disclosureAnchor?.(event.currentTarget);
+                            opener();
+                        }}
+                        type="button"
+                    >
+                        {label}
+                    </button>
+                ) : (
+                    <span className="happy-inline-page__opener">{label}</span>
+                )}
+                {toggle ? (
                     <Button
                         aria-expanded={!geometry.collapsed}
                         aria-label={
                             geometry.collapsed ? `Expand ${props.title}` : `Collapse ${props.title}`
                         }
                         data-happy-desktop-ui="inline-page-toggle"
-                        icon={geometry.collapsed ? "chevron-down" : "chevron-up"}
+                        icon={geometry.collapsed ? "chevron-right" : "chevron-down"}
                         iconOnly
                         onClick={(event) => {
                             disclosureAnchor?.(event.currentTarget);
-                            props.onCollapsedChange?.(!geometry.collapsed);
+                            toggle();
                         }}
                         size="small"
                         variant="ghost"
@@ -121,6 +157,11 @@ export function InlinePage(props: InlinePageProps) {
                         size="small"
                         variant="ghost"
                     />
+                ) : null}
+                {/* After the controls, so a status that changes with the
+                    content under it never moves them. */}
+                {props.status ? (
+                    <span className="happy-inline-page__status">{props.status}</span>
                 ) : null}
             </div>
             {open ? (
