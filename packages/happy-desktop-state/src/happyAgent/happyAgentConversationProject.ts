@@ -35,7 +35,7 @@ import {
 import { happyAgentCompactionSubject } from "./happyAgentTokenFormat.js";
 import { happyAgentConfigurationChanges } from "./happyAgentConfigurationChanges.js";
 import { happyAgentFailureProject } from "./happyAgentFailureProject.js";
-import type { HappyAgentModel } from "./happyAgentTypes.js";
+import type { HappyAgentModel, HappyAgentModelProvider } from "./happyAgentTypes.js";
 
 type HappyAgentProfile = NonNullable<Extract<ChatElement, { kind: "user_message" }>["profile"]>;
 
@@ -69,6 +69,7 @@ interface ConversationGroupCache {
  */
 interface ConversationContext {
     readonly models?: readonly HappyAgentModel[];
+    readonly providers?: readonly HappyAgentModelProvider[];
     readonly sessionId: string;
     readonly showReasoning: boolean;
     readonly ephemeral: readonly ConversationEntry[];
@@ -98,6 +99,8 @@ export function happyAgentConversationCacheCreate(): HappyAgentConversationCache
 
 export interface HappyAgentConversationInput {
     readonly models?: readonly HappyAgentModel[];
+    /** The catalog's accounts, which name the one a failure was switched to. */
+    readonly providers?: readonly HappyAgentModelProvider[];
     readonly elements: readonly ChatElement[];
     readonly sessionId: string;
     readonly showReasoning: boolean;
@@ -173,6 +176,7 @@ export function happyAgentConversationProject(
     const cache = input.cache;
     const context: ConversationContext = {
         ...(input.models === undefined ? {} : { models: input.models }),
+        ...(input.providers === undefined ? {} : { providers: input.providers }),
         sessionId: input.sessionId,
         showReasoning: input.showReasoning,
         ephemeral: input.ephemeral,
@@ -341,6 +345,7 @@ function conversationContextEqual(left: ConversationContext, right: Conversation
     return (
         left.sessionId === right.sessionId &&
         left.models === right.models &&
+        left.providers === right.providers &&
         left.showReasoning === right.showReasoning &&
         left.sentImages === right.sentImages &&
         left.agentIdentities === right.agentIdentities &&
@@ -921,10 +926,10 @@ function happyAgentConnectGroupProject(
                     ...(element.failure === undefined
                         ? {}
                         : {
-                              failure: happyAgentFailureProject(
-                                  element.failure,
-                                  input.models ?? [],
-                              ),
+                              failure: happyAgentFailureProject(element.failure, {
+                                  models: input.models ?? [],
+                                  providers: input.providers ?? [],
+                              }),
                           }),
                     sequence,
                 });

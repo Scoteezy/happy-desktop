@@ -1,6 +1,9 @@
 import { useId, useRef, useState, type KeyboardEvent } from "react";
-import type { ConversationFailureFallback } from "happy-desktop-state";
 import { Button } from "./Button";
+import {
+    ComposerModelAccountGauge,
+    ComposerModelAccountUsageDetails,
+} from "./ComposerModelControl";
 import { Icon } from "./Icon";
 import { Octicon } from "./vectorIcons/VectorIcon";
 import { WindowOverlay } from "./WindowOverlay";
@@ -9,18 +12,28 @@ import {
     conversationFailureTargetGroups,
     conversationFailureTargetKey,
     conversationFailureTargetLabel,
-    conversationFailureTargetUsage,
 } from "./conversationFailureText";
+import type { ConversationSwitchTarget } from "./conversationSwitchTargets";
 
 export interface ConversationSwitchButtonProps {
-    /** Usable targets, best first, as the daemon ranked them. Never empty. */
-    readonly targets: readonly ConversationFailureFallback[];
+    /**
+     * Every account the turn can continue on, from the same live catalog and
+     * usage as the model picker, in its list order. Never empty.
+     */
+    readonly targets: readonly ConversationSwitchTarget[];
     /** The key of the picked target; the first target when absent or no longer offered. */
     readonly target?: string;
     /** Picking a row only changes the target. */
     readonly onTargetChange?: (key: string) => void;
     /** The main segment: switch to the target and continue the turn. */
-    readonly onSwitch?: (target: ConversationFailureFallback) => void;
+    readonly onSwitch?: (target: ConversationSwitchTarget) => void;
+    /**
+     * The list was opened, which is when the picker asks for every account's
+     * usage to be read again; the answers arrive through `targets`.
+     */
+    readonly onOpen?: () => void;
+    /** The moment the usage under the list tells its age from; absent says none. */
+    readonly usageNow?: number;
     /** Seeds the list as open, for a blueprint or test. */
     readonly defaultOpen?: boolean;
     /** The row drawn as hovered, by target key, for a blueprint or test. */
@@ -55,12 +68,16 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
        seeded open for a blueprint leaves focus where it is. */
     const focusOnPlace = useRef(false);
     const menuId = useId();
+    /** The row the pointer or focus is on, whose usage the list shows beneath it. */
+    const [hovered, setHovered] = useState<string | null>(props.previewActive ?? null);
     const current =
         props.targets.find((target) => conversationFailureTargetKey(target) === props.target) ??
         props.targets[0]!;
     const currentKey = conversationFailureTargetKey(current);
     const groups = conversationFailureTargetGroups(props.targets);
     const labelled = groups.length > 1;
+    const shown =
+        props.targets.find((target) => conversationFailureTargetKey(target) === hovered) ?? current;
 
     /* The list is placed once both it and the button exist: the button's
        commit and the list's commit each try, and whichever comes second
@@ -150,7 +167,9 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
                     if (open) close(false);
                     else {
                         focusOnPlace.current = true;
+                        setHovered(null);
                         setOpen(true);
+                        props.onOpen?.();
                     }
                 }}
                 size="small"
@@ -220,6 +239,8 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
                                                     props.onTargetChange?.(key);
                                                     close(true);
                                                 }}
+                                                onFocus={() => setHovered(key)}
+                                                onPointerEnter={() => setHovered(key)}
                                                 role="menuitemradio"
                                                 type="button"
                                             >
@@ -229,19 +250,20 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
                                                     </span>
                                                     {selected ? <Check /> : null}
                                                 </span>
-                                                <span
-                                                    className="happy-composer-model-control__account-plan"
-                                                    data-unknown={
-                                                        target.usedPercent === null ? "" : undefined
-                                                    }
-                                                >
-                                                    {conversationFailureTargetUsage(target)}
-                                                </span>
+                                                <ComposerModelAccountGauge usage={target.usage} />
                                             </button>
                                         );
                                     })}
                                 </div>
                             ))}
+                            <div
+                                className="happy-composer-model-control__separator"
+                                role="separator"
+                            />
+                            <ComposerModelAccountUsageDetails
+                                now={props.usageNow}
+                                usage={shown.usage}
+                            />
                         </div>
                     </div>
                 </WindowOverlay>

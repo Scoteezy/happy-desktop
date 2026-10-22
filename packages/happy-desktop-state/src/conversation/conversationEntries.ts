@@ -11,7 +11,6 @@ import {
     type ConversationEntry,
     type ConversationError,
     type ConversationFailure,
-    type ConversationFailureFallback,
     type ConversationFailureProvider,
     type ConversationFailureResolution,
     type ConversationFileDiff,
@@ -246,21 +245,6 @@ function payloadEqual(left: ConversationEntry, right: ConversationEntry): boolea
     return false;
 }
 
-function failureFallbackEqual(
-    left: ConversationFailureFallback,
-    right: ConversationFailureFallback | undefined,
-): boolean {
-    return (
-        left.providerId === right?.providerId &&
-        left.providerLabel === right.providerLabel &&
-        left.modelId === right.modelId &&
-        left.modelName === right.modelName &&
-        left.usedPercent === right.usedPercent &&
-        left.usageWindow === right.usageWindow &&
-        left.group === right.group
-    );
-}
-
 function failureProviderEqual(
     left: ConversationFailureProvider,
     right: ConversationFailureProvider,
@@ -298,10 +282,6 @@ function noticeFailureEqual(
     if (
         left.kind !== right.kind ||
         left.message !== right.message ||
-        left.fallbackProviders.length !== right.fallbackProviders.length ||
-        !left.fallbackProviders.every((fallback, index) =>
-            failureFallbackEqual(fallback, right.fallbackProviders[index]),
-        ) ||
         !failureResolutionEqual(left.resolution, right.resolution)
     )
         return false;

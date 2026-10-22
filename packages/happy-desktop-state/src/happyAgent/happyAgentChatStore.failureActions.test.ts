@@ -27,25 +27,13 @@ const FAILURE: MessageFailure = {
     provider: { id: "claude", type: "claude", vendorName: "Claude", label: "claude" },
     resetsAt: 1_792_449_600_000,
     message: "Claude usage limit reached.",
-    fallbackProviders: [
-        {
-            providerId: "claude_work",
-            providerLabel: "claude_work",
-            modelId: "anthropic/opus-5-5",
-            usedPercent: 38,
-            usageWindow: "weekly",
-            group: "same_model",
-        },
-        {
-            providerId: "codex_fallback",
-            providerLabel: "codex_fallback",
-            modelId: "openai/gpt-5-codex",
-            usedPercent: 12,
-            usageWindow: "weekly",
-            group: "other_models",
-        },
-    ],
+    // A daemon from protocol 32 stores no targets; the card's come from the live catalog.
+    fallbackProviders: [],
 };
+
+/** Routes the live catalog below offers, as the model picker lists them. */
+const CLAUDE_WORK = { providerId: "claude_work", modelId: "anthropic/opus-5-5" } as const;
+const CODEX_FALLBACK = { providerId: "codex_fallback", modelId: "openai/gpt-5-codex" } as const;
 
 const FAILED_MODE: MessageMode = {
     providerId: "claude",
@@ -188,6 +176,7 @@ function harness(
             },
             connectActions: conn,
             connectMutationSubscribe: () => () => undefined,
+            daemonProtocol: () => conn.sync.health()?.version.protocol,
         });
         const nextUnsubscribe = nextStore.subscribe(() => undefined);
         const nextCard = (messageId?: string): ConversationServiceNoticeEntry | undefined => {
@@ -212,6 +201,23 @@ function harness(
 }
 
 describe("failure card actions", () => {
+    it("offers switching only to a daemon that checks the route against its live catalog", async () => {
+        for (const [protocol, supported] of [
+            [31, false],
+            [32, true],
+        ] as const) {
+            const { daemon, connectFresh, openStoreOn, dispose } = harness();
+            dispose();
+            daemon.healthSet({ protocol });
+            const opened = openStoreOn(connectFresh());
+            await vi.waitFor(() => expect(opened.card()).toBeDefined());
+            expect(opened.store.get().failureSwitchSupported, String(protocol)).toBe(supported);
+            // Nothing the failure carries is a target: the card's come from the picker's catalog.
+            expect(opened.card()!.failure).not.toHaveProperty("fallbackProviders");
+            opened.dispose();
+        }
+    });
+
     it("retries the failed message and shows the card as retried", async () => {
         const { daemon, store, card, dispose } = harness();
         await vi.waitFor(() => expect(card()).toBeDefined());
@@ -230,10 +236,10 @@ describe("failure card actions", () => {
         dispose();
     });
 
-    it("switches to the chosen fallback and names it on the card", async () => {
+    it("switches to the chosen catalog route and names it on the card", async () => {
         const { daemon, store, card, dispose } = harness();
         await vi.waitFor(() => expect(card()).toBeDefined());
-        const target = card()!.failure!.fallbackProviders[0]!;
+        const target = CLAUDE_WORK;
 
         await store.failureSwitch(card()!.id, target);
         await vi.waitFor(() =>
@@ -264,9 +270,9 @@ describe("failure card actions", () => {
         await vi.waitFor(() => expect(card()).toBeDefined());
 
         await expect(store.failureRetry(card()!.id)).rejects.toBeInstanceOf(UserError);
-        await expect(
-            store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!),
-        ).rejects.toThrow("This failure has already been handled.");
+        await expect(store.failureSwitch(card()!.id, CLAUDE_WORK)).rejects.toThrow(
+            "This failure has already been handled.",
+        );
         await expect(store.failureRetry("no-such-entry")).rejects.toThrow(
             "This failure is no longer in the conversation.",
         );
@@ -320,10 +326,7 @@ describe("failure card actions", () => {
 
             // 1. Switch to `claude_work` / `anthropic/opus-5-5`, which supports both `effort: "max"`
             //    and `serviceTier: "fast"`.
-            await store.failureSwitch(
-                card("message-failed")!.id,
-                card("message-failed")!.failure!.fallbackProviders[0]!,
-            );
+            await store.failureSwitch(card("message-failed")!.id, CLAUDE_WORK);
             await vi.waitFor(async () => {
                 expect(daemon.callCount("getAgentMode")).toBeGreaterThan(getModeCallsBefore);
                 expect(store.get().session).toMatchObject({
@@ -454,7 +457,7 @@ describe("failure card actions", () => {
 
             await reopenedSame.store.failureSwitch(
                 reopenedSame.card("message-failed-2")!.id,
-                reopenedSame.card("message-failed-2")!.failure!.fallbackProviders[1]!,
+                CODEX_FALLBACK,
             );
             await vi.waitFor(async () => {
                 const session = reopenedSame.store.get().session;
@@ -511,7 +514,7 @@ describe("failure card actions", () => {
             await store.draftSet("Typed before switching route", 700, "window-1");
             expect(daemon.callCount("saveAgentDraft")).toBe(0);
 
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() => expect(daemon.callCount("saveAgentDraft")).toBe(1));
 
             const saveCall = daemon.calls.find((call) => call.method === "saveAgentDraft")!;
@@ -557,7 +560,7 @@ describe("failure card actions", () => {
             expect(firstPayload.draft.text).toBe("Held across draining and switch");
             expect(firstPayload.updatedAt).toBe(850);
 
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() =>
                 expect(card()!.failure!.resolution).toMatchObject({
                     action: "switched",
@@ -609,7 +612,7 @@ describe("failure card actions", () => {
             });
             await vi.waitFor(() => expect(daemon.callCount("getAgentMode")).toBe(1));
 
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() =>
                 expect(store.get().session).toMatchObject({
                     type: "ready",
@@ -656,7 +659,7 @@ describe("failure card actions", () => {
             await vi.waitFor(() => expect(card()).toBeDefined());
 
             const releaseModeRead = daemon.pause("getAgentMode");
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() => expect(daemon.callCount("getAgentMode")).toBe(1));
 
             // Simulate an unpatched daemon where `switchAndContinue` did not update `metadata.lastMode`.
@@ -720,7 +723,7 @@ describe("failure card actions", () => {
             },
         });
         const releaseModeRead = daemon.pause("getAgentMode");
-        await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+        await store.failureSwitch(card()!.id, CLAUDE_WORK);
         await vi.waitFor(() => {
             expect(daemon.callCount("getAgentMode")).toBe(1);
             expect(store.get().session).toMatchObject({
@@ -826,7 +829,7 @@ describe("failure card actions", () => {
                     null,
                 ),
             );
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() => expect(daemon.callCount("switchAndContinue")).toBe(1));
 
             // Mark the failure resolved on the daemon without emitting SSE yet, so a second attempt answers 409.
@@ -846,7 +849,7 @@ describe("failure card actions", () => {
                     ],
                 }),
             ]);
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() => expect(daemon.callCount("switchAndContinue")).toBe(2));
             await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -967,7 +970,7 @@ describe("failure card actions", () => {
                     null,
                 ),
             );
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() => expect(daemon.callCount("switchAndContinue")).toBe(1));
 
             // Trigger an unrelated `/mode` refetch that answers with `FAILED_MODE` (`claude`).
@@ -1028,7 +1031,7 @@ describe("failure card actions", () => {
             await vi.waitFor(() => expect(card()).toBeDefined());
 
             const releaseSwitch = daemon.pause("switchAndContinue");
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() => expect(daemon.callCount("switchAndContinue")).toBe(1));
 
             // User manually selects C while `switchAndContinue` is still in flight on the agent lane.
@@ -1129,7 +1132,7 @@ describe("failure card actions", () => {
             await vi.waitFor(() => expect(card()).toBeDefined());
 
             const releaseModeRead = daemon.pause("getAgentMode");
-            await store.failureSwitch(card()!.id, card()!.failure!.fallbackProviders[0]!);
+            await store.failureSwitch(card()!.id, CLAUDE_WORK);
             await vi.waitFor(() => {
                 expect(daemon.callCount("getAgentMode")).toBe(1);
                 expect(store.get().session).toMatchObject({

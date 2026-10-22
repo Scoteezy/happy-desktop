@@ -1,9 +1,5 @@
 import { type CSSProperties } from "react";
-import type {
-    ConversationErrorAssistance,
-    ConversationFailure,
-    ConversationFailureFallback,
-} from "happy-desktop-state";
+import type { ConversationErrorAssistance, ConversationFailure } from "happy-desktop-state";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
 import { ConversationSwitchButton } from "./ConversationSwitchButton";
@@ -13,6 +9,7 @@ import {
     conversationFailureMessage,
     type ConversationFailureClock,
 } from "./conversationFailureText";
+import type { ConversationSwitchTarget } from "./conversationSwitchTargets";
 import { Ionicon, Octicon } from "./vectorIcons/VectorIcon";
 
 /** Without the owner's clock a reset time always carries its date. */
@@ -22,7 +19,7 @@ const NO_CLOCK: ConversationFailureClock = {};
 export interface ConversationFailureActions {
     readonly onRetry?: () => void;
     readonly onNewChat?: () => void;
-    readonly onSwitch?: (target: ConversationFailureFallback) => void;
+    readonly onSwitch?: (target: ConversationSwitchTarget) => void;
 }
 
 export interface ConversationFailureCardProps extends ConversationFailureActions {
@@ -37,9 +34,18 @@ export interface ConversationFailureCardProps extends ConversationFailureActions
      * since moved past keeps its message, and offers only Ask Chief of Staff.
      */
     readonly current: boolean;
+    /**
+     * Every account the turn can continue on, read live from the model
+     * picker's own catalog and usage. Absent or empty offers no switch.
+     */
+    readonly switchTargets?: readonly ConversationSwitchTarget[];
     /** The picked switch target's key; the first target when absent. */
     readonly target?: string;
     readonly onTargetChange?: (key: string) => void;
+    /** The switch list was opened: the moment to read every account's usage again. */
+    readonly onSwitchOpen?: () => void;
+    /** The moment the switch list tells its usage's age from. */
+    readonly usageNow?: number;
     readonly assistance?: ConversationErrorAssistance;
     readonly onAssistanceRequest?: () => void;
     /** Seeds the switch list open, and the row drawn as hovered, for a blueprint or test. */
@@ -62,6 +68,7 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
             newChat: props.onNewChat !== undefined,
             switch: props.onSwitch !== undefined,
         },
+        ...(props.switchTargets ? { targets: props.switchTargets } : {}),
         ...(props.assistance ? { assistance: props.assistance } : {}),
     });
     const lineAction = conversationFailureLineAction(props.failure);
@@ -173,10 +180,12 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                                                   : { previewActive: props.previewMenu.active }),
                                           }
                                         : {})}
+                                    onOpen={props.onSwitchOpen}
                                     onSwitch={props.onSwitch}
                                     onTargetChange={props.onTargetChange}
                                     target={props.target}
                                     targets={layout.switchTargets}
+                                    usageNow={props.usageNow}
                                 />
                             ) : null}
                             {layout.assistance ? (

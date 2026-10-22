@@ -12,7 +12,6 @@ import type {
     ConversationEntry,
     ConversationErrorAssistance,
     ConversationErrorAssistanceEntry,
-    ConversationFailureFallback,
     ConversationRetrying,
 } from "../conversation/conversationEntry.js";
 import { happyAgentChatDraftAppend } from "./happyAgentChatDraftAppend.js";
@@ -130,6 +129,7 @@ import type {
     HappyAgentGitChangedFile,
     HappyAgentGoal,
     HappyAgentGroupId,
+    HappyAgentFailureSwitchTarget,
     HappyAgentMenusSnapshot,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
@@ -298,6 +298,8 @@ export interface HappyAgentConversationSnapshot {
      * letting a choice be made that the next message would fail to apply.
      */
     readonly modelLocked: boolean;
+    /** Whether a failure card may offer switching to another account and model. */
+    readonly failureSwitchSupported: boolean;
     /**
      * Where this conversation was last being read, when it has been read before.
      * Absent opens at the newest message.
@@ -1897,8 +1899,8 @@ export interface HappyAgentWorkspaceStore {
     compact(): Promise<void>;
     /** Runs the turn a failure card in the open conversation failed again. */
     failureRetry(entryId: string): Promise<void>;
-    /** Continues the failed turn on one of the failure's fallback targets. */
-    failureSwitch(entryId: string, target: ConversationFailureFallback): Promise<void>;
+    /** Continues the failed turn on an account and model the live catalog offers. */
+    failureSwitch(entryId: string, target: HappyAgentFailureSwitchTarget): Promise<void>;
     /** Loads the next page before the active conversation's current window. */
     historyLoadMore(): void;
     /** Requests termination of one background terminal in the active session (`/stop`). */
@@ -2913,6 +2915,7 @@ export function happyAgentWorkspaceStoreCreate(
             ...(chat.openImage ? { openImage: chat.openImage } : {}),
             ...(chat.menus ? { menus: chat.menus } : pendingMenus ? { menus: pendingMenus } : {}),
             modelLocked: chat.modelLocked,
+            failureSwitchSupported: chat.failureSwitchSupported,
             ...(scrollPositions.has(chat.sessionId)
                 ? { scrollPosition: scrollPositions.get(chat.sessionId)! }
                 : {}),
@@ -8646,6 +8649,7 @@ function conversationAcquiring(
         activityPanelOpen: false,
         ...(menus ? { menus } : {}),
         modelLocked: false,
+        failureSwitchSupported: false,
     };
 }
 

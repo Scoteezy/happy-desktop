@@ -5,16 +5,18 @@ import {
     type ComposerSnapshot,
     type ConversationEntry,
     type ConversationFailure,
-    type ConversationFailureFallback,
     type ConversationFailureProvider,
     type ConversationRetrying,
 } from "happy-desktop-state";
 import {
     ComposerModelControl,
+    type ComposerModelAccountUsage,
     type ComposerModelChoice,
     type ComposerModelService,
+    type ComposerModelUsageWatch,
 } from "../../src/ComposerModelControl";
 import { ConversationView } from "../../src/ConversationView";
+import type { ConversationSwitchSource } from "../../src/conversationSwitchTargets";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
 import { conversationEntries } from "./happyAgentChatFixtures";
@@ -44,31 +46,104 @@ const CLAUDE: ConversationFailureProvider = {
     label: "claude",
 };
 
-const fallback = (
-    providerLabel: string,
-    modelName: string,
-    usedPercent: number,
-    usageWindow: string,
-    group: string,
-): ConversationFailureFallback => ({
-    providerId: providerLabel,
-    providerLabel,
-    modelId: modelName.toLowerCase().replaceAll(" ", "-"),
-    modelName,
-    usedPercent,
-    usageWindow,
-    group,
+const choice = (id: string, label: string): ComposerModelChoice => ({
+    id,
+    label,
+    efforts: [{ id: "high", label: "High" }],
+    effort: "high",
 });
-const SAME_MODEL = [
-    fallback("claude_work", "Opus 5.5", 38, "weekly", "same_model"),
-    fallback("claude_extra", "Opus 5.5", 61, "weekly", "same_model"),
+const OPUS = choice("opus-5-5", "Opus 5.5");
+const SONNET = choice("sonnet-5", "Sonnet 5");
+const account = (id: string, label: string, models: readonly ComposerModelChoice[]) => ({
+    id,
+    label,
+    models,
+});
+
+/* The conversation's own model picker: four Claude accounts, the conversation
+   on team@ whose week is spent, and two other services. */
+const SERVICES: readonly ComposerModelService[] = [
+    {
+        id: "claude",
+        label: "Claude",
+        account: "claude_team",
+        accounts: [
+            account("claude", "Current CLI", [OPUS, SONNET]),
+            account("claude_work", "work@example.com", [OPUS, SONNET]),
+            account("claude_team", "team@example.com", [OPUS, SONNET]),
+            account("claude_spare", "spare@example.com", [OPUS]),
+        ],
+    },
+    {
+        id: "codex",
+        label: "Codex",
+        account: "codex",
+        accounts: [account("codex", "codex", [choice("gpt-6.1-sol", "GPT-6.1 Sol")])],
+    },
+    {
+        id: "grok",
+        label: "Grok",
+        account: "grok",
+        accounts: [account("grok", "grok", [choice("grok-4.7", "Grok 4.7")])],
+    },
 ];
-const OTHER_PROVIDERS = [
-    fallback("codex", "GPT-6.1 Sol", 18, "weekly", "other_provider"),
-    fallback("grok", "Grok 4.7", 24, "monthly", "other_provider"),
-];
-const ALL = [...SAME_MODEL, ...OTHER_PROVIDERS];
+const SELECTION = { service: "claude", account: "claude_team", model: "opus-5-5", effort: "high" };
+
+const reading = (week: number, session: number, limit?: string): ComposerModelAccountUsage => ({
+    week: {
+        label: "Week",
+        usedPercent: week,
+        resets: "resets Thu 8:00 PM",
+        ...(week >= 100 ? { blocking: true } : {}),
+    },
+    session: { label: "Session", usedPercent: session, resets: "resets 5:50 PM" },
+    updatedAt: NOW - 20 * 1_000,
+    ...(limit === undefined ? {} : { limit: { resets: limit } }),
+});
+const USAGE: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
+    ["claude", reading(50, 12)],
+    ["claude_work", reading(57, 31)],
+    ["claude_team", reading(99, 100, "5:50 PM")],
+    ["claude_spare", reading(100, 4, "Thu 8:00 PM")],
+    ["codex", reading(18, 42)],
+]);
+/** Every Claude account spent, so the switch prefers another service. */
+const USAGE_CLAUDE_SPENT: ReadonlyMap<string, ComposerModelAccountUsage> = new Map([
+    ...USAGE,
+    ["claude", reading(100, 64, "Thu 8:00 PM")],
+    ["claude_work", reading(100, 12, "Fri 6:00 AM")],
+]);
+
+/**
+ * The provider-usage store's held reading, as the picker's watch answers with
+ * it at once. Nothing here is read again, so a refresh asks nobody.
+ */
+function heldUsage(usage: ReadonlyMap<string, ComposerModelAccountUsage>): ComposerModelUsageWatch {
+    return {
+        subscribe(listener) {
+            listener({ accounts: usage, now: NOW });
+            return () => undefined;
+        },
+        refresh: () => undefined,
+    };
+}
+const SOURCE: ConversationSwitchSource = {
+    services: SERVICES,
+    selection: SELECTION,
+    usageWatch: heldUsage(USAGE),
+};
+const SOURCE_CLAUDE_SPENT: ConversationSwitchSource = {
+    ...SOURCE,
+    usageWatch: heldUsage(USAGE_CLAUDE_SPENT),
+};
+/** A machine with one account: nothing to switch to. */
+const SOURCE_ALONE: ConversationSwitchSource = {
+    services: [{ ...SERVICES[0]!, accounts: [account("claude_team", "team@example.com", [OPUS])] }],
+    selection: SELECTION,
+    usageWatch: heldUsage(USAGE),
+};
 const CODEX_KEY = `codex\u0000gpt-6.1-sol`;
+const SPARE_KEY = `claude_spare\u0000opus-5-5`;
 
 const before = conversationEntries.slice(0, 3);
 const failed = (failure: ConversationFailure): ConversationEntry => ({
@@ -100,28 +175,24 @@ const continued: ConversationEntry = {
     },
 };
 
-const signinMissing = (fallbackProviders: readonly ConversationFailureFallback[]) =>
-    failed({
-        kind: "signin_missing",
-        provider: CLAUDE,
-        product: "Claude Code",
-        command: "claude auth login",
-        message: "Claude Code isn't signed in. Run `claude auth login`, then retry.",
-        fallbackProviders,
-    });
+const signinMissing = failed({
+    kind: "signin_missing",
+    provider: CLAUDE,
+    product: "Claude Code",
+    command: "claude auth login",
+    message: "Claude Code isn't signed in. Run `claude auth login`, then retry.",
+});
 const usageLimit: ConversationFailure = {
     kind: "usage_limit",
     provider: CLAUDE,
     resetsAt: RESETS,
     message: "Claude usage limit reached.",
-    fallbackProviders: ALL,
 };
 const noAccount = failed({
     kind: "no_account_available",
     poolName: "Claude pool",
     resetsAt: RESETS,
     message: "Every account in “Claude pool” is out of usage.",
-    fallbackProviders: OTHER_PROVIDERS,
 });
 
 type Screen = {
@@ -130,6 +201,8 @@ type Screen = {
     readonly entries: readonly ConversationEntry[];
     readonly running?: boolean;
     readonly retrying?: ConversationRetrying;
+    /** The picker the switch reads; the four-account machine when absent. */
+    readonly source?: ConversationSwitchSource;
     readonly preview?: { readonly target?: string; readonly menu?: { readonly active?: string } };
 };
 
@@ -137,23 +210,30 @@ const screens: readonly Screen[] = [
     {
         id: "signin-missing",
         label: "Sign-in missing · switching is primary",
-        entries: [...before, signinMissing(ALL)],
+        entries: [...before, signinMissing],
     },
     {
         id: "signin-missing-no-switch",
         label: "Sign-in missing · no other account, Retry is primary",
-        entries: [...before, signinMissing([])],
+        entries: [...before, signinMissing],
+        source: SOURCE_ALONE,
     },
     {
         id: "usage-limit",
-        label: "Usage limit · preset to the first target",
+        label: "Usage limit · preset to the account with the most week left",
         entries: [...before, failed(usageLimit)],
     },
     {
         id: "usage-limit-menu",
-        label: "Usage limit · target list open, codex hovered",
+        label: "Usage limit · the picker's accounts and usage, codex hovered",
         entries: [...before, failed(usageLimit)],
         preview: { menu: { active: CODEX_KEY } },
+    },
+    {
+        id: "usage-limit-menu-spent",
+        label: "Usage limit · a spent account hovered",
+        entries: [...before, failed(usageLimit)],
+        preview: { menu: { active: SPARE_KEY } },
     },
     {
         id: "usage-limit-picked",
@@ -171,9 +251,9 @@ const screens: readonly Screen[] = [
                 resolution: {
                     action: "switched",
                     at: NOW,
-                    providerId: "claude_work",
-                    providerLabel: "claude_work",
-                    modelId: "opus-5.5",
+                    providerId: "claude",
+                    providerLabel: "Current CLI",
+                    modelId: "opus-5-5",
                     modelName: "Opus 5.5",
                 },
             }),
@@ -182,13 +262,15 @@ const screens: readonly Screen[] = [
     },
     {
         id: "no-account-available",
-        label: "No account available · one group, no label",
+        label: "No account available · every Claude account spent, Codex preset",
         entries: [...before, noAccount],
+        source: SOURCE_CLAUDE_SPENT,
     },
     {
         id: "no-account-available-menu",
         label: "No account available · target list open",
         entries: [...before, noAccount],
+        source: SOURCE_CLAUDE_SPENT,
         preview: { menu: {} },
     },
     {
@@ -212,7 +294,6 @@ const screens: readonly Screen[] = [
                 kind: "provider_unavailable",
                 provider: CLAUDE,
                 message: "Claude is overloaded right now.",
-                fallbackProviders: ALL,
             }),
         ],
     },
@@ -234,26 +315,11 @@ const screens: readonly Screen[] = [
                 modelId: "opus-5.5",
                 modelName: "Opus 5.5",
                 message: "This conversation is too long for Opus 5.5, even after a reset.",
-                fallbackProviders: [],
             }),
         ],
     },
 ];
 
-const OPUS: ComposerModelChoice = {
-    id: "opus-5-5",
-    label: "Opus 5.5",
-    efforts: [{ id: "high", label: "High" }],
-    effort: "high",
-};
-const SERVICES: readonly ComposerModelService[] = [
-    {
-        id: "claude",
-        label: "Claude",
-        account: "claude",
-        accounts: [{ id: "claude", label: "claude", default: true, models: [OPUS] }],
-    },
-];
 const COMPOSER: ComposerSnapshot = {
     agentUserIds: [],
     attachments: [],
@@ -275,13 +341,9 @@ function conversation(screen: Screen): ReactNode {
             composerControls={
                 <ComposerModelControl
                     onSelect={noop}
-                    selection={{
-                        service: "claude",
-                        account: "claude",
-                        model: "opus-5-5",
-                        effort: "high",
-                    }}
+                    selection={SELECTION}
                     services={SERVICES}
+                    usageWatch={(screen.source ?? SOURCE).usageWatch}
                 />
             }
             composerPlaceholder="Message Happy…"
@@ -291,6 +353,7 @@ function conversation(screen: Screen): ReactNode {
             errorAssistance={[{ entryId: "failed", assistance: { status: "ready" } }]}
             failureActions={{ onNewChat: noop, onRetry: noop, onSwitch: noop }}
             failureClock={CLOCK}
+            failureSwitch={screen.source ?? SOURCE}
             {...(screen.preview ? { failurePreview: screen.preview } : {})}
             motion="calm-typed"
             onAbort={noop}
@@ -312,7 +375,7 @@ export function ConversationFailureFlowPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Failed turns as the client writes them from the failure's kind: the message with Retry or New chat after it, then the switch split button and Ask Chief of Staff. Reset times are told on the viewer's own clock; this page pins it to Los Angeles. Each viewport is named for `pnpm blueprint:screens`."
+            summary="Failed turns as the client writes them from the failure's kind: the message with Retry or New chat after it, then the switch split button and Ask Chief of Staff. The switch lists the conversation's model picker's own accounts and live usage, never a list stored with the failure. Reset times are told on the viewer's own clock; this page pins it to Los Angeles. Each viewport is named for `pnpm blueprint:screens`."
             title="Conversation failure flow"
         >
             {windows.flatMap((window) =>

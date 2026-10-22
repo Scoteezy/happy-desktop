@@ -949,6 +949,9 @@ export function happyAgentWorkspaceClientCreate(
                         modelSelect: (current, input) => models.modelSelect(current, input),
                         effortRemembered: (providerId, modelId) =>
                             models.effortRemembered(providerId, modelId),
+                        // Health is heard while the connection is admitted, before
+                        // any transcript it carries, so every projection can read it.
+                        daemonProtocol: () => deps.connection.sync.health()?.version.protocol,
                         // A conversation is opened through the workspace that
                         // already lists everything, so the list is there to
                         // name whoever writes into it.

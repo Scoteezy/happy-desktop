@@ -1,11 +1,11 @@
 import type {
     ConversationErrorAssistance,
     ConversationFailure,
-    ConversationFailureFallback,
     ConversationFailureResolution,
     ConversationRetrying,
 } from "happy-desktop-state";
 import { conversationErrorAssistanceText } from "./conversationErrorAssistanceText";
+import type { ConversationSwitchTarget } from "./conversationSwitchTargets";
 import { localMoment, type LocalTimeZone } from "./localTime";
 
 /**
@@ -106,60 +106,42 @@ export function conversationFailureLineAction(failure: ConversationFailure): "re
 const LINE_ACTION_LABEL = { retry: "Retry", newChat: "New chat" } as const;
 
 /** "account · model", as a switch target names itself. */
-export function conversationFailureTargetLabel(
-    target: Pick<ConversationFailureFallback, "providerLabel" | "modelId" | "modelName">,
-): string {
+export function conversationFailureTargetLabel(target: {
+    readonly providerLabel: string;
+    readonly modelId: string;
+    readonly modelName?: string;
+}): string {
     return `${target.providerLabel} · ${target.modelName ?? target.modelId}`;
 }
 
 /** The split button's main segment. */
-export function conversationFailureSwitchLabel(target: ConversationFailureFallback): string {
+export function conversationFailureSwitchLabel(target: ConversationSwitchTarget): string {
     return `Switch to ${conversationFailureTargetLabel(target)} and continue`;
 }
 
-/** A target's usage, named by the window it was read from, such as "38% weekly used". */
-export function conversationFailureTargetUsage(target: ConversationFailureFallback): string {
-    if (target.usedPercent === null) return "—";
-    const percent = `${String(Math.round(target.usedPercent))}%`;
-    return target.usageWindow === null
-        ? `${percent} used`
-        : `${percent} ${target.usageWindow} used`;
-}
-
-const GROUP_LABEL: Readonly<Record<string, string>> = {
-    same_model: "Same model",
-    same_family: "Same family",
-    other_provider: "Other providers",
-};
-
 /**
- * The targets in the daemon's order, cut where its group changes. A group this
- * client has no name for is still its own group, labelled "Other".
+ * The targets in list order, cut where their service changes, each part named
+ * by its service as the model picker names it.
  */
 export function conversationFailureTargetGroups(
-    targets: readonly ConversationFailureFallback[],
+    targets: readonly ConversationSwitchTarget[],
 ): readonly {
     readonly group: string;
     readonly label: string;
-    readonly targets: readonly ConversationFailureFallback[];
+    readonly targets: readonly ConversationSwitchTarget[];
 }[] {
-    const groups: { group: string; label: string; targets: ConversationFailureFallback[] }[] = [];
+    const groups: { group: string; label: string; targets: ConversationSwitchTarget[] }[] = [];
     for (const target of targets) {
         const last = groups.at(-1);
-        if (last?.group === target.group) last.targets.push(target);
-        else
-            groups.push({
-                group: target.group,
-                label: GROUP_LABEL[target.group] ?? "Other",
-                targets: [target],
-            });
+        if (last?.group === target.service) last.targets.push(target);
+        else groups.push({ group: target.service, label: target.serviceLabel, targets: [target] });
     }
     return groups;
 }
 
 /** The stable identity of a target, for the picked one to be remembered by. */
 export function conversationFailureTargetKey(
-    target: Pick<ConversationFailureFallback, "providerId" | "modelId">,
+    target: Pick<ConversationSwitchTarget, "providerId" | "modelId">,
 ): string {
     return `${target.providerId}\u0000${target.modelId}`;
 }
@@ -183,7 +165,7 @@ export interface ConversationFailureCardLayout {
     /** The button after the message, and whether it is the card's one primary. */
     readonly lineAction?: { readonly label: string; readonly primary: boolean };
     /** The switch split button's targets, when switching is offered. */
-    readonly switchTargets?: readonly ConversationFailureFallback[];
+    readonly switchTargets?: readonly ConversationSwitchTarget[];
     readonly assistance?: ReturnType<typeof conversationErrorAssistanceText>;
     /** The muted record of what was done, in place of the actions. */
     readonly resolution?: string;
@@ -192,8 +174,9 @@ export interface ConversationFailureCardLayout {
 /**
  * Which buttons a card carries. A resolved card records what was done and
  * offers nothing; one the conversation has moved past offers only Ask Chief of
- * Staff. Otherwise the switch is offered when there is a target, and is then
- * the one primary; without it, the message line's own action is.
+ * Staff. Otherwise the switch is offered when the live catalog has another
+ * account to move to, and is then the one primary; without it, the message
+ * line's own action is.
  */
 export function conversationFailureCardLayout(
     failure: ConversationFailure,
@@ -204,6 +187,8 @@ export function conversationFailureCardLayout(
             readonly newChat: boolean;
             readonly switch: boolean;
         };
+        /** Every account the failed turn could continue on, from the live catalog. */
+        readonly targets?: readonly ConversationSwitchTarget[];
         readonly assistance?: ConversationErrorAssistance;
     },
 ): ConversationFailureCardLayout {
@@ -214,8 +199,8 @@ export function conversationFailureCardLayout(
         : undefined;
     if (!options.current) return assistance ? { assistance } : {};
     const switchTargets =
-        options.actions.switch && failure.fallbackProviders.length > 0
-            ? failure.fallbackProviders
+        options.actions.switch && options.targets !== undefined && options.targets.length > 0
+            ? options.targets
             : undefined;
     const action = conversationFailureLineAction(failure);
     const lineAction = (action === "retry" ? options.actions.retry : options.actions.newChat)

@@ -567,23 +567,6 @@
     content: "";
 }
 
-/* The conversation switcher's right-aligned usage column, wide enough for a
- * dash, so every row ends on the same edge. */
-.happy-composer-model-control__account-plan {
-    display: flex;
-    flex: 0 0 auto;
-    justify-content: flex-end;
-    min-width: 32px;
-    color: var(--text-secondary);
-    font-size: 12px;
-    white-space: nowrap;
-}
-
-/* A plan the daemon could not read: a muted dash, not a plan. */
-.happy-composer-model-control__account-plan[data-unknown] {
-    opacity: 0.56;
-}
-
 /* What is left of a window, as the native menu bar draws it: the number right
  * beside a small ring, so rings line up down the account list at its right
  * edge. It takes only its own width; an account without a reading has none. */

@@ -34,7 +34,6 @@ import {
 } from "./happyAgentAgentIdentities.js";
 import type {
     ConversationAgentIdentity,
-    ConversationFailureFallback,
     ConversationRetrying,
 } from "../conversation/conversationEntry.js";
 import { happyAgentRetryingProject } from "./happyAgentFailureProject.js";
@@ -48,6 +47,7 @@ import type {
     HappyAgentModel,
     HappyAgentModelCatalog,
     HappyAgentModelEffortRemembered,
+    HappyAgentFailureSwitchTarget,
     HappyAgentModelSelection,
     HappyAgentPermissionMode,
     HappyAgentQueuedMessage,
@@ -648,6 +648,13 @@ export interface HappyAgentChatSnapshot {
     readonly activityPanelOpen: boolean;
     readonly openImage?: HappyAgentOpenImage;
     readonly menus?: HappyAgentMenusSnapshot;
+    /**
+     * Whether a failed turn can be continued on any account and model the live
+     * catalog offers. A daemon before protocol 32 accepts only the targets it
+     * stored with the failure, which this client no longer reads, so it is
+     * offered Retry instead.
+     */
+    readonly failureSwitchSupported: boolean;
 }
 
 export type HappyAgentChatOutput =
@@ -705,8 +712,11 @@ export interface HappyAgentChatStore {
     compact(): Promise<void>;
     /** Runs the turn a failure card's entry failed again. */
     failureRetry(entryId: string): Promise<void>;
-    /** Moves to one of the failure's fallback targets and continues the failed turn there. */
-    failureSwitch(entryId: string, target: ConversationFailureFallback): Promise<void>;
+    /**
+     * Moves to an account and model the live catalog offers and continues the
+     * failed turn there. Only offered when `failureSwitchSupported`.
+     */
+    failureSwitch(entryId: string, target: HappyAgentFailureSwitchTarget): Promise<void>;
     backgroundProcessStop(processId: number): Promise<void>;
     usageGet(): Promise<HappyAgentSessionUsage>;
     activityPanelToggle(): void;
@@ -766,7 +776,12 @@ export interface HappyAgentChatDeps {
     readonly effortRemembered?: HappyAgentModelEffortRemembered;
     /** Names the agents that send messages into this conversation. */
     readonly agentIdentities?: HappyAgentAgentIdentitySource;
+    /** The protocol the connection's daemon last reported in its health, once heard. */
+    readonly daemonProtocol?: () => number | undefined;
 }
+
+/** Protocol 32 validates a failure switch against the live catalog, not a stored list. */
+export const HAPPY_AGENT_FAILURE_SWITCH_PROTOCOL_VERSION = 32;
 
 export interface HappyAgentChatTranscriptConnection {
     close(): void;
@@ -825,6 +840,7 @@ export function happyAgentChatStoreCreate(
         expandedTurnIds: new Set<string>(),
         usageLoading: false,
         activityPanelOpen: false,
+        failureSwitchSupported: false,
     }));
 
     const listeners = new Set<() => void>();
@@ -967,6 +983,7 @@ export function happyAgentChatStoreCreate(
                 : happyAgentConversationProject({
                       cache: conversationCache,
                       models: catalog.models,
+                      providers: catalog.providers,
                       elements,
                       sentImages,
                       sessionId,
@@ -1093,6 +1110,8 @@ export function happyAgentChatStoreCreate(
                           deps.effortRemembered,
                       ),
                   }),
+            failureSwitchSupported:
+                (deps.daemonProtocol?.() ?? 0) >= HAPPY_AGENT_FAILURE_SWITCH_PROTOCOL_VERSION,
         };
         /* The transcript answers for itself: `entriesMerge` returns the very
            list it was given when nothing moved, so a new one is a change and

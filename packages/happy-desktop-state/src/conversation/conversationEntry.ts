@@ -643,22 +643,6 @@ export interface ConversationFailureProvider {
     readonly label: string;
 }
 
-/** One usable account and model to switch to, ranked by the daemon so every client agrees. */
-export interface ConversationFailureFallback {
-    readonly providerId: string;
-    /** The account's label, as "Switch to claude_work · …" names it. */
-    readonly providerLabel: string;
-    readonly modelId: string;
-    /** Catalog presentation label for `modelId`, when the catalog knows it. */
-    readonly modelName?: string;
-    /** Used share of the window named by `usageWindow`; null when the account has no reading. */
-    readonly usedPercent: number | null;
-    /** That window's lowercase name: "weekly" when reported, otherwise its own, such as "5h". */
-    readonly usageWindow: string | null;
-    /** How the target relates to the failed model: "same_model", "same_family", "other_provider", or newer. */
-    readonly group: string;
-}
-
 /**
  * What was done about a failure, recorded on it so its history reads the same
  * on every client and after a reload. An action this client does not know is
@@ -670,7 +654,7 @@ export type ConversationFailureResolution =
           readonly action: "switched";
           readonly at: number;
           readonly providerId: string;
-          /** The target's label, from the failure's own fallback list. */
+          /** The account's name in the live catalog; its id once the catalog no longer names it. */
           readonly providerLabel: string;
           readonly modelId: string;
           /** Catalog presentation label for `modelId`, when the catalog knows it. */
@@ -681,8 +665,6 @@ export type ConversationFailureResolution =
 interface ConversationFailureBase {
     /** The daemon's plain-text sentence, shown only for a kind this client does not know. */
     readonly message: string;
-    /** Usable switch targets, best first. Empty: no switch, and the card's own action is primary. */
-    readonly fallbackProviders: readonly ConversationFailureFallback[];
     readonly resolution?: ConversationFailureResolution;
 }
 

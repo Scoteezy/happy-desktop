@@ -55,6 +55,7 @@ import {
     conversationFailureSwitchLabel,
     conversationFailureTargetKey,
 } from "./conversationFailureText";
+import type { ConversationSwitchTarget } from "./conversationSwitchTargets";
 import {
     MESSAGE_MEDIA_LIMITS,
     MESSAGE_MEDIA_MAX,
@@ -128,6 +129,8 @@ export type ConversationFailureRowContext = {
         readonly newChat: boolean;
         readonly switch: boolean;
     };
+    /** Every account the turn can continue on; the switch is offered only with one. */
+    readonly switchTargets?: readonly ConversationSwitchTarget[];
     /** The picked switch target's key, which sets the split button's label. */
     readonly target?: string;
     readonly clock?: ConversationFailureClock;
@@ -958,6 +961,7 @@ export function conversationRowHeight(
             const layout = conversationFailureCardLayout(failure, {
                 current: options.current,
                 actions: options.actions,
+                ...(options.switchTargets ? { targets: options.switchTargets } : {}),
                 ...(context.errorAssistance ? { assistance: context.errorAssistance } : {}),
             });
             const segments = conversationFailureMessage(failure, options.clock ?? {});

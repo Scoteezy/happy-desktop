@@ -184,6 +184,10 @@ export {
     happyAgentComposerModelUsageProject,
     happyAgentComposerModelUsageWatch,
 } from "./happyAgentComposerModelControl";
+export type {
+    ConversationSwitchSource,
+    ConversationSwitchTarget,
+} from "./conversationSwitchTargets";
 export {
     DiffSnippet,
     type DiffLine,

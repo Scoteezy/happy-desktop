@@ -1017,6 +1017,16 @@ export interface HappyAgentModelSelection {
     readonly effort?: HappyAgentThinkingLevel;
 }
 
+/**
+ * The route a failed turn continues on: an account and model the live catalog
+ * offers, as the model picker lists them. The daemon keeps the failed
+ * attempt's effort when the model supports it, so none is chosen here.
+ */
+export interface HappyAgentFailureSwitchTarget {
+    readonly providerId: string;
+    readonly modelId: string;
+}
+
 export interface HappyAgentUserInputAnswers {
     readonly requestId: string;
     readonly answers: Readonly<Record<string, readonly string[]>>;

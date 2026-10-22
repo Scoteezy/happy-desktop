@@ -1,11 +1,17 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { useState } from "react";
 import type {
+    ComposerSnapshot,
     ConversationFailure,
-    ConversationFailureFallback,
     ConversationFailureProvider,
     ConversationServiceNoticeEntry,
 } from "happy-desktop-state";
+import type {
+    ComposerModelAccountUsage,
+    ComposerModelService,
+    ComposerModelUsage,
+    ComposerModelUsageWatch,
+} from "./ComposerModelControl";
 import { ConversationEntryView, type ConversationEntryFailureProps } from "./ConversationEntryView";
 import { conversationRowHeight, conversationRowHeightCacheCreate } from "./conversationRowHeight";
 import {
@@ -13,6 +19,13 @@ import {
     conversationFailureTargetKey,
     conversationRetryingLabel,
 } from "./conversationFailureText";
+import {
+    conversationSwitchTargetPreferred,
+    conversationSwitchTargets,
+    type ConversationSwitchSource,
+    type ConversationSwitchTarget,
+} from "./conversationSwitchTargets";
+import { ConversationView } from "./ConversationView";
 import { createRenderer } from "./testing";
 import "./styles.css";
 
@@ -28,36 +41,63 @@ const CLAUDE: ConversationFailureProvider = {
     vendorName: "Claude",
     label: "claude",
 };
-const target = (
-    providerLabel: string,
-    modelName: string,
-    usedPercent: number | null,
-    usageWindow: string | null,
-    group: string,
-): ConversationFailureFallback => ({
-    providerId: providerLabel,
-    providerLabel,
-    modelId: modelName.toLowerCase(),
-    modelName,
-    usedPercent,
-    usageWindow,
-    group,
+const NOW = CLOCK.now;
+const model = (id: string, label: string) => ({
+    id,
+    label,
+    efforts: [{ id: "high", label: "High" }],
 });
-const TARGETS = [
-    target("claude_work", "Opus 5.5", 38, "weekly", "same_model"),
-    target("claude_extra", "Opus 5.5", 61, "weekly", "same_model"),
-    target("codex", "GPT-6.1 Sol", 18, "weekly", "other_provider"),
-    target("grok", "Grok 4.7", null, null, "other_provider"),
+const OPUS = model("opus-5.5", "Opus 5.5");
+/* The conversation's model picker: three Claude accounts, the conversation on
+   team, one Codex and one Grok account. */
+const SERVICES: readonly ComposerModelService[] = [
+    {
+        id: "claude",
+        label: "Claude",
+        account: "claude_team",
+        accounts: [
+            { id: "claude_work", label: "claude_work", models: [OPUS] },
+            { id: "claude_extra", label: "claude_extra", models: [OPUS] },
+            { id: "claude_team", label: "claude_team", models: [OPUS] },
+        ],
+    },
+    {
+        id: "codex",
+        label: "Codex",
+        account: "codex",
+        accounts: [{ id: "codex", label: "codex", models: [model("gpt-6.1-sol", "GPT-6.1 Sol")] }],
+    },
+    {
+        id: "grok",
+        label: "Grok",
+        account: "grok",
+        accounts: [{ id: "grok", label: "grok", models: [model("grok-4.7", "Grok 4.7")] }],
+    },
 ];
-const signin = (
-    fallbackProviders: readonly ConversationFailureFallback[],
-): ConversationFailure => ({
+const SELECTION = { service: "claude", account: "claude_team", model: "opus-5.5" };
+const week = (usedPercent: number, limit = false): ComposerModelAccountUsage => ({
+    week: { label: "Week", usedPercent, resets: "resets Thu 8:00 PM" },
+    session: { label: "Session", usedPercent: 10, resets: "resets 5:50 PM" },
+    updatedAt: NOW,
+    ...(limit ? { limit: {} } : {}),
+});
+const USAGE: ComposerModelUsage = {
+    accounts: new Map([
+        ["claude_work", week(38)],
+        ["claude_extra", week(61)],
+        ["claude_team", week(100, true)],
+        ["codex", week(18)],
+    ]),
+    now: NOW,
+};
+const SOURCE: ConversationSwitchSource = { services: SERVICES, selection: SELECTION };
+const TARGETS = conversationSwitchTargets(SOURCE, USAGE);
+const signin = (): ConversationFailure => ({
     kind: "signin_missing",
     provider: CLAUDE,
     product: "Claude Code",
     command: "claude auth login",
     message: "daemon text",
-    fallbackProviders,
 });
 const notice = (failure: ConversationFailure): ConversationServiceNoticeEntry => ({
     kind: "notice",
@@ -74,8 +114,8 @@ it("writes every kind's text itself, and the daemon's only for an unknown kind",
         conversationFailureMessage(failure, CLOCK)
             .map((segment) => (segment.kind === "code" ? `\`${segment.text}\`` : segment.text))
             .join("");
-    const base = { message: "daemon text", fallbackProviders: [] };
-    expect(text(signin([]))).toBe(
+    const base = { message: "daemon text" };
+    expect(text(signin())).toBe(
         "Claude Code isn't signed in. Run `claude auth login`, then retry.",
     );
     expect(
@@ -168,7 +208,9 @@ it("writes every kind's text itself, and the daemon's only for an unknown kind",
 function Row(props: {
     readonly failure: ConversationFailure;
     readonly current?: boolean;
+    readonly targets?: readonly ConversationSwitchTarget[];
     readonly onSwitch?: ConversationEntryFailureProps["onSwitch"];
+    readonly onSwitchOpen?: () => void;
     readonly onRetry?: () => void;
     readonly onNewChat?: () => void;
 }) {
@@ -180,6 +222,8 @@ function Row(props: {
             failure={{
                 current: props.current ?? true,
                 clock: CLOCK,
+                ...(props.targets ? { switchTargets: props.targets, usageNow: NOW } : {}),
+                ...(props.onSwitchOpen ? { onSwitchOpen: props.onSwitchOpen } : {}),
                 ...(picked === undefined ? {} : { target: picked }),
                 onTargetChange: setPicked,
                 ...(props.onRetry ? { onRetry: props.onRetry } : {}),
@@ -197,6 +241,7 @@ const modeled = (
     actions: { retry: boolean; newChat: boolean; switch: boolean },
     current = true,
     picked?: string,
+    targets: readonly ConversationSwitchTarget[] | undefined = TARGETS,
 ) =>
     conversationRowHeight(
         [notice(failure)],
@@ -205,7 +250,13 @@ const modeled = (
             surface: "chat",
             width,
             errorAssistance: { status: "ready" },
-            failure: { current, actions, clock: CLOCK, ...(picked ? { target: picked } : {}) },
+            failure: {
+                current,
+                actions,
+                clock: CLOCK,
+                ...(targets ? { switchTargets: targets } : {}),
+                ...(picked ? { target: picked } : {}),
+            },
         },
         conversationRowHeightCacheCreate(),
     );
@@ -223,7 +274,14 @@ it.each([360, 720])(
         const view = createRenderer();
         const onSwitch = vi.fn();
         view.render(
-            () => <Row failure={signin(TARGETS)} onRetry={() => undefined} onSwitch={onSwitch} />,
+            () => (
+                <Row
+                    failure={signin()}
+                    onRetry={() => undefined}
+                    onSwitch={onSwitch}
+                    targets={TARGETS}
+                />
+            ),
             {
                 width,
                 height: 600,
@@ -257,7 +315,7 @@ it.each([360, 720])(
         card.querySelector<HTMLButtonElement>('[aria-label="Copy claude auth login"]')!.click();
         await expect.poll(() => write.mock.calls).toEqual([["claude auth login"]]);
         expect(card.getBoundingClientRect().height).toBe(
-            modeled(signin(TARGETS), width, { retry: true, newChat: false, switch: true }),
+            modeled(signin(), width, { retry: true, newChat: false, switch: true }),
         );
         expect(window.devicePixelRatio).toBe(2);
         await view.screenshot(`ConversationFailureCard-${String(width)}.test`);
@@ -272,7 +330,6 @@ it("makes the message line's own action primary when nothing can be switched to"
         modelId: "opus-5.5",
         modelName: "Opus 5.5",
         message: "",
-        fallbackProviders: [],
     };
     view.render(() => <Row failure={tooLong} onNewChat={onNewChat} onRetry={() => undefined} />, {
         width: 720,
@@ -287,13 +344,14 @@ it("makes the message line's own action primary when nothing can be switched to"
     card.querySelector<HTMLButtonElement>(".happy-conversation-failure-card__line-action")!.click();
     expect(onNewChat).toHaveBeenCalledOnce();
     expect(card.getBoundingClientRect().height).toBe(
-        modeled(tooLong, 720, { retry: true, newChat: true, switch: false }),
+        modeled(tooLong, 720, { retry: true, newChat: true, switch: false }, true, undefined, []),
     );
 });
 
-it("opens the target list from the chevron, picks without switching, then switches", async () => {
+it("opens the picker's accounts from the chevron, asks for fresh usage, picks without switching, then switches", async () => {
     const view = createRenderer();
     const onSwitch = vi.fn();
+    const onSwitchOpen = vi.fn();
     // At the foot of the surface, as the latest failure sits above the composer.
     view.render(
         () => (
@@ -305,7 +363,13 @@ it("opens the target list from the chevron, picks without switching, then switch
                     height: "700px",
                 }}
             >
-                <Row failure={signin(TARGETS)} onRetry={() => undefined} onSwitch={onSwitch} />
+                <Row
+                    failure={signin()}
+                    onRetry={() => undefined}
+                    onSwitch={onSwitch}
+                    onSwitchOpen={onSwitchOpen}
+                    targets={TARGETS}
+                />
             </div>
         ),
         { width: 720, height: 700 },
@@ -313,34 +377,40 @@ it("opens the target list from the chevron, picks without switching, then switch
     await view.ready();
     const split = view.$('[data-happy-desktop-ui="conversation-switch"]').element as HTMLElement;
     const chevron = split.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!;
+    expect(onSwitchOpen).not.toHaveBeenCalled();
     chevron.click();
     await expect
         .poll(() => document.querySelector('[data-happy-desktop-ui="conversation-switch-popup"]'))
         .not.toBeNull();
+    // Unfolding is when the picker reads every account again.
+    expect(onSwitchOpen).toHaveBeenCalledOnce();
     expect(chevron.getAttribute("aria-expanded")).toBe("true");
     expect(chevron.dataset["open"]).toBe("");
     const popup = document.querySelector<HTMLElement>(
         '[data-happy-desktop-ui="conversation-switch-popup"]',
     )!;
-    // The model picker's own popup and rows, with group labels for two groups.
+    // The model picker's own popup and rows, grouped by its services.
     expect(popup.classList.contains("happy-composer-model-control__popup")).toBe(true);
     expect(
         [...popup.querySelectorAll(".happy-composer-model-control__service-header")].map(
             (node) => node.textContent,
         ),
-    ).toEqual(["Same model", "Other providers"]);
+    ).toEqual(["Claude", "Codex", "Grok"]);
     const rows = [...popup.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
-    /* Read the words, not the check: an icon is a font glyph with a character of its own. */
+    /* Read the words, not the check: an icon is a font glyph with a character of its own.
+       Each row ends on the picker's own gauge of the week left; an account with
+       no reading has none. */
     const words = (row: Element) =>
         [
             row.querySelector(".happy-composer-model-control__name")?.textContent,
-            row.querySelector(".happy-composer-model-control__account-plan")?.textContent,
-        ].join("");
+            row.querySelector('[data-happy-desktop-ui="composer-model-control-usage-gauge"]')
+                ?.textContent ?? "",
+        ].join("|");
     expect(rows.map(words)).toEqual([
-        "claude_work · Opus 5.538% weekly used",
-        "claude_extra · Opus 5.561% weekly used",
-        "codex · GPT-6.1 Sol18% weekly used",
-        "grok · Grok 4.7—",
+        "claude_work · Opus 5.5|62%",
+        "claude_extra · Opus 5.5|39%",
+        "codex · GPT-6.1 Sol|82%",
+        "grok · Grok 4.7|",
     ]);
     expect(rows.map((row) => row.hasAttribute("data-selected"))).toEqual([
         true,
@@ -354,6 +424,20 @@ it("opens the target list from the chevron, picks without switching, then switch
     const anchor = popup.parentElement!.getBoundingClientRect();
     expect(anchor.right).toBeCloseTo(button.right, 1);
     expect(button.top - anchor.bottom).toBeCloseTo(4, 1);
+    // Beneath the list, the picked account's week, session, and freshness, as the picker shows them.
+    const details = () =>
+        [
+            ...popup.querySelectorAll(
+                '[data-happy-desktop-ui="composer-model-control-usage"], [data-happy-desktop-ui="composer-model-control-usage-freshness"], [data-happy-desktop-ui="composer-model-control-usage-unknown"]',
+            ),
+        ].map((node) => node.textContent);
+    expect(details()).toEqual([
+        "Weekresets Thu 8:00 PM62% left",
+        "Sessionresets 5:50 PM90% left",
+        "Updated just now",
+    ]);
+    rows[3]!.focus();
+    await expect.poll(details).toEqual(["Usage unknown"]);
     // Picking only changes the target.
     rows[2]!.click();
     await expect
@@ -366,7 +450,7 @@ it("opens the target list from the chevron, picks without switching, then switch
     const card = view.$('[data-happy-desktop-ui="conversation-error-card"]').element as HTMLElement;
     expect(card.getBoundingClientRect().height).toBe(
         modeled(
-            signin(TARGETS),
+            signin(),
             720,
             { retry: true, newChat: false, switch: true },
             true,
@@ -382,7 +466,7 @@ it("opens the list downward when there is no room above, and closes on Escape", 
     view.render(
         () => (
             <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-start" }}>
-                <Row failure={signin(TARGETS)} onSwitch={() => undefined} />
+                <Row failure={signin()} onSwitch={() => undefined} targets={TARGETS} />
             </div>
         ),
         { width: 720, height: 600 },
@@ -415,7 +499,7 @@ it("opens the list downward when there is no room above, and closes on Escape", 
 it("keeps a resolved card in history with a muted record and no actions", async () => {
     const view = createRenderer();
     const switched: ConversationFailure = {
-        ...signin(TARGETS),
+        ...signin(),
         resolution: {
             action: "switched",
             at: CLOCK.now,
@@ -442,7 +526,7 @@ it("keeps a resolved card in history with a muted record and no actions", async 
         modeled(switched, 720, { retry: true, newChat: false, switch: true }),
     );
     const handled: ConversationFailure = {
-        ...signin([]),
+        ...signin(),
         resolution: { action: "handled", at: CLOCK.now },
     };
     view.render(() => <Row failure={handled} onRetry={() => undefined} />, {
@@ -464,9 +548,10 @@ it("offers only Ask Chief of Staff on a failure the conversation has moved past"
         () => (
             <Row
                 current={false}
-                failure={signin(TARGETS)}
+                failure={signin()}
                 onRetry={() => undefined}
                 onSwitch={() => undefined}
+                targets={TARGETS}
             />
         ),
         { width: 720, height: 300 },
@@ -476,6 +561,231 @@ it("offers only Ask Chief of Staff on a failure the conversation has moved past"
     expect(buttons(card).map((button) => button.text)).toEqual(["Ask Chief of Staff"]);
     expect(card.textContent).toContain("claude auth login");
     expect(card.getBoundingClientRect().height).toBe(
-        modeled(signin(TARGETS), 720, { retry: false, newChat: false, switch: false }, false),
+        modeled(signin(), 720, { retry: false, newChat: false, switch: false }, false),
     );
+});
+
+it("lists the picker's accounts besides the selected one, and prefers the unspent one with the most week left", () => {
+    expect(TARGETS.map((target) => [target.service, target.providerId, target.modelId])).toEqual([
+        ["claude", "claude_work", "opus-5.5"],
+        ["claude", "claude_extra", "opus-5.5"],
+        ["codex", "codex", "gpt-6.1-sol"],
+        ["grok", "grok", "grok-4.7"],
+    ]);
+    // An account without the selected model continues on its top model; one with none enabled is no target.
+    const services: readonly ComposerModelService[] = [
+        {
+            ...SERVICES[0]!,
+            accounts: [
+                ...SERVICES[0]!.accounts,
+                {
+                    id: "claude_sonnet",
+                    label: "claude_sonnet",
+                    models: [model("sonnet-5", "Sonnet 5")],
+                },
+                {
+                    id: "claude_off",
+                    label: "claude_off",
+                    models: [{ ...OPUS, disabled: true }],
+                },
+            ],
+        },
+    ];
+    expect(
+        conversationSwitchTargets({ services, selection: SELECTION }, undefined).map(
+            (target) => `${target.providerId}:${target.modelName}`,
+        ),
+    ).toEqual(["claude_work:Opus 5.5", "claude_extra:Opus 5.5", "claude_sonnet:Sonnet 5"]);
+    // The selected service comes first, whatever the catalog order.
+    expect(
+        conversationSwitchTargets(
+            { services, selection: { service: "codex", account: "codex", model: "gpt-6.1-sol" } },
+            undefined,
+        )[0]?.service,
+    ).toBe("claude");
+    const preferred = (usage: ComposerModelUsage) =>
+        conversationSwitchTargetPreferred(conversationSwitchTargets(SOURCE, usage), "claude")
+            ?.providerId;
+    expect(preferred(USAGE)).toBe("claude_work");
+    const accounts = (entries: readonly [string, ComposerModelAccountUsage][]) => ({
+        accounts: new Map([...USAGE.accounts, ...entries]),
+        now: NOW,
+    });
+    // A spent account, or one whose session is full, gives way to the next on its service.
+    expect(preferred(accounts([["claude_work", week(20, true)]]))).toBe("claude_extra");
+    expect(
+        preferred(
+            accounts([
+                ["claude_work", { ...week(20), session: { label: "Session", usedPercent: 100 } }],
+            ]),
+        ),
+    ).toBe("claude_extra");
+    // Every account on the service spent: another service, read before unread.
+    expect(
+        preferred(
+            accounts([
+                ["claude_work", week(100, true)],
+                ["claude_extra", week(100, true)],
+            ]),
+        ),
+    ).toBe("codex");
+    // Nothing read at all: list order.
+    expect(preferred({ accounts: new Map(), now: NOW })).toBe("claude_work");
+    expect(conversationSwitchTargetPreferred([], "claude")).toBeUndefined();
+});
+
+/**
+ * The picker's usage watch, as the provider-usage store backs it: it answers
+ * with its held reading at once, follows changes while held, and records the
+ * refreshes it is asked for.
+ */
+function liveUsage(initial: ComposerModelUsage) {
+    let usage = initial;
+    const listeners = new Set<(usage: ComposerModelUsage) => void>();
+    const refresh = vi.fn<(accounts: readonly string[]) => void>();
+    const watch: ComposerModelUsageWatch = {
+        subscribe(listener) {
+            listeners.add(listener);
+            listener(usage);
+            return () => listeners.delete(listener);
+        },
+        refresh,
+    };
+    return {
+        watch,
+        refresh,
+        held: () => listeners.size,
+        set(next: ComposerModelUsage) {
+            usage = next;
+            for (const listener of listeners) listener(next);
+        },
+    };
+}
+
+const COMPOSER: ComposerSnapshot = {
+    agentUserIds: [],
+    attachments: [],
+    capabilities: { commands: [], mentions: false, shellMode: false },
+    focused: false,
+    mentionCandidates: [],
+    revision: 0,
+    scopeId: "failure-switch",
+    submission: { status: "idle" },
+    text: "",
+};
+
+it("switches from the conversation's live picker source, follows its usage, and refreshes it when unfolded", async () => {
+    const live = liveUsage(USAGE);
+    const onSwitch = vi.fn();
+    const source: ConversationSwitchSource = { ...SOURCE, usageWatch: live.watch };
+    const view = createRenderer();
+    let failureSet: (failure: ConversationFailure) => void = () => undefined;
+    function Conversation() {
+        const [failure, setFailure] = useState(signin);
+        failureSet = setFailure;
+        return conversation(failure);
+    }
+    const conversation = (failure: ConversationFailure) => (
+        <div style={{ display: "flex", height: "600px" }}>
+            <ConversationView
+                composer={COMPOSER}
+                conversationId="failure-switch"
+                entries={[notice(failure)]}
+                failureActions={{ onRetry: () => undefined, onSwitch }}
+                failureClock={CLOCK}
+                failureSwitch={source}
+                onComposerSend={() => undefined}
+                onComposerValueChange={() => undefined}
+            />
+        </div>
+    );
+    view.render(() => <Conversation />, { width: 720, height: 600 });
+    await view.ready();
+    const main = () =>
+        document.querySelector<HTMLButtonElement>(".happy-conversation-switch__main")?.textContent;
+    await expect.poll(main).toBe("Switch to claude_work · Opus 5.5 and continue");
+    expect(live.held()).toBe(1);
+    expect(live.refresh).not.toHaveBeenCalled();
+
+    // The account the button names is spent while the card is on screen.
+    live.set({
+        accounts: new Map([...USAGE.accounts, ["claude_work", week(100, true)]]),
+        now: NOW,
+    });
+    await expect.poll(main).toBe("Switch to claude_extra · Opus 5.5 and continue");
+
+    document.querySelector<HTMLButtonElement>(".happy-conversation-switch__menu")!.click();
+    await expect
+        .poll(() => document.querySelector('[data-happy-desktop-ui="conversation-switch-popup"]'))
+        .not.toBeNull();
+    // The refresh the picker asks for when it opens: every account it lists.
+    expect(live.refresh).toHaveBeenCalledExactlyOnceWith([
+        "claude_work",
+        "claude_extra",
+        "claude_team",
+        "codex",
+        "grok",
+    ]);
+    const gauge = (providerId: string) =>
+        [
+            ...document.querySelectorAll<HTMLElement>(
+                '[data-happy-desktop-ui="conversation-switch-row"]',
+            ),
+        ]
+            .find((row) => row.textContent?.startsWith(providerId))
+            ?.querySelector('[data-happy-desktop-ui="composer-model-control-usage-gauge"]')
+            ?.textContent;
+    expect(gauge("codex")).toBe("82%");
+    // A refreshed reading lands in the open list.
+    live.set({ accounts: new Map([...USAGE.accounts, ["codex", week(70)]]), now: NOW });
+    await expect.poll(() => gauge("codex")).toBe("30%");
+    document
+        .querySelector<HTMLButtonElement>('[data-happy-desktop-ui="conversation-switch-row"]')!
+        .click();
+    document.querySelector<HTMLButtonElement>(".happy-conversation-switch__main")!.click();
+    expect(onSwitch).toHaveBeenCalledOnce();
+    expect(onSwitch.mock.calls[0]![0]).toBe("failed");
+    expect(onSwitch.mock.calls[0]![1]).toMatchObject({
+        providerId: "claude_work",
+        modelId: "opus-5.5",
+    });
+
+    // A resolved failure offers nothing, and nothing is followed for it.
+    failureSet({ ...signin(), resolution: { action: "retried", at: NOW } });
+    await expect.poll(live.held).toBe(0);
+    expect(document.querySelector(".happy-conversation-switch")).toBeNull();
+});
+
+it("offers Retry alone when the live picker has no other account", async () => {
+    const live = liveUsage(USAGE);
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div style={{ display: "flex", height: "500px" }}>
+                <ConversationView
+                    composer={COMPOSER}
+                    conversationId="failure-alone"
+                    entries={[notice(signin())]}
+                    failureActions={{ onRetry: () => undefined, onSwitch: () => undefined }}
+                    failureClock={CLOCK}
+                    failureSwitch={{
+                        services: [{ ...SERVICES[0]!, accounts: [SERVICES[0]!.accounts[2]!] }],
+                        selection: SELECTION,
+                        usageWatch: live.watch,
+                    }}
+                    onComposerSend={() => undefined}
+                    onComposerValueChange={() => undefined}
+                />
+            </div>
+        ),
+        { width: 720, height: 500 },
+    );
+    await view.ready();
+    await expect
+        .poll(() =>
+            [...document.querySelectorAll(".happy-conversation-failure-card .happy-button")].map(
+                (button) => `${button.textContent}:${(button as HTMLElement).dataset["variant"]}`,
+            ),
+        )
+        .toEqual(["Retry:primary"]);
 });

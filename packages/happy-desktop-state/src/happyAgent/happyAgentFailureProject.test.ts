@@ -3,7 +3,7 @@ import { entriesMerge } from "../conversation/conversationEntries.js";
 import type { ConversationEntry } from "../conversation/conversationEntry.js";
 import type { MessageFailure } from "@slopus/happy-agent-client";
 import { happyAgentFailureProject, happyAgentRetryingProject } from "./happyAgentFailureProject.js";
-import type { HappyAgentModel } from "./happyAgentTypes.js";
+import type { HappyAgentModel, HappyAgentModelProvider } from "./happyAgentTypes.js";
 
 const model = (id: string, name: string): HappyAgentModel => ({
     id,
@@ -12,10 +12,19 @@ const model = (id: string, name: string): HappyAgentModel => ({
     thinkingLevels: [],
     defaultThinkingLevel: "high",
 });
-const MODELS = [
-    model("anthropic/opus-5-5", "Opus 5.5"),
-    model("openai/gpt-6.1-sol", "GPT-6.1 Sol"),
-];
+const provider = (id: string, type: string, name?: string): HappyAgentModelProvider => ({
+    id,
+    type,
+    ...(name === undefined ? {} : { name }),
+    models: [],
+    enabled: true,
+    hidden: false,
+});
+const CATALOG = {
+    models: [model("anthropic/opus-5-5", "Opus 5.5"), model("openai/gpt-6.1-sol", "GPT-6.1 Sol")],
+    providers: [provider("claude", "claude"), provider("claude_work", "claude", "Work account")],
+};
+const EMPTY = { models: [], providers: [] };
 
 const usageLimit: MessageFailure = {
     kind: "usage_limit",
@@ -43,36 +52,16 @@ const usageLimit: MessageFailure = {
 };
 
 describe("happyAgentFailureProject", () => {
-    it("carries the typed fields and names each target's model from the catalog", () => {
-        expect(happyAgentFailureProject(usageLimit, MODELS)).toEqual({
+    it("carries the typed fields and never the targets an old daemon stored with the failure", () => {
+        expect(happyAgentFailureProject(usageLimit, CATALOG)).toEqual({
             kind: "usage_limit",
             provider: { id: "claude", type: "claude", vendorName: "Claude", label: "claude" },
             resetsAt: 1_792_449_600_000,
             message: "Claude usage limit reached.",
-            fallbackProviders: [
-                {
-                    providerId: "claude_work",
-                    providerLabel: "claude_work",
-                    modelId: "anthropic/opus-5-5",
-                    modelName: "Opus 5.5",
-                    usedPercent: 38,
-                    usageWindow: "weekly",
-                    group: "same_model",
-                },
-                {
-                    providerId: "codex",
-                    providerLabel: "codex",
-                    modelId: "openai/gpt-6.1-sol",
-                    modelName: "GPT-6.1 Sol",
-                    usedPercent: null,
-                    usageWindow: null,
-                    group: "a_future_group",
-                },
-            ],
         });
     });
 
-    it("names a switch by its target's label, and keeps an unknown action as handled", () => {
+    it("names a switch from the live catalog, and keeps an unknown action as handled", () => {
         expect(
             happyAgentFailureProject(
                 {
@@ -84,26 +73,43 @@ describe("happyAgentFailureProject", () => {
                         modelId: "anthropic/opus-5-5",
                     },
                 },
-                MODELS,
+                CATALOG,
             ).resolution,
         ).toEqual({
             action: "switched",
             at: 5,
             providerId: "claude_work",
-            providerLabel: "claude_work",
+            providerLabel: "Work account",
             modelId: "anthropic/opus-5-5",
             modelName: "Opus 5.5",
         });
+        // An account without a configured name, or one gone from the catalog, is its id.
+        for (const providerId of ["claude", "codex"])
+            expect(
+                happyAgentFailureProject(
+                    {
+                        ...usageLimit,
+                        resolution: { action: "switched", at: 5, providerId, modelId: "m" },
+                    },
+                    CATALOG,
+                ).resolution,
+            ).toEqual({
+                action: "switched",
+                at: 5,
+                providerId,
+                providerLabel: providerId,
+                modelId: "m",
+            });
         expect(
             happyAgentFailureProject(
                 { ...usageLimit, resolution: { action: "retried", at: 6 } },
-                [],
+                EMPTY,
             ).resolution,
         ).toEqual({ action: "retried", at: 6 });
         expect(
             happyAgentFailureProject(
                 { ...usageLimit, resolution: { action: "escalated", at: 7 } },
-                [],
+                EMPTY,
             ).resolution,
         ).toEqual({ action: "handled", at: 7 });
     });
@@ -112,9 +118,9 @@ describe("happyAgentFailureProject", () => {
         expect(
             happyAgentFailureProject(
                 { kind: "quota_paused", message: "Paused by the host.", fallbackProviders: [] },
-                [],
+                EMPTY,
             ),
-        ).toEqual({ kind: "unknown", message: "Paused by the host.", fallbackProviders: [] });
+        ).toEqual({ kind: "unknown", message: "Paused by the host." });
     });
 
     it("projects a known kind missing a field its card reads as unknown, never guessing it", () => {
@@ -125,7 +131,7 @@ describe("happyAgentFailureProject", () => {
                     fallbackProviders: [],
                     ...fields,
                 } as unknown as MessageFailure,
-                MODELS,
+                CATALOG,
             );
         const provider = usageLimit.kind === "usage_limit" ? usageLimit.provider : undefined;
         for (const fields of [
@@ -145,7 +151,6 @@ describe("happyAgentFailureProject", () => {
             expect(malformed(fields), JSON.stringify(fields)).toEqual({
                 kind: "unknown",
                 message: "The daemon's own sentence.",
-                fallbackProviders: [],
             });
         // A well-formed one with a null reset time stays known.
         expect(malformed({ kind: "usage_limit", provider, resetsAt: null })).toMatchObject({
@@ -154,21 +159,11 @@ describe("happyAgentFailureProject", () => {
         });
     });
 
-    it("drops a switch target it could not name, and an unnamed switch reads as handled", () => {
+    it("reads an unnamed switch as handled", () => {
         const projected = happyAgentFailureProject(
-            {
-                ...usageLimit,
-                fallbackProviders: [
-                    usageLimit.fallbackProviders[0]!,
-                    { providerId: "codex", modelId: "openai/gpt-6.1-sol" },
-                ] as never,
-                resolution: { action: "switched", at: 3 } as never,
-            },
-            MODELS,
+            { ...usageLimit, resolution: { action: "switched", at: 3 } as never },
+            CATALOG,
         );
-        expect(projected.fallbackProviders.map((target) => target.providerId)).toEqual([
-            "claude_work",
-        ]);
         expect(projected.resolution).toEqual({ action: "handled", at: 3 });
     });
 
@@ -179,8 +174,8 @@ describe("happyAgentFailureProject", () => {
             message: "This conversation is too long for this model.",
             fallbackProviders: [],
         };
-        expect(happyAgentFailureProject(tooLong, MODELS)).toMatchObject({ modelName: "Opus 5.5" });
-        expect(happyAgentFailureProject(tooLong, [])).not.toHaveProperty("modelName");
+        expect(happyAgentFailureProject(tooLong, CATALOG)).toMatchObject({ modelName: "Opus 5.5" });
+        expect(happyAgentFailureProject(tooLong, EMPTY)).not.toHaveProperty("modelName");
     });
 });
 
@@ -220,10 +215,10 @@ describe("failure rows in entriesMerge", () => {
         variant: "notice",
         level: "error",
         text: failure.message,
-        failure: happyAgentFailureProject(failure, MODELS),
+        failure: happyAgentFailureProject(failure, CATALOG),
     });
 
-    it("keeps an unchanged failure row and replaces one that was acted on", () => {
+    it("keeps an unchanged failure row, whatever targets it was stored with, and replaces one acted on", () => {
         const first = row(usageLimit);
         const [same] = entriesMerge([first], [row(usageLimit)]);
         expect(same).toBe(first);
@@ -232,15 +227,7 @@ describe("failure rows in entriesMerge", () => {
             [row({ ...usageLimit, resolution: { action: "retried", at: 9 } })],
         );
         expect(resolved).not.toBe(first);
-        const [usage] = entriesMerge(
-            [first],
-            [
-                row({
-                    ...usageLimit,
-                    fallbackProviders: [{ ...usageLimit.fallbackProviders[0]!, usedPercent: 41 }],
-                }),
-            ],
-        );
-        expect(usage).not.toBe(first);
+        const [emptied] = entriesMerge([first], [row({ ...usageLimit, fallbackProviders: [] })]);
+        expect(emptied).toBe(first);
     });
 });

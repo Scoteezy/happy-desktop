@@ -107,7 +107,6 @@ import type {
     HappyAgentSpaceSectionId,
     ProjectsVisibilityStore,
     HappyAgentGroupLifecycle,
-    ConversationFailureFallback,
     HappyAgentChangeTier,
     HappyAgentChangeTierId,
     HappyAgentChangeTiersSnapshot,
@@ -218,6 +217,7 @@ import {
     ComposerFooterBar,
     ComposerModelControl,
     type ComposerModelUsageWatch,
+    type ConversationSwitchTarget,
     ConversationView,
     DeferredPane,
     EmptyState,
@@ -9145,6 +9145,22 @@ function HappyAgentConversationSurface(props: {
     const activeActivity = happyAgentActiveActivityCounts(conversation);
     const activityTotal = activeActivity.agents + activeActivity.terminals;
     const openImage = conversation.openImage;
+    /* The model pill and a failure card's switch read one set of props, so the
+       card offers the accounts, models, and usage the pill does, live. */
+    const modelControl = conversation.menus
+        ? happyAgentComposerModelControlProps(conversation.menus, {
+              usageWatch: props.modelUsageWatch,
+              sessionId: conversation.conversationId as HappyAgentSessionId,
+              onChiefOfStaffAsk: (request) => workspace.chiefOfStaffDraftAppend(request),
+              disabled: !configurable || conversation.modelLocked,
+              onEffortChange: (effort?: HappyAgentThinkingLevel) => {
+                  if (props.happyAgentOnline()) workspace.sessionEffortUpdate(effort);
+              },
+              onModelChange: (selection: HappyAgentModelSelection) => {
+                  if (props.happyAgentOnline()) workspace.sessionModelUpdate(selection);
+              },
+          })
+        : undefined;
     const references = messageReferencesCreate({
         titles,
         titlesStore,
@@ -9243,13 +9259,23 @@ function HappyAgentConversationSurface(props: {
                               if (props.happyAgentOnline())
                                   swallow(workspace.failureRetry(entryId));
                           },
-                          onSwitch: (entryId: string, target: ConversationFailureFallback) => {
+                          onSwitch: (entryId: string, target: ConversationSwitchTarget) => {
                               if (props.happyAgentOnline())
-                                  swallow(workspace.failureSwitch(entryId, target));
+                                  swallow(
+                                      workspace.failureSwitch(entryId, {
+                                          providerId: target.providerId,
+                                          modelId: target.modelId,
+                                      }),
+                                  );
                           },
                       }),
                 ...(props.onNewChat === undefined ? {} : { onNewChat: () => props.onNewChat!() }),
             }}
+            /* A daemon before protocol 32 accepts only the targets it stored
+               with the failure, which are no longer read, so it offers Retry. */
+            {...(modelControl && conversation.failureSwitchSupported
+                ? { failureSwitch: modelControl }
+                : {})}
             {...(conversation.retrying === undefined ? {} : { retrying: conversation.retrying })}
             loading={!conversation.ready}
             {...(props.notice === undefined ? {} : { notice: props.notice })}
@@ -9270,27 +9296,7 @@ function HappyAgentConversationSurface(props: {
                     workspace.historyLoadMore();
             }}
             composerControls={
-                <>
-                    {conversation.menus ? (
-                        <ComposerModelControl
-                            {...happyAgentComposerModelControlProps(conversation.menus, {
-                                usageWatch: props.modelUsageWatch,
-                                sessionId: conversation.conversationId as HappyAgentSessionId,
-                                onChiefOfStaffAsk: (request) =>
-                                    workspace.chiefOfStaffDraftAppend(request),
-                                disabled: !configurable || conversation.modelLocked,
-                                onEffortChange: (effort?: HappyAgentThinkingLevel) => {
-                                    if (props.happyAgentOnline())
-                                        workspace.sessionEffortUpdate(effort);
-                                },
-                                onModelChange: (selection: HappyAgentModelSelection) => {
-                                    if (props.happyAgentOnline())
-                                        workspace.sessionModelUpdate(selection);
-                                },
-                            })}
-                        />
-                    ) : null}
-                </>
+                <>{modelControl ? <ComposerModelControl {...modelControl} /> : null}</>
             }
             composerFooterControl={
                 <ComposerFooterBar

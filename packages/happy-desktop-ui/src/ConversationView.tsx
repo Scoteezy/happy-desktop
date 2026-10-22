@@ -13,7 +13,6 @@ import {
     type ConversationEntry,
     type ConversationErrorAssistance,
     type ConversationErrorAssistanceEntry,
-    type ConversationFailureFallback,
     type ConversationRequestSubmission,
     type ConversationRetrying,
     type ConversationToolCall,
@@ -33,10 +32,21 @@ import {
     type ConversationEntryFailureProps,
     type ConversationEntryViewProps,
 } from "./ConversationEntryView";
+import { composerModelListedAccounts } from "./ComposerModelControl";
 import {
+    conversationFailureTargetKey,
+    conversationFailureTargetLabel,
     conversationRetryingLabel,
     type ConversationFailureClock,
 } from "./conversationFailureText";
+import {
+    CONVERSATION_SWITCH_USAGE_NONE,
+    conversationSwitchTargetPreferred,
+    conversationSwitchTargets,
+    conversationSwitchUsageFeed,
+    type ConversationSwitchSource,
+    type ConversationSwitchTarget,
+} from "./conversationSwitchTargets";
 import {
     conversationAgentRowStartsGroup,
     conversationEntryPrecedesActivity,
@@ -115,6 +125,12 @@ export type ConversationViewProps = {
      * row it acts on; a missing one leaves its button off the card.
      */
     failureActions?: ConversationFailureHandlers;
+    /**
+     * What the latest failure card can switch to: the conversation's own model
+     * picker props, so the card lists the accounts, models, and live usage the
+     * picker does. Absent offers no switch, whatever `failureActions` holds.
+     */
+    failureSwitch?: ConversationSwitchSource;
     /**
      * Pins the clock failure cards tell reset times on, for a blueprint or
      * test. Otherwise they use `now` in the viewer's own time zone.
@@ -495,7 +511,7 @@ export function ConversationStatus(props: { elapsedMs?: number; running?: boolea
 export interface ConversationFailureHandlers {
     readonly onRetry?: (entryId: string) => void;
     readonly onNewChat?: (entryId: string) => void;
-    readonly onSwitch?: (entryId: string, target: ConversationFailureFallback) => void;
+    readonly onSwitch?: (entryId: string, target: ConversationSwitchTarget) => void;
 }
 
 /**
@@ -526,6 +542,7 @@ function failureRowContext(failure: ConversationEntryFailureProps): Conversation
             newChat: failure.onNewChat !== undefined,
             switch: failure.onSwitch !== undefined,
         },
+        ...(failure.switchTargets === undefined ? {} : { switchTargets: failure.switchTargets }),
         ...(failure.target === undefined ? {} : { target: failure.target }),
         ...(failure.clock === undefined ? {} : { clock: failure.clock }),
     };
@@ -608,6 +625,28 @@ export function ConversationView(props: ConversationViewProps) {
               );
     const currentFailureId =
         props.running === true ? undefined : conversationCurrentFailure(transcript);
+    /* The switch reads the picker's own catalog and usage, live. Usage is
+       followed only while the current failure offers a switch, through one
+       subscription that sizes the card's row and fills its list alike. */
+    const switchSource =
+        currentFailureId !== undefined && props.failureActions?.onSwitch !== undefined
+            ? props.failureSwitch
+            : undefined;
+    const switchFeed = switchSource?.usageWatch
+        ? conversationSwitchUsageFeed(switchSource.usageWatch)
+        : CONVERSATION_SWITCH_USAGE_NONE;
+    const switchUsage = useSyncExternalStore(switchFeed.subscribe, switchFeed.get, switchFeed.get);
+    const switchTargets = switchSource
+        ? conversationSwitchTargets(switchSource, switchUsage)
+        : undefined;
+    const switchPreferred = switchTargets
+        ? conversationSwitchTargetPreferred(switchTargets, switchSource?.selection?.service)
+        : undefined;
+    /** Opening the switch list asks for the usage of every account the picker lists. */
+    const switchOpen = () =>
+        switchSource?.usageWatch?.refresh(
+            composerModelListedAccounts(switchSource.services, switchSource.selection),
+        );
     const failureFor = (
         entry: ConversationEntry | undefined,
     ): ConversationEntryFailureProps | undefined => {
@@ -616,9 +655,23 @@ export function ConversationView(props: ConversationViewProps) {
         const current = entry.id === currentFailureId;
         const key = rowExpansionKey(entry);
         const actions = props.failureActions;
-        const target = failureTargets.get(key) ?? (current ? failurePreview?.target : undefined);
+        const picked = failureTargets.get(key) ?? (current ? failurePreview?.target : undefined);
+        const offered = current ? switchTargets : undefined;
+        // A pick the live list no longer offers gives way to its best account.
+        const target =
+            offered === undefined ||
+            offered.some((candidate) => conversationFailureTargetKey(candidate) === picked)
+                ? picked
+                : switchPreferred && conversationFailureTargetKey(switchPreferred);
         return {
             current,
+            ...(offered === undefined
+                ? {}
+                : {
+                      switchTargets: offered,
+                      onSwitchOpen: switchOpen,
+                      ...(switchUsage === undefined ? {} : { usageNow: switchUsage.now }),
+                  }),
             ...(current && failurePreview?.menu ? { previewMenu: failurePreview.menu } : {}),
             ...(target === undefined ? {} : { target }),
             ...((clock) => (clock ? { clock } : {}))(
@@ -630,15 +683,15 @@ export function ConversationView(props: ConversationViewProps) {
                 : {}),
             ...(current && actions?.onSwitch
                 ? {
-                      onSwitch: (fallback: ConversationFailureFallback) =>
-                          actions.onSwitch!(entry.id, fallback),
+                      onSwitch: (switchTarget: ConversationSwitchTarget) =>
+                          actions.onSwitch!(entry.id, switchTarget),
                   }
                 : {}),
-            onTargetChange: (picked: string) =>
+            onTargetChange: (choice: string) =>
                 setFailureTargets((targets) => {
-                    if (targets.get(key) === picked) return targets;
+                    if (targets.get(key) === choice) return targets;
                     const next = new Map(targets);
-                    next.set(key, picked);
+                    next.set(key, choice);
                     return next;
                 }),
         };
@@ -882,6 +935,9 @@ export function ConversationView(props: ConversationViewProps) {
                             props.failureClock,
                             failureTargets,
                             currentFailureId,
+                            // The labels the switch can show and which one it shows now.
+                            switchTargets?.map(conversationFailureTargetLabel).join("\n"),
+                            switchPreferred && conversationFailureTargetKey(switchPreferred),
                             props.viewerId,
                             props.activityTreatment,
                             rowExpansion,

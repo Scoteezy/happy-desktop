@@ -28,6 +28,7 @@ import {
     type ConversationFailureActions,
 } from "./ConversationFailureCard";
 import type { ConversationFailureClock } from "./conversationFailureText";
+import type { ConversationSwitchTarget } from "./conversationSwitchTargets";
 import { ConversationSummaryRow } from "./ConversationSummaryRow";
 import { conversationErrorTitle } from "./conversationErrorTitle";
 import { DelegatedAgentActivity } from "./DelegatedAgentActivity";
@@ -46,8 +47,13 @@ import { SYSTEM_NOTIFICATION_LABEL } from "./systemNotification";
 export type ConversationEntryFailureProps = ConversationFailureActions & {
     /** The conversation has not moved past this failure, so its actions are offered. */
     readonly current: boolean;
+    /** Every account the turn can continue on, from the model picker's live catalog and usage. */
+    readonly switchTargets?: readonly ConversationSwitchTarget[];
     readonly target?: string;
     readonly onTargetChange?: (key: string) => void;
+    /** The switch list was opened, so every account's usage is worth reading again. */
+    readonly onSwitchOpen?: () => void;
+    readonly usageNow?: number;
     readonly clock?: ConversationFailureClock;
     /** Seeds the switch list open, for a blueprint or test. */
     readonly previewMenu?: { readonly active?: string };
@@ -396,9 +402,12 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                     onNewChat={props.failure?.onNewChat}
                     onRetry={props.failure?.onRetry}
                     onSwitch={props.failure?.onSwitch}
+                    onSwitchOpen={props.failure?.onSwitchOpen}
                     onTargetChange={props.failure?.onTargetChange}
                     style={props.activityAuthor ? undefined : props.style}
+                    switchTargets={props.failure?.switchTargets}
                     target={props.failure?.target}
+                    usageNow={props.failure?.usageNow}
                     {...(props.failure?.previewMenu
                         ? { previewMenu: props.failure.previewMenu }
                         : {})}
