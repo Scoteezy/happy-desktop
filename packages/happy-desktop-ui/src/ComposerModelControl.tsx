@@ -980,12 +980,17 @@ export function ComposerModelControl(props: ComposerModelControlProps) {
                                 data-menu-item="account"
                                 data-shown={account.id === shown?.id ? "" : undefined}
                                 key={account.id}
-                                onClick={() => {
+                                onClick={(event) => {
                                     accountApply(service, account);
-                                    // A switch that moved the selection is done; one that
-                                    // only changed the listed models leaves them in view.
-                                    if (service.id === selection?.service) close();
-                                    else setAccounts(null);
+                                    // An account is not the last choice: the picker stays
+                                    // open on that account's models, focus on its header.
+                                    event.currentTarget
+                                        .closest("[data-popup]")
+                                        ?.parentElement?.querySelector<HTMLElement>(
+                                            "[data-popup-anchor]",
+                                        )
+                                        ?.focus();
+                                    setAccounts(null);
                                 }}
                                 onFocus={() => setAccountHover(account.id)}
                                 onPointerEnter={() => setAccountHover(account.id)}

@@ -359,6 +359,12 @@ or row that holds it: the surrounding content does, and the user's text ends in
 an ellipsis inside that width while the fixed words and marks beside it stay
 whole.
 
+## Picker levels
+
+Picking at a higher picker level (e.g. account) descends to the next level and
+keeps the picker open; only a pick at the lowest levels (model, effort) closes
+it.
+
 ## Window controls
 
 The macOS traffic lights sit in the window's top-left corner, inside the 40px

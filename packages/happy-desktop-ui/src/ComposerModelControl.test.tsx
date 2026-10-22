@@ -174,13 +174,36 @@ it("composes the controlled model picker into the composer and navigates its men
     expect(
         view.container.querySelector('[data-happy-desktop-ui="composer-model-control-accounts"]'),
     ).toBeNull();
+    // Picking an account is not the last step: the picker stays open, down on
+    // that account's models, and the header names it.
+    await userEvent.click(account.element);
+    const work = Array.from(
+        view.container.querySelectorAll<HTMLButtonElement>(
+            '[data-happy-desktop-ui="composer-model-control-account"]',
+        ),
+    ).find((choice) => choice.textContent?.includes("work"));
+    await userEvent.click(work!);
+    expect(
+        view.container.querySelector('[data-happy-desktop-ui="composer-model-control-accounts"]'),
+    ).toBeNull();
+    expect(
+        view.container.querySelector(
+            '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-models"]',
+        ),
+    ).not.toBeNull();
+    expect(account.element.textContent).toContain("work");
+    expect(document.activeElement).toBe(account.element);
     const terra = Array.from(
         view.container.querySelectorAll<HTMLButtonElement>(
             '[data-testid="control"] [data-happy-desktop-ui="composer-model-control-row"]',
         ),
     ).find((choice) => choice.textContent === "5.6 Terra");
+    // A model is the last step: picking one closes the picker.
     await userEvent.click(terra!);
     expect(trigger.element.textContent).toContain("5.6 Terra");
+    expect(
+        view.container.querySelector('[data-happy-desktop-ui="composer-model-control-menu"]'),
+    ).toBeNull();
     expect(view.container.querySelector('[aria-label="Advanced reasoning budget"]')).toBeNull();
     expect(view.container.textContent).not.toContain("Speed");
     await view.screenshot("ComposerModelControl.test");
