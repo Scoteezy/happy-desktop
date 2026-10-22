@@ -31,10 +31,10 @@ export function HappyAgentSurfaceUnsupportedPage(props: HappyAgentSurfaceUnsuppo
             <HappyAgentSurfaceHeader surface={props.surface} />
             <div className="happy-agent-surface-unsupported__body">
                 <EmptyState
-                    description={`It is a “${type}” Surface, which this version of Happy can’t show yet. Its members and its place in the sidebar work as usual.`}
+                    description={`It is a “${type}”, which this version of Happy can’t show yet. Its members and its place in the sidebar work as usual.`}
                     icon="package"
                     size="panel"
-                    title="Can’t show this Surface"
+                    title="Can’t show this yet"
                 />
             </div>
         </div>

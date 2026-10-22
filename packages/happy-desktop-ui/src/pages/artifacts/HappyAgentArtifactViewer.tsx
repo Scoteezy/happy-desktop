@@ -147,11 +147,11 @@ export function HappyAgentArtifactViewer(props: HappyAgentArtifactViewerProps) {
                                         onClick={props.surface.onToggle}
                                         size="small"
                                         title={
-                                            props.surface.added ? "Remove from Surfaces" : undefined
+                                            props.surface.added ? "Remove from sidebar" : undefined
                                         }
                                         variant="ghost"
                                     >
-                                        {props.surface.added ? "In Surfaces" : "Add to Surfaces"}
+                                        {props.surface.added ? "In sidebar" : "Add to sidebar"}
                                     </Button>
                                 ) : null}
                                 {artifact.status === "active" ? (

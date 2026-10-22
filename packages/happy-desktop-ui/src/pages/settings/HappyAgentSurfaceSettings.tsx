@@ -11,9 +11,9 @@ export function HappyAgentSurfaceSettings(props: HappyAgentSurfaceSettingsProps)
         <HappyAgentAutoJoinSettings
             {...props}
             entity="Surface"
-            label="Automatically join other people’s Surfaces"
-            description="On by default. Joins existing and new Surfaces, except Surfaces you left. Turning this off keeps Surfaces you already joined. Your own new Surfaces are always joined."
-            unsupportedMessage="Update this connection’s Happy Agent to change Surface autojoin."
+            label="Automatically join other people’s shared documents, todo lists and calendars"
+            description="On by default. Joins existing and new ones, except those you left. Turning this off keeps those you already joined. Your own new ones are always joined."
+            unsupportedMessage="Update this connection’s Happy Agent to change this preference."
         />
     );
 }

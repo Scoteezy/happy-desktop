@@ -40,7 +40,7 @@ export function HappyAgentSurfaceChatPanel(props: HappyAgentSurfaceChatPanelProp
             case "opening":
                 return (
                     <EmptyState
-                        description="Everyone in this Surface shares one chat."
+                        description="Everyone here shares one chat."
                         icon="chat"
                         size="panel"
                         title="Opening the chat…"

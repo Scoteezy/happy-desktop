@@ -27,9 +27,12 @@ export function HappyAgentAutoJoinSettings(
     },
 ) {
     const id = useId();
+    // What the description and banners call the preference; the Surface one is autojoin.
+    const noun = props.entity === "task" ? "task" : "autojoin";
+    const Noun = props.entity === "task" ? "Task" : "Autojoin";
     return (
         <HappyAgentSettingsSection
-            description={`Your ${props.entity} preference on this connection follows you across devices.`}
+            description={`Your ${noun} preference on this connection follows you across devices.`}
             title={props.connectionLabel}
         >
             {props.unavailable ? (
@@ -38,26 +41,17 @@ export function HappyAgentAutoJoinSettings(
                 </Banner>
             ) : null}
             {props.error ? (
-                <Banner
-                    tone="danger"
-                    title={`${props.entity === "task" ? "Task" : "Surface"} settings unavailable`}
-                >
+                <Banner tone="danger" title={`${Noun} settings unavailable`}>
                     {props.error}
                 </Banner>
             ) : null}
             {props.saveError ? (
-                <Banner
-                    tone="danger"
-                    title={`${props.entity === "task" ? "Task" : "Surface"} preference not saved`}
-                >
+                <Banner tone="danger" title={`${Noun} preference not saved`}>
                     {props.saveError}
                 </Banner>
             ) : null}
             {props.status === "unsupported" ? (
-                <Banner
-                    tone="neutral"
-                    title={`${props.entity === "task" ? "Task" : "Surface"} settings unavailable`}
-                >
+                <Banner tone="neutral" title={`${Noun} settings unavailable`}>
                     {props.unsupportedMessage ?? "This connection does not provide user settings."}
                 </Banner>
             ) : null}

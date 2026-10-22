@@ -253,7 +253,7 @@ it("holds Menu popover geometry, item rows, icons, danger, and shortcuts", async
 it("sets the plus, the cross, the pencil, and framed glyphs on their keylines in the icon column", async () => {
     const view = createRenderer();
     const items: MenuItem[] = [
-        { kind: "item", id: "surface", label: "Add to Surfaces", icon: "plus" },
+        { kind: "item", id: "surface", label: "Add to sidebar", icon: "plus" },
         { kind: "separator" },
         { kind: "item", id: "rename", label: "Rename task", icon: "edit" },
         { kind: "item", id: "leave", label: "Leave task", icon: "close" },
