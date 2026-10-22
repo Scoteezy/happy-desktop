@@ -551,7 +551,7 @@ export function HappyAgentArtifactsBlueprintPage() {
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
-                detail="Markdown read as a document; its own picture is shown from the same version, and a link to one of its files saves that file. The history stays folded away until History is pressed. Add to Surfaces keeps it among the reader's Surfaces; pressed, it takes it out again."
+                detail="Markdown read as a document; its own picture is shown from the same version, and a link to one of its files saves that file. The history stays folded away until History is pressed. Add to sidebar keeps it in the reader's sidebar; pressed, it takes it out again."
                 label="Viewer · markdown"
                 screen="06-markdown-1100x760"
                 window={{ width: 1100, height: 760 }}

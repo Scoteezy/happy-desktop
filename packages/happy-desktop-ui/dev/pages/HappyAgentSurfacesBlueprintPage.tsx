@@ -821,7 +821,7 @@ function MockWindow(props: {
     const results = [
         {
             id: "search-surfaces",
-            label: "Surfaces",
+            label: "Shared",
             items: [
                 ...found([ARTIFACTS]),
                 ...found(joined.map((surface) => surfaceItem(surface, true))),
@@ -843,7 +843,7 @@ function MockWindow(props: {
                 sidebar={
                     <Sidebar
                         activeItemId={selected}
-                        headerAction={{ icon: "plus", label: "New Surface", menu: CREATE_MENU }}
+                        headerAction={{ icon: "plus", label: "New…", menu: CREATE_MENU }}
                         onHeaderMenuSelect={(id) => {
                             const offer = CREATE_OFFERS.find((entry) => entry === id);
                             if (offer) setCreating(offer);
@@ -1503,7 +1503,7 @@ export function HappyAgentSurfacesBlueprintPage() {
                     onClose={noop}
                     state={{
                         phase: "failed",
-                        message: "This Happy Agent can’t keep a chat for a Surface yet.",
+                        message: "This Happy Agent can’t keep shared chats yet.",
                     }}
                     surfaceName="Groceries"
                 />

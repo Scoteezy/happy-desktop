@@ -99,13 +99,13 @@ export function HappyAgentSurfaceSettingsPage() {
                         categories={[
                             { icon: "settings", id: "general", label: "General" },
                             { icon: "check-circle", id: "tasks", label: "Tasks" },
-                            { icon: "files", id: "surfaces", label: "Surfaces" },
+                            { icon: "files", id: "surfaces", label: "Shared" },
                             { icon: "users", id: "account", label: "Account" },
                         ]}
-                        description="Which Surfaces you automatically join on each connection"
+                        description="Which shared documents, todo lists and calendars you automatically join"
                         onCategorySelect={noop}
                         onClose={noop}
-                        title="Surfaces"
+                        title="Shared"
                     >
                         <InteractiveSurfaceSettings />
                         <HappyAgentSurfaceSettings
