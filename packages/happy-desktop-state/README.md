@@ -87,6 +87,27 @@ Realtime events are delivery hints. Durable data advances through global/per-cha
 area refetch. Typing, agent activity, presence, and call signalling are explicitly ephemeral and own
 ordering/expiry/lifetime rules.
 
+## Connection membership preferences
+
+Settings → Tasks and Settings → Surfaces show one autojoin switch per Happy Agent
+connection, scoped to the authenticated person. `taskSettings()` and
+`surfaceSettings()` materialize their stores on demand; subscribing follows that
+connection's user settings through the shared synchronization driver.
+
+`tasks.autoJoin` and `surfaces.autoJoin` are enabled unless their server value is
+literal `false`. Disabling saves `false`; enabling clears the key with `null`.
+Surface autojoin requires the server's protocol 31 guarantee. Older connections
+show an update message and cannot save this key; an unknown protocol stays loading.
+Only the server changes membership. Enabling catches up existing eligible items
+and joins new ones; an explicit leave remains excluded until a manual join.
+Disabling keeps existing memberships, and the person's own new items are joined.
+
+Both stores expose loading, unsupported, ready, pending-save, read-error, and
+save-error states. Offline or unsupported connections cannot change this setting.
+A refused save restores the confirmed preference and reports the error. Closing
+Settings releases its subscription once submitted writes settle, so navigation
+does not cancel a save. There is no device-local preference fallback.
+
 ## React adapter
 
 The public surface is a vanilla Zustand `StoreApi<State>`, so React consumes it directly:

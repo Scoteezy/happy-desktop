@@ -75,6 +75,7 @@ import {
     HappyAgentSecretSettings,
     HappyAgentSettingsShell,
     HappyAgentTaskSettings,
+    HappyAgentSurfaceSettings,
     GptLiveSettings,
     HappyAgentStateSettings,
     HappyAgentUsageSettings,
@@ -102,6 +103,7 @@ import {
 export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
     { icon: "check-circle", id: "tasks", label: "Tasks" },
+    { icon: "files", id: "surfaces", label: "Surfaces" },
     // Local author identity and the optional WorkOS account share one category.
     { icon: "users", id: "account", label: "Account" },
     // How each project's changes are split into tiers in the Changes listing.
@@ -310,6 +312,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     debug: "Inspect live state, Happy and Happy Agent debugger endpoints, and renderer profiles",
     general: "How this window looks and what a new session starts with",
     tasks: "Which tasks you automatically join on each connection",
+    surfaces: "Which Surfaces you automatically join on each connection",
     "mobile-access": "This Happy Agent's connection to Happy Mobile",
     account: "Local author identity and Happy account connection",
     "file-tiers": "Which changed files every project lists apart, below the rest of a change",
@@ -929,7 +932,11 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                 </>
             ) : section === "tasks" ? (
                 directory.happyAgents.map((entry) => (
-                    <AppHappyAgentTaskSettings key={entry.id} entry={entry} />
+                    <AppHappyAgentAutoJoinSettings key={entry.id} entry={entry} entity="task" />
+                ))
+            ) : section === "surfaces" ? (
+                directory.happyAgents.map((entry) => (
+                    <AppHappyAgentAutoJoinSettings key={entry.id} entry={entry} entity="surface" />
                 ))
             ) : section === "account" ? (
                 // The local author identity and optional WorkOS connection.
@@ -1350,17 +1357,23 @@ const INSTRUCTIONS_PATH = "~/Happy/Config/AGENTS.md";
 const SECURITY_POLICY_PATH = "~/Happy/Config/SECURITY.md";
 
 const noSubscribe = () => () => undefined;
-const taskSettingsLoading: HappyAgentTaskSettingsSnapshot = { status: "loading" };
-const taskSettingsUnloaded = () => taskSettingsLoading;
+const autoJoinSettingsLoading: HappyAgentTaskSettingsSnapshot = { status: "loading" };
+const autoJoinSettingsUnloaded = () => autoJoinSettingsLoading;
 
 /** Each connection owns one preference store and one coarse subscription while this page is open. */
-function AppHappyAgentTaskSettings(props: { readonly entry: AppHappyAgentEntry }) {
+function AppHappyAgentAutoJoinSettings(props: {
+    readonly entry: AppHappyAgentEntry;
+    readonly entity: "task" | "surface";
+}) {
     const { entry } = props;
-    const store = entry.session?.taskSettings?.();
+    const taskStore = props.entity === "task" ? entry.session?.taskSettings?.() : undefined;
+    const surfaceStore =
+        props.entity === "surface" ? entry.session?.surfaceSettings?.() : undefined;
+    const store = taskStore ?? surfaceStore;
     const snapshot = useSyncExternalStore(
         store?.subscribe ?? noSubscribe,
-        store?.get ?? taskSettingsUnloaded,
-        store?.get ?? taskSettingsUnloaded,
+        store?.get ?? autoJoinSettingsUnloaded,
+        store?.get ?? autoJoinSettingsUnloaded,
     );
     const availability = entry.session
         ? happyAgentAvailabilityProject(entry.session.connection.get(), true, {
@@ -1376,17 +1389,25 @@ function AppHappyAgentTaskSettings(props: { readonly entry: AppHappyAgentEntry }
               : snapshot.status === "ready" && !snapshot.online
                 ? "Reconnecting to this connection’s user settings."
                 : undefined;
+    const Settings = props.entity === "task" ? HappyAgentTaskSettings : HappyAgentSurfaceSettings;
     return (
-        <HappyAgentTaskSettings
+        <Settings
             connectionLabel={entry.label}
-            status={snapshot.status}
+            status={
+                props.entity === "surface" && entry.session && store === undefined
+                    ? "unsupported"
+                    : snapshot.status
+            }
             autoJoinEnabled={snapshot.status === "ready" ? snapshot.autoJoinEnabled : undefined}
             saving={snapshot.status === "ready" && snapshot.saving}
             error={snapshot.status !== "unsupported" ? snapshot.error?.message : undefined}
             saveError={snapshot.status === "ready" ? snapshot.saveError?.message : undefined}
             unavailable={unavailable}
             onAutoJoinChange={(enabled) => {
-                if (availability?.online) store?.taskAutoJoinUpdate(enabled);
+                if (availability?.online) {
+                    if (props.entity === "task") taskStore?.taskAutoJoinUpdate(enabled);
+                    else surfaceStore?.surfaceAutoJoinUpdate(enabled);
+                }
             }}
         />
     );

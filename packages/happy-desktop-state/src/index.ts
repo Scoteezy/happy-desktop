@@ -221,6 +221,7 @@ export * from "./happyAgent/happyAgentSidebarCollapseStore.js";
 export * from "./happyAgent/happyAgentSidebarSearchStore.js";
 export * from "./happyAgent/happyAgentAttentionStore.js";
 export * from "./happyAgent/happyAgentTaskSettingsStore.js";
+export * from "./happyAgent/happyAgentSurfaceSettingsStore.js";
 export * from "./happyAgent/happyAgentSidebarTree.js";
 export * from "./happyAgent/happyAgentSidebarVisibilityStore.js";
 export * from "./happyAgent/happyAgentChiefOfStaffRequest.js";

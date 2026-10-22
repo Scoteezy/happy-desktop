@@ -576,6 +576,8 @@ export interface AppHappyAgentSession {
     readonly voiceSettings?: HappyAgentVoiceSettingsStore;
     /** This connection's authenticated person's task membership preference. */
     readonly taskSettings?: () => import("happy-desktop-state").HappyAgentTaskSettingsStore;
+    /** This connection's authenticated person's Surface membership preference. */
+    readonly surfaceSettings?: () => import("happy-desktop-state").HappyAgentSurfaceSettingsStore;
     /** This Happy Agent's machine-wide instructions, as the settings window edits them. */
     readonly instructions?: HappyAgentInstructionsStore;
     /** This Happy Agent's machine-wide permission-review policy. */
