@@ -55,8 +55,13 @@ EOF
 cleanup() {
   [[ -f $RUN/web.pid ]] && kill $(cat $RUN/web.pid) 2>/dev/null || true
   [[ -f $RUN/daemon.pid ]] && kill -INT $(cat $RUN/daemon.pid) 2>/dev/null || true
+  [[ -f $RUN/caffeinate.pid ]] && kill $(cat $RUN/caffeinate.pid) 2>/dev/null || true
 }
 trap cleanup EXIT
+# A host that sleeps mid-run stops every process at once; keep it awake for this run only.
+# The run still checks the power log and voids itself if the lid closed anyway.
+caffeinate -dimsu -w $ &
+echo $! > $RUN/caffeinate.pid
 daemon
 (
   export HOME=$RUN HAPPY_AGENT_SERVER_SOCKET_PATH=$SOCKET HAPPY_AGENT_SERVER_TOKEN_PATH=$RUN/h/agent/token \

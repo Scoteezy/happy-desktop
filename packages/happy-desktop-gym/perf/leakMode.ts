@@ -20,11 +20,12 @@
  *
  * The seed fixes the action sequence; it is logged first, so `PERF_SEED=<seed>` replays a run.
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createWriteStream, openSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { request } from "node:http";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import type { CDPSession, Locator, Page } from "playwright";
 
 import { heapGrowth, heapGrowthLines, heapSnapshotRead, samplingSites } from "./heapDiff.ts";
@@ -125,6 +126,130 @@ const LIMITS: Record<string, number> = {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The daemon's database, read-only: the run directory keeps it beside the token. */
+function agentDatabase<T>(read: (database: DatabaseSync) => T, fallback: T): T {
+    const token = process.env.PERF_TOKEN;
+    if (token === undefined) return fallback;
+    try {
+        const database = new DatabaseSync(join(dirname(token), "agent.sqlite"), { readOnly: true });
+        try {
+            return read(database);
+        } finally {
+            database.close();
+        }
+    } catch {
+        return fallback;
+    }
+}
+
+/** A session's newest events, the last of them, and the tool calls started but not completed. */
+function agentEvents(agentId: string) {
+    const fallback = {
+        last: undefined as string | undefined,
+        newest: [] as { at: string; type: string; summary: string }[],
+        openTools: [] as { callId: string; name: string; runningMs: number }[],
+    };
+    return agentDatabase((database) => {
+        const rows = database
+            .prepare(
+                "SELECT occurred_at, type, payload_json FROM happy_agent_events WHERE agent_id = ? ORDER BY occurred_at DESC, event_id DESC LIMIT 400",
+            )
+            .all(agentId) as { occurred_at: number; type: string; payload_json: string }[];
+        const now = Date.now();
+        const completed = new Set<string>();
+        const openTools: { callId: string; name: string; runningMs: number }[] = [];
+        for (const row of rows) {
+            const payload = JSON.parse(row.payload_json) as {
+                callId?: string;
+                rigEvent?: { toolCall?: { id?: string; name?: string } };
+            };
+            if (row.type === "tool.completed" && payload.callId !== undefined)
+                completed.add(payload.callId);
+            const call = payload.rigEvent?.toolCall;
+            if (row.type === "tool.started" && call?.id !== undefined && !completed.has(call.id))
+                openTools.push({
+                    callId: call.id,
+                    name: call.name ?? "?",
+                    runningMs: now - row.occurred_at,
+                });
+        }
+        const newest = rows.slice(0, 30).map((row) => ({
+            at: new Date(row.occurred_at).toISOString(),
+            summary: row.payload_json.slice(0, 300),
+            type: row.type,
+        }));
+        const last = rows[0];
+        return {
+            last:
+                last === undefined
+                    ? undefined
+                    : `${last.type} ${String(Math.round((now - last.occurred_at) / 1000))} s ago`,
+            newest,
+            openTools,
+        };
+    }, fallback);
+}
+
+/** The daemon's persisted state of a session's active run, if it has one. */
+function activeRunState(agentId: string): unknown {
+    return agentDatabase((database) => {
+        const row = database
+            .prepare("SELECT state_json FROM happy_agent_active_runs WHERE agent_id = ?")
+            .get(agentId) as { state_json: string } | undefined;
+        return row === undefined ? null : (JSON.parse(row.state_json) as unknown);
+    }, null);
+}
+
+/** Every process below `pid`, with its elapsed time, state and command. */
+function descendants(pid: number): string[] {
+    try {
+        const rows = execFileSync("ps", ["-axo", "pid=,ppid=,etime=,stat=,command="], {
+            encoding: "utf8",
+        })
+            .split("\n")
+            .map((line) => /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line))
+            .filter((match) => match !== null);
+        const found: string[] = [];
+        const parents = new Set([pid]);
+        for (let grew = true; grew; ) {
+            grew = false;
+            for (const [, child, parent, rest] of rows) {
+                if (!parents.has(Number(parent)) || parents.has(Number(child))) continue;
+                parents.add(Number(child));
+                found.push(`${child!} ${rest!.slice(0, 200)}`);
+                grew = true;
+            }
+        }
+        return found;
+    } catch {
+        return [];
+    }
+}
+
+/** Sleep and wake entries macOS logged between two times: a run the host slept through is void. */
+function hostSleeps(from: number, to: number): string[] {
+    try {
+        const log = execFileSync("pmset", ["-g", "log"], {
+            encoding: "utf8",
+            maxBuffer: 256 * 1024 * 1024,
+        });
+        const entries: string[] = [];
+        for (const line of log.split("\n")) {
+            const match =
+                /^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) ([+-]\d\d)(\d\d) (Sleep|Wake|DarkWake)\s*\t(.*)$/.exec(
+                    line,
+                );
+            if (match === null) continue;
+            const at = Date.parse(`${match[1]!.replace(" ", "T")}${match[2]!}:${match[3]!}`);
+            if (at >= from && at <= to)
+                entries.push(`${match[1]!} ${match[4]!}: ${match[5]!.trim().slice(0, 120)}`);
+        }
+        return entries;
+    } catch (error) {
+        return [`pmset -g log unreadable: ${(error as Error).message.slice(0, 120)}`];
+    }
+}
 
 /** A request to a process probe (`perf/leakProbe.ts`) over its Unix socket. */
 function probe<T>(role: string, path: string, method = "GET"): Promise<T | undefined> {
@@ -241,6 +366,15 @@ export async function leakRun(gym: LeakGym): Promise<number> {
     const pageErrors: string[] = [];
     const serverErrors: string[] = [];
     const harnessErrors: string[] = [];
+    /** Live captures of runs that did not finish in time. */
+    const stalls: unknown[] = [];
+    const runStartedAt = Date.now();
+    // A rejection nothing awaits (a daemon socket reset mid-request) is recorded, not fatal, so the
+    // run still reaches its verdict, its last snapshots and its audit.
+    process.on("unhandledRejection", (reason: unknown) => {
+        harnessErrors.push(`unhandled: ${failure(reason)}`);
+        console.log(`leak: ${harnessErrors.at(-1)!}`);
+    });
     const draftsLost: string[] = [];
     let echoesMissing = 0;
     page.on("pageerror", (error) => pageErrors.push(error.message.slice(0, 200)));
@@ -333,24 +467,98 @@ export async function leakRun(gym: LeakGym): Promise<number> {
                 .status === "idle"
         );
     };
-    /** Waits for a send's run to finish, or aborts it, so the next one never races its plan file. */
+    /**
+     * What a run that will not finish is doing, taken before it is aborted: the agent's state and
+     * active run, its newest events with the open tool calls, how fast the daemon answers this
+     * session, another one and its own probe, the daemon's live handles and a CPU profile, and its
+     * child processes. Written to `stall-<n>.json` in the scratch directory.
+     */
+    const stallCapture = async (agentId: string, n: number, waitedMs: number) => {
+        const timed = async <T>(work: () => Promise<T>) => {
+            const started = performance.now();
+            try {
+                return { ms: Math.round(performance.now() - started), value: await work() };
+            } catch (error) {
+                return { error: failure(error), ms: Math.round(performance.now() - started) };
+            }
+        };
+        const file = join(gym.scratch, `stall-${String(n)}.json`);
+        const daemonPid = Number(
+            (await readFile(process.env.PERF_DAEMON_PIDFILE ?? "", "utf8").catch(() => "")).trim(),
+        );
+        const capture = {
+            activeRun: activeRunState(agentId),
+            agentId,
+            at: new Date().toISOString(),
+            children: Number.isFinite(daemonPid) ? descendants(daemonPid) : [],
+            daemonPid,
+            events: agentEvents(agentId),
+            file,
+            n,
+            otherSession: await timed(() => daemon("GET", `/v0/agents/${home.id}`)),
+            probeMemory: await timed(() => probe("daemon", "/memory")),
+            probeResources: await timed(() => probe("daemon", "/resources")),
+            prompt: tag("P", n),
+            thisSession: await timed(() => daemon("GET", `/v0/agents/${agentId}`)),
+            waitedMs,
+            cpuProfile: (
+                await timed(() =>
+                    probe<{ path: string }>(
+                        "daemon",
+                        `/cpu?ms=5000&path=${encodeURIComponent(join(gym.scratch, `stall-${String(n)}.cpuprofile`))}`,
+                        "POST",
+                    ),
+                )
+            ).value?.path,
+        };
+        await writeFile(file, JSON.stringify(capture, null, 2)).catch(() => undefined);
+        const openTools = capture.events.openTools
+            .map((tool) => `${tool.name} ${String(Math.round(tool.runningMs / 1000))} s`)
+            .join(", ");
+        console.log(
+            `leak: stall ${tag("P", n)} in ${agentId}: last event ${capture.events.last ?? "none"}, open tools [${openTools}], this session ${String(capture.thisSession.ms)} ms, other session ${String(capture.otherSession.ms)} ms, probe ${String(capture.probeMemory.ms)} ms, ${String(capture.children.length)} child processes`,
+        );
+        return capture;
+    };
+    const idle = async (agentId: string) =>
+        (await daemon<{ agent: { status: string } }>("GET", `/v0/agents/${agentId}`)).agent
+            .status === "idle";
+    /** Sessions whose aborted run never settled: nothing more is sent into them. */
+    const blocked = new Set<string>();
+    /**
+     * Waits for a send's run to finish. A run that does not is captured live, then aborted, and
+     * the session gets no new plan or prompt until the daemon reports that run ended, so a slow
+     * run is never answered by the next one's plan.
+     */
     const finish = async (agentId: string, timeoutMs = 120_000) => {
         const n = outstanding.get(agentId);
         if (n === undefined) return;
         const until = Date.now() + timeoutMs;
         while (Date.now() < until) {
-            if (await replyStored(agentId, n)) {
+            if (await replyStored(agentId, n).catch(() => false)) {
                 outstanding.delete(agentId);
                 return;
             }
             await sleep(250);
         }
+        const capture = await stallCapture(agentId, n, timeoutMs);
         await daemon("POST", `/v0/agents/${agentId}/abort`, {}).catch(() => undefined);
         const send = sends.find((s) => s.agentId === agentId && s.n === n);
         if (send !== undefined) send.aborted = true;
+        let settledMs: number | undefined;
+        const abortedAt = Date.now();
+        while (Date.now() - abortedAt < 600_000) {
+            if (await idle(agentId).catch(() => false)) {
+                settledMs = Date.now() - abortedAt;
+                break;
+            }
+            await sleep(500);
+        }
         outstanding.delete(agentId);
+        if (settledMs === undefined) blocked.add(agentId);
+        stalls.push({ ...capture, settledAfterAbortMs: settledMs ?? null });
         harnessErrors.push(
-            `run ${tag("P", n)} in ${agentId} did not finish in ${String(timeoutMs / 1000)} s; aborted`,
+            `run ${tag("P", n)} in ${agentId} did not finish in ${String(timeoutMs / 1000)} s; captured to ${capture.file}, aborted, ${settledMs === undefined ? "still not idle after 600 s, session blocked" : `idle ${String(settledMs)} ms later`}`,
         );
         console.log(`leak: ${harnessErrors.at(-1)!}`);
     };
@@ -378,6 +586,8 @@ export async function leakRun(gym: LeakGym): Promise<number> {
         pace = recorded ? REPLAY_PACE : SHORT_PACE,
     ) => {
         await finish(agentId);
+        if (blocked.has(agentId))
+            throw new Error(`${agentId} is blocked: its aborted run never settled`);
         const n = (marker += 1);
         const answer = `${tag("R", n)} \n\n${text}`;
         if (recorded) await gym.writeReplay(agentId, gym.streamSource, pace, answer);
@@ -496,6 +706,7 @@ export async function leakRun(gym: LeakGym): Promise<number> {
     async function composerSend(targets: readonly Agent[]): Promise<void> {
         for (const target of targets) {
             await finish(target.id);
+            if (blocked.has(target.id)) continue;
             await open(target, how());
             const n = (marker += 1);
             await gym.writeReplay(
@@ -658,7 +869,10 @@ export async function leakRun(gym: LeakGym): Promise<number> {
         }
         return MIX[0]!;
     };
-    const failure = (error: unknown) => (error as Error).message.split("\n")[0]!.slice(0, 200);
+    const failure = (error: unknown) =>
+        String((error as Error | undefined)?.message ?? error)
+            .split("\n")[0]!
+            .slice(0, 200);
     async function act(name: string, work: () => Promise<void>): Promise<void> {
         actions += 1;
         counts.set(name, (counts.get(name) ?? 0) + 1);
@@ -1049,44 +1263,48 @@ export async function leakRun(gym: LeakGym): Promise<number> {
         );
     for (const role of ["renderer", "daemon", "web"] as const) {
         if (!grew(role) || snapshots[role] === undefined) continue;
-        let second: string | undefined;
-        let profile: unknown;
-        if (role === "renderer") {
-            profile = (await cdp.send("HeapProfiler.getSamplingProfile")).profile;
-            second = await rendererSnapshot("last");
-        } else {
-            profile = await probe(role, "/sampling");
-            const path = join(gym.scratch, `leak-${role}-last.heapsnapshot`);
-            second = (
-                await probe<{ path: string }>(
-                    role,
-                    `/snapshot?path=${encodeURIComponent(path)}`,
-                    "POST",
-                )
-            )?.path;
+        try {
+            let second: string | undefined;
+            let profile: unknown;
+            if (role === "renderer") {
+                profile = (await cdp.send("HeapProfiler.getSamplingProfile")).profile;
+                second = await rendererSnapshot("last");
+            } else {
+                profile = await probe(role, "/sampling");
+                const path = join(gym.scratch, `leak-${role}-last.heapsnapshot`);
+                second = (
+                    await probe<{ path: string }>(
+                        role,
+                        `/snapshot?path=${encodeURIComponent(path)}`,
+                        "POST",
+                    )
+                )?.path;
+            }
+            if (second === undefined) continue;
+            const growth = heapGrowth(
+                await heapSnapshotRead(snapshots[role]!),
+                await heapSnapshotRead(second),
+            );
+            causes.push(
+                ...heapGrowthLines(
+                    `${role} cause`,
+                    growth,
+                    profile === undefined ? [] : samplingSites(profile as never),
+                ),
+            );
+        } catch (error) {
+            causes.push(`${role} cause: not taken: ${failure(error)}`);
         }
-        if (second === undefined) continue;
-        const growth = heapGrowth(
-            await heapSnapshotRead(snapshots[role]!),
-            await heapSnapshotRead(second),
-        );
-        causes.push(
-            ...heapGrowthLines(
-                `${role} cause`,
-                growth,
-                profile === undefined ? [] : samplingSites(profile as never),
-            ),
-        );
     }
 
     // A last restart: the audit then reads what the new process restored, and the open chat must
     // show its newest reply again.
-    await quiesce();
     const restartProblems: string[] = [];
     const lastHome = [...sends]
         .reverse()
         .find((send) => send.agentId === home.id && send.aborted !== true);
     try {
+        await quiesce();
         await restartDaemon();
         await open(home, "direct");
         if (lastHome !== undefined && !(await showsText(tag("R", lastHome.n), 30_000)))
@@ -1112,7 +1330,10 @@ export async function leakRun(gym: LeakGym): Promise<number> {
             const history = await daemon<{ runs: Run[]; hasMore: boolean }>(
                 "GET",
                 `/v0/agents/${agentId}/messages?limit=200&omitToolData=true${before === undefined ? "" : `&before=${before}`}`,
-            );
+            ).catch((error: unknown) => {
+                problems.push(`${agentId} could not be read: ${failure(error)}`);
+                return { hasMore: false, runs: [] };
+            });
             for (const run of history.runs) {
                 for (const [index, message] of run.messages.entries()) {
                     const id = message.id ?? `${run.id}:${String(index)}`;
@@ -1178,6 +1399,9 @@ export async function leakRun(gym: LeakGym): Promise<number> {
     const failed =
         verdicts.some((verdict) => verdict.status === "FAIL" || verdict.status === "NO DATA") ||
         correctness.some((check) => check.problems.length > 0);
+    // A host that slept stops every process at once: the slopes and stalls around it mean nothing.
+    const sleeps = hostSleeps(runStartedAt, Date.now());
+    const slept = sleeps.some((entry) => / (Sleep|DarkWake): /.test(entry));
     const detail: Record<string, string> = {
         persistence: `${String(sends.length)} prompts and replies stored exactly once, read after a restart`,
         restart: "the open chat shows its newest reply again",
@@ -1199,8 +1423,20 @@ export async function leakRun(gym: LeakGym): Promise<number> {
                   `harness: ${String(harnessErrors.length)} recovered action errors, first: ${harnessErrors[0]!}`,
               ]
             : []),
+        ...stalls.map((stall) => {
+            const { agentId, n, file, settledAfterAbortMs } = stall as {
+                agentId: string;
+                n: number;
+                file: string;
+                settledAfterAbortMs: number | null;
+            };
+            return `stall: ${tag("P", n)} in ${agentId}, idle ${settledAfterAbortMs === null ? "never" : `${String(settledAfterAbortMs)} ms`} after its abort; ${file}`;
+        }),
+        `host sleep                 ${slept ? "SLEPT" : "AWAKE"}   ${sleeps.length === 0 ? "no sleep or wake logged during the run" : sleeps.slice(0, 6).join("; ")}`,
         ...causes,
-        `leak verdict: ${failed ? "FAIL" : "PASS"} (seed ${String(seed)})`,
+        slept
+            ? `leak verdict: INVALID, the host slept during the run (seed ${String(seed)})`
+            : `leak verdict: ${failed ? "FAIL" : "PASS"} (seed ${String(seed)})`,
     ];
     for (const line of lines) console.log(line);
     await writeFile(
@@ -1211,16 +1447,19 @@ export async function leakRun(gym: LeakGym): Promise<number> {
                 causes,
                 correctness,
                 counts: Object.fromEntries(counts),
+                hostSleeps: sleeps,
                 label: gym.label,
                 mode: "leak",
-                ok: !failed,
+                ok: !failed && !slept,
                 samples,
                 seed,
+                stalls,
+                valid: !slept,
                 verdicts,
             },
             null,
             2,
         ),
     );
-    return failed ? 1 : 0;
+    return slept ? 2 : failed ? 1 : 0;
 }

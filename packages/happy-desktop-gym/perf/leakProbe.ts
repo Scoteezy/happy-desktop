@@ -8,12 +8,14 @@
  * - `POST /sampling/start` and `GET /sampling` run V8's sampling heap profiler, whose result holds
  *   only allocations still alive, each with the stack that made it.
  * - `POST /snapshot?path=…` writes a heap snapshot after a collection.
+ * - `GET /resources` counts live handles and requests by kind; `POST /cpu?ms=…&path=…` writes a
+ *   CPU profile of the next few seconds. The gym takes both while a run is stuck.
  *
  * In the perf daemon it also bounds the scripted-inference request log, which the gym keeps for
  * assertions and which otherwise retains every full inference context forever: a leak of the harness
  * that the daemon verdict would otherwise measure instead of the product.
  */
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { Session } from "node:inspector/promises";
 import { register } from "node:module";
@@ -106,6 +108,22 @@ if (isMainThread) {
                     body = { started: true };
                 } else if (url.pathname === "/sampling") {
                     body = (await inspector.post("HeapProfiler.getSamplingProfile")).profile;
+                } else if (url.pathname === "/resources") {
+                    // What keeps the process busy: live handles and requests by kind.
+                    const kinds: Record<string, number> = {};
+                    for (const kind of process.getActiveResourcesInfo())
+                        kinds[kind] = (kinds[kind] ?? 0) + 1;
+                    body = { kinds, uptimeS: process.uptime() };
+                } else if (url.pathname === "/cpu") {
+                    await inspector.post("Profiler.enable");
+                    await inspector.post("Profiler.start");
+                    await new Promise((resolve) =>
+                        setTimeout(resolve, Number(url.searchParams.get("ms") ?? "5000")),
+                    );
+                    const { profile } = await inspector.post("Profiler.stop");
+                    const path = url.searchParams.get("path");
+                    if (path !== null) writeFileSync(path, JSON.stringify(profile));
+                    body = { path };
                 } else if (url.pathname === "/snapshot") {
                     gc?.();
                     body = { path: writeHeapSnapshot(url.searchParams.get("path") ?? undefined) };
