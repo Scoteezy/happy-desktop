@@ -2723,10 +2723,15 @@ function rowSurfaceMenuItems(
             ? {
                   kind: "item",
                   id: ROW_MENU_SURFACE_REMOVE,
-                  label: "Remove from Surfaces",
+                  label: "Remove from top of sidebar",
                   icon: "close",
               }
-            : { kind: "item", id: ROW_MENU_SURFACE_ADD, label: "Add to Surfaces", icon: "plus" },
+            : {
+                  kind: "item",
+                  id: ROW_MENU_SURFACE_ADD,
+                  label: "Add to top of sidebar",
+                  icon: "plus",
+              },
         ...(items.length > 0 ? ([{ kind: "separator" }] as const) : []),
         ...items,
     ];
@@ -2964,7 +2969,7 @@ function happyAgentSearchSections(
                 ? []
                 : [{ id: `${SEARCH_SECTION_PREFIX}${kind}:${happyAgent.id}`, label, items }];
         return [
-            ...section("surfaces", "Surfaces", surfaces),
+            ...section("surfaces", "Shared", surfaces),
             ...section("bots", "Bots", bots),
             ...section("tasks", "Tasks", tasks),
             ...section("projects", "Projects", projects),
@@ -3808,7 +3813,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       headerAction: {
                           disabled: active?.status !== "connected",
                           icon: "plus" as const,
-                          label: "New Surface",
+                          label: "New…",
                           menu: surfaceCreateMenu(surfaceSupport),
                       },
                       onHeaderMenuSelect: (id: string) => {

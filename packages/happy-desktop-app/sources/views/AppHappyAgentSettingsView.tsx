@@ -105,7 +105,7 @@ import {
 export const HAPPY_AGENT_SETTINGS_CATEGORIES: readonly HappyAgentSettingsCategory[] = [
     { icon: "settings", id: "general", label: "General" },
     { icon: "check-circle", id: "tasks", label: "Tasks" },
-    { icon: "files", id: "surfaces", label: "Surfaces" },
+    { icon: "files", id: "surfaces", label: "Shared" },
     // Local author identity and the optional WorkOS account share one category.
     { icon: "users", id: "account", label: "Account" },
     // How each project's changes are split into tiers in the Changes listing.
@@ -316,7 +316,7 @@ const CATEGORY_DESCRIPTIONS: Record<string, string> = {
     debug: "Inspect live state, Happy and Happy Agent debugger endpoints, and renderer profiles",
     general: "How this window looks and what a new session starts with",
     tasks: "Which tasks you automatically join on each connection",
-    surfaces: "Which Surfaces you automatically join on each connection",
+    surfaces: "Which shared documents, todo lists and calendars you automatically join",
     "mobile-access": "This Happy Agent's connection to Happy Mobile",
     account: "Local author identity and Happy account connection",
     "file-tiers": "Which changed files every project lists apart, below the rest of a change",
