@@ -30,13 +30,19 @@ const DISABLED: ExperimentsSnapshot = {
     voice: false,
 };
 
-/** The old switch opted into every feature; preserve that explicit choice. */
+/**
+ * The features the old single switch covered keep that explicit choice; the sidebar redesign's
+ * features came after it, so they wait for their own.
+ */
+const LEGACY_SWITCH_FEATURES: ReadonlySet<ExperimentalFeature> = new Set(["inbox", "voice"]);
+
+/** Each feature is its own choice on this installation. */
 function documentParse(value: unknown): ExperimentsSnapshot {
     if (typeof value !== "object" || value === null) return DISABLED;
     const legacy =
         "experimentalFeaturesEnabled" in value && value.experimentalFeaturesEnabled === true;
     const enabled = (id: ExperimentalFeature) =>
-        id in value ? Reflect.get(value, id) === true : legacy;
+        id in value ? Reflect.get(value, id) === true : legacy && LEGACY_SWITCH_FEATURES.has(id);
     return {
         spacesSidebar: enabled("spacesSidebar"),
         stemCells: enabled("stemCells"),
