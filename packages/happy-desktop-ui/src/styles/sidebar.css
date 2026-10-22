@@ -803,8 +803,7 @@
     z-index: 1;
     /* Opaque, so the rows it passes over never read through the carried ones. */
     background:
-        linear-gradient(var(--surface-ripple), var(--surface-ripple)),
-        var(--groupped-background);
+        linear-gradient(var(--surface-ripple), var(--surface-ripple)), var(--groupped-background);
 }
 
 /*

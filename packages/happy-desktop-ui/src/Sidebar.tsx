@@ -94,7 +94,7 @@ export type SidebarItem = {
     id: string;
     imageUrl?: string;
     /** Unframed entity artwork in the existing 20px leading lane. */
-    imageMark?: { src: string; alt?: string };
+    imageMark?: { src: string; srcSet?: string; alt?: string };
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
     initials?: string;
@@ -328,7 +328,7 @@ export type SidebarSection = {
     /** Static space identity separating global rows from the space's sections. */
     spaceHeading?: {
         icon?: IconName;
-        imageMark?: { src: string; alt?: string };
+        imageMark?: { src: string; srcSet?: string; alt?: string };
         label: string;
     };
     /** A controlled fold for a whole work section. */
@@ -1236,6 +1236,9 @@ const SidebarListRow = memo(function SidebarListRow({
     canSecondaryAction: boolean;
     active: boolean;
     activityPlacement?: SidebarActivityPlacement;
+    foldControlPlacement?: "leading" | "trailing";
+    itemMarkPresentation?: "default" | "glyph" | "none";
+    treeConnectors?: boolean;
     dragging: boolean;
     grabbed: boolean;
     item: SidebarItem;
@@ -1708,6 +1711,7 @@ function SidebarRow({
                             alt={item().imageMark?.alt ?? ""}
                             className="happy-sidebar__image-mark"
                             src={item().imageMark?.src}
+                            srcSet={item().imageMark?.srcSet}
                         />
                     ) : props.itemMarkPresentation === "glyph" ? (
                         <Icon name={leadingIcon(item())} size={16} />
@@ -2029,6 +2033,76 @@ function SidebarRow({
         </Row>
     );
 }
+
+/** A section heading's actions; a menu opens through the column, under the control. */
+function SidebarSectionActions({
+    onAction,
+    onMenu,
+    section,
+}: {
+    onAction: (sectionId: string, source: SidebarSectionActionSource) => void;
+    onMenu: (source: SidebarSectionActionSource, items: MenuItem[], x: number, y: number) => void;
+    section: SidebarSection;
+}): ReactNode {
+    return (
+        [
+            ["secondary", section.secondaryAction],
+            ["heading", section.action],
+        ] as const
+    ).map(([source, action]) =>
+        action ? (
+            <button
+                aria-busy={action.busy ? true : undefined}
+                aria-keyshortcuts={action.shortcut?.aria}
+                aria-label={action.label}
+                className="happy-sidebar__section-action"
+                data-busy={action.busy ? "" : undefined}
+                data-shortcut-hint={action.shortcut ? "" : undefined}
+                data-happy-desktop-ui={
+                    source === "heading"
+                        ? "sidebar-section-action"
+                        : "sidebar-section-secondary-action"
+                }
+                data-reveal={action.reveal ?? "hover"}
+                data-slot={source}
+                disabled={action.busy || action.disabled}
+                aria-haspopup={action.menuItems ? "menu" : undefined}
+                key={source}
+                onClick={(event) => {
+                    if (!action.menuItems) {
+                        onAction(section.id, source);
+                        return;
+                    }
+                    // Opened under the control and
+                    // hung from its trailing edge,
+                    // so it stays over the column.
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    onMenu(
+                        source,
+                        action.menuItems,
+                        bounds.right - SIDEBAR_MENU_WIDTH,
+                        bounds.bottom + 4,
+                    );
+                }}
+                type="button"
+            >
+                {action.busy ? (
+                    <Spinner size={12} tone="muted" />
+                ) : (
+                    <Icon name={action.icon} size={12} />
+                )}
+                {action.shortcut ? (
+                    <KeyCap
+                        className="happy-shortcut-hint--floating"
+                        decorative
+                        keys={action.shortcut.caps}
+                    />
+                ) : null}
+            </button>
+        ) : null,
+    );
+}
+
 /**
  * C-009 Sidebar — responsive native navigation column. Header with
  * workspace title, scrollable sectioned rows (views, channels, people, agents,
@@ -2327,6 +2401,21 @@ export function Sidebar(props: SidebarProps) {
         });
     })();
     const previewRoot = useRef<HTMLDivElement>(null);
+    const acrossHeldIds = new Set<string>();
+    if (dragPaint?.drag.moved && dragPaint.drag.across) {
+        const rootId = dragPaint.drag.peers[dragPaint.drag.from];
+        for (const section of sections) {
+            const start = section.items.findIndex((item) => item.id === rootId);
+            if (start < 0) continue;
+            const depth = section.items[start]!.depth ?? 0;
+            acrossHeldIds.add(section.items[start]!.id);
+            for (let index = start + 1; index < section.items.length; index++) {
+                const item = section.items[index]!;
+                if ((item.depth ?? 0) <= depth) break;
+                acrossHeldIds.add(item.id);
+            }
+        }
+    }
     const previewFirsts = useRef<Map<string, number> | undefined>(undefined);
     const previewHeldTops = useRef<Map<string, number>>(new Map());
     const previewHeldNodes = useRef<HTMLElement[]>([]);
@@ -2808,26 +2897,23 @@ export function Sidebar(props: SidebarProps) {
     const dragAbandon = useEffectEvent(() => {
         if (dragRef.current) dragSet(undefined);
     });
+    const dragCaptureLost = useEffectEvent((event: Event): void => {
+        const current = dragRef.current;
+        if (!current || (event as PointerEvent).pointerId !== current.drag.pointerId) return;
+        if (current.drag.across && previewRoot.current?.hasPointerCapture(current.drag.pointerId))
+            return;
+        liftFadeStart(current);
+        dragSet(undefined);
+    });
     // eslint-disable-next-line happy-react/no-layout-effect -- a capture lost with its own element is announced only to the document, which no declarative boundary exposes; the listener lives for one gesture and must be removed imperatively
     useLayoutEffect(() => {
         if (!dragLive || !interactionEnabled) {
             dragAbandon();
             return;
         }
-        const lost = (event: Event): void => {
-            const current = dragRef.current;
-            if (!current || (event as PointerEvent).pointerId !== current.drag.pointerId) return;
-            if (
-                current.drag.across &&
-                previewRoot.current?.hasPointerCapture(current.drag.pointerId)
-            )
-                return;
-            liftFadeStart(current);
-            dragSet(undefined);
-        };
-        document.addEventListener("lostpointercapture", lost);
+        document.addEventListener("lostpointercapture", dragCaptureLost);
         return () => {
-            document.removeEventListener("lostpointercapture", lost);
+            document.removeEventListener("lostpointercapture", dragCaptureLost);
             dragAbandon();
         };
     }, [dragLive, interactionEnabled]);
@@ -2997,68 +3083,13 @@ export function Sidebar(props: SidebarProps) {
     });
 
     /** A heading's own controls, the same buttons in either heading layout. */
-    const sectionActionButtons = (section: SidebarSection): ReactNode =>
-        (
-            [
-                ["secondary", section.secondaryAction],
-                ["heading", section.action],
-            ] as const
-        ).map(([source, action]) =>
-            action ? (
-                <button
-                    aria-busy={action.busy ? true : undefined}
-                    aria-keyshortcuts={action.shortcut?.aria}
-                    aria-label={action.label}
-                    className="happy-sidebar__section-action"
-                    data-busy={action.busy ? "" : undefined}
-                    data-shortcut-hint={action.shortcut ? "" : undefined}
-                    data-happy-desktop-ui={
-                        source === "heading"
-                            ? "sidebar-section-action"
-                            : "sidebar-section-secondary-action"
-                    }
-                    data-reveal={action.reveal ?? "hover"}
-                    data-slot={source}
-                    disabled={action.busy || action.disabled}
-                    aria-haspopup={action.menuItems ? "menu" : undefined}
-                    key={source}
-                    onClick={(event) => {
-                        if (!action.menuItems) {
-                            local.onSectionAction?.(section.id, source);
-                            return;
-                        }
-                        // Opened under the control and
-                        // hung from its trailing edge,
-                        // so it stays over the column.
-                        const bounds = event.currentTarget.getBoundingClientRect();
-                        setItemMenu({
-                            target: {
-                                kind: "section",
-                                sectionId: section.id,
-                                source,
-                            },
-                            items: action.menuItems,
-                            x: bounds.right - SIDEBAR_MENU_WIDTH,
-                            y: bounds.bottom + 4,
-                        });
-                    }}
-                    type="button"
-                >
-                    {action.busy ? (
-                        <Spinner size={12} tone="muted" />
-                    ) : (
-                        <Icon name={action.icon} size={12} />
-                    )}
-                    {action.shortcut ? (
-                        <KeyCap
-                            className="happy-shortcut-hint--floating"
-                            decorative
-                            keys={action.shortcut.caps}
-                        />
-                    ) : null}
-                </button>
-            ) : null,
-        );
+    const sectionMenuOpen = (
+        section: SidebarSection,
+        source: SidebarSectionActionSource,
+        items: MenuItem[],
+        x: number,
+        y: number,
+    ) => setItemMenu({ target: { kind: "section", sectionId: section.id, source }, items, x, y });
     const openItemMenu = (item: SidebarItem, event: MouseEvent<HTMLElement>) => {
         const items = local.itemMenuItems?.(item) ?? [];
         if (!items.some((entry) => entry.kind === "item")) {
@@ -3373,6 +3404,7 @@ export function Sidebar(props: SidebarProps) {
                         >
                             {actionsTree && local.treeConnectors !== false ? (
                                 <SidebarTreeConnectors
+                                    carriedItemIds={[]}
                                     drag={
                                         dragOf(ACTIONS_LIST)?.moved === true
                                             ? dragOf(ACTIONS_LIST)
@@ -3525,6 +3557,7 @@ export function Sidebar(props: SidebarProps) {
                                                 alt={section.spaceHeading.imageMark.alt ?? ""}
                                                 className="happy-sidebar__image-mark"
                                                 src={section.spaceHeading.imageMark.src}
+                                                srcSet={section.spaceHeading.imageMark.srcSet}
                                             />
                                         ) : section.spaceHeading.icon ? (
                                             <Icon name={section.spaceHeading.icon} size={20} />
@@ -3589,7 +3622,15 @@ export function Sidebar(props: SidebarProps) {
                                             data-happy-desktop-ui="sidebar-section-actions"
                                             style={{ columnGap: SIDEBAR_CONTROL_GAP }}
                                         >
-                                            {sectionActionButtons(section)}
+                                            <SidebarSectionActions
+                                                onAction={(sectionId, source) =>
+                                                    local.onSectionAction?.(sectionId, source)
+                                                }
+                                                onMenu={(source, items, x, y) =>
+                                                    sectionMenuOpen(section, source, items, x, y)
+                                                }
+                                                section={section}
+                                            />
                                             {section.collapsed !== undefined ? (
                                                 // The heading itself is the disclosure for
                                                 // the keyboard; this is its pointer target.
@@ -3728,7 +3769,21 @@ export function Sidebar(props: SidebarProps) {
                                                 data-happy-desktop-ui="sidebar-section-actions"
                                                 style={{ columnGap: SIDEBAR_CONTROL_GAP }}
                                             >
-                                                {sectionActionButtons(section)}
+                                                <SidebarSectionActions
+                                                    onAction={(sectionId, source) =>
+                                                        local.onSectionAction?.(sectionId, source)
+                                                    }
+                                                    onMenu={(source, items, x, y) =>
+                                                        sectionMenuOpen(
+                                                            section,
+                                                            source,
+                                                            items,
+                                                            x,
+                                                            y,
+                                                        )
+                                                    }
+                                                    section={section}
+                                                />
                                             </span>
                                         ) : null}
                                     </div>
@@ -3775,20 +3830,22 @@ export function Sidebar(props: SidebarProps) {
                                                 }}
                                             />
                                         ) : null}
-                                        {local.treeConnectors !== false ? <SidebarTreeConnectors
-                                            carriedItemIds={carriedItemIds}
-                                            drag={
-                                                sectionDrag?.moved === true
-                                                    ? sectionDrag
-                                                    : undefined
-                                            }
-                                            items={shownItems}
-                                            listId={section.id}
-                                            onElement={(key, node) => {
-                                                if (node) connectorNodes.set(key, node);
-                                                else connectorNodes.delete(key);
-                                            }}
-                                        /> : null}
+                                        {local.treeConnectors !== false ? (
+                                            <SidebarTreeConnectors
+                                                carriedItemIds={carriedItemIds}
+                                                drag={
+                                                    sectionDrag?.moved === true
+                                                        ? sectionDrag
+                                                        : undefined
+                                                }
+                                                items={shownItems}
+                                                listId={section.id}
+                                                onElement={(key, node) => {
+                                                    if (node) connectorNodes.set(key, node);
+                                                    else connectorNodes.delete(key);
+                                                }}
+                                            />
+                                        ) : null}
                                         {shown.map(({ foldable, item }, index) => {
                                             const reorderable =
                                                 local.onItemReorder !== undefined &&
@@ -3817,7 +3874,7 @@ export function Sidebar(props: SidebarProps) {
                                             const acrossHeld =
                                                 dragPaint?.drag.moved &&
                                                 dragPaint.drag.across &&
-                                                previewHeldTops.current.has(`row:${item.id}`);
+                                                acrossHeldIds.has(item.id);
                                             const held = dragPaint?.drag.across
                                                 ? Boolean(acrossHeld)
                                                 : dragging && unitIndex === drag.from;

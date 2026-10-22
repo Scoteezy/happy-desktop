@@ -1085,28 +1085,30 @@ export function ConversationView(props: ConversationViewProps) {
             )}
 
             {composer ? (
-            <ConversationDock
-                composer={composer}
-                composerAboveControl={props.composerAboveControl}
-                composerControls={props.composerControls}
-                disabled={props.composerDisabled}
-                submitDisabled={props.composerSubmitDisabled === true}
-                {...(props.composerNotice === undefined ? {} : { notice: props.composerNotice })}
-                composerFooterControl={props.composerFooterControl}
-                composerFocusOnType={props.composerFocusOnType}
-                {...(props.composerFocusKey === undefined
-                    ? {}
-                    : { composerFocusKey: props.composerFocusKey })}
-                composerPlaceholder={props.composerPlaceholder}
-                onAbort={props.onAbort}
-                onCommandInvoke={props.onCommandInvoke}
-                onComposerAttachmentRemove={props.onComposerAttachmentRemove}
-                onComposerAttachmentsSelect={props.onComposerAttachmentsSelect}
-                onComposerFocusChange={props.onComposerFocusChange}
-                onComposerSend={props.onComposerSend}
-                onComposerValueChange={props.onComposerValueChange}
-                running={props.running}
-            />
+                <ConversationDock
+                    composer={composer}
+                    composerAboveControl={props.composerAboveControl}
+                    composerControls={props.composerControls}
+                    disabled={props.composerDisabled}
+                    submitDisabled={props.composerSubmitDisabled === true}
+                    {...(props.composerNotice === undefined
+                        ? {}
+                        : { notice: props.composerNotice })}
+                    composerFooterControl={props.composerFooterControl}
+                    composerFocusOnType={props.composerFocusOnType}
+                    {...(props.composerFocusKey === undefined
+                        ? {}
+                        : { composerFocusKey: props.composerFocusKey })}
+                    composerPlaceholder={props.composerPlaceholder}
+                    onAbort={props.onAbort}
+                    onCommandInvoke={props.onCommandInvoke}
+                    onComposerAttachmentRemove={props.onComposerAttachmentRemove}
+                    onComposerAttachmentsSelect={props.onComposerAttachmentsSelect}
+                    onComposerFocusChange={props.onComposerFocusChange}
+                    onComposerSend={props.onComposerSend}
+                    onComposerValueChange={props.onComposerValueChange}
+                    running={props.running}
+                />
             ) : null}
 
             {props.overlay ? <WindowOverlay>{props.overlay}</WindowOverlay> : null}

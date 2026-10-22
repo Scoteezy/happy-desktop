@@ -162,6 +162,7 @@ function urlsBySlug(modules: Record<string, string>): ReadonlyMap<string, string
     );
 }
 
+// Bundling every icon is inefficient; these should eventually come from the daemon.
 const small = urlsBySlug(
     import.meta.glob<string>("./assets/clay-icons/*@40.png", {
         eager: true,
@@ -178,13 +179,16 @@ const large = urlsBySlug(
 );
 
 /** The image mark a row, tab, or floaty item wears for one clay subject. */
-export function clayIconMark(
-    slug: ClayIconSlug,
-    size: 40 | 64 = 40,
-): { readonly src: string; readonly alt: string } {
-    const src = (size === 64 ? large : small).get(slug);
-    if (src === undefined) throw new Error(`Clay icon ${slug}@${size} is not bundled.`);
-    return { src, alt: "" };
+export function clayIconMark(slug: ClayIconSlug): {
+    readonly src: string;
+    readonly srcSet: string;
+    readonly alt: string;
+} {
+    const src = small.get(slug);
+    const highDensity = large.get(slug);
+    if (src === undefined || highDensity === undefined)
+        throw new Error(`Clay icon ${slug} is not bundled in both sizes.`);
+    return { src, srcSet: `${src} 2x, ${highDensity} 3.2x`, alt: "" };
 }
 
 /** Happy's own mark, the one identity the library does not assign. */

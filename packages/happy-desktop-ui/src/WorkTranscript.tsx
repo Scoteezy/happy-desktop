@@ -23,7 +23,7 @@ export type WorkTranscriptRow = { id: string } & (
           text: string;
           own?: boolean;
           imageUrl?: string;
-          imageMark?: { src: string; alt?: string };
+          imageMark?: { src: string; srcSet?: string; alt?: string };
           stemCell?: StemCellMark;
           streaming?: boolean;
       }

@@ -68,7 +68,7 @@ export type TabItem = {
     /** Marks the tab as carrying unread activity with a dot on its leading mark. */
     unread?: boolean;
     /** Unframed artwork for an explicitly opened entity. */
-    imageMark?: { src: string; alt?: string };
+    imageMark?: { src: string; srcSet?: string; alt?: string };
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
     /**
@@ -109,6 +109,7 @@ function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
             alt={tab.imageMark.alt ?? ""}
             className="happy-tabs__image-mark"
             src={tab.imageMark.src}
+            srcSet={tab.imageMark.srcSet}
         />
     ) : tab.filePath !== undefined ? (
         <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />

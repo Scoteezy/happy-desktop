@@ -79,7 +79,9 @@
     height: var(--happy-integrated-band-height);
 }
 
-.happy-desktop-app-shell[data-navigation-chrome="integrated"] .happy-tabbed-pane .happy-tabbed-pane__bar {
+.happy-desktop-app-shell[data-navigation-chrome="integrated"]
+    .happy-tabbed-pane
+    .happy-tabbed-pane__bar {
     height: var(--happy-integrated-band-height);
     align-items: center;
     background: var(--groupped-background);

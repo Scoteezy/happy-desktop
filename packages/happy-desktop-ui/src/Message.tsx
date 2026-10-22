@@ -196,7 +196,7 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     gutterTime?: string;
     imageUrl?: string;
     /** Unframed entity artwork, shared with its sidebar row and tab. */
-    imageMark?: { src: string; alt?: string };
+    imageMark?: { src: string; srcSet?: string; alt?: string };
     /** Unformed item identity, retained until its artwork is assigned. */
     stemCell?: StemCellMark;
     /** Inline photo attachments rendered as a clickable thumbnail grid. */
@@ -381,6 +381,7 @@ export function Message(props: MessageProps) {
                 alt={local.imageMark.alt ?? ""}
                 className="happy-message__image-mark"
                 src={local.imageMark.src}
+                srcSet={local.imageMark.srcSet}
             />
         ) : (
             <Avatar

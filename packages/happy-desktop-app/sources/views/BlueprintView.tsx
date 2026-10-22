@@ -9,11 +9,12 @@ import { lazy, Suspense } from "react";
  * The workbench is loaded lazily: it pulls in every component page and its
  * fixtures, and nothing but this development-only screen ever asks for them.
  */
-const Workbench = lazy(async () => ({
-    default: (await import("happy-desktop-ui/blueprint")).Workbench,
-}));
+const Workbench = import.meta.env.DEV
+    ? lazy(async () => ({ default: (await import("happy-desktop-ui/blueprint")).Workbench }))
+    : undefined;
 
 export function BlueprintView() {
+    if (!Workbench) return null;
     return (
         <Suspense fallback={null}>
             {/* The window's address belongs to its own router, so the workbench
