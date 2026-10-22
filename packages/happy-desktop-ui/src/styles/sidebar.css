@@ -749,6 +749,12 @@
     z-index: 0;
 }
 
+/* The carried tree composes above every section it crosses, including headings. */
+.happy-sidebar__section[data-carrying] {
+    position: relative;
+    z-index: 2;
+}
+
 /* The lift under a carried subtree. Its geometry is never transitioned — that is
    what keeps it under the hand — but the shadow itself comes up rather than being
    switched on: a row is picked up and put down, and both take a moment.
@@ -940,6 +946,11 @@
 }
 
 .happy-sidebar__item[data-grabbed] {
+    cursor: grabbing;
+}
+
+/* Cross-section capture belongs to the stable body, so it owns the cursor too. */
+.happy-sidebar__body-content[data-dragging] {
     cursor: grabbing;
 }
 

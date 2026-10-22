@@ -2374,7 +2374,7 @@ export function Sidebar(props: SidebarProps) {
     const sections = (() => {
         const current = dragPaint;
         const target = current?.drag.moved ? current.drag.across?.target : undefined;
-        if (!current || !target) return stableSections;
+        if (!current || !target || target.sectionId === current.listId) return stableSections;
         const id = current.drag.peers[current.drag.from];
         const source = stableSections.find((section) => section.id === current.listId);
         const first = source?.items.findIndex((item) => item.id === id) ?? -1;
@@ -2401,24 +2401,46 @@ export function Sidebar(props: SidebarProps) {
         });
     })();
     const previewRoot = useRef<HTMLDivElement>(null);
-    const acrossHeldIds = new Set<string>();
-    if (dragPaint?.drag.moved && dragPaint.drag.across) {
-        const rootId = dragPaint.drag.peers[dragPaint.drag.from];
-        for (const section of sections) {
-            const start = section.items.findIndex((item) => item.id === rootId);
-            if (start < 0) continue;
-            const depth = section.items[start]!.depth ?? 0;
-            acrossHeldIds.add(section.items[start]!.id);
-            for (let index = start + 1; index < section.items.length; index++) {
-                const item = section.items[index]!;
-                if ((item.depth ?? 0) <= depth) break;
-                acrossHeldIds.add(item.id);
-            }
-        }
-    }
+    const [previewOffset, setPreviewOffset] = useState<{
+        readonly rootId: string;
+        readonly sectionId: string;
+        readonly base: number;
+    }>();
+    // Only the destination changes across sections. Every tree paints the same
+    // production drag: one measured unit, opaque backing, shadow and connectors.
+    const sectionDragOf = (
+        listId: SidebarListId,
+        items: readonly SidebarItem[],
+    ): SidebarDrag | undefined => {
+        const current = dragPaint;
+        if (!current?.drag.across) return dragOf(listId);
+        const { across, ...drag } = current.drag;
+        const target = drag.moved ? across.target : undefined;
+        if (!target || target.sectionId === current.listId)
+            return listId === current.listId
+                ? { ...drag, deltaY: dragDeltaWithinPeers(drag, drag.deltaY) }
+                : undefined;
+        if (listId !== target.sectionId) return undefined;
+        const index = items.findIndex((item) => item.id === drag.peers[drag.from]);
+        if (index < 0) return undefined;
+        const { units } = dragUnitsOf(items, index);
+        const from = units.findIndex((unit) => unit.includes(index));
+        return {
+            ...drag,
+            deltaY:
+                drag.deltaY +
+                (previewOffset?.rootId === drag.peers[drag.from] &&
+                previewOffset.sectionId === target.sectionId
+                    ? previewOffset.base
+                    : 0),
+            from,
+            to: from,
+            units,
+            peers: units.map((unit) => items[unit[0]!]!.id),
+        };
+    };
     const previewFirsts = useRef<Map<string, number> | undefined>(undefined);
     const previewHeldTops = useRef<Map<string, number>>(new Map());
-    const previewHeldNodes = useRef<HTMLElement[]>([]);
     const previewNodes = (): [string, HTMLElement][] => {
         const root = previewRoot.current;
         if (!root) return [];
@@ -2438,30 +2460,47 @@ export function Sidebar(props: SidebarProps) {
             previewNodes().map(([id, node]) => [id, node.getBoundingClientRect().top]),
         );
     };
-    // eslint-disable-next-line happy-react/no-layout-effect -- Reordering changes DOM geometry; the production FLIP animation and the held row's pointer position must be applied before paint.
+    // eslint-disable-next-line happy-react/no-layout-effect, react-hooks/exhaustive-deps -- Every layout may change the measured destination; the guarded offset update and production FLIP must finish before paint.
     useLayoutEffect(() => {
-        for (const node of previewHeldNodes.current) node.style.transform = "";
-        previewHeldNodes.current = [];
         const current = dragRef.current;
-        const across = current?.drag.moved && current.drag.across;
+        const across =
+            current?.drag.moved &&
+            current.drag.across?.target &&
+            current.drag.across.target.sectionId !== current.listId;
+        if (across) {
+            const rootId = current.drag.peers[current.drag.from]!;
+            const sectionId = current.drag.across!.target!.sectionId;
+            const node = rowNodes.get(rowKey(sectionId, rootId));
+            const heldTop = previewHeldTops.current.get(`row:${rootId}`);
+            if (node && heldTop !== undefined) {
+                node.getAnimations().forEach((animation) => animation.cancel());
+                const base =
+                    heldTop -
+                    (node.getBoundingClientRect().top - (Number.parseFloat(node.style.top) || 0));
+                if (
+                    previewOffset?.rootId !== rootId ||
+                    previewOffset.sectionId !== sectionId ||
+                    previewOffset.base !== base
+                )
+                    setPreviewOffset({ rootId, sectionId, base });
+            }
+        }
         for (const [id, node] of previewNodes()) {
             const heldTop = previewHeldTops.current.get(id);
             if (across && heldTop !== undefined) {
                 node.getAnimations().forEach((animation) => animation.cancel());
-                const delta = heldTop + current.drag.deltaY - node.getBoundingClientRect().top;
-                node.style.transform = `translateY(${delta}px)`;
-                previewHeldNodes.current.push(node);
                 continue;
             }
             const first = previewFirsts.current?.get(id);
             if (first === undefined) continue;
             node.getAnimations().forEach((animation) => animation.cancel());
             const delta = first - node.getBoundingClientRect().top;
-            if (Math.abs(delta) > 0.1 && !reducedMotion())
-                node.animate(
-                    [{ transform: `translateY(${delta}px)` }, { transform: "translateY(0)" }],
-                    { duration: SETTLE_MS, easing: SETTLE_EASING },
-                );
+            const top = Number.parseFloat(node.style.top) || 0;
+            if (delta !== 0 && !reducedMotion())
+                node.animate([{ top: `${top + delta}px` }, { top: `${top}px` }], {
+                    duration: SETTLE_MS,
+                    easing: SETTLE_EASING,
+                });
         }
         previewFirsts.current = undefined;
     });
@@ -2656,7 +2695,8 @@ export function Sidebar(props: SidebarProps) {
                     );
             }
         }
-        event.currentTarget.setPointerCapture(event.pointerId);
+        // Scripted PointerEvents have no browser-owned pointer to capture.
+        if (event.isTrusted) event.currentTarget.setPointerCapture(event.pointerId);
         dragSet({
             listId,
             drag: {
@@ -2686,7 +2726,8 @@ export function Sidebar(props: SidebarProps) {
         if (across) {
             // Keep ordinary clicks on their row. Only a real drag transfers its
             // capture to the parent that survives moving the row between sections.
-            if (!current.drag.moved) previewRoot.current?.setPointerCapture(event.pointerId);
+            if (!current.drag.moved && event.isTrusted)
+                previewRoot.current?.setPointerCapture(event.pointerId);
             // The row follows the hand wherever it goes; the line says where it lands.
             const content = event.currentTarget.closest<HTMLElement>(
                 '[data-happy-desktop-ui="sidebar-body-content"]',
@@ -2712,7 +2753,11 @@ export function Sidebar(props: SidebarProps) {
                 target?.afterId !== across.target?.afterId
             ) {
                 haptic("selection");
-                previewCapture();
+                if (
+                    (target && target.sectionId !== current.listId) ||
+                    (across.target && across.target.sectionId !== current.listId)
+                )
+                    previewCapture();
             }
             dragSet({
                 ...current,
@@ -2818,19 +2863,33 @@ export function Sidebar(props: SidebarProps) {
             dragClick.current = false;
         });
         const movedId = drag.peers[drag.from];
-        if (drag.across) {
-            previewCapture();
-            dragSet(undefined);
+        if (drag.across?.target && drag.across.target.sectionId !== current.listId) {
             const target = drag.across.target;
-            const home = drag.across.home;
-            if (
-                target === undefined ||
-                movedId === undefined ||
-                (home !== undefined &&
-                    target.sectionId === home.sectionId &&
-                    target.afterId === home.afterId)
-            )
+            if (movedId === undefined) {
+                dragSet(undefined);
                 return;
+            }
+            const section = sections.find((candidate) => candidate.id === target.sectionId);
+            const shown = section
+                ? sectionRows(section, local.activeItemId).map((row) => row.item)
+                : [];
+            const visual = sectionDragOf(target.sectionId, shown);
+            if (visual && !reducedMotion()) {
+                settleCapture({
+                    carried: true,
+                    expected: visual.peers,
+                    items: shown,
+                    listId: target.sectionId,
+                    movedId,
+                });
+                const held = rowNodes.get(rowKey(target.sectionId, movedId));
+                liftFadeStart({
+                    listId: target.sectionId,
+                    drag: { ...visual, deltaY: Number.parseFloat(held?.style.top ?? "0") || 0 },
+                });
+            }
+            previewFirsts.current = undefined;
+            dragSet(undefined);
             haptic("impact");
             local.onItemReorder?.(target.sectionId, { id: movedId, afterId: target.afterId });
             return;
@@ -2843,7 +2902,10 @@ export function Sidebar(props: SidebarProps) {
                 listId: current.listId,
                 movedId,
             });
-        liftFadeStart(current);
+        liftFadeStart({
+            listId: current.listId,
+            drag: sectionDragOf(current.listId, items) ?? drag,
+        });
         dragSet(undefined);
         if (drag.from === drag.to || movedId === undefined) return;
         haptic("impact");
@@ -3334,6 +3396,7 @@ export function Sidebar(props: SidebarProps) {
                 <div
                     className="happy-sidebar__body-content"
                     data-happy-desktop-ui="sidebar-body-content"
+                    data-dragging={dragPaint?.drag.moved ? "" : undefined}
                     ref={previewRoot}
                     onPointerMove={(event) => {
                         if (event.target === event.currentTarget) dragMove(event);
@@ -3513,15 +3576,13 @@ export function Sidebar(props: SidebarProps) {
                               )
                             : 0;
                         const shownItems = shown.map((row) => row.item);
-                        const sectionDrag = dragOf(section.id);
+                        const sectionDrag = sectionDragOf(section.id, shownItems);
                         // The lift belongs to the live gesture while there is one
                         // — from the moment a row is touched, so the shadow has a
                         // node to come up in — and to the fading remains of the
                         // last one after that. It is one element either way, so
                         // the same node carries the shadow in and back out again.
-                        const sectionLift = sectionDrag?.across
-                            ? undefined
-                            : (sectionDrag ?? liftFadeOf(section.id));
+                        const sectionLift = sectionDrag ?? liftFadeOf(section.id);
                         // Who paints the lift in this tree. The surface owns it
                         // for the whole of a carried move, including the travel
                         // after the shadow has gone out: a row that took its own
@@ -3544,6 +3605,12 @@ export function Sidebar(props: SidebarProps) {
                                 key={section.id}
                                 data-happy-desktop-ui="sidebar-section"
                                 data-reordering={sectionDrag ? "" : undefined}
+                                data-carrying={
+                                    sectionDrag?.moved ||
+                                    (dropped?.carried && dropped.listId === section.id)
+                                        ? ""
+                                        : undefined
+                                }
                                 data-section-id={section.id}
                             >
                                 {section.spaceHeading ? (
@@ -3871,13 +3938,7 @@ export function Sidebar(props: SidebarProps) {
                                                 items: shownItems,
                                                 listId: section.id,
                                             });
-                                            const acrossHeld =
-                                                dragPaint?.drag.moved &&
-                                                dragPaint.drag.across &&
-                                                acrossHeldIds.has(item.id);
-                                            const held = dragPaint?.drag.across
-                                                ? Boolean(acrossHeld)
-                                                : dragging && unitIndex === drag.from;
+                                            const held = dragging && unitIndex === drag.from;
                                             return (
                                                 <SidebarListRow
                                                     handlers={rowHandlers}

@@ -190,6 +190,63 @@ const carry = (row: HTMLElement, y: number) => {
     at("pointerup", y);
 };
 
+it("carries the same opaque subtree, connector and cursor within and across sections", async () => {
+    const view = render();
+    await view.ready();
+    const root = view.$('[data-testid="lanes"]').element;
+    const body = ui(root, "sidebar-body-content")!;
+    const row = (id: string) => root.querySelector<HTMLElement>(`[data-item-id="${id}"]`)!;
+    const initial = row("tabs").getBoundingClientRect();
+    const childOffset = row("tabs-close").getBoundingClientRect().top - initial.top;
+    const stem = () => root.querySelector<HTMLElement>('[data-parent-id="tabs"]')!;
+    const stemOffset = stem().getBoundingClientRect().top - initial.top;
+    const event = (node: Element, type: string, y: number) =>
+        flushSync(() =>
+            node.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    button: 0,
+                    buttons: type === "pointerup" ? 0 : 1,
+                    clientX: initial.left + 40,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: "mouse",
+                    isPrimary: true,
+                }),
+            ),
+        );
+    event(row("tabs"), "pointerdown", initial.top + 16);
+    for (const [section, y] of [
+        ["desktop", initial.top + 24],
+        ["older", row("old-plain").getBoundingClientRect().bottom - 2],
+    ] as const) {
+        event(body, "pointermove", y);
+        await expect
+            .poll(() => row("tabs").closest<HTMLElement>("[data-section-id]")?.dataset.sectionId)
+            .toBe(section);
+        await expect.poll(() => row("tabs").hasAttribute("data-grabbed")).toBe(true);
+        const held = row("tabs");
+        const tree = held.parentElement!;
+        expect(
+            tree.hasAttribute("data-connector-dragging"),
+            "the production lift owns every carried row",
+        ).toBe(true);
+        expect(ui(tree, "sidebar-tree-drag-surface")?.hasAttribute("data-carried")).toBe(true);
+        expect(ui(tree, "sidebar-tree-carried-surface")).not.toBeNull();
+        expect(getComputedStyle(held).cursor).toBe("grabbing");
+        expect(getComputedStyle(body).cursor).toBe("grabbing");
+        expect(
+            row("tabs-close").getBoundingClientRect().top - held.getBoundingClientRect().top,
+        ).toBeCloseTo(childOffset, 5);
+        expect(stem().getBoundingClientRect().top - held.getBoundingClientRect().top).toBeCloseTo(
+            stemOffset,
+            5,
+        );
+        expect(stem().getBoundingClientRect().height).toBeGreaterThan(0);
+    }
+    event(body, "pointerup", row("tabs").getBoundingClientRect().top + 16);
+});
+
 it("opens a draggable row when the pointer has not crossed the drag threshold", async () => {
     const selected: string[] = [];
     const view = render(undefined, (id) => selected.push(id));
