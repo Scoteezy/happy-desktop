@@ -1026,7 +1026,6 @@
 .happy-desktop-app-shell__content:not([data-panel-takeover])
     > .happy-desktop-app-shell__panel[data-motion]
     > .happy-desktop-app-shell__panel-content {
-    flex: none;
     width: var(--happy-app-shell-panel-width);
 }
 
