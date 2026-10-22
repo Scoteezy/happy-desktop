@@ -2417,9 +2417,7 @@ export function Sidebar(props: SidebarProps) {
         const { across, ...drag } = current.drag;
         const target = drag.moved ? across.target : undefined;
         if (!target || target.sectionId === current.listId)
-            return listId === current.listId
-                ? { ...drag, deltaY: dragDeltaWithinPeers(drag, drag.deltaY) }
-                : undefined;
+            return listId === current.listId ? drag : undefined;
         if (listId !== target.sectionId) return undefined;
         const index = items.findIndex((item) => item.id === drag.peers[drag.from]);
         if (index < 0) return undefined;

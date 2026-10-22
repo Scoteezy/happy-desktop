@@ -218,6 +218,7 @@ it("carries the same opaque subtree, connector and cursor within and across sect
     event(row("tabs"), "pointerdown", initial.top + 16);
     for (const [section, y] of [
         ["desktop", initial.top + 24],
+        ["desktop", row("plain").getBoundingClientRect().bottom + 1],
         ["older", row("old-plain").getBoundingClientRect().bottom - 2.3],
     ] as const) {
         event(body, "pointermove", y);
@@ -226,6 +227,9 @@ it("carries the same opaque subtree, connector and cursor within and across sect
             .toBe(section);
         await expect.poll(() => row("tabs").hasAttribute("data-grabbed")).toBe(true);
         const held = row("tabs");
+        await expect
+            .poll(() => Math.abs(row("tabs").getBoundingClientRect().top - (y - 16)))
+            .toBeLessThan(0.05);
         const tree = held.parentElement!;
         expect(
             tree.hasAttribute("data-connector-dragging"),
