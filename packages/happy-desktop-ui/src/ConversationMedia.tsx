@@ -1,13 +1,16 @@
 import { Fragment, useState, type CSSProperties } from "react";
 import type { ConversationMediaItem, ConversationMediaLayout } from "happy-desktop-state";
 import { artifactSizeText } from "./pages/artifacts/artifactPresentation";
-import { conversationMediaPlan, mediaVideoBox } from "./mediaLayout";
+import { conversationMediaPlan, mediaFlowPointSize, mediaVideoBox } from "./mediaLayout";
 import { MediaFlow } from "./MediaFlow";
 import { MediaTree } from "./MediaTree";
 import { FileTreeFamilyIcon, fileTreeFamily } from "./FileTree";
 import { Icon } from "./Icon";
 import { ResultCard } from "./ResultCard";
 import { thumbhashDataUrl } from "./thumbhashDataUrl";
+
+/** The `object-fit` a picture is drawn with. */
+export type MediaImageFit = "contain" | "cover" | "fill" | "none" | "scale-down";
 
 export type MediaImageTileProps = {
     className?: string;
@@ -25,8 +28,16 @@ export type MediaImageTileProps = {
      */
     width?: number;
     height?: number;
-    /** How the picture sits in its box: whole (the default), or covering it as a layout asked. */
-    fit?: "contain" | "cover";
+    /** How the picture sits in its box: whole (the default), or as a layout asked. */
+    fit?: MediaImageFit;
+    /** Where in its box the picture sits, as normalized `object-position` text a layout supplied. */
+    position?: string;
+    /**
+     * The picture's size in points when that differs from its pixels (a
+     * Retina capture). `none` and `scale-down` then draw it at this size,
+     * which `object-fit` alone would read off the pixels and double.
+     */
+    pointSize?: { readonly width: number; readonly height: number };
     /** Opens the picture full size. Absent leaves the tile a picture, not a fake button. */
     onOpen?: () => void;
 };
@@ -50,11 +61,12 @@ export function MediaImageTile(props: MediaImageTileProps) {
                 aria-hidden="true"
                 className="happy-media-image-tile__placeholder"
                 data-happy-desktop-ui="media-image-tile-placeholder"
-                style={
-                    props.placeholderUrl
+                style={{
+                    ...(props.placeholderUrl
                         ? { backgroundImage: `url("${props.placeholderUrl}")` }
-                        : undefined
-                }
+                        : {}),
+                    ...(props.position ? { backgroundPosition: props.position } : {}),
+                }}
             />
             <img
                 alt={props.alt}
@@ -73,6 +85,7 @@ export function MediaImageTile(props: MediaImageTileProps) {
                         setSettled({ url: props.url, state: "loaded" });
                 }}
                 src={props.url}
+                style={imagePlacement(props)}
                 width={props.width}
             />
             {state === "failed" ? (
@@ -89,7 +102,7 @@ export function MediaImageTile(props: MediaImageTileProps) {
     const shared = {
         className: ["happy-media-image-tile", props.className].filter(Boolean).join(" "),
         "data-happy-desktop-ui": "media-image-tile",
-        "data-fit": props.fit === "cover" ? "cover" : undefined,
+        "data-fit": props.fit === undefined || props.fit === "contain" ? undefined : props.fit,
         "data-state": state,
         "data-testid": props["data-testid"],
         style:
@@ -104,6 +117,36 @@ export function MediaImageTile(props: MediaImageTileProps) {
     ) : (
         <span {...shared}>{content}</span>
     );
+}
+
+/**
+ * The picture layer's own style: the layout's `object-position`, and, for a
+ * high-density picture drawn unscaled or only ever scaled down, a box at its
+ * point size centred in the tile, since `object-fit` measures pixels.
+ */
+function imagePlacement(props: MediaImageTileProps): CSSProperties | undefined {
+    const point = props.pointSize;
+    const position = props.position ? { objectPosition: props.position } : {};
+    if (point && props.fit === "scale-down")
+        return {
+            ...position,
+            width: `min(100%, ${String(point.width)}px)`,
+            height: `min(100%, ${String(point.height)}px)`,
+            margin: "auto",
+            objectFit: "contain",
+        };
+    if (point && props.fit === "none")
+        return {
+            ...position,
+            inset: "auto",
+            left: "50%",
+            top: "50%",
+            width: `${String(point.width)}px`,
+            height: `${String(point.height)}px`,
+            objectFit: "fill",
+            transform: "translate(-50%, -50%)",
+        };
+    return props.position ? position : undefined;
 }
 
 export type MediaVideoTileProps = {
@@ -194,18 +237,22 @@ export function ConversationMedia(props: ConversationMediaProps) {
     const image = (tile: {
         index: number;
         style: CSSProperties;
-        fit?: "contain" | "cover";
+        fit?: MediaImageFit;
+        position?: string;
         alt?: string;
         className?: string;
     }) => {
         const index = tile.index;
         const item = props.items[index]!;
         const placeholderUrl = item.thumbhash ? thumbhashDataUrl(item.thumbhash) : undefined;
+        const pointSize = item.scale && item.scale > 1 ? mediaFlowPointSize(item) : undefined;
         return (
             <MediaImageTile
                 alt={tile.alt ?? item.name}
                 {...(tile.className ? { className: tile.className } : {})}
                 {...(tile.fit ? { fit: tile.fit } : {})}
+                {...(tile.position ? { position: tile.position } : {})}
+                {...(pointSize ? { pointSize } : {})}
                 {...(placeholderUrl ? { placeholderUrl } : {})}
                 {...(open ? { onOpen: () => open(index) } : {})}
                 style={tile.style}
@@ -247,7 +294,8 @@ export function ConversationMedia(props: ConversationMediaProps) {
                             return image({
                                 index: rendered.index,
                                 style: rendered.style,
-                                fit: rendered.fit,
+                                ...(rendered.fit ? { fit: rendered.fit } : {}),
+                                ...(rendered.position ? { position: rendered.position } : {}),
                                 ...(rendered.alt === undefined ? {} : { alt: rendered.alt }),
                                 className: "happy-media-tree__item",
                             });

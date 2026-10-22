@@ -1,10 +1,12 @@
 import { createElement, Fragment, type CSSProperties, type ReactNode } from "react";
-import type {
-    ConversationMediaKind,
-    ConversationMediaLayoutLength,
-    ConversationMediaLayoutNode,
-    ConversationMediaLayoutStyle,
+import {
+    CONVERSATION_MEDIA_LAYOUT_CSS_PROPERTIES,
+    type ConversationMediaKind,
+    type ConversationMediaLayoutNode,
+    type ConversationMediaLayoutStyle,
 } from "happy-desktop-state";
+import type { MediaImageFit } from "./ConversationMedia";
+import { mediaFlowPointSize } from "./mediaLayout";
 import { messageTextLayoutFontGenerationGet } from "./messageTextLayout";
 
 /**
@@ -12,12 +14,19 @@ import { messageTextLayoutFontGenerationGet } from "./messageTextLayout";
  * as React elements.
  *
  * The tree arrives as closed typed nodes: a handful of tags, text, line
- * breaks, the call's items by index, and a style object whose every field is a
- * literal set or a bounded number. Each field maps to exactly one CSS
- * property here, a tone to a theme colour role and a font size to one of four
- * type steps; there is no CSS text and no HTML anywhere on the path. The
- * whole tree sits in a contained box (`.happy-media-tree`) that cannot paint
- * outside itself or grow past the transcript's width and a fixed height.
+ * breaks, the call's items by index, and a style object over a closed set of
+ * CSS properties. Each property's value is normalized CSS text that
+ * `happy-desktop-state` has already checked against the protocol's
+ * per-property grammar (see `ConversationMediaLayoutStyle` for why values are
+ * text, not typed nodes); it is set as that one property and nothing else. A
+ * tone is a theme colour role and a font size one of four type steps. There is
+ * no HTML and no free CSS anywhere on the path. The whole tree sits in a
+ * contained box (`.happy-media-tree`) that cannot paint outside itself or grow
+ * past the transcript's width and a fixed height.
+ *
+ * A picture with no width of its own, or `width: auto`, is drawn at its
+ * natural size in points — its pixels over its density — and shrinks to fit
+ * its container but is never enlarged; `width: 100%` fills the container.
  *
  * Its height is the one in the transcript that cannot be computed: it is
  * text, flexbox, and grid written by a model. `mediaTreeHeight` lays the same
@@ -30,6 +39,8 @@ export type MediaTreeItem = {
     readonly kind: ConversationMediaKind;
     readonly width?: number;
     readonly height?: number;
+    /** Pixels per point, for a picture; absent is 1×. */
+    readonly scale?: number;
 };
 
 /** How one item node is drawn: its box style, and what the reader is told it is. */
@@ -37,7 +48,9 @@ export type MediaTreeItemRender = {
     readonly index: number;
     readonly className: string;
     readonly style: CSSProperties;
-    readonly fit: "contain" | "cover";
+    readonly fit?: MediaImageFit;
+    /** Normalized `object-position` text. */
+    readonly position?: string;
     readonly alt?: string;
 };
 
@@ -51,6 +64,8 @@ export type MediaTreeProps = {
 
 /** `.happy-media-tree`'s max-height: a layout taller than this is clipped at it. */
 export const MEDIA_TREE_MAX_HEIGHT = 1200;
+/** `.happy-media-tree__item`'s max-height: the tallest a picture is drawn unless the layout says. */
+const MEDIA_TREE_ITEM_MAX_HEIGHT = 640;
 /** A document or file in a tree is one `ResultCard`. */
 const MEDIA_TREE_CARD_HEIGHT = 64;
 /** A recording whose producer stated no frame takes 16:9. */
@@ -67,13 +82,16 @@ export function MediaTree(props: MediaTreeProps) {
                 case "item": {
                     const item = props.items[node.index];
                     if (!item) return null;
+                    const fit = mediaTreeFit(node.style?.objectFit);
+                    const place = node.style?.objectPosition;
                     return (
                         <Fragment key={position}>
                             {props.renderItem({
                                 index: node.index,
                                 className: mediaTreeItemClass(item),
                                 style: mediaTreeItemStyle(item, node.style),
-                                fit: node.style?.objectFit ?? "contain",
+                                ...(fit ? { fit } : {}),
+                                ...(place ? { position: place } : {}),
                                 ...(node.alt === undefined ? {} : { alt: node.alt }),
                             })}
                         </Fragment>
@@ -102,59 +120,33 @@ export function MediaTree(props: MediaTreeProps) {
     );
 }
 
-function length(value: ConversationMediaLayoutLength): string {
-    return `${String(value.value)}${value.unit}`;
-}
-
-function box(value: { top: number; right: number; bottom: number; left: number }): string {
-    return `${String(value.top)}px ${String(value.right)}px ${String(value.bottom)}px ${String(value.left)}px`;
-}
-
-/** Box alignment as flexbox and grid both read it. */
-function alignment<Value extends string>(value: Value): string {
-    return value === "start" ? "flex-start" : value === "end" ? "flex-end" : value;
-}
-
 /**
- * The inline style of one node: every typed field the layout set, each as
- * the one CSS property it names. Values are strings with their units, so the
- * same object styles a React element and an off-screen measuring node.
+ * The inline style of one node: every CSS property the layout set, under its
+ * React name, with the checked text it arrived as. The same object styles a
+ * React element and an off-screen measuring node.
  */
 export function mediaTreeElementStyle(
     style: ConversationMediaLayoutStyle | undefined,
 ): CSSProperties {
     if (!style) return {};
     const css: Record<string, string> = {};
-    if (style.display) css.display = style.display;
-    if (style.flexDirection) css.flexDirection = style.flexDirection;
-    if (style.flexWrap) css.flexWrap = style.flexWrap;
-    if (style.flexGrow !== undefined) css.flexGrow = String(style.flexGrow);
-    if (style.flexShrink !== undefined) css.flexShrink = String(style.flexShrink);
-    if (style.flexBasis)
-        css.flexBasis = style.flexBasis === "auto" ? "auto" : length(style.flexBasis);
-    if (style.justifyContent) css.justifyContent = alignment(style.justifyContent);
-    if (style.alignItems) css.alignItems = alignment(style.alignItems);
-    if (style.alignSelf) css.alignSelf = alignment(style.alignSelf);
-    if (style.rowGap !== undefined) css.rowGap = `${String(style.rowGap)}px`;
-    if (style.columnGap !== undefined) css.columnGap = `${String(style.columnGap)}px`;
-    /* Each track may shrink below its content, so a wide picture cannot
-       push the grid past the transcript. */
-    if (style.gridTemplateColumns)
-        css.gridTemplateColumns = style.gridTemplateColumns
-            .map((weight) => `minmax(0, ${String(weight)}fr)`)
-            .join(" ");
-    if (style.gridColumnSpan !== undefined)
-        css.gridColumn = `span ${String(style.gridColumnSpan)} / span ${String(style.gridColumnSpan)}`;
-    if (style.padding) css.padding = box(style.padding);
-    if (style.margin) css.margin = box(style.margin);
-    if (style.width) css.width = length(style.width);
-    if (style.minWidth) css.minWidth = length(style.minWidth);
-    if (style.maxWidth) css.maxWidth = length(style.maxWidth);
-    if (style.aspectRatio !== undefined) css.aspectRatio = String(style.aspectRatio);
-    if (style.textAlign) css.textAlign = style.textAlign;
-    if (style.fontWeight) css.fontWeight = style.fontWeight === "bold" ? "700" : "400";
-    if (style.fontStyle) css.fontStyle = style.fontStyle;
+    for (const property of CONVERSATION_MEDIA_LAYOUT_CSS_PROPERTIES) {
+        const value = style[property];
+        if (value !== undefined) css[property] = value;
+    }
     return css as CSSProperties;
+}
+
+const FITS: ReadonlySet<string> = new Set<MediaImageFit>([
+    "contain",
+    "cover",
+    "fill",
+    "none",
+    "scale-down",
+]);
+
+function mediaTreeFit(value: string | undefined): MediaImageFit | undefined {
+    return value !== undefined && FITS.has(value) ? (value as MediaImageFit) : undefined;
 }
 
 /** Tone and type step are theme roles, named by attribute and resolved in CSS. */
@@ -174,25 +166,62 @@ function mediaTreeItemClass(item: MediaTreeItem): string {
     return "happy-media-tree__item happy-media-tree__card";
 }
 
+/** A width that leaves the size to the content: for a picture, its natural size. */
+const INTRINSIC_WIDTH = /^(?:auto|min-content|max-content|fit-content(?:\(.*\))?)$/u;
+/** A height that is fixed whatever the container: a length, not a percentage. */
+const DEFINITE_HEIGHT = /^\d+(?:\.\d+)?(?:px|em|rem)?$/u;
+
 /**
- * An item's box: the layout's own style over the default, which is the full
- * width of its container at the item's own shape. A document or file is a
- * card of fixed height instead.
+ * An item's box. A document or file is a card at the layout's style. A
+ * picture or recording keeps its own shape, and unless the layout gave it a
+ * width it is drawn at its natural size in points, at most its container's
+ * width and to the width `.happy-media-tree__item`'s height cap leaves it —
+ * or, given only a fixed height, as wide as that height and its shape make
+ * it. A picture the layout sized past the cap letterboxes, unless the layout
+ * set a height of its own.
+ *
+ * `object-fit` and `object-position` describe the picture inside the box, not
+ * the box, and go to the tile instead.
  */
 function mediaTreeItemStyle(
     item: MediaTreeItem,
     style: ConversationMediaLayoutStyle | undefined,
 ): CSSProperties {
-    const css = mediaTreeElementStyle(style);
+    const { objectFit: _fit, objectPosition: _position, ...css } = mediaTreeElementStyle(style);
     if (item.kind !== "image" && item.kind !== "video") return css;
-    if (css.aspectRatio !== undefined) return css;
-    const ratio =
-        item.width && item.height
-            ? item.width / item.height
-            : item.kind === "video"
-              ? MEDIA_TREE_VIDEO_RATIO
-              : 4 / 3;
-    return { ...css, aspectRatio: String(ratio) };
+    const natural =
+        item.kind === "image"
+            ? mediaFlowPointSize(item)
+            : item.width && item.height
+              ? { width: item.width, height: item.height }
+              : undefined;
+    const ratio = natural
+        ? natural.width / natural.height
+        : item.kind === "video"
+          ? MEDIA_TREE_VIDEO_RATIO
+          : 4 / 3;
+    const sized: CSSProperties = { ...css };
+    /* `auto` (with or without a fallback ratio) is the picture's own shape. */
+    if (sized.aspectRatio === undefined || String(sized.aspectRatio).startsWith("auto"))
+        sized.aspectRatio = String(ratio);
+    const naturalWidth = sized.width === undefined || INTRINSIC_WIDTH.test(String(sized.width));
+    if (naturalWidth) {
+        /* Given only a fixed height, the width follows from the shape. It is
+           spelled out rather than left to `aspect-ratio`, which a block box
+           with an automatic width does not consult in every engine. */
+        if (sized.height !== undefined && DEFINITE_HEIGHT.test(String(sized.height)))
+            sized.width = `calc(${String(sized.height)} * ${String(ratio)})`;
+        else sized.width = natural ? `${String(natural.width)}px` : "100%";
+    }
+    if (sized.maxHeight === undefined && sized.height !== undefined) sized.maxHeight = "none";
+    /* A picture at its own size that would pass the height cap narrows to
+       it instead of letterboxing: the cap is a size, not a crop. */
+    if (sized.maxWidth === undefined)
+        sized.maxWidth =
+            naturalWidth && sized.maxHeight === undefined && sized.aspectRatio === String(ratio)
+                ? `min(100%, ${String(MEDIA_TREE_ITEM_MAX_HEIGHT * ratio)}px)`
+                : "100%";
+    return sized;
 }
 
 let measureHost: HTMLDivElement | undefined;
@@ -212,7 +241,10 @@ export function mediaTreeHeight(
 ): number {
     if (typeof document === "undefined") return MEDIA_TREE_MAX_HEIGHT / 2;
     const key = `${String(width)}|${String(messageTextLayoutFontGenerationGet())}|${items
-        .map((item) => `${item.kind}:${String(item.width)}x${String(item.height)}`)
+        .map(
+            (item) =>
+                `${item.kind}:${String(item.width)}x${String(item.height)}@${String(item.scale ?? 1)}`,
+        )
         .join(",")}`;
     let byKey = measured.get(root);
     const known = byKey?.get(key);

@@ -161,6 +161,12 @@ export interface ConversationMediaItem {
     /** Intrinsic pixel size, so the inline box is reserved before the bytes arrive. */
     readonly width?: number;
     readonly height?: number;
+    /**
+     * Pixels per point, over 1 for a high-density capture (2 for a Retina
+     * screenshot). Absent is 1×. The item is never drawn past its point size,
+     * `width / scale` by `height / scale`.
+     */
+    readonly scale?: number;
     /** ThumbHash painted at the item's aspect ratio until the bytes load. */
     readonly thumbhash?: string;
     readonly url: string;
@@ -205,57 +211,100 @@ export type ConversationMediaLayoutNode =
     | { readonly type: "text"; readonly text: string }
     | { readonly type: "break" };
 
-export type ConversationMediaLayoutLength =
-    | { readonly unit: "%"; readonly value: number }
-    | { readonly unit: "px"; readonly value: number };
+/**
+ * Every CSS property a layout may set, by its React name. The set is closed
+ * and mirrors the protocol's `MediaLayoutStyleKey` (less `fontSize` and
+ * `tone`, which are theme roles, not CSS).
+ */
+export const CONVERSATION_MEDIA_LAYOUT_CSS_PROPERTIES = [
+    "display",
+    "flexDirection",
+    "flexWrap",
+    "flexFlow",
+    "flex",
+    "flexGrow",
+    "flexShrink",
+    "flexBasis",
+    "order",
+    "justifyContent",
+    "alignContent",
+    "placeContent",
+    "justifyItems",
+    "alignItems",
+    "placeItems",
+    "justifySelf",
+    "alignSelf",
+    "placeSelf",
+    "gap",
+    "rowGap",
+    "columnGap",
+    "gridTemplateColumns",
+    "gridTemplateRows",
+    "gridAutoColumns",
+    "gridAutoRows",
+    "gridAutoFlow",
+    "gridColumn",
+    "gridRow",
+    "gridColumnStart",
+    "gridColumnEnd",
+    "gridRowStart",
+    "gridRowEnd",
+    "width",
+    "height",
+    "minWidth",
+    "minHeight",
+    "maxWidth",
+    "maxHeight",
+    "aspectRatio",
+    "boxSizing",
+    "padding",
+    "paddingTop",
+    "paddingRight",
+    "paddingBottom",
+    "paddingLeft",
+    "margin",
+    "marginTop",
+    "marginRight",
+    "marginBottom",
+    "marginLeft",
+    "borderRadius",
+    "overflow",
+    "overflowX",
+    "overflowY",
+    "objectFit",
+    "objectPosition",
+    "verticalAlign",
+    "textAlign",
+    "fontWeight",
+    "fontStyle",
+    "lineHeight",
+] as const;
 
-/** Four edges in whole CSS pixels, 0–64. */
-export interface ConversationMediaLayoutBox {
-    readonly top: number;
-    readonly right: number;
-    readonly bottom: number;
-    readonly left: number;
-}
+export type ConversationMediaLayoutCssProperty =
+    (typeof CONVERSATION_MEDIA_LAYOUT_CSS_PROPERTIES)[number];
 
 /**
- * The presentation a layout node may ask for. Every field is a closed literal
- * set or a bounded number; there is no CSS text, and colour is a theme tone.
+ * The presentation a layout node asks for.
+ *
+ * A deliberate exception to typed values end to end: each CSS property's
+ * value is a normalized CSS string, because grid tracks, `repeat(auto-fill,
+ * minmax(…))`, line/span pairs, and `auto 16 / 9` would otherwise need a
+ * typed tree serialized twice, by the daemon and here, and the two would
+ * drift. The keys are closed, and every value has passed the protocol's own
+ * per-property grammar (`mediaLayoutStyleValue` in
+ * `@slopus/happy-agent-client`) a second time on this side of the wire. That
+ * grammar admits only lowercase keywords, bounded non-negative numbers in
+ * px/%/em/rem/fr, and `repeat`/`minmax`/`fit-content`: no colour, `url`,
+ * `var`, `calc`, quote, escape, or `!`, so a value can neither load anything
+ * nor reach outside the layout's own contained box. Colour and type size stay
+ * typed theme roles.
  */
-export interface ConversationMediaLayoutStyle {
-    readonly display?: "block" | "flex" | "grid";
-    readonly flexDirection?: "row" | "column" | "row-reverse" | "column-reverse";
-    readonly flexWrap?: "nowrap" | "wrap";
-    readonly flexGrow?: number;
-    readonly flexShrink?: number;
-    readonly flexBasis?: ConversationMediaLayoutLength | "auto";
-    readonly justifyContent?:
-        | "start"
-        | "center"
-        | "end"
-        | "space-between"
-        | "space-around"
-        | "space-evenly";
-    readonly alignItems?: "start" | "center" | "end" | "stretch" | "baseline";
-    readonly alignSelf?: "auto" | "start" | "center" | "end" | "stretch" | "baseline";
-    readonly rowGap?: number;
-    readonly columnGap?: number;
-    /** Fractional track weights, one per column. */
-    readonly gridTemplateColumns?: readonly number[];
-    readonly gridColumnSpan?: number;
-    readonly padding?: ConversationMediaLayoutBox;
-    readonly margin?: ConversationMediaLayoutBox;
-    readonly width?: ConversationMediaLayoutLength;
-    readonly minWidth?: ConversationMediaLayoutLength;
-    readonly maxWidth?: ConversationMediaLayoutLength;
-    /** Width over height. */
-    readonly aspectRatio?: number;
-    readonly objectFit?: "contain" | "cover";
-    readonly textAlign?: "left" | "center" | "right";
-    readonly fontWeight?: "normal" | "bold";
-    readonly fontStyle?: "normal" | "italic";
+export type ConversationMediaLayoutStyle = {
+    readonly [Property in ConversationMediaLayoutCssProperty]?: string;
+} & {
     readonly fontSize?: "small" | "normal" | "large" | "title";
     readonly tone?: "default" | "muted" | "accent";
-}
+};
 
 /**
  * The positions of a call's items in the order the reader meets them: the

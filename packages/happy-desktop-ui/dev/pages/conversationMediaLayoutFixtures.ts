@@ -1,6 +1,7 @@
 import {
     agentAuthor,
     happyAgentOwnerAuthor,
+    mediaLayoutProject,
     type ConversationAuthor,
     type ConversationEntry,
     type ConversationMediaItem,
@@ -30,8 +31,18 @@ function item(
     height: number,
     url: string,
     size = 380_000,
+    scale?: number,
 ): ConversationMediaItem {
-    return { kind: "image", name, mimeType: "image/png", size, width, height, url };
+    return {
+        kind: "image",
+        name,
+        mimeType: "image/png",
+        size,
+        width,
+        height,
+        ...(scale === undefined ? {} : { scale }),
+        url,
+    };
 }
 
 /** A 16:10 desktop window: sidebar, toolbar, a chart, and cards. */
@@ -242,97 +253,113 @@ export const imagegenTools: readonly ConversationToolCall[] = [
 
 const text = (value: string): ConversationMediaLayoutNode => ({ type: "text", text: value });
 
+/**
+ * A layout as the daemon sends it, through the same check the connection
+ * runs on it: what the screens show is what a real call would draw.
+ */
+function wireLayout(value: unknown, itemCount: number): ConversationMediaLayout {
+    const layout = mediaLayoutProject(value, itemCount);
+    if (!layout) throw new Error("fixture layout did not project");
+    return layout;
+}
+
 /** A layout an agent wrote: a heading, a captioned two-up grid, and a full-width figure. */
-export const treeLayout: ConversationMediaLayout = {
-    type: "tree",
-    root: [
-        {
-            type: "element",
-            tag: "section",
-            style: { display: "flex", flexDirection: "column", rowGap: 12 },
-            children: [
-                {
-                    type: "element",
-                    tag: "p",
-                    style: { fontSize: "large", fontWeight: "bold" },
-                    children: [text("Onboarding, before and after")],
-                },
-                {
-                    type: "element",
-                    tag: "div",
-                    style: {
-                        display: "grid",
-                        gridTemplateColumns: [1, 1],
-                        columnGap: 12,
-                        rowGap: 12,
+export const treeLayout: ConversationMediaLayout = wireLayout(
+    {
+        type: "tree",
+        root: [
+            {
+                type: "element",
+                tag: "section",
+                style: { display: "flex", flexDirection: "column", rowGap: "12px" },
+                children: [
+                    {
+                        type: "element",
+                        tag: "p",
+                        style: { fontSize: "large", fontWeight: "700" },
+                        children: [text("Onboarding, before and after")],
                     },
-                    children: [
-                        {
-                            type: "element",
-                            tag: "figure",
-                            style: { display: "flex", flexDirection: "column", rowGap: 6 },
-                            children: [
-                                { type: "item", index: 0, alt: "Before: create profile" },
-                                {
-                                    type: "element",
-                                    tag: "figcaption",
-                                    style: { fontSize: "small", tone: "muted" },
-                                    children: [
-                                        {
-                                            type: "element",
-                                            tag: "strong",
-                                            children: [text("Before.")],
-                                        },
-                                        text(
-                                            " The form floats over the sky with no card behind it.",
-                                        ),
-                                    ],
-                                },
-                            ],
+                    {
+                        type: "element",
+                        tag: "div",
+                        style: {
+                            display: "grid",
+                            gridTemplateColumns: "1fr 1fr",
+                            gap: "12px",
                         },
-                        {
-                            type: "element",
-                            tag: "figure",
-                            style: { display: "flex", flexDirection: "column", rowGap: 6 },
-                            children: [
-                                { type: "item", index: 1, alt: "After: connect harnesses" },
-                                {
-                                    type: "element",
-                                    tag: "figcaption",
-                                    style: { fontSize: "small", tone: "muted" },
-                                    children: [
-                                        {
-                                            type: "element",
-                                            tag: "strong",
-                                            children: [text("After.")],
-                                        },
-                                        text(" One column, and "),
-                                        { type: "element", tag: "code", children: [text("Skip")] },
-                                        text(" is the primary action."),
-                                    ],
-                                },
-                            ],
-                        },
-                    ],
-                },
-                {
-                    type: "element",
-                    tag: "figure",
-                    style: { display: "flex", flexDirection: "column", rowGap: 6 },
-                    children: [
-                        { type: "item", index: 2, style: { objectFit: "contain" } },
-                        {
-                            type: "element",
-                            tag: "figcaption",
-                            style: { fontSize: "small", tone: "muted", textAlign: "center" },
-                            children: [text("The header at full width, as shipped.")],
-                        },
-                    ],
-                },
-            ],
-        },
-    ],
-};
+                        children: [
+                            {
+                                type: "element",
+                                tag: "figure",
+                                style: { display: "flex", flexDirection: "column", rowGap: "6px" },
+                                children: [
+                                    { type: "item", index: 0, alt: "Before: create profile" },
+                                    {
+                                        type: "element",
+                                        tag: "figcaption",
+                                        style: { fontSize: "small", tone: "muted" },
+                                        children: [
+                                            {
+                                                type: "element",
+                                                tag: "strong",
+                                                children: [text("Before.")],
+                                            },
+                                            text(
+                                                " The form floats over the sky with no card behind it.",
+                                            ),
+                                        ],
+                                    },
+                                ],
+                            },
+                            {
+                                type: "element",
+                                tag: "figure",
+                                style: { display: "flex", flexDirection: "column", rowGap: "6px" },
+                                children: [
+                                    { type: "item", index: 1, alt: "After: connect harnesses" },
+                                    {
+                                        type: "element",
+                                        tag: "figcaption",
+                                        style: { fontSize: "small", tone: "muted" },
+                                        children: [
+                                            {
+                                                type: "element",
+                                                tag: "strong",
+                                                children: [text("After.")],
+                                            },
+                                            text(" One column, and "),
+                                            {
+                                                type: "element",
+                                                tag: "code",
+                                                children: [text("Skip")],
+                                            },
+                                            text(" is the primary action."),
+                                        ],
+                                    },
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        type: "element",
+                        tag: "figure",
+                        style: { display: "flex", flexDirection: "column", rowGap: "6px" },
+                        children: [
+                            { type: "item", index: 2, style: { width: "100%" } },
+                            {
+                                type: "element",
+                                tag: "figcaption",
+                                style: { fontSize: "small", tone: "muted", textAlign: "center" },
+                                children: [text("The header at full width, as shipped.")],
+                            },
+                        ],
+                    },
+                ],
+            },
+        ],
+    },
+    3,
+);
 
 export const treeTool = mediaTool(
     "tool-present-tree",
@@ -439,4 +466,366 @@ export const presentedEntries: readonly ConversationEntry[] = [
     activity(automaticTool, "m-23", "2026-10-20T10:02:11.000Z"),
     activity(automaticMixedTool, "m-24", "2026-10-20T10:02:12.000Z"),
     message("m-25", agentAuthor, "Nothing above is cropped.", "2026-10-20T10:02:20.000Z"),
+];
+
+/*
+ * The lenient CSS a `present_files` layout may use, one call per idea. Every
+ * layout here is written as the daemon sends it and goes through the
+ * connection's own check, so the invalid one shows exactly what survives.
+ */
+
+/** A settings dialog captured on a Retina display: 1040 × 720 pixels at 2×, 520 × 360 points. */
+export const retinaDialog = item(
+    "settings-dialog@2x.png",
+    1040,
+    720,
+    svg(
+        1040,
+        720,
+        `<rect width="1040" height="720" rx="28" fill="#ffffff"/>
+         <rect width="1040" height="96" rx="28" fill="#f1f5f9"/><rect y="60" width="1040" height="36" fill="#f1f5f9"/>
+         <circle cx="44" cy="48" r="12" fill="#ff5f57"/><circle cx="80" cy="48" r="12" fill="#febc2e"/><circle cx="116" cy="48" r="12" fill="#28c840"/>
+         <text x="520" y="58" text-anchor="middle" ${TEXT} font-size="28" font-weight="700" fill="#0f172a">Settings</text>
+         ${["Appearance", "Notifications", "Agents", "Shortcuts"]
+             .map(
+                 (label, index) =>
+                     `<text x="64" y="${String(176 + index * 120)}" ${TEXT} font-size="28" fill="#0f172a">${label}</text>
+                      <rect x="840" y="${String(146 + index * 120)}" width="120" height="44" rx="22" fill="${index % 2 === 0 ? "#2baccc" : "#cbd5e1"}"/>
+                      <circle cx="${String(index % 2 === 0 ? 938 : 862)}" cy="${String(168 + index * 120)}" r="18" fill="#ffffff"/>
+                      <rect x="64" y="${String(204 + index * 120)}" width="912" height="2" fill="#e2e8f0"/>`,
+             )
+             .join("")}`,
+    ),
+    420_000,
+    2,
+);
+/** An app icon: 128 pixels at 2×, so 64 points. */
+export const appIcon = item(
+    "app-icon@2x.png",
+    128,
+    128,
+    svg(
+        128,
+        128,
+        `<defs><linearGradient id="icon" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2baccc"/><stop offset="1" stop-color="#5b5bd6"/></linearGradient></defs>
+         <rect width="128" height="128" rx="28" fill="url(#icon)"/>
+         <circle cx="64" cy="64" r="30" fill="#ffffff"/><circle cx="64" cy="64" r="14" fill="#5b5bd6"/>`,
+    ),
+    9_000,
+    2,
+);
+/** A small chart at 1×: 480 × 270 pixels. */
+export const smallChart = item(
+    "weekly-chart.png",
+    480,
+    270,
+    svg(
+        480,
+        270,
+        `<rect width="480" height="270" fill="#0f172a"/>
+         ${Array.from(
+             { length: 7 },
+             (_, index) =>
+                 `<rect x="${String(40 + index * 60)}" y="${String(220 - ((index * 53) % 150) - 30)}" width="36" height="${String(((index * 53) % 150) + 30)}" rx="6" fill="${index === 4 ? "#34c38f" : "#475569"}"/>`,
+         ).join("")}
+         <text x="24" y="36" ${TEXT} font-size="18" font-weight="700" fill="#e2e8f0">Weekly runs</text>`,
+    ),
+    40_000,
+);
+/** A "New" badge: 240 × 120 pixels at 2×, 120 × 60 points — smaller than the box it is shown in. */
+export const newBadge = item(
+    "new-badge@2x.png",
+    240,
+    120,
+    svg(
+        240,
+        120,
+        `<rect width="240" height="120" rx="60" fill="#f59e0b"/>
+         <text x="120" y="78" text-anchor="middle" ${TEXT} font-size="52" font-weight="700" fill="#ffffff">NEW</text>`,
+    ),
+    6_000,
+    2,
+);
+const palettes = [
+    ["#fde2c8", "#fff7e6", ["#e9a178", "#b5655a", "#6e3b4f"]],
+    ["#d6ecf3", "#fffbe0", ["#7fbfc4", "#3f8a96", "#1f5464"]],
+    ["#e8e1f7", "#fff3d6", ["#a99bd8", "#6f5fae", "#3c3474"]],
+    ["#dff3e4", "#fffbe0", ["#8fcf9e", "#4c9a68", "#255c3d"]],
+    ["#f7e0e6", "#fff0d6", ["#e29bb0", "#b05c7a", "#5e2f4a"]],
+    ["#e2e8f0", "#fffbe0", ["#94a3b8", "#64748b", "#334155"]],
+] as const;
+export const thumbnails = palettes.map(([sky, sun, hills], index) =>
+    item(`variant-${String(index + 1)}.png`, 800, 600, art(800, 600, sky, sun, hills), 210_000),
+);
+
+const caption = (...children: unknown[]) => ({
+    type: "element",
+    tag: "figcaption",
+    style: { fontSize: "small", tone: "muted" },
+    children,
+});
+const heading = (value: string) => ({
+    type: "element",
+    tag: "p",
+    style: { fontSize: "large", fontWeight: "600" },
+    children: [text(value)],
+});
+const code = (value: string) => ({ type: "element", tag: "code", children: [text(value)] });
+const figure = (style: Record<string, string>, ...children: unknown[]) => ({
+    type: "element",
+    tag: "figure",
+    style: { display: "flex", flexDirection: "column", rowGap: "6px", ...style },
+    children,
+});
+
+/** Natural size in points, an icon that stays small, and percentage widths. */
+export const sizesTool = mediaTool(
+    "tool-present-sizes",
+    "present_files",
+    [retinaDialog, appIcon, generatedLandscape, smallChart],
+    wireLayout(
+        {
+            type: "tree",
+            root: [
+                {
+                    type: "element",
+                    tag: "section",
+                    style: { display: "flex", flexDirection: "column", rowGap: "16px" },
+                    children: [
+                        heading("Natural size and widths"),
+                        figure(
+                            {},
+                            { type: "item", index: 0, alt: "Settings dialog" },
+                            caption(
+                                text(
+                                    "Retina capture, 1040 × 720 px at 2×, with no width: drawn at its ",
+                                ),
+                                code("520 × 360"),
+                                text(" points."),
+                            ),
+                        ),
+                        figure(
+                            { flexDirection: "row", alignItems: "center", columnGap: "12px" },
+                            { type: "item", index: 1, alt: "App icon" },
+                            caption(text("An app icon, 128 px at 2×, stays 64 points.")),
+                        ),
+                        figure(
+                            {},
+                            { type: "item", index: 2, style: { width: "50%" } },
+                            caption(code("width: 50%")),
+                        ),
+                        figure(
+                            {},
+                            { type: "item", index: 3, style: { width: "100%" } },
+                            caption(code("width: 100%"), text(" fills, even past its 480 px.")),
+                        ),
+                    ],
+                },
+            ],
+        },
+        4,
+    ),
+);
+
+/** `object-fit` on a fixed square, then a flex row of captioned figures. */
+export const fitTool = mediaTool(
+    "tool-present-fit",
+    "present_files",
+    [generatedPortrait, generatedLandscape, newBadge, complaintCreateProfile, complaintConnect],
+    wireLayout(
+        {
+            type: "tree",
+            root: [
+                heading("object-fit on aspect-ratio: 1"),
+                {
+                    type: "element",
+                    tag: "div",
+                    style: { display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "8px" },
+                    children: (
+                        [
+                            [0, "cover"],
+                            [1, "contain"],
+                            [2, "scale-down"],
+                        ] as const
+                    ).map(([index, fit]) =>
+                        figure(
+                            { width: "200px" },
+                            {
+                                type: "item",
+                                index,
+                                style: {
+                                    width: "200px",
+                                    aspectRatio: "1",
+                                    objectFit: fit,
+                                    borderRadius: "12px",
+                                },
+                            },
+                            caption(code(`object-fit: ${fit}`)),
+                        ),
+                    ),
+                },
+                {
+                    type: "element",
+                    tag: "p",
+                    style: { fontSize: "large", fontWeight: "600", marginTop: "20px" },
+                    children: [text("A flex row with captions")],
+                },
+                {
+                    type: "element",
+                    tag: "div",
+                    style: { display: "flex", columnGap: "12px", marginTop: "8px" },
+                    children: [
+                        figure(
+                            { flex: "1", minWidth: "0" },
+                            { type: "item", index: 3, style: { width: "100%" } },
+                            caption(
+                                { type: "element", tag: "strong", children: [text("Before.")] },
+                                text(" The form floats over the sky."),
+                            ),
+                        ),
+                        figure(
+                            { flex: "1", minWidth: "0" },
+                            { type: "item", index: 4, style: { width: "100%" } },
+                            caption(
+                                { type: "element", tag: "strong", children: [text("After.")] },
+                                text(" One column, and Skip leads."),
+                            ),
+                        ),
+                    ],
+                },
+            ],
+        },
+        5,
+    ),
+);
+
+/** A responsive grid: as many 200 px-or-wider columns as fit. */
+export const gridTool = mediaTool(
+    "tool-present-grid",
+    "present_files",
+    thumbnails,
+    wireLayout(
+        {
+            type: "tree",
+            root: [
+                {
+                    type: "element",
+                    tag: "p",
+                    style: { fontWeight: "600" },
+                    children: [code("repeat(auto-fill, minmax(200px, 1fr))")],
+                },
+                {
+                    type: "element",
+                    tag: "div",
+                    style: {
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                        gap: "8px",
+                        marginTop: "8px",
+                    },
+                    children: thumbnails.map((_, index) => ({
+                        type: "item",
+                        index,
+                        style: {
+                            width: "100%",
+                            aspectRatio: "4 / 3",
+                            objectFit: "cover",
+                            borderRadius: "8px",
+                        },
+                    })),
+                },
+            ],
+        },
+        thumbnails.length,
+    ),
+);
+
+/**
+ * A layout with mistakes in it: an unknown tag, properties outside the
+ * subset, values outside the grammar, an index past the items, and an item
+ * named twice. Each bad part is dropped on its own; the rest still draws, and
+ * the item the layout never named is appended at the end.
+ */
+export const invalidTool = mediaTool(
+    "tool-present-invalid",
+    "present_files",
+    [readWide, generatedSquare],
+    wireLayout(
+        {
+            type: "tree",
+            root: [
+                {
+                    type: "element",
+                    tag: "marquee",
+                    style: {
+                        display: "flex",
+                        flexDirection: "sideways",
+                        flexWrap: "wrap",
+                        gap: "calc(10px + 2px)",
+                        rowGap: "10px",
+                        color: "red",
+                        background: "url(https://example.com/x.png)",
+                    },
+                    children: [
+                        {
+                            type: "element",
+                            tag: "p",
+                            style: { tone: "danger", fontSize: "huge", textAlign: "center" },
+                            children: [
+                                text("Dropped: the "),
+                                code("marquee"),
+                                text(" tag (drawn as a div), "),
+                                code("color"),
+                                text(", "),
+                                code("background"),
+                                text(", "),
+                                code("gap: calc(…)"),
+                                text(", "),
+                                code("width: red"),
+                                text(", "),
+                                code("object-fit: zoom"),
+                                text(", item 9, and the second item 0."),
+                            ],
+                        },
+                        {
+                            type: "item",
+                            index: 0,
+                            style: {
+                                width: "red",
+                                objectFit: "zoom",
+                                borderRadius: "-4px",
+                                maxWidth: "70%",
+                            },
+                        },
+                        { type: "item", index: 9 },
+                        { type: "item", index: 0, style: { width: "100%" } },
+                    ],
+                },
+            ],
+        },
+        2,
+    ),
+);
+
+/** The lenient layouts, one present_files call each. */
+export const lenientEntries: readonly ConversationEntry[] = [
+    message(
+        "m-30",
+        happyAgentOwnerAuthor,
+        "Show me how the layout CSS behaves.",
+        "2026-10-20T10:03:00.000Z",
+    ),
+    message("m-31", agentAuthor, "Sizes first.", "2026-10-20T10:03:05.000Z"),
+    activity(sizesTool, "m-32", "2026-10-20T10:03:06.000Z"),
+    message("m-33", agentAuthor, "Fitting, and a captioned row.", "2026-10-20T10:03:10.000Z"),
+    activity(fitTool, "m-34", "2026-10-20T10:03:11.000Z"),
+    message("m-35", agentAuthor, "A responsive grid.", "2026-10-20T10:03:15.000Z"),
+    activity(gridTool, "m-36", "2026-10-20T10:03:16.000Z"),
+    message(
+        "m-37",
+        agentAuthor,
+        "And a layout with mistakes: the bad parts fall away and the rest still draws.",
+        "2026-10-20T10:03:20.000Z",
+    ),
+    activity(invalidTool, "m-38", "2026-10-20T10:03:21.000Z"),
 ];

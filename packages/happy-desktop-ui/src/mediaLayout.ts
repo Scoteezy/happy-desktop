@@ -18,13 +18,13 @@ import { thumbhashAspectRatio } from "./thumbhashDataUrl";
  * Two kinds of row:
  *
  * - `cells`: equal columns. Each picture is drawn at its column's width at
- *   its own shape, never wider than its own pixels, and never taller than the
+ *   its own shape, never wider than its own point size, and never taller than the
  *   row's cap — past it the picture narrows to the cap, down to
  *   `MEDIA_FLOW_MIN_WIDTH`, and below that keeps that width and letterboxes.
  *   A row is as tall as its tallest picture; shorter ones sit at its top.
  * - `justified`: pictures share one height and fill the width together, each
  *   at its true shape, unless that height would pass the row's cap or blow a
- *   picture up past its own pixels, in which case the row stops short.
+ *   picture up past its own point size, in which case the row stops short.
  */
 
 /** What the layout knows about one picture before its bytes arrive. */
@@ -32,6 +32,8 @@ export type MediaFlowImage = {
     /** Intrinsic pixel size, when the producer stated it. */
     readonly width?: number;
     readonly height?: number;
+    /** Pixels per point: 2 for a Retina capture, which is never drawn past half its pixels. */
+    readonly scale?: number;
     /** The placeholder hash, whose header carries an approximate shape when the size is absent. */
     readonly thumbhash?: string;
 };
@@ -41,7 +43,7 @@ export type MediaFlowTile = {
     readonly index: number;
     /** Width over height. */
     readonly ratio: number;
-    /** The widest this tile is ever drawn: its own pixels, or the width its row's height cap leaves it. */
+    /** The widest this tile is ever drawn: its own point size, or the width its row's height cap leaves it. */
     readonly maxWidth: number;
 };
 
@@ -136,10 +138,23 @@ export function mediaFlowRatio(image: MediaFlowImage): number {
     return hashed ?? FALLBACK_RATIO;
 }
 
+/**
+ * The largest a picture is ever drawn: its pixel size over its density, so a
+ * 2× capture shows at the size it had on the screen it was taken from.
+ * Undefined when the producer stated no size.
+ */
+export function mediaFlowPointSize(
+    image: MediaFlowImage,
+): { readonly width: number; readonly height: number } | undefined {
+    if (!image.width || !image.height) return undefined;
+    const scale = image.scale && image.scale > 0 ? image.scale : 1;
+    return { width: image.width / scale, height: image.height / scale };
+}
+
 /** The tile of a picture drawn on its own, or in a cell, under `maxHeight`. */
 function cellTile(image: MediaFlowImage, index: number, maxHeight: number): MediaFlowTile {
     const ratio = mediaFlowRatio(image);
-    const native = image.width && image.height ? image.width : Number.POSITIVE_INFINITY;
+    const native = mediaFlowPointSize(image)?.width ?? Number.POSITIVE_INFINITY;
     return {
         index,
         ratio,
@@ -223,7 +238,7 @@ export function mediaJustifiedPlan(
     return { rows };
 }
 
-/** One justified row, capped so no picture is drawn past its own pixels. */
+/** One justified row, capped so no picture is drawn past its own point size. */
 function justifiedRow(
     images: readonly MediaFlowImage[],
     indexes: readonly number[],
@@ -231,8 +246,8 @@ function justifiedRow(
 ): MediaFlowRow {
     let maxHeight = limits.rowMaxHeight;
     for (const index of indexes) {
-        const image = images[index]!;
-        if (image.width && image.height) maxHeight = Math.min(maxHeight, image.height);
+        const point = mediaFlowPointSize(images[index]!);
+        if (point) maxHeight = Math.min(maxHeight, point.height);
     }
     return {
         type: "justified",

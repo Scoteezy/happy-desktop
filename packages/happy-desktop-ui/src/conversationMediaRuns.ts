@@ -98,7 +98,7 @@ export function conversationMediaRuns(
                 signature: `${String(columns)}|${members
                     .map(
                         (member) =>
-                            `${member.entryId}:${String(member.index)}:${String(member.item.width)}x${String(member.item.height)}`,
+                            `${member.entryId}:${String(member.index)}:${String(member.item.width)}x${String(member.item.height)}@${String(member.item.scale ?? 1)}`,
                     )
                     .join(",")}`,
             });

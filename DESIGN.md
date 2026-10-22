@@ -221,6 +221,14 @@ flexbox at all — a true two-dimensional grid of related tracks (a real media
 grid, a data table's cells) is the main legitimate case for CSS Grid. Even then,
 prefer flexbox for the one-dimensional parts.
 
+The one layout this rule does not govern is a `present_files` layout tree drawn
+by `MediaTree`: its grid, flex, and sizing are the agent's, written in the
+protocol's CSS subset. Those style values are an approved exception to typed
+end-to-end data. They travel as normalized CSS text under a closed set of
+keys, and each one is checked again with the protocol's grammar
+(`mediaLayoutStyleValue`) in `mediaLayoutProject` before React sees it. They
+always render inside `.happy-media-tree`'s contained, clipped box.
+
 Do not use floats, `inline-block` spacing hacks, layout tables, or manual
 absolute positioning for layouts that flexbox handles; absolute positioning is
 reserved for overlays, popovers, and badges that intentionally leave the flow.

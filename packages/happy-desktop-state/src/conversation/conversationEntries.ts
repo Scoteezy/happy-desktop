@@ -708,6 +708,7 @@ function mediaItemEqual(left: ConversationMediaItem, right: ConversationMediaIte
         left.size === right.size &&
         left.width === right.width &&
         left.height === right.height &&
+        left.scale === right.scale &&
         left.thumbhash === right.thumbhash &&
         left.url === right.url
     );

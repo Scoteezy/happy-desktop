@@ -7,7 +7,11 @@ import {
 import { ConversationView } from "../../src/ConversationView";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
-import { presentedEntries, readRunEntries } from "./conversationMediaLayoutFixtures";
+import {
+    lenientEntries,
+    presentedEntries,
+    readRunEntries,
+} from "./conversationMediaLayoutFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "P-024";
@@ -67,13 +71,15 @@ const SCREENS = [
     { name: "presented", entries: presentedEntries, mode: "light", width: 1100, height: 3800 },
     { name: "presented", entries: presentedEntries, mode: "dark", width: 1100, height: 3800 },
     { name: "reads", entries: readRunEntries, mode: "light", width: 720, height: 3000 },
+    { name: "lenient", entries: lenientEntries, mode: "light", width: 1100, height: 3800 },
+    { name: "lenient", entries: lenientEntries, mode: "dark", width: 1100, height: 3800 },
 ] as const;
 
 export function ConversationMediaLayoutsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Pictures in the transcript, uncropped: consecutive screenshot reads continue one two-column grid under the run's last call, generated images stack in one column, an agent-written tree lays out captions and a grid, and an unarranged set falls into justified rows."
+            summary="Pictures in the transcript, uncropped: consecutive screenshot reads continue one two-column grid under the run's last call, generated images stack in one column, an agent-written tree lays out captions and grids in its CSS subset with pictures at their natural point size, and an unarranged set falls into justified rows."
             title="Conversation media layouts"
         >
             {SCREENS.map((screen, index) => {

@@ -1,5 +1,5 @@
 import { gitSnapshotProject, type GitSnapshotState } from "./gitSnapshotState.js";
-import { mediaLayoutProject } from "./mediaLayoutProject.js";
+import { mediaLayoutProject, mediaScaleProject } from "./mediaLayoutProject.js";
 import type {
     Agent,
     AgentActivityResponse,
@@ -1344,16 +1344,14 @@ function projectToolPresentation(
                     size: item.size,
                     ...(item.width === undefined ? {} : { width: item.width }),
                     ...(item.height === undefined ? {} : { height: item.height }),
+                    ...((scale) => (scale === undefined ? {} : { scale }))(
+                        item.kind === "image" ? mediaScaleProject(item.scale) : undefined,
+                    ),
                     ...(item.thumbhash === undefined ? {} : { thumbhash: item.thumbhash }),
                     url: mediaUrl(index),
                 })),
                 ...((layout) => (layout === undefined ? {} : { layout }))(
-                    mediaLayoutProject(
-                        // `layout` is in the protocol from client 0.0.109; this
-                        // build reads it off the wire until that client ships.
-                        (presentation as { readonly layout?: unknown }).layout,
-                        presentation.items.length,
-                    ),
+                    mediaLayoutProject(presentation.layout, presentation.items.length),
                 ),
             };
         case "artifact":

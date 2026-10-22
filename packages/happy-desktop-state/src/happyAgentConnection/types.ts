@@ -94,6 +94,8 @@ export type ToolPresentation =
               size: number;
               width?: number;
               height?: number;
+              /** Pixels per point; absent is 1×. */
+              scale?: number;
               thumbhash?: string;
               /** The item's bytes on this connection's authenticated origin. */
               url: string;

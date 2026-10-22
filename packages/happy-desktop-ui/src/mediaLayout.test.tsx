@@ -1,6 +1,7 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import {
+    mediaLayoutProject,
     type ComposerSnapshot,
     type ConversationEntry,
     type ConversationMediaItem,
@@ -94,6 +95,27 @@ describe("column grids", () => {
         near(p!.width, 640 / 1.5, "portrait keeps its shape");
         near(icon!.width, 120, "a small picture is not blown up");
         expectUncropped(plan, 720);
+    });
+});
+
+describe("density", () => {
+    const retina = { ...image("retina.png", 1040, 720), scale: 2 };
+    const retinaWide = { ...image("retina-wide.png", 2880, 1800), scale: 2 };
+
+    it("never draws a 2× capture past its point size, in a grid or on its own", () => {
+        const [cell] = mediaFlowGeometry(mediaColumnsPlan([retina], 1), 900).tiles;
+        near(cell!.width, 520, "one column stops at 520 points");
+        near(cell!.height, 360, "and keeps its shape");
+        const [alone] = mediaFlowGeometry(mediaJustifiedPlan([retina]), 900).tiles;
+        near(alone!.width, 520, "a lone picture is drawn at its point size");
+        const [big] = mediaFlowGeometry(mediaColumnsPlan([retinaWide], 1), 720).tiles;
+        near(big!.width, 720, "a capture wider than the measure still fills it");
+    });
+
+    it("caps a justified row at its smallest picture's point height", () => {
+        const plan = mediaJustifiedPlan([retina, { ...retina, name: "retina-2.png" }]);
+        const geometry = mediaFlowGeometry(plan, 1400);
+        near(geometry.height, 360, "the row is no taller than 360 points");
     });
 });
 
@@ -314,26 +336,22 @@ const tree: ConversationMediaLayout = {
         {
             type: "element",
             tag: "section",
-            style: { display: "flex", flexDirection: "column", rowGap: 12 },
+            style: { display: "flex", flexDirection: "column", rowGap: "12px" },
             children: [
                 {
                     type: "element",
                     tag: "p",
-                    style: { fontSize: "large", fontWeight: "bold" },
+                    style: { fontSize: "large", fontWeight: "700" },
                     children: [{ type: "text", text: "Before and after, side by side" }],
                 },
                 {
                     type: "element",
                     tag: "div",
-                    style: { display: "grid", gridTemplateColumns: [1, 1], columnGap: 12 },
+                    style: { display: "grid", gridTemplateColumns: "1fr 1fr", columnGap: "12px" },
                     children: [0, 1].map((index) => ({
                         type: "element" as const,
                         tag: "figure" as const,
-                        style: {
-                            display: "flex" as const,
-                            flexDirection: "column" as const,
-                            rowGap: 6,
-                        },
+                        style: { display: "flex", flexDirection: "column", rowGap: "6px" },
                         children: [
                             { type: "item" as const, index },
                             {
@@ -350,7 +368,7 @@ const tree: ConversationMediaLayout = {
                         ],
                     })),
                 },
-                { type: "item", index: 2, style: { width: { unit: "%", value: 50 } } },
+                { type: "item", index: 2, style: { width: "50%" } },
             ],
         },
     ],
@@ -461,5 +479,138 @@ describe("painted geometry agrees with the row model", () => {
             /* The run's grid is painted once, under its last call. */
             expect(host.querySelectorAll(".happy-media-flow")).toHaveLength(3);
         }
+    });
+});
+
+describe("layout trees in the CSS subset", () => {
+    const retina = { ...image("retina.png", 1040, 720), scale: 2 };
+    const icon = { ...image("icon.png", 128, 128), scale: 2 };
+    const chart = image("chart.png", 480, 270);
+    const items = [retina, icon, chart, chart, square, wide, portrait, square];
+    const lenient = mediaLayoutProject(
+        {
+            type: "tree",
+            root: [
+                { type: "item", index: 0 },
+                { type: "item", index: 1, style: { width: "auto" } },
+                { type: "item", index: 2, style: { width: "50%" } },
+                { type: "item", index: 3, style: { width: "100%" } },
+                {
+                    type: "element",
+                    tag: "div",
+                    style: {
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                        gap: "8px",
+                    },
+                    children: [4, 5, 6].map((index) => ({
+                        type: "item",
+                        index,
+                        style: { width: "100%", aspectRatio: "4 / 3", objectFit: "cover" },
+                    })),
+                },
+                { type: "item", index: 7, style: { height: "120px" } },
+                {
+                    type: "element",
+                    tag: "p",
+                    style: { fontSize: "small", lineHeight: "1.5", marginTop: "1em" },
+                    children: [{ type: "text", text: "A caption under everything." }],
+                },
+            ],
+        },
+        items.length,
+    )!;
+
+    it("draws pictures at their natural point size unless the layout sizes them", async () => {
+        await document.fonts.ready;
+        const host = mount(
+            720,
+            4000,
+            <div style={{ width: "720px" }}>
+                <ConversationMedia items={items} layout={lenient} />
+            </div>,
+        );
+        await nextFrame();
+        /* The engine lays out in fractions of a pixel (Chromium in 64ths). */
+        const px = (actual: number, expected: number, label: string) =>
+            expect(Math.abs(actual - expected), `${label}: ${String(actual)}`).toBeLessThan(0.1);
+        const tiles = [...host.querySelectorAll(".happy-media-image-tile")].map((tile) =>
+            tile.getBoundingClientRect(),
+        );
+        px(tiles[0]!.width, 520, "a 2× capture with no width is 520 points wide");
+        px(tiles[0]!.height, 360, "and 360 tall");
+        px(tiles[1]!.width, 64, "a 2× icon at width: auto stays 64 points");
+        px(tiles[2]!.width, 360, "width: 50% is half the container");
+        px(tiles[3]!.width, 720, "width: 100% fills it, past the picture's own 480 pixels");
+        px(tiles[4]!.width, (720 - 2 * 8) / 3, "auto-fill fits three 200px-or-wider columns");
+        px(tiles[4]!.height, tiles[4]!.width * 0.75, "at the ratio the layout set");
+        px(tiles[7]!.width, 120, "a fixed height alone sizes the width by the picture's shape");
+        px(tiles[7]!.height, 120, "and keeps the height");
+    });
+
+    for (const width of [720, 433, 361])
+        it(`reserves exactly what the tree paints at ${String(width)}px`, async () => {
+            await document.fonts.ready;
+            const host = mount(
+                width,
+                4000,
+                <div style={{ width: `${String(width)}px` }}>
+                    <ConversationMedia items={items} layout={lenient} />
+                </div>,
+            );
+            await nextFrame();
+            const painted = host
+                .querySelector(".happy-conversation-media")!
+                .getBoundingClientRect().height;
+            const modeled = conversationMediaHeight(items, width, lenient);
+            expect(
+                Math.abs(painted - modeled),
+                `${String(painted)} vs ${String(modeled)}`,
+            ).toBeLessThan(0.5);
+        });
+
+    it("drops each part the grammar refuses and keeps the rest", () => {
+        const layout = mediaLayoutProject(
+            {
+                type: "tree",
+                root: [
+                    {
+                        type: "element",
+                        tag: "marquee",
+                        style: {
+                            display: "flex",
+                            flexDirection: "sideways",
+                            gap: "calc(10px + 2px)",
+                            rowGap: "10px",
+                            color: "red",
+                            background: "url(https://example.com/x.png)",
+                            tone: "danger",
+                        },
+                        children: [
+                            {
+                                type: "item",
+                                index: 0,
+                                style: { width: "red", objectFit: "zoom", maxWidth: "70%" },
+                            },
+                            { type: "item", index: 9 },
+                            { type: "item", index: 0, style: { width: "100%" } },
+                        ],
+                    },
+                ],
+            },
+            2,
+        );
+        expect(layout).toEqual({
+            type: "tree",
+            root: [
+                {
+                    type: "element",
+                    tag: "div",
+                    style: { display: "flex", rowGap: "10px" },
+                    children: [{ type: "item", index: 0, style: { maxWidth: "70%" } }],
+                },
+                { type: "item", index: 1 },
+            ],
+        });
     });
 });

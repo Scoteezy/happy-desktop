@@ -1,20 +1,33 @@
-import type {
-    ConversationMediaLayout,
-    ConversationMediaLayoutBox,
-    ConversationMediaLayoutLength,
-    ConversationMediaLayoutNode,
-    ConversationMediaLayoutStyle,
-    ConversationMediaLayoutTag,
+import { mediaLayoutStyleValue, type MediaLayoutStyleKey } from "@slopus/happy-agent-client";
+import {
+    CONVERSATION_MEDIA_LAYOUT_CSS_PROPERTIES,
+    type ConversationMediaLayout,
+    type ConversationMediaLayoutCssProperty,
+    type ConversationMediaLayoutNode,
+    type ConversationMediaLayoutStyle,
+    type ConversationMediaLayoutTag,
 } from "../conversation/conversationEntry.js";
+
+/* The properties drawn here are the protocol's, less its two theme roles: a
+   property the protocol renames or drops fails this line at compile time. */
+CONVERSATION_MEDIA_LAYOUT_CSS_PROPERTIES satisfies readonly MediaLayoutStyleKey[];
+type CssPropertiesCovered =
+    Exclude<MediaLayoutStyleKey, "fontSize" | "tone"> extends ConversationMediaLayoutCssProperty
+        ? true
+        : never;
+const cssPropertiesCovered: CssPropertiesCovered = true;
+void cssPropertiesCovered;
 
 /**
  * A media presentation's `layout` as this build can draw it.
  *
- * The protocol's objects are open: a newer daemon may add a style field, a
- * node type, a layout type, or a column count this build has never heard of.
- * Each is checked against the closed set this build draws and anything else
- * is left out — an unknown style field is ignored, an unknown node is skipped,
- * and an unknown layout falls back to the automatic one (`undefined`).
+ * The protocol's objects are open: a newer daemon may add a style property,
+ * a node type, a layout type, or a column count this build has never heard
+ * of. Each is checked against the closed set this build draws and anything
+ * else is left out — an unknown style property is ignored, a style value is
+ * re-checked against the protocol's grammar and dropped if it fails, an
+ * unknown node is skipped, and an unknown layout falls back to the automatic
+ * one (`undefined`).
  *
  * A tree is also made total over the call's items: an index out of range or
  * named a second time is skipped, and every item the tree never named is
@@ -35,6 +48,17 @@ export function mediaLayoutProject(
     for (let index = 0; index < itemCount; index += 1)
         if (!seen.has(index)) root.push({ type: "item", index });
     return root.length === 0 ? undefined : { type: "tree", root };
+}
+
+/**
+ * An image item's density as this build draws it: pixels per point, over 1
+ * and at most 4. Anything else is drawn at 1×, which only ever draws a
+ * picture smaller than a stated density would.
+ */
+export function mediaScaleProject(value: unknown): number | undefined {
+    return typeof value === "number" && Number.isFinite(value) && value > 1 && value <= 4
+        ? value
+        : undefined;
 }
 
 /** Deeper than the daemon ever sends (it stops at 12); a guard, not a limit. */
@@ -115,104 +139,28 @@ function nodeProject(
     }
 }
 
+/**
+ * A node's style, each value checked again against the protocol's own
+ * per-property grammar and kept only as the normalized text it returns. A key
+ * this build does not draw is ignored and a value the grammar refuses is
+ * dropped, field by field; the rest of the node still draws.
+ */
 function styleProject(value: unknown): ConversationMediaLayoutStyle | undefined {
     if (!isRecord(value)) return undefined;
     const style: {
         -readonly [Key in keyof ConversationMediaLayoutStyle]: ConversationMediaLayoutStyle[Key];
     } = {};
-    style.display = oneOf(value.display, ["block", "flex", "grid"] as const);
-    style.flexDirection = oneOf(value.flexDirection, [
-        "row",
-        "column",
-        "row-reverse",
-        "column-reverse",
-    ] as const);
-    style.flexWrap = oneOf(value.flexWrap, ["nowrap", "wrap"] as const);
-    style.flexGrow = numberIn(value.flexGrow, 0, 12);
-    style.flexShrink = numberIn(value.flexShrink, 0, 12);
-    style.flexBasis = value.flexBasis === "auto" ? "auto" : lengthProject(value.flexBasis);
-    style.justifyContent = oneOf(value.justifyContent, [
-        "start",
-        "center",
-        "end",
-        "space-between",
-        "space-around",
-        "space-evenly",
-    ] as const);
-    style.alignItems = oneOf(value.alignItems, [
-        "start",
-        "center",
-        "end",
-        "stretch",
-        "baseline",
-    ] as const);
-    style.alignSelf = oneOf(value.alignSelf, [
-        "auto",
-        "start",
-        "center",
-        "end",
-        "stretch",
-        "baseline",
-    ] as const);
-    style.rowGap = spacingProject(value.rowGap);
-    style.columnGap = spacingProject(value.columnGap);
-    if (
-        Array.isArray(value.gridTemplateColumns) &&
-        value.gridTemplateColumns.length >= 1 &&
-        value.gridTemplateColumns.length <= 6 &&
-        value.gridTemplateColumns.every(
-            (weight) => typeof weight === "number" && weight > 0 && weight <= 12,
-        )
-    )
-        style.gridTemplateColumns = value.gridTemplateColumns as number[];
-    const span = numberIn(value.gridColumnSpan, 1, 6);
-    style.gridColumnSpan = span === undefined ? undefined : Math.round(span);
-    style.padding = boxProject(value.padding);
-    style.margin = boxProject(value.margin);
-    style.width = lengthProject(value.width);
-    style.minWidth = lengthProject(value.minWidth);
-    style.maxWidth = lengthProject(value.maxWidth);
-    style.aspectRatio = numberIn(value.aspectRatio, 0.1, 10);
-    style.objectFit = oneOf(value.objectFit, ["contain", "cover"] as const);
-    style.textAlign = oneOf(value.textAlign, ["left", "center", "right"] as const);
-    style.fontWeight = oneOf(value.fontWeight, ["normal", "bold"] as const);
-    style.fontStyle = oneOf(value.fontStyle, ["normal", "italic"] as const);
-    style.fontSize = oneOf(value.fontSize, ["small", "normal", "large", "title"] as const);
-    style.tone = oneOf(value.tone, ["default", "muted", "accent"] as const);
-    /* Fields that did not check out are left off entirely, not carried as
-       `undefined`, so equal styles compare equal field by field. */
-    const entries = Object.entries(style).filter(([, field]) => field !== undefined);
-    return entries.length === 0
-        ? undefined
-        : (Object.fromEntries(entries) as ConversationMediaLayoutStyle);
-}
-
-function lengthProject(value: unknown): ConversationMediaLayoutLength | undefined {
-    if (!isRecord(value)) return undefined;
-    if (value.unit === "%") {
-        const percent = numberIn(value.value, 0, 100);
-        return percent === undefined ? undefined : { unit: "%", value: percent };
+    for (const property of CONVERSATION_MEDIA_LAYOUT_CSS_PROPERTIES) {
+        const raw = value[property];
+        if (typeof raw !== "string") continue;
+        const checked = mediaLayoutStyleValue(property, raw);
+        if (checked !== undefined) style[property] = checked;
     }
-    if (value.unit === "px") {
-        const pixels = numberIn(value.value, 0, 1600);
-        return pixels === undefined ? undefined : { unit: "px", value: pixels };
-    }
-    return undefined;
-}
-
-function spacingProject(value: unknown): number | undefined {
-    return numberIn(value, 0, 64);
-}
-
-function boxProject(value: unknown): ConversationMediaLayoutBox | undefined {
-    if (!isRecord(value)) return undefined;
-    const top = spacingProject(value.top);
-    const right = spacingProject(value.right);
-    const bottom = spacingProject(value.bottom);
-    const left = spacingProject(value.left);
-    if (top === undefined || right === undefined || bottom === undefined || left === undefined)
-        return undefined;
-    return { top, right, bottom, left };
+    const fontSize = oneOf(value.fontSize, ["small", "normal", "large", "title"] as const);
+    if (fontSize) style.fontSize = fontSize;
+    const tone = oneOf(value.tone, ["default", "muted", "accent"] as const);
+    if (tone) style.tone = tone;
+    return Object.keys(style).length === 0 ? undefined : style;
 }
 
 function oneOf<const Value extends string>(
@@ -221,12 +169,6 @@ function oneOf<const Value extends string>(
 ): Value | undefined {
     return typeof value === "string" && (values as readonly string[]).includes(value)
         ? (value as Value)
-        : undefined;
-}
-
-function numberIn(value: unknown, low: number, high: number): number | undefined {
-    return typeof value === "number" && Number.isFinite(value) && value >= low && value <= high
-        ? value
         : undefined;
 }
 

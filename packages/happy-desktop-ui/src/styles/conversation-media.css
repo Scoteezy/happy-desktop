@@ -165,8 +165,10 @@
     color: var(--text-link);
 }
 
-/* An item fills its container's width at its own shape unless the layout
-   says otherwise; a picture too tall for the transcript letterboxes. */
+/* A picture or recording sets its own width inline (`MediaTree`: its natural
+   point size unless the layout sized it); a card fills its container. No
+   item is drawn taller than the cap unless the layout gave it a height. Keep
+   the cap in step with `MEDIA_TREE_ITEM_MAX_HEIGHT`. */
 .happy-media-tree .happy-media-tree__item {
     box-sizing: border-box;
     flex: 0 1 auto;
@@ -262,6 +264,24 @@ button.happy-media-image-tile:focus-visible {
 
 .happy-media-image-tile[data-fit="cover"] .happy-media-image-tile__image {
     object-fit: cover;
+}
+
+.happy-media-image-tile[data-fit="fill"] .happy-media-image-tile__placeholder {
+    background-size: 100% 100%;
+}
+
+.happy-media-image-tile[data-fit="fill"] .happy-media-image-tile__image {
+    object-fit: fill;
+}
+
+/* The placeholder is a few pixels wide, so drawn at its own size it would be
+   a speck; it stays contained while the picture itself is not scaled. */
+.happy-media-image-tile[data-fit="none"] .happy-media-image-tile__image {
+    object-fit: none;
+}
+
+.happy-media-image-tile[data-fit="scale-down"] .happy-media-image-tile__image {
+    object-fit: scale-down;
 }
 
 .happy-media-image-tile[data-state="loaded"] .happy-media-image-tile__image {
