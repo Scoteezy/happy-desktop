@@ -59,8 +59,9 @@ cleanup() {
 }
 trap cleanup EXIT
 # A host that sleeps mid-run stops every process at once; keep it awake for this run only.
-# The run still checks the power log and voids itself if the lid closed anyway.
-caffeinate -dimsu -w $ &
+# The run still checks the power log and voids itself if the lid closed anyway. (No -u: it
+# declares user activity for five seconds and exits.)
+caffeinate -dims -w $$ &
 echo $! > $RUN/caffeinate.pid
 daemon
 (
