@@ -912,8 +912,12 @@ function projectAgent(
 }
 
 function projectQuestion(question: Question): UserInputRequest {
+    // Published client 0.0.112 does not declare the question's context yet.
+    // Validate this additive field at that wire boundary.
+    const context = (question as { context?: unknown }).context;
     return {
         requestId: question.id,
+        ...(typeof context === "string" && context.trim().length > 0 ? { context } : {}),
         questions: question.questions.map((prompt) => ({
             id: prompt.id,
             header: prompt.header,

@@ -497,6 +497,8 @@ export type ConversationRequest =
     | {
           readonly kind: "userInput";
           readonly requestId: string;
+          /** Shared Markdown background the agent gave for the questions. */
+          readonly context?: string;
           readonly questions: readonly ConversationRequestQuestion[];
           readonly status: "pending";
           readonly answers?: never;
@@ -506,6 +508,8 @@ export type ConversationRequest =
     | {
           readonly kind: "userInput";
           readonly requestId: string;
+          /** Shared Markdown background the agent gave for the questions. */
+          readonly context?: string;
           readonly questions: readonly ConversationRequestQuestion[];
           readonly status: "answered";
           readonly answers: Readonly<Record<string, readonly string[]>>;

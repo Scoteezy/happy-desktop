@@ -1,6 +1,6 @@
 import { HappyAgentUserInputPrompt } from "../../src/HappyAgentUserInputPrompt";
 import { ComponentPage, Specimen } from "../kit";
-import { happyAgentUserInput } from "./happyAgentChatFixtures";
+import { happyAgentUserInput, happyAgentUserInputWithContext } from "./happyAgentChatFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-150";
@@ -58,6 +58,34 @@ export function HappyAgentUserInputPromptPage() {
                                 question.options.slice(0, 1).map((option) => option.label),
                             ]),
                         )}
+                    />
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="the agent's shared Markdown background above the first question, rendered as chat Markdown"
+                label="Context"
+                number="04"
+                stage="surface"
+            >
+                <div style={{ width: "560px" }}>
+                    <HappyAgentUserInputPrompt
+                        onAnswer={() => undefined}
+                        request={happyAgentUserInputWithContext}
+                    />
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="answered history keeps the background the choice was made against"
+                label="Context answered"
+                number="05"
+                stage="surface"
+            >
+                <div style={{ width: "560px" }}>
+                    <HappyAgentUserInputPrompt
+                        request={happyAgentUserInputWithContext}
+                        resolvedAnswers={{ approach: ["In batches"] }}
                     />
                 </div>
             </Specimen>

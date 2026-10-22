@@ -34,6 +34,16 @@
     margin-left: 12px;
 }
 
+/* The agent's background for the questions, set as one more block of its reply:
+   the message Markdown body supplies the type ramp and block rhythm. */
+.happy-agent-input__context {
+    min-width: 0;
+    font-size: 15px;
+    line-height: 22px;
+    color: var(--text);
+    overflow-wrap: break-word;
+}
+
 .happy-agent-input__questions {
     display: flex;
     flex-direction: column;
@@ -183,6 +193,10 @@
 }
 
 /* Transcript variant: a restrained form embedded in the response flow. */
+.happy-agent-input[data-variant="card"] .happy-agent-input__context {
+    padding: 6px 12px 8px;
+}
+
 .happy-agent-input[data-variant="card"] .happy-agent-input__questions {
     gap: 0;
 }

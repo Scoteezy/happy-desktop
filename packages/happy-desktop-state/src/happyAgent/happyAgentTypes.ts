@@ -343,6 +343,8 @@ export interface HappyAgentUserInputQuestion {
 
 export interface HappyAgentUserInputRequest {
     readonly requestId: string;
+    /** Shared Markdown background the agent gave for the questions; absent when it gave none. */
+    readonly context?: string;
     readonly questions: readonly HappyAgentUserInputQuestion[];
 }
 
@@ -1041,6 +1043,8 @@ export interface HappyAgentUserInputAnswers {
  */
 export interface HappyAgentAnsweredUserInput {
     readonly requestId: string;
+    /** Shared Markdown background the agent gave for the questions; absent when it gave none. */
+    readonly context?: string;
     readonly questions: readonly HappyAgentUserInputQuestion[];
     readonly answers: Readonly<Record<string, readonly string[]>>;
     readonly createdAt: number;
@@ -1070,6 +1074,8 @@ export interface HappyAgentInboxItem {
     readonly scope?: HappyAgentSessionScope;
     /** The asking session's title, when it has earned one. */
     readonly sessionTitle?: string;
+    /** Shared Markdown background the agent gave for the questions; absent when it gave none. */
+    readonly context?: string;
     readonly questions: readonly HappyAgentUserInputQuestion[];
     readonly status: HappyAgentInboxItemStatus;
     /** Chosen option labels by question id; present once answered. */

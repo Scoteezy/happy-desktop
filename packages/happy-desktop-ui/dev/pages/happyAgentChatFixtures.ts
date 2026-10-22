@@ -444,6 +444,36 @@ export const happyAgentUserInput: Extract<ConversationRequest, { kind: "userInpu
     ],
 };
 
+/** The same questions with the shared Markdown background an agent gives above them. */
+export const happyAgentUserInputWithContext: Extract<
+    ConversationRequest,
+    { kind: "userInput"; status: "pending" }
+> = {
+    ...happyAgentUserInput,
+    requestId: "req-context",
+    context: [
+        "## Migration plan",
+        "",
+        "The `accounts` table has **12M rows**; the backfill rewrites *every* row. See the [runbook](https://example.com/runbook).",
+        "",
+        "- Locks",
+        "  - one transaction holds a write lock for the whole run",
+        "  - batches lock 10k rows at a time",
+        "- Estimated cost grows as $O(n)$ in rows",
+        "",
+        "> Last time a single transaction ran for 40 minutes.",
+        "",
+        "```ts",
+        "await db.accounts.backfill({ batchSize: 10_000 });",
+        "```",
+        "",
+        "| Approach | Duration |",
+        "| --- | --- |",
+        "| One transaction | ~40 min |",
+        "| Batches | ~65 min |",
+    ].join("\n"),
+};
+
 const now = 1_700_000_000_000;
 
 export const conversationSummaries: readonly ConversationSummary[] = [

@@ -3,6 +3,7 @@ import type { HappyAgentUserInputRequest, UserError } from "happy-desktop-state"
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { Checkbox } from "./Checkbox";
+import { renderMessageMarkdown } from "./MessageMarkdown";
 import { ShimmerText } from "./ShimmerText";
 
 export type HappyAgentUserInputAnswerMap = Record<string, string[]>;
@@ -69,6 +70,10 @@ function toggleValue(current: readonly string[], value: string, multiSelect: boo
  * with the chosen option labels, and is blocked until every `required` question
  * has at least one selection.
  *
+ * The request's shared Markdown `context` reads above the first question, in
+ * both the pending and answered states, through the chat's own Markdown
+ * renderer, so the background reads exactly as the agent's replies do.
+ *
  * Each question states its own selection rule beside its name, so a person can
  * tell a single choice from an accumulating one, and an optional question from
  * the one actually holding the submit, without trying an option to find out.
@@ -114,6 +119,14 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
             data-variant={props.variant ?? "card"}
             style={props.style}
         >
+            {request.context ? (
+                <div
+                    className="happy-agent-input__context happy-message__body--markdown"
+                    data-happy-desktop-ui="happy-agent-user-input-context"
+                >
+                    {renderMessageMarkdown(request.context)}
+                </div>
+            ) : null}
             <div className="happy-agent-input__questions">
                 {request.questions.map((question) => {
                     const selected = answers[question.id] ?? [];

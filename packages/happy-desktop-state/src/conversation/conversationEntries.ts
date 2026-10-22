@@ -416,6 +416,7 @@ function requestEqual(left: ConversationRequest, right: ConversationRequest): bo
     if (left.kind === "userInput" && right.kind === "userInput")
         return (
             left.status === right.status &&
+            left.context === right.context &&
             left.createdAt === right.createdAt &&
             left.resolvedAt === right.resolvedAt &&
             answersEqual(left.answers, right.answers) &&

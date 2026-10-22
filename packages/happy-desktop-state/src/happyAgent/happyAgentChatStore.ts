@@ -213,6 +213,7 @@ function transcriptPendingUserInputsProject(
 ): readonly HappyAgentUserInputRequest[] {
     return session.pendingUserInputs.map((request) => ({
         requestId: request.requestId,
+        ...(request.context === undefined ? {} : { context: request.context }),
         questions: request.questions.map((question) => ({
             id: question.id,
             header: question.header,

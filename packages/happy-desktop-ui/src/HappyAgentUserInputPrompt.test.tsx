@@ -7,6 +7,8 @@ import "./styles/vector-icon.css";
 import "./styles/button.css";
 import "./styles/checkbox.css";
 import "./styles/happy-agent-chat.css";
+import "./styles/message.css";
+import "katex/dist/katex.min.css";
 import "./styles/shimmer-text.css";
 import {
     HappyAgentUserInputPrompt,
@@ -195,4 +197,121 @@ it("shimmers on Submit without moving the button, choices, or following content"
         expect(submit.getBoundingClientRect().toJSON()).toEqual(before);
         expect(root.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
     }
+}, 120_000);
+
+it("renders the shared Markdown context above the first question, pending and answered", async () => {
+    const context = [
+        "## Background",
+        "",
+        "The **accounts** table is *large*; run `backfill` with care. See [the runbook](https://example.com/runbook).",
+        "",
+        "- Locks",
+        "  - one transaction locks the table",
+        "",
+        "> Last run took 40 minutes.",
+        "",
+        "```ts",
+        "await db.accounts.backfill();",
+        "```",
+        "",
+        "| Approach | Duration |",
+        "| --- | --- |",
+        "| Batches | ~65 min |",
+        "",
+        "Energy is $E = mc^2$.",
+    ].join("\n");
+    const view = createRenderer();
+    view.render(
+        () => (
+            <HappyAgentUserInputPrompt
+                data-testid="context-card"
+                onAnswer={() => undefined}
+                request={{ ...request, context }}
+            />
+        ),
+        { width: 560, height: 900, padding: 16 },
+    );
+    view.render(
+        () => (
+            <HappyAgentUserInputPrompt
+                data-testid="context-flat"
+                onAnswer={() => undefined}
+                request={{ ...request, context }}
+                variant="flat"
+            />
+        ),
+        { width: 560, height: 900, padding: 16 },
+    );
+    view.render(
+        () => (
+            <HappyAgentUserInputPrompt
+                data-testid="context-answered"
+                request={{ ...request, context }}
+                resolvedAnswers={{ approach: ["Batches"] }}
+            />
+        ),
+        { width: 560, height: 900, padding: 16 },
+    );
+    view.render(() => <HappyAgentUserInputPrompt data-testid="no-context" request={request} />, {
+        width: 560,
+        height: 440,
+        padding: 16,
+    });
+    await view.ready();
+    expect(window.devicePixelRatio).toBe(2);
+
+    for (const id of ["context-card", "context-flat", "context-answered"]) {
+        const root = view.$(`[data-testid="${id}"]`).element;
+        const body = root.querySelector<HTMLElement>(
+            '[data-happy-desktop-ui="happy-agent-user-input-context"]',
+        );
+        expect(body, `${id}: context renders`).not.toBeNull();
+        expect(root.firstElementChild, `${id}: context leads the prompt`).toBe(body);
+        expect(body!.querySelector("h2")?.textContent).toBe("Background");
+        expect(body!.querySelector("strong")?.textContent).toBe("accounts");
+        expect(body!.querySelector("em")?.textContent).toBe("large");
+        expect(body!.querySelector("p code")?.textContent).toBe("backfill");
+        expect(body!.querySelector("a")?.getAttribute("href")).toBe("https://example.com/runbook");
+        expect(body!.querySelector("ul ul li")?.textContent).toBe(
+            "one transaction locks the table",
+        );
+        expect(body!.querySelector("blockquote")?.textContent).toContain("40 minutes");
+        expect(body!.querySelector("pre")?.textContent).toContain("await db.accounts.backfill();");
+        expect(body!.querySelectorAll("table tr:first-child th")).toHaveLength(2);
+        expect(body!.querySelector(".katex")).not.toBeNull();
+
+        const paragraph = getComputedStyle(body!.querySelector("p")!);
+        expect(paragraph.fontSize).toBe("16px");
+        expect(paragraph.lineHeight).toBe("24px");
+        // The message body's block rhythm: the first block flush, each next one 8px below.
+        expect(getComputedStyle(body!.firstElementChild!).marginTop).toBe("0px");
+        expect(paragraph.marginTop).toBe("8px");
+
+        const bounds = body!.getBoundingClientRect();
+        const question = root
+            .querySelector(".happy-agent-input__question")!
+            .getBoundingClientRect();
+        const legend = root.querySelector(".happy-agent-input__legend")!;
+        const legendStyle = getComputedStyle(legend);
+        const bodyStyle = getComputedStyle(body!);
+        expect(bounds.bottom, `${id}: context sits above the questions`).toBeLessThanOrEqual(
+            question.top,
+        );
+        expect(bounds.width, `${id}: context spans the prompt`).toBe(
+            root.getBoundingClientRect().width,
+        );
+        expect(
+            bounds.left + Number.parseFloat(bodyStyle.paddingLeft),
+            `${id}: context text starts on the question text's edge`,
+        ).toBe(legend.getBoundingClientRect().left + Number.parseFloat(legendStyle.paddingLeft));
+    }
+
+    const answered = view.$('[data-testid="context-answered"]').element;
+    expect(answered.getAttribute("data-state")).toBe("answered");
+    expect(
+        view
+            .$('[data-testid="no-context"]')
+            .element.querySelector('[data-happy-desktop-ui="happy-agent-user-input-context"]'),
+    ).toBeNull();
+    await view.screenshot("HappyAgentUserInputPrompt.context.test");
 }, 120_000);

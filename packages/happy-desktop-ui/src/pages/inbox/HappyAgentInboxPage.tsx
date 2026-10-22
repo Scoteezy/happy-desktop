@@ -362,6 +362,7 @@ function InboxPendingItem(props: InboxPendingItemProps) {
                 {...(props.selection ? { selection: props.selection } : {})}
                 request={{
                     requestId: props.item.requestId,
+                    ...(props.item.context === undefined ? {} : { context: props.item.context }),
                     questions: props.item.questions,
                 }}
                 variant="flat"

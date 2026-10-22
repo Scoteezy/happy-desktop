@@ -20,6 +20,8 @@ export interface HappyAgentInboxSourceItem {
     readonly requestId: string;
     readonly scope?: HappyAgentSessionScope;
     readonly sessionTitle?: string;
+    /** Shared Markdown background the agent gave for the questions; absent when it gave none. */
+    readonly context?: string;
     readonly questions: readonly HappyAgentUserInputQuestion[];
     readonly status: "pending" | "answered";
     readonly answers?: Readonly<Record<string, readonly string[]>>;
@@ -349,6 +351,7 @@ function inboxItemsProject(
             requestId: item.requestId,
             ...(item.scope === undefined ? {} : { scope: item.scope }),
             ...(item.sessionTitle === undefined ? {} : { sessionTitle: item.sessionTitle }),
+            ...(item.context === undefined ? {} : { context: item.context }),
             questions: item.questions,
             status: item.status,
             ...(item.answers === undefined ? {} : { answers: item.answers }),

@@ -387,6 +387,7 @@ function userInputRequestEqual(
     return (
         left === right ||
         (left.requestId === right.requestId &&
+            left.context === right.context &&
             listEqual(left.questions, right.questions, requestQuestionEqual))
     );
 }
@@ -398,6 +399,7 @@ function answeredUserInputEqual(
     if (left === right) return true;
     return (
         left.requestId === right.requestId &&
+        left.context === right.context &&
         left.createdAt === right.createdAt &&
         left.resolvedAt === right.resolvedAt &&
         left.answers === right.answers &&
@@ -479,6 +481,7 @@ function userInputRequestProject(
             request: {
                 kind: "userInput",
                 requestId: input.request.requestId,
+                ...(input.request.context === undefined ? {} : { context: input.request.context }),
                 questions: input.request.questions,
                 status: "answered",
                 answers: input.request.answers,
@@ -494,6 +497,7 @@ function userInputRequestProject(
         request: {
             kind: "userInput",
             requestId: request.requestId,
+            ...(request.context === undefined ? {} : { context: request.context }),
             questions: request.questions,
             status: "pending",
         },

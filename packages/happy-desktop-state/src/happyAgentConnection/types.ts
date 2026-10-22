@@ -379,6 +379,8 @@ export type ChatElement =
 
 export interface UserInputRequest {
     requestId: string;
+    /** Shared Markdown background for the questions; absent when the agent gave none. */
+    context?: string;
     questions: readonly {
         id: string;
         header: string;
