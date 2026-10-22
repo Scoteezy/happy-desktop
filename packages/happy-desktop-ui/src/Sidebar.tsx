@@ -1018,8 +1018,16 @@ function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
             // Relative drag offsets do not change the flex tree's extent. Read
             // its uniform row geometry once, then apply the same explicit drag
             // shift as the rows. Reading moving row tops would count it twice.
+            // The rows fill only the content box: a pinned group's padding and
+            // divider sit below its last row and must not stretch the pitch.
             const rowHeight = firstRow.getBoundingClientRect().height;
-            const treeHeight = tree.getBoundingClientRect().height;
+            const treeStyle = getComputedStyle(tree);
+            const treeHeight =
+                tree.getBoundingClientRect().height -
+                parseFloat(treeStyle.paddingTop) -
+                parseFloat(treeStyle.paddingBottom) -
+                parseFloat(treeStyle.borderTopWidth) -
+                parseFloat(treeStyle.borderBottomWidth);
             const rowPitch =
                 props.items.length > 1
                     ? (treeHeight - rowHeight) / (props.items.length - 1)

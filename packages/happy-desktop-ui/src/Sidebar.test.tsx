@@ -1048,6 +1048,43 @@ it("renders a photo avatar in the leading lane when a row supplies imageUrl", as
 }, 120_000);
 
 /*
+ * The pinned group under a divider pads below its last row. That space belongs
+ * to the divider, so a pinned parent's stem still stops at its child's elbow.
+ */
+it("stops a pinned parent's stem at its child above the divider", async () => {
+    const view = createRenderer();
+    view.render(
+        () => (
+            <Sidebar
+                actions={[
+                    { id: "happy", kind: "channel", label: "Happy" },
+                    { depth: 1, id: "prioritizing", kind: "channel", label: "Prioritizing" },
+                ]}
+                actionsDivider
+                activeItemId="happy"
+                data-testid="pinned"
+                onItemSelect={() => undefined}
+                sections={[]}
+                title="Pinned"
+            />
+        ),
+        { width: 360, height: 240 },
+    );
+    await view.ready();
+
+    const child = view.$('[data-testid="pinned"] [data-item-id="prioritizing"]').bounds();
+    const stem = view
+        .$(
+            '[data-testid="pinned"] [data-happy-desktop-ui="sidebar-tree-connector"][data-parent-id="happy"]',
+        )
+        .bounds();
+    expect(stem.y + stem.height, "stem ends at the child's elbow").toBeCloseTo(
+        child.y + child.height / 2 + 1,
+        0,
+    );
+});
+
+/*
  * Child channels render directly under their parent, one 16px indent level
  * deeper, keeping their own stable `data-item-id`. Archived rows keep their
  * position and remain clickable but dim uniformly to 0.55 opacity so the state
