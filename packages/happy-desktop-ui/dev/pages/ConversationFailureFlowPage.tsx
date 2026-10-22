@@ -12,6 +12,7 @@ import {
     ComposerModelControl,
     type ComposerModelAccountUsage,
     type ComposerModelChoice,
+    type ComposerModelControlPreview,
     type ComposerModelService,
     type ComposerModelUsageWatch,
 } from "../../src/ComposerModelControl";
@@ -203,6 +204,10 @@ type Screen = {
     readonly retrying?: ConversationRetrying;
     /** The picker the switch reads; the four-account machine when absent. */
     readonly source?: ConversationSwitchSource;
+    /** A daemon before protocol 32, which is offered no switch at all. */
+    readonly olderDaemon?: boolean;
+    /** The composer's model picker, seeded open beside the card. */
+    readonly picker?: ComposerModelControlPreview;
     readonly preview?: { readonly target?: string; readonly menu?: { readonly active?: string } };
 };
 
@@ -234,6 +239,18 @@ const screens: readonly Screen[] = [
         label: "Usage limit · a spent account hovered",
         entries: [...before, failed(usageLimit)],
         preview: { menu: { active: SPARE_KEY } },
+    },
+    {
+        id: "usage-limit-beside-picker",
+        label: "Usage limit · the composer's picker open on the same Claude accounts",
+        entries: [...before, failed(usageLimit)],
+        picker: { accounts: "claude", accountHover: "claude" },
+    },
+    {
+        id: "usage-limit-older-daemon",
+        label: "Usage limit · a daemon before protocol 32 offers Retry, not a switch",
+        entries: [...before, failed(usageLimit)],
+        olderDaemon: true,
     },
     {
         id: "usage-limit-picked",
@@ -344,6 +361,7 @@ function conversation(screen: Screen): ReactNode {
                     selection={SELECTION}
                     services={SERVICES}
                     usageWatch={(screen.source ?? SOURCE).usageWatch}
+                    {...(screen.picker ? { preview: screen.picker } : {})}
                 />
             }
             composerPlaceholder="Message Happy…"
@@ -353,7 +371,7 @@ function conversation(screen: Screen): ReactNode {
             errorAssistance={[{ entryId: "failed", assistance: { status: "ready" } }]}
             failureActions={{ onNewChat: noop, onRetry: noop, onSwitch: noop }}
             failureClock={CLOCK}
-            failureSwitch={screen.source ?? SOURCE}
+            {...(screen.olderDaemon ? {} : { failureSwitch: screen.source ?? SOURCE })}
             {...(screen.preview ? { failurePreview: screen.preview } : {})}
             motion="calm-typed"
             onAbort={noop}
