@@ -4107,7 +4107,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 const destination = rowDestination(happyAgent, row.id);
                 workspaceChangesShowOnOpen(
                     happyAgent.session?.workspace,
-                    happyAgent.projects.flatMap((project) => [project, ...project.worktrees]).find((group) => group.id === row.id),
+                    happyAgent.projects
+                        .flatMap((project) => [project, ...project.worktrees])
+                        .find((group) => group.id === row.id),
                 );
                 if (destination)
                     props.onChatSelect(happyAgent.id, destination.groupId, destination.chatId);
@@ -5073,6 +5075,7 @@ function HappyAgentCommandPalette(
     // A chat that stays highlighted for a moment is loaded ahead of Enter, as one whose sidebar
     // row the pointer rests on is, so committing it shows the conversation at once.
     const highlighted = useRef<CommandPaletteRow | undefined>(undefined);
+    // eslint-disable-next-line react-hooks/refs -- the dwell timer reads the row highlighted when it fires: the latest render's, not the one that started it
     highlighted.current = commandPaletteRowAt(results, palette.activeIndex);
     const intentTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
     const highlightIntent = () => {

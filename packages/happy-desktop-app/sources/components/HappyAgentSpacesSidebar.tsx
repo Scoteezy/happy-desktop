@@ -30,7 +30,7 @@ import {
     type SidebarSection,
     type TabItem,
 } from "happy-desktop-ui";
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 
 /** The places a space can open, as the window addresses them. */
 export interface HappyAgentSpacesNavigation {
@@ -373,19 +373,6 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
     const documentNotes = view
         ? [...view.top, ...view.bottom].filter((entry) => entry.kind === "html")
         : [];
-    // What the reader can see, for the manager: rows outside folded sections and trees.
-    const visibleIds = view
-        ? [
-              ...view.top,
-              ...view.sections.filter((section) => !section.collapsed).flatMap((s) => s.entries),
-          ]
-              .flatMap((entry) => (entry.kind === "space" ? [entry.ref] : []))
-              .join(" ")
-        : "";
-    const store = props.store;
-    useEffect(() => {
-        if (visibleIds !== "") store.sidebarObserve(visibleIds.split(" "));
-    }, [store, visibleIds]);
     const documentEdit = (edited: string | undefined) => {
         if (edited !== undefined) props.store.sidebarWrite(edited);
     };

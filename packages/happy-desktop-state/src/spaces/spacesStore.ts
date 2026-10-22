@@ -11,7 +11,7 @@ import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import type { UserError } from "../types.js";
-import { sidebarDocumentInsert } from "./spacesSidebarDocument.js";
+import { sidebarDocumentInsert, sidebarDocumentView } from "./spacesSidebarDocument.js";
 import { cuid2Create } from "../utils/cuid2Create.js";
 import { orderKeyDecimalBetween, stringCompare } from "../utils/orderKeyDecimal.js";
 import type {
@@ -244,8 +244,11 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     const creating = new Map<string, HappyAgentSpaceSectionId | null>();
 
     const publish = (next: Partial<HappyAgentSpacesSnapshot>): void => {
+        const html = snapshot.sidebar?.html;
         snapshot = { ...snapshot, ...next };
         for (const listener of listeners) listener();
+        if (snapshot.sidebar !== undefined && snapshot.sidebar.html !== html)
+            queueMicrotask(() => store.sidebarObserve(sidebarVisibleIds(snapshot.sidebar?.html)));
     };
 
     const failed = (error: unknown): void => {
@@ -602,7 +605,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
         }
     };
 
-    return {
+    const store: HappyAgentSpacesStore = {
         get: () => snapshot,
         subscribe(listener) {
             listeners.add(listener);
@@ -817,6 +820,23 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             listeners.clear();
         },
     };
+    return store;
+}
+
+/** The spaces a reader can see in a document: those outside folded sections. */
+function sidebarVisibleIds(html: string | undefined): readonly string[] {
+    if (html === undefined) return [];
+    try {
+        const view = sidebarDocumentView(html);
+        return [
+            ...view.top,
+            ...view.sections
+                .filter((section) => !section.collapsed)
+                .flatMap((section) => section.entries),
+        ].flatMap((entry) => (entry.kind === "space" ? [entry.ref] : []));
+    } catch {
+        return [];
+    }
 }
 
 const UNSUPPORTED: HappyAgentSpacesSnapshot = { ...EMPTY, availability: "unsupported" };

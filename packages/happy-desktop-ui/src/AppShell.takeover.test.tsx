@@ -5,8 +5,12 @@ import { userEvent } from "vitest/browser";
 import { AppShell } from "./AppShell";
 import { Composer } from "./Composer";
 import { WindowShortcuts } from "./WindowShortcuts";
-import { commandShortcut } from "./keyboardShortcut";
+import { commandModifier, commandShortcut } from "./keyboardShortcut";
 import { createRenderer } from "./testing";
+
+// The window's own command modifier: Command on macOS, Control elsewhere.
+const toggle = `{${commandModifier}>}j{/${commandModifier}}`;
+const paste = `{${commandModifier}>}v{/${commandModifier}}`;
 
 it("keeps the covered draft mounted but gives takeover exclusive typing and paste ownership", async () => {
     const attached = vi.fn();
@@ -39,7 +43,7 @@ it("keeps the covered draft mounted but gives takeover exclusive typing and past
         .element as HTMLTextAreaElement;
     await userEvent.click(textarea);
     textarea.setSelectionRange(5, 9);
-    await userEvent.keyboard("{Meta>}j{/Meta}");
+    await userEvent.keyboard(toggle);
     const workspace = textarea.closest('[data-app-shell-pane="workspace"]') as HTMLElement;
     await expect
         .poll(() => view.container.querySelector('[data-testid="pane-control"]') !== null)
@@ -49,14 +53,14 @@ it("keeps the covered draft mounted but gives takeover exclusive typing and past
     expect(textarea.value).toBe("Keep this draft");
     expect(workspace.inert).toBe(true);
     expect(document.activeElement).toBe(pane);
-    await userEvent.keyboard("{Meta>}v{/Meta}");
+    await userEvent.keyboard(paste);
     expect(document.activeElement).toBe(pane);
     const transfer = new DataTransfer();
     transfer.items.add(new File(["image"], "paste.png", { type: "image/png" }));
     textarea.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, clipboardData: transfer }));
     expect(attached).not.toHaveBeenCalled();
     expect(textarea.value).toBe("Keep this draft");
-    await userEvent.keyboard("{Meta>}j{/Meta}");
+    await userEvent.keyboard(toggle);
     await expect.poll(() => workspace.inert).toBe(false);
     expect(view.$('[data-happy-desktop-ui="composer-textarea"]').element).toBe(textarea);
     expect(document.activeElement).toBe(textarea);
