@@ -211,7 +211,7 @@ async function releaseVerify(selectedFlavor, output) {
             "dist/happyAgentRendererUtility.js",
         ]);
         await run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", application]);
-        await run("xcrun", ["stapler", "validate", application]);
+        await staplerValidate(application);
         await run("spctl", ["--assess", "--type", "execute", "--verbose=4", application]);
         await run("hdiutil", ["verify", dmg]);
     }
@@ -275,6 +275,56 @@ function argument(name, allowed, fallback) {
     const value = inline?.slice(prefix.length) ?? (index >= 0 ? process.argv[index + 1] : fallback);
     if (!allowed.includes(value)) throw new Error(`${name} must be one of: ${allowed.join(", ")}.`);
     return value;
+}
+
+/**
+ * `stapler validate` looks the stapled ticket up in Apple's CloudKit ticket
+ * service, and GitHub's Intel runners lose that connection often enough to fail
+ * whole releases. Only that lost lookup is retried, with backoff: exit 68 with
+ * an `NSURLErrorDomain` error. Any other result, including a missing or invalid
+ * ticket, fails at once.
+ */
+async function staplerValidate(application) {
+    const attempts = 5;
+    for (let attempt = 1; ; attempt += 1) {
+        const result = await runCaptured("xcrun", ["stapler", "validate", application]);
+        if (result.code === 0) return;
+        const transient = result.code === 68 && result.output.includes("NSURLErrorDomain");
+        if (!transient)
+            throw new Error(`xcrun stapler validate failed with exit code ${result.code}.`);
+        if (attempt === attempts)
+            throw new Error(
+                `xcrun stapler validate lost Apple's ticket lookup on all ${attempts} attempts.`,
+            );
+        const delaySeconds = 15 * 2 ** (attempt - 1);
+        console.log(
+            `stapler validate lost Apple's ticket lookup (attempt ${attempt}/${attempts}); retrying in ${delaySeconds}s.`,
+        );
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, delaySeconds * 1000));
+    }
+}
+
+/** Runs like `run`, echoing output as it arrives, and resolves with the exit code and output. */
+function runCaptured(command, arguments_) {
+    console.log(`\n$ ${command} ${arguments_.join(" ")}`);
+    return new Promise((resolvePromise, reject) => {
+        const child = spawn(command, arguments_, {
+            cwd: workspace,
+            env: process.env,
+            stdio: ["inherit", "pipe", "pipe"],
+        });
+        let output = "";
+        child.stdout.on("data", (chunk) => {
+            output += chunk;
+            process.stdout.write(chunk);
+        });
+        child.stderr.on("data", (chunk) => {
+            output += chunk;
+            process.stderr.write(chunk);
+        });
+        child.once("error", reject);
+        child.once("close", (code) => resolvePromise({ code, output }));
+    });
 }
 
 function run(command, arguments_, environment = {}) {
