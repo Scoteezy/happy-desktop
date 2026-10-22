@@ -489,6 +489,7 @@ function imageGalleryOf(entries: readonly ConversationEntry[]): readonly HappyAg
                         thumbhash: item.thumbhash,
                         width: item.width,
                         height: item.height,
+                        ...(item.scale === undefined ? {} : { scale: item.scale }),
                     },
                 });
         }
@@ -508,6 +509,8 @@ export interface HappyAgentOpenImage {
         readonly thumbhash?: string;
         readonly width?: number;
         readonly height?: number;
+        /** Pixels per point; the viewer's actual size is the picture's point size. */
+        readonly scale?: number;
     };
     readonly index: number;
     readonly total: number;

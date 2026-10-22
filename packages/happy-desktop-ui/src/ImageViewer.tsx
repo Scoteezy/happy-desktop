@@ -65,6 +65,12 @@ export type ImageViewerProps = {
     thumbnail?: { readonly url: string; readonly width?: number; readonly height?: number };
     /** Reported once the picture decodes, so the caller can state its real size. */
     onNaturalSize?: (size: { readonly width: number; readonly height: number }) => void;
+    /**
+     * Pixels per point, for a high-density picture such as a Retina capture.
+     * Its actual size — 100%, and the most "fit" ever shows — is then its
+     * point size, the size it had on the screen it was taken from.
+     */
+    density?: number;
 };
 
 /**
@@ -311,6 +317,7 @@ export function ImageViewer(props: ImageViewerProps) {
         "deferLoading",
         "thumbnail",
         "onNaturalSize",
+        "density",
     ]);
     const frameElement = useRef<HTMLDivElement>(null);
     const decodedImages = useRef(new Map<string, DecodedImage>());
@@ -328,10 +335,17 @@ export function ImageViewer(props: ImageViewerProps) {
         imageUrl: string;
         thumbnailUrl: string;
     }>();
+    const density = local.density !== undefined && local.density > 1 ? local.density : 1;
     const thumbnail =
         failedThumbnail?.imageUrl === url && failedThumbnail.thumbnailUrl === local.thumbnail?.url
             ? undefined
-            : local.thumbnail;
+            : local.thumbnail?.width && local.thumbnail.height && density > 1
+              ? {
+                    ...local.thumbnail,
+                    width: local.thumbnail.width / density,
+                    height: local.thumbnail.height / density,
+                }
+              : local.thumbnail;
     const thumbnailUrl = thumbnail?.url;
     // Shared across URL lifetimes so navigation cannot cut a visible notice short.
     const loadingShownAt = useRef<number | undefined>(undefined);
@@ -359,7 +373,13 @@ export function ImageViewer(props: ImageViewerProps) {
         state.status === "ready"
             ? { ...state, view: VIEW_FIT }
             : live;
-    const natural = displayed.natural;
+    const natural =
+        displayed.natural && density > 1
+            ? {
+                  width: displayed.natural.width / density,
+                  height: displayed.natural.height / density,
+              }
+            : displayed.natural;
     const fitScale = fitScaleOf(natural, frame);
     const zoomFloor = zoomFloorOf(fitScale);
     // Held to the ladder's ends here rather than only where it was chosen: the
@@ -734,7 +754,7 @@ export function ImageViewer(props: ImageViewerProps) {
                         if (displayed.url === url) local.onNaturalSize?.(size);
                     }}
                     scale={scale}
-                    state={displayed}
+                    state={natural === displayed.natural ? displayed : { ...displayed, natural }}
                 />
             </div>
             <div className="happy-image-viewer__tools" data-happy-desktop-ui="image-viewer-tools">

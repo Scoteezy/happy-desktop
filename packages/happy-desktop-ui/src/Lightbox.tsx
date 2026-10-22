@@ -49,6 +49,8 @@ type LightboxSharedProps = {
         readonly thumbhash?: string;
         readonly width?: number;
         readonly height?: number;
+        /** Pixels per point, for a high-density picture; absent is 1×. */
+        readonly scale?: number;
     };
     /** Wire both to step through a set; the header then carries its controls. */
     onPrevious?: () => void;
@@ -405,6 +407,9 @@ export function Lightbox(props: LightboxProps) {
                             adjacentImages={local.adjacentImages}
                             autoFocus
                             content={{ type: "url", url: local.imageUrl }}
+                            {...(local.imageThumbnail?.scale
+                                ? { density: local.imageThumbnail.scale }
+                                : {})}
                             loadedImage={local.loadedImage}
                             deferLoading
                             name={mediaName}

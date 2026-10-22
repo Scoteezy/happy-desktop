@@ -288,6 +288,15 @@ button.happy-media-image-tile:focus-visible {
     opacity: 1;
 }
 
+/* Once the picture has faded in, the placeholder goes. It is drawn whole in
+   the box, so it would otherwise show around a picture drawn smaller than
+   that (`scale-down`, `none`), behind a transparent one, and as a fringe at
+   a contained picture's edges. */
+.happy-media-image-tile[data-state="loaded"] .happy-media-image-tile__placeholder {
+    opacity: 0;
+    transition: opacity 0s linear 160ms;
+}
+
 .happy-media-image-tile__failure {
     /* Absolute: the failure mark is laid over the placeholder it explains. */
     position: absolute;
