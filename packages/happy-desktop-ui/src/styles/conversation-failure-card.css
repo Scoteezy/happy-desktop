@@ -183,3 +183,11 @@
     width: 300px;
     box-shadow: 0 2px 8px var(--shadow-color);
 }
+
+/* The accounts, which scroll when the window is too short for the whole list;
+   the usage under them stays in view. */
+.happy-conversation-switch__list-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}

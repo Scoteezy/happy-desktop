@@ -5,6 +5,7 @@ import {
     ComposerModelAccountUsageDetails,
 } from "./ComposerModelControl";
 import { Icon } from "./Icon";
+import { ScrollArea } from "./Scrollbar";
 import { Octicon } from "./vectorIcons/VectorIcon";
 import { WindowOverlay } from "./WindowOverlay";
 import {
@@ -92,10 +93,19 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
            does. Measuring where (0, 0) lands makes the placement right in both. */
         node.style.left = "0px";
         node.style.top = "0px";
+        const popup = node.firstElementChild as HTMLElement;
+        popup.style.maxHeight = "";
         const origin = node.getBoundingClientRect();
-        const above = box.top - GAP - origin.height >= VIEWPORT_MARGIN;
+        /* Above when it fits, else below when that fits, else the roomier
+           side, capped there so its accounts scroll instead of leaving the window. */
+        const roomAbove = box.top - GAP - VIEWPORT_MARGIN;
+        const roomBelow = window.innerHeight - box.bottom - GAP - VIEWPORT_MARGIN;
+        const above =
+            origin.height <= roomAbove || (origin.height > roomBelow && roomAbove > roomBelow);
+        const height = Math.min(origin.height, above ? roomAbove : roomBelow);
+        popup.style.maxHeight = `${String(height)}px`;
         node.style.left = `${String(box.right - origin.width - origin.left)}px`;
-        node.style.top = `${String((above ? box.top - GAP - origin.height : box.bottom + GAP) - origin.top)}px`;
+        node.style.top = `${String((above ? box.top - GAP - height : box.bottom + GAP) - origin.top)}px`;
         node.dataset["placement"] = above ? "above" : "below";
         if (!focusOnPlace.current) return;
         focusOnPlace.current = false;
@@ -204,58 +214,71 @@ export function ConversationSwitchButton(props: ConversationSwitchButtonProps) {
                             id={menuId}
                             role="menu"
                         >
-                            {groups.map((group, index) => (
-                                <div
-                                    className="happy-composer-model-control__service"
-                                    key={group.group}
-                                    role="group"
-                                    {...(labelled ? { "aria-label": group.label } : {})}
-                                >
-                                    {index > 0 ? (
+                            <ScrollArea
+                                className="happy-composer-model-control__list"
+                                viewportClassName="happy-composer-model-control__list-viewport"
+                            >
+                                <div className="happy-conversation-switch__list-content">
+                                    {groups.map((group, index) => (
                                         <div
-                                            className="happy-composer-model-control__separator"
-                                            role="separator"
-                                        />
-                                    ) : null}
-                                    {labelled ? (
-                                        <div className="happy-composer-model-control__service-header">
-                                            {group.label}
+                                            className="happy-composer-model-control__service"
+                                            key={group.group}
+                                            role="group"
+                                            {...(labelled ? { "aria-label": group.label } : {})}
+                                        >
+                                            {index > 0 ? (
+                                                <div
+                                                    className="happy-composer-model-control__separator"
+                                                    role="separator"
+                                                />
+                                            ) : null}
+                                            {labelled ? (
+                                                <div className="happy-composer-model-control__service-header">
+                                                    {group.label}
+                                                </div>
+                                            ) : null}
+                                            {group.targets.map((target) => {
+                                                const key = conversationFailureTargetKey(target);
+                                                const selected = key === currentKey;
+                                                return (
+                                                    <button
+                                                        aria-checked={selected}
+                                                        className="happy-composer-model-control__row"
+                                                        data-active={
+                                                            key === props.previewActive
+                                                                ? ""
+                                                                : undefined
+                                                        }
+                                                        data-happy-desktop-ui="conversation-switch-row"
+                                                        data-selected={selected ? "" : undefined}
+                                                        key={key}
+                                                        onClick={() => {
+                                                            props.onTargetChange?.(key);
+                                                            close(true);
+                                                        }}
+                                                        onFocus={() => setHovered(key)}
+                                                        onPointerEnter={() => setHovered(key)}
+                                                        role="menuitemradio"
+                                                        type="button"
+                                                    >
+                                                        <span className="happy-composer-model-control__option-main">
+                                                            <span className="happy-composer-model-control__name">
+                                                                {conversationFailureTargetLabel(
+                                                                    target,
+                                                                )}
+                                                            </span>
+                                                            {selected ? <Check /> : null}
+                                                        </span>
+                                                        <ComposerModelAccountGauge
+                                                            usage={target.usage}
+                                                        />
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
-                                    ) : null}
-                                    {group.targets.map((target) => {
-                                        const key = conversationFailureTargetKey(target);
-                                        const selected = key === currentKey;
-                                        return (
-                                            <button
-                                                aria-checked={selected}
-                                                className="happy-composer-model-control__row"
-                                                data-active={
-                                                    key === props.previewActive ? "" : undefined
-                                                }
-                                                data-happy-desktop-ui="conversation-switch-row"
-                                                data-selected={selected ? "" : undefined}
-                                                key={key}
-                                                onClick={() => {
-                                                    props.onTargetChange?.(key);
-                                                    close(true);
-                                                }}
-                                                onFocus={() => setHovered(key)}
-                                                onPointerEnter={() => setHovered(key)}
-                                                role="menuitemradio"
-                                                type="button"
-                                            >
-                                                <span className="happy-composer-model-control__option-main">
-                                                    <span className="happy-composer-model-control__name">
-                                                        {conversationFailureTargetLabel(target)}
-                                                    </span>
-                                                    {selected ? <Check /> : null}
-                                                </span>
-                                                <ComposerModelAccountGauge usage={target.usage} />
-                                            </button>
-                                        );
-                                    })}
+                                    ))}
                                 </div>
-                            ))}
+                            </ScrollArea>
                             <div
                                 className="happy-composer-model-control__separator"
                                 role="separator"

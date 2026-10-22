@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
+import { page } from "vitest/browser";
 import { useState } from "react";
 import type {
     ComposerSnapshot,
@@ -788,4 +789,72 @@ it("offers Retry alone when the live picker has no other account", async () => {
             ),
         )
         .toEqual(["Retry:primary"]);
+});
+
+it("keeps every account reachable in a short window: the list takes the roomier side and scrolls", async () => {
+    const many = conversationSwitchTargets(
+        {
+            services: [
+                {
+                    ...SERVICES[0]!,
+                    accounts: [
+                        ...SERVICES[0]!.accounts,
+                        ...["a", "b", "c", "d"].map((id) => ({
+                            id: `claude_${id}`,
+                            label: `claude_${id}`,
+                            models: [OPUS],
+                        })),
+                    ],
+                },
+                SERVICES[1]!,
+            ],
+            selection: SELECTION,
+        },
+        USAGE,
+    );
+    expect(many).toHaveLength(7);
+    // The supported minimum window, the button near its middle.
+    await page.viewport(720, 640);
+    onTestFinished(() => page.viewport(1600, 1600));
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div style={{ paddingTop: "280px" }}>
+                <Row failure={signin()} onSwitch={() => undefined} targets={many} />
+            </div>
+        ),
+        { width: 720, height: 640 },
+    );
+    await view.ready();
+    const split = view.$('[data-happy-desktop-ui="conversation-switch"]').element as HTMLElement;
+    split.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')!.click();
+    await expect
+        .poll(() => document.querySelector('[data-happy-desktop-ui="conversation-switch-popup"]'))
+        .not.toBeNull();
+    const popup = document.querySelector<HTMLElement>(
+        '[data-happy-desktop-ui="conversation-switch-popup"]',
+    )!;
+    const button = split.getBoundingClientRect();
+    const box = popup.getBoundingClientRect();
+    const roomAbove = button.top - 4 - 8;
+    const roomBelow = window.innerHeight - button.bottom - 4 - 8;
+    // Neither side holds the whole list, so it opens on the roomier one, inside the window.
+    expect(popup.parentElement!.dataset["placement"]).toBe(
+        roomAbove >= roomBelow ? "above" : "below",
+    );
+    expect(box.top).toBeGreaterThanOrEqual(8 - 0.5);
+    expect(box.bottom).toBeLessThanOrEqual(window.innerHeight - 8 + 0.5);
+    // The last account scrolls into the list's view and takes a click.
+    const rows = [...popup.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')];
+    const last = rows.at(-1)!;
+    last.scrollIntoView({ block: "nearest" });
+    const lastBox = last.getBoundingClientRect();
+    const viewport = popup.querySelector(".happy-composer-model-control__list-viewport")!;
+    expect(viewport.scrollTop).toBeGreaterThan(0);
+    expect(lastBox.bottom).toBeLessThanOrEqual(viewport.getBoundingClientRect().bottom + 0.5);
+    expect(
+        document
+            .elementFromPoint(lastBox.left + lastBox.width / 2, lastBox.top + lastBox.height / 2)
+            ?.closest('[role="menuitemradio"]'),
+    ).toBe(last);
 });
