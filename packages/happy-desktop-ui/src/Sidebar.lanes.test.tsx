@@ -218,7 +218,7 @@ it("carries the same opaque subtree, connector and cursor within and across sect
     event(row("tabs"), "pointerdown", initial.top + 16);
     for (const [section, y] of [
         ["desktop", initial.top + 24],
-        ["older", row("old-plain").getBoundingClientRect().bottom - 2],
+        ["older", row("old-plain").getBoundingClientRect().bottom - 2.3],
     ] as const) {
         event(body, "pointermove", y);
         await expect

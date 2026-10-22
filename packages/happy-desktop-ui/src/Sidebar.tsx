@@ -2474,9 +2474,13 @@ export function Sidebar(props: SidebarProps) {
             const heldTop = previewHeldTops.current.get(`row:${rootId}`);
             if (node && heldTop !== undefined) {
                 node.getAnimations().forEach((animation) => animation.cancel());
-                const base =
-                    heldTop -
-                    (node.getBoundingClientRect().top - (Number.parseFloat(node.style.top) || 0));
+                // Read the unshifted layout directly. Subtracting the authored
+                // top from a browser-quantized rect feeds tiny rounding errors
+                // back into the next render at fractional pointer positions.
+                const top = node.style.top;
+                node.style.top = "0px";
+                const base = heldTop - node.getBoundingClientRect().top;
+                node.style.top = top;
                 if (
                     previewOffset?.rootId !== rootId ||
                     previewOffset.sectionId !== sectionId ||
