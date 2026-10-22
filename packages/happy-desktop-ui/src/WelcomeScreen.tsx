@@ -56,6 +56,8 @@ const APPEARANCE_CYCLE: Record<
     system: { next: "light", label: "Appearance follows the system. Switch to light." },
     light: { next: "dark", label: "Appearance is light. Switch to dark." },
     dark: { next: "system", label: "Appearance is dark. Switch to following the system." },
+    midnight: { next: "system", label: "Appearance is midnight. Switch to following the system." },
+    custom: { next: "system", label: "Appearance is custom. Switch to following the system." },
 };
 
 /**

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appearanceStoreCreate } from "./appearanceStore.js";
+import { customThemeEmpty } from "./customTheme.js";
 
 /** A controllable stand-in for the platform appearance and its change events. */
 function platform(initial: "dark" | "light" = "light") {
@@ -31,6 +32,8 @@ describe("appearance store", () => {
         expect(store.get()).toEqual({
             mode: "system",
             appearance: "light",
+            palette: "light",
+            customTheme: customThemeEmpty,
             scrollbarVisibility: "automatic",
         });
 
@@ -38,6 +41,8 @@ describe("appearance store", () => {
         expect(store.get()).toEqual({
             mode: "system",
             appearance: "dark",
+            palette: "dark",
+            customTheme: customThemeEmpty,
             scrollbarVisibility: "automatic",
         });
         expect(seen).toEqual(["dark"]);
@@ -57,6 +62,8 @@ describe("appearance store", () => {
         expect(store.get()).toEqual({
             mode: "light",
             appearance: "light",
+            palette: "light",
+            customTheme: customThemeEmpty,
             scrollbarVisibility: "automatic",
         });
 
@@ -64,6 +71,8 @@ describe("appearance store", () => {
         expect(store.get()).toEqual({
             mode: "dark",
             appearance: "dark",
+            palette: "dark",
+            customTheme: customThemeEmpty,
             scrollbarVisibility: "automatic",
         });
 
@@ -87,6 +96,8 @@ describe("appearance store", () => {
         expect(store.get()).toEqual({
             mode: "dark",
             appearance: "dark",
+            palette: "dark",
+            customTheme: customThemeEmpty,
             scrollbarVisibility: "automatic",
         });
         expect(seen).toEqual(["dark"]);
@@ -96,6 +107,8 @@ describe("appearance store", () => {
         expect(store.get()).toEqual({
             mode: "system",
             appearance: "light",
+            palette: "light",
+            customTheme: customThemeEmpty,
             scrollbarVisibility: "automatic",
         });
 
@@ -133,6 +146,8 @@ describe("appearance store", () => {
         expect(store.get()).toEqual({
             mode: "dark",
             appearance: "dark",
+            palette: "dark",
+            customTheme: customThemeEmpty,
             scrollbarVisibility: "automatic",
         });
         // Re-selecting the current mode is not a change.

@@ -4,11 +4,12 @@ import type {
     DesktopReactDevtoolsCommand,
     DesktopReactDevtoolsMessage,
 } from "./desktopProfiler";
+import type { CustomTheme } from "happy-desktop-state";
 
 export type DesktopMode = "local";
 
 /** Appearance source the Electron shell applies to every local renderer and guest. */
-export type DesktopAppearanceMode = "dark" | "light" | "system";
+export type DesktopAppearanceMode = "custom" | "dark" | "light" | "midnight" | "system";
 export type DesktopScrollbarVisibility = "always" | "automatic";
 /** When the shell holds this computer out of system sleep. Follows the agents when absent. */
 /** Where a plain click on a web link opens: the side panel's browser tab, or the machine's browser. */
@@ -909,6 +910,10 @@ export interface HappyDesktopBridge {
     directoryPick(): Promise<string | undefined>;
     desktopConfigGet(): Promise<DesktopConfig>;
     desktopConfigWrite(config: DesktopConfig): Promise<void>;
+    /** The custom theme as `~/.happy/desktop/theme.json` currently defines it. */
+    customThemeGet(): Promise<CustomTheme>;
+    /** Each accepted change to theme.json, delivered while the app runs. */
+    customThemeSubscribe(listener: (theme: CustomTheme) => void): () => void;
     /** Asks now for what the background check would otherwise find later. */
     daemonCheck(): Promise<void>;
     /**
@@ -1043,6 +1048,8 @@ export const desktopIpc = {
     zoomChanged: "happy:zoom:changed",
     desktopConfigGet: "happy:desktop-config:get",
     desktopConfigWrite: "happy:desktop-config:write",
+    customThemeGet: "happy:custom-theme:get",
+    customThemeChanged: "happy:custom-theme:changed",
     daemonChanged: "happy:daemon:changed",
     daemonCheck: "happy:daemon:check",
     daemonDownload: "happy:daemon:download",

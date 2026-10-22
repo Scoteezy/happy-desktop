@@ -23,6 +23,10 @@ import {
 import {
     HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
     appearanceStoreCreate,
+    appearanceStoreOwnedCreate,
+    customThemeEmpty,
+    type CustomTheme,
+    type ThemeMode,
     keepAwakeStoreCreate,
     type KeepAwakeStore,
     commandPaletteStoreCreate,
@@ -257,7 +261,7 @@ function desktopAppearanceSynchronize(
     appearance: AppearanceStore,
     bridge: HappyDesktopBridge,
 ): void {
-    let published: "dark" | "light" | "system" | undefined;
+    let published: ThemeMode | undefined;
     const publish = () => {
         const mode = appearance.get().mode;
         if (mode === published) return;
@@ -339,7 +343,11 @@ function DesktopAppearance(props: { appearance: AppearanceStore; children: React
         props.appearance.get,
     );
     return (
-        <ThemeScope mode={appearance.mode} scrollbarVisibility={appearance.scrollbarVisibility}>
+        <ThemeScope
+            customTheme={appearance.customTheme}
+            mode={appearance.mode}
+            scrollbarVisibility={appearance.scrollbarVisibility}
+        >
             {props.children}
         </ThemeScope>
     );
@@ -1115,7 +1123,7 @@ if (mediaPreviewBridge) {
         for (const dispose of appDisposers.splice(0)) dispose();
     };
     window.addEventListener("unload", appDispose, { once: true });
-    const start = (config: DesktopConfig): void => {
+    const start = (config: DesktopConfig, customTheme: CustomTheme): void => {
         const runtimeStore = desktopRuntimeStoreCreate(desktopBridge);
         // Whether this machine's owner has been welcomed. Acknowledging this
         // deck enters machine setup; it does not wait for machine work to finish.
@@ -1156,10 +1164,13 @@ if (mediaPreviewBridge) {
         const preferences = desktopPreferencesCreate(desktopBridge, config);
         // Appearance is chosen for the window and shared by all connection UIs.
         shell ??= ((): DesktopShellStores => {
-            const created = appearanceStoreCreate({
+            const { store: created, writer } = appearanceStoreOwnedCreate({
                 mode: preferences.initialAppearance,
+                customTheme,
                 scrollbarVisibility: preferences.initialScrollbarVisibility,
             });
+            // theme.json is the host's; every accepted edit reaches the window live.
+            appDisposers.push(desktopBridge.customThemeSubscribe(writer.customThemeReceived));
             desktopAppearanceSynchronize(created, desktopBridge);
             created.subscribe(() => {
                 const snapshot = created.get();
@@ -1576,15 +1587,25 @@ if (mediaPreviewBridge) {
             </DesktopAppearance>,
         );
     };
-    void desktopBridge.desktopConfigGet().then(start, (error: unknown) => {
-        console.error("Could not read desktop preferences.", error);
-        start({
-            appearance: "system",
-            defaultEffort: HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
-            defaultPermissionMode: "auto",
-            modelPreferences: [],
-            scrollbarVisibility: "automatic",
-            version: 1,
-        });
+    const customThemeRead = desktopBridge.customThemeGet().catch((error: unknown) => {
+        console.error("Could not read the custom theme.", error);
+        return customThemeEmpty;
     });
+    void Promise.all([desktopBridge.desktopConfigGet(), customThemeRead]).then(
+        ([config, customTheme]) => start(config, customTheme),
+        async (error: unknown) => {
+            console.error("Could not read desktop preferences.", error);
+            start(
+                {
+                    appearance: "system",
+                    defaultEffort: HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
+                    defaultPermissionMode: "auto",
+                    modelPreferences: [],
+                    scrollbarVisibility: "automatic",
+                    version: 1,
+                },
+                await customThemeRead,
+            );
+        },
+    );
 }

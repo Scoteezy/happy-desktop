@@ -1,3 +1,10 @@
+import {
+    customThemeEmpty,
+    customThemeEqual,
+    type CustomTheme,
+    type ThemePalette,
+} from "./customTheme.js";
+
 /**
  * The appearance surface: the selected and resolved theme plus the window's
  * scrollbar visibility behavior.
@@ -11,14 +18,18 @@
  * appearance is observed only while the store has a subscriber and only while
  * the mode actually depends on it, so a backgrounded surface does no work.
  */
-export type ThemeMode = "dark" | "light" | "system";
+export type ThemeMode = "custom" | "dark" | "light" | "midnight" | "system";
 export type ScrollbarVisibility = "always" | "automatic";
 
 export interface AppearanceSnapshot {
     /** The user's selection. `system` defers to the platform appearance. */
     readonly mode: ThemeMode;
-    /** The appearance actually rendered, after resolving `system`. */
+    /** The colour scheme actually rendered: midnight is dark, custom is its base's. */
     readonly appearance: "dark" | "light";
+    /** The built-in palette rendered, after resolving `system` and `custom`. */
+    readonly palette: ThemePalette;
+    /** The hand-made fourth theme, rendered only while `mode` is `custom`. */
+    readonly customTheme: CustomTheme;
     /** Whether overflowing surfaces keep their scrollbar visible at rest. */
     readonly scrollbarVisibility: ScrollbarVisibility;
 }
@@ -38,12 +49,19 @@ export interface AppearanceStore {
     [Symbol.dispose](): void;
 }
 
+/** Private input from the host that owns the custom theme document. */
+export interface AppearanceWriter {
+    customThemeReceived(theme: CustomTheme): void;
+}
+
 /** Media query the `system` mode resolves against. */
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 export interface AppearanceStoreOptions {
     /** Initial selection; defaults to following the platform. */
     readonly mode?: ThemeMode;
+    /** Initial custom theme; defaults to an untouched midnight. */
+    readonly customTheme?: CustomTheme;
     /** Initial scrollbar behavior; defaults to automatic. */
     readonly scrollbarVisibility?: ScrollbarVisibility;
     /**
@@ -66,36 +84,55 @@ function browserSystemAppearanceSubscribe(listener: () => void): () => void {
     return () => query.removeEventListener("change", listener);
 }
 
-/**
- * Creates an appearance store. The platform appearance source is injectable so
- * tests drive it deterministically. Listeners are notified only when the
- * resolved snapshot actually changes, so a platform change that the current mode
- * ignores is not a notification.
- */
+/** Creates an appearance store whose custom theme no host delivers. */
 export function appearanceStoreCreate(options: AppearanceStoreOptions = {}): AppearanceStore {
+    return appearanceStoreOwnedCreate(options).store;
+}
+
+/**
+ * Creates an appearance store with the writer its host delivers the custom
+ * theme through. The platform appearance source is injectable so tests drive it
+ * deterministically. Listeners are notified only when the resolved snapshot
+ * actually changes, so a platform change that the current mode ignores is not a
+ * notification.
+ */
+export function appearanceStoreOwnedCreate(options: AppearanceStoreOptions = {}): {
+    readonly store: AppearanceStore;
+    readonly writer: AppearanceWriter;
+} {
     const systemAppearance = options.systemAppearance ?? browserSystemAppearance;
     const systemSubscribe = options.systemAppearanceSubscribe ?? browserSystemAppearanceSubscribe;
 
     const listeners = new Set<() => void>();
     let mode: ThemeMode = options.mode ?? "system";
+    let customTheme = options.customTheme ?? customThemeEmpty;
     let scrollbarVisibility: ScrollbarVisibility = options.scrollbarVisibility ?? "automatic";
-    let snapshot: AppearanceSnapshot = {
-        mode,
-        appearance: mode === "system" ? systemAppearance() : mode,
-        scrollbarVisibility,
+    const paletteResolve = (): ThemePalette =>
+        mode === "system" ? systemAppearance() : mode === "custom" ? customTheme.base : mode;
+    const resolve = (): AppearanceSnapshot => {
+        const palette = paletteResolve();
+        return {
+            mode,
+            appearance: palette === "light" ? "light" : "dark",
+            palette,
+            customTheme,
+            scrollbarVisibility,
+        };
     };
+    let snapshot = resolve();
     let systemUnsubscribe: (() => void) | undefined;
     let disposed = false;
 
     const publish = (): void => {
-        const appearance = mode === "system" ? systemAppearance() : mode;
+        const next = resolve();
         if (
-            snapshot.mode === mode &&
-            snapshot.appearance === appearance &&
-            snapshot.scrollbarVisibility === scrollbarVisibility
+            snapshot.mode === next.mode &&
+            snapshot.palette === next.palette &&
+            snapshot.customTheme === next.customTheme &&
+            snapshot.scrollbarVisibility === next.scrollbarVisibility
         )
             return;
-        snapshot = { mode, appearance, scrollbarVisibility };
+        snapshot = next;
         for (const listener of listeners) listener();
     };
 
@@ -117,7 +154,7 @@ export function appearanceStoreCreate(options: AppearanceStoreOptions = {}): App
         systemWatchSync();
     };
 
-    return {
+    const store: AppearanceStore = {
         get: () => snapshot,
         subscribe(listener) {
             listeners.add(listener);
@@ -149,4 +186,12 @@ export function appearanceStoreCreate(options: AppearanceStoreOptions = {}): App
             systemWatchSync();
         },
     };
+    const writer: AppearanceWriter = {
+        customThemeReceived(theme) {
+            if (customThemeEqual(customTheme, theme)) return;
+            customTheme = theme;
+            publish();
+        },
+    };
+    return { store, writer };
 }

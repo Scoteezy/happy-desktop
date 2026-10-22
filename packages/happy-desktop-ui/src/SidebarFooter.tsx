@@ -67,13 +67,15 @@ export type SidebarFooterProps = {
     style?: CSSProperties;
 };
 
-export type SidebarThemeMode = "system" | "dark" | "light";
+export type SidebarThemeMode = "system" | "dark" | "light" | "midnight" | "custom";
 
 /** Theme choices, in the order the status bar menu and Settings both show them. */
 export const SIDEBAR_THEME_OPTIONS: readonly { mode: SidebarThemeMode; label: string }[] = [
     { mode: "system", label: "System" },
     { mode: "dark", label: "Dark" },
     { mode: "light", label: "Light" },
+    { mode: "midnight", label: "Midnight" },
+    { mode: "custom", label: "Custom" },
 ];
 
 export type SidebarFooterConnection = {

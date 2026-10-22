@@ -230,6 +230,8 @@ const THEME_SEGMENTS: readonly { readonly value: ThemeMode; readonly label: stri
     { value: "system", label: "System" },
     { value: "light", label: "Light" },
     { value: "dark", label: "Dark" },
+    { value: "midnight", label: "Midnight" },
+    { value: "custom", label: "Custom" },
 ];
 
 const SCROLLBAR_SEGMENTS: readonly {

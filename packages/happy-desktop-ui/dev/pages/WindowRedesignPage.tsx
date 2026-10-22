@@ -1,5 +1,9 @@
 import { useState } from "react";
-import type { HappyAgentTodoListSnapshot, HappyAgentSurfaceTodoId } from "happy-desktop-state";
+import type {
+    CustomTheme,
+    HappyAgentTodoListSnapshot,
+    HappyAgentSurfaceTodoId,
+} from "happy-desktop-state";
 import { AppShell, APP_SHELL_SIDEBAR_DEFAULT_WIDTH } from "../../src/AppShell";
 import { CodeBlock } from "../../src/CodeBlock";
 import { CommandPalette } from "../../src/CommandPalette";
@@ -68,12 +72,13 @@ type Scene =
     | "release"
     | "history"
     | "search";
-type StoryFrame = {
+export type StoryFrame = {
     id: string;
     label: string;
     scene: Scene;
     iconsOff?: boolean;
-    dark?: boolean;
+    theme?: "dark" | "midnight" | "custom";
+    customTheme?: CustomTheme;
     floaty?: boolean;
     collapsed?: boolean;
     windowed?: boolean;
@@ -144,7 +149,7 @@ const frames: readonly StoryFrame[] = [
         label: "The same work · dark appearance",
         scene: "working",
         floaty: true,
-        dark: true,
+        theme: "dark",
     },
 ];
 
@@ -273,7 +278,7 @@ function MovieList() {
     );
 }
 
-function StoryWindow(props: StoryFrame) {
+export function StoryWindow(props: StoryFrame) {
     const [scene, setScene] = useState(props.scene);
     const [collapsed, setCollapsed] = useState(props.collapsed ?? false);
     const [floatyOpen, setFloatyOpen] = useState(props.floaty ?? false);
@@ -698,7 +703,7 @@ function StoryWindow(props: StoryFrame) {
     }));
     const searchRows = searchSections.flatMap((section) => section.rows);
     return (
-        <ThemeScope mode={props.dark ? "dark" : "light"}>
+        <ThemeScope customTheme={props.customTheme} mode={props.theme ?? "light"}>
             <div
                 onKeyDown={(event) => {
                     if (!event.metaKey || event.altKey || event.shiftKey) return;

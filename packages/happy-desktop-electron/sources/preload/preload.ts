@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { CustomTheme } from "happy-desktop-state";
 import {
     buildIdentityArgument,
     debugMetricsArgument,
@@ -167,6 +168,12 @@ const bridge: HappyDesktopBridge = {
     directoryPick: () => ipcRenderer.invoke(desktopIpc.directoryPick),
     desktopConfigGet: () => ipcRenderer.invoke(desktopIpc.desktopConfigGet),
     desktopConfigWrite: (config) => ipcRenderer.invoke(desktopIpc.desktopConfigWrite, config),
+    customThemeGet: () => ipcRenderer.invoke(desktopIpc.customThemeGet),
+    customThemeSubscribe(listener) {
+        const receive = (_event: Electron.IpcRendererEvent, theme: CustomTheme) => listener(theme);
+        ipcRenderer.on(desktopIpc.customThemeChanged, receive);
+        return () => ipcRenderer.removeListener(desktopIpc.customThemeChanged, receive);
+    },
     daemonCheck: () => ipcRenderer.invoke(desktopIpc.daemonCheck),
     daemonDownload: () => ipcRenderer.invoke(desktopIpc.daemonDownload),
     daemonInstall: () => ipcRenderer.invoke(desktopIpc.daemonInstall),

@@ -12,7 +12,7 @@ import { Switch } from "../../Switch";
 import { HappyAgentProductAnalyticsSettings } from "./HappyAgentProductAnalyticsSettings";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
-export type HappyAgentAppearanceChoice = "system" | "light" | "dark";
+export type HappyAgentAppearanceChoice = "system" | "light" | "dark" | "midnight" | "custom";
 export type HappyAgentScrollbarVisibilityChoice = "always" | "automatic";
 /** Where a clicked web link opens: the side panel's browser tab, or the machine's browser. */
 export type HappyAgentLinkOpenPlacementChoice = "panel" | "browser";

@@ -211,7 +211,13 @@ export function desktopConfigValidate(candidate: unknown): DesktopConfig {
 }
 
 function appearanceModeParse(value: unknown): DesktopAppearanceMode | undefined {
-    return value === "dark" || value === "light" || value === "system" ? value : undefined;
+    return value === "custom" ||
+        value === "dark" ||
+        value === "light" ||
+        value === "midnight" ||
+        value === "system"
+        ? value
+        : undefined;
 }
 
 function linkOpenPlacementParse(value: unknown): DesktopLinkOpenPlacement | undefined {
