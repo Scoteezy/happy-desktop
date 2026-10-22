@@ -60,7 +60,7 @@ export const HAPPY_AGENT_GROUP_UNREAD_REFUSAL =
 export const HAPPY_AGENT_GROUP_UNLISTED_REFUSAL = "That project or workspace is no longer listed.";
 /** Why a Surface chat's workspace refuses anything but that chat's own conversation. */
 export const HAPPY_AGENT_SURFACE_CHAT_OTHER_REFUSAL =
-    "A Surface’s chat folder holds only that chat’s conversation.";
+    "A shared chat’s folder holds only that chat’s conversation.";
 
 /**
  * Why work cannot be written into this worktree's checkout, read from the host's

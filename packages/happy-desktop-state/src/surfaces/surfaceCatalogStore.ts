@@ -347,7 +347,10 @@ export const happyAgentSurfaceCatalogStoreNoop: HappyAgentSurfaceCatalogStore = 
     createClose: () => undefined,
     surfaceCreate: () => undefined,
     referenceAdd: () => undefined,
-    chatOpen: () => Promise.reject(new UserError("This Happy Agent has no Surfaces.")),
+    chatOpen: () =>
+        Promise.reject(
+            new UserError("This Happy Agent has no shared documents, todo lists or calendars."),
+        ),
     chatOpenCancel: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
@@ -397,7 +400,9 @@ function createRefusal(
     // invalid; only a picture could make one otherwise invalid.
     if (error.status === 400 && kind !== "todo" && !image)
         return new UserError(
-            `This Happy Agent can’t make ${CREATE_NOUNS[kind]} yet.`,
+            referenceKindIs(kind)
+                ? `This Happy Agent can’t add ${CREATE_NOUNS[kind]} to the sidebar yet.`
+                : `This Happy Agent can’t make ${CREATE_NOUNS[kind]} yet.`,
             undefined,
             error,
         );
@@ -410,22 +415,46 @@ const CREATE_NOUNS = {
     calendar: "calendars",
     system_monitor: "System Monitors",
     chat: "chats",
-    artifact: "Surfaces for artifacts",
-    bot: "Surfaces for bots",
-    task: "Surfaces for tasks",
+    artifact: "artifacts",
+    bot: "bots",
+    task: "tasks",
 } as const satisfies Record<HappyAgentSurfaceCreateKind | HappyAgentSurfaceReferenceKind, string>;
 
+/** One Surface of each kind, as the reader calls it. */
+const KIND_NOUNS = {
+    todo: "todo list",
+    document: "document",
+    calendar: "calendar",
+    system_monitor: "system monitor",
+    chat: "chat",
+    artifact: "artifact",
+    bot: "bot",
+    task: "task",
+} as const satisfies Record<HappyAgentSurfaceCreateKind | HappyAgentSurfaceReferenceKind, string>;
+
+/** Whether a Surface only keeps an artifact, bot, or task in the sidebar. */
+function referenceKindIs(
+    kind: HappyAgentSurfaceCreateKind | HappyAgentSurfaceReferenceKind,
+): kind is HappyAgentSurfaceReferenceKind {
+    return kind === "artifact" || kind === "bot" || kind === "task";
+}
+
 /** Why a Surface's chat could not be opened, in words for the reader. */
-function chatRefusal(error: HappyAgentApiError): UserError {
+function chatRefusal(
+    error: HappyAgentApiError,
+    type: HappyAgentSurfaceType | undefined,
+): UserError {
     // A daemon from before Surface chats has no such route at all.
     if (error.status === 404 || error.status === 405)
+        return new UserError("This Happy Agent can’t keep shared chats yet.", undefined, error);
+    if (error.status === 409)
         return new UserError(
-            "This Happy Agent can’t keep a chat for a Surface yet.",
+            type === undefined || type.kind === "unsupported"
+                ? "This can’t have a chat."
+                : `This ${KIND_NOUNS[type.kind]} can’t have a chat.`,
             undefined,
             error,
         );
-    if (error.status === 409)
-        return new UserError("This Surface can’t have a chat.", undefined, error);
     return happyAgentUserError(error);
 }
 
@@ -1274,7 +1303,11 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 // A Surface still being made has no chat to ask for until it exists.
                 if (making !== undefined)
                     await making.created.catch(() => {
-                        throw new UserError("This Surface was not made.");
+                        throw new UserError(
+                            referenceKindIs(making.kind)
+                                ? "This was not added to the sidebar."
+                                : `This ${KIND_NOUNS[making.kind]} was not made.`,
+                        );
                     });
                 let delay = 1_000;
                 for (;;) {
@@ -1300,7 +1333,11 @@ export function happyAgentSurfaceCatalogStoreCreate(
                         return location;
                     } catch (error) {
                         if (stopped()) throw cancelled();
-                        if (refused(error)) throw chatRefusal(error);
+                        if (refused(error))
+                            throw chatRefusal(
+                                error,
+                                snapshot.surfaces.find((surface) => surface.id === surfaceId)?.type,
+                            );
                         // A request that never arrived, or a daemon still
                         // preparing the chat's folder, is asked again.
                         await waitFor(delay, abort.signal);

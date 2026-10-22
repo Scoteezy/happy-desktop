@@ -89,7 +89,7 @@ ordering/expiry/lifetime rules.
 
 ## Connection membership preferences
 
-Settings → Tasks and Settings → Surfaces show one autojoin switch per Happy Agent
+Settings → Tasks and Settings → Shared show one autojoin switch per Happy Agent
 connection, scoped to the authenticated person. `taskSettings()` and
 `surfaceSettings()` materialize their stores on demand; subscribing follows that
 connection's user settings through the shared synchronization driver.
