@@ -135,7 +135,6 @@
     font-synthesis: none;
     -webkit-app-region: no-drag;
     app-region: no-drag;
-    transition: border-color 120ms ease;
 }
 
 .happy-search-field:focus-within {

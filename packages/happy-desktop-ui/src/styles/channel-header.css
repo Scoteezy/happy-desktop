@@ -79,17 +79,14 @@
     padding: 0;
     background: transparent;
     border: 0;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     color: var(--header-tint-secondary);
     appearance: none;
     cursor: pointer;
-    transition:
-        background-color 120ms ease,
-        color 120ms ease;
 }
 
 .happy-channel-header__star:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
     color: var(--text-secondary);
 }
 
@@ -122,14 +119,13 @@
     padding: 0 8px;
     background: transparent;
     border: 0;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     appearance: none;
     cursor: pointer;
-    transition: background-color 120ms ease;
 }
 
 .happy-channel-header__lead--button:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
 }
 
 .happy-channel-header__lead--button:focus-visible {
@@ -242,17 +238,13 @@
 .happy-channel-header__members--button {
     background: transparent;
     border: 1px solid var(--divider);
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     appearance: none;
     cursor: pointer;
-    transition:
-        background-color 120ms ease,
-        border-color 120ms ease,
-        color 120ms ease;
 }
 
 .happy-channel-header__members--button:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
     border-color: var(--divider);
     color: var(--text);
 }

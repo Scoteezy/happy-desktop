@@ -39,7 +39,6 @@
     font-synthesis: none;
     white-space: nowrap;
     cursor: pointer;
-    transition: color 120ms ease;
 }
 
 .happy-tabs__tab:hover:not([data-active]) {
@@ -149,6 +148,13 @@
     box-shadow: 0 0 0 1.5px var(--surface);
 }
 
+/* A tab with no mark keeps its news in its own leading padding, beside the title. */
+.happy-tabs__tab-unread--edge {
+    position: absolute;
+    top: calc(50% - 3px);
+    left: 2px;
+}
+
 .happy-tabs__tab-label {
     display: block;
     flex: none;
@@ -234,7 +240,6 @@
     inset: 0;
     color: var(--text-secondary);
     pointer-events: none;
-    transition: opacity 120ms ease;
 }
 
 /*
@@ -255,15 +260,13 @@
     box-sizing: border-box;
     width: 100%;
     height: 100%;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     color: var(--text-secondary);
     opacity: 0;
     cursor: pointer;
-    transition: opacity 120ms ease;
 }
 
 .happy-tabs__tab:hover .happy-tabs__tab-close,
-.happy-tabs__tab[data-active]:not(:has(.happy-tabs__tab-activity)) .happy-tabs__tab-close,
 .happy-tabs__tab[data-close-revealed] .happy-tabs__tab-close,
 .happy-tabs__tab-close:focus-visible {
     opacity: 1;
@@ -292,7 +295,7 @@
 }
 
 .happy-tabs__tab-close:hover {
-    background: var(--surface-selected);
+    background: var(--happy-hover-fill);
     color: var(--text);
 }
 
@@ -316,7 +319,6 @@
        structure rather than an interactive or semantic state, and the active
        tab's own text already switches to the primary color. */
     background: var(--text);
-    transition: opacity 120ms ease;
 }
 
 /*
@@ -330,13 +332,8 @@
     touch-action: none;
 }
 
-.happy-tabs[data-dragging] .happy-tabs__tab {
-    transition: transform 140ms ease;
-}
-
 .happy-tabs[data-dragging] .happy-tabs__tab[data-dragged] {
     z-index: 1;
-    transition: none;
     cursor: grabbing;
     opacity: 0.9;
 }
@@ -416,11 +413,13 @@
     object-fit: contain;
 }
 
+/* A narrow lane: the cross is small, and the air either side of it is half a
+   tab's ordinary gap, so it reads as belonging to its title. */
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-trailing {
     position: relative;
-    width: 24px;
-    height: 24px;
-    margin: 0;
+    width: 14px;
+    height: 20px;
+    margin: 0 0 0 -2px;
     box-sizing: border-box;
 }
 
@@ -437,11 +436,20 @@
     opacity: 1;
 }
 
+/* The same quiet ink as the strip's "+", darkening only under the pointer. */
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-close {
-    width: 24px;
-    height: 24px;
-    color: var(--text);
+    width: 14px;
+    height: 20px;
+    color: var(--button-secondary-tint);
     pointer-events: auto;
+}
+
+/* The cross is optically set on the title's text, not centred in its box: the
+   glyph's box-centre sits 1px above the title's x-height band, so it drops 1px
+   to put its ink on the title's baseline and its top on the x-height (measured
+   at 1x and 2x against the 13px title). */
+.happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-close > .happy-vector-icon {
+    translate: 0 1px;
 }
 
 /* A keyboard reader on the tab sees the same close the pointer does. */
@@ -452,10 +460,11 @@
 }
 
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-close:hover {
-    background: var(--surface-pressed);
+    background: var(--happy-hover-fill);
+    color: var(--text);
 }
 
 .happy-tabs[data-close-presentation="overlay"] .happy-tabs__tab-activity {
     inset: 0;
-    width: 24px;
+    width: 14px;
 }

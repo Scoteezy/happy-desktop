@@ -679,6 +679,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             title={categories.find((category) => category.id === section)?.label ?? "Settings"}
             windowControls={props.platform === "desktop"}
             windowFullScreen={windowState.fullScreen}
+            windowTrafficLights={windowState.trafficLights}
             connectionRail={windowState.connectionRail}
             sidebarWidth={props.sidebarVisibility?.get().width}
         >

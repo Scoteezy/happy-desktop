@@ -58,6 +58,18 @@
     top: 0;
 }
 
+/* Integrated chrome keeps the title band over the rail in full screen too: the
+   sidebar toggle sits in it at the window's leading edge. */
+.happy-connections:has([data-navigation-chrome="integrated"])
+    .happy-connections__rail[data-window-controls][data-window-full-screen="true"] {
+    padding-top: 40px;
+}
+
+.happy-connections:has([data-navigation-chrome="integrated"])
+    .happy-connections__rail[data-window-controls][data-window-full-screen="true"]::after {
+    top: 40px;
+}
+
 .happy-connections:has([data-navigation-chrome="integrated"])
     .happy-connections__rail[data-window-controls]:not([data-window-full-screen="true"]) {
     padding-top: calc(var(--happy-window-controls-height) / var(--happy-window-zoom));
@@ -111,10 +123,6 @@
     cursor: pointer;
     user-select: none;
     touch-action: none;
-    transition:
-        background-color 120ms ease,
-        box-shadow 120ms ease,
-        color 120ms ease;
     -webkit-app-region: no-drag;
 }
 .happy-connections__separator {
@@ -197,28 +205,12 @@
     color: var(--text-inverse);
     box-shadow: 0 0 0 2px var(--groupped-background);
 }
-.happy-connections__items[data-reordering] .happy-connections__item {
-    transition:
-        background-color 120ms ease,
-        box-shadow 120ms ease,
-        color 120ms ease,
-        transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
-}
 .happy-connections__items[data-reordering] .happy-connections__item[data-dragging] {
     z-index: 3;
     cursor: grabbing;
     background: var(--surface-ripple);
     box-shadow: 0 4px 12px var(--shadow-subtle);
-    /* Exactly like a project row: only neighbours ease; the held tile follows the hand. */
-    transition:
-        background-color 120ms ease,
-        box-shadow 120ms ease,
-        color 120ms ease;
-}
-@media (prefers-reduced-motion: reduce) {
-    .happy-connections__items[data-reordering] .happy-connections__item {
-        transition: none;
-    }
+    /* Exactly like a project row: the held tile follows the hand. */
 }
 .happy-connections__item[data-local] {
     background: var(--surface);
@@ -265,8 +257,11 @@
     position: relative;
 }
 .happy-connections__surface {
-    /* Fixed setup and modal chrome is contained by its connection, never the rail. */
-    contain: layout paint;
+    /* Fixed setup and modal chrome is contained by its connection, never the rail.
+       Layout containment alone: in full screen the sidebar toggle reaches back
+       over the rail's empty title band to the window's leading edge, so the
+       surface must not clip it. */
+    contain: layout;
     isolation: isolate;
 }
 .happy-connections__error {

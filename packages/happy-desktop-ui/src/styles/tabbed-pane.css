@@ -194,6 +194,13 @@
     font-weight: 500;
 }
 
+/* A tab ending in its close lane keeps half the trailing padding: the lane's
+   own slack makes up the rest, so the cross sits as far from the tab's edge as
+   from its title. */
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab:has(.happy-tabs__tab-trailing) {
+    padding-right: 5px;
+}
+
 /* Editor tabs mark selection at the band's edge without painting a tab box. */
 .happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab-underline {
     background: var(--text);
@@ -212,7 +219,7 @@
 /* A long title stops short of the pane's own controls: the tab keeps its close
    inside its bounds, and the title ends in an ellipsis rather than under them. */
 .happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab {
-    max-width: 240px;
+    max-width: 480px;
 }
 
 .happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab-label {

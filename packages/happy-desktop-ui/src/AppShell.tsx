@@ -46,10 +46,22 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      * No CSS media query reports this, so the desktop shell supplies it.
      */
     windowFullScreen?: boolean;
+    /**
+     * The host draws macOS traffic lights over the window's top-left corner.
+     * Only then is a lane held for them; full screen hides them regardless.
+     * Defaults to true; a host on Windows or Linux passes false, so the
+     * sidebar toggle and headings sit at the window's ordinary 12px inset.
+     */
+    windowTrafficLights?: boolean;
     /** Compact, shared title/tab band, with sidebar controls at its leading edge. */
     navigationChrome?: "integrated";
     /** Create control beside the sidebar toggle in the integrated header. */
     sidebarCollapsedAction?: { label: string; onClick: () => void };
+    /**
+     * The open sidebar draws its own Create row, so the header keeps its create
+     * control only while the sidebar is hidden: one Create on screen, never two.
+     */
+    sidebarOwnsCreate?: boolean;
     /** Integrated controls occupy the header only when navigation is collapsed. */
     sidebarCollapsedLayout?: "lane" | "overlay";
     /**
@@ -156,11 +168,6 @@ export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
      */
     panelFooterFloating?: boolean;
     panelResizeLabel?: string;
-    /**
-     * The panel opens and closes by its width, so whatever sits on the
-     * workspace's far edge travels with it.
-     */
-    panelAnimated?: boolean;
     /** Reports pointer or DOM-focus ownership for this exact shell instance. */
     onFocusedPaneChange?: (pane: AppShellFocusedPane) => void;
 };
@@ -382,8 +389,10 @@ export function AppShell(props: AppShellProps) {
         "titleBar",
         "windowControls",
         "windowFullScreen",
+        "windowTrafficLights",
         "navigationChrome",
         "sidebarCollapsedAction",
+        "sidebarOwnsCreate",
         "sidebarCollapsedLayout",
         "sidebarSearchAction",
         "connectionRail",
@@ -409,7 +418,6 @@ export function AppShell(props: AppShellProps) {
         "panelFooter",
         "panelFooterFloating",
         "panelResizeLabel",
-        "panelAnimated",
         "onFocusedPaneChange",
     ]);
     const onFocusedPaneChange = local.onFocusedPaneChange;
@@ -452,12 +460,6 @@ export function AppShell(props: AppShellProps) {
         if (!sidebarCollapsedControlled) setSidebarCollapsedLocal(collapsed);
         onSidebarCollapsedChange?.(collapsed);
     };
-    // The fold the sidebar last finished moving to. While it differs from the
-    // fold asked for, the sidebar and its controls are on their way, and only
-    // then do they animate: a drag of the edge must follow the pointer.
-    const [sidebarSettled, setSidebarSettled] = useState(
-        local.sidebarCollapsible === true && sidebarCollapsed,
-    );
     const [sidebarWidth, setSidebarWidth] = useState(() =>
         clamp(local.sidebarDefaultWidth ?? SIDEBAR_DEFAULT_WIDTH, sidebarMin, sidebarCap),
     );
@@ -469,11 +471,6 @@ export function AppShell(props: AppShellProps) {
         ),
     );
     const [panelDragWidth, setPanelDragWidth] = useState<number>();
-    // Whether the panel last finished opening or closing. While it differs
-    // from whether a panel is given, the panel is on its way in or out.
-    const [panelSettled, setPanelSettled] = useState(
-        local.panel !== undefined && local.panel !== null,
-    );
     /*
      * What each lane may grow to, given the other. A lane's own cap is only half
      * the answer: the two share one window with the rail and the workspace, so
@@ -597,11 +594,9 @@ export function AppShell(props: AppShellProps) {
         : panelWidthState;
     const panelWidth = panelWidthControlled ? (panelDragWidth ?? panelWidthBase) : panelWidthState;
     const panelPresent = local.panel !== undefined && local.panel !== null;
-    const panelMotion = local.panelAnimated === true && panelSettled !== panelPresent;
-    // A panel just taken away stays as an empty lane until it has closed.
-    const panelClosing = panelMotion && !panelPresent;
+    // Nothing in the shell animates: a panel is there or it is not.
     const panelTakeover =
-        (panelPresent || panelClosing) &&
+        panelPresent &&
         workspaceReadableWidth !== undefined &&
         contentWidth > 0 &&
         contentWidth < sidebarOccupied + panelMin + workspaceReadableWidth;
@@ -671,10 +666,14 @@ export function AppShell(props: AppShellProps) {
                 maxWidth: `${sidebarMax}px`,
             }
           : undefined;
+    const panelMinCss = `calc(${String(panelMin)}px + var(--happy-desktop-app-shell-caption-inset, 0px))`;
     const panelStyle: CSSProperties | undefined = panelResizable
         ? {
               width: `${panelWidth}px`,
-              minWidth: `${panelMin}px`,
+              // Native caption buttons drawn over the panel's top-right corner
+              // (a Windows title-bar overlay; zero elsewhere) widen its floor
+              // rather than eat its tab strip, so its tabs keep their room.
+              minWidth: panelMinCss,
               // Where the bound is this component's own it is also stated in
               // viewport units, which the browser keeps current: a window
               // shrunk between renders narrows the panel with it rather than
@@ -694,7 +693,7 @@ export function AppShell(props: AppShellProps) {
     // The width the panel's box resolves to, which its contents hold while
     // the box opens or closes around them.
     const panelEdge = panelResizable
-        ? `clamp(${String(panelMin)}px, ${String(panelWidth)}px, ${String(panelStyle?.maxWidth ?? `${String(panelMax)}px`)})`
+        ? `clamp(${panelMinCss}, ${String(panelWidth)}px, ${String(panelStyle?.maxWidth ?? `${String(panelMax)}px`)})`
         : `${String(local.panelWidth ?? PANEL_DEFAULT_WIDTH)}px`;
     const sidebarHidden = sidebarInteractive && sidebarCollapsed;
     // The integrated header owns its controls across both sidebar states.
@@ -702,7 +701,6 @@ export function AppShell(props: AppShellProps) {
         local.navigationChrome === "integrated" &&
         sidebarInteractive &&
         local.sidebarCollapsedLayout === "overlay";
-    const sidebarMotion = sidebarTravel && sidebarSettled !== sidebarHidden;
     // Under native window controls a collapsed sidebar leaves no lane behind: the
     // reveal control floats beside the traffic lights, exactly where the collapse
     // control sat, and the workspace takes the whole width.
@@ -778,7 +776,7 @@ export function AppShell(props: AppShellProps) {
                             onClick={local.sidebarCollapsedAction.onClick}
                             type="button"
                         >
-                            <Icon name="plus" size={16} />
+                            <Icon name="compose" size={16} />
                         </button>
                     ) : null}
                 </div>
@@ -792,7 +790,6 @@ export function AppShell(props: AppShellProps) {
             className="happy-desktop-app-shell__sidebar-controls"
             data-collapsed={sidebarHidden ? "" : undefined}
             data-happy-desktop-ui="app-shell-sidebar-controls"
-            data-motion={sidebarMotion ? "" : undefined}
         >
             <button
                 aria-label={
@@ -819,7 +816,7 @@ export function AppShell(props: AppShellProps) {
                     />
                 ) : null}
             </button>
-            {local.sidebarCollapsedAction ? (
+            {local.sidebarCollapsedAction && (sidebarHidden || !local.sidebarOwnsCreate) ? (
                 <button
                     aria-label={local.sidebarCollapsedAction.label}
                     className="happy-desktop-app-shell__new-work"
@@ -827,7 +824,7 @@ export function AppShell(props: AppShellProps) {
                     onClick={local.sidebarCollapsedAction.onClick}
                     type="button"
                 >
-                    <Icon name="edit" size={16} />
+                    <Icon name="compose" size={16} />
                 </button>
             ) : null}
             <span aria-hidden="true" className="happy-desktop-app-shell__sidebar-controls-rule" />
@@ -854,11 +851,17 @@ export function AppShell(props: AppShellProps) {
                 data-shortcut-hints={shortcutHintsVisible ? "" : undefined}
                 data-sidebar-collapsed={sidebarHidden ? "" : undefined}
                 data-sidebar-collapsed-layout={local.sidebarCollapsedLayout}
-                data-sidebar-motion={sidebarMotion ? "" : undefined}
                 data-sidebar-travel={sidebarTravel ? "" : undefined}
                 data-sidebar-search={local.sidebarSearchAction ? "" : undefined}
                 data-window-controls={local.windowControls ? "" : undefined}
                 data-window-full-screen={local.windowFullScreen ? "" : undefined}
+                data-window-traffic-lights={
+                    local.windowControls &&
+                    !local.windowFullScreen &&
+                    local.windowTrafficLights !== false
+                        ? ""
+                        : undefined
+                }
                 data-connection-rail={local.connectionRail ? "" : undefined}
                 onContextMenu={(event) => {
                     rest.onContextMenu?.(event);
@@ -946,16 +949,8 @@ export function AppShell(props: AppShellProps) {
                                         sidebarInteractive && sidebarCollapsed ? "" : undefined
                                     }
                                     data-happy-desktop-ui="app-shell-sidebar"
-                                    data-motion={sidebarMotion ? "" : undefined}
                                     data-resizable={sidebarInteractive ? "" : undefined}
                                     data-travel={sidebarTravel ? "" : undefined}
-                                    onTransitionEnd={(event) => {
-                                        if (
-                                            event.target === event.currentTarget &&
-                                            event.propertyName === "width"
-                                        )
-                                            setSidebarSettled(sidebarHidden);
-                                    }}
                                     style={sidebarStyle}
                                 >
                                     {local.sidebar}
@@ -1022,11 +1017,7 @@ export function AppShell(props: AppShellProps) {
                                 className="happy-desktop-app-shell__panel"
                                 data-app-shell-pane="panel"
                                 data-happy-desktop-ui="app-shell-panel"
-                                data-motion={panelMotion ? "open" : undefined}
                                 data-resizable={panelResizable ? "" : undefined}
-                                onAnimationEnd={(event) => {
-                                    if (event.target === event.currentTarget) setPanelSettled(true);
-                                }}
                                 ref={panelRef}
                                 tabIndex={-1}
                                 style={
@@ -1065,22 +1056,6 @@ export function AppShell(props: AppShellProps) {
                                     </div>
                                 ) : null}
                             </aside>
-                        ) : panelClosing ? (
-                            <aside
-                                aria-hidden="true"
-                                className="happy-desktop-app-shell__panel"
-                                data-motion="close"
-                                data-resizable={panelResizable ? "" : undefined}
-                                onAnimationEnd={(event) => {
-                                    if (event.target === event.currentTarget)
-                                        setPanelSettled(false);
-                                }}
-                                style={
-                                    panelTakeover
-                                        ? { left: `${String(sidebarOccupied)}px` }
-                                        : panelStyle
-                                }
-                            />
                         ) : null}
                     </div>
                 </div>

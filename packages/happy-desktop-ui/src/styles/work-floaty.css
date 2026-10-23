@@ -57,7 +57,7 @@
     margin: 0;
     padding: 0 var(--happy-panel-row-padding);
     border: none;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--text-secondary);
     font-family: var(--happy-font-ui);
@@ -65,13 +65,10 @@
     text-align: left;
     appearance: none;
     cursor: pointer;
-    transition:
-        background-color 120ms ease,
-        color 120ms ease;
 }
 
 .happy-work-floaty__row:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
 }
 
 .happy-work-floaty__row:focus-visible {
@@ -145,16 +142,8 @@
 .happy-work-floaty__chevron {
     display: flex;
     color: var(--text-secondary);
-    transition: transform 120ms ease;
 }
 
 [aria-expanded="true"] > .happy-work-floaty__trailing > .happy-work-floaty__chevron {
     transform: rotate(90deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .happy-work-floaty__row,
-    .happy-work-floaty__chevron {
-        transition: none;
-    }
 }

@@ -746,7 +746,6 @@ function StoryWindow(props: StoryFrame) {
                             open: panelOpen,
                             onClick: () => setPanelOpen(!panelOpen),
                         }}
-                        panelAnimated
                         sidebar={
                             <Sidebar
                                 activeItemId={mainId}

@@ -1688,9 +1688,8 @@ function sessionTabs(
         label: summary.title,
         labelShimmer: titleShimmerEnabled,
         ...(hideAvatar ? {} : { icon: "chat" as const }),
-        // Both are stated even when false: a session tab holds its leading lane
-        // open, so work starting or finishing makes the mark appear and go
-        // without sliding the title sideways under the reader.
+        // Stated even when false; the activity marks sit at the trailing edge,
+        // so work starting or finishing never slides the title sideways.
         busy: summary.activity === "running",
         waiting: summary.activity === "waiting",
         awaitingInput: summary.activity === "awaitingInput",
@@ -4686,6 +4685,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 shortcutHintsSurface={paletteHints}
                 windowControls={desktop}
                 windowFullScreen={windowState.fullScreen}
+                windowTrafficLights={windowState.trafficLights}
                 connectionRail={windowState.connectionRail}
                 sidebar={spacesSidebar ?? sidebar}
                 // One band holds the sidebar toggle, search, and the tabs; the
@@ -7291,7 +7291,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                           onClick: () => props.workspace.panel.panelToggle(),
                       },
                   })}
-            panelAnimated
             // The width this checkout was last left at, or the shell's own
             // default where nobody has sized it. Passed on every render rather
             // than seeded once, so moving to another project shows that

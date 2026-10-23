@@ -25,6 +25,7 @@ import {
     transferZonesDisarm,
     type TabTransferTarget,
 } from "./tabTransfer";
+import { Ionicon } from "./vectorIcons/VectorIcon";
 export type TabsSize = "small" | "medium" | "large";
 export type TabItem = {
     id: string;
@@ -79,22 +80,11 @@ export type TabItem = {
 };
 
 /**
- * Whether a tab keeps its leading lane even when nothing is in it. A tab that
- * reports `unread` at all owns the lane permanently, so news arriving and going
- * never slides the tab's own label sideways underneath it. A tab that never
- * speaks of it — a fixed section, say — has no lane to hold open and its label
- * starts at the edge.
- */
-function tabHoldsLeadingLane(tab: TabItem): boolean {
-    return tab.unread !== undefined;
-}
-
-/**
  * The tab's leading lane: what the tab *is*. An explicit icon outranks the
- * generated mark, and a tab with neither still holds the lane open if it ever
- * speaks of `unread`. Unread rides on top of whichever mark is there as a corner
- * dot, and only stands in the lane alone when there is no mark to ride — so the
- * news arriving never moves the label.
+ * generated mark, and a tab with neither has no lane at all, so its title starts
+ * at the tab's edge. Unread rides on top of whichever mark is there as a corner
+ * dot; with no mark to ride, the dot sits in the tab's own leading padding, so
+ * the news arriving never moves the label.
  *
  * What the tab is *doing* is reported at the trailing edge instead. The two are
  * different questions, and answering both in one lane meant a busy tab lost the
@@ -116,24 +106,24 @@ function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
     ) : tab.icon ? (
         <Icon name={tab.icon} size={iconSize} />
     ) : null;
-    if (mark === null && !tab.unread && !tabHoldsLeadingLane(tab)) return null;
+    if (mark === null)
+        return tab.unread ? (
+            <span
+                aria-label={`${tab.label} has unread activity`}
+                className="happy-tabs__tab-unread happy-tabs__tab-unread--edge"
+                data-happy-desktop-ui="tab-unread"
+                role="img"
+            />
+        ) : null;
     return (
         <span
             aria-label={tab.unread ? `${tab.label} has unread activity` : undefined}
             className="happy-tabs__tab-icon"
-            data-happy-desktop-ui={
-                tab.unread ? "tab-unread" : mark === null ? "tab-lane" : "tab-icon"
-            }
+            data-happy-desktop-ui={tab.unread ? "tab-unread" : "tab-icon"}
         >
             {mark}
             {tab.unread ? (
-                <span
-                    className={
-                        mark === null
-                            ? "happy-tabs__tab-unread"
-                            : "happy-tabs__tab-unread happy-tabs__tab-unread--corner"
-                    }
-                />
+                <span className="happy-tabs__tab-unread happy-tabs__tab-unread--corner" />
             ) : null}
         </span>
     );
@@ -809,7 +799,11 @@ export function Tabs(props: TabsProps) {
                                             role="button"
                                             tabIndex={0}
                                         >
-                                            <Icon name="close" size={12} />
+                                            {local.closePresentation === "overlay" ? (
+                                                <Ionicon name="close-outline" size={14} />
+                                            ) : (
+                                                <Icon name="close" size={12} />
+                                            )}
                                         </span>
                                     ) : null}
                                 </span>
