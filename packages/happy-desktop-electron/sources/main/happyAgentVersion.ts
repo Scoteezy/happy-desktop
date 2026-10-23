@@ -55,8 +55,15 @@ export function happyAgentVersionLocal(version: string): boolean {
     return release.split("-", 1)[0] === "0.0.0" || build?.split(".", 1)[0] === "local";
 }
 
+/** Whether `version` is a semantic version these comparisons accept. */
+export function happyAgentVersionValid(version: string): boolean {
+    return VERSION_PATTERN.test(version);
+}
+
+const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u;
+
 function versionParse(version: string): { core: bigint[]; prerelease: string[] } {
-    const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u.exec(version);
+    const match = VERSION_PATTERN.exec(version);
     if (!match) throw new Error(`Happy Agent version is invalid: ${version}`);
     return {
         core: [BigInt(match[1]!), BigInt(match[2]!), BigInt(match[3]!)],

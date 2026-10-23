@@ -800,6 +800,13 @@ export class LocalOnboarding implements Disposable {
         this.daemonInstallation = daemon.installation;
         if (previous === "missing" && daemon.installation === "installed")
             this.agentInstalledHere = daemon.installedVersion;
+        // A restart that brought a daemon back while this window could not
+        // connect is an arrival too — the update a newer-data refusal asked
+        // for, installed here or by `happy-agent reload` — and the runtime's
+        // failure is about the daemon that was there before it.
+        const install = daemon.install;
+        if (install.phase === "reconnecting" && this.options.runtime.get().phase === "error")
+            this.agentInstalledHere = `${install.version}@${String(install.startedAt ?? 0)}`;
     }
 
     /**
@@ -848,10 +855,16 @@ export class LocalOnboarding implements Disposable {
         }
         const ceiling = this.options.daemon ? startAttempts : 1;
         // The daemon came up and refused for a reason no number of attempts can
-        // change: nothing on this machine is signed in. That is a screen, not a
-        // timing problem, so the attempts are spent rather than spread over the
-        // next fifteen seconds in front of somebody waiting to be told.
-        if (providersMissingParse(runtime.message)) {
+        // change: nothing on this machine is signed in, or its data is newer
+        // than this release. That is a screen, not a timing problem, so the
+        // attempts are spent rather than spread over the next fifteen seconds
+        // in front of somebody waiting to be told. A newer-data refusal from
+        // before this arrival is about the release it replaced, so the
+        // arrival still gets its one attempt.
+        if (
+            providersMissingParse(runtime.message) ||
+            (runtime.code === "data_newer" && this.connectAttempts > 0)
+        ) {
             this.connectAttempts = ceiling;
             this.connectRetryClear();
             return;

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { access, chmod, lstat, mkdir, open, readFile, readdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { happyAgentBinaryPath, type HappyDaemonPaths } from "./happyAgentBinaryPaths";
+import { happyAgentDataVersionRequire } from "./happyAgentDataVersion";
 import { happyAgentInstallLockAcquire } from "./happyAgentInstallLock";
 import { happyAgentVersionCompare, happyAgentVersionLocal } from "./happyAgentVersion";
 
@@ -41,6 +42,9 @@ export interface HappyAgentBinarySelectOptions {
  * Records `selectedVersion` as the one to run and removes the versions nothing
  * needs any more. Removal is best effort: a version that cannot be removed now
  * is left for the next selection and never fails this one.
+ *
+ * A version older than this machine's data allows is never selected, whoever
+ * asks: the current selection stays, and the refusal says why.
  */
 export async function happyAgentBinarySelect(
     paths: HappyDaemonPaths,
@@ -51,6 +55,8 @@ export async function happyAgentBinarySelect(
     await chmod(paths.distDirectory, 0o700);
     const lock = await happyAgentInstallLockAcquire(paths.installLockPath, options.onStatus);
     try {
+        const current = await happyAgentBinaryConfigRead(paths).catch(() => undefined);
+        await happyAgentDataVersionRequire(paths, selectedVersion, current?.selectedVersion);
         return await selectionRecord(paths, selectedVersion, options.retainedVersions ?? []);
     } finally {
         await lock.release();

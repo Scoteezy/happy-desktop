@@ -6,6 +6,7 @@ import type {
 } from "../shared/desktopContract";
 import type { HappyAgentBinary } from "./happyAgentBinaryConfig";
 import type { HappyDaemonPaths } from "./happyAgentBinaryPaths";
+import { happyAgentDataRefusal, HappyAgentDataNewerError } from "./happyAgentDataVersion";
 import {
     HappyAgentDaemonClient,
     happyAgentDaemonTokenRead,
@@ -108,6 +109,8 @@ export async function happyAgentRestartRun(options: HappyAgentRestartOptions): P
         // fail if another local client has started the selected version first.
         await daemonStartRun(options.binary.path, options.environment);
     } catch (error) {
+        // Refused for newer data: no daemon of this version is coming.
+        if (error instanceof HappyAgentDataNewerError) throw error;
         // The command's exit is not the daemon's readiness. Continue waiting
         // only when health confirms the selected version is actually running;
         // never classify failures by parsing the CLI's human-readable stderr.
@@ -352,7 +355,11 @@ function daemonStartRun(executable: string, environment: NodeJS.ProcessEnv): Pro
             },
             (error, _stdout, stderr) => {
                 if (error === null) resolve();
-                else reject(stderr.trim() ? new Error(stderr.trim(), { cause: error }) : error);
+                else
+                    reject(
+                        happyAgentDataRefusal(error, stderr) ??
+                            (stderr.trim() ? new Error(stderr.trim(), { cause: error }) : error),
+                    );
             },
         );
     });

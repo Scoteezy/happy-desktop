@@ -10,6 +10,13 @@ import type {
 } from "../shared/desktopContract";
 import { happyAgentRestartRun } from "./happyAgentRestart";
 import {
+    happyAgentDataDowngradeError,
+    happyAgentDataMinimumRead,
+    HappyAgentDataNewerError,
+    happyAgentDataRefusal,
+    happyAgentVersionBelowData,
+} from "./happyAgentDataVersion";
+import {
     happyAgentReloadStatusPath,
     happyAgentReloadStatusWatch,
     type HappyAgentReloadStatus,
@@ -209,23 +216,35 @@ export class DesktopDaemonController {
                 if (full) this.catalogRead = true;
                 this.publishedCatalog = full ? found : catalogMerge(this.publishedCatalog, found);
                 const installedVersion = selected?.version;
-                const updateAvailable =
+                const newer =
                     installedVersion !== undefined &&
                     versionNewer(release.version, installedVersion);
-                this.publish({
+                // A release older than this machine's data is never offered:
+                // not as an update, and not as the first install over a home a
+                // newer Happy Agent already wrote.
+                const refusal = await this.dataRefusal(release.version);
+                const updateAvailable = newer && refusal === undefined;
+                const base = {
                     ...this.snapshotValue,
                     availableVersion: release.version,
                     error: undefined,
                     message: updateAvailable
                         ? `Happy Agent ${release.version} is available.`
-                        : installedVersion
-                          ? "Happy Agent is up to date."
-                          : "Happy Agent is ready to download.",
-                    operation: "idle",
+                        : newer && refusal
+                          ? refusal.message
+                          : installedVersion
+                            ? "Happy Agent is up to date."
+                            : "Happy Agent is ready to download.",
+                    operation: "idle" as const,
                     updateAvailable,
                     versions: await this.versionsProject(),
                     ...(await this.readyVersionRead()),
-                });
+                };
+                this.publish(
+                    installedVersion === undefined && refusal
+                        ? { ...failureProject(base, refusal), message: undefined }
+                        : base,
+                );
                 // Fetching it now is what makes the install a decision rather
                 // than a wait: by the time anyone clicks, the bytes are here.
                 //
@@ -404,6 +423,17 @@ export class DesktopDaemonController {
                 throw new Error("No Happy Agent update has been downloaded.");
             const selected = version ?? (await happyAgentBinarySelected(this.paths))?.version;
             if (selected === undefined) throw new Error("Happy Agent is not installed.");
+            // Refused before anything is drained: a release older than the data
+            // would only stop the daemon that can read it and fail to replace it.
+            const refusal = await this.dataRefusal(selected);
+            if (refusal) {
+                this.publish({
+                    ...failureProject(this.snapshotValue, refusal),
+                    message: undefined,
+                    operation: "idle",
+                });
+                throw refusal;
+            }
             if (reason === "install" && !happyAgentVersionAllowed(selected, this.channel)) {
                 const current = await happyAgentBinarySelected(this.paths);
                 if (current?.version !== selected)
@@ -722,8 +752,13 @@ export class DesktopDaemonController {
     private async readyVersionRead(): Promise<{ readonly readyVersion: string | undefined }> {
         const selected = await happyAgentBinarySelected(this.paths).catch(() => undefined);
         const downloaded = await happyAgentBinaryDownloaded(this.paths).catch((): string[] => []);
+        const minimum = await happyAgentDataMinimumRead(this.paths);
         const newest = downloaded
-            .filter((version) => happyAgentVersionAllowed(version, this.channel))
+            .filter(
+                (version) =>
+                    happyAgentVersionAllowed(version, this.channel) &&
+                    !happyAgentVersionBelowData(version, minimum),
+            )
             .reduce<string | undefined>(
                 (best, version) =>
                     best === undefined || versionNewer(version, best) ? version : best,
@@ -752,6 +787,7 @@ export class DesktopDaemonController {
                         ...this.fetchOption(),
                     }));
                 this.latestRelease = found;
+                await this.dataVersionRequire(found.version);
                 await this.stage(found);
                 return found;
             });
@@ -888,6 +924,7 @@ export class DesktopDaemonController {
                         ...this.fetchOption(),
                     }));
                 this.latestRelease = found;
+                await this.dataVersionRequire(found.version);
                 await this.stage(found);
                 return found;
             });
@@ -905,9 +942,36 @@ export class DesktopDaemonController {
     versionSelect(version: string): Promise<void> {
         return this.serial(async () => {
             if (!this.managed) throw new Error("This Happy Agent is managed outside Happy.");
-            await this.stageOrFail(() => this.stageVersion(version));
+            await this.stageOrFail(async () => {
+                // Before any bytes: a version this data refuses is not worth fetching.
+                await this.dataVersionRequire(version);
+                await this.stageVersion(version);
+            });
             await this.restartCore("install", version);
         });
+    }
+
+    /**
+     * Why `version` may not run on this machine's data, or nothing.
+     *
+     * The stamp is read again for every decision, because the daemon raises it
+     * the moment it migrates. The current selection is what Happy keeps.
+     */
+    private async dataRefusal(version: string): Promise<HappyAgentDataNewerError | undefined> {
+        const minimum = await happyAgentDataMinimumRead(this.paths);
+        if (minimum === undefined || !happyAgentVersionBelowData(version, minimum))
+            return undefined;
+        const kept = (await happyAgentBinarySelected(this.paths).catch(() => undefined))?.version;
+        const refusal = happyAgentDataDowngradeError(version, minimum, kept);
+        // The data came from a preview, which the stable channel never offers.
+        return this.channel === "stable" && happyAgentVersionKind(minimum) === "preview"
+            ? new HappyAgentDataNewerError(`${refusal.message} Turn on Preview updates to get it.`)
+            : refusal;
+    }
+
+    private async dataVersionRequire(version: string): Promise<void> {
+        const refusal = await this.dataRefusal(version);
+        if (refusal) throw refusal;
     }
 
     runtimeSet(runtime: DesktopRuntimeSnapshot): void {
@@ -1077,7 +1141,11 @@ function daemonCommandRun(
             },
             (error, _stdout, stderr) => {
                 if (error === null) resolve();
-                else reject(stderr.trim() ? new Error(stderr.trim(), { cause: error }) : error);
+                else
+                    reject(
+                        happyAgentDataRefusal(error, stderr) ??
+                            (stderr.trim() ? new Error(stderr.trim(), { cause: error }) : error),
+                    );
             },
         );
     });
@@ -1102,7 +1170,9 @@ function failureProject(snapshot: DesktopDaemonSnapshot, error: unknown): Deskto
         error: displayError(error),
         ...(error instanceof HappyAgentDownloadError
             ? { errorCode: error.code, downloadFailure: error.progress }
-            : {}),
+            : error instanceof HappyAgentDataNewerError
+              ? { errorCode: "data_newer" as const }
+              : {}),
     };
 }
 

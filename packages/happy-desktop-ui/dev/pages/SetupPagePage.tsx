@@ -25,6 +25,15 @@ const desktopSteps: readonly { label: string; view: LocalOnboardingView }[] = [
             retrying: false,
         },
     },
+    {
+        label: "Progress · newer data",
+        view: {
+            kind: "data-newer",
+            message:
+                "This data was written by a newer Happy Agent (version 0.4.106); update to continue.",
+            update: { busy: false, version: "0.4.106" },
+        },
+    },
 ];
 
 const handoffSteps: readonly { label: string; busy: boolean; message?: string }[] = [
@@ -643,6 +652,7 @@ export function SetupPagePage() {
                                 appearance="dark"
                                 showSteps
                                 view={view}
+                                onAgentUpdate={noop}
                                 onAssistantsContinue={noop}
                                 onConnectRetry={noop}
                                 onHappyMobileConnect={noop}

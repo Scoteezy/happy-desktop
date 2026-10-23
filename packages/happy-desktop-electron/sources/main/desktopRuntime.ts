@@ -27,6 +27,7 @@ import {
     type LocalHappyAgentConnection,
     type LocalHappyAgentConnector,
 } from "./localHappyAgent";
+import { HappyAgentDataNewerError } from "./happyAgentDataVersion";
 import { HappyAgentClient } from "@slopus/happy-agent-client";
 import type { LocalHappyAgentOnboardingState } from "./localOnboarding";
 import {
@@ -570,9 +571,13 @@ export class DesktopRuntime implements AsyncDisposable {
                 message: displayError(error),
                 ...(error instanceof HappyAgentStartTimeoutError
                     ? { code: "start_timeout" as const }
-                    : {}),
+                    : error instanceof HappyAgentDataNewerError
+                      ? { code: "data_newer" as const }
+                      : {}),
                 request,
-                retryable: true,
+                // Newer data refuses the same binary every time; an update is
+                // the only thing that changes the answer.
+                retryable: !(error instanceof HappyAgentDataNewerError),
                 targets: this.targets(),
                 update: this.snapshotValue.update,
             });

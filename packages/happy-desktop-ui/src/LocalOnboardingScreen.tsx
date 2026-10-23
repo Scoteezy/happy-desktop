@@ -85,6 +85,20 @@ export type LocalOnboardingView =
     | { readonly kind: "connect-failed"; readonly message: string; readonly retrying: boolean }
     | {
           /**
+           * This machine's data was written by a newer Happy Agent than the one
+           * Happy can run here. Trying again refuses the same way every time,
+           * so the only way on is an update.
+           */
+          readonly kind: "data-newer";
+          /** What refused, verbatim. */
+          readonly message: string;
+          /** The update that would continue, when one is on offer. */
+          readonly update?: { readonly version?: string; readonly busy: boolean };
+          /** Why the last attempt at that update failed, until the next one. */
+          readonly updateError?: string;
+      }
+    | {
+          /**
            * Binary discovery followed by daemon-owned inference verification.
            *
            * Each assistant carries its own answer, and one of them proving out
@@ -137,6 +151,8 @@ export interface LocalOnboardingScreenProps {
     readonly reachedStage?: OnboardingStage;
     onAssistantsContinue(): void;
     onConnectRetry(): void;
+    /** Installs the update a newer-data refusal is waiting for. */
+    onAgentUpdate?(): void;
     /** Returns to an earlier step. Absent where stepping back is not offered. */
     onStageSelect?(stage: OnboardingStage): void;
     /** Opens an external page: the host owns how a link leaves the app. */
@@ -566,7 +582,11 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 stage={localOnboardingStage(view)}
                 {...(props.reachedStage ? { reached: props.reachedStage } : {})}
                 {...(props.onStageSelect ? { onStageSelect: props.onStageSelect } : {})}
-                failed={view.kind === "node-missing" || view.kind === "connect-failed"}
+                failed={
+                    view.kind === "node-missing" ||
+                    view.kind === "connect-failed" ||
+                    view.kind === "data-newer"
+                }
             />
         ) : undefined,
     } as const;
@@ -716,6 +736,35 @@ export function LocalOnboardingScreen(props: LocalOnboardingScreenProps) {
                 // nameable reason does not look like a button that does nothing.
                 status={{ label: view.message }}
                 title="Can't reach Happy Agent"
+            />
+        );
+
+    if (view.kind === "data-newer")
+        return (
+            <SetupPage
+                {...frame}
+                {...(view.update && props.onAgentUpdate
+                    ? {
+                          action: {
+                              busy: view.update.busy,
+                              label: view.update.version
+                                  ? `Update to ${view.update.version}`
+                                  : "Update Happy Agent",
+                              onSelect: props.onAgentUpdate,
+                              width: 280,
+                          },
+                          ...(view.updateError ? { status: { label: view.updateError } } : {}),
+                      }
+                    : {
+                          // Nothing to press: Happy checks for the update by
+                          // itself and offers it here as soon as there is one.
+                          status: { busy: true, label: "Waiting for a newer Happy Agent…" },
+                      })}
+                // What refused, verbatim: it names the version the data needs.
+                copy={view.message}
+                data-testid="local-onboarding-screen"
+                scene="owl"
+                title="Update Happy Agent to continue"
             />
         );
 
