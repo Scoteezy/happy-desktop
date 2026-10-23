@@ -6,7 +6,9 @@ import {
     type HappyAgentSpaceId,
 } from "happy-desktop-state";
 import {
+    happyAgentSpacesChildDestination,
     HappyAgentSpacesSidebar,
+    type HappyAgentSpacesPlaces,
     type HappyAgentSpacesSidebarProps,
 } from "../../sources/components/HappyAgentSpacesSidebar";
 
@@ -39,14 +41,14 @@ function fixture() {
             botArchive: vi.fn(),
             surfaceLeave: vi.fn(),
         },
-        onSectionCreate: vi.fn(),
         now: 1,
         titleShimmerEnabled: false,
         brand: false,
         footer: null,
-        rowChildren: () => [{ id: "child", label: "Child", kind: "view", depth: 1 }],
+        sessionRow: () => undefined,
+        worktreeRows: (agentId) =>
+            agentId === "agent" ? [{ id: "child", label: "Child", kind: "view", depth: 1 }] : [],
         onChildSelect,
-        rowCollapsed: new Set(),
     };
     return { props, attentionUpdate, onChildSelect };
 }
@@ -88,7 +90,7 @@ it("reports calm after child navigation", () => {
     const view = render(<HappyAgentSpacesSidebar {...props} />);
     fireEvent.pointerDown(view.getByText("Child"));
     fireEvent.click(view.getByText("Child"));
-    expect(onChildSelect).toHaveBeenCalledWith("child");
+    expect(onChildSelect).toHaveBeenCalledWith({ kind: "worktree", worktreeId: "child" });
     expect(attentionUpdate).toHaveBeenLastCalledWith("calm");
 });
 
@@ -148,4 +150,109 @@ it("keeps a new drag held when its pointer-down dismisses a menu", () => {
     expect(attentionUpdate).toHaveBeenLastCalledWith("interacting");
     fireEvent.pointerUp(document);
     expect(attentionUpdate).toHaveBeenLastCalledWith("calm");
+});
+
+it("selects and opens a nested session at any depth, and the worktree it runs in", () => {
+    const { props, onChildSelect } = fixture();
+    const html = `<nav>
+  <happy-search/>
+  <happy-create/>
+  <happy-space id="parent" expanded="true">
+    <happy-space id="aChild" expanded="true">
+      <happy-space id="aGrandchild"/>
+    </happy-space>
+  </happy-space>
+</nav>`;
+    const nested: HappyAgentSpacesSidebarProps = {
+        ...props,
+        snapshot: {
+            ...props.snapshot,
+            sidebar: { artifactId: "a", version: 1, html, agentIcons: new Map(), seed: false },
+        },
+        sessionRow: (agentId) => ({
+            id: agentId,
+            kind: "workspace",
+            label: agentId === "aChild" ? "Child session" : "Grandchild session",
+        }),
+        worktreeRows: (agentId) =>
+            agentId === "aChild" ? [{ id: "wt", kind: "workspace", label: "Child checkout" }] : [],
+    };
+    const view = render(<HappyAgentSpacesSidebar {...nested} />);
+    fireEvent.click(view.getByText("Grandchild session"));
+    expect(onChildSelect).toHaveBeenLastCalledWith({ kind: "session", agentId: "aGrandchild" });
+    fireEvent.click(view.getByText("Child checkout"));
+    expect(onChildSelect).toHaveBeenLastCalledWith({ kind: "worktree", worktreeId: "wt" });
+    const selected = () =>
+        [...view.container.querySelectorAll('[aria-current="page"]')].map(
+            (row) => row.querySelector('[data-happy-desktop-ui="sidebar-item-label"]')?.textContent,
+        );
+    // The window now shows that session: its row, not the space's, is the selected one.
+    view.rerender(<HappyAgentSpacesSidebar {...nested} focus={{ chatId: "aGrandchild" }} />);
+    expect(selected()).toEqual(["Grandchild session"]);
+    view.rerender(
+        <HappyAgentSpacesSidebar {...nested} focus={{ chatId: "unlisted", groupId: "wt" }} />,
+    );
+    expect(selected()).toEqual(["Child checkout"]);
+    view.rerender(<HappyAgentSpacesSidebar {...nested} focus={{ chatId: "agent" }} />);
+    expect(selected()).toEqual(["Parent"]);
+});
+
+it("opens a nested row on a session, never on a bare workspace", () => {
+    const summary = (id: string) => ({ id, title: id, activity: "idle" as const, updatedAt: 1 });
+    const places = {
+        bots: [],
+        tasks: [
+            {
+                id: "task",
+                workspaceId: "ws_parent",
+                conversation: summary("agent"),
+                subtasks: [
+                    {
+                        workspaceId: "ws_parent",
+                        path: "",
+                        conversation: summary("aChild"),
+                        subtasks: [
+                            {
+                                workspaceId: "wt_grandchild",
+                                path: "",
+                                conversation: summary("aGrandchild"),
+                                subtasks: [],
+                            },
+                        ],
+                    },
+                ],
+            },
+            // A subtask made as a task of its own, in a checkout its parent made.
+            { id: "own", workspaceId: "wt_own", conversation: summary("aOwn"), subtasks: [] },
+        ],
+        chatGroupOf: () => undefined,
+    } as unknown as HappyAgentSpacesPlaces;
+    const destination = (child: Parameters<typeof happyAgentSpacesChildDestination>[0]) =>
+        happyAgentSpacesChildDestination(
+            child,
+            places,
+            [
+                { id: "wt_own", conversations: [] },
+                { id: "wt_listed", conversations: [{ id: "aListed" }] },
+            ],
+            () => undefined,
+        );
+    expect(destination({ kind: "session", agentId: "aGrandchild" })).toEqual({
+        groupId: "wt_grandchild",
+        chatId: "aGrandchild",
+    });
+    expect(destination({ kind: "session", agentId: "aOwn" })).toEqual({
+        groupId: "wt_own",
+        chatId: "aOwn",
+    });
+    // The worktree's own list files no chat; its task's conversation opens.
+    expect(destination({ kind: "worktree", worktreeId: "wt_own" })).toEqual({
+        groupId: "wt_own",
+        chatId: "aOwn",
+    });
+    expect(destination({ kind: "worktree", worktreeId: "wt_listed" })).toEqual({
+        groupId: "wt_listed",
+        chatId: "aListed",
+    });
+    expect(destination({ kind: "worktree", worktreeId: "wt_nothing" })).toBeUndefined();
 });
