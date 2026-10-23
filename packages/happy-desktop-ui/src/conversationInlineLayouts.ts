@@ -9,6 +9,7 @@ import {
     type ConversationToolCall,
 } from "happy-desktop-state";
 import type { ConversationMediaRunMember } from "./conversationMediaRuns";
+import { mediaTreeSound } from "./MediaTree";
 
 /**
  * Layouts an agent wrote into its reply as HTML, drawn where it wrote them.
@@ -18,7 +19,9 @@ import type { ConversationMediaRunMember } from "./conversationMediaRuns";
  * from. Nothing is loaded from disk or the network: the source resolves to that
  * call's existing item, the latest call that showed the path winning, and an
  * image that names nothing is left out. A block in which no image resolves is
- * not a layout and stays the inert HTML it always was.
+ * not a layout and stays the inert HTML it always was. So does one the client
+ * cannot parse, and one that lays out absurdly tall: a broken layout is text,
+ * and its pictures stay under the calls that showed them.
  *
  * A picture placed in a reply is not drawn again under the call that showed
  * it: that call's media hides it, and a call left with nothing to show draws
@@ -160,7 +163,13 @@ function messageInlineLayouts(
             continue;
         }
         const layout = blockLayout(segment.html, shown);
-        if (layout === undefined) {
+        if (
+            layout === undefined ||
+            !mediaTreeSound(
+                layout.root,
+                layout.members.map((member) => member.item),
+            )
+        ) {
             pieces.push(segment.html);
             continue;
         }
@@ -243,30 +252,67 @@ export type ConversationMediaVisible = {
     readonly indexes: readonly number[];
 };
 
-/** A call's media less the items a reply placed. */
+/**
+ * A call's media less the items a reply placed. A tree that lays out absurdly
+ * tall is broken: the call draws its items in the automatic layout instead.
+ */
 export function conversationMediaVisible(
     items: readonly ConversationMediaItem[],
     layout: ConversationMediaLayout | undefined,
     hidden: ReadonlySet<number> | undefined,
 ): ConversationMediaVisible {
     if (hidden === undefined || hidden.size === 0)
-        return { items, ...(layout ? { layout } : {}), indexes: items.map((_, index) => index) };
+        return {
+            items,
+            ...visibleLayout(items, layout),
+            indexes: items.map((_, index) => index),
+        };
     const indexes = items.map((_, index) => index).filter((index) => !hidden.has(index));
-    const positions = new Map(indexes.map((index, position) => [index, position]));
+    const visible = indexes.map((index) => items[index]!);
     return {
-        items: indexes.map((index) => items[index]!),
-        ...(layout?.type === "tree"
-            ? {
-                  layout: {
-                      type: "tree",
-                      root: mediaLayoutRootReindex(layout.root, (index) => positions.get(index)),
-                  },
-              }
-            : layout
-              ? { layout }
-              : {}),
+        items: visible,
+        ...visibleLayout(
+            visible,
+            layout?.type === "tree"
+                ? { type: "tree", root: mediaLayoutRootHide(layout.root, indexes) }
+                : layout,
+        ),
         indexes,
     };
+}
+
+function visibleLayout(
+    items: readonly ConversationMediaItem[],
+    layout: ConversationMediaLayout | undefined,
+): { layout?: ConversationMediaLayout } {
+    if (layout === undefined) return {};
+    if (layout.type === "tree" && !mediaTreeSound(layout.root, items)) return {};
+    return { layout };
+}
+
+/* A tree less its hidden items, kept per tree and visible set so the same
+   call measures the same root on every render. */
+const hiddenRoots = new WeakMap<
+    readonly ConversationMediaLayoutNode[],
+    Map<string, ConversationMediaLayoutNode[]>
+>();
+
+function mediaLayoutRootHide(
+    root: readonly ConversationMediaLayoutNode[],
+    indexes: readonly number[],
+): ConversationMediaLayoutNode[] {
+    const key = indexes.join(",");
+    let byVisible = hiddenRoots.get(root);
+    const held = byVisible?.get(key);
+    if (held) return held;
+    const positions = new Map(indexes.map((index, position) => [index, position]));
+    const hidden = mediaLayoutRootReindex(root, (index) => positions.get(index));
+    if (!byVisible) {
+        byVisible = new Map();
+        hiddenRoots.set(root, byVisible);
+    }
+    byVisible.set(key, hidden);
+    return hidden;
 }
 
 /**

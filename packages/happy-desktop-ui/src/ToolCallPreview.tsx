@@ -5,6 +5,7 @@ import type {
 } from "happy-desktop-state";
 import { happyAgentArtifactTypeLabel } from "happy-desktop-state";
 import { ConversationMedia } from "./ConversationMedia";
+import { conversationMediaVisible } from "./conversationInlineLayouts";
 import { DiffSnippet, type DiffLine } from "./DiffSnippet";
 import { Icon } from "./Icon";
 import { ArtifactTypeGlyph } from "./pages/artifacts/artifactPresentation";
@@ -85,6 +86,11 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
     const { tool } = props;
     const presentation = tool.presentation;
     const title = presentationTitle(presentation);
+    /* An absurdly tall tree is broken, and its files fall back to the automatic layout. */
+    const mediaLayout =
+        presentation?.type === "media"
+            ? conversationMediaVisible(presentation.items, presentation.layout, undefined).layout
+            : undefined;
     const command =
         presentation?.type === "execCommand" ||
         presentation?.type === "backgroundTerminalInteraction"
@@ -210,7 +216,7 @@ export function ToolCallPreview(props: ToolCallPreviewProps) {
                             <span className="happy-tool-call-preview__label">Files</span>
                             <ConversationMedia
                                 items={presentation.items}
-                                {...(presentation.layout ? { layout: presentation.layout } : {})}
+                                {...(mediaLayout ? { layout: mediaLayout } : {})}
                             />
                         </section>
                     ) : null}

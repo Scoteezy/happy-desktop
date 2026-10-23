@@ -1,6 +1,8 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import {
+    conversationTextLayoutParse,
+    conversationTextSegments,
     mediaLayoutProject,
     type ComposerSnapshot,
     type ConversationEntry,
@@ -11,6 +13,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import "./styles.css";
 import { ConversationMedia } from "./ConversationMedia";
+import { conversationInlineLayouts, conversationMediaVisible } from "./conversationInlineLayouts";
 import { conversationMediaHeight } from "./conversationRowHeight";
 import { conversationMediaRunRows, conversationMediaRuns } from "./conversationMediaRuns";
 import { ConversationDock } from "./ConversationDock";
@@ -618,5 +621,99 @@ describe("layout trees in the CSS subset", () => {
                 { type: "item", index: 1 },
             ],
         });
+    });
+});
+
+describe("a reply's layout that cannot be drawn", () => {
+    const shot: ConversationMediaItem = {
+        ...wide,
+        source: { path: "a", absolutePath: "/work/a" },
+    };
+    const composer: ComposerSnapshot = {
+        agentUserIds: [],
+        attachments: [],
+        capabilities: { commands: [], mentions: false, shellMode: false },
+        focused: false,
+        mentionCandidates: [],
+        revision: 0,
+        scopeId: "media-broken",
+        submission: { status: "idle" },
+        text: "",
+    };
+    const tower = (height: number) =>
+        `<div>${`<div style="height:${String(height)}px"></div>`.repeat(6)}<img src="a"></div>`;
+
+    it("leaves a runaway nesting as text, its picture under its call", async () => {
+        const deep = `<div>${"<x>".repeat(10000)}<img src="a">${"</x>".repeat(10000)}</div>`;
+        expect(() => conversationTextSegments(deep)).not.toThrow();
+        expect(conversationTextLayoutParse(deep, () => 0)).toBeUndefined();
+        /* Whatever the client throws, the block is text. */
+        expect(
+            conversationTextLayoutParse('<img src="a">', () => {
+                throw new Error("resolver");
+            }),
+        ).toBeUndefined();
+
+        const entries = [
+            mediaCall("read", "Read", [shot]),
+            agentText("reply", `Here.\n\n${deep}\n`),
+        ];
+        const layouts = conversationInlineLayouts(entries);
+        expect(layouts.messages.has("reply")).toBe(false);
+        expect(layouts.hidden.size).toBe(0);
+
+        const host = mount(
+            900,
+            2000,
+            <ConversationView
+                dock={
+                    <ConversationDock
+                        composer={composer}
+                        onComposerSend={() => {}}
+                        onComposerValueChange={() => {}}
+                        running={false}
+                    />
+                }
+                conversationId="media-broken-deep"
+                entries={entries}
+                running={false}
+                style={{ flex: "1 1 auto", minWidth: 0 }}
+            />,
+        );
+        for (let frame = 0; frame < 4; frame += 1) await nextFrame();
+        expect(host.querySelectorAll(".happy-media-flow")).toHaveLength(1);
+        expect(host.querySelector(".happy-media-tree")).toBeNull();
+    });
+
+    it("draws a tall layout whole, and treats an absurdly tall one as broken", () => {
+        const entries = (html: string) => [
+            mediaCall("read", "Read", [shot]),
+            agentText("reply", `Here.\n\n${html}\n`),
+        ];
+        const tall = conversationInlineLayouts(entries(tower(2000)));
+        expect(tall.messages.has("reply")).toBe(true);
+        expect([...(tall.hidden.get("read") ?? [])]).toEqual([0]);
+
+        const absurd = conversationInlineLayouts(entries(tower(4000)));
+        expect(absurd.messages.has("reply")).toBe(false);
+        expect(absurd.hidden.size).toBe(0);
+    });
+
+    it("draws a presented tree that lays out absurdly tall in the automatic layout", () => {
+        const towerRoot = (height: number): ConversationMediaLayout => ({
+            type: "tree",
+            root: [
+                ...Array.from({ length: 6 }, () => ({
+                    type: "element" as const,
+                    tag: "div" as const,
+                    style: { height: `${String(height)}px` },
+                    children: [],
+                })),
+                { type: "item", index: 0 },
+            ],
+        });
+        const tall = towerRoot(2000);
+        expect(conversationMediaVisible([wide], tall, undefined).layout).toBe(tall);
+        expect(conversationMediaVisible([wide], towerRoot(4000), undefined).layout).toBeUndefined();
     });
 });

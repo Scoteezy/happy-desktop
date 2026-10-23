@@ -1398,7 +1398,7 @@ function projectToolPresentation(
                           }),
                 })),
                 ...((layout) => (layout === undefined ? {} : { layout }))(
-                    mediaLayoutProject(presentation.layout, presentation.items.length),
+                    mediaLayoutProjectSafe(presentation.layout, presentation.items.length),
                 ),
             };
         case "artifact":
@@ -1628,5 +1628,18 @@ function stringify(value: unknown): string {
         return JSON.stringify(value);
     } catch {
         return String(value);
+    }
+}
+
+/**
+ * A presented layout as this build draws it, or the automatic layout when
+ * checking it throws: a layout the agent wrote must never take the transcript
+ * down with it, and its files still show without it.
+ */
+function mediaLayoutProjectSafe(value: unknown, itemCount: number) {
+    try {
+        return mediaLayoutProject(value, itemCount);
+    } catch {
+        return undefined;
     }
 }

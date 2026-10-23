@@ -13,9 +13,17 @@ export type ConversationTextSegment =
     | { readonly type: "markdown"; readonly text: string }
     | { readonly type: "layout"; readonly html: string; readonly complete: boolean };
 
-/** A reply's text cut into Markdown and the HTML blocks that may lay out pictures. */
+/**
+ * A reply's text cut into Markdown and the HTML blocks that may lay out
+ * pictures. The text is the agent's, so the cut is never trusted to succeed:
+ * if it throws, the whole reply is Markdown, as it was before layouts.
+ */
 export function conversationTextSegments(text: string): readonly ConversationTextSegment[] {
-    return splitMediaLayoutBlocks(text);
+    try {
+        return splitMediaLayoutBlocks(text);
+    } catch {
+        return [{ type: "markdown", text }];
+    }
 }
 
 /** A block's layout over the pictures it placed. */
@@ -36,19 +44,26 @@ export type ConversationTextLayout = {
  * nothing the agent wrote is cut short.
  *
  * The tree is checked again exactly as a presented layout is, so it carries
- * only the closed node set and grammar-checked styles `MediaTree` draws.
+ * only the closed node set and grammar-checked styles `MediaTree` draws. A
+ * parser that throws is a block that does not lay out.
  */
 export function conversationTextLayoutParse(
     html: string,
     resolve: (src: string) => number | undefined,
 ): ConversationTextLayout | undefined {
-    const parsed = parseMediaLayoutHtml(html, resolve);
-    if (parsed.truncated || parsed.placed.length === 0) return undefined;
-    const positions = new Map(parsed.placed.map((index, position) => [index, position]));
-    const layout = mediaLayoutProject(
-        { type: "tree", root: parsed.root },
-        parsed.placed.length,
-        (index) => positions.get(index),
-    );
-    return layout?.type === "tree" ? { root: layout.root, placed: parsed.placed } : undefined;
+    /* Whatever the HTML does to the parser — a stack it exhausts, a limit it
+       trips — the block is only text, and its pictures stay where they were. */
+    try {
+        const parsed = parseMediaLayoutHtml(html, resolve);
+        if (parsed.truncated || parsed.placed.length === 0) return undefined;
+        const positions = new Map(parsed.placed.map((index, position) => [index, position]));
+        const layout = mediaLayoutProject(
+            { type: "tree", root: parsed.root },
+            parsed.placed.length,
+            (index) => positions.get(index),
+        );
+        return layout?.type === "tree" ? { root: layout.root, placed: parsed.placed } : undefined;
+    } catch {
+        return undefined;
+    }
 }

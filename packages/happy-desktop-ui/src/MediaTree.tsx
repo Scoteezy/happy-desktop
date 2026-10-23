@@ -23,7 +23,8 @@ import { messageTextLayoutFontGenerationGet } from "./messageTextLayout";
  * no HTML and no free CSS anywhere on the path. The whole tree sits in a
  * contained box (`.happy-media-tree`) that cannot paint outside itself or grow
  * past the transcript's width. Its height is never capped: inline means all of
- * it.
+ * it. A tree whose height is absurd is broken, not tall (`mediaTreeSound`),
+ * and is not drawn at all.
  *
  * A picture with no width of its own, or `width: auto`, is drawn at its
  * natural size in points — its pixels over its density — and shrinks to fit
@@ -271,6 +272,30 @@ export function mediaTreeHeight(
     }
     byKey.set(key, height);
     return height;
+}
+
+/**
+ * The tallest a tree may lay out before it is taken for broken. No real
+ * layout of a few pictures comes near it; one that does is a degenerate
+ * aspect ratio or a runaway nesting, and drawing it would push the transcript
+ * apart by millions of pixels. Such a tree is not clipped — it is not drawn:
+ * its owner falls back to what it would show without it.
+ */
+const MEDIA_TREE_HEIGHT_LIMIT = 20_000;
+/* The narrowest column a tree is drawn in — a side chat — and the widest, the
+   chat measure less an agent row's inset. Aspect ratios grow a tree with its
+   width; wrapping grows it as the width shrinks. */
+const MEDIA_TREE_SOUND_WIDTHS = [320, 786] as const;
+
+/** Whether `root` lays out at a believable height at every width it is drawn at. */
+export function mediaTreeSound(
+    root: readonly ConversationMediaLayoutNode[],
+    items: readonly MediaTreeItem[],
+): boolean {
+    return MEDIA_TREE_SOUND_WIDTHS.every((width) => {
+        const height = mediaTreeHeight(root, items, width);
+        return Number.isFinite(height) && height <= MEDIA_TREE_HEIGHT_LIMIT;
+    });
 }
 
 function styleApply(element: HTMLElement, style: CSSProperties): void {
