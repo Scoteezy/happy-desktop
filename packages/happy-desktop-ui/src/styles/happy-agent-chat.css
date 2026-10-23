@@ -158,8 +158,10 @@
     align-items: flex-start;
     gap: 12px;
     box-sizing: border-box;
-    width: 100%;
-    padding: 4px 0;
+    /* Give the hover fill breathing room without moving the text column. */
+    width: calc(100% + 16px);
+    margin-inline: -8px;
+    padding: 4px 8px;
     border: 0;
     border-radius: var(--happy-radius-sm);
     background: transparent;
@@ -579,7 +581,8 @@
 
 /*
  * A docked question keeps the transcript's text measure. The dock itself starts
- * at 12px and ends at 20px; these insets reach prose's 30px and 64px edges.
+ * at 12px and ends at 20px. Leave 8px outside the prose column for option
+ * hover fills; the viewport's padding restores the 30px and 64px text edges.
  */
 .happy-agent-input[data-variant="dock"] {
     padding: 0;
@@ -592,8 +595,8 @@
     display: flex;
     flex: none;
     flex-direction: column;
-    margin-right: 44px;
-    margin-left: 18px;
+    margin-right: 36px;
+    margin-left: 10px;
     max-height: 50vh;
     overflow: hidden;
 }
@@ -609,6 +612,8 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    box-sizing: border-box;
+    padding-inline: 8px;
     overflow-y: auto;
 }
 
