@@ -120,7 +120,7 @@ export {
     stemCellSupportProbe,
     type StemCellPlay,
     type StemCellPlayOptions,
-} from "./stemCellGrowth";
+} from "./stemCellPlay";
 export {
     BotFace,
     botFaceCredit,

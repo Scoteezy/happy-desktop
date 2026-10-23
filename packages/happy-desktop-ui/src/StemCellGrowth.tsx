@@ -6,7 +6,7 @@ import {
     stemCellReducedMotion,
     stemCellSupportKnown,
     stemCellSupportProbe,
-} from "./stemCellGrowth";
+} from "./stemCellPlay";
 
 /** Unframed artwork in an item's mark lane. */
 export type ImageMark = {

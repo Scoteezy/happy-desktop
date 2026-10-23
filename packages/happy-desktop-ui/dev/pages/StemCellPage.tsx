@@ -5,7 +5,7 @@ import { clayIconMark } from "../../src/clayIcons";
 import { MakeStuffIntro, type MakeStuffOption } from "../../src/MakeStuffView";
 import { StemCell } from "../../src/StemCell";
 import { StemCellGrowth, type ImageMark } from "../../src/StemCellGrowth";
-import { stemCellPaletteOf } from "../../src/stemCellGrowth";
+import { stemCellPaletteOf } from "../../src/stemCellPlay";
 import { createStemCellEngine, stemCellVariantFor } from "../../src/stemCellEngine";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
