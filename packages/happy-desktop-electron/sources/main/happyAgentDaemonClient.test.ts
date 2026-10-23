@@ -88,13 +88,21 @@ describe("happyAgentDaemonConnectionUnavailable", () => {
 describe("HappyAgentDaemonClient.openArtifactApi", () => {
     it("carries the token only to routes under the artifact's own API", async () => {
         const directory = await mkdtemp(join(tmpdir(), "hadc-"));
-        const socketPath = join(directory, "d.sock");
+        // Windows serves the daemon on a named pipe, never on a file path.
+        const socketPath =
+            process.platform === "win32"
+                ? localAgentSocketPath(directory)
+                : join(directory, "d.sock");
         const reached: string[] = [];
         const daemon = createServer((request, response) => {
             reached.push(request.url ?? "");
             response.end();
         });
-        await new Promise<void>((resolve) => daemon.listen(socketPath, resolve));
+        // A failed listen would otherwise leave the test waiting until it times out.
+        await new Promise<void>((resolve, reject) => {
+            daemon.once("error", reject);
+            daemon.listen(socketPath, resolve);
+        });
         try {
             const local = new HappyAgentDaemonClient({ socketPath, token: "secret" });
             const artifact = "k3v8w2m9q4x7z1c5b6n0p2r8";

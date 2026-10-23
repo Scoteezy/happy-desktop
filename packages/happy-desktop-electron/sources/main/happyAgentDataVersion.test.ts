@@ -1,7 +1,7 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, link, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { dirname, join, resolve, sep } from "node:path";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { DesktopRuntimeSnapshot } from "../shared/desktopContract";
 import { DesktopDaemonController } from "./desktopDaemonController";
 import { DesktopRuntime } from "./desktopRuntime";
@@ -25,13 +25,26 @@ const REFUSAL =
 
 const temporaryRoots: string[] = [];
 afterEach(async () => {
-    const parent = resolve(tmpdir()) + sep;
-    for (const root of temporaryRoots.splice(0)) {
-        if (!resolve(root).startsWith(parent) || !root.includes("happy-data-version-"))
-            throw new Error("Refusing to remove an unexpected fixture directory.");
-        await rm(root, { recursive: true, force: true });
-    }
+    for (const root of temporaryRoots.splice(0)) await fixtureRemove(root);
 });
+
+/**
+ * One copy of Node.exe that every Windows release in this file links to.
+ * Windows will not delete any name of an executable that is running, and the
+ * test runner itself is running Node.exe, so a release cannot link to that.
+ */
+let windowsNode: Promise<string> | undefined;
+afterAll(async () => {
+    const node = await windowsNode;
+    if (node !== undefined) await fixtureRemove(dirname(node));
+});
+
+async function fixtureRemove(root: string): Promise<void> {
+    const parent = resolve(tmpdir()) + sep;
+    if (!resolve(root).startsWith(parent) || !root.includes("happy-data-version-"))
+        throw new Error("Refusing to remove an unexpected fixture directory.");
+    await rm(root, { recursive: true, force: true });
+}
 
 function stamp(fields: Record<string, unknown>): string {
     return JSON.stringify({
@@ -59,16 +72,46 @@ async function stampWrite(paths: HappyDaemonPaths, minimumVersion: string): Prom
     );
 }
 
-/** An installed release whose every command refuses the data the way 0.4.104 would. */
-async function versionInstall(
-    paths: HappyDaemonPaths,
-    version: string,
-    script = `#!/bin/sh\necho "${REFUSAL}" >&2\nexit 65\n`,
-): Promise<void> {
+/**
+ * An installed release that runs Node under the release's file name, which Happy
+ * executes directly as it does a real Happy Agent. Windows only executes a real
+ * `happy-agent.exe`, so there it is Node's own executable; elsewhere a launcher
+ * runs Node, which may load libraries from beside its real path. Run with
+ * `refusalEnvironment`, every command refuses the data the way 0.4.104 would.
+ */
+async function versionInstall(paths: HappyDaemonPaths, version: string): Promise<void> {
     const path = happyAgentBinaryPath(paths, version);
     await mkdir(join(paths.versionsDirectory, version), { recursive: true });
-    await writeFile(path, script);
+    if (process.platform === "win32") {
+        windowsNode ??= (async () => {
+            const root = await mkdtemp(join(tmpdir(), "happy-data-version-"));
+            const node = join(root, "node.exe");
+            await copyFile(process.execPath, node);
+            return node;
+        })();
+        const node = await windowsNode;
+        await link(node, path).catch(() => copyFile(node, path));
+        return;
+    }
+    const node = `'${process.execPath.replaceAll("'", `'\\''`)}'`;
+    await writeFile(path, `#!/bin/sh\nexec ${node} "$@"\n`);
     await chmod(path, 0o700);
+}
+
+/** An environment in which an installed release prints the refusal and exits 65 before anything else. */
+async function refusalEnvironment(paths: HappyDaemonPaths): Promise<NodeJS.ProcessEnv> {
+    const preload = join(paths.happyHome, "refuse.cjs");
+    // A synchronous write, because exiting abandons a pending write to a Windows pipe.
+    await writeFile(
+        preload,
+        `require("node:fs").writeSync(2, ${JSON.stringify(`${REFUSAL}\n`)});\nprocess.exit(65);\n`,
+    );
+    return {
+        ...process.env,
+        HAPPY_HOME_DIR: paths.happyHome,
+        // NODE_OPTIONS treats a backslash as an escape, so the path uses forward slashes.
+        NODE_OPTIONS: `--require "${preload.replaceAll("\\", "/")}"`,
+    };
 }
 
 describe("the data-version stamp", () => {
@@ -155,7 +198,7 @@ describe("exit 65", () => {
         const started = Date.now();
         const failure = await happyAgentRestartRun({
             binary: { path: happyAgentBinaryPath(paths, "0.4.104"), version: "0.4.104" },
-            environment: { ...process.env, HAPPY_HOME_DIR: paths.happyHome },
+            environment: await refusalEnvironment(paths),
             killSignal: new AbortController().signal,
             onStep: (step) => steps.push(step.phase),
             paths,
@@ -322,7 +365,7 @@ describe("the downgrade guard", () => {
         await stampWrite(paths, "0.4.106");
         const controller = await DesktopDaemonController.create({
             paths,
-            environment: { ...process.env, HAPPY_HOME_DIR: paths.happyHome },
+            environment: await refusalEnvironment(paths),
         });
         await controller.channelUpdate("preview");
         expect(controller.get().readyVersion).toBe("0.4.106");
