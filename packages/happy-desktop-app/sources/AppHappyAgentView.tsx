@@ -1210,7 +1210,6 @@ function botSubtaskSidebarItems(
 function sidebarItems(
     { project, worktrees }: HappyAgentSidebarProject,
     titleShimmerEnabled: boolean,
-    newWorkspaceShortcut: boolean,
 ): SidebarItem[] {
     const projectHasLineChanges = (project.addedLines ?? 0) > 0 || (project.deletedLines ?? 0) > 0;
     // The shared sidebar tree already leaves out a worktree a bot's or task's
@@ -1232,7 +1231,6 @@ function sidebarItems(
                 disabled: project.lifecycle.phase !== "ready",
                 icon: "plus" as const,
                 label: `New workspace in ${project.name}`,
-                ...(newWorkspaceShortcut ? { shortcut: APP_SHORTCUTS.workspaceCreate } : {}),
                 reveal: "hover" as const,
             },
             ...sidebarLifecycle(project.lifecycle),
@@ -2329,7 +2327,6 @@ function happyAgentSections(
     titleShimmerEnabled: boolean,
     projectsHidden: boolean,
     attention: HappyAgentAttentionSnapshot,
-    shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
     folded?: ReadonlySet<string>,
     /** The machine Cmd-N makes a task on, whose Tasks heading wears the chord. */
     shortcutHappyAgentId?: string,
@@ -2396,14 +2393,7 @@ function happyAgentSections(
         // section goes entirely, heading and all, rather than folding.
         ...(projectsHidden
             ? []
-            : [
-                  happyAgentProjectsSection(
-                      happyAgent,
-                      titleShimmerEnabled,
-                      shortcutProject,
-                      folded,
-                  ),
-              ]),
+            : [happyAgentProjectsSection(happyAgent, titleShimmerEnabled, folded)]),
     ]);
 }
 
@@ -2957,7 +2947,7 @@ function happyAgentSearchSections(
         const projects = projectsHidden
             ? []
             : happyAgentSidebarTree(happyAgent).projects.flatMap((entry) =>
-                  sidebarItems(entry, titleShimmerEnabled, false)
+                  sidebarItems(entry, titleShimmerEnabled)
                       .filter((item) => matches(item.label))
                       // A worktree found on its own says which project it is in.
                       .map((item) =>
@@ -3065,7 +3055,6 @@ function subtaskFailureError(
 function happyAgentProjectsSection(
     happyAgent: AppHappyAgentEntry,
     titleShimmerEnabled: boolean,
-    shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
     /**
      * The window's folding record, when it keeps one. The whole Projects list
      * folds under its own heading the way a project folds its worktrees, kept
@@ -3085,14 +3074,7 @@ function happyAgentProjectsSection(
         items: hidden
             ? []
             : happyAgentSidebarTree(happyAgent)
-                  .projects.flatMap((entry) =>
-                      sidebarItems(
-                          entry,
-                          titleShimmerEnabled,
-                          shortcutProject?.happyAgentId === happyAgent.id &&
-                              shortcutProject.projectId === entry.project.id,
-                      ),
-                  )
+                  .projects.flatMap((entry) => sidebarItems(entry, titleShimmerEnabled))
                   .map((item) => ({
                       ...item,
                       id: happyAgentItemId(happyAgent.id, item.id),
@@ -4340,7 +4322,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                                   titleShimmerEnabled,
                                   projectsHidden,
                                   attention,
-                                  workspaceCreateTarget,
                                   props.sidebarCollapse
                                       ? // A navigation into a folded-away Projects list
                                         // shows it while voice points there.
@@ -4653,9 +4634,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               onArtifactOpen: (artifactId: string) =>
                                   props.onArtifactOpen?.(active.id, artifactId),
                           }
-                        : {})}
-                    {...(workspaceCreateTarget
-                        ? { workspaceCreateProjectId: workspaceCreateTarget.projectId }
                         : {})}
                 />
             );
@@ -6399,8 +6377,6 @@ interface HappyAgentWorkspaceSurfaceProps {
     viewerId: string;
     groupId?: string;
     chatId?: string;
-    /** Ready online project that Shift-Cmd-N and its sidebar cap both address. */
-    workspaceCreateProjectId?: HappyAgentProjectId;
     onChatSelect(groupId: string | undefined, chatId?: string, replace?: boolean): void;
     onChatClose(groupId: string, chatId: string, fallbackChatId?: string): boolean;
     onFileClose(groupId: string, path: string): void;
@@ -6552,7 +6528,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         connectionRefusal === undefined &&
         openGroupChatRefusal === undefined &&
         workspaceLifecyclePhase(openGroup.lifecycle) !== "creating";
-    const workspaceCreateProjectId = props.workspaceCreateProjectId;
     // The worktree phase this screen has to say something about. `ready` and a
     // project both leave it absent: there is nothing to interrupt the reader
     // with when the place they are looking at is simply there.
@@ -7568,19 +7543,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                       {
                                           run: () => groupConversationCreate(openGroup, "shortcut"),
                                           shortcut: APP_SHORTCUTS.sessionCreate,
-                                      },
-                                  ]
-                                : []),
-                            ...(workspaceCreateProjectId
-                                ? [
-                                      {
-                                          run: () => {
-                                              if (happyAgentOnline())
-                                                  void props.workspace
-                                                      .worktreeCreate(workspaceCreateProjectId)
-                                                      .catch(() => undefined);
-                                          },
-                                          shortcut: APP_SHORTCUTS.workspaceCreate,
                                       },
                                   ]
                                 : []),

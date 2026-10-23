@@ -837,7 +837,6 @@ function actionRows(
                       id: "action:workspace-create",
                       title: "New workspace",
                       glyph: { kind: "icon" as const, name: "branch" as const },
-                      shortcut: APP_SHORTCUTS.workspaceCreate,
                       command: { kind: "workspaceCreate" as const },
                   },
               ]

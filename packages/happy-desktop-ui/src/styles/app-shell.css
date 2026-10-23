@@ -492,14 +492,29 @@
     app-region: drag;
 }
 
-/* Rule 1 in force. A tab strip is window chrome only where it is the column's
-   first row and there is no header above it; nested under a channel header it
-   is an ordinary control surface, and making it draggable reclaimed the top of
-   every menu that opened downwards out of that header. */
+/* Rule 1 in force. A tab strip is window chrome only where there is no header
+   above it; nested under a channel header it is an ordinary control surface, and
+   making it draggable reclaimed the top of every menu that opened downwards out
+   of that header. The test is "no header before it", not `:first-child`: the
+   workspace keeps an always-mounted, usually empty lifecycle lane ahead of its
+   strip, so `:first-child` never matched once the channel header was removed and
+   the main band, with or without tabs, stopped moving the window. The side
+   panel's strip heads its own column the same way, and the pane toggle's box
+   beside it is chrome around one button. */
 .happy-desktop-app-shell[data-window-controls]
     .happy-desktop-app-shell__workspace
-    > .happy-tabbed-pane:first-child
-    > .happy-tabbed-pane__bar {
+    > .happy-tabbed-pane:not(:is(.happy-channel-header, .happy-panel-header) ~ *)
+    > .happy-tabbed-pane__bar,
+.happy-desktop-app-shell[data-window-controls]
+    .happy-desktop-app-shell__panel-content
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__bar,
+.happy-desktop-app-shell[data-window-controls]
+    .happy-desktop-app-shell__panel-content
+    > .happy-transfer-zone
+    > .happy-tabbed-pane
+    > .happy-tabbed-pane__bar,
+.happy-desktop-app-shell[data-window-controls] .happy-desktop-app-shell__panel-controls {
     -webkit-app-region: drag;
     app-region: drag;
 }
