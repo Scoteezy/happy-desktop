@@ -35,6 +35,8 @@ export interface AppearanceSnapshot {
 }
 
 export interface AppearanceStore {
+    /** Modes supported by the host, fixed for this store's lifetime. */
+    readonly supportedModes: readonly ThemeMode[];
     get(): AppearanceSnapshot;
     subscribe(listener: () => void): () => void;
     /**
@@ -51,13 +53,18 @@ export interface AppearanceStore {
 
 /** Private input from the host that owns the custom theme document. */
 export interface AppearanceWriter {
-    customThemeReceived(theme: CustomTheme): void;
+    configReceived(config: {
+        readonly mode: ThemeMode;
+        readonly customTheme: CustomTheme;
+        readonly scrollbarVisibility: ScrollbarVisibility;
+    }): void;
 }
 
 /** Media query the `system` mode resolves against. */
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 export interface AppearanceStoreOptions {
+    readonly supportedModes?: readonly ThemeMode[];
     /** Initial selection; defaults to following the platform. */
     readonly mode?: ThemeMode;
     /** Initial custom theme; defaults to an untouched midnight. */
@@ -104,7 +111,16 @@ export function appearanceStoreOwnedCreate(options: AppearanceStoreOptions = {})
     const systemSubscribe = options.systemAppearanceSubscribe ?? browserSystemAppearanceSubscribe;
 
     const listeners = new Set<() => void>();
-    let mode: ThemeMode = options.mode ?? "system";
+    const supportedModes = options.supportedModes ?? [
+        "system",
+        "dark",
+        "light",
+        "midnight",
+        "custom",
+    ];
+    let mode: ThemeMode =
+        options.mode && supportedModes.includes(options.mode) ? options.mode : "system";
+    let toggleReturn: ThemeMode | undefined;
     let customTheme = options.customTheme ?? customThemeEmpty;
     let scrollbarVisibility: ScrollbarVisibility = options.scrollbarVisibility ?? "automatic";
     const paletteResolve = (): ThemePalette =>
@@ -148,6 +164,7 @@ export function appearanceStoreOwnedCreate(options: AppearanceStoreOptions = {})
     };
 
     const modeSet = (next: ThemeMode): void => {
+        if (!supportedModes.includes(next)) return;
         if (mode === next) return;
         mode = next;
         publish();
@@ -155,6 +172,7 @@ export function appearanceStoreOwnedCreate(options: AppearanceStoreOptions = {})
     };
 
     const store: AppearanceStore = {
+        supportedModes,
         get: () => snapshot,
         subscribe(listener) {
             listeners.add(listener);
@@ -169,9 +187,18 @@ export function appearanceStoreOwnedCreate(options: AppearanceStoreOptions = {})
             };
         },
         appearanceToggle() {
-            modeSet(snapshot.appearance === "dark" ? "light" : "dark");
+            const opposite = snapshot.appearance === "dark" ? "light" : "dark";
+            if (toggleReturn !== undefined) {
+                const target = toggleReturn;
+                toggleReturn = undefined;
+                modeSet(target);
+            } else {
+                if (mode === "custom" || mode === "midnight") toggleReturn = mode;
+                modeSet(opposite);
+            }
         },
         appearanceSelect(next) {
+            toggleReturn = undefined;
             modeSet(next);
         },
         scrollbarVisibilitySelect(next) {
@@ -187,10 +214,15 @@ export function appearanceStoreOwnedCreate(options: AppearanceStoreOptions = {})
         },
     };
     const writer: AppearanceWriter = {
-        customThemeReceived(theme) {
-            if (customThemeEqual(customTheme, theme)) return;
-            customTheme = theme;
+        configReceived(config) {
+            mode = supportedModes.includes(config.mode) ? config.mode : "system";
+            customTheme = customThemeEqual(customTheme, config.customTheme)
+                ? customTheme
+                : config.customTheme;
+            scrollbarVisibility = config.scrollbarVisibility;
+            toggleReturn = undefined;
             publish();
+            systemWatchSync();
         },
     };
     return { store, writer };

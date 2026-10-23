@@ -51,6 +51,7 @@ export interface DesktopModelPreference extends DesktopModelIdentity {
  */
 export interface DesktopConfig {
     readonly appearance: DesktopAppearanceMode;
+    readonly customTheme?: CustomTheme;
     readonly defaultModel?: DesktopDefaultModel;
     readonly defaultEffort: string;
     readonly defaultPermissionMode: DesktopPermissionMode;
@@ -918,10 +919,10 @@ export interface HappyDesktopBridge {
     directoryPick(): Promise<string | undefined>;
     desktopConfigGet(): Promise<DesktopConfig>;
     desktopConfigWrite(config: DesktopConfig): Promise<void>;
-    /** The custom theme as `~/.happy/desktop/theme.json` currently defines it. */
-    customThemeGet(): Promise<CustomTheme>;
-    /** Each accepted change to theme.json, delivered while the app runs. */
-    customThemeSubscribe(listener: (theme: CustomTheme) => void): () => void;
+    /** Absent on older shells; subscribe before reading the initial config. */
+    desktopConfigSubscribe?(listener: (config: DesktopConfig) => void): () => void;
+    /** Only fields changed from previous to next are merged into the current disk document. */
+    desktopConfigUpdate?(previous: DesktopConfig, next: DesktopConfig): Promise<void>;
     /** Asks now for what the background check would otherwise find later. */
     daemonCheck(): Promise<void>;
     /**
@@ -1056,8 +1057,8 @@ export const desktopIpc = {
     zoomChanged: "happy:zoom:changed",
     desktopConfigGet: "happy:desktop-config:get",
     desktopConfigWrite: "happy:desktop-config:write",
-    customThemeGet: "happy:custom-theme:get",
-    customThemeChanged: "happy:custom-theme:changed",
+    desktopConfigUpdate: "happy:desktop-config:update",
+    desktopConfigChanged: "happy:desktop-config:changed",
     daemonChanged: "happy:daemon:changed",
     daemonCheck: "happy:daemon:check",
     daemonDownload: "happy:daemon:download",

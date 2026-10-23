@@ -61,6 +61,10 @@ function activeResolve(mode: KeepAwakeMode, agentWorking: boolean): boolean {
  * not a notification.
  */
 export function keepAwakeStoreCreate(options: KeepAwakeStoreOptions = {}): KeepAwakeStore {
+    return keepAwakeStoreOwnedCreate(options).store;
+}
+
+export function keepAwakeStoreOwnedCreate(options: KeepAwakeStoreOptions = {}) {
     const source = options.agentWorking ?? NO_AGENT;
     const listeners = new Set<() => void>();
     let mode: KeepAwakeMode = options.mode ?? "agent";
@@ -98,7 +102,7 @@ export function keepAwakeStoreCreate(options: KeepAwakeStoreOptions = {}): KeepA
         }
     };
 
-    return {
+    const store: KeepAwakeStore = {
         get: () => snapshot,
         subscribe(listener) {
             listeners.add(listener);
@@ -122,6 +126,14 @@ export function keepAwakeStoreCreate(options: KeepAwakeStoreOptions = {}): KeepA
             disposed = true;
             listeners.clear();
             sourceWatchSync();
+        },
+    };
+    return {
+        store,
+        modeReceived(next: KeepAwakeMode): void {
+            if (mode === next) return;
+            mode = next;
+            publish();
         },
     };
 }

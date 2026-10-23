@@ -44,6 +44,7 @@ export interface DesktopPreferences {
     ): void;
     keepAwakeChanged(mode: DesktopKeepAwakeMode): void;
     settingsChanged(snapshot: HappyAgentSettingsSnapshot): void;
+    configReceived(config: DesktopConfig): HappyAgentSettingsInitial;
 }
 
 /**
@@ -58,14 +59,23 @@ export function desktopPreferencesCreate(
     initial: DesktopConfig,
 ): DesktopPreferences {
     let config = initial;
+    let receiving = false;
     const preferenceListeners = new Set<() => void>();
 
     const commit = (next: DesktopConfig): void => {
+        // Model persistence listeners may synchronously publish a settings
+        // projection before the other config fields have reached that store.
+        // Authoritative reconciliation must never turn that intermediate
+        // notification into a write of the previous preferences.
+        if (receiving) return;
+        const previous = config;
         config = next;
         for (const listener of preferenceListeners) listener();
         // Invoke immediately; the privileged store is the single serialization
         // authority, so every quick selection enters its ordered write queue.
-        void bridge.desktopConfigWrite(next).catch((error: unknown) => {
+        const write =
+            bridge.desktopConfigUpdate?.(previous, next) ?? bridge.desktopConfigWrite(next);
+        void write.catch((error: unknown) => {
             console.error("Could not save desktop preferences.", error);
         });
     };
@@ -94,6 +104,16 @@ export function desktopPreferencesCreate(
     };
 
     return {
+        configReceived(next) {
+            config = next;
+            receiving = true;
+            try {
+                for (const listener of preferenceListeners) listener();
+            } finally {
+                receiving = false;
+            }
+            return settingsInitial(next);
+        },
         initialAppearance: config.appearance,
         initialKeepAwake: config.keepAwake,
         initialScrollbarVisibility: config.scrollbarVisibility,
@@ -204,6 +224,7 @@ function configFromPreferenceDocument(
     );
     return {
         appearance: current.appearance,
+        ...(current.customTheme ? { customTheme: current.customTheme } : {}),
         defaultEffort: document.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
         ...(document.defaultSelection
             ? {

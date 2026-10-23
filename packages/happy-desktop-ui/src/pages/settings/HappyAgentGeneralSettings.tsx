@@ -19,6 +19,7 @@ export type HappyAgentLinkOpenPlacementChoice = "panel" | "browser";
 
 export type HappyAgentGeneralSettingsProps = {
     appearance: HappyAgentAppearanceChoice;
+    appearanceModes?: readonly HappyAgentAppearanceChoice[];
     scrollbarVisibility: HappyAgentScrollbarVisibilityChoice;
     linkOpenPlacement: HappyAgentLinkOpenPlacementChoice;
     /** The default a new session starts on, keyed `${providerId}:${modelId}`. */
@@ -174,7 +175,9 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             onChange={(value) =>
                                 props.onAppearanceChange(value as HappyAgentAppearanceChoice)
                             }
-                            segments={appearanceSegments}
+                            segments={appearanceSegments.filter(
+                                (option) => props.appearanceModes?.includes(option.value) ?? true,
+                            )}
                             size="small"
                             value={props.appearance}
                         />

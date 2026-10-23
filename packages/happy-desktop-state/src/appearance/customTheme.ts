@@ -3,7 +3,7 @@
  * for them — shapes by hand. It is one of the three built-in palettes taken as a
  * base, with any of its colour roles replaced.
  *
- * The document lives in `~/.happy/desktop/theme.json`. The desktop host parses it
+ * The object lives in `~/.happy/desktop/config.json` as `customTheme`. The host parses it
  * with `customThemeParse` and delivers the result to the window, which applies it
  * without a restart. Every role named here is a colour property of
  * `happy-desktop-ui/src/theme.css`; keep the two in step when a role is added.
@@ -68,37 +68,12 @@ export const THEME_COLOR_ROLES = [
     "sidebar-search-border",
     "input-text",
     "input-placeholder",
-    "box-warning-background",
-    "box-warning-border",
-    "box-warning-text",
-    "box-error-background",
-    "box-error-border",
-    "box-error-text",
     "review-accent",
     "status-connected",
     "status-connecting",
     "status-disconnected",
     "status-error",
     "status-default",
-    "permission-default",
-    "permission-accept-edits",
-    "permission-bypass",
-    "permission-plan",
-    "permission-read-only",
-    "permission-safe-yolo",
-    "permission-yolo",
-    "permission-button-allow-background",
-    "permission-button-allow-text",
-    "permission-button-deny-background",
-    "permission-button-deny-text",
-    "permission-button-allow-all-background",
-    "permission-button-allow-all-text",
-    "permission-button-inactive-background",
-    "permission-button-inactive-border",
-    "permission-button-inactive-text",
-    "permission-button-selected-background",
-    "permission-button-selected-border",
-    "permission-button-selected-text",
     "diff-outline",
     "diff-success",
     "diff-error",
@@ -194,42 +169,64 @@ export interface CustomTheme {
 /** What the custom theme is before anyone has written one. */
 export const customThemeEmpty: CustomTheme = { base: "midnight", colors: {} };
 
-const CUSTOM_THEME_VERSION = 1;
 const HEX_COLOR = /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/iu;
 const ROLES: ReadonlySet<string> = new Set(THEME_COLOR_ROLES);
 
 export type CustomThemeParseResult =
-    | { readonly ok: true; readonly theme: CustomTheme }
+    | { readonly ok: true; readonly theme: CustomTheme; readonly issues: readonly string[] }
     | { readonly ok: false; readonly error: string };
 
 /**
- * Validates one `theme.json` document. The error names the exact field at fault,
- * because the usual author is an agent that has to correct its own write.
+ * Parses the customTheme field independently. Invalid roles are dropped, while
+ * invalid base/colors fields retain their last accepted value (or the default).
+ * Diagnostics name paths, never arbitrary values from the config document.
  */
-export function customThemeParse(candidate: unknown): CustomThemeParseResult {
+export function customThemeParse(
+    candidate: unknown,
+    previous: CustomTheme = customThemeEmpty,
+): CustomThemeParseResult {
     const fail = (error: string): CustomThemeParseResult => ({ ok: false, error });
     if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate))
-        return fail("The theme must be a JSON object.");
+        return fail('"customTheme" must be a JSON object; keeping the previous theme or default.');
     const document = candidate as Record<string, unknown>;
+    const issues: string[] = [];
     for (const key of Object.keys(document))
-        if (key !== "version" && key !== "base" && key !== "colors")
-            return fail(`Unknown field "${key}"; expected version, base, and colors.`);
-    if (document.version !== CUSTOM_THEME_VERSION)
-        return fail(`"version" must be ${String(CUSTOM_THEME_VERSION)}.`);
-    const base = document.base;
-    if (base !== "dark" && base !== "light" && base !== "midnight")
-        return fail('"base" must be "light", "dark", or "midnight".');
-    const colors = document.colors ?? {};
-    if (typeof colors !== "object" || colors === null || Array.isArray(colors))
-        return fail('"colors" must be an object of role names to hex colours.');
+        if (key !== "base" && key !== "colors")
+            issues.push(
+                `"customTheme.${key}" is unknown; ignored by the app and preserved on disk.`,
+            );
+    const candidateBase = document.base === undefined ? customThemeEmpty.base : document.base;
+    const base: ThemePalette =
+        candidateBase === "dark" || candidateBase === "light" || candidateBase === "midnight"
+            ? candidateBase
+            : previous.base;
+    if (candidateBase !== "dark" && candidateBase !== "light" && candidateBase !== "midnight") {
+        issues.push(
+            '"customTheme.base" must be "light", "dark", or "midnight"; keeping the previous base or default.',
+        );
+    }
+    const colors = document.colors === undefined ? {} : document.colors;
+    if (typeof colors !== "object" || colors === null || Array.isArray(colors)) {
+        issues.push(
+            '"customTheme.colors" must be an object of role names to hex colours; keeping the previous colors or default.',
+        );
+        return { ok: true, theme: { base, colors: previous.colors }, issues };
+    }
     const parsed: Partial<Record<ThemeColorRole, string>> = {};
     for (const [role, value] of Object.entries(colors)) {
-        if (!ROLES.has(role)) return fail(`"${role}" is not a theme colour role.`);
-        if (typeof value !== "string" || !HEX_COLOR.test(value))
-            return fail(`"${role}" must be a hex colour such as "#121212".`);
+        if (!ROLES.has(role)) {
+            issues.push(`"customTheme.colors.${role}" is not an overridable color role; ignored.`);
+            continue;
+        }
+        if (typeof value !== "string" || !HEX_COLOR.test(value)) {
+            issues.push(
+                `"customTheme.colors.${role}" must be a hex colour such as "#121212"; ignored.`,
+            );
+            continue;
+        }
         parsed[role as ThemeColorRole] = value.toLowerCase();
     }
-    return { ok: true, theme: { base, colors: parsed } };
+    return { ok: true, theme: { base, colors: parsed }, issues };
 }
 
 /** Whether two custom themes render identically. */

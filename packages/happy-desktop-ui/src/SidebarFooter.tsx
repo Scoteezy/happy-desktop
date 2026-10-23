@@ -50,6 +50,7 @@ export type SidebarFooterProps = {
         readonly mode: SidebarThemeMode;
         /** The appearance on screen; picks the sun or moon glyph. */
         readonly appearance: "dark" | "light";
+        readonly supportedModes?: readonly SidebarThemeMode[];
         readonly onModeSelect: (mode: SidebarThemeMode) => void;
     };
     /** The keep-awake menu; omit it where hidden or where the host cannot hold the machine awake. */
@@ -195,7 +196,9 @@ export function SidebarFooter(props: SidebarFooterProps) {
                     <MenuButton
                         align="end"
                         icon={props.theme.appearance === "dark" ? "moon" : "sun"}
-                        items={SIDEBAR_THEME_OPTIONS.map((option) => ({
+                        items={SIDEBAR_THEME_OPTIONS.filter(
+                            (option) => props.theme?.supportedModes?.includes(option.mode) ?? true,
+                        ).map((option) => ({
                             kind: "item" as const,
                             id: option.mode,
                             label: option.label,

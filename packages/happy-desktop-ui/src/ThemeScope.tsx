@@ -1,8 +1,13 @@
-import { type CSSProperties, type ReactNode } from "react";
+import { createContext, type CSSProperties, type ReactNode } from "react";
 import type { CustomTheme, ThemeColorRole, ThemeMode } from "happy-desktop-state";
 
 export type { ThemeMode };
 export type ScrollbarVisibility = "always" | "automatic";
+
+/** Resolved scheme for paired artwork; system remains a native media query. */
+export const ThemeAppearanceContext = createContext<"dark" | "light" | "system" | undefined>(
+    undefined,
+);
 
 export type ThemeScopeProps = {
     children: ReactNode;
@@ -22,18 +27,20 @@ export function ThemeScope(props: ThemeScopeProps) {
     const palette = props.mode === "custom" ? (props.customTheme?.base ?? "midnight") : props.mode;
     const colors = props.mode === "custom" ? props.customTheme?.colors : undefined;
     return (
-        <div
-            className={
-                palette === "system"
-                    ? "happy-theme-scope"
-                    : `happy-theme-scope happy-theme-${palette}`
-            }
-            data-happy-desktop-ui="theme-scope"
-            data-scrollbar-visibility={props.scrollbarVisibility ?? "automatic"}
-            style={colors ? themeColorsStyle(colors) : undefined}
-        >
-            {props.children}
-        </div>
+        <ThemeAppearanceContext value={palette === "midnight" ? "dark" : palette}>
+            <div
+                className={
+                    palette === "system"
+                        ? "happy-theme-scope"
+                        : `happy-theme-scope happy-theme-${palette}`
+                }
+                data-happy-desktop-ui="theme-scope"
+                data-scrollbar-visibility={props.scrollbarVisibility ?? "automatic"}
+                style={colors ? themeColorsStyle(colors) : undefined}
+            >
+                {props.children}
+            </div>
+        </ThemeAppearanceContext>
     );
 }
 

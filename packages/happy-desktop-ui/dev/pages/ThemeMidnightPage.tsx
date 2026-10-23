@@ -16,7 +16,7 @@ export const componentNumber = "P-025";
 const noop = () => undefined;
 const themes = ["dark", "midnight", "custom"] as const;
 
-/** A sample of what an agent might write to theme.json: a warm, low-contrast dark. */
+/** A sample config.customTheme an agent might write: a warm, low-contrast dark. */
 const customTheme: CustomTheme = {
     base: "midnight",
     colors: {

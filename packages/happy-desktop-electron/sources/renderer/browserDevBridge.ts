@@ -1,4 +1,3 @@
-import { customThemeEmpty } from "happy-desktop-state";
 import type {
     DesktopConfig,
     DesktopDebugSnapshot,
@@ -127,9 +126,10 @@ export function browserDevBridgeCreate(): HappyDesktopBridge {
         directoryPick: async () => undefined,
         desktopConfigGet: () => request<DesktopConfig>("desktopConfigGet"),
         desktopConfigWrite: (config) => request<void>("desktopConfigWrite", config),
-        // A browser tab has no host following theme.json, so it keeps the empty theme.
-        customThemeGet: async () => customThemeEmpty,
-        customThemeSubscribe: () => () => undefined,
+        desktopConfigUpdate: (previous, next) =>
+            request<void>("desktopConfigUpdate", { previous, next }),
+        // No live config subscription in browser development yet. Its appearance
+        // store withholds Midnight/Custom instead of exposing a non-live theme.
         daemonCheck: async () => {
             throw new Error("Happy Agent updates are available in the Electron desktop window.");
         },

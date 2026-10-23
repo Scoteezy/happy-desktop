@@ -3589,6 +3589,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 ? {
                       theme: {
                           appearance: appearance.appearance,
+                          supportedModes: props.appearance.supportedModes,
                           mode: appearance.mode,
                           onModeSelect: (mode: ThemeMode) =>
                               props.appearance.appearanceSelect(mode),
@@ -5121,6 +5122,7 @@ function HappyAgentCommandPalette(
         query: palette.query,
         scrollbarVisibility: appearance.scrollbarVisibility,
         themeMode: appearance.mode,
+        themeModes: props.appearance.supportedModes,
         linkOpenPlacement: settings.linkOpenPlacement,
         titleShimmerEnabled: titleShimmer.titleShimmerEnabled,
     });
