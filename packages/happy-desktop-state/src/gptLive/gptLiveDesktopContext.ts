@@ -225,8 +225,8 @@ export function gptLiveDesktopContextRead(
                       : "idle",
             messages: publicText.messages,
             composerHasDraft:
-                conversation.value.composer.text.length > 0 ||
-                conversation.value.composer.attachments.length > 0,
+                conversation.value.composer.get().text.length > 0 ||
+                conversation.value.composer.get().attachments.length > 0,
             writeRefusal: refusal?.slice(0, 1024) ?? null,
         };
         context.truncated ||= publicText.truncated;

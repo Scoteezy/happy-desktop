@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { ComposerSnapshot, ConversationEntry } from "happy-desktop-state";
 import { expect, it, onTestFinished, vi } from "vitest";
+import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 
 const cacheProbe = vi.hoisted(() => ({
@@ -118,12 +119,16 @@ it("keeps one row-height cache per conversation across view lifetimes", () => {
         return (
             <ConversationView
                 className={`revision-${String(snapshot.revision)}`}
-                composer={composer}
+                dock={
+                    <ConversationDock
+                        composer={composer}
+                        onComposerSend={() => undefined}
+                        onComposerValueChange={() => undefined}
+                    />
+                }
                 conversationId={snapshot.conversationId}
                 elapsedMs={snapshot.revision}
                 entries={entries.get(snapshot.conversationId) ?? []}
-                onComposerSend={() => undefined}
-                onComposerValueChange={() => undefined}
             />
         );
     }

@@ -1,4 +1,5 @@
 import { type ComposerSnapshot } from "happy-desktop-state";
+import { ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import { EmptyState } from "../../src/EmptyState";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -115,8 +116,14 @@ export function EmptyStatePage() {
             >
                 <div style={{ display: "flex", width: "560px", height: "480px" }}>
                     <ConversationView
-                        composer={composer}
-                        composerPlaceholder="Message Chief of Staff…"
+                        dock={
+                            <ConversationDock
+                                composer={composer}
+                                composerPlaceholder="Message Chief of Staff…"
+                                onComposerSend={noop}
+                                onComposerValueChange={noop}
+                            />
+                        }
                         emptyContent={
                             <EmptyState
                                 animation="chief-of-staff"
@@ -129,8 +136,6 @@ export function EmptyStatePage() {
                             />
                         }
                         entries={[]}
-                        onComposerSend={noop}
-                        onComposerValueChange={noop}
                     />
                 </div>
             </Specimen>

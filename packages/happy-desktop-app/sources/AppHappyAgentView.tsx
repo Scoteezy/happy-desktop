@@ -39,7 +39,7 @@ import type {
     HappyAgentArtifactTitlesStore,
     HappyAgentArtifactViewerStore,
     ConversationEntry,
-    ComposerSnapshot,
+    ComposerSource,
     ExperimentsStore,
     GptLiveStore,
     ConversationToolCall,
@@ -222,6 +222,8 @@ import {
     ComposerFooterBar,
     ComposerModelControl,
     type ComposerModelUsageWatch,
+    ConversationDock,
+    type ConversationDockProps,
     type ConversationSwitchTarget,
     ConversationView,
     DeferredPane,
@@ -8557,6 +8559,27 @@ function HappyAgentFilePreview(props: {
 }
 
 /**
+ * A conversation's dock, reading its composer's draft itself.
+ *
+ * This is the one subscription a keystroke reaches. The surface around it reads
+ * the workspace, whose snapshot holds the composer as a source rather than its
+ * draft, so typing re-renders this dock and nothing above it. The subscription
+ * is synchronous, not frame-coalesced: a controlled textarea must be given its
+ * new value inside the input event that produced it, or React puts the old one
+ * back and the caret jumps to the end.
+ */
+function HappyAgentComposerDock(
+    props: Omit<ConversationDockProps, "composer"> & { composer: ComposerSource },
+) {
+    const composer = useSyncExternalStore(
+        props.composer.subscribe,
+        props.composer.get,
+        props.composer.get,
+    );
+    return <ConversationDock {...props} composer={composer} />;
+}
+
+/**
  * The composer of a group that holds no conversation yet: a live input rather
  * than a button, so opening a project or worktree and typing is what starts its
  * first session. It is one surface wherever it stands — alone on a group with
@@ -8565,7 +8588,7 @@ function HappyAgentFilePreview(props: {
  * places to type the same first message.
  */
 function HappyAgentGroupComposer(props: {
-    composer: ComposerSnapshot;
+    composer: ComposerSource;
     modelUsageWatch?: ComposerModelUsageWatch;
     /**
      * How that first conversation will be configured, and the options behind
@@ -8595,82 +8618,84 @@ function HappyAgentGroupComposer(props: {
     return (
         <ConversationView
             agentAuthor={agentAuthor}
-            composer={props.composer}
-            composerDisabled={modelsNotConfigured}
-            composerFocusOnType={props.focusOnType && !modelsNotConfigured}
-            // Only the composer that claims stray typing takes the caret, so the
-            // dock over an expanded panel cannot pull it out from under the one
-            // the reader can see.
-            {...(props.focusOnType && !modelsNotConfigured
-                ? { composerFocusKey: props.groupId }
-                : {})}
-            composerPlaceholder={
-                modelsNotConfigured
-                    ? "Configure models to start messaging…"
-                    : composerPlaceholder(props.groupName)
-            }
-            composerSubmitDisabled={props.unavailable !== undefined || props.restarting === true}
-            {...(props.restarting === true ? { composerNotice: AGENT_RESTARTING_NOTICE } : {})}
-            entries={NO_ENTRIES}
-            // The first message is what creates the session, so its model,
-            // effort, and access mode have to be choosable before it is sent
-            // rather than corrected afterwards. These are the same pickers an
-            // open conversation carries, over the draft instead of a live
-            // session.
-            composerControls={
-                draftMenus ? (
-                    <ComposerModelControl
-                        {...happyAgentComposerModelControlProps(draftMenus, {
-                            usageWatch: props.modelUsageWatch,
-                            onChiefOfStaffAsk: (request) =>
-                                workspace.chiefOfStaffDraftAppend(request),
-                            onEffortChange: (effort?: HappyAgentThinkingLevel) =>
-                                workspace.sessionEffortUpdate(effort),
-                            onModelChange: (selection: HappyAgentModelSelection) =>
-                                workspace.sessionModelUpdate(selection),
-                        })}
-                    />
-                ) : undefined
-            }
-            composerFooterControl={
-                draftMenus ? (
-                    <ComposerFooterBar
-                        leading={
-                            <HappyAgentSessionControls
-                                disabled={modelsNotConfigured}
-                                fields={["permission", "tier"]}
-                                menuPlacement="above"
-                                variant="ghost"
-                                menus={draftMenus}
-                                onEffortChange={(effort?: HappyAgentThinkingLevel) =>
-                                    workspace.sessionEffortUpdate(effort)
-                                }
-                                onModelChange={(selection: HappyAgentModelSelection) =>
-                                    workspace.sessionModelUpdate(selection)
-                                }
-                                onPermissionModeChange={(mode: HappyAgentPermissionMode) =>
-                                    workspace.sessionPermissionModeUpdate(mode)
-                                }
-                                onServiceTierChange={(tier?: HappyAgentServiceTier) =>
-                                    workspace.sessionServiceTierUpdate(tier)
+            dock={
+                <HappyAgentComposerDock
+                    composer={props.composer}
+                    disabled={modelsNotConfigured}
+                    composerFocusOnType={props.focusOnType && !modelsNotConfigured}
+                    // Only the composer that claims stray typing takes the caret, so the
+                    // dock over an expanded panel cannot pull it out from under the one
+                    // the reader can see.
+                    {...(props.focusOnType && !modelsNotConfigured
+                        ? { composerFocusKey: props.groupId }
+                        : {})}
+                    composerPlaceholder={
+                        modelsNotConfigured
+                            ? "Configure models to start messaging…"
+                            : composerPlaceholder(props.groupName)
+                    }
+                    submitDisabled={props.unavailable !== undefined || props.restarting === true}
+                    {...(props.restarting === true ? { notice: AGENT_RESTARTING_NOTICE } : {})}
+                    // The first message is what creates the session, so its model,
+                    // effort, and access mode have to be choosable before it is sent
+                    // rather than corrected afterwards. These are the same pickers an
+                    // open conversation carries, over the draft instead of a live
+                    // session.
+                    composerControls={
+                        draftMenus ? (
+                            <ComposerModelControl
+                                {...happyAgentComposerModelControlProps(draftMenus, {
+                                    usageWatch: props.modelUsageWatch,
+                                    onChiefOfStaffAsk: (request) =>
+                                        workspace.chiefOfStaffDraftAppend(request),
+                                    onEffortChange: (effort?: HappyAgentThinkingLevel) =>
+                                        workspace.sessionEffortUpdate(effort),
+                                    onModelChange: (selection: HappyAgentModelSelection) =>
+                                        workspace.sessionModelUpdate(selection),
+                                })}
+                            />
+                        ) : undefined
+                    }
+                    composerFooterControl={
+                        draftMenus ? (
+                            <ComposerFooterBar
+                                leading={
+                                    <HappyAgentSessionControls
+                                        disabled={modelsNotConfigured}
+                                        fields={["permission", "tier"]}
+                                        menuPlacement="above"
+                                        variant="ghost"
+                                        menus={draftMenus}
+                                        onEffortChange={(effort?: HappyAgentThinkingLevel) =>
+                                            workspace.sessionEffortUpdate(effort)
+                                        }
+                                        onModelChange={(selection: HappyAgentModelSelection) =>
+                                            workspace.sessionModelUpdate(selection)
+                                        }
+                                        onPermissionModeChange={(mode: HappyAgentPermissionMode) =>
+                                            workspace.sessionPermissionModeUpdate(mode)
+                                        }
+                                        onServiceTierChange={(tier?: HappyAgentServiceTier) =>
+                                            workspace.sessionServiceTierUpdate(tier)
+                                        }
+                                    />
                                 }
                             />
-                        }
-                    />
-                ) : undefined
+                        ) : undefined
+                    }
+                    onComposerAttachmentRemove={(attachmentId) =>
+                        workspace.composerAttachmentRemove(attachmentId)
+                    }
+                    onComposerAttachmentsSelect={(files) => workspace.composerAttachmentsAdd(files)}
+                    onComposerFocusChange={(focused) => workspace.composerFocusUpdate(focused)}
+                    onComposerSend={() => {
+                        if (!modelsNotConfigured && props.happyAgentOnline())
+                            workspace.composerTextSubmit();
+                    }}
+                    onComposerValueChange={(value) => workspace.composerTextUpdate(value)}
+                />
             }
-            onComposerAttachmentRemove={(attachmentId) =>
-                workspace.composerAttachmentRemove(attachmentId)
-            }
-            onComposerAttachmentsSelect={(files) => workspace.composerAttachmentsAdd(files)}
-            onComposerFocusChange={(focused) => workspace.composerFocusUpdate(focused)}
-            onComposerSend={() => {
-                if (!modelsNotConfigured && props.happyAgentOnline())
-                    workspace.composerTextSubmit();
-            }}
-            onComposerValueChange={(value) =>
-                reactFrameInputUpdate(workspace, () => workspace.composerTextUpdate(value))
-            }
+            entries={NO_ENTRIES}
         />
     );
 }
@@ -9333,33 +9358,117 @@ function HappyAgentConversationSurface(props: {
                     />
                 ) : undefined
             }
-            composer={conversation.composer}
-            composerDisabled={composerDisabled}
-            composerSubmitDisabled={sendRefusal !== undefined || props.restarting === true}
-            // A restarting agent is said in two plain lines above the input,
-            // and only while the input is open: a locked chat already says why.
-            {...(props.restarting === true && !composerDisabled
-                ? { composerNotice: AGENT_RESTARTING_NOTICE }
-                : {})}
-            composerFocusOnType={!composerDisabled && props.focusOnType}
-            // The open conversation is what this composer writes into, so moving
-            // to another one — or landing in the one a new workspace was made
-            // with — puts the caret in the draft. A locked chat has no draft to
-            // put it in, and only the composer claiming stray typing takes it,
-            // so the dock over an expanded panel cannot steal it.
-            {...(!composerDisabled && props.focusOnType
-                ? { composerFocusKey: conversation.conversationId }
-                : {})}
-            // A locked chat says why in the words of whatever locked it: the
-            // agent that owns it, named, or the checkout that will not take a
-            // message. Both are more use than the category of chat this is.
-            composerPlaceholder={
-                props.readOnly
-                    ? (props.readOnlyReason ?? composerPlaceholder(props.groupName))
-                    : modelsNotConfigured
-                      ? "Configure models to start messaging…"
-                      : // The tab already names the chat.
-                        composerPlaceholder(undefined)
+            dock={
+                <HappyAgentComposerDock
+                    composer={conversation.composer}
+                    disabled={composerDisabled}
+                    submitDisabled={sendRefusal !== undefined || props.restarting === true}
+                    // A restarting agent is said in two plain lines above the input,
+                    // and only while the input is open: a locked chat already says why.
+                    {...(props.restarting === true && !composerDisabled
+                        ? { notice: AGENT_RESTARTING_NOTICE }
+                        : {})}
+                    composerFocusOnType={!composerDisabled && props.focusOnType}
+                    // The open conversation is what this composer writes into, so moving
+                    // to another one — or landing in the one a new workspace was made
+                    // with — puts the caret in the draft. A locked chat has no draft to
+                    // put it in, and only the composer claiming stray typing takes it,
+                    // so the dock over an expanded panel cannot steal it.
+                    {...(!composerDisabled && props.focusOnType
+                        ? { composerFocusKey: conversation.conversationId }
+                        : {})}
+                    // A locked chat says why in the words of whatever locked it: the
+                    // agent that owns it, named, or the checkout that will not take a
+                    // message. Both are more use than the category of chat this is.
+                    composerPlaceholder={
+                        props.readOnly
+                            ? (props.readOnlyReason ?? composerPlaceholder(props.groupName))
+                            : modelsNotConfigured
+                              ? "Configure models to start messaging…"
+                              : // The tab already names the chat.
+                                composerPlaceholder(undefined)
+                    }
+                    composerControls={
+                        <>{modelControl ? <ComposerModelControl {...modelControl} /> : null}</>
+                    }
+                    composerFooterControl={
+                        <ComposerFooterBar
+                            leading={
+                                <>
+                                    <HappyAgentSessionControls
+                                        disabled={!configurable}
+                                        fields={["permission", "tier"]}
+                                        menuPlacement="above"
+                                        variant="ghost"
+                                        menus={conversation.menus}
+                                        onEffortChange={(effort?: HappyAgentThinkingLevel) => {
+                                            if (props.happyAgentOnline())
+                                                workspace.sessionEffortUpdate(effort);
+                                        }}
+                                        onModelChange={(selection: HappyAgentModelSelection) => {
+                                            if (props.happyAgentOnline())
+                                                workspace.sessionModelUpdate(selection);
+                                        }}
+                                        onPermissionModeChange={(
+                                            mode: HappyAgentPermissionMode,
+                                        ) => {
+                                            if (props.happyAgentOnline())
+                                                workspace.sessionPermissionModeUpdate(mode);
+                                        }}
+                                        onServiceTierChange={(tier?: HappyAgentServiceTier) => {
+                                            if (props.happyAgentOnline())
+                                                workspace.sessionServiceTierUpdate(tier);
+                                        }}
+                                    />
+                                </>
+                            }
+                            /* How much of the window this session has spent, at the far
+                               end of the same row as the access mode and the speed: the
+                               reader is about to type one more message, and this is
+                               where they find out whether it still fits and when to
+                               compact. Before the provider's first measurement, the
+                               declared window still appears with an empty-state count
+                               so the context surface is discoverable. */
+                            trailing={
+                                conversation.contextGauge ? (
+                                    <ContextMeter
+                                        approximate={conversation.contextGauge.approximate}
+                                        compactTokens={conversation.contextGauge.compactTokens}
+                                        measured={conversation.contextGauge.measured}
+                                        totalTokens={conversation.contextGauge.totalTokens}
+                                        usedTokens={conversation.contextGauge.usedTokens}
+                                    />
+                                ) : undefined
+                            }
+                        />
+                    }
+                    onAbort={
+                        props.canAbort
+                            ? () => {
+                                  if (props.happyAgentOnline()) swallow(workspace.runAbort());
+                              }
+                            : undefined
+                    }
+                    onCommandInvoke={
+                        !modelsNotConfigured && props.unavailable === undefined
+                            ? (commandId) => {
+                                  if (props.happyAgentOnline())
+                                      workspace.composerCommandInvoke(commandId);
+                              }
+                            : undefined
+                    }
+                    onComposerAttachmentRemove={(attachmentId) =>
+                        workspace.composerAttachmentRemove(attachmentId)
+                    }
+                    onComposerAttachmentsSelect={(files) => workspace.composerAttachmentsAdd(files)}
+                    onComposerFocusChange={(focused) => workspace.composerFocusUpdate(focused)}
+                    onComposerSend={() => {
+                        if (!modelsNotConfigured && props.happyAgentOnline())
+                            workspace.composerTextSubmit();
+                    }}
+                    onComposerValueChange={(value) => workspace.composerTextUpdate(value)}
+                    running={conversation.running}
+                />
             }
             conversationId={conversation.conversationId}
             entries={
@@ -9418,84 +9527,6 @@ function HappyAgentConversationSurface(props: {
                 if (props.happyAgentOnline() && !conversation.transcriptComplete)
                     workspace.historyLoadMore();
             }}
-            composerControls={
-                <>{modelControl ? <ComposerModelControl {...modelControl} /> : null}</>
-            }
-            composerFooterControl={
-                <ComposerFooterBar
-                    leading={
-                        <>
-                            <HappyAgentSessionControls
-                                disabled={!configurable}
-                                fields={["permission", "tier"]}
-                                menuPlacement="above"
-                                variant="ghost"
-                                menus={conversation.menus}
-                                onEffortChange={(effort?: HappyAgentThinkingLevel) => {
-                                    if (props.happyAgentOnline())
-                                        workspace.sessionEffortUpdate(effort);
-                                }}
-                                onModelChange={(selection: HappyAgentModelSelection) => {
-                                    if (props.happyAgentOnline())
-                                        workspace.sessionModelUpdate(selection);
-                                }}
-                                onPermissionModeChange={(mode: HappyAgentPermissionMode) => {
-                                    if (props.happyAgentOnline())
-                                        workspace.sessionPermissionModeUpdate(mode);
-                                }}
-                                onServiceTierChange={(tier?: HappyAgentServiceTier) => {
-                                    if (props.happyAgentOnline())
-                                        workspace.sessionServiceTierUpdate(tier);
-                                }}
-                            />
-                        </>
-                    }
-                    /* How much of the window this session has spent, at the far
-                       end of the same row as the access mode and the speed: the
-                       reader is about to type one more message, and this is
-                       where they find out whether it still fits and when to
-                       compact. Before the provider's first measurement, the
-                       declared window still appears with an empty-state count
-                       so the context surface is discoverable. */
-                    trailing={
-                        conversation.contextGauge ? (
-                            <ContextMeter
-                                approximate={conversation.contextGauge.approximate}
-                                compactTokens={conversation.contextGauge.compactTokens}
-                                measured={conversation.contextGauge.measured}
-                                totalTokens={conversation.contextGauge.totalTokens}
-                                usedTokens={conversation.contextGauge.usedTokens}
-                            />
-                        ) : undefined
-                    }
-                />
-            }
-            onAbort={
-                props.canAbort
-                    ? () => {
-                          if (props.happyAgentOnline()) swallow(workspace.runAbort());
-                      }
-                    : undefined
-            }
-            onCommandInvoke={
-                !modelsNotConfigured && props.unavailable === undefined
-                    ? (commandId) => {
-                          if (props.happyAgentOnline()) workspace.composerCommandInvoke(commandId);
-                      }
-                    : undefined
-            }
-            onComposerAttachmentRemove={(attachmentId) =>
-                workspace.composerAttachmentRemove(attachmentId)
-            }
-            onComposerAttachmentsSelect={(files) => workspace.composerAttachmentsAdd(files)}
-            onComposerFocusChange={(focused) => workspace.composerFocusUpdate(focused)}
-            onComposerSend={() => {
-                if (!modelsNotConfigured && props.happyAgentOnline())
-                    workspace.composerTextSubmit();
-            }}
-            onComposerValueChange={(value) =>
-                reactFrameInputUpdate(workspace, () => workspace.composerTextUpdate(value))
-            }
             onFileOpen={(path, selection) => {
                 if (props.happyAgentOnline()) props.onFileOpen(path, selection);
             }}
@@ -10044,59 +10075,73 @@ function HappyAgentCreateBotSurface(props: {
     return (
         <ConversationView
             agentAuthor={agentAuthor}
-            composer={botCreate.composer}
-            // The composer stays live while the host makes the bot: what is
-            // typed meanwhile follows the reader into the conversation, and a
-            // composer that greyed out for the host's round trip would be the
-            // one thing on the screen that moved. The store refuses a second
-            // creation while one is under way.
-            composerFocusOnType
-            composerFocusKey={botCreate.composer.scopeId}
-            // The pickers an open conversation carries, over the draft the
-            // bot's conversation will start from.
-            composerControls={
-                menus ? (
-                    <ComposerModelControl
-                        {...happyAgentComposerModelControlProps(menus, {
-                            usageWatch: modelUsageWatch,
-                            onChiefOfStaffAsk: (request) => store.chiefOfStaffDraftAppend(request),
-                            onEffortChange: (effort?: HappyAgentThinkingLevel) =>
-                                store.botCreateEffortUpdate(effort),
-                            onModelChange: (selection: HappyAgentModelSelection) =>
-                                store.botCreateModelUpdate(selection),
-                        })}
-                    />
-                ) : undefined
-            }
-            composerFooterControl={
-                <ComposerFooterBar
-                    leading={
+            dock={
+                <HappyAgentComposerDock
+                    composer={botCreate.composer}
+                    // The composer stays live while the host makes the bot: what is
+                    // typed meanwhile follows the reader into the conversation, and a
+                    // composer that greyed out for the host's round trip would be the
+                    // one thing on the screen that moved. The store refuses a second
+                    // creation while one is under way.
+                    composerFocusOnType
+                    composerFocusKey={botCreate.composer.get().scopeId}
+                    // The pickers an open conversation carries, over the draft the
+                    // bot's conversation will start from.
+                    composerControls={
                         menus ? (
-                            <HappyAgentSessionControls
-                                fields={["permission", "tier"]}
-                                menuPlacement="above"
-                                variant="ghost"
-                                menus={menus}
-                                onEffortChange={(effort?: HappyAgentThinkingLevel) =>
-                                    store.botCreateEffortUpdate(effort)
-                                }
-                                onModelChange={(selection: HappyAgentModelSelection) =>
-                                    store.botCreateModelUpdate(selection)
-                                }
-                                onPermissionModeChange={(mode: HappyAgentPermissionMode) =>
-                                    store.botCreatePermissionModeUpdate(mode)
-                                }
-                                onServiceTierChange={(tier?: HappyAgentServiceTier) =>
-                                    store.botCreateServiceTierUpdate(tier)
-                                }
+                            <ComposerModelControl
+                                {...happyAgentComposerModelControlProps(menus, {
+                                    usageWatch: modelUsageWatch,
+                                    onChiefOfStaffAsk: (request) =>
+                                        store.chiefOfStaffDraftAppend(request),
+                                    onEffortChange: (effort?: HappyAgentThinkingLevel) =>
+                                        store.botCreateEffortUpdate(effort),
+                                    onModelChange: (selection: HappyAgentModelSelection) =>
+                                        store.botCreateModelUpdate(selection),
+                                })}
                             />
                         ) : undefined
                     }
-                    note="Sending also creates the bot"
+                    composerFooterControl={
+                        <ComposerFooterBar
+                            leading={
+                                menus ? (
+                                    <HappyAgentSessionControls
+                                        fields={["permission", "tier"]}
+                                        menuPlacement="above"
+                                        variant="ghost"
+                                        menus={menus}
+                                        onEffortChange={(effort?: HappyAgentThinkingLevel) =>
+                                            store.botCreateEffortUpdate(effort)
+                                        }
+                                        onModelChange={(selection: HappyAgentModelSelection) =>
+                                            store.botCreateModelUpdate(selection)
+                                        }
+                                        onPermissionModeChange={(mode: HappyAgentPermissionMode) =>
+                                            store.botCreatePermissionModeUpdate(mode)
+                                        }
+                                        onServiceTierChange={(tier?: HappyAgentServiceTier) =>
+                                            store.botCreateServiceTierUpdate(tier)
+                                        }
+                                    />
+                                ) : undefined
+                            }
+                            note="Sending also creates the bot"
+                        />
+                    }
+                    composerPlaceholder="What should it work on?"
+                    submitDisabled={props.unavailable !== undefined}
+                    onComposerAttachmentRemove={(attachmentId) =>
+                        store.botCreateAttachmentRemove(attachmentId)
+                    }
+                    onComposerAttachmentsSelect={(files) => store.botCreateAttachmentsAdd(files)}
+                    onComposerFocusChange={(focused) => store.botCreateTaskFocusUpdate(focused)}
+                    onComposerSend={() => {
+                        if (props.happyAgentOnline()) store.botCreateTaskSend();
+                    }}
+                    onComposerValueChange={(value) => store.botCreateTaskUpdate(value)}
                 />
             }
-            composerPlaceholder="What should it work on?"
-            composerSubmitDisabled={props.unavailable !== undefined}
             emptyContent={
                 <HappyAgentCreateBotPage
                     {...(botCreate.error === undefined ? {} : { error: botCreate.error })}
@@ -10124,17 +10169,6 @@ function HappyAgentCreateBotSurface(props: {
                 />
             }
             entries={NO_ENTRIES}
-            onComposerAttachmentRemove={(attachmentId) =>
-                store.botCreateAttachmentRemove(attachmentId)
-            }
-            onComposerAttachmentsSelect={(files) => store.botCreateAttachmentsAdd(files)}
-            onComposerFocusChange={(focused) => store.botCreateTaskFocusUpdate(focused)}
-            onComposerSend={() => {
-                if (props.happyAgentOnline()) store.botCreateTaskSend();
-            }}
-            onComposerValueChange={(value) =>
-                reactFrameInputUpdate(store, () => store.botCreateTaskUpdate(value))
-            }
         />
     );
 }
@@ -10164,52 +10198,66 @@ function HappyAgentCreateTaskSurface(props: {
     return (
         <ConversationView
             agentAuthor={agentAuthor}
-            composer={taskCreate.composer}
-            composerFocusOnType
-            composerFocusKey={taskCreate.composer.scopeId}
-            composerControls={
-                menus ? (
-                    <ComposerModelControl
-                        {...happyAgentComposerModelControlProps(menus, {
-                            usageWatch: modelUsageWatch,
-                            onChiefOfStaffAsk: (request) => store.chiefOfStaffDraftAppend(request),
-                            onEffortChange: (effort?: HappyAgentThinkingLevel) =>
-                                store.taskCreateEffortUpdate(effort),
-                            onModelChange: (selection: HappyAgentModelSelection) =>
-                                store.taskCreateModelUpdate(selection),
-                        })}
-                    />
-                ) : undefined
-            }
-            composerFooterControl={
-                <ComposerFooterBar
-                    leading={
+            dock={
+                <HappyAgentComposerDock
+                    composer={taskCreate.composer}
+                    composerFocusOnType
+                    composerFocusKey={taskCreate.composer.get().scopeId}
+                    composerControls={
                         menus ? (
-                            <HappyAgentSessionControls
-                                fields={["permission", "tier"]}
-                                menuPlacement="above"
-                                variant="ghost"
-                                menus={menus}
-                                onEffortChange={(effort?: HappyAgentThinkingLevel) =>
-                                    store.taskCreateEffortUpdate(effort)
-                                }
-                                onModelChange={(selection: HappyAgentModelSelection) =>
-                                    store.taskCreateModelUpdate(selection)
-                                }
-                                onPermissionModeChange={(mode: HappyAgentPermissionMode) =>
-                                    store.taskCreatePermissionModeUpdate(mode)
-                                }
-                                onServiceTierChange={(tier?: HappyAgentServiceTier) =>
-                                    store.taskCreateServiceTierUpdate(tier)
-                                }
+                            <ComposerModelControl
+                                {...happyAgentComposerModelControlProps(menus, {
+                                    usageWatch: modelUsageWatch,
+                                    onChiefOfStaffAsk: (request) =>
+                                        store.chiefOfStaffDraftAppend(request),
+                                    onEffortChange: (effort?: HappyAgentThinkingLevel) =>
+                                        store.taskCreateEffortUpdate(effort),
+                                    onModelChange: (selection: HappyAgentModelSelection) =>
+                                        store.taskCreateModelUpdate(selection),
+                                })}
                             />
                         ) : undefined
                     }
-                    note="Sending also creates the task"
+                    composerFooterControl={
+                        <ComposerFooterBar
+                            leading={
+                                menus ? (
+                                    <HappyAgentSessionControls
+                                        fields={["permission", "tier"]}
+                                        menuPlacement="above"
+                                        variant="ghost"
+                                        menus={menus}
+                                        onEffortChange={(effort?: HappyAgentThinkingLevel) =>
+                                            store.taskCreateEffortUpdate(effort)
+                                        }
+                                        onModelChange={(selection: HappyAgentModelSelection) =>
+                                            store.taskCreateModelUpdate(selection)
+                                        }
+                                        onPermissionModeChange={(mode: HappyAgentPermissionMode) =>
+                                            store.taskCreatePermissionModeUpdate(mode)
+                                        }
+                                        onServiceTierChange={(tier?: HappyAgentServiceTier) =>
+                                            store.taskCreateServiceTierUpdate(tier)
+                                        }
+                                    />
+                                ) : undefined
+                            }
+                            note="Sending also creates the task"
+                        />
+                    }
+                    composerPlaceholder="What should it work on?"
+                    submitDisabled={props.unavailable !== undefined}
+                    onComposerAttachmentRemove={(attachmentId) =>
+                        store.taskCreateAttachmentRemove(attachmentId)
+                    }
+                    onComposerAttachmentsSelect={(files) => store.taskCreateAttachmentsAdd(files)}
+                    onComposerFocusChange={(focused) => store.taskCreateMessageFocusUpdate(focused)}
+                    onComposerSend={() => {
+                        if (props.happyAgentOnline()) store.taskCreateMessageSend();
+                    }}
+                    onComposerValueChange={(value) => store.taskCreateMessageUpdate(value)}
                 />
             }
-            composerPlaceholder="What should it work on?"
-            composerSubmitDisabled={props.unavailable !== undefined}
             emptyContent={
                 <HappyAgentCreateTaskPage
                     {...(taskCreate.error === undefined ? {} : { error: taskCreate.error })}
@@ -10230,17 +10278,6 @@ function HappyAgentCreateTaskSurface(props: {
                 />
             }
             entries={NO_ENTRIES}
-            onComposerAttachmentRemove={(attachmentId) =>
-                store.taskCreateAttachmentRemove(attachmentId)
-            }
-            onComposerAttachmentsSelect={(files) => store.taskCreateAttachmentsAdd(files)}
-            onComposerFocusChange={(focused) => store.taskCreateMessageFocusUpdate(focused)}
-            onComposerSend={() => {
-                if (props.happyAgentOnline()) store.taskCreateMessageSend();
-            }}
-            onComposerValueChange={(value) =>
-                reactFrameInputUpdate(store, () => store.taskCreateMessageUpdate(value))
-            }
         />
     );
 }
@@ -11043,8 +11080,6 @@ function HappyAgentPanelChatSurface(props: {
             entries={chatSnapshot?.entries ?? []}
             {...(chatSnapshot ? { expandedTurnIds: chatSnapshot.expandedTurnIds } : {})}
             loading={chatSnapshot === undefined}
-            onComposerSend={() => undefined}
-            onComposerValueChange={() => undefined}
             onTraceToggle={chat.turnTraceToggle}
             running={chatSnapshot?.runStatus === "running"}
         />

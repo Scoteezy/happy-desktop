@@ -8,7 +8,6 @@ import {
 import type { MessageReferences } from "./messageReferences";
 import {
     entryKey,
-    type ComposerSnapshot,
     type ConversationAuthor,
     type ConversationEntry,
     type ConversationErrorAssistance,
@@ -26,7 +25,6 @@ import {
     type AgentWorkingPhase,
 } from "./AgentWorkingStatus";
 import { ChannelHeader } from "./ChannelHeader";
-import { ConversationDock } from "./ConversationDock";
 import {
     ConversationEntryView,
     type ConversationEntryFailureProps,
@@ -204,16 +202,6 @@ export type ConversationViewProps = {
     /** Header controls composed by the surface owner. */
     headerActions?: ReactNode;
     /**
-     * Controls rendered inside the composer toolbar, beneath the text input:
-     * the model/effort picker and the settings affordance. They belong to the
-     * message being written, so they sit with the input rather than the header.
-     */
-    composerControls?: ReactNode;
-    /** Agent-authored contribution bar immediately above the composer. */
-    composerAboveControl?: ReactNode;
-    /** Controlled accessory below the composer card. */
-    composerFooterControl?: ReactNode;
-    /**
      * A modal-class surface (settings dialog, picker) hosted above this one.
      * The owner decides whether it is open; this surface only says where it
      * belongs in the product. It is rendered in the window's own overlay lane,
@@ -234,35 +222,23 @@ export type ConversationViewProps = {
     notice?: ReactNode;
     /** Replaces the conversation body while an owner-selected panel is open. */
     panel?: ReactNode;
+    /**
+     * The write end under the transcript, usually a `ConversationDock`. Absent,
+     * the conversation is only read here.
+     *
+     * A slot rather than the draft and its handlers: the draft changes a
+     * keystroke at a time, and the owner hands this view an element whose own
+     * subscription to the draft re-renders only the dock. The transcript and
+     * header above it are drawn from the conversation and stay as they are
+     * while the reader types.
+     */
+    dock?: ReactNode;
     /** Shows or hides the intermediate entries of a finished turn. */
     onTraceToggle?: (turnId: string) => void;
     /** Finished turns currently listing their intermediate entries. */
     expandedTurnIds?: ReadonlySet<string>;
     /** @deprecated Pending steering now renders as an ordered transcript message. */
     queued?: readonly { readonly id: string; readonly text: string }[];
-    /**
-     * The composer surface snapshot; the draft never lives in this component.
-     * Absent, the conversation is only read here and has no composer.
-     */
-    composer?: ComposerSnapshot;
-    /** Keeps the conversation readable while disabling every composer action. */
-    composerDisabled?: boolean;
-    /** Keeps the local draft editable while disabling submission to the Happy Agent. */
-    composerSubmitDisabled?: boolean;
-    /** Lines said directly above the input, such as why sending is held; see `ConversationDock`. */
-    composerNotice?: readonly string[];
-    composerPlaceholder?: string;
-    /** Makes this composer the last resort for typing; see `Composer.focusOnType`. */
-    composerFocusOnType?: boolean;
-    /** What this composer writes into; a change takes the caret. See `Composer.focusKey`. */
-    composerFocusKey?: string;
-    onComposerValueChange: (value: string) => void;
-    onComposerFocusChange?: (focused: boolean) => void;
-    onComposerSend: () => void;
-    /** Receives images picked through the composer's picker or pasted into it. */
-    onComposerAttachmentsSelect?: (files: File[]) => void;
-    /** Removes one attachment chip from the draft. */
-    onComposerAttachmentRemove?: (attachmentId: string) => void;
     /** Opens one transcript image full size; the owner hosts the viewer in `overlay`. */
     onImageOpen?: (messageId: string, attachmentId: string) => void;
     /** Opens or downloads one linked transcript attachment. */
@@ -307,10 +283,6 @@ export type ConversationViewProps = {
      * draw them. Absent, every such call keeps its card.
      */
     inlinePages?: ConversationInlinePages;
-    /** Runs a command chosen from the `/` palette. */
-    onCommandInvoke?: (commandId: string) => void;
-    /** Stops the current run; the composer's send control becomes this while running. */
-    onAbort?: () => void;
     onRequestAnswer?: (requestId: string, answers: HappyAgentUserInputAnswerMap) => void;
     /** Request-id-scoped local answer submission lifecycles. */
     requestSubmissions?: readonly ConversationRequestSubmission[];
@@ -498,15 +470,14 @@ export function ConversationStatus(props: { elapsedMs?: number; running?: boolea
  * ConversationView — the assembled conversation surface: a `ChannelHeader` with
  * the title, subtitle, and owner-supplied controls; the virtualized shared
  * `MessageList` of `ConversationEntry` rows; an optional owner panel that takes
- * the body; and the shared `Composer` with its `/` command palette and `@`
- * mention candidates. A running turn keeps one minimal `AgentWorkingStatus` in the
+ * the body; and the owner's `dock` under them, usually a `ConversationDock`
+ * holding the shared `Composer`. A running turn keeps one minimal `AgentWorkingStatus` in the
  * message list footer — elapsed clock and current phase — alongside any active
  * external-work summary, all of which scrolls with the transcript rather than
  * floating over it.
  *
- * Every value comes from props and every draft keystroke goes back out through
- * `onComposerValueChange`, so the composer store — not this component — owns the
- * draft, the active command query, and the mention query.
+ * Every value comes from props. The draft is not one of them: it belongs to the
+ * dock, so a keystroke never re-renders the transcript.
  */
 /** What a conversation can do about its latest failure, told which failure row it acts on. */
 export interface ConversationFailureHandlers {
@@ -550,7 +521,6 @@ function failureRowContext(failure: ConversationEntryFailureProps): Conversation
 }
 
 export function ConversationView(props: ConversationViewProps) {
-    const composer = props.composer;
     /* The switch target picked on each failure card. Picking only changes the
        target; it is this view's own UI state, keyed like row expansion so it
        never leaks into another conversation. */
@@ -1159,32 +1129,7 @@ export function ConversationView(props: ConversationViewProps) {
                 </MarkdownLayoutCacheContext.Provider>
             )}
 
-            {composer ? (
-                <ConversationDock
-                    composer={composer}
-                    composerAboveControl={props.composerAboveControl}
-                    composerControls={props.composerControls}
-                    disabled={props.composerDisabled}
-                    submitDisabled={props.composerSubmitDisabled === true}
-                    {...(props.composerNotice === undefined
-                        ? {}
-                        : { notice: props.composerNotice })}
-                    composerFooterControl={props.composerFooterControl}
-                    composerFocusOnType={props.composerFocusOnType}
-                    {...(props.composerFocusKey === undefined
-                        ? {}
-                        : { composerFocusKey: props.composerFocusKey })}
-                    composerPlaceholder={props.composerPlaceholder}
-                    onAbort={props.onAbort}
-                    onCommandInvoke={props.onCommandInvoke}
-                    onComposerAttachmentRemove={props.onComposerAttachmentRemove}
-                    onComposerAttachmentsSelect={props.onComposerAttachmentsSelect}
-                    onComposerFocusChange={props.onComposerFocusChange}
-                    onComposerSend={props.onComposerSend}
-                    onComposerValueChange={props.onComposerValueChange}
-                    running={props.running}
-                />
-            ) : null}
+            {props.dock}
 
             {props.overlay ? <WindowOverlay>{props.overlay}</WindowOverlay> : null}
         </section>

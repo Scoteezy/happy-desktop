@@ -779,8 +779,6 @@ export interface HappyAgentSessionSummary {
     readonly createdAt: number;
     readonly updatedAt: number;
     readonly lastMessageAt?: number;
-    readonly draft?: string;
-    readonly draftUpdatedAt?: number;
 }
 
 export interface HappyAgentSession {
@@ -800,8 +798,6 @@ export interface HappyAgentSession {
     readonly status: HappyAgentSessionStatus;
     readonly title?: string;
     readonly recap?: string;
-    readonly draft?: string;
-    readonly draftUpdatedAt?: number;
     /**
      * Steering messages queued to submit after the current tool call. Non-internal
      * user turns the runner has accepted but not yet started; the composer previews

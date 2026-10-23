@@ -255,6 +255,34 @@ export interface ComposerState extends ComposerSnapshot {
 
 export type ComposerStore = StoreApi<ComposerState>;
 
+/**
+ * One composer's draft as a surface reads it: the current snapshot and a
+ * notification when it changes, without the actions that change it.
+ *
+ * A draft changes a keystroke at a time and nothing else does, so a surface
+ * holds this rather than the snapshot. The snapshot that carries it keeps its
+ * identity while the reader types, and only the subscriber reading the draft
+ * renders for each key.
+ */
+export interface ComposerSource {
+    get(): ComposerSnapshot;
+    subscribe(listener: () => void): () => void;
+}
+
+const composerSources = new WeakMap<ComposerStore, ComposerSource>();
+
+/** The one read-only source for a composer store, the same object for its whole life. */
+export function composerSourceOf(store: ComposerStore): ComposerSource {
+    const cached = composerSources.get(store);
+    if (cached) return cached;
+    const source: ComposerSource = {
+        get: store.getState,
+        subscribe: (listener) => store.subscribe(() => listener()),
+    };
+    composerSources.set(store, source);
+    return source;
+}
+
 export interface ComposerStoreOptions {
     readonly capabilities?: ComposerCapabilities;
     readonly text?: string;

@@ -15,7 +15,7 @@ import {
 import { AppShell } from "../../src/AppShell";
 import { MentionPicker, type Mentionable } from "../../src/Composer";
 import { ComposerModelControl } from "../../src/ComposerModelControl";
-import { ComposerFooterBar } from "../../src/ConversationDock";
+import { ComposerFooterBar, ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import { HappyAgentSessionControls } from "../../src/HappyAgentSessionControls";
 import { happyAgentComposerModelControlProps } from "../../src/happyAgentComposerModelControl";
@@ -513,34 +513,40 @@ function MockChat(props: {
                 username: "happy",
                 kind: "agent",
             }}
-            composer={chatComposer(text, sending)}
-            composerControls={
-                <ComposerModelControl
-                    {...happyAgentComposerModelControlProps(happyAgentMenus, {
-                        onEffortChange: noop,
-                        onModelChange: noop,
-                    })}
-                />
-            }
-            composerFocusKey="surface-groceries-chat"
-            composerFocusOnType
-            composerFooterControl={
-                <ComposerFooterBar
-                    leading={
-                        <HappyAgentSessionControls
-                            fields={["permission", "tier"]}
-                            menuPlacement="above"
-                            variant="ghost"
-                            menus={happyAgentMenus}
-                            onEffortChange={noop}
-                            onModelChange={noop}
-                            onPermissionModeChange={noop}
-                            onServiceTierChange={noop}
+            dock={
+                <ConversationDock
+                    composer={chatComposer(text, sending)}
+                    composerControls={
+                        <ComposerModelControl
+                            {...happyAgentComposerModelControlProps(happyAgentMenus, {
+                                onEffortChange: noop,
+                                onModelChange: noop,
+                            })}
                         />
                     }
+                    composerFocusKey="surface-groceries-chat"
+                    composerFocusOnType
+                    composerFooterControl={
+                        <ComposerFooterBar
+                            leading={
+                                <HappyAgentSessionControls
+                                    fields={["permission", "tier"]}
+                                    menuPlacement="above"
+                                    variant="ghost"
+                                    menus={happyAgentMenus}
+                                    onEffortChange={noop}
+                                    onModelChange={noop}
+                                    onPermissionModeChange={noop}
+                                    onServiceTierChange={noop}
+                                />
+                            }
+                        />
+                    }
+                    composerPlaceholder={`Message Happy in “${surfaceName}”…`}
+                    onComposerSend={send}
+                    onComposerValueChange={setText}
                 />
             }
-            composerPlaceholder={`Message Happy in “${surfaceName}”…`}
             emptyContent={
                 <EmptyState
                     description={`Everyone in ${surfaceName} reads and writes this chat. Its agent can work on ${surfaceName} for whoever asks.`}
@@ -550,8 +556,6 @@ function MockChat(props: {
                 />
             }
             entries={props.entries ?? CHAT}
-            onComposerSend={send}
-            onComposerValueChange={setText}
             viewerId="u1"
         />
     );

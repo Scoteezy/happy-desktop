@@ -4,6 +4,7 @@ import {
     type ComposerSnapshot,
     type CustomTheme,
 } from "happy-desktop-state";
+import { ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
@@ -73,12 +74,17 @@ function TranscriptWindow(props: { readonly theme: (typeof themes)[number] }) {
             >
                 <ConversationView
                     agentAuthor={agentAuthor}
-                    composer={COMPOSER}
-                    composerPlaceholder="Message Happy…"
+                    dock={
+                        <ConversationDock
+                            composer={COMPOSER}
+                            composerPlaceholder="Message Happy…"
+                            onComposerSend={noop}
+                            onComposerValueChange={noop}
+                            running={false}
+                        />
+                    }
                     conversationId={`theme-midnight-${props.theme}`}
                     entries={conversationEntries}
-                    onComposerSend={noop}
-                    onComposerValueChange={noop}
                     onToolMediaOpen={noop}
                     running={false}
                     style={{ flex: "1 1 auto", minWidth: 0 }}

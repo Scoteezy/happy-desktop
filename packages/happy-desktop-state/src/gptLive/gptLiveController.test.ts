@@ -29,6 +29,12 @@ const botTarget = {
     botId: "bot-1",
 } as const;
 
+/** An empty composer at one revision, as the workspace hands out its source. */
+const composerAt = (revision: number) => {
+    const snapshot = { text: "", attachments: [], revision };
+    return { get: () => snapshot, subscribe: () => () => undefined };
+};
+
 /** A conversation as the workspace holds it once its transcript has loaded. */
 const loaded = (conversationId: string) => ({
     type: "ready",
@@ -40,7 +46,7 @@ const loaded = (conversationId: string) => ({
         transcriptComplete: true,
         running: false,
         workingWait: false,
-        composer: { text: "", attachments: [], revision: 1 },
+        composer: composerAt(1),
         session: { type: "ready", value: { pendingUserInputs: [], permissionMode: "read_only" } },
     },
 });
@@ -214,7 +220,7 @@ describe("GPT-Live controller navigation", () => {
                 type: "ready",
                 value: {
                     ...loaded(botTarget.sessionId).value,
-                    composer: { text: "", attachments: [], revision: 2 },
+                    composer: composerAt(2),
                 },
             },
         }));

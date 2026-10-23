@@ -21,6 +21,7 @@ import type {
     Workspace,
 } from "@slopus/happy-agent-client";
 import { happyAgentServiceTierFromWire } from "../happyAgentServiceTier.js";
+import { deepEqual } from "../happyAgent/happyAgentSupport.js";
 import { happyAgentConversationActivityProject } from "../happyAgent/happyAgentConversationAuthors.js";
 import type { HappyAgentSubtaskActivity } from "../happyAgent/happyAgentTypes.js";
 import type { UserProfile } from "./userProfiles.js";
@@ -774,8 +775,7 @@ const groupSessionCache = new WeakMap<
     Agent,
     {
         config: DaemonConfig;
-        draft: AgentDraftSnapshot | undefined;
-        storedMode: MessageMode | null | undefined;
+        mode: MessageMode;
         endpoint: string;
         cwd: string;
         workspaceKind: Workspace["kind"] | undefined;
@@ -829,12 +829,14 @@ function projectAgent(
     const botId = workspace?.kind === "bot" ? (workspace.botId ?? undefined) : undefined;
     const projectId = workspace?.projectId ?? agent.workspaceId;
     const cwd = workspacePath(workspace);
+    // The draft reaches a row only through the mode it picks. Its text is the
+    // composer's alone, so a keystroke must not replace the row or the list.
+    const mode = modeOf(config, draft, storedMode);
     const cached = groupSessionCache.get(agent);
     if (
         cached &&
         cached.config === config &&
-        cached.draft === draft &&
-        cached.storedMode === storedMode &&
+        deepEqual(cached.mode, mode) &&
         cached.endpoint === endpoint &&
         cached.cwd === cwd &&
         cached.workspaceKind === workspace?.kind &&
@@ -842,7 +844,6 @@ function projectAgent(
         cached.projectId === projectId
     )
         return cached.value;
-    const mode = modeOf(config, draft, storedMode);
     const serviceTier = happyAgentServiceTierFromWire(mode.serviceTier);
     const subtaskActivity = subtaskActivityOf(agent);
     // A bot's one conversation is scoped to the bot. Only a project's workspace
@@ -860,12 +861,6 @@ function projectAgent(
         ...(agent.archivedAt === null ? {} : { archivedAt: agent.archivedAt }),
         createdAt: agent.createdAt,
         cwd,
-        ...(draft?.value == null
-            ? {}
-            : {
-                  draft: draft.value.text,
-                  ...(draft.updatedAt === null ? {} : { draftUpdatedAt: draft.updatedAt }),
-              }),
         effort: mode.effort,
         id: agent.id,
         modelId: mode.modelId,
@@ -899,8 +894,7 @@ function projectAgent(
     };
     groupSessionCache.set(agent, {
         config,
-        draft,
-        storedMode,
+        mode,
         endpoint,
         cwd,
         workspaceKind: workspace?.kind,

@@ -589,8 +589,6 @@ function sessionProject(session: SessionState): HappyAgentSession {
         status: sessionStatusProject(session),
         ...(session.title === undefined ? {} : { title: session.title }),
         ...(session.recap === undefined ? {} : { recap: session.recap }),
-        ...(session.draft === undefined ? {} : { draft: session.draft }),
-        ...(session.draftUpdatedAt === undefined ? {} : { draftUpdatedAt: session.draftUpdatedAt }),
         queuedMessages: transcriptQueuedMessagesProject(session),
         pendingUserInputs: transcriptPendingUserInputsProject(session),
         ...(transcriptGoalProject(session) === undefined
@@ -602,6 +600,26 @@ function sessionProject(session: SessionState): HappyAgentSession {
         createdAt: session.activity.since,
         updatedAt: session.activity.since,
     };
+}
+
+/** The stored draft's two fields of a chat snapshot, present or absent as they are there. */
+function chatDraftOf(
+    snapshot: HappyAgentChatSnapshot,
+): Pick<HappyAgentChatSnapshot, "draft" | "draftUpdatedAt"> {
+    return {
+        ...(snapshot.draft === undefined ? {} : { draft: snapshot.draft }),
+        ...(snapshot.draftUpdatedAt === undefined
+            ? {}
+            : { draftUpdatedAt: snapshot.draftUpdatedAt }),
+    };
+}
+
+/** A chat snapshot without its stored draft, every other part by reference. */
+function chatDraftless(
+    snapshot: HappyAgentChatSnapshot,
+): Omit<HappyAgentChatSnapshot, "draft" | "draftUpdatedAt"> {
+    const { draft: _draft, draftUpdatedAt: _draftUpdatedAt, ...rest } = snapshot;
+    return rest;
 }
 
 export interface HappyAgentChatSnapshot {
@@ -1119,7 +1137,18 @@ export function happyAgentChatStoreCreate(
            needs no further inspection. Only when the transcript stood still is
            the rest of the snapshot worth comparing — and then the comparison
            settles the transcript on one reference rather than walking it. */
-        if (entries !== previous.entries || !deepEqual(previous, next)) store.setState(next, true);
+        if (entries !== previous.entries) {
+            store.setState(next, true);
+            return;
+        }
+        if (deepEqual(previous, next)) return;
+        /* The stored draft follows the composer a keystroke at a time. When it
+           is all that moved, every other part keeps its reference, so a reader
+           of the session, the menus, or the queue settles it with one
+           comparison instead of drawing the conversation again per key. */
+        if (deepEqual(chatDraftless(previous), chatDraftless(next)))
+            store.setState({ ...chatDraftless(previous), ...chatDraftOf(next) }, true);
+        else store.setState(next, true);
     };
 
     const start = (): void => {

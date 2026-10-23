@@ -8,6 +8,7 @@ import type {
 } from "happy-desktop-state";
 import { expect, it } from "vitest";
 import "./styles.css";
+import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import { Message } from "./Message";
 import {
@@ -126,13 +127,18 @@ it("keeps live prose, tool, and status rows adjacent before and after settlement
             <div className="happy-theme-dark" style={{ width: state.width, height: 700 }}>
                 <ConversationView
                     agentAuthor={agent}
-                    composer={composer}
+                    dock={
+                        <ConversationDock
+                            composer={composer}
+                            onComposerSend={() => {}}
+                            onComposerValueChange={() => {}}
+                            running
+                        />
+                    }
                     conversationId="streaming-layout"
                     elapsedMs={82_000}
                     entries={[message(state.text, state.streaming), tool]}
                     motion="calm"
-                    onComposerSend={() => {}}
-                    onComposerValueChange={() => {}}
                     running
                     workingLabel="Preparing tools"
                 />
@@ -184,12 +190,17 @@ for (const width of [800, 560, 360]) {
                 <div className="happy-theme-dark" style={{ width, height: 700 }}>
                     <ConversationView
                         agentAuthor={agent}
-                        composer={composer}
+                        dock={
+                            <ConversationDock
+                                composer={composer}
+                                onComposerSend={() => {}}
+                                onComposerValueChange={() => {}}
+                                running
+                            />
+                        }
                         conversationId="nested-link-stream"
                         entries={[message(state.text, state.streaming), tool]}
                         motion="calm"
-                        onComposerSend={() => {}}
-                        onComposerValueChange={() => {}}
                         running
                     />
                 </div>
@@ -233,7 +244,14 @@ it("keeps the transcript fixed when the live status becomes the completed summar
             <div className="happy-theme-dark" style={{ width: 800, height: 700 }}>
                 <ConversationView
                     agentAuthor={agent}
-                    composer={composer}
+                    dock={
+                        <ConversationDock
+                            composer={composer}
+                            onComposerSend={() => {}}
+                            onComposerValueChange={() => {}}
+                            running={running}
+                        />
+                    }
                     conversationId="completion-transition"
                     elapsedMs={82_000}
                     entries={
@@ -242,8 +260,6 @@ it("keeps the transcript fixed when the live status becomes the completed summar
                             : [tool, message(markdown, false), completed]
                     }
                     motion="calm"
-                    onComposerSend={() => {}}
-                    onComposerValueChange={() => {}}
                     running={running}
                     workingLabel="Finishing"
                 />
@@ -284,12 +300,17 @@ for (const width of [800, 560, 360]) {
                 <div className="happy-theme-dark" style={{ width: state.width, height: 700 }}>
                     <ConversationView
                         agentAuthor={agent}
-                        composer={composer}
+                        dock={
+                            <ConversationDock
+                                composer={composer}
+                                onComposerSend={() => {}}
+                                onComposerValueChange={() => {}}
+                                running
+                            />
+                        }
                         conversationId="reported-rich-table"
                         entries={[message(state.text, state.streaming), tool]}
                         motion="calm"
-                        onComposerSend={() => {}}
-                        onComposerValueChange={() => {}}
                         running
                     />
                 </div>
@@ -346,12 +367,17 @@ it("matches empty streamed heading, list and table boxes", async () => {
         return (
             <ConversationView
                 agentAuthor={agent}
-                composer={composer}
+                dock={
+                    <ConversationDock
+                        composer={composer}
+                        onComposerSend={() => {}}
+                        onComposerValueChange={() => {}}
+                        running
+                    />
+                }
                 conversationId="empty-streamed-blocks"
                 entries={[message(text, true), tool]}
                 motion="calm"
-                onComposerSend={() => {}}
-                onComposerValueChange={() => {}}
                 running
             />
         );
@@ -404,12 +430,17 @@ it("keeps the reported movie list adjacent to the next row at subpixel wrap boun
             <div style={{ width: state.width, height: 700 }}>
                 <ConversationView
                     agentAuthor={agent}
-                    composer={composer}
+                    dock={
+                        <ConversationDock
+                            composer={composer}
+                            onComposerSend={() => {}}
+                            onComposerValueChange={() => {}}
+                            running={state.streaming}
+                        />
+                    }
                     conversationId="movie-list-layout"
                     entries={[message(state.text, state.streaming), tool]}
                     motion="calm"
-                    onComposerSend={() => {}}
-                    onComposerValueChange={() => {}}
                     running={state.streaming}
                 />
             </div>
@@ -455,12 +486,17 @@ it("keeps expanded shell output adjacent to the live status while output grows",
         return (
             <ConversationView
                 agentAuthor={agent}
-                composer={composer}
+                dock={
+                    <ConversationDock
+                        composer={composer}
+                        onComposerSend={() => {}}
+                        onComposerValueChange={() => {}}
+                        running
+                    />
+                }
                 conversationId="streaming-output"
                 entries={[shell]}
                 motion="calm"
-                onComposerSend={() => {}}
-                onComposerValueChange={() => {}}
                 running
             />
         );

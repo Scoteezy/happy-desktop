@@ -26,6 +26,7 @@ import {
     type ConversationSwitchSource,
     type ConversationSwitchTarget,
 } from "./conversationSwitchTargets";
+import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import { createRenderer } from "./testing";
 import "./styles.css";
@@ -689,14 +690,18 @@ it("switches from the conversation's live picker source, follows its usage, and 
     const conversation = (failure: ConversationFailure) => (
         <div style={{ display: "flex", height: "600px" }}>
             <ConversationView
-                composer={COMPOSER}
+                dock={
+                    <ConversationDock
+                        composer={COMPOSER}
+                        onComposerSend={() => undefined}
+                        onComposerValueChange={() => undefined}
+                    />
+                }
                 conversationId="failure-switch"
                 entries={[notice(failure)]}
                 failureActions={{ onRetry: () => undefined, onSwitch }}
                 failureClock={CLOCK}
                 failureSwitch={source}
-                onComposerSend={() => undefined}
-                onComposerValueChange={() => undefined}
             />
         </div>
     );
@@ -764,7 +769,13 @@ it("offers Retry alone when the live picker has no other account", async () => {
         () => (
             <div style={{ display: "flex", height: "500px" }}>
                 <ConversationView
-                    composer={COMPOSER}
+                    dock={
+                        <ConversationDock
+                            composer={COMPOSER}
+                            onComposerSend={() => undefined}
+                            onComposerValueChange={() => undefined}
+                        />
+                    }
                     conversationId="failure-alone"
                     entries={[notice(signin())]}
                     failureActions={{ onRetry: () => undefined, onSwitch: () => undefined }}
@@ -774,8 +785,6 @@ it("offers Retry alone when the live picker has no other account", async () => {
                         selection: SELECTION,
                         usageWatch: live.watch,
                     }}
-                    onComposerSend={() => undefined}
-                    onComposerValueChange={() => undefined}
                 />
             </div>
         ),

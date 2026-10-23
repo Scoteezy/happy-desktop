@@ -5,6 +5,7 @@ import type { ComposerSnapshot, ConversationEntry } from "happy-desktop-state";
 import { expect, it } from "vitest";
 import { AppShell } from "./AppShell";
 import { ContextMenu } from "./ContextMenu";
+import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import { RetainedViews } from "./RetainedViews";
 import { createRenderer } from "./testing";
@@ -82,14 +83,18 @@ function harness(initial: Shown) {
                         id,
                         content: (
                             <ConversationView
-                                composer={composer(id)}
-                                composerFocusKey={id}
-                                composerFocusOnType
-                                composerPlaceholder={`Write to ${id}`}
+                                dock={
+                                    <ConversationDock
+                                        composer={composer(id)}
+                                        composerFocusKey={id}
+                                        composerFocusOnType
+                                        composerPlaceholder={`Write to ${id}`}
+                                        onComposerSend={() => undefined}
+                                        onComposerValueChange={() => undefined}
+                                    />
+                                }
                                 conversationId={id}
                                 entries={TRANSCRIPTS.get(id)!}
-                                onComposerSend={() => undefined}
-                                onComposerValueChange={() => undefined}
                             />
                         ),
                     }))}

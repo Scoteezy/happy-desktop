@@ -925,12 +925,23 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     };
 
     const replaceDraft = (agentId: string, draft: AgentDraftSnapshot): void => {
+        const previous = agentDrafts.get(agentId);
         agentDrafts.set(agentId, draft);
         const entry = sessions.get(agentId);
         if (entry !== undefined) {
             entry.draft = draft;
             publishSession(entry);
         }
+        // A row shows only the mode a draft picks, never its text, so typing
+        // leaves every list as it was.
+        if (
+            config !== undefined &&
+            deepEqual(
+                modeOf(config, previous, agentModes.get(agentId)),
+                modeOf(config, draft, agentModes.get(agentId)),
+            )
+        )
+            return;
         publishGroups();
     };
 

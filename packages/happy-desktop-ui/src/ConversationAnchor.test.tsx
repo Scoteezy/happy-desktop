@@ -7,6 +7,7 @@ import type {
 } from "happy-desktop-state";
 import { expect, it } from "vitest";
 import "./styles.css";
+import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import {
     conversationRowHeight,
@@ -185,11 +186,16 @@ function harnessRender(width: number): Harness {
             >
                 <ConversationView
                     agentAuthor={agent}
-                    composer={composer}
+                    dock={
+                        <ConversationDock
+                            composer={composer}
+                            onComposerSend={() => undefined}
+                            onComposerValueChange={() => undefined}
+                            running={false}
+                        />
+                    }
                     conversationId={mounted.conversation}
                     entries={entries}
-                    onComposerSend={() => undefined}
-                    onComposerValueChange={() => undefined}
                     onScrollPositionChange={(position) => {
                         reported = position;
                     }}

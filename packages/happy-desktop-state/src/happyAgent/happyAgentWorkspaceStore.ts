@@ -36,6 +36,8 @@ import {
     type ComposerCommand,
     type ComposerReviewComment,
     type ComposerSnapshot,
+    type ComposerSource,
+    composerSourceOf,
     type ComposerStore,
 } from "../modules/composer/composerState.js";
 import type {
@@ -256,7 +258,13 @@ export interface HappyAgentConversationSnapshot {
     readonly subtitle?: string;
     readonly entries: readonly ConversationEntry[];
     readonly errorAssistance: readonly ConversationErrorAssistanceEntry[];
-    readonly composer: ComposerSnapshot;
+    /**
+     * The conversation's composer. A source rather than the draft itself: a
+     * keystroke changes the draft and nothing else, so it reaches whatever
+     * reads the composer and leaves this snapshot, and every surface drawn
+     * from it, as they were.
+     */
+    readonly composer: ComposerSource;
     readonly running: boolean;
     readonly workingPhase: HappyAgentWorkingPhase;
     /** Display-ready activity text from the agent, when it describes its work. */
@@ -717,7 +725,7 @@ export interface HappyAgentWorkspaceSnapshot {
      * into it is what starts the group's first conversation, so a project or a
      * worktree can be opened and typed into before anything exists in it.
      */
-    readonly groupComposer?: ComposerSnapshot;
+    readonly groupComposer?: ComposerSource;
     /**
      * How that first conversation will be configured — model, effort, access
      * mode, tier — and the picker options behind those choices. Present only
@@ -890,7 +898,7 @@ export interface HappyAgentBotCreateSnapshot {
      * making the bot without sending carries its text into the conversation as
      * the draft, so nothing the reader wrote moves or disappears.
      */
-    readonly composer: ComposerSnapshot;
+    readonly composer: ComposerSource;
     /**
      * The model, effort, access mode, and speed the bot's conversation will
      * start with, and the options behind those choices — the same pickers the
@@ -916,7 +924,7 @@ export interface HappyAgentTaskCreateSnapshot {
     /** The chosen name. Blank, the host names the task from its first message. */
     readonly name: string;
     /** The composer the first message is written in; see `HappyAgentBotCreateSnapshot`. */
-    readonly composer: ComposerSnapshot;
+    readonly composer: ComposerSource;
     /** The pickers the task's conversation will start with, once the catalog is read. */
     readonly menus?: HappyAgentMenusSnapshot;
     /** True while the task is being made; the surface stays up and inert. */
@@ -2302,7 +2310,6 @@ export function happyAgentWorkspaceStoreCreate(
     let chatStore: HappyAgentChatStore | undefined;
     let unsubscribeChat: (() => void) | undefined;
     let composer: ComposerStore | undefined;
-    let unsubscribeComposer: (() => void) | undefined;
     // The chat store of the open conversation once it is acquired. Composer
     // output that lands before then waits on this rather than being dropped.
     let chatArrival: Promise<HappyAgentChatStore> | undefined;
@@ -2491,7 +2498,6 @@ export function happyAgentWorkspaceStoreCreate(
      */
     let createKind: "bot" | "task" = "bot";
     let botCreateComposer: ComposerStore | undefined;
-    let unsubscribeBotCreateComposer: (() => void) | undefined;
     /**
      * How the bot's conversation will be configured, materialized from the
      * model catalog once it has been read — the same draft a group with no
@@ -2510,7 +2516,7 @@ export function happyAgentWorkspaceStoreCreate(
     let botCreateComposedFrom:
         | {
               readonly draft: BotCreateDraft;
-              readonly composer: ComposerSnapshot;
+              readonly composer: ComposerSource;
               readonly session: HappyAgentSessionDraftSnapshot | undefined;
           }
         | undefined;
@@ -2537,7 +2543,6 @@ export function happyAgentWorkspaceStoreCreate(
     /** Directories that changed while their read was in flight; each reads again after it. */
     let workspaceFilesRefreshPending = new Set<string>();
     let groupComposer: ComposerStore | undefined;
-    let unsubscribeGroupComposer: (() => void) | undefined;
     /** How the addressed group's first session will be configured. */
     let groupDraft: HappyAgentSessionDraftStore | undefined;
     let groupDraftWriter: HappyAgentSessionDraftWriter | undefined;
@@ -2869,7 +2874,7 @@ export function happyAgentWorkspaceStoreCreate(
 
     const conversationProject = (
         chat: HappyAgentChatSnapshot,
-        draft: ComposerSnapshot,
+        draft: ComposerSource,
         /** Stands in only until this session states its own; see `recompute`. */
         pendingMenus: HappyAgentMenusSnapshot | undefined,
     ): HappyAgentConversationSnapshot => {
@@ -3045,7 +3050,7 @@ export function happyAgentWorkspaceStoreCreate(
         )
             tabOrder = nextTabOrder;
         const chat = chatStore?.get();
-        const draft = composer?.getState();
+        const draft = composer && composerSourceOf(composer);
         const conversationDelegated = openId !== undefined && list.sessionDelegated(openId);
         // A failed acquisition stays failed until something retries it; the
         // composer must not paint over the error the reader has to act on.
@@ -3075,7 +3080,7 @@ export function happyAgentWorkspaceStoreCreate(
                 conversation = { type: "ready", value: next };
             }
         }
-        const groupComposerDraft = groupComposer?.getState();
+        const groupComposerDraft = groupComposer && composerSourceOf(groupComposer);
         const groupSessionDraft = groupDraft?.get();
         botCreateCompose();
         const nextAddress = addressPublic();
@@ -4595,8 +4600,6 @@ export function happyAgentWorkspaceStoreCreate(
         mentionGeneration += 1;
         if (composer?.getState().voiceDraft)
             voiceComposers.set(composer.getState().scopeId as HappyAgentSessionId, composer);
-        unsubscribeComposer?.();
-        unsubscribeComposer = undefined;
         composer = undefined;
         unsubscribeChat?.();
         unsubscribeChat = undefined;
@@ -5219,10 +5222,7 @@ export function happyAgentWorkspaceStoreCreate(
         // screen immediately and the transcript fills in behind it. Anything
         // typed before the chat handle arrives is submitted once it does. A
         // retry after a failure starts from the same live composer.
-        if (!composer) {
-            composer = composerCreate(conversationId);
-            unsubscribeComposer = composer.subscribe(recompute);
-        }
+        if (!composer) composer = composerCreate(conversationId);
         if (conversation.type === "error") conversation = { type: "loading" };
         recompute();
         const acquisition = client.chat(conversationId);
@@ -5584,7 +5584,7 @@ export function happyAgentWorkspaceStoreCreate(
 
     /** Composes the published draft from its parts, keeping identity while none moved. */
     const botCreateCompose = (): void => {
-        const composerState = botCreateComposer?.getState();
+        const composerState = botCreateComposer && composerSourceOf(botCreateComposer);
         if (botCreateDraft === undefined || composerState === undefined) {
             botCreate = undefined;
             taskCreate = undefined;
@@ -5660,8 +5660,6 @@ export function happyAgentWorkspaceStoreCreate(
         if (dropped)
             for (const attachment of botCreateComposer?.getState().attachments ?? [])
                 happyAgentComposerAttachmentPreviewRelease(attachment);
-        unsubscribeBotCreateComposer?.();
-        unsubscribeBotCreateComposer = undefined;
         botCreateComposer = undefined;
         unsubscribeBotCreateSessionDraft?.();
         unsubscribeBotCreateSessionDraft = undefined;
@@ -5888,7 +5886,6 @@ export function happyAgentWorkspaceStoreCreate(
             },
         });
         botCreateComposer = created;
-        unsubscribeBotCreateComposer = created.subscribe(recompute);
         botCreateSessionDraftEnsure();
         recompute();
     };
@@ -5913,8 +5910,6 @@ export function happyAgentWorkspaceStoreCreate(
     };
 
     const releaseGroup = (): void => {
-        unsubscribeGroupComposer?.();
-        unsubscribeGroupComposer = undefined;
         groupComposer = undefined;
         unsubscribeGroupDraft?.();
         unsubscribeGroupDraft = undefined;
@@ -7028,7 +7023,6 @@ export function happyAgentWorkspaceStoreCreate(
                 },
             });
             groupComposer = created;
-            unsubscribeGroupComposer = created.subscribe(recompute);
             groupDraftEnsure(groupId);
             recompute();
         },
@@ -8652,7 +8646,7 @@ const NO_TURNS: ReadonlySet<string> = new Set();
  */
 function conversationAcquiring(
     conversationId: HappyAgentSessionId,
-    composer: ComposerSnapshot,
+    composer: ComposerSource,
     summary: ConversationSummary | undefined,
     menus?: HappyAgentMenusSnapshot,
 ): HappyAgentConversationSnapshot {

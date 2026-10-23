@@ -1,7 +1,7 @@
 import type { ComposerSnapshot } from "happy-desktop-state";
 import type { ReactNode } from "react";
 import { ComposerModelControl } from "../../src/ComposerModelControl";
-import { ComposerFooterBar } from "../../src/ConversationDock";
+import { ComposerFooterBar, ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import { HappyAgentCreateTaskPage } from "../../src/HappyAgentCreateTaskPage";
 import { HappyAgentSessionControls } from "../../src/HappyAgentSessionControls";
@@ -65,41 +65,45 @@ function region(children: ReactNode, size: { height: string; width: string } = R
 function inPlace(panel: ReactNode, text: string, submitDisabled = false, disabled = false) {
     return (
         <ConversationView
-            composer={composerWith(text)}
-            composerControls={
-                <ComposerModelControl
-                    {...happyAgentComposerModelControlProps(happyAgentMenus, {
-                        onEffortChange: noop,
-                        onModelChange: noop,
-                    })}
-                />
-            }
-            composerDisabled={disabled}
-            composerFooterControl={
-                <ComposerFooterBar
-                    leading={
-                        <HappyAgentSessionControls
-                            fields={["permission", "tier"]}
-                            menuPlacement="above"
-                            variant="ghost"
-                            menus={happyAgentMenus}
-                            onEffortChange={noop}
-                            onModelChange={noop}
-                            onPermissionModeChange={noop}
-                            onServiceTierChange={noop}
+            dock={
+                <ConversationDock
+                    composer={composerWith(text)}
+                    composerControls={
+                        <ComposerModelControl
+                            {...happyAgentComposerModelControlProps(happyAgentMenus, {
+                                onEffortChange: noop,
+                                onModelChange: noop,
+                            })}
                         />
                     }
-                    note="Sending also creates the task"
+                    disabled={disabled}
+                    composerFooterControl={
+                        <ComposerFooterBar
+                            leading={
+                                <HappyAgentSessionControls
+                                    fields={["permission", "tier"]}
+                                    menuPlacement="above"
+                                    variant="ghost"
+                                    menus={happyAgentMenus}
+                                    onEffortChange={noop}
+                                    onModelChange={noop}
+                                    onPermissionModeChange={noop}
+                                    onServiceTierChange={noop}
+                                />
+                            }
+                            note="Sending also creates the task"
+                        />
+                    }
+                    composerPlaceholder="What should it work on?"
+                    submitDisabled={submitDisabled}
+                    onComposerAttachmentRemove={noop}
+                    onComposerAttachmentsSelect={noop}
+                    onComposerSend={noop}
+                    onComposerValueChange={noop}
                 />
             }
-            composerPlaceholder="What should it work on?"
-            composerSubmitDisabled={submitDisabled}
             emptyContent={panel}
             entries={[]}
-            onComposerAttachmentRemove={noop}
-            onComposerAttachmentsSelect={noop}
-            onComposerSend={noop}
-            onComposerValueChange={noop}
         />
     );
 }

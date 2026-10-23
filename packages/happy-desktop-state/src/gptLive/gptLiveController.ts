@@ -12,6 +12,7 @@ import type {
     HappyAgentWorkspaceStore,
 } from "../happyAgent/happyAgentWorkspaceStore.js";
 import type { HappyAgentModelStore } from "../happyAgent/happyAgentModelStore.js";
+import type { ComposerSource } from "../modules/composer/composerState.js";
 import { gptLiveAppStateRead, type GptLiveAppState } from "./gptLiveAppState.js";
 import type { GptLiveDesktopSource } from "./gptLiveDesktopSource.js";
 import type { GptLiveRuntimeEvent, GptLiveVoiceFocus } from "./gptLiveRuntime.js";
@@ -158,7 +159,7 @@ export function gptLiveControllerCreate(options: {
             // Only the revision crosses the wire, never the draft text. Edits
             // while composerHasDraft stays true must still invalidate intent.
             composerRevision:
-                conversation?.type === "ready" ? conversation.value.composer.revision : null,
+                conversation?.type === "ready" ? conversation.value.composer.get().revision : null,
             permissionMode:
                 conversation?.type === "ready" && conversation.value.session.type === "ready"
                     ? conversation.value.session.value.permissionMode
@@ -195,6 +196,12 @@ export function gptLiveControllerCreate(options: {
     let running: (Queued & { timer: ReturnType<typeof setTimeout> }) | undefined;
     const workspaceStops = new Map<HappyAgentWorkspaceStore, () => void>();
     const modelStops = new Map<HappyAgentModelStore, () => void>();
+    /*
+     * The open conversations' composers. A draft is no longer part of the
+     * workspace snapshot, so an edit reaches the decision only through these;
+     * the workspace subscription keeps the set current as conversations open.
+     */
+    const composerStops = new Map<ComposerSource, () => void>();
     const ledger = new Map<string, LiveDesktopActionResult | undefined>();
     type Watch = {
         target: LiveSessionRef;
@@ -438,6 +445,20 @@ export function gptLiveControllerCreate(options: {
                 workspaceStops.set(workspace, () => {});
                 workspaceStops.set(workspace, workspace.subscribe(follow));
             }
+        const wantedComposers = new Set(
+            [...wanted].flatMap((workspace) => {
+                const conversation = workspace.get().conversation;
+                return conversation.type === "ready" ? [conversation.value.composer] : [];
+            }),
+        );
+        for (const [composer, stop] of composerStops)
+            if (!wantedComposers.has(composer)) {
+                stop();
+                composerStops.delete(composer);
+            }
+        for (const composer of wantedComposers)
+            if (!composerStops.has(composer))
+                composerStops.set(composer, composer.subscribe(schedule));
         schedule();
     };
     const check = (expected: number, signal?: AbortSignal) => {
@@ -1083,6 +1104,8 @@ export function gptLiveControllerCreate(options: {
             workspaceStops.clear();
             for (const stop of modelStops.values()) stop();
             modelStops.clear();
+            for (const stop of composerStops.values()) stop();
+            composerStops.clear();
             for (const watch of watches.values()) {
                 watchRelease(watch);
             }

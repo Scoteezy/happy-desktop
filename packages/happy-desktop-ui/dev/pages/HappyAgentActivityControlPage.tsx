@@ -4,6 +4,7 @@ import {
     type ComposerSnapshot,
     type ConversationEntry,
 } from "happy-desktop-state";
+import { ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import { HappyAgentActivityControl } from "../../src/HappyAgentActivityControl";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -75,16 +76,21 @@ function TranscriptStage(props: {
                 activityControl={activity}
                 activityTreatment="focused"
                 agentAuthor={agentAuthor}
-                composer={COMPOSER}
-                composerPlaceholder="Message Happy…"
+                dock={
+                    <ConversationDock
+                        composer={COMPOSER}
+                        composerPlaceholder="Message Happy…"
+                        onComposerSend={noop}
+                        onComposerValueChange={noop}
+                        running={props.running ?? true}
+                    />
+                }
                 conversationId="activity-control"
                 delegatedAgents={props.agents}
                 delegatedElapsedMs={props.delegatedElapsedMs}
                 elapsedMs={28_000}
                 entries={props.running === false ? SETTLED_ENTRIES : conversationEntries}
                 motion="calm-typed"
-                onComposerSend={noop}
-                onComposerValueChange={noop}
                 running={props.running ?? true}
                 style={{ flex: "1 1 auto", minWidth: 0 }}
                 viewerId={happyAgentOwnerAuthor.id}

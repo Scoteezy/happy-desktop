@@ -16,6 +16,7 @@ import {
     type ComposerModelService,
     type ComposerModelUsageWatch,
 } from "../../src/ComposerModelControl";
+import { ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import type { ConversationSwitchSource } from "../../src/conversationSwitchTargets";
 import { ThemeScope } from "../../src/ThemeScope";
@@ -387,17 +388,25 @@ function conversation(screen: Screen): ReactNode {
         <ConversationView
             activityTreatment="focused"
             agentAuthor={agentAuthor}
-            composer={COMPOSER}
-            composerControls={
-                <ComposerModelControl
-                    onSelect={noop}
-                    selection={SELECTION}
-                    services={SERVICES}
-                    usageWatch={(screen.source ?? SOURCE).usageWatch}
-                    {...(screen.picker ? { preview: screen.picker } : {})}
+            dock={
+                <ConversationDock
+                    composer={COMPOSER}
+                    composerControls={
+                        <ComposerModelControl
+                            onSelect={noop}
+                            selection={SELECTION}
+                            services={SERVICES}
+                            usageWatch={(screen.source ?? SOURCE).usageWatch}
+                            {...(screen.picker ? { preview: screen.picker } : {})}
+                        />
+                    }
+                    composerPlaceholder="Message Happy…"
+                    onAbort={noop}
+                    onComposerSend={noop}
+                    onComposerValueChange={noop}
+                    running={screen.running ?? false}
                 />
             }
-            composerPlaceholder="Message Happy…"
             conversationId={screen.id}
             elapsedMs={41_000}
             entries={screen.entries}
@@ -407,9 +416,6 @@ function conversation(screen: Screen): ReactNode {
             {...(screen.olderDaemon ? {} : { failureSwitch: screen.source ?? SOURCE })}
             {...(screen.preview ? { failurePreview: screen.preview } : {})}
             motion="calm-typed"
-            onAbort={noop}
-            onComposerSend={noop}
-            onComposerValueChange={noop}
             onErrorAssistanceRequest={noop}
             {...(screen.retrying ? { retrying: screen.retrying } : {})}
             running={screen.running ?? false}

@@ -203,18 +203,23 @@ function TranscriptWindow(props: { readonly restarting: boolean }) {
         >
             <ConversationView
                 agentAuthor={agentAuthor}
-                composer={composer({ text: LONG_DRAFT })}
-                composerPlaceholder="Message Happy…"
-                composerSubmitDisabled={props.restarting}
+                dock={
+                    <ConversationDock
+                        composer={composer({ text: LONG_DRAFT })}
+                        composerPlaceholder="Message Happy…"
+                        submitDisabled={props.restarting}
+                        onComposerSend={noop}
+                        onComposerValueChange={noop}
+                        {...(props.restarting ? { notice: RESTARTING_NOTICE } : {})}
+                        running={false}
+                    />
+                }
                 conversationId={`dock-restarting-${props.restarting ? "on" : "off"}`}
                 entries={RESTARTING_ENTRIES}
-                onComposerSend={noop}
-                onComposerValueChange={noop}
                 running={false}
                 style={{ flex: "1 1 auto", minWidth: 0 }}
                 title="Release checklist"
                 viewerId={happyAgentOwnerAuthor.id}
-                {...(props.restarting ? { composerNotice: RESTARTING_NOTICE } : {})}
             />
         </div>
     );

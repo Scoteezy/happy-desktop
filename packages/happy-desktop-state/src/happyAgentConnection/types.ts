@@ -588,8 +588,6 @@ export interface GroupSession {
     archivedAt?: number;
     createdAt: number;
     cwd: string;
-    draft?: string;
-    draftUpdatedAt?: number;
     effort?: string;
     id: string;
     lastMessageAt?: number;

@@ -13,6 +13,7 @@ import "./styles.css";
 import { ConversationMedia } from "./ConversationMedia";
 import { conversationMediaHeight } from "./conversationRowHeight";
 import { conversationMediaRunRows, conversationMediaRuns } from "./conversationMediaRuns";
+import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import {
     MEDIA_FLOW_GAP,
@@ -454,11 +455,16 @@ describe("painted geometry agrees with the row model", () => {
                 width,
                 6000,
                 <ConversationView
-                    composer={composer}
+                    dock={
+                        <ConversationDock
+                            composer={composer}
+                            onComposerSend={() => {}}
+                            onComposerValueChange={() => {}}
+                            running={false}
+                        />
+                    }
                     conversationId={`media-geometry-${String(width)}`}
                     entries={entries}
-                    onComposerSend={() => {}}
-                    onComposerValueChange={() => {}}
                     running={false}
                     style={{ flex: "1 1 auto", minWidth: 0 }}
                 />,

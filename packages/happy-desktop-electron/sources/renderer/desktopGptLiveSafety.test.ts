@@ -8,6 +8,7 @@ import {
 } from "happy-desktop-state/testing";
 import {
     HappyAgentApiError,
+    type ComposerSnapshot,
     type HappyAgentSessionId,
     type HappyAgentProjectId,
 } from "happy-desktop-state";
@@ -658,6 +659,7 @@ it.each(["empty", "restored"] as const)(
         let acknowledgedConversation:
             | ReturnType<typeof f.workspace.get>["conversation"]
             | undefined;
+        let acknowledgedComposer: ComposerSnapshot | undefined;
         let acknowledgedRevision: number | undefined;
         const controller = gptLiveControllerCreate({
             windowId: "window-hydration",
@@ -687,6 +689,8 @@ it.each(["empty", "restored"] as const)(
             send: (frame) => {
                 if (frame.type === "actionResult" && frame.actionId === "open-unloaded") {
                     acknowledgedConversation = f.workspace.get().conversation;
+                    if (acknowledgedConversation.type === "ready")
+                        acknowledgedComposer = acknowledgedConversation.value.composer.get();
                     acknowledgedRevision = controller.contextRead().revision;
                 }
                 frames.push(frame);
@@ -728,8 +732,9 @@ it.each(["empty", "restored"] as const)(
             );
             expect(acknowledgedConversation).toMatchObject({
                 type: "ready",
-                value: { ready: true, session: { type: "ready" }, composer: { text: savedText } },
+                value: { ready: true, session: { type: "ready" } },
             });
+            expect(acknowledgedComposer).toMatchObject({ text: savedText });
             const published = frames.filter((frame) => frame.type === "desktopContext").at(-1)!;
             expect(published.revision).toBe(acknowledgedRevision);
             expect(frames.indexOf(published)).toBeLessThan(
@@ -749,14 +754,12 @@ it.each(["empty", "restored"] as const)(
                         : { status: "succeeded", output: { type: "staged" } },
                 }),
             );
-            expect(f.workspace.get().conversation).toMatchObject({
-                type: "ready",
-                value: {
-                    composer: savedText
-                        ? { text: savedText }
-                        : { text: "Bring the seed catalog", voiceDraft: true },
-                },
-            });
+            const opened = f.workspace.get().conversation;
+            expect(opened.type === "ready" ? opened.value.composer.get() : undefined).toMatchObject(
+                savedText
+                    ? { text: savedText }
+                    : { text: "Bring the seed catalog", voiceDraft: true },
+            );
             expect(f.daemon.callCount("sendMessage")).toBe(0);
         } finally {
             releaseBootstrap();
@@ -875,10 +878,10 @@ it.each(["open"] as const)(
                     },
                 }),
             );
-            expect(f.workspace.get().conversation).toMatchObject({
-                type: "ready",
-                value: { composer: { text: "Exact next-step draft", voiceDraft: true } },
-            });
+            const staged = f.workspace.get().conversation;
+            expect(staged.type === "ready" ? staged.value.composer.get() : undefined).toMatchObject(
+                { text: "Exact next-step draft", voiceDraft: true },
+            );
             expect(f.daemon.callCount("sendMessage")).toBe(0);
             expect(live.events).not.toContainEqual(expect.objectContaining({ type: "callFailed" }));
         } finally {

@@ -4,6 +4,7 @@ import {
     type ComposerSnapshot,
     type ConversationEntry,
 } from "happy-desktop-state";
+import { ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
@@ -49,12 +50,17 @@ function TranscriptWindow(props: {
             >
                 <ConversationView
                     agentAuthor={agentAuthor}
-                    composer={COMPOSER}
-                    composerPlaceholder="Message Happy…"
+                    dock={
+                        <ConversationDock
+                            composer={COMPOSER}
+                            composerPlaceholder="Message Happy…"
+                            onComposerSend={noop}
+                            onComposerValueChange={noop}
+                            running={false}
+                        />
+                    }
                     conversationId={`media-layouts-${props.id}`}
                     entries={props.entries}
-                    onComposerSend={noop}
-                    onComposerValueChange={noop}
                     onToolMediaOpen={noop}
                     running={false}
                     style={{ flex: "1 1 auto", minWidth: 0 }}

@@ -9,6 +9,7 @@ import {
 } from "happy-desktop-state";
 import { expect, it } from "vitest";
 import "./styles.css";
+import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import { Message } from "./Message";
 import { markdownTableFixtures, type MarkdownTableFixture } from "./fixtures/markdownTables";
@@ -192,12 +193,17 @@ it("streams a wrapping table cell by cell with exact rows and no partial cells",
         return (
             <ConversationView
                 agentAuthor={agent}
-                composer={composer}
+                dock={
+                    <ConversationDock
+                        composer={composer}
+                        onComposerSend={() => {}}
+                        onComposerValueChange={() => {}}
+                        running
+                    />
+                }
                 conversationId="table-stream"
                 entries={[streamed(state.text, state.streaming), tool]}
                 motion="calm"
-                onComposerSend={() => {}}
-                onComposerValueChange={() => {}}
                 running
             />
         );

@@ -6,6 +6,7 @@ import {
     type ConversationEntry,
 } from "happy-desktop-state";
 import { type ReactNode } from "react";
+import { ConversationDock } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
 import {
     plainTextMessageFixtures,
@@ -133,12 +134,17 @@ function TranscriptWindow(props: {
             >
                 <ConversationView
                     agentAuthor={agentAuthor}
-                    composer={COMPOSER}
-                    composerPlaceholder="Message Happy…"
+                    dock={
+                        <ConversationDock
+                            composer={COMPOSER}
+                            composerPlaceholder="Message Happy…"
+                            onComposerSend={noop}
+                            onComposerValueChange={noop}
+                            running={false}
+                        />
+                    }
                     conversationId={`message-plain-text-${props.mode}`}
                     entries={props.entries}
-                    onComposerSend={noop}
-                    onComposerValueChange={noop}
                     running={false}
                     style={{ flex: "1 1 auto", minWidth: 0 }}
                     title="Sidebar layout"
