@@ -94,6 +94,11 @@ function chatCreate(sessionId: string) {
             snapshot = { ...snapshot, entries: [...snapshot.entries, entry(text)] };
             for (const listener of listeners) listener();
         },
+        /** The stored draft moving, as it does once per keystroke. */
+        draft(text: string, updatedAt: number) {
+            snapshot = { ...snapshot, draft: text, draftUpdatedAt: updatedAt };
+            for (const listener of listeners) listener();
+        },
     };
     return chat;
 }
@@ -354,4 +359,39 @@ it("affords one kept view per gigabyte, between one and seven, and a size to mat
     expect(happyAgentConversationRetentionFor(undefined)).toEqual({ count: 3, size: 24_000 });
     // Chromium caps what it reports at 8; anything larger is still eight views.
     expect(happyAgentConversationRetentionFor(32)).toEqual({ count: 7, size: 48_000 });
+});
+
+it("publishes nothing for a draft keystroke after the transcript reports the same place again", async () => {
+    const view = workspaceCreate({ count: 1, size: 1_000 });
+    await view.open("a");
+    const conversationId = "a" as HappyAgentSessionId;
+    view.workspace.conversationScrollUpdate(conversationId, { type: "bottom" });
+    view.workspace.conversationScrollUpdate(conversationId, {
+        type: "row",
+        rowKey: "a:1",
+        offset: 12,
+    });
+    // The first chat change after that carries the recorded place once.
+    view.chats.get("a")!.draft("", 1_999);
+    const before = view.workspace.get();
+    let notifications = 0;
+    const unsubscribe = view.workspace.subscribe(() => {
+        notifications += 1;
+    });
+
+    // A streaming transcript reports where it is on every frame, each time as
+    // a new object, and the reader types between those frames.
+    for (const [index, text] of ["h", "hi", "hi!"].entries()) {
+        view.workspace.conversationScrollUpdate(conversationId, {
+            type: "row",
+            rowKey: "a:1",
+            offset: 12,
+        });
+        view.chats.get("a")!.draft(text, 2_000 + index);
+    }
+
+    expect(notifications).toBe(0);
+    expect(view.workspace.get()).toBe(before);
+    unsubscribe();
+    view.unsubscribe();
 });

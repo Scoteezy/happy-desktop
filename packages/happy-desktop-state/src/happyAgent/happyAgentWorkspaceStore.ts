@@ -8588,7 +8588,11 @@ export function happyAgentWorkspaceStoreCreate(
             // that already knows this position — it just reported it — and
             // feeding it back through the snapshot would re-anchor a list the
             // reader is in the middle of scrolling. It is read once, on mount.
-            scrollPositions = new Map(scrollPositions).set(conversationId, position);
+            // The transcript reports the same place again on every streamed
+            // frame; keeping the stored one leaves the conversation snapshot
+            // equal, so the next chat notification republishes nothing.
+            if (!scrollPositionEqual(scrollPositions.get(conversationId), position))
+                scrollPositions = new Map(scrollPositions).set(conversationId, position);
             if (conversationId === openId) chatStore?.historyFollowingSet(position.type !== "row");
         },
         [Symbol.dispose]() {
@@ -8679,6 +8683,15 @@ function conversationAcquiring(
         modelLocked: false,
         failureSwitchSupported: false,
     };
+}
+
+function scrollPositionEqual(
+    left: HappyAgentScrollPosition | undefined,
+    right: HappyAgentScrollPosition,
+): boolean {
+    if (left?.type !== right.type) return false;
+    if (left.type === "bottom" || right.type === "bottom") return true;
+    return left.rowKey === right.rowKey && left.offset === right.offset;
 }
 
 function conversationEqual(
