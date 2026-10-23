@@ -802,7 +802,7 @@
 }
 
 /* Inline code: mono, a touch smaller than the body, on a subtle raised fill. */
-.happy-message__body--markdown code:not(.happy-media-tree *) {
+.happy-message__body--markdown code:not(.happy-media-tree *, pre *) {
     display: inline;
     font-family: var(--happy-font-mono);
     font-size: 14px;
@@ -853,6 +853,7 @@
 .happy-message__body--markdown pre code {
     display: block;
     margin: 0;
+    font-family: var(--happy-font-mono);
     background: transparent;
     border-radius: 0;
     padding: 16px;
