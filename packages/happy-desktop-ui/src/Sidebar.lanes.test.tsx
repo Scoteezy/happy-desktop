@@ -7,9 +7,11 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 
 /*
- * With trailing folds every row and heading keeps one geometry: the name, what
- * the row is doing STATUS_GAP after it, and the fold on one column at the
- * trailing edge. Hover only fades the fold in; nothing moves.
+ * With trailing folds only a row that folds has a fold, and it sits at the
+ * trailing edge on the same column as the headings' folds. What a row reports
+ * follows its name STATUS_GAP after it; a row with nothing to fold keeps no
+ * empty column. Hover fades the fold in over the row's edge without moving the
+ * name or what the row reports.
  */
 const STATUS_GAP = 6;
 
@@ -107,52 +109,72 @@ it("keeps the fold on one column and the status right after the name, through ho
         "pinned",
     ]);
 
+    const foldOf = (row: HTMLElement) =>
+        row.querySelector<HTMLElement>(':scope > [data-happy-desktop-ui="sidebar-item-fold"]');
+    const foldable = rows.filter((row) => row.hasAttribute("data-foldable"));
+    expect(foldable.map((row) => row.dataset.itemId)).toEqual(["tabs", "old"]);
+    for (const row of rows) {
+        if (row.hasAttribute("data-foldable")) continue;
+        expect(foldOf(row), `${row.dataset.itemId} keeps no fold cell`).toBeNull();
+    }
     const folds = [
-        ...rows.map((row) =>
-            row.querySelector<HTMLElement>(':scope > [data-happy-desktop-ui="sidebar-item-fold"]'),
-        ),
+        ...foldable.map((row) => foldOf(row)),
         ...heads.map((head) => ui(head, "sidebar-section-fold")),
     ];
-    const columns = new Set(
+    const edges = new Set(
         folds.map((fold) => {
-            expect(fold, "every row and heading has a fold cell").not.toBeNull();
-            const r = fold!.getBoundingClientRect();
-            return `${Math.round(r.left)}:${Math.round(r.right)}`;
+            expect(fold, "every foldable row and heading has a fold").not.toBeNull();
+            return Math.round(fold!.getBoundingClientRect().right);
         }),
     );
-    expect([...columns]).toHaveLength(1);
+    expect([...edges]).toHaveLength(1);
     for (const fold of folds) expect(getComputedStyle(fold!).opacity).toBe("0");
 
     // The status starts STATUS_GAP after the name, and a long name ellipsizes
-    // before it rather than pushing it under the fold.
-    const fold = folds[0]!.getBoundingClientRect();
+    // before it rather than pushing it off the row.
     for (const id of ["tabs", "long"]) {
         const row = root.querySelector<HTMLElement>(`[data-item-id="${id}"]`)!;
         const label = ui(row, "sidebar-item-label")!;
         const count = ui(row, "sidebar-item-count")!;
         const gap = count.getBoundingClientRect().left - label.getBoundingClientRect().right;
         expect(Math.abs(gap - STATUS_GAP), `${id} status gap ${gap}`).toBeLessThanOrEqual(0.5);
-        expect(count.getBoundingClientRect().right).toBeLessThanOrEqual(fold.left);
+        expect(count.getBoundingClientRect().right).toBeLessThanOrEqual(
+            row.getBoundingClientRect().right,
+        );
     }
     const long = ui(root.querySelector('[data-item-id="long"]')!, "sidebar-item-label")!;
     expect(long.scrollWidth).toBeGreaterThan(long.clientWidth);
 
     // Hover reveals the fold of a row that folds, shut or open, and of a
-    // heading; no box in the row moves.
+    // heading. A row that cannot fold does not move at all; one that can keeps
+    // its name and what it reports where they stood, clear of the fold.
     for (const target of [...rows, ...heads]) {
-        const before = parts(target);
+        const isRow = target.dataset.happyDesktopUi === "sidebar-item";
+        const steady = isRow
+            ? [ui(target, "sidebar-item-label"), ui(target, "sidebar-item-count")].filter(
+                  (el): el is HTMLElement => el !== null,
+              )
+            : [target];
+        const before =
+            isRow && target.hasAttribute("data-foldable")
+                ? steady.map((el) => parts(el))
+                : [parts(target)];
         await userEvent.hover(target);
         finish(target);
-        expect(parts(target), `${target.textContent} moved on hover`).toEqual(before);
-        const own =
-            target.dataset.happyDesktopUi === "sidebar-item"
-                ? target.querySelector<HTMLElement>(
-                      ':scope > [data-happy-desktop-ui="sidebar-item-fold"]',
-                  )!
-                : ui(target, "sidebar-section-fold")!;
-        // A row with nothing to fold keeps the cell, unseen.
-        if (own.hasAttribute("data-empty")) expect(getComputedStyle(own).visibility).toBe("hidden");
-        else expect(getComputedStyle(own).opacity).toBe("1");
+        const after =
+            isRow && target.hasAttribute("data-foldable")
+                ? steady.map((el) => parts(el))
+                : [parts(target)];
+        expect(after, `${target.textContent} moved on hover`).toEqual(before);
+        const own = isRow ? foldOf(target) : ui(target, "sidebar-section-fold")!;
+        if (!own) continue;
+        expect(getComputedStyle(own).opacity).toBe("1");
+        for (const el of steady) {
+            if (el === target) continue;
+            expect(el.getBoundingClientRect().right).toBeLessThanOrEqual(
+                own.getBoundingClientRect().left,
+            );
+        }
     }
     await userEvent.unhover(heads[1]!);
 
@@ -382,3 +404,110 @@ it("previews the committed cross-section order and keeps every resting row still
     expect(resting()).toEqual(preview);
     expect(dragStates).toEqual([true, false]);
 });
+
+/*
+ * A section is its heading and every row after it up to the next section or
+ * separator. Dragged, folded or not, it travels as that one block and lands
+ * only between blocks, so it never splits another section.
+ */
+const spacesList = (): SidebarSection[] => [
+    {
+        id: "spaces",
+        items: [
+            { icon: "search", id: "search", kind: "view", label: "Search" },
+            { icon: "doc", id: "happy", kind: "view", label: "Happy" },
+            { id: "divider", kind: "separator", label: "" },
+            { collapsed: false, id: "bots", kind: "section", label: "Bots" },
+            { icon: "doc", id: "b1", kind: "view", label: "Bot one" },
+            { icon: "doc", id: "b2", kind: "view", label: "Bot two" },
+            { collapsed: true, id: "tasks", kind: "section", label: "Tasks" },
+            { icon: "doc", id: "t1", kind: "view", label: "Task one" },
+            { collapsed: false, id: "later", kind: "section", label: "Later" },
+            { icon: "doc", id: "l1", kind: "view", label: "Later one" },
+        ],
+        label: "",
+    },
+];
+
+it("drags a section with its rows as one block, expanded or folded", async () => {
+    const moves: SidebarReorder[] = [];
+    const view = createRenderer();
+    view.render(
+        () => (
+            <Sidebar
+                activeItemId=""
+                data-testid="blocks"
+                foldControlPlacement="trailing"
+                foldControlReveal="hover"
+                onItemCollapseToggle={() => {}}
+                onItemReorder={(_, move) => moves.push(move)}
+                onItemSelect={() => {}}
+                style={{ width: 280 }}
+                sections={spacesList()}
+            />
+        ),
+        { width: 304, height: 480 },
+    );
+    await view.ready();
+    const root = view.$('[data-testid="blocks"]').element;
+    const body = ui(root, "sidebar-body-content")!;
+    const row = (id: string) => root.querySelector<HTMLElement>(`[data-item-id="${id}"]`)!;
+    const top = (id: string) => row(id).getBoundingClientRect().top;
+    const event = (target: Element, type: string, y: number) =>
+        flushSync(() =>
+            target.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    button: 0,
+                    buttons: type === "pointerup" ? 0 : 1,
+                    clientX: root.getBoundingClientRect().left + 60,
+                    clientY: y,
+                    isPrimary: true,
+                    pointerId: 1,
+                    pointerType: "mouse",
+                }),
+            ),
+        );
+    const settle = async () => {
+        await new Promise(requestAnimationFrame);
+        finish(root);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+    };
+
+    // Expanded: Bots carried below Later. Mid-drag its rows ride with the
+    // heading, the same distance, and the drop names the block it follows.
+    const start = top("bots");
+    const gaps = () => ["b1", "b2"].map((id) => top(id) - top("bots"));
+    const restingGaps = gaps();
+    event(row("bots"), "pointerdown", start + 8);
+    event(body, "pointermove", start + 16);
+    const target = row("l1").getBoundingClientRect().bottom - 2;
+    event(body, "pointermove", target);
+    await expect.poll(() => top("bots")).toBeGreaterThan(start + 40);
+    for (const [index, gap] of gaps().entries()) expect(gap).toBeCloseTo(restingGaps[index]!, 1);
+    // Tasks, then Later with its row, made room together where Bots stood.
+    finish(root);
+    await expect.poll(() => Math.abs(top("tasks") - start)).toBeLessThan(1);
+    expect(top("l1") - top("later")).toBeCloseTo(restingGaps[0]!, 1);
+    event(body, "pointerup", target);
+    expect(moves.at(-1)).toEqual({ afterId: "later", id: "bots" });
+    await settle();
+
+    // Folded: Tasks carried to the top lands first; its hidden rows are the
+    // document's to carry.
+    const folded = top("tasks");
+    event(row("tasks"), "pointerdown", folded + 4);
+    event(body, "pointermove", folded - 4);
+    event(body, "pointermove", top("search") + 2);
+    event(body, "pointerup", top("search") + 2);
+    expect(moves.at(-1)).toEqual({ afterId: null, id: "tasks" });
+    await settle();
+
+    // A plain row still moves on its own, between single rows.
+    const happy = top("happy");
+    event(row("happy"), "pointerdown", happy + 16);
+    event(body, "pointermove", happy + 24);
+    event(body, "pointermove", top("search") + 2);
+    event(body, "pointerup", top("search") + 2);
+    expect(moves.at(-1)).toEqual({ afterId: null, id: "happy" });
+}, 120_000);

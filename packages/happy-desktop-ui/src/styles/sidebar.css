@@ -133,7 +133,7 @@
     margin: 0;
     padding: 0;
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--header-tint-secondary);
     cursor: pointer;
@@ -154,7 +154,7 @@
 }
 
 .happy-sidebar__header-action:hover:not(:disabled) {
-    background: var(--surface-pressed);
+    background: var(--happy-hover-fill);
     color: var(--text);
 }
 
@@ -210,14 +210,11 @@
     margin-left: -6px;
     padding: 0;
     border: 0;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--text-secondary);
     cursor: pointer;
     appearance: none;
-    transition:
-        background-color 120ms ease,
-        color 120ms ease;
 }
 
 /* Mirror the right chevron into a back (left) chevron. Icon uses a font span,
@@ -227,7 +224,7 @@
 }
 
 .happy-sidebar__back:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
     color: var(--text);
 }
 
@@ -243,46 +240,6 @@
     flex: none;
     overflow: visible;
     font-weight: 700;
-}
-
-/* Drill-in morph: the "Administration" title rises from the row position up
-   into the header while the back chevron eases in from the left and the sub-nav
-   settles in below it — so the tapped row reads as flying up into a back header.
-   The distance (26px) is one row + gap, matching the row's original offset. */
-@media (prefers-reduced-motion: no-preference) {
-    .happy-sidebar[data-back] .happy-sidebar__back {
-        animation: happy-sidebar-back-in 260ms ease both;
-    }
-
-    .happy-sidebar[data-back] .happy-sidebar__title--back {
-        animation: happy-sidebar-title-rise 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    }
-
-    .happy-sidebar[data-back] .happy-sidebar__body-content {
-        animation: happy-sidebar-detail-body 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
-        animation-delay: 40ms;
-    }
-}
-
-@keyframes happy-sidebar-back-in {
-    from {
-        opacity: 0;
-        transform: translateX(-6px);
-    }
-}
-
-@keyframes happy-sidebar-title-rise {
-    from {
-        opacity: 0;
-        transform: translateY(26px);
-    }
-}
-
-@keyframes happy-sidebar-detail-body {
-    from {
-        opacity: 0;
-        transform: translateY(12px);
-    }
 }
 
 /* ---- Body ------------------------------------------------------------- */
@@ -310,7 +267,6 @@
     mask-image: linear-gradient(to bottom, black, transparent);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 120ms ease;
 }
 
 .happy-sidebar[data-scrolled] > .happy-sidebar__body::before {
@@ -438,7 +394,7 @@
     height: 24px;
     padding: 0 calc(var(--happy-panel-row-padding) + 28px);
     border: 0;
-    border-radius: 6px;
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--text-secondary);
     font: inherit;
@@ -447,7 +403,7 @@
 }
 
 .happy-sidebar__section-tail:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
     color: var(--text);
 }
 
@@ -665,16 +621,12 @@
     margin: 0;
     padding: 0;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--text-secondary);
     appearance: none;
     cursor: pointer;
     opacity: 0;
-    transition:
-        background-color 120ms ease,
-        color 120ms ease,
-        opacity 120ms ease;
 }
 
 .happy-sidebar__section-head:hover .happy-sidebar__section-action,
@@ -707,7 +659,7 @@
 }
 
 .happy-sidebar__section-action:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
     color: var(--text-secondary);
 }
 
@@ -755,22 +707,12 @@
     z-index: 2;
 }
 
-/* The lift under a carried subtree. Its geometry is never transitioned — that is
-   what keeps it under the hand — but the shadow itself comes up rather than being
-   switched on: a row is picked up and put down, and both take a moment.
-
-   One element does both halves. It is mounted, empty and invisible, as soon as a
-   row is touched, and stays mounted for the length of its own fade after the hand
-   has gone, so `opacity` is always a transition between two states of the same
-   node rather than a mount and an unmount. That is what a flicked row needs: a
-   drag let go of before the shadow has finished arriving turns around from
-   wherever it had got to, which keyframes — starting again from their own first
-   frame — cannot do. */
+/* The lift under a carried subtree. Its geometry follows the hand exactly, and
+   the shadow is switched on and off with the gesture: nothing in the sidebar
+   fades. It is mounted, empty and invisible, as soon as a row is touched. */
 .happy-sidebar__tree-drag-surface {
     position: absolute;
-    /* Once released, the fading face must sit below ordinary rows and stems.
-       A drop with no remaining motion can clear its carried IDs immediately,
-       while this shadow still has part of its 120ms fade left to paint. */
+    /* Once released, the face sits below ordinary rows and stems. */
     z-index: 0;
     right: 0;
     left: 0;
@@ -783,7 +725,6 @@
         0 4px 12px var(--shadow-subtle);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 120ms ease;
 }
 
 .happy-sidebar__tree-drag-surface[data-carried] {
@@ -899,7 +840,7 @@
     margin: 0;
     padding: 0 var(--happy-panel-row-padding);
     border: none;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--text-secondary);
     font-family: var(--happy-font-ui);
@@ -907,42 +848,16 @@
     text-align: left;
     appearance: none;
     cursor: pointer;
-    /* The shadow is listed for the rows that can be carried: a row that has been
-       let go of puts its lift back down over the same moment it takes its fill
-       back, rather than losing the shadow a frame before the colour. */
-    transition:
-        background-color 120ms ease,
-        box-shadow 120ms ease,
-        color 120ms ease;
 }
 
-/* Rows only animate their offset while a reorder is in flight. Once the move
-   is reported the list is rearranged and every offset drops to zero in the
-   same commit; if that drop were transitioned, each row would glide in from
-   wherever it had been pushed to — the dropped row appearing to fly in from
-   above — instead of simply being where the new order puts it. */
-.happy-sidebar__section[data-reordering] .happy-sidebar__item,
-.happy-sidebar__actions[data-reordering] .happy-sidebar__item {
-    transition:
-        background-color 120ms ease,
-        color 120ms ease,
-        top 160ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-/* The row under the pointer rides above its neighbours and drops the transition
-   on its position, so it tracks the pointer exactly while the rows it displaces
-   still glide. The shadow is what lifts it off the column: a row being carried is
-   the one thing in the sidebar that is not lying flat in the list — so it comes
-   up over the same moment it takes anywhere else, while `top`, left out of
-   the list on purpose, stays under the hand. */
+/* The row under the pointer rides above its neighbours and tracks the pointer
+   exactly; the rows it displaces step to their new places at once. The shadow is
+   what lifts it off the column: a row being carried is the one thing in the
+   sidebar that is not lying flat in the list. */
 .happy-sidebar__item[data-dragging] {
     z-index: 1;
     background: var(--surface-ripple);
     box-shadow: 0 4px 12px var(--shadow-subtle);
-    transition:
-        background-color 120ms ease,
-        box-shadow 120ms ease,
-        color 120ms ease;
 }
 
 .happy-sidebar__item[data-grabbed] {
@@ -969,35 +884,6 @@
     box-shadow: none;
 }
 
-/* Said again inside the list being arranged, because that is where it has to
-   win: the rule above is one class and one attribute, the reordering rule two
-   classes and an attribute, so on its own it loses the transition it is trying
-   to drop and the carried row eases toward the pointer over 160ms instead of
-   tracking it — a lag under the hand, worst exactly when the hand moves fast. */
-.happy-sidebar__section[data-reordering] .happy-sidebar__item[data-dragging],
-.happy-sidebar__actions[data-reordering] .happy-sidebar__item[data-dragging] {
-    transition:
-        background-color 120ms ease,
-        box-shadow 120ms ease,
-        color 120ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .happy-sidebar__section[data-reordering] .happy-sidebar__item,
-    .happy-sidebar__actions[data-reordering] .happy-sidebar__item {
-        transition:
-            background-color 120ms ease,
-            color 120ms ease;
-    }
-
-    /* A reader who asked for less motion is not kept waiting for the lift to go
-       out either: the sidebar drops the surface the moment the gesture ends, so
-       the entry it would have paired with is dropped here to match. */
-    .happy-sidebar__tree-drag-surface {
-        transition: none;
-    }
-}
-
 /* Said out loud, never drawn: the region reports a keyboard move to a screen
    reader and must not take a line of the sidebar to do it. */
 .happy-sidebar__announcement {
@@ -1013,7 +899,90 @@
 }
 
 .happy-sidebar__item:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
+}
+
+/* A section heading is arranged like any row: a row tall while open, half of
+   that once it has folded the run after it away. */
+.happy-sidebar__section-item {
+    position: relative;
+    min-width: 0;
+    height: 28px;
+}
+
+.happy-sidebar__section-item[data-collapsed] {
+    height: 14px;
+}
+
+.happy-sidebar__section-item:hover:not([data-dragging]) {
+    background: transparent;
+}
+
+.happy-sidebar__section-item-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.happy-sidebar__section-item[data-collapsed] .happy-sidebar__section-item-label {
+    font-size: 10px;
+}
+
+.happy-sidebar__section-item:hover .happy-sidebar__section-item-label {
+    color: var(--text);
+}
+
+/* The same 18px box, on the same trailing column, as a row's own fold. */
+.happy-sidebar__section-item-fold {
+    position: absolute;
+    inset: calc(50% - 9px) var(--happy-panel-row-padding) auto auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: var(--text-secondary);
+    opacity: 0;
+}
+
+.happy-sidebar__section-item:is(:hover, :focus-visible, [data-collapsed])
+    .happy-sidebar__section-item-fold {
+    opacity: 1;
+}
+
+/* A section is its title alone, no rule: that is a separator's look. The title
+   keeps clear of the fold's lane at all times, so showing the fold moves
+   nothing. */
+.happy-sidebar__section-item[data-foldable] {
+    padding-right: calc(var(--happy-panel-row-padding) + 22px);
+}
+
+/* A separator is only a hairline, across the row box's whole width: it takes
+   none of the row's padding, so it runs as far as a selected row's fill. */
+.happy-sidebar__separator {
+    min-width: 0;
+    height: 17px;
+    padding: 0;
+    cursor: grab;
+}
+
+.happy-sidebar__separator:hover:not([data-dragging]) {
+    background: transparent;
+}
+
+.happy-sidebar__separator-rule {
+    flex: 1;
+    min-width: 0;
+    height: 1px;
+    background: var(--divider);
 }
 
 .happy-sidebar__item:focus-visible {
@@ -1213,8 +1182,39 @@
     opacity: 1;
 }
 
-.happy-sidebar__item[data-fold-placement="trailing"] > .happy-sidebar__item-fold[data-empty] {
+/* Revealed on hover, a row's fold is laid over its trailing edge, and what the
+   row reports there steps aside for as long as the fold shows; at rest the delta
+   ends the row. */
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__item[data-fold-placement="trailing"]:not([data-fold-reveal="always"])
+    > .happy-sidebar__item-fold {
+    position: absolute;
+    inset: calc(50% - 9px) var(--happy-panel-row-padding) auto auto;
+}
+
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__item[data-fold-placement="trailing"][data-foldable]:not(
+        [data-fold-reveal="always"]
+    ):is(:hover, :focus-visible, :has(:focus-visible))
+    > .happy-sidebar__item-trailing {
     visibility: hidden;
+}
+
+/* A row with nothing trailing has no lane for the fold to cover, so its name
+   gives the fold room while it shows. */
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__item[data-fold-placement="trailing"][data-foldable]:not(
+        [data-fold-reveal="always"]
+    ):not(:has(> .happy-sidebar__item-trailing)):is(:hover, :focus-visible, :has(:focus-visible))
+    > .happy-sidebar__item-main {
+    margin-right: 22px;
+}
+
+/* A row that keeps its fold in view has it as its last column, always shown. */
+.happy-sidebar[data-fold-control-reveal="hover"]
+    .happy-sidebar__item[data-fold-reveal="always"]
+    > .happy-sidebar__item-fold {
+    opacity: 1;
 }
 
 /* The name and what the row is doing, in one run: the mark follows the name at
@@ -1338,8 +1338,23 @@
     flex: none;
 }
 
-.happy-sidebar__item[data-shortcut-always] > .happy-sidebar__item-shortcut {
+/* A key cap's ink, not its padded box, ends on the trailing column the deltas
+   end on: the box hangs its own padding into the row's. */
+.happy-sidebar__item[data-shortcut-always] .happy-sidebar__item-shortcut {
+    margin-right: -4px;
+}
+
+.happy-sidebar__item[data-shortcut-always] > .happy-sidebar__item-shortcut,
+.happy-sidebar__item[data-shortcut-always]
+    > .happy-sidebar__item-main
+    > .happy-sidebar__item-shortcut {
     display: inline-flex;
+}
+
+/* With trailing lanes the key cap sits in the row's main column; it still
+   belongs at the far edge, as on a row without lanes. */
+.happy-sidebar__item-main > .happy-sidebar__item-shortcut {
+    margin-left: auto;
 }
 
 [data-shortcut-hints]
@@ -1437,6 +1452,19 @@
     align-items: center;
     justify-content: flex-end;
     height: 18px;
+}
+
+/* The delta's mono digits sit half a pixel low against the name's baseline at
+   these sizes; lifted, both stand on one line. */
+.happy-sidebar__item-trailing > .happy-sidebar__item-change-stats {
+    translate: 0 -0.5px;
+}
+
+/* With trailing lanes what a row reports follows its name at the status gap
+   (6px), as a count in the name's own run does, rather than at the row's 8px:
+   a long name keeps those two pixels before it has to ellipsize. */
+.happy-sidebar__item[data-fold-placement="trailing"] > .happy-sidebar__item-trailing {
+    margin-left: -2px;
 }
 
 /*
@@ -1586,13 +1614,9 @@
     box-sizing: border-box;
     width: 18px;
     height: 18px;
-    border-radius: 4px;
+    border-radius: var(--happy-hover-radius);
     color: var(--text-secondary);
     cursor: pointer;
-    transition:
-        background-color 120ms ease,
-        color 120ms ease,
-        opacity 120ms ease;
 }
 
 .happy-sidebar__item-action-icon {
@@ -1618,8 +1642,35 @@
 }
 
 .happy-sidebar__item-action:hover {
-    background: var(--surface-selected);
+    background: var(--happy-hover-fill);
     color: var(--text);
+}
+
+/* A command row whose key cap always shows (Create) and which offers a menu
+   behind it: the menu's control takes the key cap's place at the trailing
+   edge instead of a lane of its own, so the key cap lines up with every other
+   row's at rest, and gives way to the control on hover or focus. Neither box
+   moves; only which one is visible changes. */
+.happy-sidebar__item[data-shortcut-always]:has(
+        > .happy-sidebar__item-trailing .happy-sidebar__item-action[aria-haspopup]
+    )
+    > .happy-sidebar__item-trailing {
+    position: absolute;
+    top: calc(50% - 9px);
+    right: calc(var(--happy-panel-row-padding) - 3px);
+    margin: 0;
+}
+
+.happy-sidebar__item[data-shortcut-always]:has(
+        > .happy-sidebar__item-trailing .happy-sidebar__item-action[aria-haspopup]
+    ):is(:hover, :focus-visible, :focus-within)
+    .happy-sidebar__item-shortcut {
+    visibility: hidden;
+}
+
+.happy-sidebar__item[data-shortcut-always]:is(:hover, :focus-visible, :focus-within)
+    .happy-sidebar__item-action[aria-haspopup][data-reveal="hover"] {
+    opacity: 1;
 }
 
 .happy-sidebar__item-action[data-disabled],
@@ -1855,27 +1906,18 @@
     margin: 0;
     padding: 0;
     border: 0;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--box-warning-text);
     cursor: pointer;
     appearance: none;
     /* The mark arrives in a footer the reader is not looking at, so it rises
        into place instead of appearing between two frames. */
-    animation: happy-sidebar-update-mark-in 260ms ease both;
-    transition: background-color 120ms ease;
-}
-
-@keyframes happy-sidebar-update-mark-in {
-    from {
-        opacity: 0;
-        transform: translateY(6px) scale(0.8);
-    }
 }
 
 .happy-sidebar-update__trigger:hover,
 .happy-sidebar-update[data-open] .happy-sidebar-update__trigger {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
 }
 
 .happy-sidebar-update__trigger:focus-visible {
@@ -1909,22 +1951,7 @@
     /* Grows out of the mark it hangs off, so the panel reads as that control
        opening rather than as a card that was already there. */
     transform-origin: 100% 100%;
-    animation: happy-sidebar-update-panel-in 140ms ease both;
     user-select: none;
-}
-
-@keyframes happy-sidebar-update-panel-in {
-    from {
-        opacity: 0;
-        transform: translateY(4px) scale(0.96);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .happy-sidebar-update__trigger,
-    .happy-sidebar-update__panel {
-        animation-duration: 1ms;
-    }
 }
 
 .happy-sidebar-update__copy {
@@ -1998,7 +2025,7 @@
     margin: 0;
     padding: 6px 8px;
     border: 0;
-    border-radius: var(--happy-radius-sm);
+    border-radius: var(--happy-hover-radius);
     background: transparent;
     color: var(--text);
     font-family: var(--happy-font-ui);
@@ -2006,11 +2033,10 @@
     text-align: left;
     cursor: pointer;
     appearance: none;
-    transition: background-color 120ms ease;
 }
 
 .happy-sidebar__profile:hover {
-    background: var(--surface-ripple);
+    background: var(--happy-hover-fill);
 }
 
 /* A surface with no profile to open renders the same identity row as inert

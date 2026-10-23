@@ -8,6 +8,7 @@ import {
     Sidebar,
     SIDEBAR_TRAILING_GAP,
     type SidebarItem,
+    type SidebarReorder,
     type SidebarSection,
 } from "../../src/Sidebar";
 import { SidebarFooter } from "../../src/SidebarFooter";
@@ -801,6 +802,103 @@ function PinnedReorderDemo() {
                 {move}
             </span>
             <DimensionRule label="cursor pointer → grabbing · pinned rows arrange above the projects · ⌥↑ / ⌥↓ moves the focused row" />
+        </div>
+    );
+}
+
+/** One list where Search, Create, separators and rows are all items of it. */
+const SPACES_LIST: SidebarItem[] = [
+    {
+        icon: "search",
+        id: "search",
+        kind: "action",
+        label: "Search",
+        shortcut: commandShortcut("k"),
+    },
+    {
+        icon: "compose",
+        id: "create",
+        kind: "action",
+        label: "Create",
+        shortcut: commandShortcut("n"),
+    },
+    { emoji: "🙂", id: "happy", kind: "view", label: "Happy" },
+    { emoji: "🌱", id: "new", kind: "view", label: "New" },
+    { id: "divider", kind: "separator", label: "" },
+    { collapsed: false, id: "bots", kind: "section", label: "Bots" },
+    { emoji: "🤖", id: "release-bot", kind: "view", label: "Release bot" },
+    { collapsed: false, id: "tasks", kind: "section", label: "Tasks" },
+    {
+        changeStats: { added: 628, deleted: 364 },
+        emoji: "🎨",
+        id: "sidebar",
+        kind: "view",
+        label: "Sidebar UI fixes",
+    },
+    {
+        changeStats: { added: 251, deleted: 57 },
+        emoji: "🧱",
+        id: "model",
+        kind: "view",
+        label: "Prioritizer model",
+    },
+    { collapsed: true, id: "later", kind: "section", label: "Later" },
+    { emoji: "🎲", id: "flaky", kind: "view", label: "Fix flaky CI" },
+];
+
+/**
+ * A top-level move carries the row's nested rows with it; a section carries its
+ * whole block, every row up to the next section or separator, and lands after
+ * the block it was dropped behind.
+ */
+function spacesListMove(items: readonly SidebarItem[], move: SidebarReorder): SidebarItem[] {
+    if (move.parentId !== undefined) return [...items];
+    const section = items.find((item) => item.id === move.id)?.kind === "section";
+    const blocks: SidebarItem[][] = [];
+    let open = false;
+    for (const item of items) {
+        const top = (item.depth ?? 0) === 0;
+        const breaks = top && (item.kind === "section" || item.kind === "separator");
+        const joins = section ? !breaks && open : !top;
+        if (joins && blocks.length > 0) blocks.at(-1)!.push(item);
+        else blocks.push([item]);
+        open = !(top && item.kind === "separator");
+    }
+    return listMove(
+        blocks.map((block) => ({ id: block[0]!.id, block })),
+        move.id,
+        move.afterId,
+    ).flatMap(({ block }) => block);
+}
+
+function SpacesListDemo() {
+    const [items, setItems] = useState(SPACES_LIST);
+    return (
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <Frame height={460}>
+                <Sidebar
+                    activeItemId="sidebar"
+                    data-testid="spaces-list"
+                    foldControlPlacement="trailing"
+                    foldControlReveal="hover"
+                    onItemCollapseToggle={(id) =>
+                        setItems((current) =>
+                            current.map((item) =>
+                                item.id === id && item.collapsed !== undefined
+                                    ? { ...item, collapsed: !item.collapsed }
+                                    : item,
+                            ),
+                        )
+                    }
+                    onItemReorder={(_section, move) =>
+                        setItems((current) => spacesListMove(current, move))
+                    }
+                    onItemSelect={() => {}}
+                    sections={[{ id: "spaces", items }]}
+                    title="Spaces"
+                />
+            </Frame>
+            <DimensionRule label="section 28 px, title only · folded 14 px · separator 17 px, full width · key caps on the row's edge" />
         </div>
     );
 }
@@ -1847,6 +1945,14 @@ export function SidebarPage() {
                         </div>
                     ))}
                 </div>
+            </Specimen>
+            <Specimen
+                detail="The spaces sidebar is one list. By default: Search, Create, Happy, new work right below Happy, a separator, then the Bots and Tasks sections. Search and Create are rows with their key caps at the edge; a section is a title alone (no rule) that folds the run up to the next section or separator and halves its height when folded; a separator is only a full-width rule. Everything is carried like any other row, and a section carries its whole block. A row with nothing trailing keeps no empty column. Rows are flat: Prioritizing shows no nested sessions for now, though the list still draws them if a document has them."
+                label="Spaces list · items, sections, separators"
+                number="10"
+                stage="app"
+            >
+                <SpacesListDemo />
             </Specimen>
         </ComponentPage>
     );
