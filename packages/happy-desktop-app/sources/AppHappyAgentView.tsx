@@ -3718,6 +3718,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             .catch(() => undefined),
                     surfaceLeave: (surfaceId) =>
                         surfaceCatalogStore.surfaceLeave(surfaceId as HappyAgentSurfaceId),
+                    ...(active && happyAgentTaskCreateSupported(active)
+                        ? {
+                              taskRename: (taskId: string, name: string) =>
+                                  void active.session?.workspace
+                                      .taskRename(taskId as HappyAgentTaskId, name)
+                                      .catch(() => undefined),
+                          }
+                        : {}),
+                    botRename: (botId, name) =>
+                        void active?.session?.workspace
+                            .botRename(botId as HappyAgentBotId, name)
+                            .catch(() => undefined),
                 }}
                 // The integrated header holds the toggle in this lane, so the
                 // spaces sidebar never shows the wordmark.

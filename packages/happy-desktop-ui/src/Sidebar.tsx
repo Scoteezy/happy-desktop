@@ -1654,6 +1654,46 @@ function SidebarRow({
                 <span aria-hidden="true" className="happy-sidebar__separator-rule" />
             </button>
         );
+    if (item().kind === "section" && props.rename)
+        return (
+            /* Renamed in place: the heading's title becomes the editable text,
+               Enter keeps it and Escape leaves it as it was. */
+            <div
+                className="happy-sidebar__item happy-sidebar__section-item"
+                data-happy-desktop-ui="sidebar-item"
+                data-item-id={item().id}
+                data-kind="section"
+                data-renaming=""
+                ref={(node) => nodeRef?.(node)}
+            >
+                <span
+                    aria-label={`Rename ${props.rename.initialValue}`}
+                    aria-multiline={false}
+                    className="happy-sidebar__section-item-label happy-sidebar__item-rename"
+                    contentEditable="plaintext-only"
+                    data-happy-desktop-ui="sidebar-section-item-label"
+                    onBlur={(event) => renameFinish(event.currentTarget.textContent ?? "")}
+                    onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.nativeEvent.isComposing) return;
+                        if (event.key !== "Enter" && event.key !== "Escape") return;
+                        event.preventDefault();
+                        if (event.repeat) return;
+                        renameFinish(
+                            event.key === "Enter"
+                                ? (event.currentTarget.textContent ?? "")
+                                : undefined,
+                        );
+                    }}
+                    ref={renameLabelRef}
+                    role="textbox"
+                    suppressContentEditableWarning
+                    tabIndex={0}
+                >
+                    {props.rename.initialValue}
+                </span>
+            </div>
+        );
     if (item().kind === "section")
         return (
             /* A section heading is arranged like a row and folds the run after

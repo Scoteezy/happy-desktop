@@ -121,6 +121,7 @@ const MENU_ARCHIVE = "archive";
 const MENU_SIDEBAR = "sidebar";
 const MENU_ASIDE = "aside";
 const MENU_DISCARD = "discard";
+const MENU_RENAME = "rename";
 /** The one list every item stands in: the sidebar has no sections of its own. */
 const LIST = "spaces";
 /** Rows the window draws under a node, which the document does not name. */
@@ -269,7 +270,11 @@ function spaceRow(
 }
 
 /** What a row's menu offers, by what the row holds. */
-function spaceMenu(space: HappyAgentSpace, places: HappyAgentSpacesPlaces): MenuItem[] {
+function spaceMenu(
+    space: HappyAgentSpace,
+    places: HappyAgentSpacesPlaces,
+    actions: HappyAgentSpacesActions,
+): MenuItem[] {
     const open: MenuItem = { kind: "item", id: MENU_OPEN, label: "Open", icon: "open-external" };
     if (happyAgentSpaceHappyIs(space, places))
         return [
@@ -280,15 +285,21 @@ function spaceMenu(space: HappyAgentSpace, places: HappyAgentSpacesPlaces): Menu
     switch (space.target.kind) {
         case "task": {
             const task = targetTask(space.target, places);
+            // Renamed by hand from here or with Enter, as the classic sidebar did.
+            const rename: MenuItem[] = actions.taskRename
+                ? [{ kind: "item", id: MENU_RENAME, label: "Rename task", icon: "edit" }]
+                : [];
             // New work nobody named yet closes from here and only from here.
             if (space.title === null && space.icon?.type === "stem_cell")
                 return [
                     open,
+                    ...rename,
                     { kind: "separator" },
                     { kind: "item", id: MENU_DISCARD, label: "Close new work", icon: "close" },
                 ];
             return [
                 open,
+                ...rename,
                 { kind: "separator" },
                 { kind: "item", id: MENU_LEAVE, label: "Leave task", icon: "close" },
                 ...(task?.canArchive
@@ -306,6 +317,16 @@ function spaceMenu(space: HappyAgentSpace, places: HappyAgentSpacesPlaces): Menu
         case "bot":
             return [
                 { ...open, label: "Open bot" },
+                ...(actions.botRename
+                    ? [
+                          {
+                              kind: "item" as const,
+                              id: MENU_RENAME,
+                              label: "Rename bot",
+                              icon: "edit" as const,
+                          },
+                      ]
+                    : []),
                 { kind: "separator" },
                 { kind: "item", id: MENU_ARCHIVE, label: "Archive bot", icon: "archive" },
             ];
@@ -324,6 +345,10 @@ export interface HappyAgentSpacesActions {
     taskArchive(taskId: string): void;
     botArchive(botId: string): void;
     surfaceLeave(surfaceId: string): void;
+    /** Renames a task by hand; absent for a Happy Agent that cannot. */
+    taskRename?(taskId: string, name: string): void;
+    /** Renames a bot by hand. */
+    botRename?(botId: string, name: string): void;
 }
 
 /** The window's two commands, which stand in the list like any item. */
@@ -419,6 +444,22 @@ function legacyViewOf(snapshot: HappyAgentSpacesSnapshot): SidebarDocumentView {
                 ? [{ kind: "separator" as const, id: "older" }, ...older.map(space)]
                 : []),
         ],
+    };
+}
+
+/** The document with one section's heading renamed; labels need not be unique. */
+function sidebarDocumentRelabel(
+    view: SidebarDocumentView,
+    key: string,
+    label: string,
+): SidebarDocumentView | undefined {
+    if (!view.items.some((node) => sidebarDocumentKey(node) === key && node.kind === "section"))
+        return undefined;
+    return {
+        ...view,
+        items: view.items.map((node) =>
+            sidebarDocumentKey(node) === key && node.kind === "section" ? { ...node, label } : node,
+        ),
     };
 }
 
@@ -658,22 +699,27 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 if (key) documentEdit((current) => sidebarDocumentFold(current, key));
             }}
             itemMenuItems={(item) => {
+                // A section's label is the person's to write, through the document.
+                if (item.kind === "section" && editable)
+                    return [
+                        { kind: "item", id: MENU_RENAME, label: "Rename section", icon: "edit" },
+                    ];
                 const space = spaceOf(item.id);
                 if (space === undefined) return [];
                 const agentId = spaceAgentId(space);
                 const menu: MenuItem[] =
                     agentId !== undefined && props.onChatAside
                         ? [
-                              ...spaceMenu(space, places).slice(0, 1),
+                              ...spaceMenu(space, places, props.actions).slice(0, 1),
                               {
                                   kind: "item",
                                   id: MENU_ASIDE,
                                   label: "Open in side panel",
                                   icon: "panel-expand",
                               },
-                              ...spaceMenu(space, places).slice(1),
+                              ...spaceMenu(space, places, props.actions).slice(1),
                           ]
-                        : spaceMenu(space, places);
+                        : spaceMenu(space, places, props.actions);
                 // The sidebar document is Happy's to show, from Happy's row.
                 return sidebarDoc && props.onSidebarOpen && happyAgentSpaceHappyIs(space, places)
                     ? [
@@ -686,6 +732,22 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                           },
                       ]
                     : menu;
+            }}
+            itemRename={{
+                actionId: MENU_RENAME,
+                onSubmit: (item, name) => {
+                    const label = name.trim();
+                    if (!label) return;
+                    if (item.kind === "section") {
+                        const key = anchorOf.get(item.id);
+                        if (key)
+                            documentEdit((current) => sidebarDocumentRelabel(current, key, label));
+                        return;
+                    }
+                    const target = spaceOf(item.id)?.target;
+                    if (target?.kind === "task") props.actions.taskRename?.(target.id, label);
+                    else if (target?.kind === "bot") props.actions.botRename?.(target.id, label);
+                },
             }}
             onItemMenuSelect={(item, actionId) => {
                 if (item.id === "create") {
