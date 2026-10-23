@@ -337,6 +337,13 @@ const AGENT_MESSAGE_ACTIVITY_CHROME = 36;
 const SHELL_ACTIVITY_CHROME = 60;
 const SHELL_ACTIVITY_OUTPUT_INSET = 36;
 const ACTIVITY_ROW_INSET = { detailed: 126, focused: 60 } as const;
+/**
+ * The same inset on the row a tool-first turn opens with, inside the Message
+ * that carries the agent's identity line: the message's 30px leading inset,
+ * then a detailed row ends on prose's 64px trailing edge while a focused row
+ * keeps its own 30px on top of the message's 30px.
+ */
+const ACTIVITY_LEAD_INSET = { detailed: AGENT_INSET, focused: 90 } as const;
 /** Tool-first Message: 16px top inset + 20px identity row, then no lower chrome. */
 const ACTIVITY_LEAD_CHROME = 36;
 /**
@@ -869,9 +876,9 @@ export function conversationRowHeight(
         const startsGroup =
             context.surface === "conversation" && conversationAgentRowStartsGroup(entries, index);
         const expanded = context.expanded ?? entry.activity.kind === "shell";
-        const activityInset = startsGroup
-            ? AGENT_INSET
-            : ACTIVITY_ROW_INSET[context.activityTreatment ?? "detailed"];
+        const activityInset = (startsGroup ? ACTIVITY_LEAD_INSET : ACTIVITY_ROW_INSET)[
+            context.activityTreatment ?? "detailed"
+        ];
         /* The output and body are laid out only on a miss: on a hit, the entry
            and everything its height reads are already in the key. */
         return rowHeightCached(
