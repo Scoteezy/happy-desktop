@@ -3,7 +3,7 @@ import { watch, type FSWatcher } from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { customThemeParse } from "happy-desktop-state";
+import { customThemeParse } from "happy-desktop-state/customTheme";
 import type {
     DesktopAppearanceMode,
     DesktopConfig,
