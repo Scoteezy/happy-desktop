@@ -194,6 +194,15 @@
     font-weight: 500;
 }
 
+/* A content-sized tab is as wide as its title, which is almost never a whole
+   pixel, so every tab after it and the "+" following the strip would start
+   between pixels and paint their 1px strokes soft. Rounding each tab up to a
+   whole pixel keeps the strip, and everything placed after it, on the pixel
+   grid. Engines without calc-size() keep the exact width. */
+.happy-tabbed-pane[data-tab-sizing="content"] .happy-tabs__tab {
+    width: calc-size(fit-content, round(up, size, 1px));
+}
+
 /* A tab ending in its close lane keeps half the trailing padding: the lane's
    own slack makes up the rest, so the cross sits as far from the tab's edge as
    from its title. */
