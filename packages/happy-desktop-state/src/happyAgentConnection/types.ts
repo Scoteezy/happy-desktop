@@ -361,6 +361,11 @@ export interface GroupEndElement extends BaseChatElement {
     usedTokens?: number;
     /** Conversation context measured when this run settled, when reported. */
     finalContextTokens?: number;
+    /**
+     * Whether any model ran in this run: its usage names at least one
+     * provider/model segment. A note the Happy Agent wrote itself ran none.
+     */
+    modelTurn: boolean;
 }
 
 export type ChatElement =

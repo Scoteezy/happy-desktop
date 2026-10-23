@@ -1268,6 +1268,7 @@ function runEndProject(
         turnElapsedMs: Math.max(0, run.endedAt - run.startedAt),
         usedTokens: usageTotal(run.usage),
         ...(finalContextTokens === undefined ? {} : { finalContextTokens }),
+        modelTurn: Object.values(run.usage).some((models) => Object.keys(models).length > 0),
     };
 }
 

@@ -77,6 +77,7 @@ it("keeps a standalone manual compaction activity and completion time", () => {
         elapsedMs: 31_000,
         turnStartedAt: 1_000,
         turnElapsedMs: 31_000,
+        modelTurn: true,
     };
 
     const projected = happyAgentConversationProject({
@@ -289,6 +290,7 @@ it("keeps a completed file edit visible while command traces are folded", () => 
             elapsedMs: 1000,
             turnStartedAt: 1000,
             turnElapsedMs: 1000,
+            modelTurn: true,
         },
     ];
     const input = {

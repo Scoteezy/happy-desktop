@@ -981,6 +981,10 @@ function happyAgentConnectGroupProject(
                    cause, so its footer would read as the reader interrupting a
                    turn they never touched. */
                 if (element.reason === "steering" && nextGroupOpensOmitted) break;
+                /* A run that finished without a model turn — a note the Happy
+                   Agent wrote itself — took no time worth reading, so it ends
+                   without "Completed in 0s"; its own row says what happened. */
+                if (element.reason === "completed" && !element.modelTurn) break;
                 entries.push({
                     kind: "turnStatus",
                     id: `${element.id}:status`,
