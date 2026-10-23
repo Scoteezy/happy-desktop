@@ -428,6 +428,42 @@ export function Composer(props: ComposerProps) {
         (element: HTMLTextAreaElement | null) => {
             textareaEl.current = element;
             draftScrollbarController.viewportSet(element);
+            const targetWindow = element?.ownerDocument.defaultView;
+            if (!element || !targetWindow) return;
+            const blockSize = element.style.getPropertyValue("block-size");
+            const blockSizePriority = element.style.getPropertyPriority("block-size");
+            const fieldSizing = element.style.getPropertyValue("field-sizing");
+            const fieldSizingPriority = element.style.getPropertyPriority("field-sizing");
+            let releaseFrame: number | undefined;
+            const sizingRelease = () => {
+                if (releaseFrame === undefined) return;
+                targetWindow.cancelAnimationFrame(releaseFrame);
+                releaseFrame = undefined;
+                element.style.setProperty("block-size", blockSize, blockSizePriority);
+                element.style.setProperty("field-sizing", fieldSizing, fieldSizingPriority);
+            };
+            const sizingHold = () => {
+                /* Chromium's content-sized textarea can move the sibling
+                 * transcript's native scroll offset while deleting its final
+                 * character, before `input` and despite unchanged final geometry.
+                 * Hold the committed box through the native edit; the
+                 * resulting draft resumes ordinary content sizing before React
+                 * handles it. No transcript render or scroll correction is needed. */
+                element.style.blockSize = targetWindow.getComputedStyle(element).blockSize;
+                element.style.setProperty("field-sizing", "fixed");
+                if (releaseFrame !== undefined) targetWindow.cancelAnimationFrame(releaseFrame);
+                // A canceled beforeinput has no input event to release the hold.
+                releaseFrame = targetWindow.requestAnimationFrame(sizingRelease);
+            };
+            element.addEventListener("beforeinput", sizingHold);
+            element.addEventListener("input", sizingRelease);
+            return () => {
+                element.removeEventListener("beforeinput", sizingHold);
+                element.removeEventListener("input", sizingRelease);
+                sizingRelease();
+                textareaEl.current = null;
+                draftScrollbarController.viewportSet(null);
+            };
         },
         [draftScrollbarController],
     );
