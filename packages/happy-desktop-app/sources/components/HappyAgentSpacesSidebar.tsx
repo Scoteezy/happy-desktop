@@ -213,10 +213,15 @@ function iconMark(
 export function happyAgentSpaceMark(
     space: HappyAgentSpace,
     places: HappyAgentSpacesPlaces,
+    stemCellAnimation: boolean,
 ): Pick<SidebarItem & TabItem, "imageMark" | "stemCell"> {
     if (happyAgentSpaceHappyIs(space, places)) return { imageMark: happyIconMark() };
     const icon = space.icon;
     if (icon?.type === "stem_cell") return { stemCell: { id: space.id } };
+    // A clay icon is what a stem cell becomes; unless the reader turned it
+    // off, a row or tab that sees the change on screen grows the cell into it.
+    if (icon?.type === "library" && clayIconSlugIs(icon.slug) && stemCellAnimation)
+        return { imageMark: { ...clayIconMark(icon.slug), growsFromStemCell: true } };
     const chosen = iconMark(icon);
     if (chosen) return chosen;
     const avatar = targetBot(space.target, places)?.avatar;
@@ -247,6 +252,7 @@ function spaceRow(
     space: HappyAgentSpace,
     places: HappyAgentSpacesPlaces,
     titleShimmerEnabled: boolean,
+    stemCellAnimation: boolean,
 ): SidebarItem {
     const conversation = (targetTask(space.target, places) ?? targetBot(space.target, places))
         ?.conversation;
@@ -257,7 +263,7 @@ function spaceRow(
         label: happyAgentSpaceLabel(space),
         labelShimmer: titleShimmerEnabled,
         workingIndicator: "none",
-        ...happyAgentSpaceMark(space, places),
+        ...happyAgentSpaceMark(space, places, stemCellAnimation),
         ...(activity === "awaitingInput"
             ? { status: "awaitingInput" as const }
             : activity === "running" || space.working
@@ -373,6 +379,8 @@ export interface HappyAgentSpacesSidebarProps {
     readonly visible?: boolean;
     /** Whether a working row shimmers its title, as the reader set it. */
     readonly titleShimmerEnabled: boolean;
+    /** Whether a row that sees its stem cell get an icon grows it, as the reader set it. */
+    readonly stemCellAnimation: boolean;
     readonly brand: boolean;
     readonly footer: ReactNode;
     readonly headerAccessory?: ReactNode;
@@ -560,7 +568,12 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 const children = nested(spaceAgentId(space), item.children, 1);
                 return [
                     {
-                        ...spaceRow(space, places, props.titleShimmerEnabled),
+                        ...spaceRow(
+                            space,
+                            places,
+                            props.titleShimmerEnabled,
+                            props.stemCellAnimation,
+                        ),
                         // A tidy's note lands in Happy, which says so until it is read.
                         ...(snapshot.noteUnread && happyAgentSpaceHappyIs(space, places)
                             ? { unread: true }

@@ -7,6 +7,7 @@ import type {
     HappyAgentChangeTiersStore,
     ExperimentsStore,
     ProjectsVisibilityStore,
+    StemCellAnimationStore,
     GptLiveStore,
     HappyAgentInstructionsSnapshot,
     HappyAgentDebugLogSnapshot,
@@ -38,6 +39,7 @@ import {
     happyAgentThinkingLabel,
     experimentsStoreNoop,
     projectsVisibilityStoreNoop,
+    stemCellAnimationStoreNoop,
     gptLiveStoreNoop,
     happyAgentCloudStoreNoop,
     happyAgentAvailabilityProject,
@@ -333,6 +335,9 @@ const PERMISSION_MODES: readonly HappyAgentPermissionMode[] = [
     "full_access",
 ];
 
+/** The row in Experimental that is a window preference rather than an experiment. */
+const STEM_CELL_ANIMATION_SETTING = "stemCellAnimation";
+
 /** Stands in where the host cannot hold the machine awake, keeping hook order fixed. */
 const keepAwakeStoreNone = keepAwakeStoreCreate({ mode: "off" });
 
@@ -358,6 +363,8 @@ export interface AppHappyAgentSettingsViewProps {
      * host that remembers no such choice, which offers no control for it.
      */
     projectsVisibility?: ProjectsVisibilityStore;
+    /** Whether new work's stem cell grows into its icon. Absent in a host that remembers no such choice. */
+    stemCellAnimation?: StemCellAnimationStore;
     /** Whether this window sends product analytics events. Absent where it sends none. */
     usageAnalytics?: UsageAnalyticsStore;
     gptLive?: GptLiveStore;
@@ -408,6 +415,12 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         experimentsStore.subscribe,
         experimentsStore.get,
         experimentsStore.get,
+    );
+    const stemCellAnimationStore = props.stemCellAnimation ?? stemCellAnimationStoreNoop;
+    const stemCellAnimation = useSyncExternalStore(
+        stemCellAnimationStore.subscribe,
+        stemCellAnimationStore.get,
+        stemCellAnimationStore.get,
     );
     const projectsVisibilityStore = props.projectsVisibility ?? projectsVisibilityStoreNoop;
     const projectsVisibility = useSyncExternalStore(
@@ -685,11 +698,25 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
         >
             {section === "experimental" ? (
                 <HappyAgentExperimentalSettings
-                    features={EXPERIMENTAL_FEATURES.map((feature) => ({
-                        ...feature,
-                        enabled: experiments[feature.id],
-                    }))}
+                    features={EXPERIMENTAL_FEATURES.flatMap((feature) => [
+                        { ...feature, enabled: experiments[feature.id] },
+                        // How stem cells become their icons, beside the
+                        // experiment that brings stem cells.
+                        ...(feature.id === "stemCells" && props.stemCellAnimation
+                            ? [
+                                  {
+                                      id: STEM_CELL_ANIMATION_SETTING,
+                                      label: "Animate new work’s icon",
+                                      enabled: stemCellAnimation.stemCellAnimationEnabled,
+                                  },
+                              ]
+                            : []),
+                    ])}
                     onFeatureChange={(id, enabled) => {
+                        if (id === STEM_CELL_ANIMATION_SETTING) {
+                            stemCellAnimationStore.stemCellAnimationUpdate(enabled);
+                            return;
+                        }
                         const feature = EXPERIMENTAL_FEATURES.find((feature) => feature.id === id);
                         if (feature) experimentsStore.featureUpdate(feature.id, enabled);
                     }}

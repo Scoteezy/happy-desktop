@@ -19,6 +19,7 @@ import type {
     CommandPaletteStore,
     ExperimentsStore,
     ProjectsVisibilityStore,
+    StemCellAnimationStore,
     GptLiveStore,
     HappyAgentGroupId,
     UsageAnalyticsStore,
@@ -140,6 +141,7 @@ export interface HappyAgentRouterContext {
      * connection. Absent in a host that remembers no such choice, which shows them.
      */
     readonly projectsVisibility?: ProjectsVisibilityStore;
+    readonly stemCellAnimation?: StemCellAnimationStore;
     /** Whether this window sends product analytics events. Absent where it sends none. */
     readonly usageAnalytics?: UsageAnalyticsStore;
     /** Window-owned GPT-Live opt-in; unrelated to coding-provider settings. */
@@ -620,6 +622,7 @@ function HappyAgentWorkspaceLayout() {
             {...(context.projectsVisibility
                 ? { projectsVisibility: context.projectsVisibility }
                 : {})}
+            {...(context.stemCellAnimation ? { stemCellAnimation: context.stemCellAnimation } : {})}
             {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             {...(context.keepAwake ? { keepAwake: context.keepAwake } : {})}
             {...(context.statusBar ? { statusBar: context.statusBar } : {})}
@@ -816,6 +819,7 @@ function HappyAgentSettingsRoute() {
             {...(context.projectsVisibility
                 ? { projectsVisibility: context.projectsVisibility }
                 : {})}
+            {...(context.stemCellAnimation ? { stemCellAnimation: context.stemCellAnimation } : {})}
             {...(context.usageAnalytics ? { usageAnalytics: context.usageAnalytics } : {})}
             {...(context.gptLive ? { gptLive: context.gptLive } : {})}
             {...(context.keepAwake ? { keepAwake: context.keepAwake } : {})}

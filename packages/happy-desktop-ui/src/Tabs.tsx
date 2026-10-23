@@ -16,7 +16,8 @@ import type { KeyboardShortcut } from "./keyboardShortcut";
 import { Menu, type MenuItem } from "./Menu";
 import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
-import { StemCell, type StemCellMark } from "./StemCell";
+import { type StemCellMark } from "./StemCell";
+import { StemCellGrowth, type ImageMark } from "./StemCellGrowth";
 import {
     transferFocusClaim,
     transferFocusRequest,
@@ -69,7 +70,7 @@ export type TabItem = {
     /** Marks the tab as carrying unread activity with a dot on its leading mark. */
     unread?: boolean;
     /** Unframed artwork for an explicitly opened entity. */
-    imageMark?: { src: string; srcSet?: string; alt?: string };
+    imageMark?: ImageMark;
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
     /**
@@ -92,20 +93,19 @@ export type TabItem = {
  * reader was most likely to be looking for it.
  */
 function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
-    const mark = tab.stemCell ? (
-        <StemCell {...tab.stemCell} size={20} />
-    ) : tab.imageMark ? (
-        <img
-            alt={tab.imageMark.alt ?? ""}
-            className="happy-tabs__image-mark"
-            src={tab.imageMark.src}
-            srcSet={tab.imageMark.srcSet}
-        />
-    ) : tab.filePath !== undefined ? (
-        <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />
-    ) : tab.icon ? (
-        <Icon name={tab.icon} size={iconSize} />
-    ) : null;
+    const mark =
+        tab.stemCell || tab.imageMark ? (
+            <StemCellGrowth
+                imageClassName="happy-tabs__image-mark"
+                imageMark={tab.imageMark}
+                size={20}
+                stemCell={tab.stemCell}
+            />
+        ) : tab.filePath !== undefined ? (
+            <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />
+        ) : tab.icon ? (
+            <Icon name={tab.icon} size={iconSize} />
+        ) : null;
     if (mark === null)
         return tab.unread ? (
             <span

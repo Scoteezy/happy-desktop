@@ -98,6 +98,7 @@ function Spaces(props: { store: HappyAgentSpacesStore }) {
         },
         now: 1,
         titleShimmerEnabled: false,
+        stemCellAnimation: true,
         brand: false,
         footer: null,
         sessionRow: () => undefined,

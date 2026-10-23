@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, Ref } from "react";
 import { stemCellGeometry, stemCellSmoothPath } from "./stemCellGeometry";
 
 export type StemCellMark = {
@@ -7,10 +7,10 @@ export type StemCellMark = {
     /** Slowly drift the shape's phases. Static by default and in Blueprint captures. */
     wobble?: boolean;
 };
-export type StemCellProps = StemCellMark & { size: 16 | 20 | 64 };
+export type StemCellProps = StemCellMark & { size: 16 | 20 | 64; ref?: Ref<SVGSVGElement> };
 
 /** C-298 — a seeded identity for work that has not become something yet. */
-export function StemCell({ id, size, wobble = false }: StemCellProps) {
+export function StemCell({ id, size, wobble = false, ref }: StemCellProps) {
     const geometry = stemCellGeometry(id);
     const forward = wobble ? stemCellGeometry(id, 0.2) : undefined;
     const backward = wobble ? stemCellGeometry(id, -0.2) : undefined;
@@ -41,6 +41,7 @@ export function StemCell({ id, size, wobble = false }: StemCellProps) {
             data-wobble={wobble ? "" : undefined}
             focusable="false"
             height={size}
+            ref={ref}
             viewBox={`0 0 ${size} ${size}`}
             width={size}
         >

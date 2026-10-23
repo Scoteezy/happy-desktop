@@ -31,7 +31,8 @@ import { Menu, type MenuItem } from "./Menu";
 import { MenuButton } from "./MenuButton";
 import { ShimmerText } from "./ShimmerText";
 import { Spinner } from "./Spinner";
-import { StemCell, type StemCellMark } from "./StemCell";
+import { type StemCellMark } from "./StemCell";
+import { StemCellGrowth, type ImageMark } from "./StemCellGrowth";
 import { ScrollArea } from "./Scrollbar";
 import { SidebarSectionContext, SidebarSectionTail } from "./SidebarSectionDetails";
 import { TextField } from "./TextField";
@@ -100,7 +101,7 @@ export type SidebarItem = {
     id: string;
     imageUrl?: string;
     /** Unframed entity artwork in the existing 20px leading lane. */
-    imageMark?: { src: string; srcSet?: string; alt?: string };
+    imageMark?: ImageMark;
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
     initials?: string;
@@ -1941,14 +1942,12 @@ function SidebarRow({
                         none when it folds: the branch line beside it already says
                         what it is, and opening the lane for the chevron must not
                         put back the glyph that line replaced. */}
-                    {item().stemCell ? (
-                        <StemCell {...item().stemCell!} size={20} />
-                    ) : item().imageMark ? (
-                        <img
-                            alt={item().imageMark?.alt ?? ""}
-                            className="happy-sidebar__image-mark"
-                            src={item().imageMark?.src}
-                            srcSet={item().imageMark?.srcSet}
+                    {item().stemCell || item().imageMark ? (
+                        <StemCellGrowth
+                            imageClassName="happy-sidebar__image-mark"
+                            imageMark={item().imageMark}
+                            size={20}
+                            stemCell={item().stemCell}
                         />
                     ) : props.itemMarkPresentation === "glyph" ? (
                         <Icon name={leadingIcon(item())} size={16} />

@@ -108,6 +108,7 @@ import type {
     HappyAgentSpace,
     SidebarDocumentClassic,
     ProjectsVisibilityStore,
+    StemCellAnimationStore,
     HappyAgentGroupLifecycle,
     HappyAgentChangeTier,
     HappyAgentChangeTierId,
@@ -157,6 +158,7 @@ import {
     commandPaletteStoreNoop,
     experimentsStoreNoop,
     projectsVisibilityStoreNoop,
+    stemCellAnimationStoreNoop,
     happyAgentVersionAtLeast,
     HAPPY_AGENT_TASKS_VERSION,
     HAPPY_AGENT_TASK_CREATE_VERSION,
@@ -750,6 +752,11 @@ export interface AppHappyAgentViewProps {
      * remembers no such choice supplies none, and the projects stay listed.
      */
     projectsVisibility?: ProjectsVisibilityStore;
+    /**
+     * Whether new work's stem cell grows into its icon when the icon arrives.
+     * A host that remembers no such choice supplies none, and it does.
+     */
+    stemCellAnimation?: StemCellAnimationStore;
     gptLive?: GptLiveStore;
     /**
      * Whether running session, project, and workspace titles shimmer. A host
@@ -3304,6 +3311,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         projectsVisibilityStore.get,
         projectsVisibilityStore.get,
     ).projectsHidden;
+    // Whether a row or tab that sees its stem cell get an icon grows it there.
+    const stemCellAnimationStore = props.stemCellAnimation ?? stemCellAnimationStoreNoop;
+    const stemCellAnimation = useSyncExternalStore(
+        stemCellAnimationStore.subscribe,
+        stemCellAnimationStore.get,
+        stemCellAnimationStore.get,
+    ).stemCellAnimationEnabled;
     const navigationOrderStore = props.navigationOrder ?? happyAgentNavigationOrderStoreNoop;
     const navigationOrder = useSyncExternalStore(
         navigationOrderStore.subscribe,
@@ -3758,6 +3772,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 navigation={spacesNavigation}
                 now={spaces.readAt}
                 titleShimmerEnabled={titleShimmerEnabled}
+                stemCellAnimation={stemCellAnimation}
                 sessionRow={(agentId) => {
                     // A session is a subtask at any depth, or a task of its own
                     // that Prioritizing shows under the work that started it.
@@ -3845,7 +3860,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             // not its row is shown.
             return space
                 ? {
-                      ...happyAgentSpaceMark(space, spacesPlaces),
+                      ...happyAgentSpaceMark(space, spacesPlaces, stemCellAnimation),
                       label: happyAgentSpaceLabel(space),
                   }
                 : happyAgentSessionMark(spaces, sessionId);

@@ -19,6 +19,7 @@ export * from "./keepAwake/keepAwakeStore.js";
 export * from "./commandPalette/commandPaletteStore.js";
 export * from "./experiments/experimentsStore.js";
 export * from "./projectsVisibility/projectsVisibilityStore.js";
+export * from "./stemCellAnimation/stemCellAnimationStore.js";
 export * from "./statusBar/statusBarStore.js";
 export * from "./usageAnalytics/usageAnalyticsStore.js";
 export * from "./gptLive/gptLiveStore.js";

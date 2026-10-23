@@ -31,6 +31,7 @@ import {
     commandPaletteStoreCreate,
     experimentsStoreCreate,
     projectsVisibilityStoreCreate,
+    stemCellAnimationStoreCreate,
     statusBarStoreCreate,
     gptLiveStoreCreate,
     gptLiveExperimentsConnect,
@@ -52,6 +53,7 @@ import {
     type CommandPaletteStore,
     type ExperimentsStore,
     type ProjectsVisibilityStore,
+    type StemCellAnimationStore,
     type StatusBarStore,
     type UsageAnalyticsStore,
     type GptLiveStore,
@@ -139,6 +141,7 @@ import { desktopMetricsStoreCreate } from "./desktopMetricsStore";
 import { desktopDaemonStoreCreate } from "./desktopDaemonStore";
 import { desktopExperimentsPersistence } from "./desktopExperiments";
 import { desktopProjectsVisibilityPersistence } from "./desktopProjectsVisibility";
+import { desktopStemCellAnimationPersistence } from "./desktopStemCellAnimation";
 import { desktopStatusBarPersistence } from "./desktopStatusBar";
 import { desktopGptLivePersistence } from "./desktopGptLive";
 import { desktopGptLiveRuntimeCreate } from "./desktopGptLiveRuntime";
@@ -375,6 +378,7 @@ function HappyAgentBoundary(props: {
     mediaWindow?: MediaWindowOpener;
     experiments: ExperimentsStore;
     projectsVisibility: ProjectsVisibilityStore;
+    stemCellAnimation: StemCellAnimationStore;
     statusBar: StatusBarStore;
     keepAwake: KeepAwakeStore;
     platform: "desktop" | "web";
@@ -428,6 +432,7 @@ function HappyAgentBoundary(props: {
                     : {}),
                 experiments: props.experiments,
                 projectsVisibility: props.projectsVisibility,
+                stemCellAnimation: props.stemCellAnimation,
                 statusBar: props.statusBar,
                 gptLive: props.gptLive,
                 usageAnalytics: props.usageAnalytics,
@@ -576,6 +581,7 @@ interface DesktopRendererProps {
     bridge: HappyDesktopBridge;
     experiments: ExperimentsStore;
     projectsVisibility: ProjectsVisibilityStore;
+    stemCellAnimation: StemCellAnimationStore;
     statusBar: StatusBarStore;
     gptLive: GptLiveStore;
     usageAnalytics: UsageAnalyticsStore;
@@ -774,6 +780,7 @@ function DesktopScreens(props: DesktopRendererProps) {
                                     connectionOnboarding
                                     experiments={props.experiments}
                                     projectsVisibility={props.projectsVisibility}
+                                    stemCellAnimation={props.stemCellAnimation}
                                     statusBar={props.statusBar}
                                     gptLive={props.gptLive}
                                     usageAnalytics={props.usageAnalytics}
@@ -1000,6 +1007,7 @@ function DesktopRuntimeContent(
             mediaWindow={props.mediaWindow}
             experiments={props.experiments}
             projectsVisibility={props.projectsVisibility}
+            stemCellAnimation={props.stemCellAnimation}
             statusBar={props.statusBar}
             keepAwake={props.keepAwake}
             gptLive={props.gptLive}
@@ -1247,6 +1255,10 @@ if (mediaPreviewBridge) {
         // connection — team and local — and is never asked of a machine.
         const projectsVisibility = projectsVisibilityStoreCreate(
             desktopProjectsVisibilityPersistence(),
+        );
+        // Whether new work's stem cell grows into its icon: the window's own choice.
+        const stemCellAnimation = stemCellAnimationStoreCreate(
+            desktopStemCellAnimationPersistence(),
         );
         // Which optional controls the status bar shows: the window's own choice.
         const statusBar = statusBarStoreCreate(desktopStatusBarPersistence());
@@ -1587,6 +1599,7 @@ if (mediaPreviewBridge) {
                         }
                         experiments={experiments}
                         projectsVisibility={projectsVisibility}
+                        stemCellAnimation={stemCellAnimation}
                         statusBar={statusBar}
                         gptLive={gptLive}
                         usageAnalytics={analytics.preference}

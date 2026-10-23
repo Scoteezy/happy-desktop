@@ -43,6 +43,7 @@ function fixture() {
         },
         now: 1,
         titleShimmerEnabled: false,
+        stemCellAnimation: true,
         brand: false,
         footer: null,
         sessionRow: () => undefined,

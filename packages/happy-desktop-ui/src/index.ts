@@ -114,6 +114,13 @@ export {
     type ToneName,
 } from "./Avatar";
 export { StemCell, type StemCellMark, type StemCellProps } from "./StemCell";
+export { StemCellGrowth, type ImageMark, type StemCellGrowthProps } from "./StemCellGrowth";
+export {
+    playStemCellToIcon,
+    stemCellSupportProbe,
+    type StemCellPlay,
+    type StemCellPlayOptions,
+} from "./stemCellGrowth";
 export {
     BotFace,
     botFaceCredit,
