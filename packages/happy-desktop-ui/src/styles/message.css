@@ -1271,13 +1271,13 @@
  * rhythm of a grouped follow-up instead of separating the thread like a
  * centered banner.
  */
-/* The 14px leading glyph plus the 8px gap consume 22px, so an 8px inset lands
-   the text itself on the same 30px column a message body starts on. Its 6px
-   vertical inset around one 20px line matches a compact tool call exactly. */
+/* Status icons start on the same 30px content edge as errors and tool rows.
+   Only author avatars hang in the gutter. The 6px vertical inset around one
+   20px line matches a compact tool call exactly. */
 .happy-system-notice[data-align="start"] {
     align-items: flex-start;
     justify-content: flex-start;
-    padding: 6px 96px 6px 8px;
+    padding: 6px 96px 6px 30px;
 }
 
 /* Same as the activity row and the error card: the identity Message around a

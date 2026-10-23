@@ -337,6 +337,39 @@ const screens: readonly Screen[] = [
     },
 ];
 
+const statusAlignment: Screen = {
+    id: "status-alignment",
+    label: "Failed turn · shared status-row content edge",
+    entries: [
+        failed({
+            ...usageLimit,
+            resolution: {
+                action: "switched",
+                at: NOW,
+                providerId: "claude_kirill_for_sms_gmail",
+                providerLabel: "Claude Kirill For Sms Gmail",
+                modelId: "opus-5-5",
+                modelName: "Opus 5.5",
+            },
+        }),
+        {
+            kind: "turnStatus",
+            id: "failed-status",
+            sequence: "31",
+            status: "failed",
+            durationMs: 1_000,
+        },
+        {
+            kind: "notice",
+            variant: "configuration",
+            id: "provider-changed",
+            sequence: "32",
+            level: "info",
+            text: "Provider selection changed: claude → claude_kirill_for_sms_gmail",
+        },
+    ],
+};
+
 const COMPOSER: ComposerSnapshot = {
     agentUserIds: [],
     attachments: [],
@@ -396,6 +429,25 @@ export function ConversationFailureFlowPage() {
             summary="Failed turns as the client writes them from the failure's kind: the message with Retry or New chat after it, then the switch split button and Ask Chief of Staff. The switch lists the conversation's model picker's own accounts and live usage, never a list stored with the failure. Reset times are told on the viewer's own clock; this page pins it to Los Angeles. Each viewport is named for `pnpm blueprint:screens`."
             title="Conversation failure flow"
         >
+            {[
+                { width: 1100, height: 760 },
+                { width: 720, height: 640 },
+            ].map((window) => (
+                <FullScreenSpecimen
+                    key={`status-alignment-${String(window.width)}`}
+                    detail="Only the author avatar hangs in the gutter; status icons share the content edge."
+                    label={statusAlignment.label}
+                    number="00"
+                    screen={`00-status-alignment-${String(window.width)}x${String(window.height)}`}
+                    window={window}
+                >
+                    <ThemeScope mode="dark">
+                        <div style={{ display: "flex", width: "100%", height: "100%" }}>
+                            {conversation(statusAlignment)}
+                        </div>
+                    </ThemeScope>
+                </FullScreenSpecimen>
+            ))}
             {windows.flatMap((window) =>
                 screens.map((screen, index) => {
                     const number = String(index + 1).padStart(2, "0");

@@ -102,7 +102,6 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                 <div
                     className="happy-conversation-failure-card__content"
                     data-happy-desktop-ui="conversation-error-content"
-                    data-resolved={layout.resolution === undefined ? undefined : ""}
                 >
                     <div
                         className="happy-conversation-failure-card__line"
@@ -145,26 +144,6 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                             </Button>
                         ) : null}
                     </div>
-                    {layout.resolution !== undefined ? (
-                        <span
-                            className="happy-conversation-failure-card__resolution"
-                            data-happy-desktop-ui="conversation-failure-resolution"
-                        >
-                            <span
-                                aria-hidden="true"
-                                className="happy-conversation-failure-card__resolution-icon"
-                            >
-                                {props.failure.resolution?.action === "switched" ? (
-                                    <Octicon name="arrow-switch" size={14} />
-                                ) : (
-                                    <Ionicon name="refresh-outline" size={14} />
-                                )}
-                            </span>
-                            <span className="happy-conversation-failure-card__resolution-text">
-                                {layout.resolution}
-                            </span>
-                        </span>
-                    ) : null}
                     {actionsRow ? (
                         <div
                             className="happy-conversation-failure-card__actions"
@@ -210,6 +189,26 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
                     ) : null}
                 </div>
             </div>
+            {layout.resolution !== undefined ? (
+                <span
+                    className="happy-conversation-failure-card__resolution"
+                    data-happy-desktop-ui="conversation-failure-resolution"
+                >
+                    <span
+                        aria-hidden="true"
+                        className="happy-conversation-failure-card__resolution-icon"
+                    >
+                        {props.failure.resolution?.action === "switched" ? (
+                            <Octicon name="arrow-switch" size={14} />
+                        ) : (
+                            <Ionicon name="refresh-outline" size={14} />
+                        )}
+                    </span>
+                    <span className="happy-conversation-failure-card__resolution-text">
+                        {layout.resolution}
+                    </span>
+                </span>
+            ) : null}
         </div>
     );
 }

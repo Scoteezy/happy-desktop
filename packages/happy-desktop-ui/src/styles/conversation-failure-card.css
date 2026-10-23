@@ -7,17 +7,19 @@
  * `conversationRowHeight.ts`, which models this card without mounting it.
  */
 
+/* The resolution is a sibling of the error row, not nested in its text column:
+   both status icons start at the transcript content edge. */
+.happy-conversation-failure-card {
+    flex-direction: column;
+    gap: 6px;
+}
+
 .happy-conversation-failure-card__content {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
     gap: 12px;
     min-width: 0;
-}
-
-/* Once acted on, the record sits closer under the message than a row of buttons. */
-.happy-conversation-failure-card__content[data-resolved] {
-    gap: 6px;
 }
 
 .happy-conversation-failure-card__line {
@@ -89,7 +91,7 @@
 .happy-conversation-failure-card__resolution {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
     color: var(--text-secondary);
     font-size: 14px;

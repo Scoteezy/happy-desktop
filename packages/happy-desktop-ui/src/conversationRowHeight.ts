@@ -370,8 +370,6 @@ const FAILURE_RESOLUTION_GAP = 6;
 const FAILURE_LINE_GAP = 8;
 /** A command box: 5px padding per side, the 2px gap and the 20px copy button. */
 const FAILURE_CODE_EXTRA = 32;
-/** The resolution record's 14px icon and its 6px gap. */
-const FAILURE_RESOLUTION_INSET = 20;
 /** Small Button: 28px tall, 10px padding and a 1px border per side, 12/700 at 0.01em. */
 const SMALL_BUTTON_HEIGHT = 28;
 const SMALL_BUTTON_CHROME = 22;
@@ -1028,11 +1026,7 @@ export function conversationRowHeight(
                         return (
                             height +
                             FAILURE_RESOLUTION_GAP +
-                            errorTextHeight(
-                                layout.resolution,
-                                measure - FAILURE_RESOLUTION_INSET,
-                                cache?.text,
-                            )
+                            errorTextHeight(layout.resolution, measure, cache?.text)
                         );
                     /* The row wraps like flex does: each button joins the line
                        while it fits, and one wider than the line takes a line of
