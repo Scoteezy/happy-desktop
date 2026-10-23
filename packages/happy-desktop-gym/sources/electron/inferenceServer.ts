@@ -321,6 +321,7 @@ class DeterministicInferenceServer implements GymInferenceServer {
         }
         const streamingPaint = scriptKey.includes("gym-streaming-paint");
         const streamingUnstick = scriptKey.includes("gym-mixed-replay-stream-unstick");
+        const composerTyping = composerTypingRequest(scriptKey);
         return {
             content,
             ...(streamingPaint
@@ -328,27 +329,35 @@ class DeterministicInferenceServer implements GymInferenceServer {
                       textDeltaChunkSize: 8,
                       textDeltaDelayMs: 48,
                   }
-                : streamingUnstick
+                : composerTyping
                   ? {
-                        textDeltaChunkSize: 64,
-                        textDeltaDelayMs: 12,
+                        // Small deltas, several per frame across the four
+                        // streams, for longer than the typing lane takes, so
+                        // every keystroke lands mid-stream.
+                        textDeltaChunkSize: 24,
+                        textDeltaDelayMs: 32,
                     }
-                  : replay
+                  : streamingUnstick
                     ? {
-                          thinkingDeltaChunkSize: 96,
-                          thinkingDeltaDelayMs: 4,
-                          textDeltaChunkSize: 256,
-                          textDeltaDelayMs: 4,
+                          textDeltaChunkSize: 64,
+                          textDeltaDelayMs: 12,
                       }
-                    : {
-                          textDeltaChunkSize:
-                              latestUserText.includes("gym-history-") || longChat ? 16_384 : 96,
-                          textDeltaDelayMs:
-                              latestUserText.includes("gym-history-") ||
-                              this.#manifest.profile === "smoke"
-                                  ? 0
-                                  : 1,
-                      }),
+                    : replay
+                      ? {
+                            thinkingDeltaChunkSize: 96,
+                            thinkingDeltaDelayMs: 4,
+                            textDeltaChunkSize: 256,
+                            textDeltaDelayMs: 4,
+                        }
+                      : {
+                            textDeltaChunkSize:
+                                latestUserText.includes("gym-history-") || longChat ? 16_384 : 96,
+                            textDeltaDelayMs:
+                                latestUserText.includes("gym-history-") ||
+                                this.#manifest.profile === "smoke"
+                                    ? 0
+                                    : 1,
+                        }),
             completionDelayMs: replay ? 20 : this.#manifest.profile === "smoke" ? 0 : 2,
         };
     }
@@ -404,13 +413,15 @@ function deterministicText(
             "",
             "The trailing paragraph arrives after the complete table.",
         ].join("\n");
-    const lineCount = longChat
-        ? manifest.seed.longChatResponseLines
-        : toolHeavy
-          ? Math.max(8, manifest.seed.longTranscriptLines)
-          : replay
-            ? 128
-            : 8;
+    const lineCount = composerTypingRequest(scriptKey)
+        ? COMPOSER_TYPING_RESPONSE_LINES
+        : longChat
+          ? manifest.seed.longChatResponseLines
+          : toolHeavy
+            ? Math.max(8, manifest.seed.longTranscriptLines)
+            : replay
+              ? 128
+              : 8;
     const lines = Array.from({ length: lineCount }, (_, index) => {
         const line = index + 1;
         return [
@@ -443,6 +454,19 @@ function deterministicThinking(
         "This thinking payload is intentionally chunked so foreground UI work overlaps durable Happy Agent streaming.",
         "The mixed lane keeps this stream correlated with session switches, transcript scrolls, and file watcher updates.",
     ].join(" · ");
+}
+
+/**
+ * Lines in the response streamed while the composer lane types. At 24 bytes
+ * every 32ms they stream for longer than typing takes, so the typing phase is
+ * compared against the same stream it started on. A longer response is not
+ * the way to stretch it: every delta costs the daemon more as the message
+ * grows, and the run would outlast the barrier that waits for it.
+ */
+const COMPOSER_TYPING_RESPONSE_LINES = 120;
+
+function composerTypingRequest(scriptKey: string): boolean {
+    return scriptKey.includes("gym-composer-typing");
 }
 
 function replayRequest(latestUserText: string): boolean {

@@ -2066,6 +2066,7 @@ async function longChatScrollRun(
     page: Page,
     app: ElectronApplication,
     options: {
+        readonly paths: GymRunPaths;
         readonly runtime: StartedHappyAgentRuntime;
         readonly sessionIds: readonly string[];
         profilerActive(): boolean;
@@ -2089,6 +2090,16 @@ async function longChatScrollRun(
         );
     }
     await mark("virtualized-transcript-ready");
+    // The reader is at the newest message of a long, hydrated transcript: type
+    // into it while it and its neighbours stream.
+    const composerTyping = await composerTypingRun(
+        page,
+        options.runtime.client,
+        options.paths,
+        material,
+        targets,
+        mark,
+    );
     // Hydrate first so the streams overlap scrolling instead of finishing during cold layout.
     const before = await performanceCapture(page, app, options.profilerActive());
     const submission = await concurrentSubmissions(
@@ -2127,6 +2138,7 @@ async function longChatScrollRun(
     return {
         after,
         before,
+        composerTyping,
         durableBarriers,
         finalViewport,
         goldReplay: goldReplayDetails(material),
@@ -2146,6 +2158,576 @@ async function longChatScrollRun(
                 initialViewport.scrollHeight > initialViewport.clientHeight,
         },
     };
+}
+
+/**
+ * What a person types into the composer while the transcript streams. Plain
+ * prose: a leading `/` or an `@` would open a popover the lane is not about.
+ */
+const COMPOSER_TYPING_TEXT =
+    "Can you check whether this keeps up while the transcript streams? I am typing quickly, with commas, numbers like 42, and a question.";
+
+/** Milliseconds between keystrokes; roughly a fast typist's cadence. */
+const COMPOSER_TYPING_KEY_INTERVAL_MS = 60;
+
+/** How long the stream runs untouched first, so typing can be compared with it. */
+const COMPOSER_TYPING_STREAM_ONLY_MS = 3_000;
+
+/**
+ * Components whose per-keystroke render counts the lane reports by name. The
+ * composer and its dock are the only ones a keystroke should reach; the rest
+ * are the transcript, header, window, and palette surfaces around it.
+ */
+const COMPOSER_TYPING_COMPONENTS = {
+    composer: ["HappyAgentComposerDock", "ConversationDock", "Composer"],
+    transcript: ["MessageList", "ConversationEntryView"],
+    header: ["ChannelHeader", "Tabs"],
+    surface: [
+        "ConversationView",
+        "HappyAgentWorkspaceSurface",
+        "HappyAgentConversationBody",
+        "HappyAgentSurfaceChat",
+        "HappyAgentWindowDialogs",
+        "AppShell",
+        "Sidebar",
+    ],
+    palette: [
+        "HappyAgentCommandPaletteSurface",
+        "HappyAgentQuickActionsSurface",
+        "HappyAgentCommandPalette",
+        "HappyAgentQuickActions",
+    ],
+} as const;
+
+interface ComposerTypingKeystroke {
+    readonly key: string;
+    /** The keydown's own timestamp: when the browser received the key. */
+    readonly keydownAt: number;
+    /** Synchronous keydown, beforeinput, and input handling, React's render and commit included. */
+    readonly handlerMs: number;
+    /** Keydown timestamp until every handler of the resulting input event returned. */
+    readonly keydownToInputHandledMs: number;
+    /** Keydown timestamp until the first animation frame after the input. */
+    readonly keydownToNextFrameMs?: number;
+    /** React commits inside this keystroke's own event dispatch. */
+    readonly commits: number;
+    /** React's render time for those commits, from the profiling build. */
+    readonly reactRenderMs: number;
+    /** Components React rendered inside this keystroke's dispatch, by name. */
+    readonly rendered: Readonly<Record<string, number>>;
+}
+
+interface ComposerTypingProbeCapture {
+    readonly reactHook: boolean;
+    readonly keystrokes: readonly ComposerTypingKeystroke[];
+    readonly untrustedEvents: number;
+    readonly eventTimings: readonly {
+        readonly name: string;
+        readonly duration: number;
+        readonly processingMs: number;
+        readonly inputDelayMs: number;
+    }[];
+    /** Commits outside any keystroke dispatch, by phase: the frame-coalesced stream work. */
+    readonly background: Readonly<
+        Record<
+            "streamOnly" | "typing",
+            {
+                readonly durationMs: number;
+                readonly commits: number;
+                readonly renderMs: number;
+                readonly rendered: Readonly<Record<string, number>>;
+            }
+        >
+    >;
+}
+
+/**
+ * Starts recording keystroke timing and React commits in the renderer.
+ *
+ * React reports every commit to the DevTools global hook the profile build
+ * installs; walking the committed tree the way DevTools does names each
+ * component that actually rendered. A commit made while a key's events are
+ * being dispatched is that keystroke's own work; anything else is the
+ * frame-coalesced stream. Event Timing adds the browser's view of slow events.
+ */
+function composerTypingProbeInstall(): void {
+    {
+        interface Fiber {
+            readonly tag: number;
+            readonly type: unknown;
+            readonly flags: number;
+            readonly alternate: Fiber | null;
+            readonly child: Fiber | null;
+            readonly sibling: Fiber | null;
+            readonly actualDuration?: number;
+        }
+        interface Hook {
+            onCommitFiberRoot?: (
+                id: unknown,
+                root: { current: Fiber },
+                ...rest: unknown[]
+            ) => unknown;
+        }
+        interface Pending {
+            key: string;
+            keydownAt: number;
+            handlerMs: number;
+            handlerStartedAt?: number;
+            commits: number;
+            renderMs: number;
+            rendered: Record<string, number>;
+        }
+        interface Background {
+            startedAt: number;
+            durationMs: number;
+            commits: number;
+            renderMs: number;
+            rendered: Record<string, number>;
+        }
+        const hook = (window as unknown as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
+            .__REACT_DEVTOOLS_GLOBAL_HOOK__;
+        const background: Record<"streamOnly" | "typing", Background> = {
+            streamOnly: {
+                startedAt: performance.now(),
+                durationMs: 0,
+                commits: 0,
+                renderMs: 0,
+                rendered: {},
+            },
+            typing: { startedAt: 0, durationMs: 0, commits: 0, renderMs: 0, rendered: {} },
+        };
+        let phase: "streamOnly" | "typing" = "streamOnly";
+        const keystrokes: object[] = [];
+        const eventTimings: object[] = [];
+        let untrustedEvents = 0;
+        let pending: Pending | undefined;
+
+        const nameOf = (fiber: Fiber): string => {
+            const type = fiber.type as
+                | { displayName?: string; name?: string; type?: unknown; render?: unknown }
+                | undefined;
+            if (typeof type === "function")
+                return (
+                    (type as { displayName?: string }).displayName ??
+                    (type as { name?: string }).name ??
+                    "Anonymous"
+                );
+            const inner = (type?.type ?? type?.render) as
+                | { displayName?: string; name?: string }
+                | undefined;
+            return type?.displayName ?? inner?.displayName ?? inner?.name ?? "Anonymous";
+        };
+        // Function, class, forwardRef, and simple-memo fibers. A memo
+        // wrapper's inner component is its own child fiber, counted there.
+        const componentTags = new Set([0, 1, 11, 15]);
+        const PERFORMED_WORK = 1;
+        const visit = (first: Fiber | null, rendered: Record<string, number>): void => {
+            for (let fiber = first; fiber !== null; fiber = fiber.sibling) {
+                const previous = fiber.alternate;
+                if (
+                    componentTags.has(fiber.tag) &&
+                    (previous === null || (fiber.flags & PERFORMED_WORK) !== 0)
+                ) {
+                    const name = nameOf(fiber);
+                    rendered[name] = (rendered[name] ?? 0) + 1;
+                }
+                // A subtree React bailed out of keeps its previous children.
+                if (previous === null || fiber.child !== previous.child)
+                    visit(fiber.child, rendered);
+            }
+        };
+        const original = hook?.onCommitFiberRoot;
+        if (hook && original) {
+            hook.onCommitFiberRoot = function (id, root, ...rest) {
+                try {
+                    const target = pending ?? background[phase];
+                    target.commits += 1;
+                    target.renderMs += root.current.actualDuration ?? 0;
+                    visit(root.current.child, target.rendered);
+                } catch {
+                    // Measurement must never break the renderer it observes.
+                }
+                return original.call(this, id, root, ...rest);
+            };
+        }
+
+        const keydownCapture = (event: KeyboardEvent): void => {
+            if (!event.isTrusted) untrustedEvents += 1;
+            pending = {
+                key: event.key,
+                keydownAt: event.timeStamp,
+                handlerMs: 0,
+                handlerStartedAt: performance.now(),
+                commits: 0,
+                renderMs: 0,
+                rendered: {},
+            };
+        };
+        const handlerStart = (): void => {
+            if (pending) pending.handlerStartedAt = performance.now();
+        };
+        const handlerEnd = (): void => {
+            if (!pending || pending.handlerStartedAt === undefined) return;
+            pending.handlerMs += performance.now() - pending.handlerStartedAt;
+            pending.handlerStartedAt = undefined;
+        };
+        const inputBubble = (event: Event): void => {
+            if (!event.isTrusted) untrustedEvents += 1;
+            handlerEnd();
+            const finished = pending;
+            pending = undefined;
+            if (!finished) return;
+            const handledAt = performance.now();
+            const record: Record<string, unknown> = {
+                key: finished.key,
+                keydownAt: finished.keydownAt,
+                handlerMs: finished.handlerMs,
+                keydownToInputHandledMs: handledAt - finished.keydownAt,
+                commits: finished.commits,
+                reactRenderMs: finished.renderMs,
+                rendered: finished.rendered,
+            };
+            keystrokes.push(record);
+            requestAnimationFrame(() => {
+                record.keydownToNextFrameMs = performance.now() - finished.keydownAt;
+            });
+        };
+        const keyupCapture = (): void => {
+            // A key that produced no input still ends its dispatch here.
+            pending = undefined;
+        };
+        window.addEventListener("keydown", keydownCapture, true);
+        window.addEventListener("keydown", handlerEnd, false);
+        window.addEventListener("beforeinput", handlerStart, true);
+        window.addEventListener("beforeinput", handlerEnd, false);
+        window.addEventListener("input", handlerStart, true);
+        window.addEventListener("input", inputBubble, false);
+        window.addEventListener("keyup", keyupCapture, true);
+
+        const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries() as PerformanceEventTiming[]) {
+                if (!["keydown", "keypress", "beforeinput", "input", "keyup"].includes(entry.name))
+                    continue;
+                eventTimings.push({
+                    name: entry.name,
+                    duration: entry.duration,
+                    processingMs: entry.processingEnd - entry.processingStart,
+                    inputDelayMs: entry.processingStart - entry.startTime,
+                });
+            }
+        });
+        observer.observe({ type: "event", durationThreshold: 16 } as PerformanceObserverInit);
+
+        const probe = {
+            typingStart(): void {
+                const now = performance.now();
+                background.streamOnly.durationMs = now - background.streamOnly.startedAt;
+                background.typing.startedAt = now;
+                phase = "typing";
+            },
+            stop(): unknown {
+                background.typing.durationMs = performance.now() - background.typing.startedAt;
+                observer.disconnect();
+                for (const entry of observer.takeRecords() as PerformanceEventTiming[])
+                    eventTimings.push({
+                        name: entry.name,
+                        duration: entry.duration,
+                        processingMs: entry.processingEnd - entry.processingStart,
+                        inputDelayMs: entry.processingStart - entry.startTime,
+                    });
+                window.removeEventListener("keydown", keydownCapture, true);
+                window.removeEventListener("keydown", handlerEnd, false);
+                window.removeEventListener("beforeinput", handlerStart, true);
+                window.removeEventListener("beforeinput", handlerEnd, false);
+                window.removeEventListener("input", handlerStart, true);
+                window.removeEventListener("input", inputBubble, false);
+                window.removeEventListener("keyup", keyupCapture, true);
+                if (hook && original) hook.onCommitFiberRoot = original;
+                const summary = (entry: Background) => ({
+                    durationMs: entry.durationMs,
+                    commits: entry.commits,
+                    renderMs: entry.renderMs,
+                    rendered: entry.rendered,
+                });
+                return {
+                    reactHook: original !== undefined,
+                    keystrokes,
+                    untrustedEvents,
+                    eventTimings,
+                    background: {
+                        streamOnly: summary(background.streamOnly),
+                        typing: summary(background.typing),
+                    },
+                };
+            },
+        };
+        (
+            window as unknown as { __happyGymComposerTyping?: typeof probe }
+        ).__happyGymComposerTyping = probe;
+    }
+}
+
+async function composerTypingProbeStart(page: Page): Promise<void> {
+    // tsx names the installer's inner functions through a helper that only
+    // exists in Node; the serialized copy gets an identity stand-in.
+    await page.evaluate(
+        `(() => { const __name = (value) => value; (${composerTypingProbeInstall.toString()})(); })()`,
+    );
+}
+
+async function composerTypingProbeTypingStart(page: Page): Promise<void> {
+    await page.evaluate(() =>
+        (
+            window as unknown as { __happyGymComposerTyping?: { typingStart(): void } }
+        ).__happyGymComposerTyping?.typingStart(),
+    );
+}
+
+async function composerTypingProbeStop(page: Page): Promise<ComposerTypingProbeCapture> {
+    const capture = await page.evaluate(() => {
+        const host = window as unknown as {
+            __happyGymComposerTyping?: { stop(): unknown };
+        };
+        const probe = host.__happyGymComposerTyping;
+        delete host.__happyGymComposerTyping;
+        return probe?.stop();
+    });
+    if (capture === undefined) throw new Error("The composer typing probe was not installed.");
+    return capture as ComposerTypingProbeCapture;
+}
+
+function latencyStats(values: readonly number[]): {
+    readonly count: number;
+    readonly p50: number;
+    readonly p95: number;
+    readonly max: number;
+    readonly mean: number;
+} {
+    const sorted = [...values].sort((left, right) => left - right);
+    const at = (fraction: number): number =>
+        sorted.length === 0
+            ? 0
+            : sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)]!;
+    const round = (value: number): number => Math.round(value * 100) / 100;
+    return {
+        count: sorted.length,
+        p50: round(at(0.5)),
+        p95: round(at(0.95)),
+        max: round(sorted.at(-1) ?? 0),
+        mean: round(sorted.reduce((total, value) => total + value, 0) / Math.max(1, sorted.length)),
+    };
+}
+
+/** Rendered components summed over several commits' tallies. */
+function renderedSum(
+    tallies: readonly Readonly<Record<string, number>>[],
+): Readonly<Record<string, number>> {
+    const total: Record<string, number> = {};
+    for (const tally of tallies)
+        for (const [name, count] of Object.entries(tally)) total[name] = (total[name] ?? 0) + count;
+    return total;
+}
+
+/** Each tracked component's renders, and every component's, divided by `per`. */
+function renderedReport(
+    rendered: Readonly<Record<string, number>>,
+    per: number,
+): Record<string, unknown> {
+    const rate = (count: number): number => Math.round((count / Math.max(1, per)) * 100) / 100;
+    const tracked = Object.fromEntries(
+        Object.entries(COMPOSER_TYPING_COMPONENTS).map(([group, names]) => [
+            group,
+            Object.fromEntries(names.map((name) => [name, rate(rendered[name] ?? 0)])),
+        ]),
+    );
+    const all = Object.values(rendered).reduce((total, count) => total + count, 0);
+    return {
+        tracked,
+        allComponents: rate(all),
+        top: Object.entries(rendered)
+            .sort((left, right) => right[1] - left[1])
+            .slice(0, 30)
+            .map(([name, count]) => [name, rate(count)]),
+    };
+}
+
+/**
+ * Types into the open conversation's composer while long responses stream
+ * into it and its neighbours, and measures what each keystroke costs.
+ *
+ * Every key is a trusted keyboard event, delivered one at a time at a typing
+ * cadence; nothing is filled. For each one the lane records how long the
+ * browser spent handling it and how soon the next frame followed, and which
+ * React components rendered inside that key's own dispatch. A keystroke should
+ * reach the composer alone: the transcript, header, and window around it
+ * re-render only for the stream, at frame cadence. The final text must equal
+ * what was typed, so a lost character fails the lane rather than a timing.
+ */
+async function composerTypingRun(
+    page: Page,
+    client: StartedHappyAgentRuntime["client"],
+    paths: GymRunPaths,
+    material: GymGoldReplayMaterial,
+    targets: readonly MixedSessionTarget[],
+    mark: (name: string) => Promise<void>,
+): Promise<Record<string, unknown>> {
+    const composer = page.locator('[data-happy-desktop-ui="composer-textarea"]').first();
+    await composer.waitFor({ state: "visible", timeout: 20_000 });
+    // An earlier run that failed mid-lane can leave its words behind.
+    if ((await composer.inputValue()) !== "") {
+        await composer.focus();
+        await page.keyboard.press("ControlOrMeta+a");
+        await page.keyboard.press("Backspace");
+    }
+    const submission = await concurrentSubmissions(client, material, targets, "composer-typing");
+    const visible = submission.submissions.find((entry) => entry.sessionId === targets[0]!.id)!;
+    // Typing starts once the open conversation's own response is arriving.
+    await page.waitForFunction(
+        (marker) =>
+            document
+                .querySelector('[data-happy-desktop-ui="conversation-view"]')
+                ?.textContent?.includes(`script=${String(marker)}`) === true,
+        visible.marker,
+        { timeout: 30_000 },
+    );
+    await mark("composer-typing-stream-started");
+    await composerTypingProbeStart(page);
+    await page.waitForTimeout(COMPOSER_TYPING_STREAM_ONLY_MS);
+    await composer.focus();
+    await composerTypingProbeTypingStart(page);
+    await mark("composer-typing-start");
+    for (const character of COMPOSER_TYPING_TEXT) {
+        await page.keyboard.type(character);
+        await page.waitForTimeout(COMPOSER_TYPING_KEY_INTERVAL_MS);
+    }
+    await page.waitForTimeout(500);
+    await mark("composer-typing-complete");
+    const capture = await composerTypingProbeStop(page);
+    const typingEndedAt = Date.now();
+    const finalValue = await composer.inputValue();
+    // Leave the conversation as it was found, with keys rather than a fill.
+    await page.keyboard.press("ControlOrMeta+a");
+    await page.keyboard.press("Backspace");
+    // When each run finished, as the daemon delivered it, so the typing phase
+    // is known to have run under all four streams.
+    const finishedAt: number[] = [];
+    const barriers = await Promise.all(
+        submission.submissions.map((entry) =>
+            sessionRunBarrierWait(
+                client,
+                entry,
+                (streamEvent, observedAt) => {
+                    if (streamEvent.event.type === "run.finished")
+                        finishedAt.push(Date.parse(observedAt));
+                },
+                submission.collectors.get(entry.sessionId),
+            ),
+        ),
+    );
+    const streamStillRunning = finishedAt.every((at) => at > typingEndedAt);
+    await mark("composer-typing-streams-complete");
+    const keystrokes = capture.keystrokes;
+    const details = {
+        typedCharacters: [...COMPOSER_TYPING_TEXT].length,
+        keyIntervalMs: COMPOSER_TYPING_KEY_INTERVAL_MS,
+        streams: submission.submissions.length,
+        streamStillRunningAfterTyping: streamStillRunning,
+        finalValueMatches: finalValue === COMPOSER_TYPING_TEXT,
+        untrustedEvents: capture.untrustedEvents,
+        keystrokesObserved: keystrokes.length,
+        latencyMs: {
+            handler: latencyStats(keystrokes.map((entry) => entry.handlerMs)),
+            reactRender: latencyStats(keystrokes.map((entry) => entry.reactRenderMs)),
+            keydownToInputHandled: latencyStats(
+                keystrokes.map((entry) => entry.keydownToInputHandledMs),
+            ),
+            keydownToNextFrame: latencyStats(
+                keystrokes.flatMap((entry) =>
+                    entry.keydownToNextFrameMs === undefined ? [] : [entry.keydownToNextFrameMs],
+                ),
+            ),
+        },
+        eventTiming: {
+            over16ms: capture.eventTimings.length,
+            duration: latencyStats(capture.eventTimings.map((entry) => entry.duration)),
+            processing: latencyStats(capture.eventTimings.map((entry) => entry.processingMs)),
+        },
+        reactProfiler: capture.reactHook
+            ? {
+                  perKeystroke: {
+                      commits:
+                          Math.round(
+                              (keystrokes.reduce((total, entry) => total + entry.commits, 0) /
+                                  Math.max(1, keystrokes.length)) *
+                                  100,
+                          ) / 100,
+                      ...renderedReport(
+                          renderedSum(keystrokes.map((entry) => entry.rendered)),
+                          keystrokes.length,
+                      ),
+                  },
+                  // Frame-coalesced stream work per second, without and then with typing.
+                  streamOnlyPerSecond: {
+                      durationMs: capture.background.streamOnly.durationMs,
+                      commits:
+                          capture.background.streamOnly.commits /
+                          (capture.background.streamOnly.durationMs / 1_000),
+                      renderMs:
+                          capture.background.streamOnly.renderMs /
+                          (capture.background.streamOnly.durationMs / 1_000),
+                      ...renderedReport(
+                          capture.background.streamOnly.rendered,
+                          capture.background.streamOnly.durationMs / 1_000,
+                      ),
+                  },
+                  typingBackgroundPerSecond: {
+                      durationMs: capture.background.typing.durationMs,
+                      commits:
+                          capture.background.typing.commits /
+                          (capture.background.typing.durationMs / 1_000),
+                      renderMs:
+                          capture.background.typing.renderMs /
+                          (capture.background.typing.durationMs / 1_000),
+                      ...renderedReport(
+                          capture.background.typing.rendered,
+                          capture.background.typing.durationMs / 1_000,
+                      ),
+                  },
+              }
+            : { status: "unavailable", reason: "No React DevTools hook in this build." },
+        barriers,
+    };
+    // Kept on its own as well, so a later phase of the lane failing does not
+    // take the typing measurement down with it.
+    await writeFile(
+        join(paths.artifacts, "composer-typing.json"),
+        `${JSON.stringify(details, null, 2)}\n`,
+        "utf8",
+    );
+    if (!details.finalValueMatches)
+        throw new Error(
+            `The composer lost typed input: expected ${JSON.stringify(COMPOSER_TYPING_TEXT)}, got ${JSON.stringify(finalValue)}.`,
+        );
+    if (keystrokes.length !== details.typedCharacters || capture.untrustedEvents > 0)
+        throw new Error(`Composer typing was not measured key by key: ${JSON.stringify(details)}`);
+    if (!capture.reactHook) return details;
+    // A keystroke reaches the composer and nothing drawn around it.
+    const keyRendered = renderedSum(keystrokes.map((entry) => entry.rendered));
+    const leaked = [
+        ...COMPOSER_TYPING_COMPONENTS.transcript,
+        ...COMPOSER_TYPING_COMPONENTS.header,
+        ...COMPOSER_TYPING_COMPONENTS.surface,
+        ...COMPOSER_TYPING_COMPONENTS.palette,
+    ].filter((name) => (keyRendered[name] ?? 0) > 0);
+    if (leaked.length > 0)
+        throw new Error(
+            `Keystrokes re-rendered ${leaked.join(", ")}: ${JSON.stringify(details.reactProfiler)}`,
+        );
+    // Frame-coalesced surface work while typing, against the stream alone, is
+    // reported in `streamOnlyPerSecond` and `typingBackgroundPerSecond` rather
+    // than asserted: a draft-only chat change still reaches the workspace once
+    // per frame, so typing raises it today.
+    return details;
 }
 
 async function sessionSwitchLoadRun(
