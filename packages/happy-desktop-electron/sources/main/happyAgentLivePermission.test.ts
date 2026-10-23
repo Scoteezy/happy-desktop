@@ -156,7 +156,6 @@ describe("native GPT-Live microphone and window boundary", () => {
             for (const permission of [
                 "clipboard-read",
                 "clipboard-sanitized-write",
-                "display-capture",
                 "fullscreen",
                 "geolocation",
                 "idle-detection",
@@ -185,6 +184,21 @@ describe("native GPT-Live microphone and window boundary", () => {
                 );
                 expect(granted).toBe(true);
             }
+            let screenGranted = true;
+            f.permission()(
+                f.contents,
+                "display-capture",
+                (value) => {
+                    screenGranted = value;
+                },
+                { isMainFrame: true, requestingUrl: f.document },
+            );
+            expect(screenGranted).toBe(false);
+            expect(
+                f.check()(f.contents, "display-capture", "https://app.example", {
+                    isMainFrame: true,
+                }),
+            ).toBe(false);
             const preview = Object.assign(new EventEmitter(), {
                 id: 3,
                 session: f.browserSession,

@@ -808,7 +808,7 @@ app.on("web-contents-created", (_event, contents) => {
 
 app.on("select-client-certificate", (event, webContents, _url, _list, callback) => {
     // An artifact page never presents one of this machine's certificates.
-    if (webContents.session !== artifactSessionGet()) return;
+    if (webContents?.session !== artifactSessionGet()) return;
     event.preventDefault();
     callback();
 });

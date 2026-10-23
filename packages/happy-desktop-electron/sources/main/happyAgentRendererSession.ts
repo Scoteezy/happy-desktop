@@ -109,12 +109,19 @@ export async function happyAgentRendererSessionCreate(
     };
     // The default session previously used Electron's default grant behavior.
     // Change only media capture; browser and HTML-preview profiles keep their own handlers.
+    // Screen capture used to arrive as `media` without an audio track and was denied;
+    // Electron 45 reports it as `display-capture`, which stays denied.
     session.setPermissionCheckHandler(
         (contents, permission, _origin, details) =>
-            permission !== "media" ||
-            (details.mediaType === "audio" && microphoneAllowed(contents, details)),
+            permission !== "display-capture" &&
+            (permission !== "media" ||
+                (details.mediaType === "audio" && microphoneAllowed(contents, details))),
     );
     session.setPermissionRequestHandler((contents, permission, callback, details) => {
+        if (permission === "display-capture") {
+            callback(false);
+            return;
+        }
         if (permission !== "media") {
             callback(true);
             return;
