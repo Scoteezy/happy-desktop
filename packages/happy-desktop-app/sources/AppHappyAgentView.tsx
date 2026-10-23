@@ -3620,34 +3620,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         chatGroupOf: (agentId) => chatGroupFind(active?.projects ?? NO_PROJECTS, agentId),
     };
     const spacesProjects = active ? happyAgentSidebarTree(active).projects : [];
-    // New work nobody started does not outlive being left: with no message and
-    // nothing typed, leaving it drops its row. A draft keeps it, and the daemon
-    // refuses once its chat has any message.
-    const stemCellLeave = (leavingChatId: string | undefined, nextChatId?: string): void => {
-        if (!spacesEnabled || leavingChatId === undefined || leavingChatId === nextChatId) return;
-        const space = happyAgentSpaceFocused(spaces, { chatId: leavingChatId });
-        if (space === undefined || space.title !== null || space.icon?.type !== "stem_cell") return;
-        const conversation = active?.session?.workspace.get().conversation;
-        if (
-            conversation?.type !== "ready" ||
-            conversation.value.conversationId !== leavingChatId ||
-            conversation.value.entries.length > 0 ||
-            conversation.value.composer.text.trim().length > 0 ||
-            conversation.value.composer.attachments.length > 0
-        )
-            return;
-        spacesStore.stemCellDiscard(space.id);
-    };
     const spacesNavigation: HappyAgentSpacesNavigation | undefined = active
         ? {
-              onChatSelect: (groupId, chatId) => {
-                  stemCellLeave(props.chatId, chatId);
-                  props.onChatSelect(active.id, groupId, chatId);
-              },
-              onSurfaceOpen: (surfaceId) => {
-                  stemCellLeave(props.chatId);
-                  props.onSurfaceOpen?.(active.id, surfaceId);
-              },
+              onChatSelect: (groupId, chatId) => props.onChatSelect(active.id, groupId, chatId),
+              onSurfaceOpen: (surfaceId) => props.onSurfaceOpen?.(active.id, surfaceId),
           }
         : undefined;
     // What the reader had folded and hidden in the classic sidebar, which the
@@ -3838,7 +3814,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                         if (worktree)
                             workspaceChangesShowOnOpen(active.session?.workspace, worktree);
                     }
-                    stemCellLeave(props.chatId, destination.chatId);
                     props.onChatSelect(active.id, destination.groupId, destination.chatId);
                 }}
                 onChatAside={(agentId, label) =>
@@ -4671,11 +4646,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     groupId={props.groupId}
                     key={active.id}
                     onChatSelect={(groupId, chatId, replace) => {
-                        stemCellLeave(props.chatId, chatId);
                         props.onChatSelect(active.id, groupId, chatId, replace);
                     }}
                     onChatClose={(groupId, chatId, fallbackChatId) => {
-                        stemCellLeave(chatId);
                         return (
                             props.onChatClose?.(active.id, groupId, chatId, fallbackChatId) ?? false
                         );

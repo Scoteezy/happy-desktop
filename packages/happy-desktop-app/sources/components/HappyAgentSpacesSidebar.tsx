@@ -120,6 +120,7 @@ const MENU_LEAVE = "leave";
 const MENU_ARCHIVE = "archive";
 const MENU_SIDEBAR = "sidebar";
 const MENU_ASIDE = "aside";
+const MENU_DISCARD = "discard";
 /** The one list every item stands in: the sidebar has no sections of its own. */
 const LIST = "spaces";
 /** Rows the window draws under a node, which the document does not name. */
@@ -279,6 +280,13 @@ function spaceMenu(space: HappyAgentSpace, places: HappyAgentSpacesPlaces): Menu
     switch (space.target.kind) {
         case "task": {
             const task = targetTask(space.target, places);
+            // New work nobody named yet closes from here and only from here.
+            if (space.title === null && space.icon?.type === "stem_cell")
+                return [
+                    open,
+                    { kind: "separator" },
+                    { kind: "item", id: MENU_DISCARD, label: "Close new work", icon: "close" },
+                ];
             return [
                 open,
                 { kind: "separator" },
@@ -566,13 +574,12 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                     kind: "worktree",
                     worktreeId: id.slice(WORKTREE_PREFIX.length),
                 });
-            props.store.attentionUpdate("calm");
             return;
         }
         props.store.happyFocusUpdate(happyAgentSpaceHappyIs(space, places));
+        // Opening a row lets nothing land: queued changes wait until the
+        // pointer has left the sidebar, so no click moves or folds a row away.
         happyAgentSpaceOpen(space, places, snapshot, props.navigation);
-        // A finished navigation is the moment queued changes may land.
-        props.store.attentionUpdate("calm");
     };
     // The row for what is on screen, most specific first: the session itself
     // at whatever depth it is drawn, then the worktree it runs in, then the
@@ -671,6 +678,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                     props.actions.taskLeave(target.id);
                 else if (actionId === MENU_LEAVE && target.kind === "surface")
                     props.actions.surfaceLeave(target.id);
+                else if (actionId === MENU_DISCARD) props.store.stemCellDiscard(space.id);
                 else if (actionId === MENU_ARCHIVE && target.kind === "task")
                     props.actions.taskArchive(target.id);
                 else if (actionId === MENU_ARCHIVE && target.kind === "bot")

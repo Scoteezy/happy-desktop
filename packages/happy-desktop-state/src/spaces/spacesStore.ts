@@ -169,8 +169,10 @@ export interface HappyAgentSpacesStore {
     /** Asks the manager to tidy now; its batch applies as soon as it is done. */
     tidyRequest(): void;
     /**
-     * Drops new work nobody started: the daemon removes the row and its empty
-     * chat, and refuses once the chat has any message, which leaves it alone.
+     * Closes new work nobody started, when the person asks to: the daemon
+     * removes the row and its empty chat, and refuses once the chat has any
+     * message, which leaves it alone. Nothing but an explicit close calls this;
+     * opening, leaving or selecting a row never does.
      */
     stemCellDiscard(spaceId: HappyAgentSpaceId): void;
     /**
@@ -798,10 +800,6 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 }
             });
         },
-        sidebarClassicUpdate(next) {
-            classic = next;
-            seedAdopt();
-        },
         stemCellDiscard(spaceId) {
             const mutationId = idCreate();
             void happyAgentSyncRead(
@@ -822,6 +820,10 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 },
                 () => undefined,
             ).catch(() => undefined);
+        },
+        sidebarClassicUpdate(next) {
+            classic = next;
+            seedAdopt();
         },
         [Symbol.dispose]() {
             if (disposed) return;

@@ -85,13 +85,24 @@ it("ends a sidebar drag released outside, cancelled, blurred, collapsed or unmou
     expect(attentionUpdate).toHaveBeenCalledTimes(calls);
 });
 
-it("reports calm after child navigation", () => {
+it("opens a row on click without letting queued changes land or writing the document", () => {
     const { props, attentionUpdate, onChildSelect } = fixture();
-    const view = render(<HappyAgentSpacesSidebar {...props} />);
-    fireEvent.pointerDown(view.getByText("Child"));
-    fireEvent.click(view.getByText("Child"));
+    const sidebarWrite = vi.fn();
+    const onChatSelect = vi.fn();
+    const view = render(
+        <HappyAgentSpacesSidebar
+            {...props}
+            store={{ ...props.store, sidebarWrite }}
+            navigation={{ onChatSelect }}
+        />,
+    );
+    for (const label of ["Parent", "Child", "Parent", "Child"])
+        fireEvent.click(view.getByText(label));
+    expect(onChatSelect).toHaveBeenCalled();
     expect(onChildSelect).toHaveBeenCalledWith({ kind: "worktree", worktreeId: "child" });
-    expect(attentionUpdate).toHaveBeenLastCalledWith("calm");
+    // Queued changes land only once the pointer leaves the sidebar, never because a row opened.
+    expect(attentionUpdate).not.toHaveBeenCalled();
+    expect(sidebarWrite).not.toHaveBeenCalled();
 });
 
 it("holds attention through a row menu until its action finishes", () => {
