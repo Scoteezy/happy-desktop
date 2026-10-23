@@ -321,6 +321,11 @@
     --happy-radius-window: 8px;
     --happy-radius-shell: 14px;
     --happy-radius-pill: 999px;
+    /* The one hover shape: a hovered sidebar row's rounded rectangle and fill.
+       Every control with a hover background (toolbar icons, a tab's close,
+       a strip's +, a row's own control) wears exactly this. */
+    --happy-hover-radius: var(--happy-radius-sm);
+    --happy-hover-fill: var(--surface-ripple);
     --happy-chat-measure: 880px;
     /* The gutter a document read on a surface of its own keeps from that
        surface's edges: a Markdown document, and an artifact's page shown beside

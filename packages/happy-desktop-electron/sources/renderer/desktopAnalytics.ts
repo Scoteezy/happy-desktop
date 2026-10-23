@@ -227,7 +227,8 @@ export function setupDownloadFailureOf(
     if (
         daemon?.error === undefined ||
         daemon.errorCode === undefined ||
-        daemon.errorCode === "start_timeout"
+        daemon.errorCode === "start_timeout" ||
+        daemon.errorCode === "data_newer"
     )
         return undefined;
     const progress = daemon.downloadFailure;

@@ -74,7 +74,7 @@
  *
  * The glyph inside it is a placeholder: what the reader sees while the worker
  * runtime loads, and what they keep if it never arrives. It stands where the
- * artwork will, and the two cross-fade, which is the one thing flexbox cannot
+ * artwork will, and the two swap in place, which is the one thing flexbox cannot
  * express here: both children occupy the same box instead of sitting beside
  * each other.
  */
@@ -99,14 +99,13 @@
 }
 
 .happy-empty-state__art {
-    /* The canvas and the placeholder glyph occupy one box and cross-fade there;
+    /* The canvas and the placeholder glyph occupy one box and swap there;
        flexbox can only place them side by side. */
     position: absolute;
     top: 50%;
     left: 50%;
     translate: -50% -50%;
     opacity: 0;
-    transition: opacity 160ms ease-out;
 }
 
 .happy-empty-state__art[data-painted="true"] {
@@ -117,16 +116,6 @@
    showing through it. */
 .happy-empty-state__scene:has(.happy-empty-state__art[data-painted="true"]) .happy-icon {
     opacity: 0;
-    transition: opacity 160ms ease-out;
-}
-
-/* Someone who asked for less movement gets no cross-fade either: the scene is a
-   still frame, so it should simply be there. */
-@media (prefers-reduced-motion: reduce) {
-    .happy-empty-state__art,
-    .happy-empty-state__scene:has(.happy-empty-state__art[data-painted="true"]) .happy-icon {
-        transition: none;
-    }
 }
 
 /*

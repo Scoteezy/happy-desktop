@@ -234,11 +234,13 @@
     transform: translate(-50%, -50%);
     visibility: hidden;
     pointer-events: none;
+    /* No fade: a hint is there or it is not. The zero-length transition only
+       carries the hover delay below. */
     transition:
-        opacity 80ms ease,
-        visibility 0s linear 80ms,
-        top 0s linear 80ms,
-        transform 0s linear 80ms;
+        opacity 0s,
+        visibility 0s,
+        top 0s,
+        transform 0s;
 }
 
 [data-shortcut-hint]:hover > .happy-shortcut-hint--floating {

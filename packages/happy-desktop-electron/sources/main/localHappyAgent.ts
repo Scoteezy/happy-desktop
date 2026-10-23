@@ -5,6 +5,8 @@ import { isAbsolute, normalize, resolve, win32 } from "node:path";
 import type { happyAgentProtocol } from "happy-desktop-state";
 import type { LocalAssistantId } from "../shared/desktopContract";
 import { environmentRead } from "./localApps";
+import { happyDaemonPaths } from "./happyAgentBinaryPaths";
+import { happyAgentDataRefusal, happyAgentDataVersionRequire } from "./happyAgentDataVersion";
 import {
     HappyAgentDaemonClient,
     happyAgentDaemonPathsResolve,
@@ -117,7 +119,8 @@ export const defaultProcessHost: HappyAgentProcessHost = {
                     timeout: options.timeoutMs ?? 75_000,
                 },
                 (error, stdout, stderr) => {
-                    if (error) reject(error);
+                    // As promisified `execFile` does, so a refusal can say why.
+                    if (error) reject(Object.assign(error, { stderr }));
                     else resolvePromise({ stdout, stderr });
                 },
             );
@@ -411,11 +414,19 @@ export function localHappyAgentConnectorCreate(
                 if (!selected) throw new HappyAgentBinaryMissingError();
                 const environment = await daemonBinary.launchEnvironment();
                 const daemonPaths = happyAgentDaemonPathsResolve(environment);
+                // A release older than the data would only refuse it; one
+                // selected before a newer Happy Agent moved the data on is
+                // reported as needing the update, not started to find out.
+                await happyAgentDataVersionRequire(happyDaemonPaths(environment), selected.version);
                 let startError: unknown;
                 try {
                     debug(`Happy Agent executable: ${selected.path}`);
                     await host.execFile(selected.path, ["start"], { env: environment });
                 } catch (error) {
+                    // The data is newer than this release. No daemon is coming,
+                    // and asking again refuses again.
+                    const refusal = happyAgentDataRefusal(error);
+                    if (refusal) throw refusal;
                     startError = error;
                 }
                 const daemon = await sharedDaemonAttach(daemonPaths, clientCreate, wait, 10_000);

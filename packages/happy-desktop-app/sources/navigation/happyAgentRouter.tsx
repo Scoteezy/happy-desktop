@@ -4,6 +4,7 @@ import {
     createRouter,
     Outlet,
     redirect,
+    useMatches,
     useNavigate,
     useParams,
     useRouteContext,
@@ -271,7 +272,10 @@ const chatsRootRoute = createRoute({
 /**
  * The workspace layout is pathless so the shell, session list, and open
  * transcript keep one instance while the addressed machine and conversation
- * change underneath them.
+ * change underneath them. Every address that shows the window — a chat, the
+ * inbox, the artifacts, a Surface, a new bot or task, the workbench — sits
+ * under it, so moving between them changes only the content region and never
+ * remounts the sidebar, its scroll, or its folds.
  */
 const workspaceRoute = createRoute({
     component: HappyAgentWorkspaceLayout,
@@ -375,8 +379,7 @@ const chatFileRoute = createRoute({
  * region until the reader goes somewhere else or the new bot takes them there.
  */
 const botCreateRoute = createRoute({
-    component: HappyAgentBotCreateRoute,
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => workspaceRoute,
     loader: ({ context, params }) => {
         // The store owns the seeds and the order of what happens; the painter
         // is lent to it because a canvas lives here, not there.
@@ -391,8 +394,7 @@ const botCreateRoute = createRoute({
  * reader goes elsewhere or the new task takes them there.
  */
 const taskCreateRoute = createRoute({
-    component: HappyAgentTaskCreateRoute,
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => workspaceRoute,
     loader: ({ context, params }) => {
         happyAgentWorkspace(context, params.happyAgentId)?.taskCreateOpen();
     },
@@ -406,8 +408,7 @@ const taskCreateRoute = createRoute({
  * of one ambiguous list.
  */
 const inboxRoute = createRoute({
-    component: HappyAgentInboxRoute,
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => workspaceRoute,
     path: "/inbox/$happyAgentId",
 });
 
@@ -416,15 +417,13 @@ const inboxRoute = createRoute({
  * the catalog is that machine's, the way its inbox is.
  */
 const artifactsRoute = createRoute({
-    component: HappyAgentArtifactsRoute,
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => workspaceRoute,
     path: "/artifacts/$happyAgentId",
 });
 
 /** One artifact open in the viewer, on the machine that keeps it. */
 const artifactRoute = createRoute({
-    component: HappyAgentArtifactsRoute,
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => workspaceRoute,
     path: "/artifacts/$happyAgentId/$artifactId",
 });
 
@@ -434,8 +433,7 @@ const artifactRoute = createRoute({
  * is that machine's, the way its artifacts are.
  */
 const surfaceRoute = createRoute({
-    component: HappyAgentSurfaceRoute,
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => workspaceRoute,
     path: "/surfaces/$happyAgentId/$surfaceId",
 });
 
@@ -486,8 +484,7 @@ const surfaceChatRoute = createRoute({
  * development build, which is also the only build whose sidebar offers it.
  */
 const blueprintRoute = createRoute({
-    component: HappyAgentBlueprintRoute,
-    getParentRoute: () => rootRoute,
+    getParentRoute: () => workspaceRoute,
     path: "/blueprint",
 });
 
@@ -531,73 +528,19 @@ const routeTree = rootRoute.addChildren([
         chatRoute,
         groupFileRoute,
         chatFileRoute,
+        inboxRoute,
+        artifactsRoute,
+        artifactRoute,
+        surfaceRoute.addChildren([surfaceChatRoute]),
+        botCreateRoute,
+        taskCreateRoute,
+        ...(import.meta.env.DEV ? [blueprintRoute] : []),
     ]),
-    inboxRoute,
-    artifactsRoute,
-    artifactRoute,
-    surfaceRoute.addChildren([surfaceChatRoute]),
-    botCreateRoute,
-    taskCreateRoute,
-    ...(import.meta.env.DEV ? [blueprintRoute] : []),
     settingsIndexRoute,
     settingsSectionRoute,
 ]);
 
-/**
- * The inbox address renders the same window a conversation does: the shell and
- * its sidebar stay, and only the content area changes, so working through
- * questions is not leaving the workspace.
- */
-function HappyAgentInboxRoute() {
-    return <HappyAgentWorkspaceLayout inbox />;
-}
-
-/**
- * The artifact addresses render the same window a conversation does: the shell
- * and its sidebar stay, and the catalog or the open artifact takes the content
- * area.
- */
-function HappyAgentArtifactsRoute() {
-    return <HappyAgentWorkspaceLayout artifacts />;
-}
-
-/** A Surface's address renders the same window, with the Surface in the content area. */
-function HappyAgentSurfaceRoute() {
-    return <HappyAgentWorkspaceLayout surface />;
-}
-
-/**
- * The naming address renders the same window a conversation does: the shell and
- * its sidebar stay, and only the content area changes, so making a bot is not
- * leaving the workspace.
- */
-function HappyAgentBotCreateRoute() {
-    return <HappyAgentWorkspaceLayout botCreate />;
-}
-
-/** The task's address renders the same window, as the bot's does. */
-function HappyAgentTaskCreateRoute() {
-    return <HappyAgentWorkspaceLayout taskCreate />;
-}
-
-/**
- * The workbench address renders the same window a conversation does: the shell
- * and its sidebar stay, and only the content area changes.
- */
-function HappyAgentBlueprintRoute() {
-    return <HappyAgentWorkspaceLayout blueprint />;
-}
-
-function HappyAgentWorkspaceLayout(
-    props: {
-        artifacts?: boolean;
-        blueprint?: boolean;
-        botCreate?: boolean;
-        inbox?: boolean;
-        surface?: boolean;
-        taskCreate?: boolean;
-    } = {},
-) {
+function HappyAgentWorkspaceLayout() {
     // Read loosely because this component renders under several routes, which
     // makes every context member optional; the provider supplies all of them
     // together, so it is read back as the whole context it was given.
@@ -607,6 +550,17 @@ function HappyAgentWorkspaceLayout(
     // `strict: false` because a Happy Agent's list carries only `happyAgentId`, and a group
     // carries no `chatId`.
     const params = useParams({ strict: false });
+    // What the content region shows, by the routes matched under this one
+    // layout: the window around it stays the same instance at every address.
+    const matched = new Set<string>(useMatches().map((match) => match.routeId));
+    const shows = {
+        artifacts: matched.has(artifactsRoute.id) || matched.has(artifactRoute.id),
+        blueprint: matched.has(blueprintRoute.id),
+        botCreate: matched.has(botCreateRoute.id),
+        inbox: matched.has(inboxRoute.id),
+        surface: matched.has(surfaceRoute.id),
+        taskCreate: matched.has(taskCreateRoute.id),
+    };
     // The router is constructed before RouterProvider supplies the real context,
     // so the very first render of a deep-linked URL can arrive with an empty
     // context; the provider's context lands on the next synchronous pass.
@@ -677,17 +631,17 @@ function HappyAgentWorkspaceLayout(
             {...(context.attention ? { attention: context.attention } : {})}
             {...(context.sidebarVisibility ? { sidebarVisibility: context.sidebarVisibility } : {})}
             settings={context.settings}
-            botCreateOpen={props.botCreate}
-            taskCreateOpen={props.taskCreate}
-            inboxOpen={props.inbox}
-            artifactsOpen={props.artifacts}
-            {...(props.artifacts && params.artifactId !== undefined
+            botCreateOpen={shows.botCreate}
+            taskCreateOpen={shows.taskCreate}
+            inboxOpen={shows.inbox}
+            artifactsOpen={shows.artifacts}
+            {...(shows.artifacts && params.artifactId !== undefined
                 ? { artifactId: params.artifactId }
                 : {})}
-            {...(props.surface && params.surfaceId !== undefined
+            {...(shows.surface && params.surfaceId !== undefined
                 ? { surfaceId: params.surfaceId }
                 : {})}
-            {...(props.surface &&
+            {...(shows.surface &&
             params.chatGroupId !== undefined &&
             params.chatAgentId !== undefined
                 ? { surfaceChat: { groupId: params.chatGroupId, chatId: params.chatAgentId } }
@@ -735,7 +689,7 @@ function HappyAgentWorkspaceLayout(
                           },
                 )
             }
-            blueprintOpen={props.blueprint}
+            blueprintOpen={shows.blueprint}
             // Offered only where the route exists, which is what puts the
             // workbench row in a development sidebar and nowhere else.
             {...(import.meta.env.DEV
@@ -925,9 +879,18 @@ export function happyAgentRouterConversationOpen(
     });
 }
 
+/** The conversation addresses, the workspace proper rather than the window's other pages. */
+const CONVERSATION_ROUTE_IDS = new Set<string>([
+    chatsIndexRoute.id,
+    groupRoute.id,
+    chatRoute.id,
+    groupFileRoute.id,
+    chatFileRoute.id,
+]);
+
 /** Uses the router's explicit route identity, never a pathname convention. */
 export function happyAgentRouterWorkspaceVisible(router: HappyAgentRouter): boolean {
-    return router.state.matches.some((match) => match.routeId === workspaceRoute.id);
+    return router.state.matches.some((match) => CONVERSATION_ROUTE_IDS.has(match.routeId));
 }
 
 /**

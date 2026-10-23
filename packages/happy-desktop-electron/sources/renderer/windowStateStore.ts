@@ -6,7 +6,23 @@ import type {
 import type { DesktopWindowState, HappyDesktopBridge } from "../shared/desktopContract";
 import type { HappyAgentDirectoryStore } from "./happyAgentDirectoryStore";
 
-const windowed: HappyAgentWindowSnapshot = { fullScreen: false, connectionRail: false };
+/**
+ * Whether this window is on macOS, the one platform whose host draws traffic
+ * lights over the window's top-left corner (Windows draws its caption buttons
+ * on the right; Linux keeps its native frame). A hosted renderer can outlive
+ * its shell, so it asks the browser's platform string rather than a newer
+ * bridge.
+ */
+function trafficLightsPlatform(): boolean {
+    const platform =
+        (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+            ?.platform ?? navigator.platform;
+    return platform.toLowerCase().startsWith("mac");
+}
+
+function windowSnapshot(fullScreen: boolean, macOS: boolean): HappyAgentWindowSnapshot {
+    return { fullScreen, trafficLights: macOS && !fullScreen, connectionRail: false };
+}
 
 /**
  * The window state each connection surface lays out against. While the
@@ -29,14 +45,18 @@ export function surfaceWindowStateStoreCreate(input: {
     readonly sidebarVisibility: HappyAgentSidebarVisibilityStore;
     readonly happyAgents: HappyAgentDirectoryStore;
 }): HappyAgentWindowStore {
-    const railedWindowed: HappyAgentWindowSnapshot = { fullScreen: false, connectionRail: true };
-    const railedFullScreen: HappyAgentWindowSnapshot = { fullScreen: true, connectionRail: true };
+    let railedFrom: HappyAgentWindowSnapshot | undefined;
+    let railed: HappyAgentWindowSnapshot | undefined;
     const compute = (): HappyAgentWindowSnapshot => {
         const window = input.windowState.get();
         const rail =
             input.happyAgents.get().happyAgents.length > 1 && !input.sidebarVisibility.get().hidden;
         if (!rail) return window;
-        return window.fullScreen ? railedFullScreen : railedWindowed;
+        if (railedFrom !== window || !railed) {
+            railedFrom = window;
+            railed = { ...window, connectionRail: true };
+        }
+        return railed;
     };
     let snapshot = compute();
     const listeners = new Set<() => void>();
@@ -79,13 +99,14 @@ export function surfaceWindowStateStoreCreate(input: {
  * mounted; a push that arrives first wins over that read.
  */
 export function windowStateStoreCreate(bridge: HappyDesktopBridge): HappyAgentWindowStore {
-    let snapshot: HappyAgentWindowSnapshot = windowed;
+    const macOS = trafficLightsPlatform();
+    let snapshot: HappyAgentWindowSnapshot = windowSnapshot(false, macOS);
     let bridgeUnsubscribe: (() => void) | undefined;
     let eventReceived = false;
     const listeners = new Set<() => void>();
     const publish = (next: DesktopWindowState) => {
         if (snapshot.fullScreen === next.fullScreen) return;
-        snapshot = { fullScreen: next.fullScreen, connectionRail: false };
+        snapshot = windowSnapshot(next.fullScreen, macOS);
         for (const listener of listeners) listener();
     };
     return {

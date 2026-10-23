@@ -40,7 +40,8 @@ it("holds incoming sidebar versions and attention through the saved drop", async
         expect(daemon.callCount("getSpaceSidebar")).toBe(reads);
         store.sidebarWrite("<nav>\n</nav>");
         store.sidebarDragUpdate(false);
-        store.attentionUpdate("calm");
+        // The window hides mid-save: calm waits for the saved drop.
+        store.attentionVisibleUpdate(false);
         await vi.advanceTimersByTimeAsync(0);
         expect(attention.mock.calls.map(([report]) => report)).toEqual([{ state: "interacting" }]);
         expect(store.get().sidebar?.html).toBe("<nav>\n</nav>");
@@ -52,6 +53,47 @@ it("holds incoming sidebar versions and attention through the saved drop", async
         ]);
         expect(store.get().sidebar?.html).toBe("<nav>\n</nav>");
         expect(store.get().sidebar?.version).toBe(2);
+    } finally {
+        unsubscribe();
+        store[Symbol.dispose]();
+        sync.writer.close();
+    }
+});
+
+it("lets queued changes land only after five quiet minutes or once out of sight", async () => {
+    vi.useFakeTimers();
+    const daemon = fakeHappyAgentDaemonCreate();
+    const attention = vi.fn(async (_report: { state: "interacting" | "calm" }) => ({
+        batch: null,
+    }));
+    daemon.client.reportSpaceAttention = attention;
+    const sync = happyAgentSyncCreate();
+    sync.writer.bootstrapReceived(await daemon.client.getDesktopBootstrap());
+    const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync: sync.source });
+    const unsubscribe = store.subscribe(() => {});
+    const states = () => attention.mock.calls.map(([report]) => report.state);
+    try {
+        await vi.advanceTimersByTimeAsync(0);
+        // In and out of the sidebar, clicking rows, for most of the quiet period each time.
+        for (let round = 0; round < 3; round += 1) {
+            store.attentionInteractingUpdate(true);
+            store.attentionInput();
+            store.attentionInteractingUpdate(false);
+            await vi.advanceTimersByTimeAsync(4 * 60_000);
+        }
+        expect(states()).not.toContain("calm");
+        await vi.advanceTimersByTimeAsync(60_000);
+        expect(states().at(-1)).toBe("calm");
+        store.attentionInput();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(states().at(-1)).toBe("interacting");
+        store.attentionVisibleUpdate(false);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(states().at(-1)).toBe("calm");
+        // Input that reaches a hidden window changes nothing.
+        store.attentionInput();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(states().at(-1)).toBe("calm");
     } finally {
         unsubscribe();
         store[Symbol.dispose]();

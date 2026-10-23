@@ -69,6 +69,12 @@ export type SidebarItem = {
      * rows are shut, rather than working out which of its own rows to withhold.
      */
     collapsed?: boolean;
+    /**
+     * This row's own fold placement with trailing folds: `always` keeps the fold
+     * visible as the row's last column, with what the row reports left of it,
+     * whatever the sidebar's `foldControlReveal` says for other rows.
+     */
+    foldReveal?: "hover" | "always";
     /** Nesting level. `0`/absent is top level; each level adds `SIDEBAR_ROW_INDENT` of left inset. */
     depth?: number;
     /**
@@ -98,15 +104,39 @@ export type SidebarItem = {
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
     initials?: string;
-    kind: "view" | "channel" | "workspace" | "project" | "person" | "agent" | "folder" | "action";
+    /**
+     * `section` is a titled heading rather than a destination. It is arranged
+     * like any other row, and one that states `collapsed` folds the rows after
+     * it up to the next section or separator; folded, it stands half as tall.
+     * `separator` is only a hairline across the row: no title, no fold.
+     */
+    kind:
+        | "view"
+        | "channel"
+        | "workspace"
+        | "project"
+        | "person"
+        | "agent"
+        | "folder"
+        | "action"
+        | "section"
+        | "separator";
     label: string;
+    /**
+     * A window chord shown at the row's trailing edge at all times, for a row
+     * that is itself a window command, such as Search or Create.
+     */
+    shortcut?: KeyboardShortcut;
     /** Whether a busy or creating row shimmers its label. Defaults to true. */
     labelShimmer?: boolean;
     meta?: string;
     /** Reserve one stable status lane, including metadata, before truncating the title. */
     trailingWidth?: number;
-    /** The circular indicator already used by compact agent activity rows. */
-    workingIndicator?: "circle";
+    /**
+     * The circular indicator already used by compact agent activity rows, or
+     * `none` for a row whose title shimmer is report enough while it works.
+     */
+    workingIndicator?: "circle" | "none";
     /**
      * How many open things the row holds — a todo list's unfinished todos —
      * as a quiet number at its trailing edge. Absent or zero shows nothing.
@@ -392,9 +422,20 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     /** The pointer gesture's lifetime, independent of hover and menus. */
     onDragChange?: (dragging: boolean) => void;
     interactionEnabled?: boolean;
+    /**
+     * The arrows, Home and End walk the focus through every item but the
+     * separators, and only one item is a Tab stop: the one last focused, or
+     * the active one. Enter or Space activates what has focus — a row opens, a
+     * heading folds — so renaming moves to F2.
+     */
+    keyboardNavigation?: boolean;
     /** Keep the identity lane intact when a row folds. Defaults to leading. */
     foldControlPlacement?: "leading" | "trailing";
-    /** Reveal section and row fold controls only on hover or keyboard focus. */
+    /**
+     * Reveal section and row fold controls only on hover or keyboard focus. With
+     * trailing folds, a revealed row fold is laid over the row's trailing marks
+     * while it shows; without this, it is the row's always-visible last column.
+     */
     foldControlReveal?: "hover";
     /** Omit identity lanes entirely, or use plain type glyphs instead of avatars. */
     itemMarkPresentation?: "default" | "glyph" | "none";
@@ -593,8 +634,17 @@ function visibleRows(items: readonly SidebarItem[]): readonly SidebarVisibleRow[
     // The depth a row must be shallower than to be shown again, once a folded
     // row has been passed. Nothing is hidden until one is.
     let hiddenBelow: number | undefined;
+    // A folded section takes every row up to the next section or separator.
+    let runHidden = false;
     for (const [index, item] of items.entries()) {
         const depth = item.depth ?? 0;
+        if ((item.kind === "section" || item.kind === "separator") && depth === 0) {
+            hiddenBelow = undefined;
+            runHidden = item.kind === "section" && item.collapsed === true;
+            rows.push({ foldable: item.kind === "section" && item.collapsed !== undefined, item });
+            continue;
+        }
+        if (runHidden) continue;
         if (hiddenBelow !== undefined) {
             if (depth >= hiddenBelow) continue;
             hiddenBelow = undefined;
@@ -701,7 +751,8 @@ function reducedMotion(): boolean {
  * says the row has left the column comes up under it and settles back out rather
  * than being switched on and off. Stated here and in the stylesheet both — the
  * fade is the stylesheet's, and this is how long the sidebar keeps the surface
- * on screen for it to run.
+ * on screen for it to run. Only a drag moves anything in the sidebar: folding,
+ * selecting, and rows the document adds or removes are all instant.
  */
 const LIFT_MS = 120;
 
@@ -734,6 +785,11 @@ interface SidebarDrag {
      */
     readonly peers: readonly string[];
     readonly heights: readonly number[];
+    /**
+     * Where the held unit's rows stood when the drag began, from the list's
+     * first row, so the lift fits rows that are not all one height.
+     */
+    readonly surface?: { readonly top: number; readonly height: number };
     /** Furthest legal visual travel, measured from the peer block boundaries. */
     readonly minimumDeltaY: number;
     readonly maximumDeltaY: number;
@@ -784,6 +840,26 @@ function blocksOf(items: readonly SidebarItem[]): readonly (readonly number[])[]
     items.forEach((item, index) => {
         if ((item.depth ?? 0) === 0 || blocks.length === 0) blocks.push([index]);
         else blocks[blocks.length - 1]!.push(index);
+    });
+    return blocks;
+}
+
+/**
+ * The peers a section is dragged among. A section is its heading and every row
+ * after it up to the next section or separator, carried as one block; it lands
+ * only between blocks, so it never splits another section's rows. A separator
+ * stands alone, and the rows before the first section or after a separator are
+ * one run.
+ */
+function sectionBlocksOf(items: readonly SidebarItem[]): readonly (readonly number[])[] {
+    const blocks: number[][] = [];
+    let open = false;
+    items.forEach((item, index) => {
+        const top = (item.depth ?? 0) === 0;
+        const breaks = top && (item.kind === "section" || item.kind === "separator");
+        if (breaks || !open || blocks.length === 0) blocks.push([index]);
+        else blocks[blocks.length - 1]!.push(index);
+        open = !(top && item.kind === "separator");
     });
     return blocks;
 }
@@ -841,7 +917,7 @@ function dragUnitsOf(
         // either: a drag arranges the unbroken run of movable rows around the
         // one it started on, and never carries a row past a fixed one or
         // pushes a fixed one aside.
-        const blocks = blocksOf(items);
+        const blocks = items[index]?.kind === "section" ? sectionBlocksOf(items) : blocksOf(items);
         const movable = (block: readonly number[]): boolean =>
             items[block[0]!]?.reorderable !== false;
         const at = blocks.findIndex((block) => block.includes(index));
@@ -1020,7 +1096,15 @@ function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
             // shift as the rows. Reading moving row tops would count it twice.
             // The rows fill only the content box: a pinned group's padding and
             // divider sit below its last row and must not stretch the pitch.
-            const rowHeight = firstRow.getBoundingClientRect().height;
+            // Rows are not all one height — a folded section is half of one —
+            // so each row's own height is read, and the gap is what the tree's
+            // extent leaves between them.
+            const rows = [...tree.querySelectorAll<HTMLElement>(":scope > .happy-sidebar__item")];
+            const firstHeight = firstRow.getBoundingClientRect().height;
+            const heights =
+                rows.length === props.items.length
+                    ? rows.map((row) => row.getBoundingClientRect().height)
+                    : props.items.map(() => firstHeight);
             const treeStyle = getComputedStyle(tree);
             const treeHeight =
                 tree.getBoundingClientRect().height -
@@ -1028,12 +1112,18 @@ function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
                 parseFloat(treeStyle.paddingBottom) -
                 parseFloat(treeStyle.borderTopWidth) -
                 parseFloat(treeStyle.borderBottomWidth);
-            const rowPitch =
+            const rowGap =
                 props.items.length > 1
-                    ? (treeHeight - rowHeight) / (props.items.length - 1)
-                    : rowHeight;
+                    ? (treeHeight - heights.reduce((sum, height) => sum + height, 0)) /
+                      (props.items.length - 1)
+                    : 0;
+            const rowTops: number[] = [];
+            heights.reduce((top, height) => {
+                rowTops.push(top);
+                return top + height + rowGap;
+            }, 0);
             const rowCenter = (index: number): number =>
-                index * rowPitch + rowHeight / 2 + rowDragShift(props.drag, index);
+                rowTops[index]! + heights[index]! / 2 + rowDragShift(props.drag, index);
             const geometry = groups.map((group) => {
                 const top = rowCenter(group.parentIndex) + SIDEBAR_BRANCH_STEM_INSET;
                 const bottom = Math.max(...group.childIndexes.map(rowCenter)) + 1;
@@ -1056,9 +1146,11 @@ function SidebarTreeConnectors(props: SidebarTreeConnectorsProps) {
             }
             if (surface && firstCarried !== undefined && lastCarried !== undefined) {
                 const top = `${String(
-                    firstCarried * rowPitch + rowDragShift(props.drag, firstCarried),
+                    rowTops[firstCarried]! + rowDragShift(props.drag, firstCarried),
                 )}px`;
-                const height = `${String((lastCarried - firstCarried) * rowPitch + rowHeight)}px`;
+                const height = `${String(
+                    rowTops[lastCarried]! + heights[lastCarried]! - rowTops[firstCarried]!,
+                )}px`;
                 if (surface.style.top !== top) surface.style.top = top;
                 if (surface.style.height !== height) surface.style.height = height;
             }
@@ -1127,6 +1219,10 @@ function SidebarDragSurface(props: { readonly drag: SidebarDrag; readonly carrie
     const last = held?.[held.length - 1];
     if (first === undefined || last === undefined) return null;
     const rowPitch = SIDEBAR_ROW_HEIGHT + SIDEBAR_ROW_GAP;
+    const surface = props.drag.surface ?? {
+        top: first * rowPitch,
+        height: (last - first) * rowPitch + SIDEBAR_ROW_HEIGHT,
+    };
     return (
         <span
             aria-hidden="true"
@@ -1135,8 +1231,8 @@ function SidebarDragSurface(props: { readonly drag: SidebarDrag; readonly carrie
             data-carried={props.carried ? "" : undefined}
             data-across={props.drag.across ? "" : undefined}
             style={{
-                height: `${String((last - first) * rowPitch + SIDEBAR_ROW_HEIGHT)}px`,
-                top: `${String(first * rowPitch + rowDragShift(props.drag, first))}px`,
+                height: `${String(surface.height)}px`,
+                top: `${String(surface.top + rowDragShift(props.drag, first))}px`,
             }}
         />
     );
@@ -1243,6 +1339,8 @@ const SidebarListRow = memo(function SidebarListRow({
     canRename: boolean;
     canSecondaryAction: boolean;
     active: boolean;
+    /** See `SidebarRow.tabStop`. */
+    tabStop?: boolean;
     activityPlacement?: SidebarActivityPlacement;
     foldControlPlacement?: "leading" | "trailing";
     itemMarkPresentation?: "default" | "glyph" | "none";
@@ -1254,6 +1352,7 @@ const SidebarListRow = memo(function SidebarListRow({
     shift?: number;
     shortcut?: KeyboardShortcut;
     shortcutActive: boolean;
+    shortcutAlwaysVisible?: boolean;
 }) {
     return (
         <SidebarRow
@@ -1302,6 +1401,11 @@ function SidebarRow({
     item: SidebarItem;
     rename?: { initialValue: string; onSubmit: (name: string) => void; onCancel: () => void };
     onRenameRequest?: () => boolean;
+    /**
+     * Set while the arrows walk the list: whether this item is the list's one
+     * Tab stop. A walked list renames with F2, since Enter opens.
+     */
+    tabStop?: boolean;
     /** Which end of the row reports work. See `SidebarProps.activityPlacement`. */
     activityPlacement?: SidebarActivityPlacement;
     onContextMenu?: (item: SidebarItem, event: MouseEvent<HTMLElement>) => void;
@@ -1478,7 +1582,9 @@ function SidebarRow({
         )
             return undefined;
         if (item().status === "working")
-            return { kind: "spinner", tone: "muted", label: `${item().label} is working` };
+            return item().workingIndicator === "none"
+                ? undefined
+                : { kind: "spinner", tone: "muted", label: `${item().label} is working` };
         if (item().status === "waiting")
             return {
                 kind: "glyph",
@@ -1522,7 +1628,7 @@ function SidebarRow({
                         label={state.label}
                         size={14}
                         tone={state.tone}
-                        variant={item().workingIndicator}
+                        variant={item().workingIndicator === "circle" ? "circle" : undefined}
                     />
                 ) : (
                     <span aria-label={state.label} role="img">
@@ -1591,6 +1697,125 @@ function SidebarRow({
                 <Icon name={item().collapsed ? "chevron-right" : "chevron-down"} size={12} />
             </span>
         ) : null;
+    if (item().kind === "separator")
+        return (
+            /* A separator is only a hairline across the row's whole width. It
+               opens nothing and folds nothing; it can still be carried, so it
+               is a control that announces itself as a separator. */
+            <button
+                aria-keyshortcuts={props.reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+                aria-label="Separator"
+                aria-roledescription="separator"
+                className="happy-sidebar__item happy-sidebar__separator"
+                data-dragging={props.dragging ? "" : undefined}
+                data-grabbed={props.grabbed ? "" : undefined}
+                data-happy-desktop-ui="sidebar-item"
+                data-item-id={item().id}
+                data-kind="separator"
+                onContextMenu={(event) => props.onContextMenu?.(item(), event)}
+                onKeyDown={props.onKeyDown}
+                onLostPointerCapture={props.onPointerCancel}
+                onPointerCancel={props.onPointerCancel}
+                onPointerDown={props.onPointerDown}
+                onPointerMove={props.onPointerMove}
+                onPointerUp={props.onPointerUp}
+                ref={(node) => nodeRef?.(node)}
+                style={props.shift ? { top: props.shift } : undefined}
+                tabIndex={props.reorderable && props.tabStop === undefined ? 0 : -1}
+                type="button"
+            >
+                <span aria-hidden="true" className="happy-sidebar__separator-rule" />
+            </button>
+        );
+    if (item().kind === "section" && props.rename)
+        return (
+            /* Renamed in place: the heading's title becomes the editable text,
+               Enter keeps it and Escape leaves it as it was. */
+            <div
+                className="happy-sidebar__item happy-sidebar__section-item"
+                data-happy-desktop-ui="sidebar-item"
+                data-item-id={item().id}
+                data-kind="section"
+                data-renaming=""
+                ref={(node) => nodeRef?.(node)}
+            >
+                <span
+                    aria-label={`Rename ${props.rename.initialValue}`}
+                    aria-multiline={false}
+                    className="happy-sidebar__section-item-label happy-sidebar__item-rename"
+                    contentEditable="plaintext-only"
+                    data-happy-desktop-ui="sidebar-section-item-label"
+                    onBlur={(event) => renameFinish(event.currentTarget.textContent ?? "")}
+                    onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.nativeEvent.isComposing) return;
+                        if (event.key !== "Enter" && event.key !== "Escape") return;
+                        event.preventDefault();
+                        if (event.repeat) return;
+                        renameFinish(
+                            event.key === "Enter"
+                                ? (event.currentTarget.textContent ?? "")
+                                : undefined,
+                        );
+                    }}
+                    ref={renameLabelRef}
+                    role="textbox"
+                    suppressContentEditableWarning
+                    tabIndex={0}
+                >
+                    {props.rename.initialValue}
+                </span>
+            </div>
+        );
+    if (item().kind === "section")
+        return (
+            /* A section heading is arranged like a row and folds the run after
+               it from a click anywhere on it; its title is the only text it
+               carries. */
+            <button
+                aria-expanded={props.onCollapseToggle ? item().collapsed !== true : undefined}
+                aria-keyshortcuts={props.reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+                className="happy-sidebar__item happy-sidebar__section-item"
+                data-collapsed={item().collapsed ? "" : undefined}
+                data-dragging={props.dragging ? "" : undefined}
+                data-foldable={props.onCollapseToggle ? "" : undefined}
+                data-grabbed={props.grabbed ? "" : undefined}
+                data-happy-desktop-ui="sidebar-item"
+                data-item-id={item().id}
+                data-kind="section"
+                onClick={() => props.onCollapseToggle?.()}
+                onContextMenu={(event) => props.onContextMenu?.(item(), event)}
+                onKeyDown={props.onKeyDown}
+                onLostPointerCapture={props.onPointerCancel}
+                onPointerCancel={props.onPointerCancel}
+                onPointerDown={props.onPointerDown}
+                onPointerMove={props.onPointerMove}
+                onPointerUp={props.onPointerUp}
+                ref={(node) => nodeRef?.(node)}
+                style={props.shift ? { top: props.shift } : undefined}
+                tabIndex={props.tabStop === undefined ? undefined : props.tabStop ? 0 : -1}
+                type="button"
+            >
+                <span
+                    className="happy-sidebar__section-item-label"
+                    data-happy-desktop-ui="sidebar-section-item-label"
+                >
+                    {item().label}
+                </span>
+                {props.onCollapseToggle ? (
+                    <span
+                        aria-hidden="true"
+                        className="happy-sidebar__section-item-fold"
+                        data-happy-desktop-ui="sidebar-section-item-fold"
+                    >
+                        <Icon
+                            name={item().collapsed ? "chevron-right" : "chevron-down"}
+                            size={12}
+                        />
+                    </span>
+                ) : null}
+            </button>
+        );
     return (
         <Row
             aria-current={props.active ? "page" : undefined}
@@ -1607,6 +1832,7 @@ function SidebarRow({
             data-collapsed={props.onCollapseToggle && item().collapsed ? "" : undefined}
             data-foldable={props.onCollapseToggle ? "" : undefined}
             data-fold-placement={props.foldControlPlacement}
+            data-fold-reveal={item().foldReveal}
             data-fold-in-branch={props.onCollapseToggle && foldInBranch() ? "" : undefined}
             data-depth={depth() > 0 ? String(depth()) : undefined}
             data-item-id={item().id}
@@ -1629,7 +1855,7 @@ function SidebarRow({
             onContextMenu={(event) => props.onContextMenu?.(item(), event)}
             onKeyDown={(event) => {
                 if (
-                    event.key === "Enter" &&
+                    event.key === (props.tabStop === undefined ? "Enter" : "F2") &&
                     event.target === event.currentTarget &&
                     !event.ctrlKey &&
                     !event.metaKey &&
@@ -1675,6 +1901,9 @@ function SidebarRow({
                     : {}),
                 ...(props.shift ? { top: props.shift } : {}),
             }}
+            tabIndex={
+                props.rename || props.tabStop === undefined ? undefined : props.tabStop ? 0 : -1
+            }
             type={props.rename ? undefined : "button"}
         >
             {depth() > 0 && props.treeConnectors !== false ? (
@@ -2026,18 +2255,12 @@ function SidebarRow({
                 !lanes && swapsTrailing(),
                 !lanes && showCount() ? item().count : undefined,
             )}
-            {/* The fold's column is kept on every row, so whatever ends a row
-                that has nothing to fold still ends where the others do. */}
-            {lanes
-                ? (foldControl() ?? (
-                      <span
-                          aria-hidden="true"
-                          className="happy-sidebar__item-fold"
-                          data-empty=""
-                          data-happy-desktop-ui="sidebar-item-fold"
-                      />
-                  ))
-                : null}
+            {/* Only a row that folds has a fold at its edge. Revealed on hover, it
+                is laid over the trailing lane and takes the delta's place while
+                it shows; always shown, it is the row's last column and the delta
+                stands left of it. A row with nothing to fold keeps no empty
+                column: what it reports ends at the row's edge. */}
+            {lanes ? foldControl() : null}
         </Row>
     );
 }
@@ -2156,6 +2379,7 @@ export function Sidebar(props: SidebarProps) {
         "onInteractionChange",
         "onDragChange",
         "interactionEnabled",
+        "keyboardNavigation",
         "numberShortcuts",
         "numberShortcutTargets",
         "onSectionAction",
@@ -2171,6 +2395,41 @@ export function Sidebar(props: SidebarProps) {
     ]);
     const interactionEnabled = props.interactionEnabled !== false;
     const menuRoot = useRef<HTMLDivElement>(null);
+    // The item that last had focus, which stays the list's Tab stop until
+    // another item comes on screen, as going back or forward brings one.
+    const [tabStopFocus, tabStopFocusSet] = useState<{ id: string; activeItemId: string }>();
+    /** The items the arrows walk, in the order they are drawn. */
+    const walkable = (root: HTMLElement): HTMLElement[] =>
+        [
+            ...root.querySelectorAll<HTMLElement>(
+                '[data-happy-desktop-ui="sidebar-item"]:not([data-kind="separator"])',
+            ),
+        ].filter((node) => !node.hasAttribute("data-renaming"));
+    const keyboardWalk = (event: ReactKeyboardEvent<HTMLElement>): void => {
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        if (event.nativeEvent.isComposing) return;
+        const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
+        if (!keys.includes(event.key)) return;
+        const items = walkable(event.currentTarget);
+        // Only from an item itself: a name being edited keeps its own arrows.
+        const from = items.indexOf(event.target as HTMLElement);
+        if (from < 0) return;
+        event.preventDefault();
+        const to =
+            event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? items.length - 1
+                  : Math.min(
+                        items.length - 1,
+                        Math.max(0, from + (event.key === "ArrowUp" ? -1 : 1)),
+                    );
+        const next = items[to];
+        if (!next || next === items[from]) return;
+        // Moving by key brings the item into view, and no further.
+        next.focus({ preventScroll: true });
+        next.scrollIntoView?.({ block: "nearest" });
+    };
     const [renaming, setRenaming] = useState<{ id: string; initialValue: string }>();
     const renameStart = (item: SidebarItem): boolean => {
         const actionId = local.itemRename?.actionId;
@@ -2707,6 +2966,8 @@ export function Sidebar(props: SidebarProps) {
         }
         // Scripted PointerEvents have no browser-owned pointer to capture.
         if (event.isTrusted) event.currentTarget.setPointerCapture(event.pointerId);
+        const held = blocks[blockIndex]!;
+        const heldFirst = bounds[held[0]!];
         dragSet({
             listId,
             drag: {
@@ -2714,6 +2975,14 @@ export function Sidebar(props: SidebarProps) {
                 deltaY: 0,
                 from: blockIndex,
                 heights,
+                ...(heldFirst && bounds[0]
+                    ? {
+                          surface: {
+                              top: heldFirst.top - bounds[0].top,
+                              height: bottom(held) - heldFirst.top,
+                          },
+                      }
+                    : {}),
                 maximumDeltaY: bottom(blocks[blocks.length - 1]!) - bottom(blocks[blockIndex]!),
                 minimumDeltaY: top(0) - top(blockIndex),
                 moved: false,
@@ -3212,10 +3481,15 @@ export function Sidebar(props: SidebarProps) {
         return {
             action: (key) =>
                 void latest().act(key, ({ item }) => latest().local.onItemAction?.(item.id)),
-            collapseToggle: (key) =>
-                void latest().act(key, ({ item }) =>
-                    latest().local.onItemCollapseToggle?.(item.id),
-                ),
+            collapseToggle: (key) => {
+                // A section folds from a click on the whole row, and the click
+                // that ends a drag of one is not that.
+                if (dragClick.current) {
+                    dragClick.current = false;
+                    return;
+                }
+                latest().act(key, ({ item }) => latest().local.onItemCollapseToggle?.(item.id));
+            },
             contextMenu: (item, event) => latest().openItemMenu(item, event),
             // One row can be pointed at at a time, so one timer serves the list.
             intent: (id, now) => {
@@ -3262,6 +3536,24 @@ export function Sidebar(props: SidebarProps) {
             },
         };
     });
+    // The one item a Tab reaches while the arrows walk the list: the one last
+    // focused, else the one on screen, else the first.
+    const walkedIds = local.keyboardNavigation
+        ? sections.flatMap((section) =>
+              section.collapsed
+                  ? []
+                  : sectionRows(section, local.activeItemId)
+                        .map((row) => row.item)
+                        .filter((item) => item.kind !== "separator")
+                        .map((item) => item.id),
+          )
+        : [];
+    const tabStop =
+        tabStopFocus?.activeItemId === local.activeItemId && walkedIds.includes(tabStopFocus.id)
+            ? tabStopFocus.id
+            : walkedIds.includes(local.activeItemId)
+              ? local.activeItemId
+              : walkedIds[0];
     return (
         <nav
             {...rest}
@@ -3407,6 +3699,20 @@ export function Sidebar(props: SidebarProps) {
                     className="happy-sidebar__body-content"
                     data-happy-desktop-ui="sidebar-body-content"
                     data-dragging={dragPaint?.drag.moved ? "" : undefined}
+                    onFocus={
+                        local.keyboardNavigation
+                            ? (event) => {
+                                  const id = event.target.getAttribute("data-item-id");
+                                  if (
+                                      id !== null &&
+                                      event.target.getAttribute("data-happy-desktop-ui") ===
+                                          "sidebar-item"
+                                  )
+                                      tabStopFocusSet({ id, activeItemId: local.activeItemId });
+                              }
+                            : undefined
+                    }
+                    onKeyDown={local.keyboardNavigation ? keyboardWalk : undefined}
                     ref={previewRoot}
                     onPointerMove={(event) => {
                         if (event.target === event.currentTarget) dragMove(event);
@@ -3967,6 +4273,11 @@ export function Sidebar(props: SidebarProps) {
                                                         foldable
                                                     }
                                                     canRename={local.itemRename !== undefined}
+                                                    tabStop={
+                                                        local.keyboardNavigation
+                                                            ? item.id === tabStop
+                                                            : undefined
+                                                    }
                                                     canSecondaryAction={
                                                         local.onItemSecondaryAction !== undefined &&
                                                         item.secondaryAction !== undefined
@@ -3991,8 +4302,14 @@ export function Sidebar(props: SidebarProps) {
                                                     key={item.id}
                                                     item={item}
                                                     reorderable={reorderable}
-                                                    shortcutActive={numberShortcutNavigation}
-                                                    shortcut={shortcut}
+                                                    shortcutActive={
+                                                        item.shortcut !== undefined ||
+                                                        numberShortcutNavigation
+                                                    }
+                                                    shortcut={item.shortcut ?? shortcut}
+                                                    shortcutAlwaysVisible={
+                                                        item.shortcut !== undefined
+                                                    }
                                                     shift={
                                                         dragging && !drag?.across && unitIndex >= 0
                                                             ? rowDragShift(drag, index)

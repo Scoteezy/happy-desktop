@@ -52,9 +52,6 @@
     border-radius: 16px;
     /* 8px shell below the action lane (1px transparent border + 7px pad). */
     padding-bottom: 7px;
-    transition:
-        background-color 120ms ease,
-        border-color 120ms ease;
 }
 
 .happy-composer:focus-within .happy-composer__surface {
@@ -348,10 +345,6 @@
      * arrow never swaps color as the draft becomes sendable. */
     background: var(--composer-send-background);
     color: var(--composer-send-icon);
-    transition:
-        background-color 120ms ease,
-        border-color 120ms ease,
-        opacity 120ms ease;
 }
 
 /* The toolbar uses a 16px upward arrow in its 32px circular send control. The
@@ -496,9 +489,6 @@
     color: var(--text-secondary);
     cursor: pointer;
     appearance: none;
-    transition:
-        background-color 120ms ease,
-        color 120ms ease;
 }
 
 .happy-context-chips__remove:hover {
@@ -564,7 +554,6 @@
     font-family: var(--happy-font-ui);
     font-synthesis: none;
     appearance: none;
-    transition: background-color 120ms ease;
 }
 
 .happy-mention-picker__row:hover {

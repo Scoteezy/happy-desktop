@@ -256,7 +256,15 @@ export interface DesktopDaemonDownload {
  * Why starting Happy Agent failed, as a fixed code beside the displayable
  * error. Absent where no fixed code applies; the message is never classified.
  */
-export type DesktopStartFailureCode = "start_timeout";
+export type DesktopStartFailureCode =
+    | "start_timeout"
+    /**
+     * This machine's data was written by a newer Happy Agent than the one
+     * Happy would run: the daemon refused it (exit 65), or Happy refused to run
+     * a release older than the data allows. Only an update changes the answer,
+     * so it is never retried.
+     */
+    | "data_newer";
 
 /**
  * Why finding or fetching a Happy Agent release failed, by where it stopped.

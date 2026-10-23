@@ -194,6 +194,55 @@ describe("artifact site handler", () => {
         expect(reads).toEqual([]);
     });
 
+    it("never forwards an API path that could leave the artifact's API", async () => {
+        const { sites, site, client } = fixture();
+        const forwarded: string[] = [];
+        client.openArtifactApi = (async (_artifactId: string, rest: string, search: string) => {
+            forwarded.push(`${rest}${search}`);
+            return { statusCode: 200, headers: {}, body: Readable.from([]) };
+        }) as never;
+        await site.open(ARTIFACT, 2);
+        // Each of these reaches /v0/secrets, /v0/artifacts/b, or another route
+        // outside this artifact if the daemon's own URL parser sees it, and the
+        // daemon request carries the user's token.
+        for (const path of [
+            "/api/..\\..\\..\\secrets",
+            "/api/%2e%2e/%2e%2e/b",
+            "/api/%2E%2e/%2e%2E/b",
+            "/api/.%2e/.%2e/secrets",
+            "/api/%2e./secrets",
+            "/api/../../secrets",
+            "/api/x/../../../secrets",
+            "/api/%2e",
+            "/api/..%2f..%2fsecrets",
+            "/api/%2f..%2f..%2fsecrets",
+            "/api/..%5c..%5csecrets",
+            "/api/%5c..%5c..%5csecrets",
+            "/api/a\tb/../../secrets",
+            "/api//..//..//secrets",
+            "/api/%00/x",
+            "/api/x%3f/../../secrets",
+            "/api",
+            "/api/",
+        ]) {
+            const url = `happy-artifact://${ARTIFACT}-v2${path}`;
+            for (const method of ["GET", "POST"]) {
+                // A path that resolves out of /api/ is a file request instead,
+                // which a POST is refused as.
+                const response = await sites.handle(new Request(url, { method }));
+                expect([404, 405], `${method} ${path}`).toContain(response.status);
+            }
+        }
+        expect(forwarded).toEqual([]);
+
+        // A query is the API's own and cannot move the route.
+        const ordinary = await sites.handle(
+            new Request(`happy-artifact://${ARTIFACT}-v2/api/kv/a%20b?x=/../../secrets`),
+        );
+        expect(ordinary.status).toBe(200);
+        expect(forwarded).toEqual(["kv/a%20b?x=/../../secrets"]);
+    });
+
     it("answers only GET", async () => {
         const { sites, site, reads } = fixture();
         const url = await site.open(ARTIFACT, 2);

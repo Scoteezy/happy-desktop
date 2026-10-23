@@ -72,6 +72,8 @@ export interface LocalOnboardingStore {
     get(): LocalOnboardingViewSnapshot;
     subscribe(listener: () => void): () => void;
     connectRetry(): void;
+    /** Installs the newer Happy Agent a newer-data refusal is waiting for. */
+    agentUpdate(): void;
     /** Enters machine setup and allows its automatic download and launch to begin. */
     agentSetupBegin(): void;
     chiefOfStaffSetup(): void;
@@ -274,7 +276,11 @@ export function localOnboardingStoreCreate(
             onboarding?.stage !== "daemonDownload" ||
             !daemon ||
             daemon.installation !== "missing" ||
-            daemon.readyVersion !== undefined
+            daemon.readyVersion !== undefined ||
+            // Every release on offer is older than this machine's data. Asking
+            // again finds the same ones; the shell's own update check clears
+            // this when a release that can open the data appears.
+            daemon.errorCode === "data_newer"
         ) {
             downloadRetryStop();
             downloadRetryMs = downloadRetryMinimumMs;
@@ -335,7 +341,9 @@ export function localOnboardingStoreCreate(
             onboarding?.stage !== "daemonDownload" ||
             !daemon ||
             daemon.installation !== "missing" ||
-            daemon.readyVersion === undefined
+            daemon.readyVersion === undefined ||
+            // Refused for newer data: starting it again refuses again.
+            daemon.errorCode === "data_newer"
         ) {
             startRetryStop();
             startRetryMs = startRetryMinimumMs;
@@ -871,6 +879,9 @@ export function localOnboardingStoreCreate(
         connectRetry() {
             attempt(bridge.runtimeRetry(), "Happy could not ask Happy Agent to start again.");
         },
+        agentUpdate() {
+            attempt(bridge.daemonUpgrade(), "Happy could not update Happy Agent.");
+        },
         agentSetupBegin() {
             if (agentSetupActive) return;
             agentSetupActive = true;
@@ -932,6 +943,8 @@ export function localOnboardingView(
         case "nodeMissing":
             return { kind: "node-missing" };
         case "daemonDownload":
+            if (snapshot.daemon?.error && snapshot.daemon.errorCode === "data_newer")
+                return dataNewerProject(snapshot.daemon, snapshot.daemon.error);
             return agentSetupProject(snapshot.daemon, snapshot.agentStarting, message);
         case "daemonStarting":
             return {
@@ -942,6 +955,8 @@ export function localOnboardingView(
         case "connecting":
             return { kind: "connecting" };
         case "connectFailed":
+            if (snapshot.runtime?.phase === "error" && snapshot.runtime.code === "data_newer")
+                return dataNewerProject(snapshot.daemon, snapshot.runtime.message);
             return {
                 kind: "connect-failed",
                 message: message ?? "Happy could not reach your Happy Agent daemon.",
@@ -1021,6 +1036,38 @@ export function localOnboardingReachedStage(
         default:
             return "setup";
     }
+}
+
+/**
+ * A refusal only an update can answer, with that update when Happy has one to
+ * offer: an installed agent Happy manages, and a newer release it may run.
+ */
+function dataNewerProject(
+    daemon: DesktopDaemonSnapshot | undefined,
+    message: string,
+): LocalOnboardingView {
+    // The update's bytes arriving are already part of it.
+    const upgrading = daemon?.operation === "upgrading" || daemon?.operation === "downloading";
+    const offered =
+        daemon?.managed === true &&
+        daemon.installation === "installed" &&
+        (daemon.updateAvailable || upgrading);
+    // The refusal itself may be the daemon's error, and is already the message.
+    const updateError =
+        !upgrading && daemon?.error && daemon.error !== message ? daemon.error : undefined;
+    return {
+        kind: "data-newer",
+        message,
+        ...(updateError ? { updateError } : {}),
+        ...(offered
+            ? {
+                  update: {
+                      busy: upgrading,
+                      ...(daemon.availableVersion ? { version: daemon.availableVersion } : {}),
+                  },
+              }
+            : {}),
+    };
 }
 
 function agentSetupProject(

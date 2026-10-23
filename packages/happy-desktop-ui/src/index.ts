@@ -1002,6 +1002,7 @@ export {
     MakeStuffIntro,
     MakeStuffView,
     type MakeStuffIntroProps,
+    type MakeStuffOption,
     type MakeStuffStage,
     type MakeStuffViewProps,
 } from "./MakeStuffView";

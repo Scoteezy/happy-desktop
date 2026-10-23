@@ -1,5 +1,5 @@
 import "./styles.css";
-import { type CSSProperties, useState } from "react";
+import type { CSSProperties } from "react";
 import { flushSync } from "react-dom";
 import { expect, it } from "vitest";
 import { AppShell } from "./AppShell";
@@ -407,70 +407,3 @@ it("pins a panel footer below the panel body", async () => {
     expect(footer.y).toBe(body.y + body.height);
     expect(view.container.querySelector('[data-testid="footer"]')).not.toBeNull();
 });
-
-it.each([false, true])(
-    "keeps a sparse panel bottom-aligned throughout opening (footer: %s)",
-    async (footer) => {
-        let open!: () => void;
-        function Fixture() {
-            const [shown, setShown] = useState(false);
-            open = () => setShown(true);
-            return (
-                <AppShell
-                    panelAnimated
-                    panelToggleAction={{ open: shown, onClick: () => setShown(!shown) }}
-                    panel={
-                        shown ? (
-                            <div
-                                style={{
-                                    display: "flex",
-                                    flex: 1,
-                                    minHeight: 0,
-                                    flexDirection: "column",
-                                }}
-                            >
-                                <div data-testid="last-reply" style={{ marginTop: "auto" }}>
-                                    Latest reply
-                                </div>
-                                <input aria-label="kept draft" defaultValue="Keep this draft" />
-                            </div>
-                        ) : undefined
-                    }
-                    panelFooter={
-                        footer ? <div style={{ height: 32 }}>Pinned footer</div> : undefined
-                    }
-                >
-                    {slot("workspace", {})}
-                </AppShell>
-            );
-        }
-        const view = createRenderer().render(Fixture, shellSize);
-        await view.ready();
-        flushSync(open);
-        const panel = view.$('[data-happy-desktop-ui="app-shell-panel"]').element as HTMLElement;
-        expect(panel.dataset.motion).toBe("open");
-        const animation = panel.getAnimations()[0]!;
-        animation.pause();
-        animation.currentTime = Number(animation.effect!.getTiming().duration) / 2;
-        const body = view.$('[data-happy-desktop-ui="app-shell-panel-content"]').element;
-        const reply = view.$('[data-testid="last-reply"]').element;
-        const draft = view.container.querySelector<HTMLInputElement>(
-            'input[aria-label="kept draft"]',
-        )!;
-        draft.focus({ preventScroll: true });
-        draft.setSelectionRange(2, 6);
-        const during = body.getBoundingClientRect();
-        const replyTop = reply.getBoundingClientRect().top;
-        expect(during.height).toBeCloseTo(
-            panel.getBoundingClientRect().height - (footer ? 32 : 0),
-            5,
-        );
-        animation.finish();
-        await expect.poll(() => panel.hasAttribute("data-motion")).toBe(false);
-        expect(body.getBoundingClientRect().height).toBeCloseTo(during.height, 5);
-        expect(reply.getBoundingClientRect().top).toBeCloseTo(replyTop, 5);
-        expect(view.container.querySelector('input[aria-label="kept draft"]')).toBe(draft);
-        expect(document.activeElement).toBe(draft);
-        expect([draft.selectionStart, draft.selectionEnd]).toEqual([2, 6]);
-    },
-);

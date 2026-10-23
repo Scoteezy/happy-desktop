@@ -106,7 +106,7 @@ import type {
     HappyAgentTaskId,
     HappyAgentBotId,
     HappyAgentSpace,
-    HappyAgentSpaceSectionId,
+    SidebarDocumentClassic,
     ProjectsVisibilityStore,
     HappyAgentGroupLifecycle,
     HappyAgentChangeTier,
@@ -301,6 +301,7 @@ import {
     happyAgentComposerModelUsageWatch,
     sidebarReorderMove,
     type IconName,
+    type MakeStuffOption,
     type MenuItem,
     type FileTreeNode,
     type KeyboardShortcut,
@@ -325,6 +326,8 @@ import {
     happyAgentSpaceLabel,
     happyAgentSpaceMark,
     happyAgentSpacesNotes,
+    happyAgentSessionMark,
+    happyAgentSpacesChildDestination,
     happyAgentSpacesStemCellIntro,
     HappyAgentSpacesSidebar,
     type HappyAgentSpacesNavigation,
@@ -1063,17 +1066,6 @@ function taskSidebarItem(task: HappyAgentTask, titleShimmerEnabled: boolean): Si
     };
 }
 
-/** The subtasks under a space's task or bot, as the window's own lists hold them. */
-function spaceSubtasks(
-    space: HappyAgentSpace,
-    places: HappyAgentSpacesPlaces,
-): readonly HappyAgentBotSubtask[] {
-    const { kind, id } = space.target;
-    if (kind === "task") return places.tasks.find((task) => task.id === id)?.subtasks ?? [];
-    if (kind === "bot") return places.bots.find((bot) => bot.id === id)?.subtasks ?? [];
-    return [];
-}
-
 /** One subtask anywhere in a tree, by its conversation. */
 function subtaskFind(
     subtasks: readonly HappyAgentBotSubtask[],
@@ -1087,28 +1079,34 @@ function subtaskFind(
     return undefined;
 }
 
-/**
- * The worktrees a space's task or bot made, itself or through one of its
- * subtasks, that no subtask works in: a subtask's own worktree is already that
- * subtask's row.
- */
-function spaceWorktreeSidebarItems(
+/** The task or bot a space opens, of one kind. */
+function targetOfSpace(
     space: HappyAgentSpace,
-    subtasks: readonly HappyAgentBotSubtask[],
+    places: HappyAgentSpacesPlaces,
+    kind: "task" | "bot",
+): { readonly workspaceId: string } | undefined {
+    if (space.target.kind !== kind) return undefined;
+    const id = space.target.id;
+    return kind === "task"
+        ? places.tasks.find((task) => task.id === id)
+        : places.bots.find((bot) => bot.id === id);
+}
+
+/** What the stem cell offers beside the Surfaces: naming a bot. */
+const STEM_CELL_BOT = "bot";
+
+/**
+ * The worktrees one agent made, which no subtask works in: a subtask's own
+ * worktree is already that subtask's row.
+ */
+function agentWorktreeSidebarItems(
+    agentId: string,
     projects: readonly HappyAgentSidebarProject[],
     titleShimmerEnabled: boolean,
 ): SidebarItem[] {
-    if (space.target.agentId === null) return [];
-    const creators = new Set<string>([
-        space.target.agentId,
-        ...happyAgentBotSubtaskConversationIds(subtasks),
-    ]);
     return projects.flatMap(({ project, worktrees }) =>
         worktrees
-            .filter(
-                (worktree) =>
-                    worktree.creatorAgentId !== null && creators.has(worktree.creatorAgentId),
-            )
+            .filter((worktree) => worktree.creatorAgentId === agentId)
             .map(
                 (worktree): SidebarItem => ({
                     id: worktree.id,
@@ -1145,14 +1143,6 @@ function spaceWorktreeSidebarItems(
                 }),
             ),
     );
-}
-
-/** Every conversation in a subtask tree. */
-function happyAgentBotSubtaskConversationIds(subtasks: readonly HappyAgentBotSubtask[]): string[] {
-    return subtasks.flatMap((subtask) => [
-        subtask.conversation.id,
-        ...happyAgentBotSubtaskConversationIds(subtask.subtasks),
-    ]);
 }
 
 function botSubtaskSidebarItems(
@@ -1210,7 +1200,6 @@ function botSubtaskSidebarItems(
 function sidebarItems(
     { project, worktrees }: HappyAgentSidebarProject,
     titleShimmerEnabled: boolean,
-    newWorkspaceShortcut: boolean,
 ): SidebarItem[] {
     const projectHasLineChanges = (project.addedLines ?? 0) > 0 || (project.deletedLines ?? 0) > 0;
     // The shared sidebar tree already leaves out a worktree a bot's or task's
@@ -1232,7 +1221,6 @@ function sidebarItems(
                 disabled: project.lifecycle.phase !== "ready",
                 icon: "plus" as const,
                 label: `New workspace in ${project.name}`,
-                ...(newWorkspaceShortcut ? { shortcut: APP_SHORTCUTS.workspaceCreate } : {}),
                 reveal: "hover" as const,
             },
             ...sidebarLifecycle(project.lifecycle),
@@ -1690,9 +1678,8 @@ function sessionTabs(
         label: summary.title,
         labelShimmer: titleShimmerEnabled,
         ...(hideAvatar ? {} : { icon: "chat" as const }),
-        // Both are stated even when false: a session tab holds its leading lane
-        // open, so work starting or finishing makes the mark appear and go
-        // without sliding the title sideways under the reader.
+        // Stated even when false; the activity marks sit at the trailing edge,
+        // so work starting or finishing never slides the title sideways.
         busy: summary.activity === "running",
         waiting: summary.activity === "waiting",
         awaitingInput: summary.activity === "awaitingInput",
@@ -2329,7 +2316,6 @@ function happyAgentSections(
     titleShimmerEnabled: boolean,
     projectsHidden: boolean,
     attention: HappyAgentAttentionSnapshot,
-    shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
     folded?: ReadonlySet<string>,
     /** The machine Cmd-N makes a task on, whose Tasks heading wears the chord. */
     shortcutHappyAgentId?: string,
@@ -2396,14 +2382,7 @@ function happyAgentSections(
         // section goes entirely, heading and all, rather than folding.
         ...(projectsHidden
             ? []
-            : [
-                  happyAgentProjectsSection(
-                      happyAgent,
-                      titleShimmerEnabled,
-                      shortcutProject,
-                      folded,
-                  ),
-              ]),
+            : [happyAgentProjectsSection(happyAgent, titleShimmerEnabled, folded)]),
     ]);
 }
 
@@ -2957,7 +2936,7 @@ function happyAgentSearchSections(
         const projects = projectsHidden
             ? []
             : happyAgentSidebarTree(happyAgent).projects.flatMap((entry) =>
-                  sidebarItems(entry, titleShimmerEnabled, false)
+                  sidebarItems(entry, titleShimmerEnabled)
                       .filter((item) => matches(item.label))
                       // A worktree found on its own says which project it is in.
                       .map((item) =>
@@ -3065,7 +3044,6 @@ function subtaskFailureError(
 function happyAgentProjectsSection(
     happyAgent: AppHappyAgentEntry,
     titleShimmerEnabled: boolean,
-    shortcutProject?: { readonly projectId: HappyAgentProjectId; readonly happyAgentId: string },
     /**
      * The window's folding record, when it keeps one. The whole Projects list
      * folds under its own heading the way a project folds its worktrees, kept
@@ -3085,14 +3063,7 @@ function happyAgentProjectsSection(
         items: hidden
             ? []
             : happyAgentSidebarTree(happyAgent)
-                  .projects.flatMap((entry) =>
-                      sidebarItems(
-                          entry,
-                          titleShimmerEnabled,
-                          shortcutProject?.happyAgentId === happyAgent.id &&
-                              shortcutProject.projectId === entry.project.id,
-                      ),
-                  )
+                  .projects.flatMap((entry) => sidebarItems(entry, titleShimmerEnabled))
                   .map((item) => ({
                       ...item,
                       id: happyAgentItemId(happyAgent.id, item.id),
@@ -3649,48 +3620,85 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         chatGroupOf: (agentId) => chatGroupFind(active?.projects ?? NO_PROJECTS, agentId),
     };
     const spacesProjects = active ? happyAgentSidebarTree(active).projects : [];
-    // New work nobody started does not outlive being left: with no message and
-    // nothing typed, leaving it drops its row. A draft keeps it, and the daemon
-    // refuses once its chat has any message.
-    const stemCellLeave = (leavingChatId: string | undefined, nextChatId?: string): void => {
-        if (!spacesEnabled || leavingChatId === undefined || leavingChatId === nextChatId) return;
-        const space = happyAgentSpaceFocused(spaces, { chatId: leavingChatId });
-        if (space === undefined || space.title !== null || space.icon?.type !== "stem_cell") return;
-        const conversation = active?.session?.workspace.get().conversation;
-        if (
-            conversation?.type !== "ready" ||
-            conversation.value.conversationId !== leavingChatId ||
-            conversation.value.entries.length > 0 ||
-            conversation.value.composer.text.trim().length > 0 ||
-            conversation.value.composer.attachments.length > 0
-        )
-            return;
-        spacesStore.stemCellDiscard(space.id);
-    };
     const spacesNavigation: HappyAgentSpacesNavigation | undefined = active
         ? {
-              onChatSelect: (groupId, chatId) => {
-                  stemCellLeave(props.chatId, chatId);
-                  props.onChatSelect(active.id, groupId, chatId);
-              },
-              onSurfaceOpen: (surfaceId) => {
-                  stemCellLeave(props.chatId);
-                  props.onSurfaceOpen?.(active.id, surfaceId);
-              },
+              onChatSelect: (groupId, chatId) => props.onChatSelect(active.id, groupId, chatId),
+              onSurfaceOpen: (surfaceId) => props.onSurfaceOpen?.(active.id, surfaceId),
           }
         : undefined;
+    // What the reader had folded and hidden in the classic sidebar, which the
+    // daemon's first Spaces document mirrors without knowing.
+    const spacesClassic: SidebarDocumentClassic = (() => {
+        const rowIdOf = (workspaceId: string) =>
+            active ? happyAgentItemId(active.id, workspaceId) : workspaceId;
+        const foldedSpaceIds = new Set<string>();
+        const hiddenSpaceIds = new Set<string>();
+        for (const space of spaces.spaces.values()) {
+            const owner =
+                targetOfSpace(space, spacesPlaces, "task") ??
+                targetOfSpace(space, spacesPlaces, "bot");
+            if (owner && sidebarCollapse.collapsed.has(rowIdOf(owner.workspaceId)))
+                foldedSpaceIds.add(space.id);
+            if (
+                active &&
+                space.target.kind === "bot" &&
+                happyAgentBotAttention(attention, active.id, space.target.id as HappyAgentBotId) ===
+                    "hidden"
+            )
+                hiddenSpaceIds.add(space.id);
+        }
+        const foldedSectionIds = new Set<string>(
+            active
+                ? [
+                      ...(sidebarCollapse.collapsed.has(happyAgentBotsSectionId(active.id))
+                          ? ["bots"]
+                          : []),
+                      ...(sidebarCollapse.collapsed.has(happyAgentTasksSectionId(active.id))
+                          ? ["tasks"]
+                          : []),
+                  ]
+                : [],
+        );
+        return { foldedSpaceIds, foldedSectionIds, hiddenSpaceIds };
+    })();
     // New work is made on the daemon and opened the moment it exists: the
     // stem cell and its empty chat are one thing, so there is nothing to show
     // before the daemon has made it.
-    const makeStuff = (sectionId: HappyAgentSpaceSectionId | null): void => {
+    const makeStuff = (): void => {
         if (!experimental.stemCells || !active || !activeHappyAgentOnline()) return;
+        // New work lands right below Happy's row, wherever the reader keeps it.
+        const happySpace = [...spaces.spaces.values()].find((space) =>
+            happyAgentSpaceHappyIs(space, spacesPlaces),
+        );
         void spacesStore
-            .stemCellCreate(sectionId)
+            .stemCellCreate(null, happySpace?.id ?? null)
             .then((cell) => {
                 spacesStore.happyFocusUpdate(false);
                 props.onChatSelect(active.id, cell.workspaceId, cell.agentId);
             })
             .catch(() => undefined);
+    };
+    // What can be made: the Surfaces this Happy Agent serves, and a bot. The
+    // Create row's › lists them directly and a new stem cell offers the same.
+    const createOffers: readonly MakeStuffOption[] = [
+        ...(surfaceCatalog.availability === "available"
+            ? surfaceCreateMenu(surfaceSupport).flatMap((item) =>
+                  item.kind === "item" && item.icon
+                      ? [{ id: item.id, icon: item.icon, label: item.label }]
+                      : [],
+              )
+            : []),
+        ...(active && props.onBotCreateOpen
+            ? [{ id: STEM_CELL_BOT, icon: "agents" as const, label: "New bot" }]
+            : []),
+    ];
+    const createOfferSelect = (id: string): void => {
+        if (id === STEM_CELL_BOT) {
+            if (active) props.onBotCreateOpen?.(active.id);
+            return;
+        }
+        const offer = SURFACE_CREATE_OFFERS.find((entry) => entry.kind === id);
+        if (offer !== undefined) surfaceCatalogStore.createOpen(offer.kind);
     };
     const spacesSidebar =
         spacesEnabled && spacesNavigation ? (
@@ -3710,13 +3718,36 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                             .catch(() => undefined),
                     surfaceLeave: (surfaceId) =>
                         surfaceCatalogStore.surfaceLeave(surfaceId as HappyAgentSurfaceId),
+                    ...(active && happyAgentTaskCreateSupported(active)
+                        ? {
+                              taskRename: (taskId: string, name: string) =>
+                                  void active.session?.workspace
+                                      .taskRename(taskId as HappyAgentTaskId, name)
+                                      .catch(() => undefined),
+                          }
+                        : {}),
+                    botRename: (botId, name) =>
+                        void active?.session?.workspace
+                            .botRename(botId as HappyAgentBotId, name)
+                            .catch(() => undefined),
                 }}
                 // The integrated header holds the toggle in this lane, so the
                 // spaces sidebar never shows the wordmark.
                 brand={false}
-                {...(sidebarSearchRow ? { searchRow: sidebarSearchRow } : {})}
+                {...(sidebarSearchRow ? { search: sidebarSearchRow } : {})}
+                {...(experimental.stemCells
+                    ? {
+                          create: {
+                              label: "Create",
+                              shortcut: APP_SHORTCUTS.taskCreate,
+                              onOpen: makeStuff,
+                          },
+                      }
+                    : {})}
+                classic={spacesClassic}
                 focus={{
                     ...(props.chatId !== undefined ? { chatId: props.chatId } : {}),
+                    ...(props.groupId !== undefined ? { groupId: props.groupId } : {}),
                     ...(props.surfaceId !== undefined ? { surfaceId: props.surfaceId } : {}),
                     ...(props.artifactsOpen && props.artifactId !== undefined
                         ? { artifactId: props.artifactId }
@@ -3726,70 +3757,64 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 navigation={spacesNavigation}
                 now={spaces.readAt}
                 titleShimmerEnabled={titleShimmerEnabled}
-                rowChildren={(space) => {
-                    const subtasks = spaceSubtasks(space, spacesPlaces);
-                    return [
-                        // A subtask with a checkout of its own is that
-                        // checkout's row, and wears its project's picture like
-                        // the task's other worktrees, or the worktree glyph
-                        // where the project has none.
-                        ...botSubtaskSidebarItems(
-                            subtasks,
-                            active?.projects ?? NO_PROJECTS,
-                            titleShimmerEnabled,
-                        ).map(({ contextAvatars, ...child }) =>
-                            contextAvatars?.some((avatar) => avatar.imageUrl !== undefined)
-                                ? { ...child, contextAvatars }
-                                : contextAvatars?.length
-                                  ? { ...child, icon: "branch" as const }
-                                  : child,
-                        ),
-                        ...spaceWorktreeSidebarItems(
-                            space,
-                            subtasks,
-                            spacesProjects,
-                            titleShimmerEnabled,
-                        ),
-                    ];
-                }}
-                onChildSelect={(id) => {
-                    if (!active) return;
-                    const subtask = subtaskFind(
-                        [...spacesPlaces.tasks, ...spacesPlaces.bots].flatMap(
-                            (owner) => owner.subtasks,
-                        ),
-                        id,
+                sessionRow={(agentId) => {
+                    // A session is a subtask at any depth, or a task of its own
+                    // that Prioritizing shows under the work that started it.
+                    const subtask =
+                        subtaskFind(
+                            [...spacesPlaces.tasks, ...spacesPlaces.bots].flatMap(
+                                (owner) => owner.subtasks,
+                            ),
+                            agentId,
+                        ) ?? spacesPlaces.tasks.find((task) => task.conversation.id === agentId);
+                    if (!subtask) return undefined;
+                    // A subtask with a checkout of its own is that checkout's
+                    // row, and wears its project's picture like the task's
+                    // other worktrees, or the worktree glyph where the project
+                    // has none.
+                    const [row] = botSubtaskSidebarItems(
+                        [
+                            {
+                                workspaceId: subtask.workspaceId,
+                                path: subtask.path,
+                                conversation: subtask.conversation,
+                                subtasks: [],
+                            },
+                        ],
+                        active?.projects ?? NO_PROJECTS,
+                        titleShimmerEnabled,
                     );
-                    if (subtask) {
-                        props.onChatSelect(active.id, subtask.workspaceId, subtask.conversation.id);
-                        return;
-                    }
-                    // A worktree opens where it was last left, or on its newest chat.
-                    const worktree = spacesProjects
-                        .flatMap((entry) => entry.worktrees)
-                        .find((entry) => entry.id === id);
-                    if (worktree) {
-                        workspaceChangesShowOnOpen(active.session?.workspace, worktree);
-                        props.onChatSelect(
-                            active.id,
-                            worktree.id,
+                    if (!row) return undefined;
+                    const { contextAvatars, ...rest } = row;
+                    return contextAvatars?.some((avatar) => avatar.imageUrl !== undefined)
+                        ? { ...rest, contextAvatars }
+                        : contextAvatars?.length
+                          ? { ...rest, icon: "branch" as const }
+                          : rest;
+                }}
+                worktreeRows={(agentId) =>
+                    agentWorktreeSidebarItems(agentId, spacesProjects, titleShimmerEnabled)
+                }
+                onChildSelect={(child) => {
+                    if (!active) return;
+                    const worktrees = spacesProjects.flatMap((entry) => entry.worktrees);
+                    const destination = happyAgentSpacesChildDestination(
+                        child,
+                        spacesPlaces,
+                        worktrees,
+                        (worktreeId) =>
                             active.session?.workspace
                                 .get()
-                                .groupResume?.get(worktree.id as HappyAgentGroupId) ??
-                                worktree.conversations[0]?.id,
-                        );
+                                .groupResume?.get(worktreeId as HappyAgentGroupId),
+                    );
+                    if (!destination) return;
+                    if (child.kind === "worktree") {
+                        const worktree = worktrees.find((entry) => entry.id === child.worktreeId);
+                        if (worktree)
+                            workspaceChangesShowOnOpen(active.session?.workspace, worktree);
                     }
+                    props.onChatSelect(active.id, destination.groupId, destination.chatId);
                 }}
-                rowCollapsed={sidebarCollapse.collapsed}
-                {...(props.sidebarCollapse
-                    ? { onRowCollapseToggle: sidebarCollapseStore.rowCollapseToggle }
-                    : {})}
-                {...(experimental.stemCells
-                    ? {
-                          onSectionCreate: (sectionId: HappyAgentSpaceSectionId) =>
-                              makeStuff(sectionId),
-                      }
-                    : {})}
                 onChatAside={(agentId, label) =>
                     active?.session?.workspace.panel.chatTabOpen(
                         agentId as HappyAgentSessionId,
@@ -3815,15 +3840,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     const workspaceSpaces: HappyAgentWorkspaceSpaces = {
         chatMark: (sessionId) => {
             const space = spaceOfChat(sessionId);
+            // A session wears the picture Prioritizing chose for it, whether or
+            // not its row is shown.
             return space
                 ? {
                       ...happyAgentSpaceMark(space, spacesPlaces),
                       label: happyAgentSpaceLabel(space),
                   }
-                : undefined;
+                : happyAgentSessionMark(spaces, sessionId);
         },
         floatyKey: (sessionId) => spaceOfChat(sessionId)?.id,
-        chatEmpty: (sessionId) => happyAgentSpacesStemCellIntro(spaceOfChat(sessionId)),
+        chatEmpty: (sessionId) =>
+            happyAgentSpacesStemCellIntro(spaceOfChat(sessionId), createOffers, createOfferSelect),
         chatNotes: (sessionId) =>
             experimental.batchNotes &&
             happySpace !== undefined &&
@@ -4340,7 +4368,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                                   titleShimmerEnabled,
                                   projectsHidden,
                                   attention,
-                                  workspaceCreateTarget,
                                   props.sidebarCollapse
                                       ? // A navigation into a folded-away Projects list
                                         // shows it while voice points there.
@@ -4618,11 +4645,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     groupId={props.groupId}
                     key={active.id}
                     onChatSelect={(groupId, chatId, replace) => {
-                        stemCellLeave(props.chatId, chatId);
                         props.onChatSelect(active.id, groupId, chatId, replace);
                     }}
                     onChatClose={(groupId, chatId, fallbackChatId) => {
-                        stemCellLeave(chatId);
                         return (
                             props.onChatClose?.(active.id, groupId, chatId, fallbackChatId) ?? false
                         );
@@ -4653,9 +4678,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               onArtifactOpen: (artifactId: string) =>
                                   props.onArtifactOpen?.(active.id, artifactId),
                           }
-                        : {})}
-                    {...(workspaceCreateTarget
-                        ? { workspaceCreateProjectId: workspaceCreateTarget.projectId }
                         : {})}
                 />
             );
@@ -4708,6 +4730,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 shortcutHintsSurface={paletteHints}
                 windowControls={desktop}
                 windowFullScreen={windowState.fullScreen}
+                windowTrafficLights={windowState.trafficLights}
                 connectionRail={windowState.connectionRail}
                 sidebar={spacesSidebar ?? sidebar}
                 // One band holds the sidebar toggle, search, and the tabs; the
@@ -4726,8 +4749,9 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     ? {
                           sidebarCollapsedAction: {
                               label: "New work (⌘N or ⌘T)",
-                              onClick: () => makeStuff(null),
+                              onClick: () => makeStuff(),
                           },
+                          sidebarOwnsCreate: true,
                       }
                     : taskCreateTarget !== undefined
                       ? {
@@ -4766,8 +4790,8 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             {spacesSidebar && experimental.stemCells ? (
                 <WindowShortcuts
                     actions={[
-                        { run: () => makeStuff(null), shortcut: APP_SHORTCUTS.taskCreate },
-                        { run: () => makeStuff(null), shortcut: APP_SHORTCUTS.sessionCreate },
+                        { run: () => makeStuff(), shortcut: APP_SHORTCUTS.taskCreate },
+                        { run: () => makeStuff(), shortcut: APP_SHORTCUTS.sessionCreate },
                     ]}
                 />
             ) : taskCreateTarget !== undefined ? (
@@ -6399,8 +6423,6 @@ interface HappyAgentWorkspaceSurfaceProps {
     viewerId: string;
     groupId?: string;
     chatId?: string;
-    /** Ready online project that Shift-Cmd-N and its sidebar cap both address. */
-    workspaceCreateProjectId?: HappyAgentProjectId;
     onChatSelect(groupId: string | undefined, chatId?: string, replace?: boolean): void;
     onChatClose(groupId: string, chatId: string, fallbackChatId?: string): boolean;
     onFileClose(groupId: string, path: string): void;
@@ -6422,7 +6444,9 @@ interface HappyAgentWorkspaceSurfaceProps {
 /** What the spaces sidebar adds to a workspace it shows. */
 interface HappyAgentWorkspaceSpaces {
     /** The identity a chat's tab wears: its space's name and icon, or its stem cell. */
-    chatMark(sessionId: string): Pick<TabItem, "imageMark" | "stemCell" | "label"> | undefined;
+    chatMark(
+        sessionId: string,
+    ): (Pick<TabItem, "imageMark" | "stemCell"> & Partial<Pick<TabItem, "label">>) | undefined;
     /** Which space a chat's hand-folded floaty is remembered for. */
     floatyKey(sessionId: string): string | undefined;
     /** What an empty conversation says instead of the default, such as new work's stem cell. */
@@ -6552,7 +6576,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
         connectionRefusal === undefined &&
         openGroupChatRefusal === undefined &&
         workspaceLifecyclePhase(openGroup.lifecycle) !== "creating";
-    const workspaceCreateProjectId = props.workspaceCreateProjectId;
     // The worktree phase this screen has to say something about. `ready` and a
     // project both leave it absent: there is nothing to interrupt the reader
     // with when the place they are looking at is simply there.
@@ -6794,7 +6817,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             : (props.spaces?.floatyKey(floatyChatId) ?? floatyChatId);
     const floatyShown =
         floatyKey !== undefined &&
-        !panel.floatyCollapsed.has(floatyKey) &&
+        panel.floatyOpened.has(floatyKey) &&
         (floatyPlaces.length > 0 ||
             floatyOutputs.length > 0 ||
             floatyAgents.current.length > 0 ||
@@ -7316,7 +7339,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                           onClick: () => props.workspace.panel.panelToggle(),
                       },
                   })}
-            panelAnimated
             // The width this checkout was last left at, or the shell's own
             // default where nobody has sized it. Passed on every render rather
             // than seeded once, so moving to another project shows that
@@ -7571,19 +7593,6 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                       },
                                   ]
                                 : []),
-                            ...(workspaceCreateProjectId
-                                ? [
-                                      {
-                                          run: () => {
-                                              if (happyAgentOnline())
-                                                  void props.workspace
-                                                      .worktreeCreate(workspaceCreateProjectId)
-                                                      .catch(() => undefined);
-                                          },
-                                          shortcut: APP_SHORTCUTS.workspaceCreate,
-                                      },
-                                  ]
-                                : []),
                         ]}
                     />
                     {/* A worktree with work already in it keeps its tab strip and
@@ -7641,9 +7650,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                     floatyOpen={floatyShown}
                                     onFloatyOpenChange={(open) => {
                                         if (floatyKey !== undefined)
-                                            props.workspace.panel.floatyCollapsedUpdate(
+                                            props.workspace.panel.floatyOpenedUpdate(
                                                 floatyKey,
-                                                !open,
+                                                open,
                                             );
                                     }}
                                 />

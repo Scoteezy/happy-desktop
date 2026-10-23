@@ -152,6 +152,14 @@
     color: var(--text-secondary);
 }
 
+.happy-make-stuff__options {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    max-width: 480px;
+}
+
 .happy-tabs__tab-icon:has(> .happy-tabs__image-mark) {
     width: 20px;
     height: 20px;

@@ -1,9 +1,11 @@
 import { localAgentSocketPath } from "./localAgentSocketPath";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+    HappyAgentDaemonClient,
     happyAgentDaemonConnectionUnavailable,
     HappyAgentDaemonHttpError,
     happyAgentDaemonPathsResolve,
@@ -80,5 +82,48 @@ describe("happyAgentDaemonConnectionUnavailable", () => {
             happyAgentDaemonConnectionUnavailable(new HappyAgentDaemonHttpError(500, "boom")),
         ).toBe(false);
         expect(happyAgentDaemonConnectionUnavailable(new Error("ordinary failure"))).toBe(false);
+    });
+});
+
+describe("HappyAgentDaemonClient.openArtifactApi", () => {
+    it("carries the token only to routes under the artifact's own API", async () => {
+        const directory = await mkdtemp(join(tmpdir(), "hadc-"));
+        const socketPath = join(directory, "d.sock");
+        const reached: string[] = [];
+        const daemon = createServer((request, response) => {
+            reached.push(request.url ?? "");
+            response.end();
+        });
+        await new Promise<void>((resolve) => daemon.listen(socketPath, resolve));
+        try {
+            const local = new HappyAgentDaemonClient({ socketPath, token: "secret" });
+            const artifact = "k3v8w2m9q4x7z1c5b6n0p2r8";
+            for (const client of [local, local.connection("remote")]) {
+                for (const rest of [
+                    "..\\..\\..\\secrets",
+                    "%2e%2e/%2e%2e/b",
+                    "%2E%2e/.%2E/b",
+                    "../../secrets",
+                    "x/../../../secrets",
+                    "a\tb/../../../secrets",
+                ]) {
+                    await expect(
+                        client.openArtifactApi(artifact, rest, "", { method: "GET", headers: {} }),
+                        rest,
+                    ).rejects.toThrow("The artifact API path is invalid.");
+                }
+            }
+            expect(reached).toEqual([]);
+
+            const answer = await local.openArtifactApi(artifact, "kv/a%20b", "?x=/../..", {
+                method: "GET",
+                headers: {},
+            });
+            answer.body.resume();
+            expect(reached).toEqual([`/v0/artifacts/${artifact}/api/kv/a%20b?x=/../..`]);
+        } finally {
+            await new Promise((resolve) => daemon.close(resolve));
+            await rm(directory, { force: true, recursive: true });
+        }
     });
 });

@@ -6,17 +6,24 @@ import {
     type SpaceBatch,
     type SpaceBatchPosition,
     type SpaceSection,
+    type SpaceSidebarResponse,
 } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
 import type { UserError } from "../types.js";
-import { sidebarDocumentInsert, sidebarDocumentView } from "./spacesSidebarDocument.js";
+import {
+    sidebarDocumentClassicApply,
+    sidebarDocumentEdit,
+    sidebarDocumentInsert,
+    type SidebarDocumentClassic,
+} from "./spacesSidebarDocument.js";
 import { cuid2Create } from "../utils/cuid2Create.js";
 import { orderKeyDecimalBetween, stringCompare } from "../utils/orderKeyDecimal.js";
 import type {
     HappyAgentSpace,
     HappyAgentSpaceBatch,
+    HappyAgentSpaceIcon,
     HappyAgentSpaceId,
     HappyAgentSpacePosition,
     HappyAgentSpaceSection,
@@ -86,6 +93,20 @@ export interface HappyAgentSpacesSidebarDocument {
     readonly artifactId: string;
     readonly version: number;
     readonly html: string;
+    /** The icons Prioritizing chose for sessions, by agent ID. */
+    readonly agentIcons: ReadonlyMap<string, HappyAgentSpaceIcon>;
+    /** The daemon's untouched mirror of the classic sidebar, before any write. */
+    readonly seed: boolean;
+}
+
+function sidebarOf(answer: SpaceSidebarResponse): HappyAgentSpacesSidebarDocument {
+    return {
+        artifactId: answer.artifactId,
+        version: answer.version,
+        html: answer.html,
+        agentIcons: new Map(Object.entries(answer.agentIcons ?? {})),
+        seed: answer.seed === true,
+    };
 }
 
 export interface HappyAgentSpacesSnapshot {
@@ -121,10 +142,14 @@ export interface HappyAgentSpacesStore {
     get(): HappyAgentSpacesSnapshot;
     subscribe(listener: () => void): () => void;
     /**
-     * Makes new work: under Happy for `null`, or at the top of a section. It
+     * Makes new work right after a section or separator, or for `null` right
+     * after Happy's row (`happySpaceId`, which the window knows by its bot), and
      * resolves with the conversation to open once the daemon has made it.
      */
-    stemCellCreate(sectionId: HappyAgentSpaceSectionId | null): Promise<HappyAgentStemCell>;
+    stemCellCreate(
+        sectionId: string | null,
+        happySpaceId: string | null,
+    ): Promise<HappyAgentStemCell>;
     /** Moves a row after another in a section, or first for `null`. */
     spaceMove(
         spaceId: HappyAgentSpaceId,
@@ -137,15 +162,29 @@ export interface HappyAgentSpacesStore {
     /** Whether Happy's chat is on screen; opening it reads its note. */
     happyFocusUpdate(focused: boolean): void;
     /**
-     * Holds queued sidebar changes back while the reader is in the sidebar, or
-     * lets them land now that a navigation gesture is done.
+     * Whether the reader is in the sidebar: hovering it, dragging in it, or in
+     * one of its menus. Being in it holds queued changes back; leaving it is
+     * only more input, never permission for them to land.
      */
-    attentionUpdate(state: HappyAgentSpacesAttention): void;
+    attentionInteractingUpdate(interacting: boolean): void;
+    /**
+     * The person did something in the window. Queued changes wait for
+     * ATTENTION_CALM_MS without any of this, so no click, navigation or
+     * selection ever lets them land.
+     */
+    attentionInput(): void;
+    /**
+     * Whether the window and its sidebar are on screen. Hiding or minimising
+     * the window, or collapsing the sidebar, lets queued changes land at once.
+     */
+    attentionVisibleUpdate(visible: boolean): void;
     /** Asks the manager to tidy now; its batch applies as soon as it is done. */
     tidyRequest(): void;
     /**
-     * Drops new work nobody started: the daemon removes the row and its empty
-     * chat, and refuses once the chat has any message, which leaves it alone.
+     * Closes new work nobody started, when the person asks to: the daemon
+     * removes the row and its empty chat, and refuses once the chat has any
+     * message, which leaves it alone. Nothing but an explicit close calls this;
+     * opening, leaving or selecting a row never does.
      */
     stemCellDiscard(spaceId: HappyAgentSpaceId): void;
     /**
@@ -153,11 +192,15 @@ export interface HappyAgentSpacesStore {
      * edited. It shows at once; a stale base reads the daemon's version back
      * and reports the refusal, without merging.
      */
-    sidebarWrite(html: string): void;
+    sidebarWrite(html: string, force?: boolean): void;
     /** Holds the document and daemon edits through the gesture and its saved drop. */
     sidebarDragUpdate(active: boolean): void;
-    /** Which spaces the reader can see, reported at most once a second. */
-    sidebarObserve(visibleSpaceIds: readonly string[]): void;
+    /**
+     * What the reader had folded and hidden in the sidebar they kept before
+     * Spaces. The daemon's first document mirrors that sidebar; once it is read,
+     * these folds are written into it once, and nothing else changes.
+     */
+    sidebarClassicUpdate(classic: SidebarDocumentClassic): void;
     [Symbol.dispose](): void;
 }
 
@@ -185,6 +228,8 @@ const EMPTY: HappyAgentSpacesSnapshot = {
 const BATCH_LIMIT = 100;
 /** Comfortably inside the daemon's ten-minute hold on an "interacting" report. */
 const ATTENTION_RENEW_MS = 60_000;
+/** How long the person goes without any input before queued changes may land. */
+const ATTENTION_CALM_MS = 5 * 60_000;
 
 function sectionsOrdered(
     sections: Iterable<HappyAgentSpaceSection>,
@@ -241,14 +286,22 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     const life = new AbortController();
     // Authored document sections need not have a legacy SpaceSection row.
     // Keep the requested placement until both the creation event and reply agree.
-    const creating = new Map<string, HappyAgentSpaceSectionId | null>();
+    const creating = new Map<
+        string,
+        { readonly sectionId: string | null; readonly happySpaceId: string | null }
+    >();
+    const insert = (
+        html: string,
+        spaceId: string,
+        placement: { readonly sectionId: string | null; readonly happySpaceId: string | null },
+    ) =>
+        sidebarDocumentEdit(html, (view) =>
+            sidebarDocumentInsert(view, spaceId, placement.sectionId, placement.happySpaceId),
+        );
 
     const publish = (next: Partial<HappyAgentSpacesSnapshot>): void => {
-        const html = snapshot.sidebar?.html;
         snapshot = { ...snapshot, ...next };
         for (const listener of listeners) listener();
-        if (snapshot.sidebar !== undefined && snapshot.sidebar.html !== html)
-            queueMicrotask(() => store.sidebarObserve(sidebarVisibleIds(snapshot.sidebar?.html)));
     };
 
     const failed = (error: unknown): void => {
@@ -298,6 +351,18 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     let sidebarWrites = 0;
     let sidebarDragging = false;
     let sidebarStale = false;
+    let classic: SidebarDocumentClassic | undefined;
+    /** Writes the reader's classic folds into the daemon's seed, once per seed. */
+    const seedAdopt = (): void => {
+        const current = snapshot.sidebar;
+        if (!current?.seed || classic === undefined || sidebarWrites > 0) return;
+        const folds = classic;
+        const html = sidebarDocumentEdit(current.html, (view) =>
+            sidebarDocumentClassicApply(view, folds),
+        );
+        // Written even when it changes nothing: the write is what ends the seed.
+        store.sidebarWrite(html ?? current.html, true);
+    };
     const sidebarLoad = (): void => {
         if (sidebarWrites > 0 || sidebarDragging || creating.size > 0) {
             sidebarStale = true;
@@ -314,21 +379,13 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 const current = snapshot.sidebar;
                 if (current && current.version > answer.version) return;
                 if (current?.version === answer.version && current.html === answer.html) return;
-                publish({
-                    sidebar: {
-                        artifactId: answer.artifactId,
-                        version: answer.version,
-                        html: answer.html,
-                    },
-                });
+                publish({ sidebar: sidebarOf(answer) });
+                seedAdopt();
             })
             .catch(() => undefined);
     };
     /** One write at a time, each against the version the last one produced. */
     let sidebarQueue: Promise<void> = Promise.resolve();
-    let observed: { ids: string; at: number } | undefined;
-    let observeTimer: ReturnType<typeof setTimeout> | undefined;
-    let observePending: readonly string[] | undefined;
 
     const load = (): Promise<void> => {
         const active = reading;
@@ -393,10 +450,10 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     creating.has(event.payload.space.id)
                 ) {
                     const space = event.payload.space;
-                    const html = sidebarDocumentInsert(
+                    const html = insert(
                         snapshot.sidebar.html,
                         space.id,
-                        creating.get(space.id) ?? null,
+                        creating.get(space.id) ?? { sectionId: null, happySpaceId: null },
                     );
                     if (html !== undefined) next.sidebar = { ...snapshot.sidebar, html };
                 }
@@ -432,21 +489,11 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 break;
             }
             case "artifact.updated": {
-                const artifact = (
-                    event.payload as {
-                        readonly artifact?: {
-                            readonly id?: string;
-                            readonly latestVersion?: number;
-                        };
-                    }
-                ).artifact;
                 const sidebar = snapshot.sidebar;
                 // A version this window already holds, its own write included, needs no read.
                 if (
-                    artifact?.id !== undefined &&
-                    artifact.id === sidebar?.artifactId &&
-                    (artifact.latestVersion === undefined ||
-                        artifact.latestVersion > sidebar.version)
+                    event.payload.artifactId === sidebar?.artifactId &&
+                    event.payload.changes.latestVersion > sidebar.version
                 )
                     sidebarLoad();
                 break;
@@ -596,9 +643,23 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 .catch(() => undefined);
         });
     };
+    let attentionVisible = true;
+    let attentionIdle: ReturnType<typeof setTimeout> | undefined;
+    /** Starts the quiet period over: calm only once it passes without input. */
+    const attentionIdleRestart = (): void => {
+        if (attentionIdle) clearTimeout(attentionIdle);
+        attentionIdle = undefined;
+        if (disposed || !attentionVisible) return;
+        attentionIdle = setTimeout(() => {
+            attentionIdle = undefined;
+            attentionSend("calm");
+        }, ATTENTION_CALM_MS);
+    };
     const sidebarReleased = (): void => {
         if (sidebarDragging || sidebarWrites > 0) return;
-        attentionSend("calm");
+        // A drop is input like any other; a hidden window was already calm.
+        if (attentionVisible) attentionIdleRestart();
+        else attentionSend("calm");
         if (sidebarStale) {
             sidebarStale = false;
             sidebarLoad();
@@ -615,10 +676,12 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 if (listeners.size === 0) stop();
             };
         },
-        async stemCellCreate(sectionId) {
+        async stemCellCreate(placeSectionId, happySpaceId) {
             const id = idCreate();
             const mutationId = idCreate();
-            creating.set(id, sectionId);
+            const sectionId = placeSectionId as HappyAgentSpaceSectionId | null;
+            const placement = { sectionId: placeSectionId, happySpaceId };
+            creating.set(id, placement);
             try {
                 const response = await happyAgentSyncRead(
                     life.signal,
@@ -640,9 +703,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 const space = spaceOf(response.space);
                 const spaces = new Map(snapshot.spaces);
                 spaceAdopt(spaces, space);
-                const html =
-                    snapshot.sidebar &&
-                    sidebarDocumentInsert(snapshot.sidebar.html, space.id, sectionId);
+                const html = snapshot.sidebar && insert(snapshot.sidebar.html, space.id, placement);
                 publish({
                     spaces,
                     ...(html && snapshot.sidebar ? { sidebar: { ...snapshot.sidebar, html } } : {}),
@@ -714,8 +775,25 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             happyOnScreen = focused;
             if (focused && snapshot.noteUnread) publish({ noteUnread: false });
         },
-        attentionUpdate(state) {
-            attentionSend(state);
+        attentionInteractingUpdate(interacting) {
+            if (!attentionVisible) return;
+            if (interacting) attentionSend("interacting");
+            attentionIdleRestart();
+        },
+        attentionInput() {
+            if (!attentionVisible) return;
+            attentionSend("interacting");
+            attentionIdleRestart();
+        },
+        attentionVisibleUpdate(visible) {
+            if (attentionVisible === visible) return;
+            attentionVisible = visible;
+            if (visible) {
+                store.attentionInput();
+                return;
+            }
+            attentionIdleRestart();
+            attentionSend("calm");
         },
         sidebarDragUpdate(active) {
             sidebarDragging = active;
@@ -728,10 +806,10 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 () => undefined,
             );
         },
-        sidebarWrite(html) {
+        sidebarWrite(html, force = false) {
             const current = snapshot.sidebar;
-            if (current === undefined || current.html === html) return;
-            publish({ sidebar: { ...current, html } });
+            if (current === undefined || (current.html === html && !force)) return;
+            publish({ sidebar: { ...current, html, seed: false } });
             sidebarWrites += 1;
             sidebarQueue = sidebarQueue.then(async () => {
                 await attentionQueue;
@@ -744,10 +822,10 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     );
                     if (disposed) return;
                     const latest = snapshot.sidebar;
+                    const written = sidebarOf(answer);
                     publish({
                         sidebar: {
-                            artifactId: answer.artifactId,
-                            version: answer.version,
+                            ...written,
                             // A later edit already on screen stays there until it is written.
                             html:
                                 latest !== undefined && latest.html !== html
@@ -766,29 +844,6 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     sidebarReleased();
                 }
             });
-        },
-        sidebarObserve(visibleSpaceIds) {
-            const ids = [...visibleSpaceIds].sort().join(" ");
-            if (observed?.ids === ids && observeTimer === undefined) return;
-            observePending = visibleSpaceIds;
-            if (observeTimer !== undefined) return;
-            const at = (deps.now ?? Date.now)();
-            const wait = observed === undefined ? 0 : Math.max(0, observed.at + 1_000 - at);
-            observeTimer = setTimeout(() => {
-                observeTimer = undefined;
-                const next = observePending;
-                observePending = undefined;
-                if (disposed || next === undefined) return;
-                const nextIds = [...next].sort().join(" ");
-                if (observed?.ids === nextIds) return;
-                observed = { ids: nextIds, at: (deps.now ?? Date.now)() };
-                void deps.client
-                    .reportSpaceSidebarObservations(
-                        { visibleSpaceIds: [...next] },
-                        { signal: life.signal },
-                    )
-                    .catch(() => undefined);
-            }, wait);
         },
         stemCellDiscard(spaceId) {
             const mutationId = idCreate();
@@ -811,32 +866,20 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 () => undefined,
             ).catch(() => undefined);
         },
+        sidebarClassicUpdate(next) {
+            classic = next;
+            seedAdopt();
+        },
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
+            if (attentionIdle) clearTimeout(attentionIdle);
             stop();
-            if (observeTimer !== undefined) clearTimeout(observeTimer);
             life.abort();
             listeners.clear();
         },
     };
     return store;
-}
-
-/** The spaces a reader can see in a document: those outside folded sections. */
-function sidebarVisibleIds(html: string | undefined): readonly string[] {
-    if (html === undefined) return [];
-    try {
-        const view = sidebarDocumentView(html);
-        return [
-            ...view.top,
-            ...view.sections
-                .filter((section) => !section.collapsed)
-                .flatMap((section) => section.entries),
-        ].flatMap((entry) => (entry.kind === "space" ? [entry.ref] : []));
-    } catch {
-        return [];
-    }
 }
 
 const UNSUPPORTED: HappyAgentSpacesSnapshot = { ...EMPTY, availability: "unsupported" };
@@ -851,11 +894,13 @@ export const happyAgentSpacesStoreNoop: HappyAgentSpacesStore = {
     sectionTailExpandedUpdate: () => undefined,
     olderExpandedUpdate: () => undefined,
     happyFocusUpdate: () => undefined,
-    attentionUpdate: () => undefined,
+    attentionInteractingUpdate: () => undefined,
+    attentionInput: () => undefined,
+    attentionVisibleUpdate: () => undefined,
     tidyRequest: () => undefined,
     stemCellDiscard: () => undefined,
     sidebarWrite: () => undefined,
     sidebarDragUpdate: () => undefined,
-    sidebarObserve: () => undefined,
+    sidebarClassicUpdate: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
