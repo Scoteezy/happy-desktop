@@ -356,15 +356,6 @@ export interface HappyAgentSpacesCommand {
     readonly label: string;
     readonly shortcut?: KeyboardShortcut;
     readonly onOpen: () => void;
-    /**
-     * What else the item can make, behind a › at its trailing edge (hover or
-     * focus; ArrowRight opens it too). The item itself still does `onOpen`.
-     */
-    readonly menu?: {
-        readonly label: string;
-        readonly items: readonly MenuItem[];
-        readonly onSelect: (id: string) => void;
-    };
 }
 
 export interface HappyAgentSpacesSidebarProps {
@@ -539,16 +530,6 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                         icon: item.kind === "search" ? "search" : "compose",
                         label: command.label,
                         ...(command.shortcut ? { shortcut: command.shortcut } : {}),
-                        ...(command.menu && command.menu.items.length > 0
-                            ? {
-                                  action: {
-                                      icon: "chevron-right" as const,
-                                      label: command.menu.label,
-                                      reveal: "hover" as const,
-                                      menu: [...command.menu.items],
-                                  },
-                              }
-                            : {}),
                         ...(editable ? {} : { reorderable: false }),
                     },
                 ];
@@ -750,10 +731,6 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 },
             }}
             onItemMenuSelect={(item, actionId) => {
-                if (item.id === "create") {
-                    props.create?.menu?.onSelect(actionId);
-                    return;
-                }
                 const space = spaceOf(item.id);
                 if (space === undefined) return;
                 const target = space.target;

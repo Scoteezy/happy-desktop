@@ -3741,19 +3741,6 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               label: "Create",
                               shortcut: APP_SHORTCUTS.taskCreate,
                               onOpen: makeStuff,
-                              menu: {
-                                  label: "New…",
-                                  items: createOffers.map(
-                                      (offer): MenuItem => ({
-                                          kind: "item",
-                                          id: offer.id,
-                                          icon: offer.icon,
-                                          label: offer.label,
-                                          disabled: active?.status !== "connected",
-                                      }),
-                                  ),
-                                  onSelect: createOfferSelect,
-                              },
                           },
                       }
                     : {})}

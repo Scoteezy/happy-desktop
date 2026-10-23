@@ -898,7 +898,7 @@ function SpacesListDemo() {
                     title="Spaces"
                 />
             </Frame>
-            <DimensionRule label="section 28 px, title only · folded 14 px · separator 17 px, full width · key caps on the row's edge" />
+            <DimensionRule label="section 28 px open or folded, title only · separator 17 px, full width · key caps on the row's edge" />
         </div>
     );
 }
@@ -1947,7 +1947,7 @@ export function SidebarPage() {
                 </div>
             </Specimen>
             <Specimen
-                detail="The spaces sidebar is one list. By default: Search, Create, Happy, new work right below Happy, a separator, then the Bots and Tasks sections. Search and Create are rows with their key caps at the edge; a section is a title alone (no rule) that folds the run up to the next section or separator and halves its height when folded; a separator is only a full-width rule. Everything is carried like any other row, and a section carries its whole block. A row with nothing trailing keeps no empty column. Rows are flat: Prioritizing shows no nested sessions for now, though the list still draws them if a document has them."
+                detail="The spaces sidebar is one list. By default: Search, Create, Happy, new work right below Happy, a separator, then the Bots and Tasks sections. Search and Create are rows with their key caps at the edge; a section is a title alone (no rule) that folds the run up to the next section or separator, keeping its height and look when folded (only the chevron turns); a separator is only a full-width rule. Everything is carried like any other row, and a section carries its whole block. A row with nothing trailing keeps no empty column. Rows are flat: Prioritizing shows no nested sessions for now, though the list still draws them if a document has them."
                 label="Spaces list · items, sections, separators"
                 number="10"
                 stage="app"

@@ -128,7 +128,8 @@ it("drags a stem cell past another stem cell and into a section, and the daemon 
             return new DOMRect(0, Math.max(index, 0) * ROW_HEIGHT, 280, index < 0 ? 0 : ROW_HEIGHT);
         },
     );
-    Element.prototype.animate ??= () => ({}) as Animation;
+    Element.prototype.animate ??= () => ({ finished: Promise.resolve() }) as unknown as Animation;
+    window.matchMedia ??= () => ({ matches: false }) as MediaQueryList;
     const { daemon, saved } = daemonCreate();
     const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync });
     const view = render(<Spaces store={store} />);

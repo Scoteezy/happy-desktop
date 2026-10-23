@@ -707,9 +707,15 @@
     z-index: 2;
 }
 
-/* The lift under a carried subtree. Its geometry follows the hand exactly, and
-   the shadow is switched on and off with the gesture: nothing in the sidebar
-   fades. It is mounted, empty and invisible, as soon as a row is touched. */
+/* The lift under a carried subtree. Its geometry is never transitioned — that is
+   what keeps it under the hand — but the shadow itself comes up rather than being
+   switched on: a row is picked up and put down, and both take a moment. A drag is
+   the only thing in the sidebar that moves; everything else is instant.
+
+   One element does both halves. It is mounted, empty and invisible, as soon as a
+   row is touched, and stays mounted for the length of its own fade after the hand
+   has gone, so `opacity` is always a transition between two states of the same
+   node rather than a mount and an unmount. */
 .happy-sidebar__tree-drag-surface {
     position: absolute;
     /* Once released, the face sits below ordinary rows and stems. */
@@ -725,6 +731,7 @@
         0 4px 12px var(--shadow-subtle);
     opacity: 0;
     pointer-events: none;
+    transition: opacity 120ms ease;
 }
 
 .happy-sidebar__tree-drag-surface[data-carried] {
@@ -850,14 +857,42 @@
     cursor: pointer;
 }
 
-/* The row under the pointer rides above its neighbours and tracks the pointer
-   exactly; the rows it displaces step to their new places at once. The shadow is
-   what lifts it off the column: a row being carried is the one thing in the
-   sidebar that is not lying flat in the list. */
+/* Rows only animate their offset while a reorder is in flight. Once the move
+   is reported the list is rearranged and every offset drops to zero in the
+   same commit; if that drop were transitioned, each row would glide in from
+   wherever it had been pushed to instead of simply being where the new order
+   puts it. Nothing outside a drag — a fold, a selection, rows the document
+   adds or removes — ever transitions. */
+.happy-sidebar__section[data-reordering] .happy-sidebar__item,
+.happy-sidebar__actions[data-reordering] .happy-sidebar__item {
+    transition: top 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* The row under the pointer rides above its neighbours and drops the transition
+   on its position, so it tracks the pointer exactly while the rows it displaces
+   still glide. The shadow is what lifts it off the column, and it comes up over
+   a moment while `top` stays under the hand. */
 .happy-sidebar__item[data-dragging] {
     z-index: 1;
     background: var(--surface-ripple);
     box-shadow: 0 4px 12px var(--shadow-subtle);
+    transition: box-shadow 120ms ease;
+}
+
+/* Said again inside the list being arranged, because that is where it has to
+   win: on its own the rule above loses to the reordering rule, and the carried
+   row would ease toward the pointer instead of tracking it. */
+.happy-sidebar__section[data-reordering] .happy-sidebar__item[data-dragging],
+.happy-sidebar__actions[data-reordering] .happy-sidebar__item[data-dragging] {
+    transition: box-shadow 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-sidebar__section[data-reordering] .happy-sidebar__item,
+    .happy-sidebar__actions[data-reordering] .happy-sidebar__item,
+    .happy-sidebar__tree-drag-surface {
+        transition: none;
+    }
 }
 
 .happy-sidebar__item[data-grabbed] {
@@ -902,16 +937,12 @@
     background: var(--happy-hover-fill);
 }
 
-/* A section heading is arranged like any row: a row tall while open, half of
-   that once it has folded the run after it away. */
+/* A section heading is arranged like any row, the same open or folded: only
+   its chevron says which, and the rows after it show or hide. */
 .happy-sidebar__section-item {
     position: relative;
     min-width: 0;
     height: 28px;
-}
-
-.happy-sidebar__section-item[data-collapsed] {
-    height: 14px;
 }
 
 .happy-sidebar__section-item:hover:not([data-dragging]) {
@@ -930,10 +961,6 @@
     text-overflow: ellipsis;
     text-transform: uppercase;
     white-space: nowrap;
-}
-
-.happy-sidebar__section-item[data-collapsed] .happy-sidebar__section-item-label {
-    font-size: 10px;
 }
 
 .happy-sidebar__section-item:hover .happy-sidebar__section-item-label {
@@ -1644,33 +1671,6 @@
 .happy-sidebar__item-action:hover {
     background: var(--happy-hover-fill);
     color: var(--text);
-}
-
-/* A command row whose key cap always shows (Create) and which offers a menu
-   behind it: the menu's control takes the key cap's place at the trailing
-   edge instead of a lane of its own, so the key cap lines up with every other
-   row's at rest, and gives way to the control on hover or focus. Neither box
-   moves; only which one is visible changes. */
-.happy-sidebar__item[data-shortcut-always]:has(
-        > .happy-sidebar__item-trailing .happy-sidebar__item-action[aria-haspopup]
-    )
-    > .happy-sidebar__item-trailing {
-    position: absolute;
-    top: calc(50% - 9px);
-    right: calc(var(--happy-panel-row-padding) - 3px);
-    margin: 0;
-}
-
-.happy-sidebar__item[data-shortcut-always]:has(
-        > .happy-sidebar__item-trailing .happy-sidebar__item-action[aria-haspopup]
-    ):is(:hover, :focus-visible, :focus-within)
-    .happy-sidebar__item-shortcut {
-    visibility: hidden;
-}
-
-.happy-sidebar__item[data-shortcut-always]:is(:hover, :focus-visible, :focus-within)
-    .happy-sidebar__item-action[aria-haspopup][data-reveal="hover"] {
-    opacity: 1;
 }
 
 .happy-sidebar__item-action[data-disabled],
