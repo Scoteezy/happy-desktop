@@ -422,6 +422,13 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     /** The pointer gesture's lifetime, independent of hover and menus. */
     onDragChange?: (dragging: boolean) => void;
     interactionEnabled?: boolean;
+    /**
+     * The arrows, Home and End walk the focus through every item but the
+     * separators, and only one item is a Tab stop: the one last focused, or
+     * the active one. Enter or Space activates what has focus — a row opens, a
+     * heading folds — so renaming moves to F2.
+     */
+    keyboardNavigation?: boolean;
     /** Keep the identity lane intact when a row folds. Defaults to leading. */
     foldControlPlacement?: "leading" | "trailing";
     /**
@@ -1332,6 +1339,8 @@ const SidebarListRow = memo(function SidebarListRow({
     canRename: boolean;
     canSecondaryAction: boolean;
     active: boolean;
+    /** See `SidebarRow.tabStop`. */
+    tabStop?: boolean;
     activityPlacement?: SidebarActivityPlacement;
     foldControlPlacement?: "leading" | "trailing";
     itemMarkPresentation?: "default" | "glyph" | "none";
@@ -1392,6 +1401,11 @@ function SidebarRow({
     item: SidebarItem;
     rename?: { initialValue: string; onSubmit: (name: string) => void; onCancel: () => void };
     onRenameRequest?: () => boolean;
+    /**
+     * Set while the arrows walk the list: whether this item is the list's one
+     * Tab stop. A walked list renames with F2, since Enter opens.
+     */
+    tabStop?: boolean;
     /** Which end of the row reports work. See `SidebarProps.activityPlacement`. */
     activityPlacement?: SidebarActivityPlacement;
     onContextMenu?: (item: SidebarItem, event: MouseEvent<HTMLElement>) => void;
@@ -1707,7 +1721,7 @@ function SidebarRow({
                 onPointerUp={props.onPointerUp}
                 ref={(node) => nodeRef?.(node)}
                 style={props.shift ? { top: props.shift } : undefined}
-                tabIndex={props.reorderable ? 0 : -1}
+                tabIndex={props.reorderable && props.tabStop === undefined ? 0 : -1}
                 type="button"
             >
                 <span aria-hidden="true" className="happy-sidebar__separator-rule" />
@@ -1779,6 +1793,7 @@ function SidebarRow({
                 onPointerUp={props.onPointerUp}
                 ref={(node) => nodeRef?.(node)}
                 style={props.shift ? { top: props.shift } : undefined}
+                tabIndex={props.tabStop === undefined ? undefined : props.tabStop ? 0 : -1}
                 type="button"
             >
                 <span
@@ -1840,7 +1855,7 @@ function SidebarRow({
             onContextMenu={(event) => props.onContextMenu?.(item(), event)}
             onKeyDown={(event) => {
                 if (
-                    event.key === "Enter" &&
+                    event.key === (props.tabStop === undefined ? "Enter" : "F2") &&
                     event.target === event.currentTarget &&
                     !event.ctrlKey &&
                     !event.metaKey &&
@@ -1886,6 +1901,9 @@ function SidebarRow({
                     : {}),
                 ...(props.shift ? { top: props.shift } : {}),
             }}
+            tabIndex={
+                props.rename || props.tabStop === undefined ? undefined : props.tabStop ? 0 : -1
+            }
             type={props.rename ? undefined : "button"}
         >
             {depth() > 0 && props.treeConnectors !== false ? (
@@ -2361,6 +2379,7 @@ export function Sidebar(props: SidebarProps) {
         "onInteractionChange",
         "onDragChange",
         "interactionEnabled",
+        "keyboardNavigation",
         "numberShortcuts",
         "numberShortcutTargets",
         "onSectionAction",
@@ -2376,6 +2395,41 @@ export function Sidebar(props: SidebarProps) {
     ]);
     const interactionEnabled = props.interactionEnabled !== false;
     const menuRoot = useRef<HTMLDivElement>(null);
+    // The item that last had focus, which stays the list's Tab stop until
+    // another item comes on screen, as going back or forward brings one.
+    const [tabStopFocus, tabStopFocusSet] = useState<{ id: string; activeItemId: string }>();
+    /** The items the arrows walk, in the order they are drawn. */
+    const walkable = (root: HTMLElement): HTMLElement[] =>
+        [
+            ...root.querySelectorAll<HTMLElement>(
+                '[data-happy-desktop-ui="sidebar-item"]:not([data-kind="separator"])',
+            ),
+        ].filter((node) => !node.hasAttribute("data-renaming"));
+    const keyboardWalk = (event: ReactKeyboardEvent<HTMLElement>): void => {
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+        if (event.nativeEvent.isComposing) return;
+        const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
+        if (!keys.includes(event.key)) return;
+        const items = walkable(event.currentTarget);
+        // Only from an item itself: a name being edited keeps its own arrows.
+        const from = items.indexOf(event.target as HTMLElement);
+        if (from < 0) return;
+        event.preventDefault();
+        const to =
+            event.key === "Home"
+                ? 0
+                : event.key === "End"
+                  ? items.length - 1
+                  : Math.min(
+                        items.length - 1,
+                        Math.max(0, from + (event.key === "ArrowUp" ? -1 : 1)),
+                    );
+        const next = items[to];
+        if (!next || next === items[from]) return;
+        // Moving by key brings the item into view, and no further.
+        next.focus({ preventScroll: true });
+        next.scrollIntoView?.({ block: "nearest" });
+    };
     const [renaming, setRenaming] = useState<{ id: string; initialValue: string }>();
     const renameStart = (item: SidebarItem): boolean => {
         const actionId = local.itemRename?.actionId;
@@ -3482,6 +3536,24 @@ export function Sidebar(props: SidebarProps) {
             },
         };
     });
+    // The one item a Tab reaches while the arrows walk the list: the one last
+    // focused, else the one on screen, else the first.
+    const walkedIds = local.keyboardNavigation
+        ? sections.flatMap((section) =>
+              section.collapsed
+                  ? []
+                  : sectionRows(section, local.activeItemId)
+                        .map((row) => row.item)
+                        .filter((item) => item.kind !== "separator")
+                        .map((item) => item.id),
+          )
+        : [];
+    const tabStop =
+        tabStopFocus?.activeItemId === local.activeItemId && walkedIds.includes(tabStopFocus.id)
+            ? tabStopFocus.id
+            : walkedIds.includes(local.activeItemId)
+              ? local.activeItemId
+              : walkedIds[0];
     return (
         <nav
             {...rest}
@@ -3627,6 +3699,20 @@ export function Sidebar(props: SidebarProps) {
                     className="happy-sidebar__body-content"
                     data-happy-desktop-ui="sidebar-body-content"
                     data-dragging={dragPaint?.drag.moved ? "" : undefined}
+                    onFocus={
+                        local.keyboardNavigation
+                            ? (event) => {
+                                  const id = event.target.getAttribute("data-item-id");
+                                  if (
+                                      id !== null &&
+                                      event.target.getAttribute("data-happy-desktop-ui") ===
+                                          "sidebar-item"
+                                  )
+                                      tabStopFocusSet({ id, activeItemId: local.activeItemId });
+                              }
+                            : undefined
+                    }
+                    onKeyDown={local.keyboardNavigation ? keyboardWalk : undefined}
                     ref={previewRoot}
                     onPointerMove={(event) => {
                         if (event.target === event.currentTarget) dragMove(event);
@@ -4187,6 +4273,11 @@ export function Sidebar(props: SidebarProps) {
                                                         foldable
                                                     }
                                                     canRename={local.itemRename !== undefined}
+                                                    tabStop={
+                                                        local.keyboardNavigation
+                                                            ? item.id === tabStop
+                                                            : undefined
+                                                    }
                                                     canSecondaryAction={
                                                         local.onItemSecondaryAction !== undefined &&
                                                         item.secondaryAction !== undefined

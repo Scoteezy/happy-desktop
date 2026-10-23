@@ -12,9 +12,10 @@ import {
 
 /*
  * Rows are renamed by hand as the classic sidebar renamed them: "Rename task"
- * or "Rename bot" from the row's menu, or Enter on the focused row, edits the
- * name in place; Enter saves and Escape leaves it as it was. A section's
- * heading is renamed the same way, as an edit of the document.
+ * or "Rename bot" from the row's menu, or F2 on the focused row, edits the
+ * name in place, since Enter on a row opens it; Enter saves and Escape leaves
+ * it as it was. A section's heading is renamed the same way, as an edit of
+ * the document.
  */
 
 function space(id: string, title: string | null, kind: "task" | "bot"): HappyAgentSpace {
@@ -116,9 +117,9 @@ it("renames a task, new work and a bot from their menus, with Enter saving and E
     expect(botRename).not.toHaveBeenCalled();
     expect(field()).toBeNull();
 
-    // Enter on the focused row edits it in place, as in the classic sidebar.
+    // F2 on the focused row edits it in place; Enter opens the row instead.
     row("space:steward").focus();
-    fireEvent.keyDown(row("space:steward"), { key: "Enter" });
+    fireEvent.keyDown(row("space:steward"), { key: "F2" });
     type("Ship it", "Enter");
     expect(botRename).toHaveBeenCalledWith("bot-steward", "Ship it");
 });

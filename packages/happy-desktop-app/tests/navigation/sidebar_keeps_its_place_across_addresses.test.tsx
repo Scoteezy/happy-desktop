@@ -134,6 +134,12 @@ const task = (agentId: string) => ({
 const SPACES = [
     spaceOf("stem", null, task("ses_stem")),
     spaceOf("board", "Board", { kind: "surface", id: "srf_one" }),
+    spaceOf("steward", "Steward", {
+        kind: "bot",
+        id: "bot-steward",
+        agentId: "ses_bot",
+        workspaceId: "prj_one",
+    }),
     ...Array.from({ length: 30 }, (_, index) =>
         spaceOf(`old${index}`, `Old ${index}`, task(`ses_old${index}`)),
     ),
@@ -146,7 +152,8 @@ const SIDEBAR_HTML = [
     "  <happy-create/>",
     '  <happy-space id="stem"/>',
     '  <happy-space id="board"/>',
-    ...SPACES.slice(2, -1).map((space) => `  <happy-space id="${space.id}"/>`),
+    '  <happy-space id="steward"/>',
+    ...SPACES.slice(3, -1).map((space) => `  <happy-space id="${space.id}"/>`),
     '  <happy-section id="desktop" label="Desktop"/>',
     '  <happy-space id="release"/>',
     "</nav>",
@@ -272,7 +279,23 @@ async function windowOpen(address: string, spacesOn: boolean) {
             expect(scroll.scrollTop).toBe(120);
         };
     };
-    return { calls: spaces.calls, router, row, rows, scrolled };
+    /** The row the window marks as on screen, and the list's one Tab stop. */
+    const current = () => {
+        const nodes = [
+            ...view.container.querySelectorAll<HTMLElement>(
+                '[data-happy-desktop-ui="sidebar-item"]',
+            ),
+        ];
+        return {
+            selected: nodes
+                .filter((node) => node.getAttribute("aria-current") === "page")
+                .map((node) => node.getAttribute("data-item-id")),
+            stop: nodes
+                .filter((node) => node.tabIndex === 0)
+                .map((node) => node.getAttribute("data-item-id")),
+        };
+    };
+    return { calls: spaces.calls, current, router, row, rows, scrolled };
 }
 
 it("keeps the sidebar's scroll element and its scroll wherever a click or an address leads", async () => {
@@ -329,4 +352,31 @@ it("leaves the classic sidebar as it was, and calls no Spaces route, with the ex
     // The classic rows, with no Create, section, separator or space among them.
     expect(window.rows()).toEqual(["artifacts", "local/prj_one"]);
     expect(window.calls).toEqual([]);
+});
+
+it("goes back and forward through a stem cell, a Surface, a bot and a task, selecting each row again", async () => {
+    const window = await windowOpen("/chats/local", true);
+    await waitFor(() => expect(window.row("space:release")).not.toBeNull());
+    const steps = [
+        ["space:stem", "/chats/local/prj_one/ses_stem"],
+        ["space:board", "/surfaces/local/srf_one"],
+        ["space:steward", "/chats/local/prj_one/ses_bot"],
+        ["space:release", "/chats/local/prj_one/ses_one"],
+    ] as const;
+    const at = async ([id, pathname]: readonly [string, string]) => {
+        await waitFor(() => expect(window.router.state.location.pathname).toBe(pathname));
+        await waitFor(() => expect(window.current()).toEqual({ selected: [id], stop: [id] }));
+    };
+    for (const step of steps) {
+        fireEvent.click(window.row(step[0])!);
+        await at(step);
+    }
+    for (const step of [...steps].reverse().slice(1)) {
+        await act(() => window.router.history.back());
+        await at(step);
+    }
+    for (const step of steps.slice(1)) {
+        await act(() => window.router.history.forward());
+        await at(step);
+    }
 });

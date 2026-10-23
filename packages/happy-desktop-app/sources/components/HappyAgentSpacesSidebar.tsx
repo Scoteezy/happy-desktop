@@ -623,6 +623,9 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             // Rows never move under the pointer: queued changes wait while it
             // is over the sidebar — hovering, dragging, or in a row's menu.
             interactionEnabled={props.visible !== false}
+            // Every item but a separator is walked with the arrows and opens
+            // with Enter or Space.
+            keyboardNavigation
             onInteractionChange={props.store.attentionInteractingUpdate}
             onDragChange={props.store.sidebarDragUpdate}
             footer={
