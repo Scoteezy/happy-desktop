@@ -1607,10 +1607,9 @@ function messagesOrdered(messages: readonly TranscriptMessage[]): boolean {
 }
 
 function compareMessages(left: TranscriptMessage, right: TranscriptMessage): number {
-    return (
-        left.message.createdAt - right.message.createdAt ||
-        left.message.id.localeCompare(right.message.id)
-    );
+    // Keep history/event insertion order for messages in the same millisecond.
+    // Their opaque identities do not encode the order in which they were sent.
+    return left.message.createdAt - right.message.createdAt;
 }
 
 /** Deterministically projects a daemon CUID2 into the UI's numeric process identity space. */

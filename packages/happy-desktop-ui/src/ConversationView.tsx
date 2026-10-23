@@ -516,24 +516,6 @@ function conversationQuestionDocked(entry: ConversationEntry): boolean {
     );
 }
 
-/**
- * The newest message submitted through this store. Its local marker survives
- * daemon acceptance. The list remembers it while queued and lifts it only
- * once its own row enters the transcript, unless the reader has scrolled away.
- */
-function conversationSendingMessageKey(
-    transcript: readonly ConversationEntry[],
-): string | undefined {
-    for (let index = transcript.length - 1; index >= 0; index -= 1) {
-        const entry = transcript[index]!;
-        if (entry.kind !== "message") continue;
-        return entry.delivery !== "failed" && entry.sentHere === true
-            ? entry.message.id
-            : undefined;
-    }
-    return undefined;
-}
-
 /** The geometry-relevant part of a failure row's props, for the row-height model. */
 function failureRowContext(failure: ConversationEntryFailureProps): ConversationFailureRowContext {
     return {
@@ -646,19 +628,6 @@ export function ConversationView(props: ConversationViewProps) {
                       );
                   }),
               };
-    const turnAnchorKey = conversationSendingMessageKey(props.entries);
-    // The first send also creates an empty conversation's MessageList. Keep
-    // this view's mount boundary so that send is fresh even if React combines
-    // its queued and accepted snapshots; IDs already present on opening are history.
-    const [sendLifetime, setSendLifetime] = useState(() => ({
-        conversationId: props.conversationId,
-        initialKey: turnAnchorKey,
-    }));
-    if (sendLifetime.conversationId !== props.conversationId)
-        setSendLifetime({ conversationId: props.conversationId, initialKey: turnAnchorKey });
-    const turnAnchorOnMount =
-        sendLifetime.conversationId === props.conversationId &&
-        turnAnchorKey !== sendLifetime.initialKey;
     /* Every change to an inline page's collapse or height is one generation,
        which re-sizes the rows; the values themselves live in module memory. */
     const [inlinePageGeneration, setInlinePageGeneration] = useState(0);
@@ -1132,8 +1101,6 @@ export function ConversationView(props: ConversationViewProps) {
                         onScrollPositionChange={props.onScrollPositionChange}
                         onStartReached={props.onStartReached}
                         paddingEnd={24}
-                        turnAnchorKey={turnAnchorKey}
-                        turnAnchorOnMount={turnAnchorOnMount}
                         virtualize
                     >
                         {transcript.map((entry, index) => {

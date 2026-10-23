@@ -1154,11 +1154,6 @@
     width: 100%;
 }
 
-.happy-message-list__tail {
-    flex: none;
-    height: 0;
-}
-
 .happy-message-list__virtual-row {
     position: absolute;
     top: 0;

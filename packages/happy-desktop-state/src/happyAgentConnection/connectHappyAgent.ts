@@ -2299,7 +2299,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 updateRun(event.payload.agentId, event.payload.run);
                 return;
             case "run.boundary":
-                updateRun(event.payload.agentId, event.payload.finishedRun);
+                updateRun(event.payload.agentId, event.payload.finishedRun, false);
                 acceptMessages(
                     event.payload.agentId,
                     event.payload.acceptedMessageIds,
@@ -2446,7 +2446,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         }
     };
 
-    const updateRun = (agentId: string, run: Run): void => {
+    const updateRun = (agentId: string, run: Run, publish = true): void => {
         const entry = sessions.get(agentId);
         if (entry === undefined) return;
         const current = entry.runs.get(run.id);
@@ -2456,7 +2456,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         entry.runs.set(run.id, run);
         entry.runsOrdered = undefined;
         captureRunFinalContext(entry, run);
-        publishSession(entry);
+        if (publish) publishSession(entry);
     };
 
     /**
@@ -2836,7 +2836,8 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             if (!knownUserMessageIds.has(messageId)) nonUserAccepted = true;
         }
         if (nonUserAccepted) refetchAgentMode(agentId);
-        if (entry !== undefined) publishSession(entry);
+        // The event handler installs the run that accepted these messages
+        // before publishing. Until then they have no projectable run.
     };
 
     const appendMessageDelta = (
@@ -5607,7 +5608,9 @@ function modesEqual(left: MessageMode, right: MessageMode): boolean {
 }
 
 function runCompare(left: Run, right: Run): number {
-    return left.startedAt - right.startedAt || left.id.localeCompare(right.id);
+    // Stable sort preserves history/event insertion order when timestamps tie;
+    // opaque CUID2 identities carry no chronological information.
+    return left.startedAt - right.startedAt;
 }
 
 async function optional<T>(read: () => Promise<T>): Promise<T | undefined> {

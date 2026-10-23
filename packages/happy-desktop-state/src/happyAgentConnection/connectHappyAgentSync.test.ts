@@ -1237,6 +1237,98 @@ it("marks pending messages accepted and moves them under the run that took them"
     expect(chat.session?.status).toBe("running");
 });
 
+it.each(["run.started", "run.boundary"] as const)(
+    "keeps an accepted message visible in every %s snapshot",
+    async (eventType) => {
+        const { daemon, chat, sessionId } = await liveHarness();
+        const previous = fakeRun({ id: "previous", status: "running", startedAt: 1 });
+        daemon.eventEmit("run.started", {
+            agentId: sessionId,
+            run: previous,
+            acceptedMessageIds: [],
+        });
+        daemon.eventEmit("message.created", {
+            agentId: sessionId,
+            message: fakeUserMessage({ id: "next", delivery: "steer" }),
+            runId: null,
+        });
+        await vi.waitFor(() => expect(userMessages(chat.elements)).toHaveLength(1));
+        const before = chat.deltas.length;
+        const startedRun = fakeRun({ id: "next-run", status: "running", startedAt: 2 });
+        if (eventType === "run.started") {
+            daemon.eventEmit(eventType, {
+                agentId: sessionId,
+                run: startedRun,
+                acceptedMessageIds: ["next"],
+            });
+        } else {
+            daemon.eventEmit(eventType, {
+                agentId: sessionId,
+                finishedRun: { ...previous, status: "completed", endedAt: 2 },
+                startedRun,
+                acceptedMessageIds: ["next"],
+            });
+        }
+        await vi.waitFor(() => expect(userMessages(chat.elements)[0]?.groupId).toBe(startedRun.id));
+        const published = chat.deltas
+            .slice(before)
+            .filter((delta) => delta.type === "elements_changed");
+        expect(published.length).toBeGreaterThan(0);
+        for (const delta of published)
+            expect(userMessages(delta.elements).map((message) => message.messageId)).toEqual([
+                "next",
+            ]);
+    },
+);
+
+it("preserves the daemon's message order when timestamps tie", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const project = daemon.projectSeed({ id: "project-a" });
+    daemon.agentSeed(project.id, { id: "agent-a" });
+    daemon.historySet("agent-a", [
+        fakeRun({
+            id: "z-first-run",
+            startedAt: 1,
+            messages: [
+                fakeAgentMessage({ id: "z-first", content: [{ type: "text", text: "First" }] }),
+                fakeAgentMessage({ id: "a-second", content: [{ type: "text", text: "Second" }] }),
+            ],
+        }),
+        fakeRun({
+            id: "a-second-run",
+            startedAt: 2,
+            messages: [fakeAgentMessage({ id: "last", content: [{ type: "text", text: "Last" }] })],
+        }),
+    ]);
+    const { connection } = harnessOpen(daemon);
+    groupsWatch(connection);
+    const chat = sessionWatch(connection, "agent-a");
+    await vi.waitFor(() => expect(agentTexts(chat.elements)).toHaveLength(3));
+    expect(agentTexts(chat.elements).map((element) => element.text)).toEqual([
+        "First",
+        "Second",
+        "Last",
+    ]);
+});
+
+it("preserves live run order when their start timestamps tie", async () => {
+    const { daemon, chat, sessionId } = await liveHarness();
+    for (const [id, text] of [
+        ["z-first-run", "First"],
+        ["a-second-run", "Second"],
+    ] as const) {
+        const run = fakeRun({ id, startedAt: 1 });
+        daemon.eventEmit("run.started", { agentId: sessionId, run, acceptedMessageIds: [] });
+        daemon.eventEmit("message.created", {
+            agentId: sessionId,
+            message: fakeAgentMessage({ id, content: [{ type: "text", text }] }),
+            runId: run.id,
+        });
+    }
+    await vi.waitFor(() => expect(agentTexts(chat.elements)).toHaveLength(2));
+    expect(agentTexts(chat.elements).map((element) => element.text)).toEqual(["First", "Second"]);
+});
+
 it("starts sends without waiting for draft persistence or another send", async () => {
     const { connection, daemon, sessionId } = await liveHarness();
     const releaseDraft = daemon.pause("saveAgentDraft");
