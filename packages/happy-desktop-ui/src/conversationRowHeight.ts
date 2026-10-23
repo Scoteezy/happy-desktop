@@ -384,6 +384,8 @@ const STEERING_QUOTE_MARGIN = 16;
 /** Transcript request chrome from happy-agent-chat.css / approval-card.css. */
 const USER_INPUT_HORIZONTAL_MARGIN = 32;
 const USER_INPUT_LEGEND_HORIZONTAL_PADDING = 24;
+/** The context block's 6px/8px vertical padding around its Markdown body. */
+const USER_INPUT_CONTEXT_VERTICAL_PADDING = 14;
 const USER_INPUT_OPTION_HORIZONTAL_CHROME = 51;
 const USER_INPUT_QUESTION_LEGEND_CHROME = 30;
 const USER_INPUT_QUESTION_GAP = 8;
@@ -719,7 +721,16 @@ function userInputRequestHeight(
     const contentWidth = width - USER_INPUT_HORIZONTAL_MARGIN;
     const promptMeasure = contentWidth - USER_INPUT_LEGEND_HORIZONTAL_PADDING;
     const optionMeasure = contentWidth - USER_INPUT_OPTION_HORIZONTAL_CHROME;
-    let total = 0;
+    /* The shared Markdown context reads above the first question in both
+       states, through the same body model as an agent reply. */
+    let total = request.context
+        ? USER_INPUT_CONTEXT_VERTICAL_PADDING +
+          markdownBodyHeight(
+              messageReferencesResolve(request.context, undefined, false),
+              promptMeasure,
+              cache,
+          )
+        : 0;
     for (const [questionIndex, question] of request.questions.entries()) {
         if (questionIndex > 0) total += USER_INPUT_QUESTION_GAP;
         total +=
