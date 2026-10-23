@@ -1472,7 +1472,15 @@ const viewMenu: MenuItemConstructorOptions = {
             click: () => zoomStep((level) => level - 0.5),
         },
         { type: "separator" },
-        { role: "togglefullscreen" },
+        /* Full screen answers to Command-Shift-N on macOS, where the menu shows
+           it. The role's own Control-Command-F stays on a hidden twin, as the
+           zoom key does above. Elsewhere the role keeps its F11. */
+        ...(process.platform === "darwin"
+            ? ([
+                  { role: "togglefullscreen", accelerator: "Command+Shift+N" },
+                  { role: "togglefullscreen", accelerator: "Control+Command+F", visible: false },
+              ] satisfies MenuItemConstructorOptions[])
+            : [{ role: "togglefullscreen" } satisfies MenuItemConstructorOptions]),
     ],
 };
 
