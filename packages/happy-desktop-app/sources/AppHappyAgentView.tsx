@@ -258,6 +258,7 @@ import {
     type HappyAgentSurfaceReferenceView,
     HappyAgentSurfaceChatPanel,
     type HappyAgentSurfaceChatToggle,
+    type HappyAgentSurfaceWidthToggle,
     HappyAgentTodoSurfacePage,
     HappyAgentMessagesSurfacePage,
     HappyAgentDocumentSurfacePage,
@@ -5744,6 +5745,14 @@ function HappyAgentSurfaceContent(props: {
                   },
               }
             : undefined;
+    // A document or chat reads on its centred column until the reader widens
+    // it, and stays as they left it.
+    const expanded = catalog.expanded.has(surface.id);
+    const width: HappyAgentSurfaceWidthToggle = {
+        expanded,
+        onToggle: () =>
+            catalogStore.surfaceWidthUpdate(surface.id, expanded ? "centered" : "expanded"),
+    };
     // The address only asks for the chat; where it is held is the Surface's
     // to say. An address naming any other conversation shows none, and the
     // window replaces it with the Surface's own.
@@ -5778,6 +5787,7 @@ function HappyAgentSurfaceContent(props: {
                     store={props.surfaces.document(surface.id)}
                     surface={view}
                     user={documentUserOf(catalog)}
+                    width={width}
                 />
             );
         if (surface.type.kind === "system_monitor")
@@ -5802,6 +5812,7 @@ function HappyAgentSurfaceContent(props: {
                     surface={view}
                     {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
                     {...(catalog.viewer ? { viewer: catalog.viewer } : {})}
+                    width={width}
                 />
             );
         if (surface.type.kind === "calendar")
@@ -5985,6 +5996,7 @@ function HappyAgentDocumentSurface(props: {
     surface: HappyAgentSurfaceView;
     user: DocumentEditorUser;
     chat?: HappyAgentSurfaceChatToggle;
+    width: HappyAgentSurfaceWidthToggle;
     focusOnType: boolean;
 }) {
     const store = props.store;
@@ -6021,6 +6033,7 @@ function HappyAgentDocumentSurface(props: {
                 : {})}
             focusOnType={props.focusOnType}
             surface={props.surface}
+            width={props.width}
         />
     );
 }
@@ -6128,6 +6141,7 @@ function HappyAgentMessagesSurface(props: {
     viewer?: { readonly userId: string | null };
     unavailable?: string;
     chat?: HappyAgentSurfaceChatToggle;
+    width: HappyAgentSurfaceWidthToggle;
     focusOnType: boolean;
 }) {
     const store = props.store;
@@ -6149,6 +6163,7 @@ function HappyAgentMessagesSurface(props: {
             surface={props.surface}
             {...(props.unavailable === undefined ? {} : { unavailable: props.unavailable })}
             {...(props.viewer ? { viewer: props.viewer } : {})}
+            width={props.width}
         />
     );
 }

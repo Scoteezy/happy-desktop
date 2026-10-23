@@ -28,6 +28,7 @@ import { HappyAgentSurfaceCreateDialog } from "../../src/pages/surfaces/HappyAge
 import {
     HappyAgentSurfaceHeader,
     type HappyAgentSurfaceChatToggle,
+    type HappyAgentSurfaceWidthToggle,
 } from "../../src/pages/surfaces/HappyAgentSurfaceHeader";
 import {
     HappyAgentSurfaceReferencePage,
@@ -154,21 +155,25 @@ const OTHER = { name: "Ada Park", tone: "mint" } as const;
 
 /**
  * The page on a document held here, so writing in it can be tried in the
- * workbench: headings, lists, `/`, and the bar over selected text.
+ * workbench: headings, lists, `/`, the bar over selected text, and widening
+ * it to the whole pane.
  */
 function LiveDocumentPage(props: {
     readonly surface?: HappyAgentSurfaceView;
     readonly markdown?: string;
     readonly chat?: HappyAgentSurfaceChatToggle;
     readonly focusKey?: string;
+    readonly expanded?: boolean;
 }) {
     const window = useDocumentAlone(props.markdown ?? HOUSE_TEXT, READER);
+    const [expanded, setExpanded] = useState(props.expanded === true);
     return (
         <HappyAgentDocumentSurfacePage
             {...(props.chat ? { chat: props.chat, focusOnType: !props.chat.open } : {})}
             {...(props.focusKey === undefined ? {} : { focusKey: props.focusKey })}
             content={{ kind: "live", ...window }}
             surface={props.surface ?? HOUSE}
+            width={{ expanded, onToggle: () => setExpanded(!expanded) }}
         />
     );
 }
@@ -1025,6 +1030,7 @@ const HEADERS: readonly {
     readonly width: number;
     readonly surface: HappyAgentSurfaceView;
     readonly chat?: HappyAgentSurfaceChatToggle;
+    readonly pageWidth?: HappyAgentSurfaceWidthToggle;
 }[] = [
     { key: "creator", width: 760, surface: GROCERIES },
     { key: "nobody", width: 760, surface: { ...GROCERIES, creator: undefined } },
@@ -1046,6 +1052,21 @@ const HEADERS: readonly {
         width: 760,
         surface: GROCERIES,
         chat: { open: false, onToggle: noop, working: true },
+    },
+    // A document's page, centred and then across the whole pane.
+    {
+        key: "width-centered",
+        width: 760,
+        surface: HOUSE,
+        chat: { open: false, onToggle: noop },
+        pageWidth: { expanded: false, onToggle: noop },
+    },
+    {
+        key: "width-expanded",
+        width: 760,
+        surface: HOUSE,
+        chat: { open: false, onToggle: noop },
+        pageWidth: { expanded: true, onToggle: noop },
     },
     // A chat Surface names the chat beside it for its agent.
     {
@@ -1219,6 +1240,7 @@ export function HappyAgentSurfacesBlueprintPage() {
                         >
                             <HappyAgentSurfaceHeader
                                 {...(entry.chat ? { chat: entry.chat } : {})}
+                                {...(entry.pageWidth ? { width: entry.pageWidth } : {})}
                                 surface={entry.surface}
                             />
                         </div>
@@ -1284,6 +1306,16 @@ export function HappyAgentSurfacesBlueprintPage() {
                 window={{ width: 1100, height: 760 }}
             >
                 <LiveDocumentPage />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Live. The document across the whole pane, its text still starting under the header's name; the header's button brings it back to its column."
+                label="Document, full width"
+                number="08a"
+                screen="08a-document-full-width-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <LiveDocumentPage expanded />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen
@@ -1550,6 +1582,16 @@ export function HappyAgentSurfacesBlueprintPage() {
                 window={{ width: 1100, height: 760 }}
             >
                 <LiveMessagesPage />
+            </FullScreenSpecimen>
+
+            <FullScreenSpecimen
+                detail="Live. The chat and its composer across the whole pane; the header's button brings them back to their column."
+                label="Chat, full width"
+                number="11b2"
+                screen="11b2-chat-full-width-1100x760"
+                window={{ width: 1100, height: 760 }}
+            >
+                <LiveMessagesPage expanded />
             </FullScreenSpecimen>
 
             <FullScreenSpecimen

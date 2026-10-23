@@ -9,7 +9,7 @@ import type {
 import { Banner } from "../../Banner";
 import { Button } from "../../Button";
 import { ConversationDock } from "../../ConversationDock";
-import { contentWidth, messageRowHeight } from "../../conversationRowHeight";
+import { messageRowHeight } from "../../conversationRowHeight";
 import { EmptyState } from "../../EmptyState";
 import { Message, MessageList } from "../../Message";
 import {
@@ -22,8 +22,13 @@ import { ModalOverlay } from "../../ModalOverlay";
 import {
     HappyAgentSurfaceHeader,
     type HappyAgentSurfaceChatToggle,
+    type HappyAgentSurfaceWidthToggle,
 } from "./HappyAgentSurfaceHeader";
-import { initialsOf, type HappyAgentSurfaceView } from "./surfacePresentation";
+import {
+    initialsOf,
+    SURFACE_READING_COLUMN,
+    type HappyAgentSurfaceView,
+} from "./surfacePresentation";
 
 /** What a deleted message reads as, in its place in the conversation. */
 const DELETED_TEXT = "This message was deleted";
@@ -64,6 +69,8 @@ export interface HappyAgentMessagesSurfacePageProps {
     focusOnType?: boolean;
     /** The Surface's shared chat with its agent, toggled from the header. */
     chat?: HappyAgentSurfaceChatToggle;
+    /** Centred on the reading column, or across the whole pane, switched from the header. */
+    width?: HappyAgentSurfaceWidthToggle;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -139,6 +146,10 @@ export function HappyAgentMessagesSurfacePage(props: HappyAgentMessagesSurfacePa
     const authorOf = (row: Row) => (own(row) ? SELF : rowAuthor(row));
     const grouped = (index: number) =>
         index > 0 && authorOf(rows[index - 1]!) === authorOf(rows[index]!);
+    const expanded = props.width?.expanded === true;
+    // The width a row lays its text out in: the reading column's, or the pane's.
+    const contentWidth = (width: number) =>
+        expanded ? width : Math.min(width, SURFACE_READING_COLUMN);
     const rowHeight = (index: number, width: number) => {
         const row = rows[index];
         if (row === undefined) return undefined;
@@ -262,7 +273,7 @@ export function HappyAgentMessagesSurfacePage(props: HappyAgentMessagesSurfacePa
         return (
             <MessageList
                 className="happy-agent-messages-surface__list"
-                estimateDependencies={[viewer?.userId]}
+                estimateDependencies={[viewer?.userId, expanded]}
                 estimateRowSize={rowHeight}
                 estimateRowWidth={contentWidth}
                 estimateRows={rows.map((row) => row.message)}
@@ -308,6 +319,7 @@ export function HappyAgentMessagesSurfacePage(props: HappyAgentMessagesSurfacePa
             className={["happy-agent-messages-surface", props.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="happy-agent-messages-surface"
             data-testid={props["data-testid"]}
+            data-width={expanded ? "expanded" : "centered"}
             onKeyDown={(event) => {
                 if (event.key !== "Escape" || editing === undefined) return;
                 event.preventDefault();
@@ -317,6 +329,7 @@ export function HappyAgentMessagesSurfacePage(props: HappyAgentMessagesSurfacePa
         >
             <HappyAgentSurfaceHeader
                 {...(props.chat ? { chat: props.chat } : {})}
+                {...(props.width ? { width: props.width } : {})}
                 surface={props.surface}
             />
             {body()}

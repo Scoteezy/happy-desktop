@@ -109,6 +109,7 @@ export {
     type HappyAgentSurfaceCreateRefusal,
     type HappyAgentSurfaceCreateState,
     type HappyAgentSurfaceMembershipAction,
+    type HappyAgentSurfaceWidth,
 } from "./surfaces/surfaceCatalogStore.js";
 export {
     HAPPY_AGENT_TODO_TEXT_LIMIT,

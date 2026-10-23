@@ -167,6 +167,12 @@ export type HappyAgentSurfaceChatOpening =
 export type HappyAgentSurfaceChatActivity = "running" | "waiting" | "awaitingInput" | "idle";
 
 /**
+ * How wide a Surface's page lays out what it holds: centred on a reading
+ * column, or across the whole pane.
+ */
+export type HappyAgentSurfaceWidth = "centered" | "expanded";
+
+/**
  * A Surface this window asked for that the Happy Agent turned down: what it
  * was to be, and why, in words for the reader.
  */
@@ -240,6 +246,11 @@ export interface HappyAgentSurfaceCatalogSnapshot {
      * Surface changes nothing.
      */
     readonly chatsShown: ReadonlySet<HappyAgentSurfaceId>;
+    /**
+     * The Surfaces the reader widened to the whole pane, remembered between
+     * runs. Every other Surface is centred on its reading column.
+     */
+    readonly expanded: ReadonlySet<HappyAgentSurfaceId>;
     /** The last read failed; the retained catalog stays visible and the read is retried. */
     readonly error?: UserError;
 }
@@ -298,6 +309,8 @@ export interface HappyAgentSurfaceCatalogStore {
      * Surface is remembered among `chatsShown`.
      */
     chatOpen(surfaceId: HappyAgentSurfaceId): Promise<HappyAgentSessionLocation>;
+    /** Lays a Surface's page out centred on its reading column, or across the whole pane. */
+    surfaceWidthUpdate(surfaceId: HappyAgentSurfaceId, width: HappyAgentSurfaceWidth): void;
     /**
      * Closes a Surface's chat: stops opening it, or forgets why it could not
      * be opened, and takes the Surface out of `chatsShown`.
@@ -336,6 +349,11 @@ export interface HappyAgentSurfaceCatalogDeps {
         read(): readonly string[];
         write(surfaceIds: readonly HappyAgentSurfaceId[]): void;
     };
+    /** Where `expanded` is kept between runs, as `chatsShownMemory` keeps its set. */
+    readonly expandedMemory?: {
+        read(): readonly string[];
+        write(surfaceIds: readonly HappyAgentSurfaceId[]): void;
+    };
     /**
      * Told of each list this store starts making, with a promise that settles
      * once the daemon has it — rejected if the daemon refused it — so a store
@@ -356,6 +374,7 @@ const CHAT_OPENING: HappyAgentSurfaceChatOpening = { phase: "opening" };
 const NO_CHATS: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSessionLocation> = new Map();
 const NO_CHAT_ACTIVITY: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatActivity> = new Map();
 const NO_CHATS_SHOWN: ReadonlySet<HappyAgentSurfaceId> = new Set();
+const NO_EXPANDED: ReadonlySet<HappyAgentSurfaceId> = new Set();
 
 const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     availability: "unsupported",
@@ -370,6 +389,7 @@ const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     chats: NO_CHATS,
     chatActivity: NO_CHAT_ACTIVITY,
     chatsShown: NO_CHATS_SHOWN,
+    expanded: NO_EXPANDED,
 };
 
 /**
@@ -392,6 +412,7 @@ export const happyAgentSurfaceCatalogStoreNoop: HappyAgentSurfaceCatalogStore = 
             new UserError("This Happy Agent has no shared documents, todo lists or calendars."),
         ),
     chatOpenCancel: () => undefined,
+    surfaceWidthUpdate: () => undefined,
     [Symbol.dispose]: () => undefined,
 };
 
@@ -523,8 +544,8 @@ async function base64Of(blob: Blob): Promise<string> {
     return btoa(binary);
 }
 
-/** The Surfaces whose chat was left open in an earlier run, as the host kept them. */
-function chatsShownRemembered(
+/** A set of Surfaces remembered from an earlier run, as the host kept it. */
+function surfacesRemembered(
     memory: HappyAgentSurfaceCatalogDeps["chatsShownMemory"],
 ): ReadonlySet<HappyAgentSurfaceId> {
     let remembered: readonly string[] = [];
@@ -533,9 +554,7 @@ function chatsShownRemembered(
     } catch {
         // Memory the host cannot read is memory of nothing.
     }
-    return remembered.length === 0
-        ? NO_CHATS_SHOWN
-        : new Set(remembered as readonly HappyAgentSurfaceId[]);
+    return new Set(remembered as readonly HappyAgentSurfaceId[]);
 }
 
 /** What an `agent.updated` event carries. */
@@ -625,7 +644,8 @@ export function happyAgentSurfaceCatalogStoreCreate(
         chatsOpening: NO_CHATS_OPENING,
         chats: NO_CHATS,
         chatActivity: NO_CHAT_ACTIVITY,
-        chatsShown: chatsShownRemembered(deps.chatsShownMemory),
+        chatsShown: surfacesRemembered(deps.chatsShownMemory),
+        expanded: surfacesRemembered(deps.expandedMemory),
     };
     let ops: MembershipOp[] = [];
     /** Chats being opened, each with its own way to stop asking. */
@@ -1239,19 +1259,31 @@ export function happyAgentSurfaceCatalogStoreCreate(
         targetsTimer = undefined;
     };
 
-    /** Records whether a Surface's chat is left open beside it, here and between runs. */
-    const chatShownRemember = (surfaceId: HappyAgentSurfaceId, shown: boolean): void => {
-        if (disposed || snapshot.chatsShown.has(surfaceId) === shown) return;
-        const chatsShown = new Set(snapshot.chatsShown);
-        if (shown) chatsShown.add(surfaceId);
-        else chatsShown.delete(surfaceId);
-        publish({ chatsShown });
+    /**
+     * Adds a Surface to one of the reader's remembered sets, or takes it out,
+     * here and between runs.
+     */
+    const surfaceRemember = (
+        key: "chatsShown" | "expanded",
+        memory: HappyAgentSurfaceCatalogDeps["chatsShownMemory"],
+        surfaceId: HappyAgentSurfaceId,
+        member: boolean,
+    ): void => {
+        if (disposed || snapshot[key].has(surfaceId) === member) return;
+        const next = new Set(snapshot[key]);
+        if (member) next.add(surfaceId);
+        else next.delete(surfaceId);
+        publish({ [key]: next });
         try {
-            deps.chatsShownMemory?.write([...chatsShown]);
+            memory?.write([...next]);
         } catch {
             // Memory the host refused still keeps this run's.
         }
     };
+
+    /** Records whether a Surface's chat is left open beside it. */
+    const chatShownRemember = (surfaceId: HappyAgentSurfaceId, shown: boolean): void =>
+        surfaceRemember("chatsShown", deps.chatsShownMemory, surfaceId, shown);
 
     /** Sends the queued acts one at a time, in the order they were asked for. */
     const queueRun = async (): Promise<void> => {
@@ -1579,6 +1611,9 @@ export function happyAgentSurfaceCatalogStoreCreate(
                 chatsOpening: new Map([...snapshot.chatsOpening, [surfaceId, CHAT_OPENING]]),
             });
             return answer;
+        },
+        surfaceWidthUpdate(surfaceId, width) {
+            surfaceRemember("expanded", deps.expandedMemory, surfaceId, width === "expanded");
         },
         chatOpenCancel(surfaceId) {
             chatShownRemember(surfaceId, false);

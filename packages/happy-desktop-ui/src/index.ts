@@ -812,7 +812,10 @@ export {
     type HappyAgentSurfaceChatPanelProps,
     type HappyAgentSurfaceChatPanelState,
 } from "./pages/surfaces/HappyAgentSurfaceChatPanel";
-export type { HappyAgentSurfaceChatToggle } from "./pages/surfaces/HappyAgentSurfaceHeader";
+export type {
+    HappyAgentSurfaceChatToggle,
+    HappyAgentSurfaceWidthToggle,
+} from "./pages/surfaces/HappyAgentSurfaceHeader";
 export {
     HappyAgentCalendarSurfacePage,
     type HappyAgentCalendarSurfacePageProps,

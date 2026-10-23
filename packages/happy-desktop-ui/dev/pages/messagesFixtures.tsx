@@ -109,8 +109,8 @@ export const messagesHandlers = {
 };
 
 /**
- * The page on a conversation held here, so posting, editing, and deleting can
- * be tried in the workbench. A post shows as sending for a moment, as it does
+ * The page on a conversation held here, so posting, editing, deleting, and
+ * widening it can be tried in the workbench. A post shows as sending for a moment, as it does
  * while the Happy Agent takes it. The application holds the same snapshot in
  * its store.
  */
@@ -118,8 +118,10 @@ export function LiveMessagesPage(props: {
     readonly initial?: HappyAgentSurfaceMessagesSnapshot;
     readonly chat?: HappyAgentSurfaceChatToggle;
     readonly focusOnType?: boolean;
+    readonly expanded?: boolean;
 }) {
     const [snapshot, setSnapshot] = useState(props.initial ?? MESSAGES_SNAPSHOT);
+    const [expanded, setExpanded] = useState(props.expanded === true);
     const set = (patch: Partial<HappyAgentSurfaceMessagesSnapshot>) =>
         setSnapshot((current) => ({ ...current, ...patch }));
     const at = MORNING + 20 * 60_000;
@@ -129,6 +131,7 @@ export function LiveMessagesPage(props: {
             {...(props.chat ? { chat: props.chat } : {})}
             focusOnType={props.focusOnType ?? !props.chat?.open}
             messages={snapshot}
+            width={{ expanded, onToggle: () => setExpanded(!expanded) }}
             onDraftChange={(draft) => set({ draft })}
             onDraftSubmit={() => {
                 const text = snapshot.draft.trim();

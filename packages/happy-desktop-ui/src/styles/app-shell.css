@@ -639,12 +639,20 @@
     .happy-agent-artifacts__header,
 .happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed]
     .happy-agent-artifact-viewer__header,
-.happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed] .happy-agent-surface-header,
 .happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed]
     .happy-desktop-app-shell__workspace
     > .happy-tabbed-pane:first-child
     .happy-tabbed-pane__bar {
     padding-left: calc(var(--happy-desktop-app-shell-chrome-inset) + 44px);
+}
+
+/* A Surface's header keeps its name over the page's text, unless that would
+   put it under the lights. */
+.happy-desktop-app-shell[data-window-controls][data-sidebar-collapsed] .happy-agent-surface-header {
+    padding-left: max(
+        calc(var(--happy-desktop-app-shell-chrome-inset) + 44px),
+        var(--happy-agent-surface-header-inline)
+    );
 }
 
 /* And on the surface that takes the whole window. A `fill` overlay covers the

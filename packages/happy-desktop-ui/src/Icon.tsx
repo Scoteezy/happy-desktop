@@ -84,7 +84,9 @@ export type IconName =
     | "repeat"
     | "location"
     | "dot"
-    | "pulse";
+    | "pulse"
+    | "width-expand"
+    | "width-center";
 export type IconProps = {
     name: IconName;
     /*
@@ -242,6 +244,10 @@ const glyphs: Record<IconName, IconGlyph> = {
     // what happens to a list rather than to one row.
     fold: { set: "octicons", name: "fold" },
     unfold: { set: "octicons", name: "unfold" },
+    // A page laid across the whole pane, or brought back to its reading
+    // column: corners pushed out, and pulled back in.
+    "width-expand": { set: "ionicons", name: "expand-outline" },
+    "width-center": { set: "ionicons", name: "contract-outline" },
     // Finding your own place again: the crosshair that centres on where you
     // already are, not an arrow that takes you somewhere else.
     locate: { set: "ionicons", name: "locate-outline" },

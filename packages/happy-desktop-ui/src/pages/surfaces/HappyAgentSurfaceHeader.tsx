@@ -9,6 +9,17 @@ export interface HappyAgentSurfaceHeaderProps {
     actions?: ReactNode;
     /** The Surface's shared chat, opened beside it; absent for a type that has none. */
     chat?: HappyAgentSurfaceChatToggle;
+    /** Whether the page is centred or across the whole pane; absent for a type that is neither. */
+    width?: HappyAgentSurfaceWidthToggle;
+}
+
+/**
+ * Whether a Surface's page is centred on its reading column or laid across
+ * the whole pane, and how to switch.
+ */
+export interface HappyAgentSurfaceWidthToggle {
+    readonly expanded: boolean;
+    readonly onToggle: () => void;
 }
 
 /** Whether a Surface's shared chat is open beside it, and how to open or close it. */
@@ -26,6 +37,11 @@ export interface HappyAgentSurfaceChatToggle {
  * The header band of one Surface, whatever its type: one line with its name,
  * who made it when that is known, and the faces of who is in it. Joining and
  * leaving belong to its row in the sidebar.
+ *
+ * A page with a reading column states it in `--happy-agent-surface-column`
+ * (and how far into it its text starts, `--happy-agent-surface-column-inset`,
+ * and the least room kept at the pane's edges, `--happy-agent-surface-gutter`),
+ * and the band lines its name and controls up with that column.
  *
  * It is the window's shared header band (`PanelHeader`), so it is a chat
  * header's height and the row the window is dragged by. Who made it is
@@ -56,6 +72,20 @@ export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
             {props.actions === undefined ? null : (
                 <div className="happy-agent-surface-header__actions">{props.actions}</div>
             )}
+            {props.width ? (
+                <Button
+                    aria-label={props.width.expanded ? "Center the page" : "Use the full width"}
+                    aria-pressed={props.width.expanded}
+                    className="happy-agent-surface-header__width"
+                    data-testid="happy-agent-surface-width-toggle"
+                    icon={props.width.expanded ? "width-center" : "width-expand"}
+                    iconOnly
+                    onClick={props.width.onToggle}
+                    size="small"
+                    title={props.width.expanded ? "Center the page" : "Use the full width"}
+                    variant="ghost"
+                />
+            ) : null}
             <SurfaceMemberStack members={props.surface.members} />
             {/* At the edge the chat opens from. */}
             {props.chat ? (

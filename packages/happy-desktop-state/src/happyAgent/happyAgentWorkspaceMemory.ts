@@ -129,6 +129,8 @@ export interface HappyAgentWorkspaceMemoryDocument {
     readonly floatyCollapsed?: readonly string[];
     /** The Surfaces whose shared chat the reader left open beside them, oldest first. */
     readonly surfaceChatsShown?: readonly string[];
+    /** The Surfaces the reader widened to the whole pane, oldest first. */
+    readonly surfacesExpanded?: readonly string[];
 }
 
 /**
@@ -185,6 +187,9 @@ export interface HappyAgentWorkspaceMemoryStore {
     /** The Surfaces whose shared chat the reader left open beside them. */
     surfaceChatsShownRead(): readonly string[];
     surfaceChatsShownWrite(surfaceIds: readonly string[]): void;
+    /** The Surfaces the reader widened to the whole pane. */
+    surfacesExpandedRead(): readonly string[];
+    surfacesExpandedWrite(surfaceIds: readonly string[]): void;
 }
 
 const FILE_KINDS: readonly HappyAgentFileTabKind[] = ["file", "diff", "document", "media"];
@@ -193,8 +198,9 @@ const RECENT_SESSION_LIMIT_PER_GROUP = 200;
 const RECENT_FILE_LIMIT_PER_GROUP = 80;
 /** Folded floaties remembered; the oldest fold is forgotten first. */
 const FLOATY_COLLAPSED_LIMIT = 500;
-/** Surfaces remembered with their chat open; the oldest is forgotten first. */
+/** Surfaces remembered with their chat open, or widened; the oldest is forgotten first. */
 const SURFACE_CHATS_SHOWN_LIMIT = 500;
+const SURFACES_EXPANDED_LIMIT = 500;
 
 /** The distinct non-empty strings of a stored list, newest `limit` kept. */
 function storedKeysParse(value: unknown, limit: number): readonly string[] {
@@ -407,6 +413,7 @@ export function happyAgentWorkspaceMemoryStoreCreate(
     let recentTabs: readonly HappyAgentRecentTabMemory[] = [];
     let floatyCollapsed: readonly string[] = [];
     let surfaceChatsShown: readonly string[] = [];
+    let surfacesExpanded: readonly string[] = [];
     const stored = (() => {
         try {
             return persistence?.read();
@@ -437,6 +444,7 @@ export function happyAgentWorkspaceMemoryStoreCreate(
         }
         floatyCollapsed = storedKeysParse(document.floatyCollapsed, FLOATY_COLLAPSED_LIMIT);
         surfaceChatsShown = storedKeysParse(document.surfaceChatsShown, SURFACE_CHATS_SHOWN_LIMIT);
+        surfacesExpanded = storedKeysParse(document.surfacesExpanded, SURFACES_EXPANDED_LIMIT);
     }
 
     const flush = (): void => {
@@ -447,6 +455,7 @@ export function happyAgentWorkspaceMemoryStoreCreate(
                 recentTabs,
                 ...(floatyCollapsed.length === 0 ? {} : { floatyCollapsed }),
                 ...(surfaceChatsShown.length === 0 ? {} : { surfaceChatsShown }),
+                ...(surfacesExpanded.length === 0 ? {} : { surfacesExpanded }),
             });
         } catch {
             // Storage the host refused still keeps this client's memory alive.
@@ -532,6 +541,11 @@ export function happyAgentWorkspaceMemoryStoreCreate(
         surfaceChatsShownRead: () => surfaceChatsShown,
         surfaceChatsShownWrite(surfaceIds) {
             surfaceChatsShown = [...new Set(surfaceIds)].slice(-SURFACE_CHATS_SHOWN_LIMIT);
+            flush();
+        },
+        surfacesExpandedRead: () => surfacesExpanded,
+        surfacesExpandedWrite(surfaceIds) {
+            surfacesExpanded = [...new Set(surfaceIds)].slice(-SURFACES_EXPANDED_LIMIT);
             flush();
         },
     };

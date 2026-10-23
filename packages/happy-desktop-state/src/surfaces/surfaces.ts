@@ -87,6 +87,8 @@ export interface HappyAgentSurfacesDeps {
     readonly chatFound?: HappyAgentSurfaceCatalogDeps["chatFound"];
     /** Where the Surfaces whose chat the reader left open are remembered between runs. */
     readonly chatsShownMemory?: HappyAgentSurfaceCatalogDeps["chatsShownMemory"];
+    /** Where the Surfaces the reader widened are remembered between runs. */
+    readonly expandedMemory?: HappyAgentSurfaceCatalogDeps["expandedMemory"];
 }
 
 export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAgentSurfaces {
@@ -118,6 +120,7 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
                     sync: deps.sync,
                     ...(deps.chatFound ? { chatFound: deps.chatFound } : {}),
                     ...(deps.chatsShownMemory ? { chatsShownMemory: deps.chatsShownMemory } : {}),
+                    ...(deps.expandedMemory ? { expandedMemory: deps.expandedMemory } : {}),
                     surfaceCreating(surfaceId, created) {
                         creating.set(surfaceId, created);
                         const done = (): void => {

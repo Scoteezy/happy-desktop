@@ -12,6 +12,7 @@ import { ScrollArea } from "../../Scrollbar";
 import {
     HappyAgentSurfaceHeader,
     type HappyAgentSurfaceChatToggle,
+    type HappyAgentSurfaceWidthToggle,
 } from "./HappyAgentSurfaceHeader";
 import type { HappyAgentSurfaceView } from "./surfacePresentation";
 
@@ -63,6 +64,8 @@ export interface HappyAgentDocumentSurfacePageProps {
     focusKey?: string;
     /** The Surface's shared chat, toggled from the header. */
     chat?: HappyAgentSurfaceChatToggle;
+    /** Centred on the reading column, or across the whole pane, switched from the header. */
+    width?: HappyAgentSurfaceWidthToggle;
     className?: string;
     "data-testid"?: string;
     style?: CSSProperties;
@@ -75,7 +78,8 @@ const SYNC_LABELS = {
 
 /**
  * HappyAgentDocumentSurfacePage — one shared document: its header, then the
- * document itself on the reading measure, always open for writing.
+ * document itself on the reading column, or across the whole pane, always open
+ * for writing. The header's name stands over the first letter of the text.
  *
  * What is on the page is what the document is: headings, lists, quotes, and
  * code are drawn as they will read, and `/` turns a line into one. Everyone in
@@ -174,11 +178,13 @@ export function HappyAgentDocumentSurfacePage(props: HappyAgentDocumentSurfacePa
             className={["happy-agent-document-surface", props.className].filter(Boolean).join(" ")}
             data-happy-desktop-ui="happy-agent-document-surface"
             data-testid={props["data-testid"]}
+            data-width={props.width?.expanded ? "expanded" : "centered"}
             style={props.style}
         >
             <HappyAgentSurfaceHeader
                 actions={actions}
                 {...(props.chat ? { chat: props.chat } : {})}
+                {...(props.width ? { width: props.width } : {})}
                 surface={props.surface}
             />
             {body()}

@@ -780,6 +780,10 @@ export function happyAgentWorkspaceClientCreate(
                     read: () => memory.surfaceChatsShownRead(),
                     write: (surfaceIds) => memory.surfaceChatsShownWrite(surfaceIds),
                 },
+                expandedMemory: {
+                    read: () => memory.surfacesExpandedRead(),
+                    write: (surfaceIds) => memory.surfacesExpandedWrite(surfaceIds),
+                },
             });
             return surfaces;
         },

@@ -64,9 +64,17 @@
    The band itself is the shared PanelHeader, so its height, inset, and drag
    contract are a chat header's. These rules only lay out what it carries. */
 
-/* Measured so a narrow band can drop who made the Surface. */
+/* Measured so a narrow band can drop who made the Surface. Its name and its
+   controls stand on the edges of the page's text: the column the page states,
+   centred in the band, less how far into it the text starts. A page that states
+   none keeps the band's own 16px. */
 .happy-agent-surface-header {
+    --happy-agent-surface-header-inline: calc(
+        max(0px, (100% - var(--happy-agent-surface-column, 100%)) / 2) +
+            var(--happy-agent-surface-column-inset, 16px)
+    );
     container-type: inline-size;
+    padding-inline: var(--happy-agent-surface-header-inline);
 }
 
 /* The name and who made it share one lane, which takes the band's free space
@@ -122,6 +130,7 @@
 }
 
 /* Pressed while the chat is open beside the Surface, as a hovered ghost button looks. */
+.happy-agent-surface-header__width[aria-pressed="true"],
 .happy-agent-surface-header__chat[aria-pressed="true"] {
     background: var(--surface-ripple);
     color: var(--text);
@@ -171,6 +180,12 @@
     overflow-y: auto;
 }
 
+/* The cards' column, which the header lines up with. */
+.happy-agent-todo-surface {
+    --happy-agent-surface-column: 720px;
+    --happy-agent-surface-column-inset: 16px;
+}
+
 .happy-agent-todo-surface__content {
     display: flex;
     flex: 1 0 auto;
@@ -179,8 +194,8 @@
     gap: 12px;
     box-sizing: border-box;
     width: 100%;
-    max-width: 720px;
-    padding: 24px 16px 48px;
+    max-width: var(--happy-agent-surface-column);
+    padding: 24px var(--happy-agent-surface-column-inset) 48px;
 }
 
 /* Everything in the column is a card, so it reads over any part of the picture. */
@@ -392,8 +407,32 @@
 }
 
 /* ---- Document page -----------------------------------------------------
-   The editor stands on the reader's measure under the shared scrollbar; a
-   document only to be read is the shared Markdown reader. */
+   The editor stands on the reading column under the shared scrollbar, or
+   across the whole pane; a document only to be read is the shared Markdown
+   reader, on the same column. The column's 64px insets are the editor's
+   gutters, wide enough for the side menu beside each block, so the text and
+   the header's name start on one line. The column is
+   `SURFACE_READING_COLUMN`. */
+
+.happy-agent-document-surface {
+    --happy-agent-surface-column: 1040px;
+    --happy-agent-surface-column-inset: 64px;
+}
+
+.happy-agent-document-surface[data-width="expanded"],
+.happy-agent-messages-surface[data-width="expanded"] {
+    --happy-agent-surface-column: 100%;
+}
+
+.happy-agent-document-surface .happy-document-editor .bn-editor {
+    max-width: var(--happy-agent-surface-column);
+    padding-inline: var(--happy-agent-surface-column-inset);
+}
+
+.happy-agent-document-surface .happy-markdown-document__body {
+    max-width: var(--happy-agent-surface-column);
+    padding-inline: var(--happy-agent-surface-column-inset);
+}
 
 .happy-agent-document-surface__reading {
     display: flex;
@@ -422,15 +461,17 @@
     white-space: nowrap;
 }
 
-/* One quiet line on the measure, above the text it is about. */
+/* One quiet line on the text's own edges, above the text it is about. */
 .happy-agent-document-surface__notice {
     display: flex;
     flex: none;
     align-items: center;
     align-self: center;
     box-sizing: border-box;
-    width: calc(100% - 32px);
-    max-width: 704px;
+    width: calc(100% - 2 * var(--happy-agent-surface-column-inset));
+    max-width: calc(
+        var(--happy-agent-surface-column) - 2 * var(--happy-agent-surface-column-inset)
+    );
     min-height: 32px;
     margin: 8px 0 0;
     padding: 7px 12px;
@@ -453,13 +494,20 @@
 /* ---- Chat page --------------------------------------------------------- */
 
 /*
- * The conversation is centred at the shared readable measure, as a
- * conversation with an agent is; the scrollport stays full-bleed and only its
- * content column is capped.
+ * The conversation and its composer are centred on the reading column, wider
+ * than a conversation with an agent, or across the whole pane; the scrollport
+ * stays full-bleed and only its content column is capped. The header's name
+ * starts over the faces, 20px into the column as every message is.
  */
+.happy-agent-messages-surface {
+    --happy-agent-surface-column: 1040px;
+    --happy-agent-surface-column-inset: 20px;
+    --happy-chat-measure: var(--happy-agent-surface-column);
+}
+
 .happy-agent-messages-surface .happy-message-list__content {
     width: 100%;
-    max-width: var(--happy-chat-measure);
+    max-width: var(--happy-agent-surface-column);
     margin-inline: auto;
 }
 
