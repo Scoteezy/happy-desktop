@@ -6,6 +6,7 @@ import {
     type SpaceBatch,
     type SpaceBatchPosition,
     type SpaceSection,
+    type SpaceSidebarResponse,
 } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
@@ -98,20 +99,7 @@ export interface HappyAgentSpacesSidebarDocument {
     readonly seed: boolean;
 }
 
-/**
- * The fields the daemon adds to its sidebar answer ahead of the client's schema.
- * They are read here, at the one place the answer enters the store, and carried
- * typed from then on.
- */
-interface SidebarAnswer {
-    readonly artifactId: string;
-    readonly version: number;
-    readonly html: string;
-    readonly agentIcons?: Readonly<Record<string, HappyAgentSpaceIcon>>;
-    readonly seed?: boolean;
-}
-
-function sidebarOf(answer: SidebarAnswer): HappyAgentSpacesSidebarDocument {
+function sidebarOf(answer: SpaceSidebarResponse): HappyAgentSpacesSidebarDocument {
     return {
         artifactId: answer.artifactId,
         version: answer.version,
