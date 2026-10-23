@@ -60,6 +60,8 @@ function renderConversation(count: number, withShell = false) {
     let send!: () => void;
     let resize!: (height: number) => void;
     let question!: (answered: boolean) => void;
+    let stream!: (lines: number) => void;
+    let finish!: () => void;
     function Dock() {
         const [text, setText] = useState("");
         return (
@@ -101,6 +103,7 @@ function renderConversation(count: number, withShell = false) {
         });
         const [height, setHeight] = useState(700);
         const [running, setRunning] = useState(false);
+        finish = () => flushSync(() => setRunning(false));
         send = () =>
             flushSync(() =>
                 setEntries((previous) => [
@@ -109,6 +112,28 @@ function renderConversation(count: number, withShell = false) {
                 ]),
             );
         resize = (next) => flushSync(() => setHeight(next));
+        stream = (lines) =>
+            flushSync(() =>
+                setEntries((previous) => {
+                    const entry = message(
+                        "streaming-reply",
+                        Array.from(
+                            { length: lines },
+                            (_, index) =>
+                                `Streaming paragraph ${String(index)}. ${"A stable sentence. ".repeat(6)}`,
+                        ).join("\n\n"),
+                    );
+                    return previous.some(
+                        (item) => item.kind === "message" && item.message.id === "streaming-reply",
+                    )
+                        ? previous.map((item) =>
+                              item.kind === "message" && item.message.id === "streaming-reply"
+                                  ? entry
+                                  : item,
+                          )
+                        : [...previous, entry];
+                }),
+            );
         question = (answered) =>
             flushSync(() => {
                 const entry: ConversationEntry = {
@@ -163,6 +188,8 @@ function renderConversation(count: number, withShell = false) {
         send: () => send(),
         resize: (height: number) => resize(height),
         question: (answered: boolean) => question(answered),
+        stream: (lines: number) => stream(lines),
+        finish: () => finish(),
     };
 }
 
@@ -325,6 +352,31 @@ it.each([40, 640])(
     },
 );
 
+it("keeps newer messages fixed when a question above them is answered", async () => {
+    const { view, question, send, resize } = renderConversation(60);
+    await view.ready();
+    question(false);
+    send();
+    await frames();
+    const anchor = [...view.container.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+    const top = anchor.getBoundingClientRect().top;
+    question(true);
+    await frames();
+    expect(anchor.isConnected).toBe(true);
+    expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThan(1);
+    const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+    await userEvent.click(textarea);
+    await userEvent.keyboard("one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
+    await frames();
+    const expandedTop = anchor.getBoundingClientRect().top;
+    resize(800);
+    await frames();
+    expect(Math.abs(anchor.getBoundingClientRect().top - expandedTop)).toBeLessThan(1);
+    await userEvent.keyboard("{Meta>}a{/Meta}{Backspace}");
+    await frames();
+    expect(Math.abs(anchor.getBoundingClientRect().top - expandedTop)).toBeLessThan(1);
+});
+
 it("keeps a cold long history fixed while resize slack and idle refinement overlap", async () => {
     const { view, resize } = renderConversation(400);
     await view.ready();
@@ -341,6 +393,97 @@ it("keeps a cold long history fixed while resize slack and idle refinement overl
     expect(viewport.getBoundingClientRect().bottom - anchor.getBoundingClientRect().bottom).toBe(
         124,
     );
+});
+
+it("keeps a parked row fixed when answering grows the viewport", async () => {
+    const { view, question, send } = renderConversation(60);
+    await view.ready();
+    question(false);
+    send();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -200 }));
+    viewport.scrollTop -= 200;
+    await frames();
+    const bounds = viewport.getBoundingClientRect();
+    const anchor = [
+        ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+    ].find((row) => {
+        const rect = row.getBoundingClientRect();
+        return rect.top <= bounds.bottom - 60 && rect.bottom > bounds.bottom - 60;
+    })!;
+    const top = anchor.getBoundingClientRect().top;
+    question(true);
+    await frames();
+    expect(anchor.isConnected).toBe(true);
+    expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThan(1);
+});
+
+it("anchors the last visible message when an upward wheel lands in preserved blank space", async () => {
+    const { view, question, send, resize } = renderConversation(60);
+    await view.ready();
+    question(false);
+    send();
+    await frames();
+    resize(1000);
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+    viewport.scrollTop -= 4;
+    await frames();
+    const anchor = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+    const top = anchor.getBoundingClientRect().top;
+    question(true);
+    await frames();
+    expect(anchor.isConnected).toBe(true);
+    expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThan(1);
+});
+
+it("keeps a parked message fixed when the status footer disappears near the bottom", async () => {
+    const { view, question, finish } = renderConversation(60);
+    await view.ready();
+    question(true);
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+    viewport.scrollTop -= 4;
+    await frames();
+    const anchor = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+    const top = anchor.getBoundingClientRect().top;
+    finish();
+    await frames();
+    expect(anchor.isConnected).toBe(true);
+    expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThan(1);
+});
+
+it("keeps the visible parked row fixed when resize clips its previous anchor and streaming resumes", async () => {
+    const { view, stream, send, resize } = renderConversation(60);
+    await view.ready();
+    const panel = view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
+    panel.style.width = "360px";
+    stream(30);
+    await frames();
+    send();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -40 }));
+    viewport.scrollTop -= 40;
+    await frames();
+    panel.style.width = "880px";
+    resize(350);
+    await frames();
+    const bounds = viewport.getBoundingClientRect();
+    const anchor = [...viewport.querySelectorAll<HTMLElement>(".happy-message")]
+        .filter((row) => {
+            const rect = row.getBoundingClientRect();
+            return rect.top < bounds.bottom && rect.bottom > bounds.top;
+        })
+        .at(-1)!;
+    const top = anchor.getBoundingClientRect().top;
+    stream(31);
+    await frames();
+    expect(anchor.isConnected).toBe(true);
+    expect(anchor.getBoundingClientRect().top).toBe(top);
 });
 
 it("keeps a parked text anchor and its DOM node through cold-history refinement while typing", async () => {
