@@ -442,214 +442,117 @@ it(
     },
 );
 it(
-    "aligns every KeyCap glyph to the 0 calibration axis inside fixed slots",
+    "stands every KeyCap glyph on one baseline, with the modifiers spanning the capitals' height",
     { timeout: 120000 },
     async () => {
         /*
-         * '0' is the vertical calibration glyph (a bilaterally symmetric figure
-         * band). Each engine snaps its alpha centroid to a fixed plateau near
-         * the 10px slot center at the integer fixture position (Chromium ~0,
-         * Gecko ~-0.11, WebKit ~-0.16); no finer correction survives the raster.
-         * Every modifier symbol is tuned to sit on THAT same axis (styles/
-         * badge.css --happy-keycap-symbol-y), so ⌘/⇧/⌥/⌃ share the letters' optical
-         * line instead of an absolute zero. Content letters (T, A, 1 …) carry
-         * asymmetric ink and are deliberately NOT forced onto the 0 centroid:
-         * they assert a shared baseline and cell rhythm instead, per DESIGN.md
-         * "Testing text by character class".
+         * The modifiers are text from the system face and the letters text from
+         * the mono face, laid out on one shared baseline, so wherever a cap
+         * lands — integer or fractional — both snap together. ⌘ ⇧ ⌥ span the
+         * capitals' band: their ink starts on the cap line and ends on the
+         * baseline, a round ⌘ overshooting it by at most one device pixel. ⌃ is
+         * the raised caret macOS draws, hung from the cap line.
          */
-        const cal = ["0", "O", "⌘", "⇧", "⌥", "⌃"] as const;
         const combos = ["⌘K", "⇧⌘P", "⌥⌘K", "⌃K", "⌘0", "ESC", "ENTER"] as const;
+        const offsets = [0, 0.25, 0.5, 0.75] as const;
         const isSym = (ch: string) => ["⌘", "⇧", "⌥", "⌃"].includes(ch);
         const view = createRenderer();
         view.render(
             () => (
                 <div style={{ height: "100%", position: "relative", width: "100%" }}>
                     <style>{INK_FIXTURE_CSS}</style>
-                    {cal.map((keys, index) =>
-                        cell(
-                            20,
-                            20 + index * 30,
-                            <KeyCap className={`ink cal-${index}`} keys={keys} />,
-                            `cal-${keys}`,
-                        ),
-                    )}
-                    {combos.map((keys, index) =>
-                        cell(
-                            150,
-                            20 + index * 30,
-                            <KeyCap className={`ink k-${index}`} keys={keys} />,
-                            `combo-${keys}`,
+                    {offsets.flatMap((offset, column) =>
+                        combos.map((keys, index) =>
+                            cell(
+                                20 + column * 80,
+                                20 + index * 30 + offset,
+                                <KeyCap className={`ink k-${column}-${index}`} keys={keys} />,
+                                `combo-${column}-${keys}`,
+                            ),
                         ),
                     )}
                 </div>
             ),
             { width: 360, height: 260 },
         );
-        view.render(
-            () => (
-                <div
-                    style={{
-                        alignItems: "center",
-                        background: "#ffffff",
-                        display: "flex",
-                        gap: "12px",
-                        height: "100%",
-                        padding: "12px",
-                    }}
-                >
-                    {combos.map((keys) => (
-                        <KeyCap key={keys} keys={keys} />
-                    ))}
-                </div>
-            ),
-            { width: 470, height: 46 },
-        );
         await view.ready();
-        const labelOf = (cls: string) => view.$(`.${cls} [data-happy-desktop-ui="key-cap-label"]`);
-        const innerOf = (cls: string, k: number, sym: boolean) =>
-            view.$(
-                `.${cls} [data-happy-desktop-ui="key-cap-key"]:nth-child(${k + 1}) ${sym ? "svg" : '[data-happy-desktop-ui="key-cap-text"]'}`,
-            );
-        async function measure(cls: string, k: number, sym: boolean) {
-            const label = labelOf(cls);
-            const inner = innerOf(cls, k, sym);
-            const visible = await inner.visibleMetrics();
-            expect(visible.pixelCount, `${cls}#${k} paints ink`).toBeGreaterThan(0);
-            const lb = label.bounds();
-            const ib = inner.bounds();
-            return {
-                inner,
-                label,
-                visible,
-                cy: ib.y - lb.y + visible.center.y - lb.height / 2,
-                inkLeft: ib.x - lb.x + visible.bounds.x,
-                inkRight: ib.x - lb.x + visible.bounds.x + visible.bounds.width,
-            };
-        }
-        // --- Vertical calibration on '0' (and the equally symmetric 'O') ---
-        const zero = await measure("cal-0", 0, false);
-        const cyRef = zero.cy;
-        expect(Math.abs(cyRef), `0 centroid off label center: ${cyRef}`).toBeLessThanOrEqual(0.2);
-        const bigO = await measure("cal-1", 0, false);
-        expect(Math.abs(bigO.cy - cyRef), `O vs 0 axis: ${bigO.cy - cyRef}`).toBeLessThanOrEqual(
-            0.06,
-        );
-        // --- Modifier symbols: on the 0 axis, equal width, height parity ---
-        const symCells: ReadonlyArray<readonly [string, string]> = [
-            ["cal-2", "⌘"],
-            ["cal-3", "⇧"],
-            ["cal-4", "⌥"],
-            ["cal-5", "⌃"],
-        ];
-        for (const [cls, ch] of symCells) {
-            const s = await measure(cls, 0, true);
-            // Shares the 0 vertical axis (the whole point of the retune).
-            expect(Math.abs(s.cy - cyRef), `${ch} vs 0 axis: ${s.cy - cyRef}`).toBeLessThanOrEqual(
-                0.16,
-            );
-            // Equal visible width => equal slot bearings => uniform gaps.
-            expect(
-                Math.abs(s.visible.bounds.width - 8),
-                `${ch} normalized ink width: ${s.visible.bounds.width}`,
-            ).toBeLessThanOrEqual(0.5);
-            // Height parity: ⌃ must read as a full chevron, not a flat/stretched
-            // one (regression guard — it measured 7.5 before the redraw).
-            expect(
-                s.visible.bounds.height,
-                `${ch} ink height: ${s.visible.bounds.height}`,
-            ).toBeGreaterThanOrEqual(7.75);
-            expect(
-                s.visible.bounds.height,
-                `${ch} ink height: ${s.visible.bounds.height}`,
-            ).toBeLessThanOrEqual(9);
-            // Optically centered across its 9px slot.
-            const slot = view.$(`.${cls} [data-happy-desktop-ui="key-cap-key"]`);
-            const dx =
-                s.inner.bounds().x - slot.bounds().x + s.visible.center.x - slot.bounds().width / 2;
-            expect(Math.abs(dx), `${ch} slot horizontal centroid: ${dx}`).toBeLessThanOrEqual(0.1);
-        }
-        // --- Per-combo geometry, cell rhythm, baselines ---
-        let sharedBaseline: number | undefined;
-        for (const [index, keys] of combos.entries()) {
-            const cls = `k-${index}`;
-            const cap = view.$(`.${cls}`);
-            const label = labelOf(cls);
-            const chars = Array.from(keys);
-            expect(cap.height(), `${keys} height`).toBe(18);
-            expect(cap.element.getAttribute("aria-label"), `${keys} label`).toBe(keys);
-            expect(cap.computedStyle("padding-left"), `${keys} left padding`).toBe("4px");
-            expect(cap.computedStyle("padding-right"), `${keys} right padding`).toBe("4px");
-            expect(label.bounds().height, `${keys} label height`).toBe(10);
-            expect(label.computedStyle("column-gap"), `${keys} character gap`).toBe("0px");
-            expect(Math.abs(label.offsets().left - 4), `${keys} left inset`).toBeLessThanOrEqual(
-                0.001,
-            );
-            expect(Math.abs(label.offsets().right - 4), `${keys} right inset`).toBeLessThanOrEqual(
-                0.001,
-            );
-            const contentWidth = chars.reduce((w, ch) => w + (isSym(ch) ? 9 : 6.5), 0);
-            expect(label.bounds().width, `${keys} content width`).toBe(contentWidth);
-            expect(cap.width(), `${keys} width with equal padding`).toBe(contentWidth + 8);
-            const ink: Array<{
-                ch: string;
-                left: number;
-                right: number;
-                sym: boolean;
-            }> = [];
-            for (const [k, ch] of chars.entries()) {
-                const sym = isSym(ch);
-                const slot = view.$(
-                    `.${cls} [data-happy-desktop-ui="key-cap-key"]:nth-child(${k + 1})`,
-                );
-                expect(slot.bounds().width, `${keys}/${ch} slot width`).toBe(sym ? 9 : 6.5);
-                expect(slot.bounds().height, `${keys}/${ch} slot height`).toBe(10);
-                expect(slot.element.getAttribute("data-kind"), `${keys}/${ch} kind`).toBe(
-                    sym ? "symbol" : "text",
-                );
-                const m = await measure(cls, k, sym);
-                ink.push({ ch, left: m.inkLeft, right: m.inkRight, sym });
-                if (sym) {
-                    expect(
-                        Math.abs(m.cy - cyRef),
-                        `${keys}/${ch} on 0 axis: ${m.cy - cyRef}`,
-                    ).toBeLessThanOrEqual(0.16);
-                } else {
-                    const text = innerOf(cls, k, false);
-                    expect(text.computedStyle("font-family"), `${keys}/${ch} font`).toContain(
-                        "happy Mono",
+        const glyph = (cls: string, k: number) =>
+            view.$(`.${cls} [data-happy-desktop-ui="key-cap-key"]:nth-child(${k + 1}) > span`);
+        for (const column of offsets.keys())
+            for (const [index, keys] of combos.entries()) {
+                const cls = `k-${column}-${index}`;
+                const cap = view.$(`.${cls}`);
+                const label = view.$(`.${cls} [data-happy-desktop-ui="key-cap-label"]`);
+                const chars = Array.from(keys);
+                expect(cap.height(), `${keys} height`).toBe(18);
+                expect(cap.element.getAttribute("aria-label"), `${keys} label`).toBe(keys);
+                expect(cap.computedStyle("padding-left"), `${keys} left padding`).toBe("4px");
+                expect(cap.computedStyle("padding-right"), `${keys} right padding`).toBe("4px");
+                expect(label.bounds().height, `${keys} label height`).toBe(10);
+                const contentWidth = chars.reduce((w, ch) => w + (isSym(ch) ? 10 : 6.5), 0);
+                expect(label.bounds().width, `${keys} content width`).toBe(contentWidth);
+                const ink: {
+                    ch: string;
+                    left: number;
+                    right: number;
+                    top: number;
+                    bottom: number;
+                }[] = [];
+                let baseline: number | undefined;
+                for (const [k, ch] of chars.entries()) {
+                    const slot = view.$(
+                        `.${cls} [data-happy-desktop-ui="key-cap-key"]:nth-child(${k + 1})`,
                     );
-                    expect(text.computedStyle("font-size"), `${keys}/${ch} size`).toBe("10.8px");
-                    expect(text.computedStyle("font-weight"), `${keys}/${ch} weight`).toBe("500");
-                    const baseline = text.textMetrics().verticalOffset - label.bounds().y;
-                    sharedBaseline ??= baseline;
+                    expect(slot.bounds().width, `${keys}/${ch} slot width`).toBe(
+                        isSym(ch) ? 10 : 6.5,
+                    );
+                    const text = glyph(cls, k);
+                    expect(text.element.getAttribute("data-happy-desktop-ui")).toBe(
+                        isSym(ch) ? "key-cap-symbol" : "key-cap-text",
+                    );
+                    const own = text.textMetrics().verticalOffset;
+                    baseline ??= own;
                     expect(
-                        Math.abs(baseline - sharedBaseline),
-                        `${keys}/${ch} shared text baseline`,
+                        Math.abs(own - baseline),
+                        `${keys}/${ch} shared baseline`,
                     ).toBeLessThanOrEqual(0.001);
+                    const visible = await text.visibleMetrics();
+                    expect(visible.pixelCount, `${keys}/${ch} paints ink`).toBeGreaterThan(0);
+                    const box = text.bounds();
+                    ink.push({
+                        ch,
+                        left: box.x + visible.bounds.x,
+                        right: box.x + visible.bounds.x + visible.bounds.width,
+                        top: box.y + visible.bounds.y,
+                        bottom: box.y + visible.bounds.y + visible.bounds.height,
+                    });
+                }
+                const capital = ink.find((entry) => /[A-Z]/.test(entry.ch));
+                if (capital)
+                    for (const entry of ink.filter((candidate) => isSym(candidate.ch))) {
+                        const pair = `${keys}@${String(offsets[column])}/${entry.ch}`;
+                        expect(
+                            Math.abs(entry.top - capital.top),
+                            `${pair} starts on the cap line`,
+                        ).toBeLessThanOrEqual(0.5);
+                        if (entry.ch === "⌃") continue;
+                        const below = entry.bottom - capital.bottom;
+                        expect(below, `${pair} ends on the baseline`).toBeGreaterThanOrEqual(0);
+                        expect(below, `${pair} overshoot`).toBeLessThanOrEqual(0.5);
+                    }
+                // A modifier keeps clear air on each side; letters keep the mono rhythm.
+                for (let token = 1; token < ink.length; token += 1) {
+                    const gap = ink[token]!.left - ink[token - 1]!.right;
+                    const pair = `${keys}/${ink[token - 1]!.ch}-${ink[token]!.ch}`;
+                    if (isSym(ink[token]!.ch) || isSym(ink[token - 1]!.ch)) {
+                        expect(gap, `${pair} modifier gap`).toBeGreaterThanOrEqual(0.5);
+                        expect(gap, `${pair} modifier gap`).toBeLessThanOrEqual(2);
+                    } else {
+                        expect(gap, `${pair} letter gap`).toBeGreaterThanOrEqual(-0.01);
+                        expect(gap, `${pair} letter gap`).toBeLessThanOrEqual(1.6);
+                    }
                 }
             }
-            // Cell rhythm: any adjacency touching a modifier is a uniform 1.0px
-            // visible gap; letter↔letter pairs follow the mono font's bearings.
-            for (let token = 1; token < ink.length; token += 1) {
-                const gap = ink[token]!.left - ink[token - 1]!.right;
-                const pair = `${keys}/${ink[token - 1]!.ch}-${ink[token]!.ch}`;
-                if (ink[token]!.sym || ink[token - 1]!.sym) {
-                    expect(Math.abs(gap - 1), `${pair} modifier gap: ${gap}`).toBeLessThanOrEqual(
-                        0.25,
-                    );
-                } else {
-                    expect(gap, `${pair} letter gap: ${gap}`).toBeGreaterThanOrEqual(-0.01);
-                    expect(gap, `${pair} letter gap: ${gap}`).toBeLessThanOrEqual(1.6);
-                }
-            }
-            const contentW = chars.reduce((w, ch) => w + (isSym(ch) ? 9 : 6.5), 0);
-            const visibleLeftPadding = 4 + ink[0]!.left;
-            const visibleRightPadding = 4 + contentW - ink.at(-1)!.right;
-            expect(
-                Math.abs(visibleLeftPadding - visibleRightPadding),
-                `${keys} visible outer-padding parity`,
-            ).toBeLessThanOrEqual(1.5);
-        }
         await view.screenshot("KeyCap.test");
     },
 );

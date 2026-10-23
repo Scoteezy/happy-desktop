@@ -1,5 +1,10 @@
 import { Badge, CountBadge, KeyCap, ReactionChip, type BadgeVariant } from "../../src/Badge";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
+import { Menu } from "../../src/Menu";
+import { Sidebar } from "../../src/Sidebar";
+import { SearchField } from "../../src/TitleBar";
+import { Tooltip } from "../../src/Tooltip";
+import { commandShortcut } from "../../src/keyboardShortcut";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-005";
@@ -109,7 +114,7 @@ export function BadgePage() {
             </Specimen>
 
             <Specimen
-                detail="18px cap · normalized 9px modifier SVGs + mono 10.8/500 text cells · bearing-aware adjacency · 4px x-padding"
+                detail="18px cap · system-face modifiers spanning the capitals' band + mono 10.8/500 letters, one shared baseline · 4px x-padding · Ctrl+ spelled out off macOS"
                 label="KeyCap"
                 number="05"
                 stage="chrome"
@@ -122,6 +127,65 @@ export function BadgePage() {
                     <KeyCap keys="⌃K" />
                     <KeyCap keys="ESC" />
                     <KeyCap keys="ENTER" />
+                </div>
+            </Specimen>
+
+            <Specimen
+                detail="The one KeyCap wherever a shortcut is shown: a sidebar row, a menu item, the search field, a tooltip"
+                label="KeyCap in every context"
+                number="05b"
+                stage="surface"
+            >
+                <div
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "16px",
+                        width: "300px",
+                    }}
+                >
+                    <Sidebar
+                        activeItemId=""
+                        onItemSelect={() => {}}
+                        searchRow={{
+                            label: "Search",
+                            onOpen: () => {},
+                            shortcut: commandShortcut("k"),
+                        }}
+                        onCompose={() => {}}
+                        composeLabel="Create"
+                        composeShortcut={commandShortcut("n")}
+                        sections={[]}
+                        style={{ width: 280, height: 140 }}
+                    />
+                    <Menu
+                        items={[
+                            {
+                                kind: "item",
+                                id: "copy",
+                                label: "Copy link",
+                                icon: "link",
+                                shortcut: commandShortcut("c").caps,
+                            },
+                            {
+                                kind: "item",
+                                id: "dup",
+                                label: "Duplicate",
+                                shortcut: commandShortcut("d", { shift: true }).caps,
+                            },
+                        ]}
+                        width={220}
+                    />
+                    <SearchField onChange={() => {}} placeholder="Search" value="" />
+                    <div style={{ paddingTop: "34px" }}>
+                        <Tooltip label="Bold" open shortcut={commandShortcut("b")}>
+                            <button type="button">B</button>
+                        </Tooltip>
+                    </div>
+                    <div style={row}>
+                        <KeyCap keys={commandShortcut("k", {}, "Control").caps} />
+                        <KeyCap keys={commandShortcut("p", { shift: true }, "Control").caps} />
+                    </div>
                 </div>
             </Specimen>
 

@@ -1,5 +1,7 @@
 import { useId, type CSSProperties, type ReactNode } from "react";
+import { KeyCap } from "./Badge";
 import { partitionComponentProps } from "./componentProps";
+import type { KeyboardShortcut } from "./keyboardShortcut";
 
 export type TooltipPlacement = "top" | "bottom";
 
@@ -16,6 +18,8 @@ export interface TooltipProps {
      */
     readonly open?: boolean;
     readonly placement?: TooltipPlacement;
+    /** The chord that does what the trigger does, shown after the text as a key cap. */
+    readonly shortcut?: KeyboardShortcut;
     readonly style?: CSSProperties;
 }
 
@@ -44,6 +48,7 @@ export function Tooltip(props: TooltipProps) {
         "label",
         "open",
         "placement",
+        "shortcut",
         "style",
     ]);
     const bubbleId = useId();
@@ -66,6 +71,13 @@ export function Tooltip(props: TooltipProps) {
                 role="tooltip"
             >
                 {local.label}
+                {local.shortcut ? (
+                    <KeyCap
+                        className="happy-tooltip__shortcut"
+                        decorative
+                        keys={local.shortcut.caps}
+                    />
+                ) : null}
             </span>
         </span>
     );

@@ -4,6 +4,7 @@ import { KeyCap } from "./Badge";
 import type { Dimension } from "./dimensions";
 import { toCssDimension } from "./dimensions";
 import { Icon } from "./Icon";
+import { commandShortcut } from "./keyboardShortcut";
 type SearchFieldSharedProps = {
     placeholder?: string;
     /**
@@ -95,7 +96,10 @@ export function SearchField(props: SearchFieldProps) {
                 value={props.value}
             />
             {props.shortcutHint === false ? null : (
-                <KeyCap className="happy-search-field__hint" keys={props.shortcutHint ?? "⌘K"} />
+                <KeyCap
+                    className="happy-search-field__hint"
+                    keys={props.shortcutHint ?? commandShortcut("k").caps}
+                />
             )}
         </div>
     );

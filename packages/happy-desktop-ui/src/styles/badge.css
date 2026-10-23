@@ -3,7 +3,8 @@
  * ReactionChip (emoji reaction), KeyCap (shortcut hint).
  *
  * Contract heights: Badge 18, CountBadge 18 (min-width 18), ReactionChip 24,
- * KeyCap 18. Badge and KeyCap use the mono uppercase treatment; CountBadge
+ * KeyCap 18. KeyCap is every shortcut the app shows: sidebar rows, menus,
+ * buttons, the palette, tooltips and the search field all draw this one. Badge and KeyCap use the mono uppercase treatment; CountBadge
  * uses mono lining/tabular figures so arbitrary counts share one figure band.
  */
 
@@ -261,46 +262,43 @@
     transition-delay: 0ms;
 }
 
+/* Every key stands on one baseline: the modifiers and the letters are text in
+   one line, so whatever position the cap lands on, they snap together. */
 .happy-key-cap__label {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 0;
     height: 10px;
 }
 
 .happy-key-cap__key {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    display: block;
     flex: none;
     height: 10px;
+    text-align: center;
 }
 
 .happy-key-cap__key[data-kind="text"] {
     width: 6.5px;
-    transform: translateY(var(--happy-keycap-text-y, 0px));
 }
 
-.happy-key-cap__text {
+.happy-key-cap__key[data-kind="symbol"] {
+    width: 10px;
+}
+
+.happy-key-cap__text,
+.happy-key-cap__symbol {
     display: block;
     line-height: 10px;
 }
 
-.happy-key-cap__key[data-kind="symbol"] {
-    width: 9px;
-    transform: translateY(var(--happy-keycap-symbol-y, 0px));
-}
-
-.happy-key-cap__key svg {
-    display: block;
-    width: 9px;
-    height: 9px;
-    overflow: visible;
-    stroke: currentColor;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    vector-effect: non-scaling-stroke;
+/* The mono face has no modifier symbols, so they come from the system's own
+   face, which is where macOS draws them in its menus. Sized so their ink spans
+   the capitals' height from baseline to cap line. */
+.happy-key-cap__symbol {
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-size: 11px;
+    font-weight: 500;
 }
 
 /*
@@ -325,18 +323,6 @@
     --happy-chip-emoji-y: 0px;
 }
 
-.happy-key-cap {
-    /*
-     * KeyCap vertical is calibrated on '0' (bilaterally symmetric figure band)
-     * at the integer fixture position used by Badge.test.tsx. The raster snaps
-     * the '0' centroid onto the 10px slot center with no text shift; the
-     * modifier symbols rise 0.5px to sit on that same axis. Chromium and Gecko
-     * rasterize the shared slot identically, so only WebKit overrides it.
-     */
-    --happy-keycap-symbol-y: -0.5px;
-    --happy-keycap-text-y: 0px;
-}
-
 /*
  * Firefox — Gecko is the only engine that parses -moz-appearance.
  * (@-moz-document is stripped by the CSS pipeline, and Blink on macOS
@@ -352,7 +338,6 @@
         --happy-chip-emoji-x: 1.5px;
         --happy-chip-emoji-y: 0.9px;
     }
-    /* KeyCap: Gecko rasterizes identically to the Chromium base here. */
 }
 
 /* WebKit — Blink and Gecko do not parse -webkit-named-image(). */
@@ -364,10 +349,5 @@
     .happy-reaction-chip {
         --happy-chip-emoji-x: 0px;
         --happy-chip-emoji-y: -0.9px;
-    }
-
-    .happy-key-cap {
-        --happy-keycap-symbol-y: 0px;
-        --happy-keycap-text-y: 0px;
     }
 }

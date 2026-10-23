@@ -104,19 +104,8 @@ export type KeyCapProps = {
     decorative?: boolean;
     keys: string;
 };
+/** The modifier keys macOS names with a symbol, drawn from the system font that has them. */
 const shortcutSymbols = new Set(["⌘", "⇧", "⌥", "⌃"]);
-function ShortcutSymbol(props: { symbol: string }) {
-    return (
-        <svg aria-hidden="true" data-shortcut-symbol={props.symbol} fill="none" viewBox="0 0 24 24">
-            {props.symbol === "⌘" ? (
-                <path d="M18 9a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12Z" />
-            ) : null}
-            {props.symbol === "⇧" ? <path d="m12 1.8 9 9.5h-5v9.5H8v-9.5H3l9-9.5Z" /> : null}
-            {props.symbol === "⌥" ? <path d="M2.85 3.2h5l9 18h4M13.85 3.2h7M2.85 21.2h7" /> : null}
-            {props.symbol === "⌃" ? <path d="M3 21.2 12 2.3 21 21.2" /> : null}
-        </svg>
-    );
-}
 /** Keyboard shortcut hint, e.g. ⌘K in the title-bar search field. */
 export function KeyCap(props: KeyCapProps) {
     return (
@@ -134,16 +123,18 @@ export function KeyCap(props: KeyCapProps) {
                         key={`${key}-${index}`}
                         data-happy-desktop-ui="key-cap-key"
                     >
-                        {shortcutSymbols.has(key) ? (
-                            <ShortcutSymbol symbol={key} />
-                        ) : (
-                            <span
-                                className="happy-key-cap__text"
-                                data-happy-desktop-ui="key-cap-text"
-                            >
-                                {key}
-                            </span>
-                        )}
+                        <span
+                            className={
+                                shortcutSymbols.has(key)
+                                    ? "happy-key-cap__symbol"
+                                    : "happy-key-cap__text"
+                            }
+                            data-happy-desktop-ui={
+                                shortcutSymbols.has(key) ? "key-cap-symbol" : "key-cap-text"
+                            }
+                        >
+                            {key}
+                        </span>
                     </span>
                 ))}
             </span>

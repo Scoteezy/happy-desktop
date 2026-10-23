@@ -129,3 +129,9 @@
         --happy-tooltip-rise: 0px;
     }
 }
+
+/* The chord after the text. The cap is 2px taller than the line, so it hangs
+   1px into the padding above and below and the bubble stays 24px. */
+.happy-tooltip__shortcut {
+    margin: -1px 0 -1px 6px;
+}

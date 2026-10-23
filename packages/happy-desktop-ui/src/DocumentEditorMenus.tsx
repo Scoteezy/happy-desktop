@@ -14,6 +14,7 @@ import {
     useExtensionState,
 } from "@blocknote/react";
 import { useState, type ReactNode } from "react";
+import { commandShortcut, type KeyboardShortcut } from "./keyboardShortcut";
 import { Tooltip } from "./Tooltip";
 import { Octicon, type OcticonName } from "./vectorIcons/VectorIcon";
 
@@ -135,6 +136,7 @@ export function DocumentSlashMenu(props: SuggestionMenuProps<DocumentSlashMenuIt
 /** One square, icon-only control on a floating editor bar. */
 function BarButton(props: {
     label: string;
+    shortcut?: KeyboardShortcut;
     icon: OcticonName;
     pressed?: boolean;
     onPress: () => void;
@@ -142,8 +144,13 @@ function BarButton(props: {
     "data-testid"?: string;
 }) {
     return (
-        <Tooltip label={props.label} placement={props.placement ?? "top"}>
+        <Tooltip
+            label={props.label}
+            placement={props.placement ?? "top"}
+            {...(props.shortcut ? { shortcut: props.shortcut } : {})}
+        >
             <button
+                aria-keyshortcuts={props.shortcut?.aria}
                 aria-label={props.label}
                 aria-pressed={props.pressed}
                 className="happy-document-editor__bar-button"
@@ -219,11 +226,23 @@ function LinkField(props: {
 }
 
 const TEXT_STYLES = [
-    { style: "bold", icon: "bold", label: "Bold  ⌘B" },
-    { style: "italic", icon: "italic", label: "Italic  ⌘I" },
-    { style: "strike", icon: "strikethrough", label: "Strikethrough  ⌘⇧S" },
-    { style: "code", icon: "code", label: "Code  ⌘E" },
-] as const satisfies readonly { style: string; icon: OcticonName; label: string }[];
+    { style: "bold", icon: "bold", label: "Bold", shortcut: commandShortcut("b") },
+    { style: "italic", icon: "italic", label: "Italic", shortcut: commandShortcut("i") },
+    {
+        style: "strike",
+        icon: "strikethrough",
+        label: "Strikethrough",
+        shortcut: commandShortcut("s", { shift: true }),
+    },
+    { style: "code", icon: "code", label: "Code", shortcut: commandShortcut("e") },
+] as const satisfies readonly {
+    style: string;
+    icon: OcticonName;
+    label: string;
+    shortcut: KeyboardShortcut;
+}[];
+
+const LINK_SHORTCUT = commandShortcut("k");
 
 type TextStyle = (typeof TEXT_STYLES)[number]["style"];
 
@@ -269,6 +288,7 @@ export function DocumentFormattingToolbar() {
                     icon={entry.icon}
                     key={entry.style}
                     label={entry.label}
+                    shortcut={entry.shortcut}
                     onPress={() => editor.toggleStyles({ [entry.style]: true })}
                     pressed={state[entry.style]}
                 />
@@ -277,7 +297,8 @@ export function DocumentFormattingToolbar() {
             <BarButton
                 data-testid="document-editor-link"
                 icon="link"
-                label="Link  ⌘K"
+                label="Link"
+                shortcut={LINK_SHORTCUT}
                 onPress={() => setLinking(true)}
                 pressed={state.link.length > 0}
             />
