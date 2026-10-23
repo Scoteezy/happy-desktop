@@ -641,10 +641,6 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             await record("getSpaceSidebar", args);
             return { artifactId: "sidebar", version: 1, html: "<nav></nav>", spaces: [] };
         },
-        async reportSpaceSidebarObservations(...args: unknown[]) {
-            await record("reportSpaceSidebarObservations", args);
-            return {};
-        },
         async getHealth(...args: unknown[]) {
             await record("getHealth", args);
             return health();
