@@ -1,4 +1,5 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
+import type { HappyAgentSurfaceType } from "../../surfaces/surfaceTypes.js";
 import { type MessageAudience, type UserError } from "../../types.js";
 
 /** One slash command a composer may offer while the draft begins with `/`. */
@@ -12,11 +13,23 @@ export interface ComposerCommand {
     readonly kind?: string;
 }
 
+/** What one mention candidate names. */
+export type ComposerMentionSubject =
+    | { readonly kind: "file" }
+    /** A Surface: a document, todo list, calendar, chat among people, and so on. */
+    | { readonly kind: "surface"; readonly type: HappyAgentSurfaceType }
+    /** A chat with an agent: a bot's, a task's, or a project's conversation. */
+    | { readonly kind: "agent"; readonly owner: "bot" | "task" | "conversation" };
+
 /** One `@`-mention candidate offered for the active mention token. */
 export interface ComposerMention {
+    /** Unique among the candidates of one token, whatever they name. */
     readonly id: string;
     readonly label: string;
     readonly detail?: string;
+    readonly subject: ComposerMentionSubject;
+    /** What choosing it writes into the draft in place of the `@` token. */
+    readonly insertion: string;
 }
 
 /**

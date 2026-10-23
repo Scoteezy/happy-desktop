@@ -37,6 +37,7 @@ import {
 } from "./messageTextLayout";
 import {
     messageReferencesNamed,
+    messageReferencesPlainText,
     messageReferencesResolve,
     messageReferencesSignature,
     type MessageReferences,
@@ -598,7 +599,14 @@ export function messageRowHeight(input: MessageRowHeightInput): number {
     const measure = messageBodyMeasure(input.width, input.treatment, input.time, input.textCache);
     if (input.bodyFormat === "plain")
         return (
-            chrome + plainTextHeight(input.body, measure, input.textCache, input.trailingExtraWidth)
+            chrome +
+            plainTextHeight(
+                // Every reference as the words it reads as, as the body paints it.
+                messageReferencesPlainText(input.body, input.references),
+                measure,
+                input.textCache,
+                input.trailingExtraWidth,
+            )
         );
     /* Grouped incoming/agent rows append their hover time to the final word in
        one non-wrapping inline run. Include that run in the text model: at a

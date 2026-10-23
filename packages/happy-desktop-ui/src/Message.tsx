@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-virtual";
 import {
     Children,
+    Fragment,
     isValidElement,
     useLayoutEffect,
     useRef,
@@ -31,13 +32,14 @@ import {
 } from "./mediaLayout";
 import { MediaFlow } from "./MediaFlow";
 import { messagePlainTextNormalize, type MessageBodyFormat } from "./messagePlainText";
-import type { MessageReferences } from "./messageReferences";
+import { messagePlainTextSegments, type MessageReferences } from "./messageReferences";
 import {
     MessageListDisclosureAnchorProvider,
     type MessageListDisclosureAnchor,
 } from "./messageListDisclosureAnchor";
 import {
     markdownTablesSolve,
+    MessageReferenceLink,
     renderMessageMarkdown,
     type LinkOpenHandler,
     type LinkOpenPlacement,
@@ -303,13 +305,39 @@ function hasRenderableChild(value: ReactNode): boolean {
  */
 const GUTTER_MARK_PIXELS = 12;
 
-/** Literal text with the same 16px/24px body type as agent paragraphs. */
-function renderMessagePlainText(source: string, trailing: ReactNode): ReactNode {
+/**
+ * Literal text with the same 16px/24px body type as agent paragraphs. A Happy
+ * reference in it reads as what it names, as a link when it can be opened;
+ * everything else is exactly as typed.
+ */
+function renderMessagePlainText(
+    source: string,
+    trailing: ReactNode,
+    references: MessageReferences | undefined,
+): ReactNode {
     const text = messagePlainTextNormalize(source);
     if (text.length === 0) return null;
     return (
         <p className="happy-message__plain-text" data-happy-desktop-ui="message-plain-text">
-            {text}
+            {!text.includes("<happy-")
+                ? text
+                : messagePlainTextSegments(text, references).map((segment, index) =>
+                      segment.type === "text" ? (
+                          // The runs of one body never move, so their order is their identity.
+                          <Fragment key={index}>{segment.text}</Fragment>
+                      ) : references === undefined ? (
+                          <Fragment key={index}>{segment.label}</Fragment>
+                      ) : (
+                          <MessageReferenceLink
+                              href={segment.href}
+                              key={index}
+                              reference={segment.reference}
+                              references={references}
+                          >
+                              {segment.label}
+                          </MessageReferenceLink>
+                      ),
+                  )}
             {trailing === null || trailing === undefined ? null : (
                 <>
                     {"\u00a0"}
@@ -515,7 +543,7 @@ export function Message(props: MessageProps) {
             >
                 {ownAutomatedLine}
                 {typeof local.body === "string" && plainBody()
-                    ? renderMessagePlainText(local.body, inlineIncomingHoverMeta)
+                    ? renderMessagePlainText(local.body, inlineIncomingHoverMeta, local.references)
                     : typeof local.body === "string"
                       ? renderMessageMarkdown(
                             local.body,

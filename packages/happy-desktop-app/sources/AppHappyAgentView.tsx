@@ -22,8 +22,10 @@ import {
     ARTIFACT_READING,
     artifactTitlesStoreNoop,
     messageReferenceEntities,
+    messageReferenceSurfaceNames,
     messageReferencesCreate,
     type MessageReferenceEntities,
+    type MessageReferenceSurfaces,
 } from "./messageReferences";
 import type {
     AppearanceStore,
@@ -3457,6 +3459,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         surfaceCatalogStore.get,
         surfaceCatalogStore.get,
     );
+    // A Surface a message names opens as its sidebar row does.
+    const referenceSurfaces: MessageReferenceSurfaces | undefined = active
+        ? {
+              names: messageReferenceSurfaceNames(surfaceCatalog),
+              open: (surfaceId) => props.onSurfaceOpen?.(active.id, surfaceId),
+          }
+        : undefined;
     const surfaceSupportStore =
         active?.session?.surfaces?.support() ?? happyAgentSurfaceSupportStoreNone;
     const surfaceSupport = useSyncExternalStore(
@@ -4504,6 +4513,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     {...(props.surfaceChat ? { chat: props.surfaceChat } : {})}
                     chatConversation={(chat, surfaceName) => (
                         <HappyAgentSurfaceChat
+                            {...(referenceSurfaces ? { referenceSurfaces } : {})}
                             {...(artifactsAvailable && session.artifacts
                                 ? { artifacts: session.artifacts }
                                 : {})}
@@ -4590,6 +4600,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         if (active?.session)
             return (
                 <HappyAgentWorkspaceSurface
+                    {...(referenceSurfaces ? { referenceSurfaces } : {})}
                     availability={
                         activeAvailability ??
                         happyAgentAvailabilityProject(active.session.connection.get(), true, {
@@ -5897,6 +5908,8 @@ function HappyAgentSurfaceChat(props: {
     unavailable?: string;
     onChatSelect: (groupId: string | undefined, chatId?: string) => void;
     onExternalLinkOpen: (url: string) => void;
+    /** The Surfaces the chat's references can name, and where one opens. */
+    referenceSurfaces?: MessageReferenceSurfaces;
 }) {
     const workspace = useSyncExternalStore(
         reactFrameSubscribe(props.workspace),
@@ -5919,6 +5932,7 @@ function HappyAgentSurfaceChat(props: {
             {...(props.artifacts ? { artifacts: props.artifacts } : {})}
             referenceEntities={messageReferenceEntities(workspace.list)}
             onReferenceGroupOpen={(groupId, agentId) => props.onChatSelect(groupId, agentId)}
+            {...(props.referenceSurfaces ? { referenceSurfaces: props.referenceSurfaces } : {})}
             modelUsageWatch={modelUsageWatch}
             conversation={conversation}
             emptyContent={
@@ -6342,6 +6356,8 @@ function HappyAgentArtifactsPanelSurface(props: {
 }
 
 interface HappyAgentWorkspaceSurfaceProps {
+    /** The Surfaces the transcript's references can name, and where one opens. */
+    referenceSurfaces?: MessageReferenceSurfaces;
     /** The machine's artifacts, present only once it has said it keeps them. */
     artifacts?: HappyAgentArtifacts;
     /** Shows an HTML artifact opened beside the conversation as a site of its own. */
@@ -7178,6 +7194,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     browserConnectionId: props.browserConnectionId,
                 }}
                 referenceEntities={messageReferenceEntities(workspace.list)}
+                {...(props.referenceSurfaces ? { referenceSurfaces: props.referenceSurfaces } : {})}
                 onReferenceGroupOpen={(groupId, agentId) => {
                     // A workspace or project a reference names opens where the
                     // reader left it, the way its sidebar row does; an agent
@@ -8628,6 +8645,8 @@ function HappyAgentConversationBody(props: {
     referenceEntities: MessageReferenceEntities;
     /** Opens a group a reference names, on one of its conversations or where it was left. */
     onReferenceGroupOpen: (groupId: HappyAgentGroupId, agentId?: string) => void;
+    /** The Surfaces the transcript's references can name, and where one opens. */
+    referenceSurfaces?: MessageReferenceSurfaces;
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentWorkspaceSnapshot["conversation"];
     emptyContent?: ReactNode;
@@ -8689,6 +8708,7 @@ function HappyAgentConversationBody(props: {
                 {...(props.inlineEngines ? { inlineEngines: props.inlineEngines } : {})}
                 referenceEntities={props.referenceEntities}
                 onReferenceGroupOpen={props.onReferenceGroupOpen}
+                {...(props.referenceSurfaces ? { referenceSurfaces: props.referenceSurfaces } : {})}
                 modelUsageWatch={props.modelUsageWatch}
                 conversation={conversation.value}
                 emptyContent={props.emptyContent}
@@ -9077,6 +9097,8 @@ function HappyAgentConversationSurface(props: {
     referenceEntities: MessageReferenceEntities;
     /** Opens a group a reference names, on one of its conversations or where it was left. */
     onReferenceGroupOpen: (groupId: HappyAgentGroupId, agentId?: string) => void;
+    /** The Surfaces the transcript's references can name, and where one opens. */
+    referenceSurfaces?: MessageReferenceSurfaces;
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentConversationSnapshot;
     emptyContent?: ReactNode;
@@ -9210,6 +9232,16 @@ function HappyAgentConversationSurface(props: {
         onGroupOpen: (groupId, agentId) => {
             if (props.happyAgentOnline()) props.onReferenceGroupOpen(groupId, agentId);
         },
+        ...(props.referenceSurfaces
+            ? {
+                  surfaces: {
+                      names: props.referenceSurfaces.names,
+                      open: (surfaceId: HappyAgentSurfaceId) => {
+                          if (props.happyAgentOnline()) props.referenceSurfaces?.open(surfaceId);
+                      },
+                  },
+              }
+            : {}),
         ...(props.artifacts
             ? {
                   // A reference opens beside the conversation, the way a file

@@ -129,12 +129,12 @@ function linkMenuItems(defaultPlacement: LinkOpenPlacement | undefined): MenuIte
  */
 const MarkdownReferencesContext = createContext<MessageReferences | undefined>(undefined);
 /**
- * A Happy reference the agent named: an underlined link like any other in the
+ * A Happy reference a message names: an underlined link like any other in the
  * body, reading as the live title of what it names. While that thing is busy
  * the title carries the same travelling band a busy sidebar row or tab does,
  * and nothing else changes — the words wrap where they would without it.
  */
-const MarkdownReferenceLink = ({
+export const MessageReferenceLink = ({
     children,
     href,
     references,
@@ -267,9 +267,9 @@ const MarkdownLink = ({
     const [menuAt, setMenuAt] = useState<{ x: number; y: number }>();
     if (reference !== undefined && references !== undefined)
         return (
-            <MarkdownReferenceLink href={href!} reference={reference} references={references}>
+            <MessageReferenceLink href={href!} reference={reference} references={references}>
                 {children}
-            </MarkdownReferenceLink>
+            </MessageReferenceLink>
         );
     // A link into another workspace's folder carries that folder, so it opens
     // the same file wherever the message is read. Its scheme means nothing to

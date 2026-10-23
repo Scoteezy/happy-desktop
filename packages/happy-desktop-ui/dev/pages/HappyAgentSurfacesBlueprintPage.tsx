@@ -13,6 +13,7 @@ import {
     type HappyAgentTodoListSnapshot,
 } from "happy-desktop-state";
 import { AppShell } from "../../src/AppShell";
+import { MentionPicker, type Mentionable } from "../../src/Composer";
 import { ComposerModelControl } from "../../src/ComposerModelControl";
 import { ComposerFooterBar } from "../../src/ConversationDock";
 import { ConversationView } from "../../src/ConversationView";
@@ -1024,6 +1025,22 @@ function MockWindow(props: {
     );
 }
 
+/** What `@` offers in a chat beside a document. */
+const MENTIONS: Mentionable[] = [
+    { id: "s1", name: "House rules", description: "Document", icon: "doc", initials: "H" },
+    { id: "s2", name: "Groceries", description: "Todo list", icon: "tasks", initials: "G" },
+    { id: "s3", name: "Weekend trip", description: "Chat", icon: "users", initials: "W" },
+    { id: "a1", name: "Chief of Staff", description: "Bot", icon: "agents", initials: "C" },
+    {
+        id: "a2",
+        name: "Rewrite onboarding guide",
+        description: "Task",
+        icon: "tasks",
+        initials: "R",
+    },
+    { id: "f1", name: "docs/house-rules.md", icon: "files", initials: "D" },
+];
+
 /** The header with and without a creator, with long names, and too narrow for the creator. */
 const HEADERS: readonly {
     readonly key: string;
@@ -1678,6 +1695,17 @@ export function HappyAgentSurfacesBlueprintPage() {
                 {frame(
                     <HappyAgentSurfaceCreateDialog kind="chat" onClose={noop} onSubmit={noop} />,
                 )}
+            </Specimen>
+
+            <Specimen
+                detail="The composer's @ picker, as wide as its composer: the reader's Surfaces first, then the bots, tasks, and chats they can open, then files, each with the glyph of what it is. Choosing a Surface or chat writes the Happy reference that names it."
+                label="Mentioning a Surface or chat"
+                number="12"
+                stage="surface"
+            >
+                <div style={{ display: "flex", width: "420px" }}>
+                    <MentionPicker mentions={MENTIONS} onSelect={noop} query="" />
+                </div>
             </Specimen>
         </ComponentPage>
     );

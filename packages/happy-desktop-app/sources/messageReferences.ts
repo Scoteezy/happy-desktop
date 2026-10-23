@@ -7,6 +7,8 @@ import {
     type HappyAgentArtifactTitlesStore,
     type HappyAgentGroupId,
     type HappyAgentSessionListSnapshot,
+    type HappyAgentSurfaceCatalogSnapshot,
+    type HappyAgentSurfaceId,
     type HappyReference,
 } from "happy-desktop-state";
 import type { MessageReferences, MessageReferenceView } from "happy-desktop-ui";
@@ -131,6 +133,32 @@ export function messageReferenceEntities(
     return entities;
 }
 
+/** The Surfaces a reference can name, by ID, and where opening one goes. */
+export interface MessageReferenceSurfaces {
+    readonly names: ReadonlyMap<string, string>;
+    readonly open: (surfaceId: HappyAgentSurfaceId) => void;
+}
+
+const surfaceNamesCache = new WeakMap<
+    HappyAgentSurfaceCatalogSnapshot,
+    ReadonlyMap<string, string>
+>();
+
+/**
+ * What each Surface the reader can see is called, read out of the catalog the
+ * sidebar already draws. A Surface it does not hold — deleted, or not visible
+ * to this reader — stays inert. Cached per catalog snapshot.
+ */
+export function messageReferenceSurfaceNames(
+    catalog: HappyAgentSurfaceCatalogSnapshot,
+): ReadonlyMap<string, string> {
+    const cached = surfaceNamesCache.get(catalog);
+    if (cached) return cached;
+    const names = new Map(catalog.surfaces.map((surface) => [surface.id, surface.name]));
+    surfaceNamesCache.set(catalog, names);
+    return names;
+}
+
 function inert(reference: HappyReference): MessageReferenceView {
     return { type: "text", label: happyReferencePlaceholder(reference) };
 }
@@ -190,9 +218,16 @@ export function messageReferencesCreate(input: {
     readonly onArtifactOpen?: (artifactId: HappyAgentArtifactId, version?: number) => void;
     /** Opens a group on one of its conversations, or where it was left. */
     readonly onGroupOpen?: (groupId: HappyAgentGroupId, agentId?: string) => void;
+    /** The Surfaces a reference can name; absent, every one stays inert. */
+    readonly surfaces?: MessageReferenceSurfaces;
 }): MessageReferences {
     return {
         view(reference) {
+            if (reference.kind === "surface") {
+                const name = input.surfaces?.names.get(reference.id);
+                if (name === undefined) return inert(reference);
+                return { type: "link", label: name.trim() || "Untitled", busy: false };
+            }
             if (reference.kind === "artifact")
                 return input.onArtifactOpen === undefined
                     ? inert(reference)
@@ -206,6 +241,11 @@ export function messageReferencesCreate(input: {
             };
         },
         open(reference) {
+            if (reference.kind === "surface") {
+                if (input.surfaces?.names.has(reference.id))
+                    input.surfaces.open(reference.id as HappyAgentSurfaceId);
+                return;
+            }
             if (reference.kind === "artifact") {
                 input.onArtifactOpen?.(reference.id as HappyAgentArtifactId, reference.version);
                 return;

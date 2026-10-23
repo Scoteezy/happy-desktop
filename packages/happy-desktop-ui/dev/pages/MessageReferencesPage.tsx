@@ -83,6 +83,21 @@ function agentReply(body: string, streaming = false) {
     );
 }
 
+/** A person's message, shown as typed: only its references read as links. */
+function ownMessage(body: string) {
+    return (
+        <Message
+            author="Steve"
+            body={body}
+            bodyFormat="plain"
+            initials="SK"
+            own
+            references={references}
+            time="10:52"
+        />
+    );
+}
+
 export function MessageReferencesPage() {
     return (
         <ComponentPage
@@ -138,6 +153,18 @@ export function MessageReferencesPage() {
                 {channelFrame(
                     agentReply(
                         '<happy-artifact id="gone"/> was deleted, <happy-agent id="hidden"/> is not visible here, <happy-service id="preview"/> does not open yet, and <happy-gizmo id="x1"/> is a kind this build does not know.',
+                    ),
+                )}
+            </Specimen>
+            <Specimen
+                detail="What a person mentioned from the composer's @ picker: their words exactly as typed, every reference the same underlined live title, an unavailable one its plain words"
+                label="In a person's message"
+                number="03b"
+                stage="app"
+            >
+                {channelFrame(
+                    ownMessage(
+                        'Ask <happy-agent id="reviewer"/> to fold the notes into <happy-project id="desktop"/>  — **not** <happy-artifact id="gone"/>.',
                     ),
                 )}
             </Specimen>

@@ -20,6 +20,7 @@ import {
     type HappyAgentChiefOfStaffRequest,
 } from "./happyAgentChiefOfStaffRequest.js";
 import { happyAgentErrorAssistanceText } from "./happyAgentErrorAssistance.js";
+import { happyAgentMentionPlaces } from "./happyAgentMentionPlaces.js";
 import {
     HAPPY_AGENT_FILE_LINK_READ_ONLY_REFUSAL,
     happyAgentFileLinkReadFailure,
@@ -5132,23 +5133,56 @@ export function happyAgentWorkspaceStoreCreate(
                         const query = event.query;
                         if (query === undefined) return;
                         const target = composer;
+                        if (target === undefined) return;
+                        // Surfaces and chats are held here, so they answer at
+                        // once; the files the token still names stand beside
+                        // them until the search answers.
+                        const places = happyAgentMentionPlaces({
+                            query,
+                            list: list.get(),
+                            catalog: client.surfaces().catalog().get(),
+                            conversationId,
+                        });
+                        const needle = query.toLowerCase();
+                        const filesStanding = target
+                            .getState()
+                            .mentionCandidates.filter(
+                                (candidate) =>
+                                    candidate.subject.kind === "file" &&
+                                    candidate.label.toLowerCase().includes(needle),
+                            );
+                        if (places.length > 0)
+                            target.getState().composerInput({
+                                type: "mentionCandidatesReconciled",
+                                query,
+                                candidates: [...places, ...filesStanding],
+                            });
                         const group = conversationGroupId(conversationId);
-                        if (!group) return;
+                        if (!group) {
+                            if (places.length === 0)
+                                target.getState().composerInput({
+                                    type: "mentionCandidatesReconciled",
+                                    query,
+                                    candidates: [],
+                                });
+                            return;
+                        }
                         void client.filesSearch(group, query, MENTION_LIMIT).then(
                             (files: readonly HappyAgentFileSearchResult[]) => {
-                                if (
-                                    requestGeneration !== mentionGeneration ||
-                                    target === undefined ||
-                                    composer !== target
-                                )
+                                if (requestGeneration !== mentionGeneration || composer !== target)
                                     return;
                                 target.getState().composerInput({
                                     type: "mentionCandidatesReconciled",
                                     query,
-                                    candidates: files.map((file) => ({
-                                        id: file.path,
-                                        label: file.path,
-                                    })),
+                                    candidates: [
+                                        ...places,
+                                        ...files.map((file) => ({
+                                            id: `file:${file.path}`,
+                                            label: file.path,
+                                            subject: { kind: "file" as const },
+                                            insertion: `@${file.path}`,
+                                        })),
+                                    ],
                                 });
                             },
                             () => undefined,

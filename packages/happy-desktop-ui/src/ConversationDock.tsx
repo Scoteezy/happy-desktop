@@ -1,13 +1,15 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
-import type { ComposerSnapshot } from "happy-desktop-state";
+import type { ComposerMentionSubject, ComposerSnapshot } from "happy-desktop-state";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
 import { commandPickerItems } from "./CommandPicker";
 import { Composer, type Mentionable } from "./Composer";
+import type { IconName } from "./Icon";
 import type { ComposerAttachmentPreview } from "./ComposerAttachmentPreviews";
 import { Lightbox } from "./Lightbox";
 import type { ImageViewerLoadedImage } from "./ImageViewer";
 import { ModalOverlay } from "./ModalOverlay";
+import { surfaceTypeIcon, surfaceTypeLabel } from "./pages/surfaces/surfacePresentation";
 import { reviewCommentPlace } from "./ReviewComment";
 import { WindowOverlay } from "./WindowOverlay";
 
@@ -99,13 +101,44 @@ function attachmentSizeFormat(bytes: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** The glyph and the words beside a candidate's name, for what it names. */
+function mentionSubjectOf(subject: ComposerMentionSubject): {
+    icon: IconName;
+    description?: string;
+} {
+    switch (subject.kind) {
+        case "file":
+            return { icon: "files" };
+        case "surface":
+            return {
+                icon: surfaceTypeIcon(subject.type),
+                description: surfaceTypeLabel(subject.type),
+            };
+        case "agent":
+            switch (subject.owner) {
+                case "bot":
+                    return { icon: "agents", description: "Bot" };
+                case "task":
+                    return { icon: "tasks", description: "Task" };
+                case "conversation":
+                    return { icon: "chat" };
+            }
+    }
+}
+
 function mentionsOf(composer: ComposerSnapshot): Mentionable[] {
-    return composer.mentionCandidates.map((candidate) => ({
-        id: candidate.id,
-        name: candidate.label,
-        initials: candidate.label.slice(0, 1).toUpperCase(),
-        ...(candidate.detail ? { description: candidate.detail } : {}),
-    }));
+    return composer.mentionCandidates.map((candidate) => {
+        const subject = mentionSubjectOf(candidate.subject);
+        const description = candidate.detail ?? subject.description;
+        return {
+            id: candidate.id,
+            name: candidate.label,
+            initials: candidate.label.slice(0, 1).toUpperCase(),
+            icon: subject.icon,
+            insertion: candidate.insertion,
+            ...(description ? { description } : {}),
+        };
+    });
 }
 
 /**

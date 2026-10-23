@@ -143,6 +143,53 @@ export function messageReferencesPlainText(
     return replaceHappyReferences(text, (reference) => referenceView(reference, references).label);
 }
 
+/** One run of a plain body: its own words, or a reference read as a link. */
+export type MessagePlainTextSegment =
+    | { readonly type: "text"; readonly text: string }
+    | {
+          readonly type: "reference";
+          readonly reference: HappyReference;
+          readonly href: string;
+          readonly label: string;
+      };
+
+/**
+ * A plain body split around the references it names, for a person's message
+ * shown as typed: each openable reference becomes a link under the label it
+ * reads as, and an inert one its label as words. Joined, the runs read
+ * exactly as `messageReferencesPlainText` does, which is what its row is
+ * measured from.
+ */
+export function messagePlainTextSegments(
+    text: string,
+    references: MessageReferences | undefined,
+): readonly MessagePlainTextSegment[] {
+    if (!text.includes("<happy-")) return [{ type: "text", text }];
+    const segments: MessagePlainTextSegment[] = [];
+    const textAdd = (words: string) => {
+        const last = segments.at(-1);
+        if (last?.type === "text")
+            segments[segments.length - 1] = { type: "text", text: last.text + words };
+        else segments.push({ type: "text", text: words });
+    };
+    for (const segment of parseHappyReferences(text)) {
+        if (segment.type === "text") {
+            textAdd(segment.text);
+            continue;
+        }
+        const view = referenceView(segment.reference, references);
+        if (view.type === "link")
+            segments.push({
+                type: "reference",
+                reference: segment.reference,
+                href: referenceHref(segment.reference),
+                label: view.label,
+            });
+        else textAdd(view.label);
+    }
+    return segments;
+}
+
 /**
  * The references one body names, in order. A body is immutable, so a caller
  * holding the same body can keep this and skip the parse next time.

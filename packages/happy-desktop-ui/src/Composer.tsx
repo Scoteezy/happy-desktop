@@ -110,8 +110,12 @@ export function ContextChips(props: ContextChipsProps) {
 /* ---- MentionPicker ----------------------------------------------------- */
 export type Mentionable = {
     description?: string;
+    /** A glyph for what it is, in place of the initials. */
+    icon?: IconName;
     id: string;
     initials: string;
+    /** What choosing it writes in place of the `@` token; `@` and its name when absent. */
+    insertion?: string;
     name: string;
     status?: "ready" | "working";
     tone?: ToneName;
@@ -156,7 +160,17 @@ export function MentionPicker(props: MentionPickerProps) {
             role="option"
             type="button"
         >
-            <Avatar initials={mention.initials} size="xs" tone={mention.tone} type="agent" />
+            {mention.icon ? (
+                <span
+                    aria-hidden="true"
+                    className="happy-mention-picker__icon"
+                    data-happy-desktop-ui="mention-picker-icon"
+                >
+                    <Icon name={mention.icon} size={16} />
+                </span>
+            ) : (
+                <Avatar initials={mention.initials} size="xs" tone={mention.tone} type="agent" />
+            )}
             <span
                 className="happy-mention-picker__meta"
                 data-happy-desktop-ui="mention-picker-meta"
@@ -609,7 +623,7 @@ export function Composer(props: ComposerProps) {
         const start = mentionStart;
         if (!el || start === null) return;
         const caret = el.selectionStart ?? el.value.length;
-        const insertion = `@${mention.name} `;
+        const insertion = `${mention.insertion ?? `@${mention.name}`} `;
         const next = el.value.slice(0, start) + insertion + el.value.slice(caret);
         closeMention();
         props.onValueChange(next);
