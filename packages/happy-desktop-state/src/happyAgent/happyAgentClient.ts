@@ -776,6 +776,10 @@ export function happyAgentWorkspaceClientCreate(
                 client: deps.client,
                 sync: deps.connection.sync,
                 chatFound: surfaceChatGroups.add,
+                chatsShownMemory: {
+                    read: () => memory.surfaceChatsShownRead(),
+                    write: (surfaceIds) => memory.surfaceChatsShownWrite(surfaceIds),
+                },
             });
             return surfaces;
         },

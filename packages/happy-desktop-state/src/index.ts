@@ -102,6 +102,7 @@ export {
     type HappyAgentSurfaceReference,
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
+    type HappyAgentSurfaceChatActivity,
     type HappyAgentSurfaceChatOpening,
     type HappyAgentSurfaceCreateInput,
     type HappyAgentSurfaceCreateKind,

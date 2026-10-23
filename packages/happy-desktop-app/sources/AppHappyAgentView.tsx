@@ -179,6 +179,7 @@ import {
     type HappyAgentSurface,
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceCatalogStore,
+    type HappyAgentSurfaceChatActivity,
     type HappyAgentSurfaceCreateKind,
     type HappyAgentSurfaceSupportSnapshot,
     type HappyAgentSurfaceId,
@@ -2612,7 +2613,9 @@ function surfaceViewOf(
 /**
  * A Surface's row: its own name and picture whatever its type, with Leave on
  * one the reader joined and Join on one a search found. A joined todo list
- * also says how many of its todos are still open.
+ * also says how many of its todos are still open, and a joined Surface whose
+ * shared chat is busy says so the way a chat's row does, wherever the reader
+ * is.
  */
 function surfaceSidebarItem(
     happyAgentId: string,
@@ -2620,15 +2623,23 @@ function surfaceSidebarItem(
     places: SurfacePlaces,
     joined: boolean,
     offline: boolean,
-    activeTodoCounts?: ReadonlyMap<HappyAgentSurfaceId, number>,
+    live?: {
+        readonly activeTodoCounts: ReadonlyMap<HappyAgentSurfaceId, number>;
+        readonly chatActivity: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatActivity>;
+        readonly labelShimmer: boolean;
+    },
 ): SidebarItem {
-    const count = joined ? activeTodoCounts?.get(surface.id) : undefined;
+    const count = joined ? live?.activeTodoCounts.get(surface.id) : undefined;
+    const chatActivity = joined ? live?.chatActivity.get(surface.id) : undefined;
     const label = surfaceLabel(surface);
     return {
         id: happyAgentItemId(happyAgentId, surfaceRowId(surface.id)),
         kind: "project",
         label,
         ...surfaceFace(surface, places),
+        ...(chatActivity === undefined
+            ? {}
+            : { labelShimmer: live?.labelShimmer ?? true, ...sidebarActivity(chatActivity) }),
         ...(count !== undefined && count > 0 ? { count } : {}),
         ...(joined ? {} : { reorderable: false }),
         action: joined
@@ -2751,6 +2762,7 @@ function happyAgentTopSection(
     happyAgent: AppHappyAgentEntry | undefined,
     catalog: HappyAgentSurfaceCatalogSnapshot,
     activeTodoCounts: ReadonlyMap<HappyAgentSurfaceId, number>,
+    titleShimmerEnabled: boolean,
 ): SidebarSection {
     const offline = happyAgent?.status !== "connected";
     return {
@@ -2765,7 +2777,11 @@ function happyAgentTopSection(
                           surfacePlacesOf(happyAgent),
                           true,
                           offline,
-                          activeTodoCounts,
+                          {
+                              activeTodoCounts,
+                              chatActivity: catalog.chatActivity,
+                              labelShimmer: titleShimmerEnabled,
+                          },
                       ),
                   )
                 : []),
@@ -2894,7 +2910,11 @@ function happyAgentSearchSections(
                                     surfacePlacesOf(happyAgent),
                                     true,
                                     offline,
-                                    activeTodoCounts,
+                                    {
+                                        activeTodoCounts,
+                                        chatActivity: catalog.chatActivity,
+                                        labelShimmer: titleShimmerEnabled,
+                                    },
                                 ),
                             ),
                         );
@@ -4302,6 +4322,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                               active,
                               surfaceCatalog,
                               activeTodoCounts,
+                              titleShimmerEnabled,
                           ),
                           ...sectionsVoiceFocused(
                               happyAgentSections(
@@ -5713,6 +5734,7 @@ function HappyAgentSurfaceContent(props: {
         happyAgentSurfaceChatSupported(view.type) && surface.target?.state !== "unavailable"
             ? {
                   open: chatShown,
+                  working: catalog.chatActivity.get(surface.id) === "running",
                   onToggle: () => {
                       if (chatShown) {
                           chatClose();

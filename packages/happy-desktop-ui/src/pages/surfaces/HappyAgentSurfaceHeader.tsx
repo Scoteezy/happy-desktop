@@ -15,6 +15,11 @@ export interface HappyAgentSurfaceHeaderProps {
 export interface HappyAgentSurfaceChatToggle {
     readonly open: boolean;
     readonly onToggle: () => void;
+    /**
+     * The chat's agent is working, whether or not the chat is open, so the
+     * reader sees the work they asked for go on from the Surface itself.
+     */
+    readonly working?: boolean;
 }
 
 /**
@@ -61,6 +66,7 @@ export function HappyAgentSurfaceHeader(props: HappyAgentSurfaceHeaderProps) {
                     icon={agentChat ? "spark" : "chat"}
                     onClick={props.chat.onToggle}
                     size="small"
+                    working={props.chat.working === true}
                     title={
                         props.chat.open
                             ? "Close the chat"

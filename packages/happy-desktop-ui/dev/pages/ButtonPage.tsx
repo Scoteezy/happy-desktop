@@ -209,6 +209,31 @@ export function ButtonPage() {
                         ))}
                     </div>
                 </Specimen>
+                <Specimen
+                    detail="loading: its own work, disabled · working: work it leads to, still presses"
+                    label="Loading and working"
+                    number="B-09"
+                    stage="app"
+                >
+                    <div
+                        style={{
+                            alignItems: "center",
+                            display: "flex",
+                            gap: "16px",
+                            padding: "20px",
+                        }}
+                    >
+                        <Button icon="chat" size="small" variant="ghost">
+                            Chat
+                        </Button>
+                        <Button icon="chat" loading size="small" variant="ghost">
+                            Chat
+                        </Button>
+                        <Button icon="chat" size="small" variant="ghost" working>
+                            Chat
+                        </Button>
+                    </div>
+                </Specimen>
             </div>
         </ComponentPage>
     );

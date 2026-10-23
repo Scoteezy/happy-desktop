@@ -1040,6 +1040,13 @@ const HEADERS: readonly {
     { key: "narrow", width: 440, surface: GROCERIES },
     { key: "chat", width: 760, surface: GROCERIES, chat: { open: false, onToggle: noop } },
     { key: "chat-open", width: 560, surface: GROCERIES, chat: { open: true, onToggle: noop } },
+    // The chat's agent is working, which the header shows with the chat closed.
+    {
+        key: "chat-working",
+        width: 760,
+        surface: GROCERIES,
+        chat: { open: false, onToggle: noop, working: true },
+    },
     // A chat Surface names the chat beside it for its agent.
     {
         key: "agent-chat",

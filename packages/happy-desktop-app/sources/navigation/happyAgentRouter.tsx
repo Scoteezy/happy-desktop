@@ -611,6 +611,43 @@ function HappyAgentWorkspaceLayout(
     // so the very first render of a deep-linked URL can arrive with an empty
     // context; the provider's context lands on the next synchronous pass.
     if (!context.happyAgents) return null;
+    /**
+     * Shows a Surface's shared chat beside it, at the conversation it is, or
+     * hides it. The chat is found in the background; a reader who has moved
+     * on by the time it answers stays where they went.
+     */
+    const surfaceChatShow = (
+        happyAgentId: string,
+        surfaceId: string,
+        chat: HappyAgentSessionLocation | undefined,
+    ): void => {
+        const shown = happyAgentRoutePathParse(router.history.location.pathname);
+        if (
+            shown?.kind !== "surface" ||
+            shown.happyAgentId !== happyAgentId ||
+            shown.surfaceId !== surfaceId
+        )
+            return;
+        // Showing or hiding the chat is not a step to go back through.
+        void navigate(
+            chat === undefined
+                ? {
+                      params: { happyAgentId, surfaceId },
+                      replace: true,
+                      to: "/surfaces/$happyAgentId/$surfaceId",
+                  }
+                : {
+                      params: {
+                          chatAgentId: chat.sessionId,
+                          chatGroupId: chat.groupId,
+                          happyAgentId,
+                          surfaceId,
+                      },
+                      replace: true,
+                      to: "/surfaces/$happyAgentId/$surfaceId/chat/$chatGroupId/$chatAgentId",
+                  },
+        );
+    };
     return (
         <AppHappyAgentView
             appearance={context.appearance}
@@ -655,42 +692,49 @@ function HappyAgentWorkspaceLayout(
             params.chatAgentId !== undefined
                 ? { surfaceChat: { groupId: params.chatGroupId, chatId: params.chatAgentId } }
                 : {})}
-            onSurfaceOpen={(happyAgentId, surfaceId) =>
+            onSurfaceOpen={(happyAgentId, surfaceId) => {
+                // A Surface whose chat the reader left open opens with it.
+                const catalog = happyAgentSurfaces(context, happyAgentId)?.catalog();
+                const shown = catalog?.get().chatsShown.has(surfaceId as HappyAgentSurfaceId);
+                const found = shown
+                    ? catalog?.get().chats.get(surfaceId as HappyAgentSurfaceId)
+                    : undefined;
+                if (found !== undefined) {
+                    void navigate({
+                        params: {
+                            chatAgentId: found.sessionId,
+                            chatGroupId: found.groupId,
+                            happyAgentId,
+                            surfaceId,
+                        },
+                        to: "/surfaces/$happyAgentId/$surfaceId/chat/$chatGroupId/$chatAgentId",
+                    });
+                    return;
+                }
                 void navigate({
                     params: { happyAgentId, surfaceId },
                     to: "/surfaces/$happyAgentId/$surfaceId",
-                })
-            }
-            onSurfaceChatShow={(happyAgentId, surfaceId, chat) => {
-                // The chat is found in the background; a reader who has moved
-                // on by the time it answers stays where they went.
-                const shown = happyAgentRoutePathParse(router.history.location.pathname);
-                if (
-                    shown?.kind !== "surface" ||
-                    shown.happyAgentId !== happyAgentId ||
-                    shown.surfaceId !== surfaceId
-                )
-                    return;
-                // Showing or hiding the chat is not a step to go back through.
-                void navigate(
-                    chat === undefined
-                        ? {
-                              params: { happyAgentId, surfaceId },
-                              replace: true,
-                              to: "/surfaces/$happyAgentId/$surfaceId",
-                          }
-                        : {
-                              params: {
-                                  chatAgentId: chat.chatId,
-                                  chatGroupId: chat.groupId,
-                                  happyAgentId,
-                                  surfaceId,
-                              },
-                              replace: true,
-                              to: "/surfaces/$happyAgentId/$surfaceId/chat/$chatGroupId/$chatAgentId",
-                          },
-                );
+                });
+                // Not found yet in this run: it opens beside the Surface the way
+                // the header's Chat opens it, saying so while it is found.
+                if (shown && catalog)
+                    catalog
+                        .chatOpen(surfaceId as HappyAgentSurfaceId)
+                        .then((location) => surfaceChatShow(happyAgentId, surfaceId, location))
+                        .catch(() => undefined);
             }}
+            onSurfaceChatShow={(happyAgentId, surfaceId, chat) =>
+                surfaceChatShow(
+                    happyAgentId,
+                    surfaceId,
+                    chat === undefined
+                        ? undefined
+                        : {
+                              groupId: chat.groupId as HappyAgentGroupId,
+                              sessionId: chat.chatId as HappyAgentSessionId,
+                          },
+                )
+            }
             blueprintOpen={props.blueprint}
             // Offered only where the route exists, which is what puts the
             // workbench row in a development sidebar and nowhere else.

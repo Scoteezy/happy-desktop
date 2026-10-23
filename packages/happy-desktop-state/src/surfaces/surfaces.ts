@@ -85,6 +85,8 @@ export interface HappyAgentSurfacesDeps {
     readonly sync: HappyAgentSync;
     /** Told of the workspace each Surface chat is held in, once the daemon has said. */
     readonly chatFound?: HappyAgentSurfaceCatalogDeps["chatFound"];
+    /** Where the Surfaces whose chat the reader left open are remembered between runs. */
+    readonly chatsShownMemory?: HappyAgentSurfaceCatalogDeps["chatsShownMemory"];
 }
 
 export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAgentSurfaces {
@@ -115,6 +117,7 @@ export function happyAgentSurfacesCreate(deps: HappyAgentSurfacesDeps): HappyAge
                     client: deps.client,
                     sync: deps.sync,
                     ...(deps.chatFound ? { chatFound: deps.chatFound } : {}),
+                    ...(deps.chatsShownMemory ? { chatsShownMemory: deps.chatsShownMemory } : {}),
                     surfaceCreating(surfaceId, created) {
                         creating.set(surfaceId, created);
                         const done = (): void => {

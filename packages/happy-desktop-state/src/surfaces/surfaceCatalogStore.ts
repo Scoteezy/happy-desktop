@@ -1,12 +1,15 @@
 import {
     HappyAgentApiError,
+    type Agent,
     type CreateSurfaceRequest,
     type HappyAgentClient,
+    type HappyAgentEvent,
     type Profile,
 } from "@slopus/happy-agent-client";
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
+import { happyAgentConversationActivityProject } from "../happyAgent/happyAgentConversationAuthors.js";
 import type { HappyAgentArtifactId } from "../artifacts/artifactTypes.js";
 import type { HappyAgentSessionLocation } from "../happyAgent/happyAgentSessionListStore.js";
 import type {
@@ -157,6 +160,13 @@ export type HappyAgentSurfaceChatOpening =
     | { readonly phase: "failed"; readonly error: UserError };
 
 /**
+ * What a Surface's shared chat is doing, as a sidebar row says it of a chat:
+ * its agent working, inside a scheduled wait, stopped on a question for the
+ * person, or idle.
+ */
+export type HappyAgentSurfaceChatActivity = "running" | "waiting" | "awaitingInput" | "idle";
+
+/**
  * A Surface this window asked for that the Happy Agent turned down: what it
  * was to be, and why, in words for the reader.
  */
@@ -217,6 +227,19 @@ export interface HappyAgentSurfaceCatalogSnapshot {
      * a Surface's chat: an address naming another is not it.
      */
     readonly chats: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSessionLocation>;
+    /**
+     * What the shared chat of each joined Surface that has one is doing, by
+     * Surface, as last read from its agent. A Surface missing from it has no
+     * chat yet, or its chat has not been read yet.
+     */
+    readonly chatActivity: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatActivity>;
+    /**
+     * The Surfaces whose shared chat the reader left open beside them, so the
+     * chat is open again when they come back, in this run or the next. Opening
+     * a chat adds its Surface and closing it takes it out; leaving for another
+     * Surface changes nothing.
+     */
+    readonly chatsShown: ReadonlySet<HappyAgentSurfaceId>;
     /** The last read failed; the retained catalog stays visible and the read is retried. */
     readonly error?: UserError;
 }
@@ -271,10 +294,14 @@ export interface HappyAgentSurfaceCatalogStore {
      * Opens a Surface's one shared chat, which the daemon makes the first time
      * anybody asks, and answers where it is held. A chat already found here
      * answers at once. Asked again under one mutation ID until the daemon
-     * hears; rejects with its refusal, which `chatsOpening` states too.
+     * hears; rejects with its refusal, which `chatsOpening` states too. The
+     * Surface is remembered among `chatsShown`.
      */
     chatOpen(surfaceId: HappyAgentSurfaceId): Promise<HappyAgentSessionLocation>;
-    /** Stops opening a Surface's chat, or forgets why it could not be opened. */
+    /**
+     * Closes a Surface's chat: stops opening it, or forgets why it could not
+     * be opened, and takes the Surface out of `chatsShown`.
+     */
     chatOpenCancel(surfaceId: HappyAgentSurfaceId): void;
     [Symbol.dispose](): void;
 }
@@ -292,6 +319,7 @@ export interface HappyAgentSurfaceCatalogDeps {
         | "getProfile"
         | "getUsers"
         | "ensureSurfaceChat"
+        | "getAgent"
     >;
     readonly sync: HappyAgentSync;
     readonly now?: () => number;
@@ -300,6 +328,14 @@ export interface HappyAgentSurfaceCatalogDeps {
      * the daemon has said, since no listing names that workspace.
      */
     readonly chatFound?: (location: HappyAgentSessionLocation) => void;
+    /**
+     * Where `chatsShown` is kept between runs. The host decides the medium;
+     * without one it lasts as long as this store.
+     */
+    readonly chatsShownMemory?: {
+        read(): readonly string[];
+        write(surfaceIds: readonly HappyAgentSurfaceId[]): void;
+    };
     /**
      * Told of each list this store starts making, with a promise that settles
      * once the daemon has it — rejected if the daemon refused it — so a store
@@ -318,6 +354,8 @@ const CREATE_CLOSED: HappyAgentSurfaceCreateState = { phase: "closed" };
 const NO_CHATS_OPENING: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatOpening> = new Map();
 const CHAT_OPENING: HappyAgentSurfaceChatOpening = { phase: "opening" };
 const NO_CHATS: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSessionLocation> = new Map();
+const NO_CHAT_ACTIVITY: ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatActivity> = new Map();
+const NO_CHATS_SHOWN: ReadonlySet<HappyAgentSurfaceId> = new Set();
 
 const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     availability: "unsupported",
@@ -330,6 +368,8 @@ const UNSUPPORTED: HappyAgentSurfaceCatalogSnapshot = {
     createsRefused: NO_CREATES_REFUSED,
     chatsOpening: NO_CHATS_OPENING,
     chats: NO_CHATS,
+    chatActivity: NO_CHAT_ACTIVITY,
+    chatsShown: NO_CHATS_SHOWN,
 };
 
 /**
@@ -483,6 +523,50 @@ async function base64Of(blob: Blob): Promise<string> {
     return btoa(binary);
 }
 
+/** The Surfaces whose chat was left open in an earlier run, as the host kept them. */
+function chatsShownRemembered(
+    memory: HappyAgentSurfaceCatalogDeps["chatsShownMemory"],
+): ReadonlySet<HappyAgentSurfaceId> {
+    let remembered: readonly string[] = [];
+    try {
+        remembered = memory?.read() ?? [];
+    } catch {
+        // Memory the host cannot read is memory of nothing.
+    }
+    return remembered.length === 0
+        ? NO_CHATS_SHOWN
+        : new Set(remembered as readonly HappyAgentSurfaceId[]);
+}
+
+/** What an `agent.updated` event carries. */
+type AgentUpdatedPayloadOf = Extract<HappyAgentEvent, { type: "agent.updated" }>["payload"];
+
+/** The parts of a chat's agent its activity is read from, with the version they stand on. */
+type ChatAgentFacts = Pick<
+    Agent,
+    "version" | "status" | "wait" | "pendingQuestionId" | "subagents"
+>;
+
+function chatAgentFactsOf(agent: ChatAgentFacts): ChatAgentFacts {
+    return {
+        version: agent.version,
+        status: agent.status,
+        ...(agent.wait === undefined ? {} : { wait: agent.wait }),
+        pendingQuestionId: agent.pendingQuestionId,
+        subagents: agent.subagents,
+    };
+}
+
+/** What a chat's agent is doing, judged exactly as a chat's sidebar row judges it. */
+function chatActivityOf(agent: ChatAgentFacts): HappyAgentSurfaceChatActivity {
+    return happyAgentConversationActivityProject({
+        pendingQuestion: agent.pendingQuestionId !== null,
+        activeSubagentCount: agent.subagents.running,
+        status: agent.status === "idle" ? "idle" : "running",
+        ...(agent.wait == null ? {} : { wait: agent.wait }),
+    });
+}
+
 /** A member's place in a sidebar: its key, then the Surface's ID, in plain string order. */
 function sidebarCompare(
     left: { readonly surface: HappyAgentSurface; readonly member: HappyAgentSurfaceMember },
@@ -540,6 +624,8 @@ export function happyAgentSurfaceCatalogStoreCreate(
         createsRefused: NO_CREATES_REFUSED,
         chatsOpening: NO_CHATS_OPENING,
         chats: NO_CHATS,
+        chatActivity: NO_CHAT_ACTIVITY,
+        chatsShown: chatsShownRemembered(deps.chatsShownMemory),
     };
     let ops: MembershipOp[] = [];
     /** Chats being opened, each with its own way to stop asking. */
@@ -558,6 +644,10 @@ export function happyAgentSurfaceCatalogStoreCreate(
     let reads = new AbortController();
     /** Count reads in flight, each marked when a hint arrives while it runs. */
     const countReads = new Map<HappyAgentSurfaceId, { again: boolean }>();
+    /** Each followed chat agent as last read or updated, by agent ID. */
+    const chatAgents = new Map<string, ChatAgentFacts>();
+    /** Chat agent reads in flight, each marked when a gap arrives while it runs. */
+    const chatReads = new Map<string, { again: boolean }>();
     let readsInFlight = 0;
     let readLatest = 0;
     /** Events seen while a read was in flight, replayed onto its answer. */
@@ -768,6 +858,98 @@ export function happyAgentSurfaceCatalogStoreCreate(
         return true;
     };
 
+    /** The chats followed: each joined Surface's chat agent, by agent ID, with its Surface. */
+    const chatFollowed = (joined: readonly HappyAgentSurface[]): Map<string, HappyAgentSurfaceId> =>
+        new Map(
+            joined.flatMap((surface) =>
+                surface.chatAgentId === null ? [] : [[surface.chatAgentId, surface.id] as const],
+            ),
+        );
+
+    /**
+     * The activity of every followed chat whose agent is known, keeping the
+     * map it replaces when nothing in it moved.
+     */
+    const chatActivityProject = (
+        joined: readonly HappyAgentSurface[],
+    ): ReadonlyMap<HappyAgentSurfaceId, HappyAgentSurfaceChatActivity> => {
+        const next = new Map<HappyAgentSurfaceId, HappyAgentSurfaceChatActivity>();
+        for (const [agentId, surfaceId] of chatFollowed(joined)) {
+            const agent = chatAgents.get(agentId);
+            if (agent !== undefined) next.set(surfaceId, chatActivityOf(agent));
+        }
+        const held = snapshot.chatActivity;
+        return next.size === held.size &&
+            [...next].every(([surfaceId, activity]) => held.get(surfaceId) === activity)
+            ? held
+            : next.size === 0
+              ? NO_CHAT_ACTIVITY
+              : next;
+    };
+
+    /** Holds one chat agent's facts and publishes what its Surface's chat is doing. */
+    const chatAgentAdopt = (agentId: string, agent: ChatAgentFacts): void => {
+        chatAgents.set(agentId, agent);
+        const chatActivity = chatActivityProject(snapshot.joined);
+        if (chatActivity !== snapshot.chatActivity) publish({ chatActivity });
+    };
+
+    /**
+     * Reads one chat's agent. A gap arriving while a read runs asks for one
+     * more read after it, so the activity settles on the daemon's latest
+     * answer however many changes arrive at once.
+     */
+    const chatRead = (agentId: string): void => {
+        if (following === undefined || disposed) return;
+        const running = chatReads.get(agentId);
+        if (running !== undefined) {
+            running.again = true;
+            return;
+        }
+        const entry = { again: false };
+        chatReads.set(agentId, entry);
+        void deps.client
+            .getAgent(agentId, { signal: reads.signal })
+            .then(
+                (response) => {
+                    if (chatReads.get(agentId) !== entry) return;
+                    if (!chatFollowed(snapshot.joined).has(agentId)) return;
+                    chatAgentAdopt(agentId, chatAgentFactsOf(response.agent));
+                },
+                () => {
+                    // An unread chat shows no activity; the next hint or
+                    // reconciliation reads it again.
+                },
+            )
+            .finally(() => {
+                if (chatReads.get(agentId) !== entry) return;
+                chatReads.delete(agentId);
+                if (entry.again) chatRead(agentId);
+            });
+    };
+
+    /** Reads every followed chat's agent again, as a reconciliation does. */
+    const chatsRefresh = (): void => {
+        for (const agentId of chatFollowed(snapshot.joined).keys()) chatRead(agentId);
+    };
+
+    /**
+     * Applies a change to a followed chat's agent by its version chain, or
+     * reads the agent again when the chain is broken. Changes to any other
+     * agent are not this catalog's.
+     */
+    const chatHint = (event: { readonly payload: AgentUpdatedPayloadOf }): void => {
+        const { agentId, version, previousVersion, changes } = event.payload;
+        if (!chatFollowed(snapshot.joined).has(agentId)) return;
+        const held = chatAgents.get(agentId);
+        if (held?.version === version) return;
+        if (held === undefined || held.version !== previousVersion || chatReads.has(agentId)) {
+            chatRead(agentId);
+            return;
+        }
+        chatAgentAdopt(agentId, chatAgentFactsOf({ ...held, ...changes, version }));
+    };
+
     const republish = (next: Partial<HappyAgentSurfaceCatalogSnapshot> = {}): void => {
         snapshot = { ...snapshot, ...next };
         const projected = project();
@@ -777,8 +959,18 @@ export function happyAgentSurfaceCatalogStoreCreate(
         let counts = snapshot.activeTodoCounts;
         if ([...counts.keys()].some((surfaceId) => !counted.has(surfaceId)))
             counts = new Map([...counts].filter(([surfaceId]) => counted.has(surfaceId)));
-        publish({ ...projected, activeTodoCounts: counts });
+        // Chats follow it too: a Surface left forgets its chat, and one joined,
+        // or whose chat was just made, has its chat read.
+        const followed = chatFollowed(projected.joined);
+        for (const agentId of chatAgents.keys())
+            if (!followed.has(agentId)) chatAgents.delete(agentId);
+        publish({
+            ...projected,
+            activeTodoCounts: counts,
+            chatActivity: chatActivityProject(projected.joined),
+        });
         for (const surfaceId of counted) if (!counts.has(surfaceId)) countRead(surfaceId);
+        for (const agentId of followed.keys()) if (!chatAgents.has(agentId)) chatRead(agentId);
     };
 
     /** Replaces one Surface with a later version of it, or adds it. */
@@ -944,6 +1136,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
         usersRequest(authoritative);
         republish({ ...reader, availability: "available" });
         countsRefresh();
+        chatsRefresh();
         if (gap) reload();
     };
 
@@ -959,6 +1152,8 @@ export function happyAgentSurfaceCatalogStoreCreate(
                     ...HAPPY_AGENT_TODO_EVENT_TYPES,
                     ...TARGET_EVENT_TYPES,
                     "profile.updated",
+                    // What a Surface's shared chat is doing is its agent's.
+                    "agent.updated",
                 ],
             })) {
                 if (input.kind === "error") {
@@ -991,6 +1186,10 @@ export function happyAgentSurfaceCatalogStoreCreate(
                     if (raw.payload.profile !== undefined)
                         republish(profileAdopt(raw.payload.profile));
                     else if (raw.payload.userId !== undefined) usersRequest([], raw.payload.userId);
+                    continue;
+                }
+                if (raw.type === "agent.updated") {
+                    chatHint(raw);
                     continue;
                 }
                 if (todoHint(raw)) continue;
@@ -1033,10 +1232,25 @@ export function happyAgentSurfaceCatalogStoreCreate(
         readsInFlight = 0;
         journal = [];
         countReads.clear();
+        chatReads.clear();
         if (retry) clearTimeout(retry);
         retry = undefined;
         if (targetsTimer) clearTimeout(targetsTimer);
         targetsTimer = undefined;
+    };
+
+    /** Records whether a Surface's chat is left open beside it, here and between runs. */
+    const chatShownRemember = (surfaceId: HappyAgentSurfaceId, shown: boolean): void => {
+        if (disposed || snapshot.chatsShown.has(surfaceId) === shown) return;
+        const chatsShown = new Set(snapshot.chatsShown);
+        if (shown) chatsShown.add(surfaceId);
+        else chatsShown.delete(surfaceId);
+        publish({ chatsShown });
+        try {
+            deps.chatsShownMemory?.write([...chatsShown]);
+        } catch {
+            // Memory the host refused still keeps this run's.
+        }
     };
 
     /** Sends the queued acts one at a time, in the order they were asked for. */
@@ -1287,6 +1501,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
             return surfaceId;
         },
         chatOpen(surfaceId) {
+            chatShownRemember(surfaceId, true);
             // Where a chat is held never moves.
             const found = snapshot.chats.get(surfaceId);
             if (found !== undefined) return Promise.resolve(found);
@@ -1366,6 +1581,7 @@ export function happyAgentSurfaceCatalogStoreCreate(
             return answer;
         },
         chatOpenCancel(surfaceId) {
+            chatShownRemember(surfaceId, false);
             const running = chatOpenings.get(surfaceId);
             if (running !== undefined) {
                 chatOpenings.delete(surfaceId);

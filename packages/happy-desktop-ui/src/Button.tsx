@@ -20,6 +20,12 @@ export type ButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "style">
      */
     loading?: boolean;
     /**
+     * Work the button leads to is running somewhere else — the chat it opens,
+     * say: a spinner takes the icon's place, but unlike `loading` the button
+     * still presses, because the work is not this button's own.
+     */
+    working?: boolean;
+    /**
      * Command-key hint. It floats below the unchanged button after the ordinary
      * hover delay, or immediately when an ancestor carries
      * `data-shortcut-hints` after AppShell's deliberate Command hold.
@@ -49,6 +55,7 @@ export function Button(props: ButtonProps) {
         "type",
         "variant",
         "width",
+        "working",
     ]);
     const size = () => local.size ?? "medium";
     const variant = () => local.variant ?? "primary";
@@ -60,6 +67,7 @@ export function Button(props: ButtonProps) {
             data-icon-only={local.iconOnly ? "" : undefined}
             data-happy-desktop-ui="button"
             data-loading={local.loading ? "" : undefined}
+            data-working={local.working && !local.loading ? "" : undefined}
             data-shortcut-hint={local.shortcut ? "" : undefined}
             disabled={rest.disabled === true || local.loading === true}
             data-size={size()}
@@ -75,7 +83,7 @@ export function Button(props: ButtonProps) {
             type={local.type ?? "button"}
         >
             <span className="happy-button__content" data-happy-desktop-ui="button-content">
-                {local.loading ? (
+                {local.loading || local.working ? (
                     <span className="happy-button__icon" data-happy-desktop-ui="button-icon">
                         <Spinner
                             size={iconSizes[size()]}
