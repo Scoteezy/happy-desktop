@@ -434,6 +434,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
     const documentView = useMemo(() => documentViewOf(sidebarDoc?.html), [sidebarDoc?.html]);
     const view = documentView ?? legacyViewOf(snapshot);
     const editable = documentView !== undefined && sidebarDoc !== undefined;
+    const visible = props.visible !== false;
     const focused = happyAgentSpaceFocused(snapshot, props.focus);
     const foldReveal = (own: "hover" | "always" | undefined) =>
         (own ?? view.foldRibbon) === "always" ? { foldReveal: "always" as const } : {};
@@ -600,13 +601,41 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             // Rows never move under the pointer: queued changes wait while it
             // is over the sidebar — hovering, dragging, or in a row's menu.
             interactionEnabled={props.visible !== false}
-            onInteractionChange={(interacting) =>
-                props.store.attentionUpdate(interacting ? "interacting" : "calm")
-            }
+            onInteractionChange={props.store.attentionInteractingUpdate}
             onDragChange={props.store.sidebarDragUpdate}
             footer={
                 <>
                     {props.footer}
+                    {/* Queued changes land after five minutes without input, or
+                        at once when the window or this sidebar goes out of
+                        sight; nothing the person clicks lets them land. */}
+                    <span
+                        hidden
+                        ref={(node) => {
+                            const view = node?.ownerDocument.defaultView;
+                            if (!node || !view) return;
+                            const store = props.store;
+                            const document = node.ownerDocument;
+                            const report = () =>
+                                store.attentionVisibleUpdate(
+                                    visible && document.visibilityState === "visible",
+                                );
+                            const input = () => store.attentionInput();
+                            const kinds = ["keydown", "pointerdown", "pointermove", "wheel"];
+                            for (const kind of kinds)
+                                view.addEventListener(kind, input, {
+                                    capture: true,
+                                    passive: true,
+                                });
+                            document.addEventListener("visibilitychange", report);
+                            report();
+                            return () => {
+                                for (const kind of kinds)
+                                    view.removeEventListener(kind, input, { capture: true });
+                                document.removeEventListener("visibilitychange", report);
+                            };
+                        }}
+                    />
                     {props.classic ? (
                         // Mounted with the sidebar and replaced when the folds
                         // change, so the store always holds the current ones.

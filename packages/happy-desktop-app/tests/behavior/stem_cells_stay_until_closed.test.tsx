@@ -134,6 +134,11 @@ it("keeps stem cells through clicks and a reload, and closes only the one asked 
         expect(window.row("stemA")).not.toBeNull();
         expect(window.row("stemB")).not.toBeNull();
         expect(removeSpace).not.toHaveBeenCalled();
+        // No click lets queued changes land.
+        expect(daemon.client.reportSpaceAttention).not.toHaveBeenCalledWith(
+            { state: "calm" },
+            expect.anything(),
+        );
 
         fireEvent.contextMenu(window.row("stemA")!);
         fireEvent.click(window.view.getByText("Close new work"));

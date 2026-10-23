@@ -162,10 +162,22 @@ export interface HappyAgentSpacesStore {
     /** Whether Happy's chat is on screen; opening it reads its note. */
     happyFocusUpdate(focused: boolean): void;
     /**
-     * Holds queued sidebar changes back while the reader is in the sidebar, or
-     * lets them land now that a navigation gesture is done.
+     * Whether the reader is in the sidebar: hovering it, dragging in it, or in
+     * one of its menus. Being in it holds queued changes back; leaving it is
+     * only more input, never permission for them to land.
      */
-    attentionUpdate(state: HappyAgentSpacesAttention): void;
+    attentionInteractingUpdate(interacting: boolean): void;
+    /**
+     * The person did something in the window. Queued changes wait for
+     * ATTENTION_CALM_MS without any of this, so no click, navigation or
+     * selection ever lets them land.
+     */
+    attentionInput(): void;
+    /**
+     * Whether the window and its sidebar are on screen. Hiding or minimising
+     * the window, or collapsing the sidebar, lets queued changes land at once.
+     */
+    attentionVisibleUpdate(visible: boolean): void;
     /** Asks the manager to tidy now; its batch applies as soon as it is done. */
     tidyRequest(): void;
     /**
@@ -216,6 +228,8 @@ const EMPTY: HappyAgentSpacesSnapshot = {
 const BATCH_LIMIT = 100;
 /** Comfortably inside the daemon's ten-minute hold on an "interacting" report. */
 const ATTENTION_RENEW_MS = 60_000;
+/** How long the person goes without any input before queued changes may land. */
+const ATTENTION_CALM_MS = 5 * 60_000;
 
 function sectionsOrdered(
     sections: Iterable<HappyAgentSpaceSection>,
@@ -629,9 +643,23 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 .catch(() => undefined);
         });
     };
+    let attentionVisible = true;
+    let attentionIdle: ReturnType<typeof setTimeout> | undefined;
+    /** Starts the quiet period over: calm only once it passes without input. */
+    const attentionIdleRestart = (): void => {
+        if (attentionIdle) clearTimeout(attentionIdle);
+        attentionIdle = undefined;
+        if (disposed || !attentionVisible) return;
+        attentionIdle = setTimeout(() => {
+            attentionIdle = undefined;
+            attentionSend("calm");
+        }, ATTENTION_CALM_MS);
+    };
     const sidebarReleased = (): void => {
         if (sidebarDragging || sidebarWrites > 0) return;
-        attentionSend("calm");
+        // A drop is input like any other; a hidden window was already calm.
+        if (attentionVisible) attentionIdleRestart();
+        else attentionSend("calm");
         if (sidebarStale) {
             sidebarStale = false;
             sidebarLoad();
@@ -747,8 +775,25 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             happyOnScreen = focused;
             if (focused && snapshot.noteUnread) publish({ noteUnread: false });
         },
-        attentionUpdate(state) {
-            attentionSend(state);
+        attentionInteractingUpdate(interacting) {
+            if (!attentionVisible) return;
+            if (interacting) attentionSend("interacting");
+            attentionIdleRestart();
+        },
+        attentionInput() {
+            if (!attentionVisible) return;
+            attentionSend("interacting");
+            attentionIdleRestart();
+        },
+        attentionVisibleUpdate(visible) {
+            if (attentionVisible === visible) return;
+            attentionVisible = visible;
+            if (visible) {
+                store.attentionInput();
+                return;
+            }
+            attentionIdleRestart();
+            attentionSend("calm");
         },
         sidebarDragUpdate(active) {
             sidebarDragging = active;
@@ -828,6 +873,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
         [Symbol.dispose]() {
             if (disposed) return;
             disposed = true;
+            if (attentionIdle) clearTimeout(attentionIdle);
             stop();
             life.abort();
             listeners.clear();
@@ -848,7 +894,9 @@ export const happyAgentSpacesStoreNoop: HappyAgentSpacesStore = {
     sectionTailExpandedUpdate: () => undefined,
     olderExpandedUpdate: () => undefined,
     happyFocusUpdate: () => undefined,
-    attentionUpdate: () => undefined,
+    attentionInteractingUpdate: () => undefined,
+    attentionInput: () => undefined,
+    attentionVisibleUpdate: () => undefined,
     tidyRequest: () => undefined,
     stemCellDiscard: () => undefined,
     sidebarWrite: () => undefined,
