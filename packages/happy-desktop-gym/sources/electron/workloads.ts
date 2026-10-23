@@ -2167,6 +2167,14 @@ async function longChatScrollRun(
 const COMPOSER_TYPING_TEXT =
     "Can you check whether this keeps up while the transcript streams? I am typing quickly, with commas, numbers like 42, and a question.";
 
+/**
+ * A correction made in the middle of what was typed, after the measurement.
+ * The pause after each key outlasts the connection's draft-save debounce, so
+ * every save reaches the host and its answer comes back while the next key
+ * goes in.
+ */
+const COMPOSER_TYPING_CORRECTION = { before: " while ", text: " really", pauseMs: 330 } as const;
+
 /** Milliseconds between keystrokes; roughly a fast typist's cadence. */
 const COMPOSER_TYPING_KEY_INTERVAL_MS = 60;
 
@@ -2606,6 +2614,56 @@ function renderedReport(
 }
 
 /**
+ * Moves the caret back into the typed text with arrow keys and inserts a
+ * word there a key at a time, while the responses still stream and each key's
+ * draft save and the host's answer to it arrive. The value, the caret, and
+ * focus must all be where the keys left them.
+ */
+async function composerTypingCorrect(
+    page: Page,
+    composer: Locator,
+): Promise<{
+    readonly expected: string;
+    readonly value: string;
+    readonly valueMatches: boolean;
+    readonly caret: { readonly start: number; readonly end: number; readonly expected: number };
+    readonly caretKept: boolean;
+    readonly focused: boolean;
+}> {
+    const at = COMPOSER_TYPING_TEXT.indexOf(COMPOSER_TYPING_CORRECTION.before);
+    for (let index = COMPOSER_TYPING_TEXT.length; index > at; index -= 1)
+        await page.keyboard.press("ArrowLeft");
+    for (const character of COMPOSER_TYPING_CORRECTION.text) {
+        await page.keyboard.type(character);
+        await page.waitForTimeout(COMPOSER_TYPING_CORRECTION.pauseMs);
+    }
+    // The last key's save and its answer.
+    await page.waitForTimeout(COMPOSER_TYPING_CORRECTION.pauseMs * 2);
+    const expected =
+        COMPOSER_TYPING_TEXT.slice(0, at) +
+        COMPOSER_TYPING_CORRECTION.text +
+        COMPOSER_TYPING_TEXT.slice(at);
+    const caretExpected = at + COMPOSER_TYPING_CORRECTION.text.length;
+    const state = await composer.evaluate((element) => {
+        const textarea = element as HTMLTextAreaElement;
+        return {
+            value: textarea.value,
+            start: textarea.selectionStart,
+            end: textarea.selectionEnd,
+            focused: document.activeElement === textarea,
+        };
+    });
+    return {
+        expected,
+        value: state.value,
+        valueMatches: state.value === expected,
+        caret: { start: state.start, end: state.end, expected: caretExpected },
+        caretKept: state.start === caretExpected && state.end === caretExpected,
+        focused: state.focused,
+    };
+}
+
+/**
  * Types into the open conversation's composer while long responses stream
  * into it and its neighbours, and measures what each keystroke costs.
  *
@@ -2664,6 +2722,7 @@ async function composerTypingRun(
     let typed = false;
     let capture: ComposerTypingProbeCapture;
     let finalValue: string;
+    let correction: Awaited<ReturnType<typeof composerTypingCorrect>>;
     let measuredFrom: number;
     let measuredUntil: number;
     try {
@@ -2695,8 +2754,9 @@ async function composerTypingRun(
         await page.waitForTimeout(COMPOSER_TYPING_STREAM_ONLY_MS);
         capture = await composerTypingProbeStop(page);
         probing = false;
-        measuredUntil = Date.now();
         finalValue = await composer.inputValue();
+        correction = await composerTypingCorrect(page, composer);
+        measuredUntil = Date.now();
     } finally {
         if (probing) await composerTypingProbeStop(page).catch(() => undefined);
         // Leave the conversation as it was found, with keys rather than a fill.
@@ -2741,6 +2801,7 @@ async function composerTypingRun(
         streamsIntended: targets.length,
         streams,
         finalValueMatches: finalValue === COMPOSER_TYPING_TEXT,
+        correction,
         untrustedEvents: capture.untrustedEvents,
         keystrokesObserved: keystrokes.length,
         latencyMs: {
@@ -2812,6 +2873,10 @@ async function composerTypingRun(
         );
     if (keystrokes.length !== details.typedCharacters || capture.untrustedEvents > 0)
         throw new Error(`Composer typing was not measured key by key: ${JSON.stringify(details)}`);
+    if (!correction.valueMatches || !correction.caretKept || !correction.focused)
+        throw new Error(
+            `A correction in the middle of the draft did not hold: ${JSON.stringify(correction)}`,
+        );
     if (
         keystrokes.some(
             (entry) =>
