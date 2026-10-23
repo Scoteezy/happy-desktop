@@ -6,6 +6,7 @@ import {
     type HappyAgentSpaceId,
 } from "happy-desktop-state";
 import {
+    happyAgentSpaceMark,
     happyAgentSpacesChildDestination,
     HappyAgentSpacesSidebar,
     type HappyAgentSpacesPlaces,
@@ -267,4 +268,68 @@ it("opens a nested row on a session, never on a bare workspace", () => {
         chatId: "aListed",
     });
     expect(destination({ kind: "worktree", worktreeId: "wt_nothing" })).toBeUndefined();
+});
+
+it("draws a bot's uploaded avatar as its classic row does, and named work without a picture as named work", () => {
+    const space = (
+        id: string,
+        title: string | null,
+        icon: HappyAgentSpace["icon"],
+        target: HappyAgentSpace["target"],
+    ): HappyAgentSpace => ({
+        id: id as HappyAgentSpaceId,
+        title,
+        icon,
+        target,
+        sectionId: null,
+        orderKey: "0",
+        placement: "settled",
+        visibility: "shown",
+        version: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        working: false,
+    });
+    const avatar = "http://happy-agent/v0/bots/bot-uploaded/avatar";
+    const places = {
+        bots: [{ id: "bot-uploaded", avatar: { url: avatar, thumbhash: "" } }],
+        tasks: [
+            {
+                id: "task-owned",
+                owner: { avatar: { url: "http://happy-agent/v0/users/u/avatar" } },
+            },
+        ],
+        chatGroupOf: () => undefined,
+    } as unknown as HappyAgentSpacesPlaces;
+    const bot = { kind: "bot", id: "bot-uploaded", agentId: "a", workspaceId: "w" } as const;
+    const task = (id: string) => ({ kind: "task", id, agentId: "a", workspaceId: "w" }) as const;
+    // The uploaded picture outranks whatever was chosen for the row.
+    for (const icon of [
+        null,
+        { type: "library", slug: "rocket" },
+        { type: "image", url: "/v0/bots/bot-uploaded/avatar" },
+    ] as const)
+        expect(happyAgentSpaceMark(space("b", "Insight Miner", icon, bot), places, true)).toEqual({
+            imageMark: { src: avatar, alt: "" },
+        });
+    // New work is the stem cell for as long as it is one.
+    expect(happyAgentSpaceMark(space("n", null, null, task("t")), places, true)).toEqual({
+        stemCell: { id: "n" },
+    });
+    expect(
+        happyAgentSpaceMark(space("s", "Named", { type: "stem_cell" }, task("t")), places, true),
+    ).toEqual({
+        stemCell: { id: "s" },
+    });
+    // Named work with no picture wears its owner's face, or the tasks glyph.
+    expect(
+        happyAgentSpaceMark(space("o", "Preview Releases", null, task("task-owned")), places, true),
+    ).toEqual({
+        imageMark: { src: "http://happy-agent/v0/users/u/avatar", alt: "" },
+    });
+    expect(
+        happyAgentSpaceMark(space("p", "Buried Alive flyer", null, task("t")), places, true),
+    ).toEqual({
+        icon: "tasks",
+    });
 });

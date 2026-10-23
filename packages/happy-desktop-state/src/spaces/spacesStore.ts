@@ -49,9 +49,21 @@ function spaceEventIs(event: HappyAgentEvent): event is SpaceEvent {
 }
 
 /** The daemon's IDs, branded at the one place they enter the store. */
-function spaceOf(space: Space): HappyAgentSpace {
+/**
+ * A row as this window reads it. The daemon names a picture by its path on the
+ * daemon (`/v0/bots/:id/avatar`), which is only an address once it is put
+ * behind the endpoint this connection talks to — the same base every other
+ * avatar this connection renders is put behind. Left as a bare path, the
+ * window resolved it against its own origin and drew a broken image.
+ */
+function spaceOf(space: Space, endpoint: string): HappyAgentSpace {
+    const icon =
+        space.icon?.type === "image" && space.icon.url.startsWith("/")
+            ? { type: "image" as const, url: `${endpoint.replace(/\/$/u, "")}${space.icon.url}` }
+            : space.icon;
     return {
         ...space,
+        icon,
         id: space.id as HappyAgentSpaceId,
         sectionId: space.sectionId as HappyAgentSpaceSectionId | null,
     };
@@ -274,6 +286,7 @@ export function happyAgentSpacesOlder(
  */
 export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAgentSpacesStore {
     const idCreate = cuid2Create(deps.now ?? Date.now);
+    const spaceRead = (space: Space): HappyAgentSpace => spaceOf(space, deps.client.endpoint);
     const listeners = new Set<() => void>();
     let snapshot = EMPTY;
     let disposed = false;
@@ -405,7 +418,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             .then((response) => {
                 if (disposed || active.signal.aborted) return;
                 const spaces = new Map<HappyAgentSpaceId, HappyAgentSpace>();
-                for (const space of response.spaces.map(spaceOf)) spaces.set(space.id, space);
+                for (const space of response.spaces.map(spaceRead)) spaces.set(space.id, space);
                 const pending = held ?? [];
                 held = undefined;
                 snapshot = {
@@ -443,7 +456,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             case "space.created":
             case "space.updated": {
                 const spaces = new Map(snapshot.spaces);
-                if (spaceAdopt(spaces, spaceOf(event.payload.space))) next.spaces = spaces;
+                if (spaceAdopt(spaces, spaceRead(event.payload.space))) next.spaces = spaces;
                 if (
                     event.type === "space.created" &&
                     snapshot.sidebar &&
@@ -590,7 +603,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
 
     const spaceHeard = ({ space }: { readonly space: Space }): void => {
         const spaces = new Map(snapshot.spaces);
-        if (spaceAdopt(spaces, spaceOf(space))) publish({ spaces });
+        if (spaceAdopt(spaces, spaceRead(space))) publish({ spaces });
     };
 
     const sectionHeard = ({ section: answered }: { readonly section: SpaceSection }): void => {
@@ -700,7 +713,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     () => undefined,
                 );
                 if ("refused" in response) throw response.refused;
-                const space = spaceOf(response.space);
+                const space = spaceRead(response.space);
                 const spaces = new Map(snapshot.spaces);
                 spaceAdopt(spaces, space);
                 const html = snapshot.sidebar && insert(snapshot.sidebar.html, space.id, placement);

@@ -158,3 +158,54 @@ it("reads the sidebar document again when the daemon removes a row from it", asy
         sync.writer.close();
     }
 });
+
+it("puts a row's daemon picture behind the endpoint this connection talks to", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const row = (id: string, icon: { type: "image"; url: string } | null) => ({
+        createdAt: 1,
+        icon,
+        id,
+        orderKey: id,
+        placement: "settled" as const,
+        sectionId: null,
+        target: {
+            agentId: `agent-${id}`,
+            id: `bot-${id}`,
+            kind: "bot" as const,
+            workspaceId: null,
+        },
+        title: id,
+        updatedAt: 1,
+        version: 1,
+        visibility: "shown" as const,
+        working: false,
+    });
+    daemon.client.listSpaces = vi.fn(async () => ({
+        cursor: "0",
+        sections: [],
+        spaces: [
+            row("uploaded", { type: "image", url: "/v0/bots/bot-uploaded/avatar" }),
+            row("hosted", { type: "image", url: "https://cdn.test/face.png" }),
+            row("bare", null),
+        ],
+    }));
+    const sync = happyAgentSyncCreate();
+    sync.writer.bootstrapReceived(await daemon.client.getDesktopBootstrap());
+    const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync: sync.source });
+    const unsubscribe = store.subscribe(() => {});
+    try {
+        await vi.waitFor(() => expect(store.get().spaces.size).toBe(3));
+        const icon = (id: string) => store.get().spaces.get(id as never)?.icon;
+        // The same address the classic sidebar draws this bot's avatar from.
+        expect(icon("uploaded")).toEqual({
+            type: "image",
+            url: "http://fake-happy-agent.test/v0/bots/bot-uploaded/avatar",
+        });
+        expect(icon("hosted")).toEqual({ type: "image", url: "https://cdn.test/face.png" });
+        expect(icon("bare")).toBeNull();
+    } finally {
+        unsubscribe();
+        store[Symbol.dispose]();
+        sync.writer.close();
+    }
+});

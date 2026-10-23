@@ -619,6 +619,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     });
 
     const client = {
+        endpoint: "http://fake-happy-agent.test/",
         async getUsage(...args: unknown[]) {
             await record("getUsage", args);
             return usage;

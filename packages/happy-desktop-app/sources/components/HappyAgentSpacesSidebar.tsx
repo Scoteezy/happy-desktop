@@ -207,15 +207,23 @@ function iconMark(
 }
 
 /**
- * The identity a space wears in a row or a tab. Work that has no picture yet
- * is still taking shape, so it wears the stem cell until it is given one.
+ * The identity a space wears in a row or a tab.
+ *
+ * A bot wears its own avatar whenever it has one, exactly as its classic row
+ * does: a picture someone uploaded for it outranks whatever Prioritizing picked.
+ * New work wears the stem cell for as long as the daemon says it is one. Named
+ * work the daemon gave no picture is not new work any more, so it wears what its
+ * classic row would — its owner's face, or the tasks glyph — rather than the
+ * stem cell.
  */
 export function happyAgentSpaceMark(
     space: HappyAgentSpace,
     places: HappyAgentSpacesPlaces,
     stemCellAnimation: boolean,
-): Pick<SidebarItem & TabItem, "imageMark" | "stemCell"> {
+): Pick<SidebarItem & TabItem, "icon" | "imageMark" | "stemCell"> {
     if (happyAgentSpaceHappyIs(space, places)) return { imageMark: happyIconMark() };
+    const avatar = targetBot(space.target, places)?.avatar;
+    if (avatar) return { imageMark: { src: avatar.url, alt: "" } };
     const icon = space.icon;
     if (icon?.type === "stem_cell") return { stemCell: { id: space.id } };
     // A clay icon is what a stem cell becomes; unless the reader turned it
@@ -224,9 +232,17 @@ export function happyAgentSpaceMark(
         return { imageMark: { ...clayIconMark(icon.slug), growsFromStemCell: true } };
     const chosen = iconMark(icon);
     if (chosen) return chosen;
-    const avatar = targetBot(space.target, places)?.avatar;
-    if (avatar) return { imageMark: { src: avatar.url, alt: "" } };
-    return { stemCell: { id: space.id } };
+    if (space.title === null) return { stemCell: { id: space.id } };
+    const owner = targetTask(space.target, places)?.owner?.avatar;
+    if (owner) return { imageMark: { src: owner.url, alt: "" } };
+    return {
+        icon:
+            space.target.kind === "bot"
+                ? "agents"
+                : space.target.kind === "surface"
+                  ? "doc"
+                  : "tasks",
+    };
 }
 
 /** The picture Prioritizing chose for a session, for its row and its tab. */
