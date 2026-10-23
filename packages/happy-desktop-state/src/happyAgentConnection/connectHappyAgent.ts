@@ -924,6 +924,16 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         return true;
     };
 
+    /**
+     * The stamp for an edit made over `previous`. The host keeps whichever save
+     * is stamped later, and the draft it holds may have been stamped by another
+     * device whose clock runs ahead of this one; an edit stamped by this clock
+     * alone would be refused as stale and the stored text handed back over what
+     * was just typed. So an edit is always stamped after the draft it replaces.
+     */
+    const draftStampAfter = (previous: AgentDraftSnapshot, at: number): number =>
+        Math.max(at, (previous.updatedAt ?? 0) + 1);
+
     const replaceDraft = (agentId: string, draft: AgentDraftSnapshot): void => {
         const previous = agentDrafts.get(agentId);
         agentDrafts.set(agentId, draft);
@@ -3884,7 +3894,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         const previousDraft =
             agentDrafts.get(sessionId) ?? ({ value: null, updatedAt: null } as const);
         const mode = change(modeOf(config, previousDraft, agentModes.get(sessionId), previousMode));
-        const updatedAt = now();
+        const updatedAt = draftStampAfter(previousDraft, now());
         const draft: AgentDraftSnapshot = {
             value: { ...mode, text: previousDraft.value?.text ?? "" },
             updatedAt,
@@ -4713,7 +4723,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             );
             const previousDraft =
                 agentDrafts.get(sessionId) ?? ({ value: null, updatedAt: null } as const);
-            const updatedAt = value.updatedAt ?? now();
+            const updatedAt = draftStampAfter(previousDraft, value.updatedAt ?? now());
             const draft: AgentDraftSnapshot = {
                 value: value.draft === null ? null : { ...mode, text: value.draft },
                 updatedAt,
@@ -4763,7 +4773,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             if (next === undefined) return;
             if (config === undefined) throw new Error("The agent is not loaded.");
             const mode = previousDraft.value ?? bootstrap.mode ?? defaultMode(config);
-            const timestamp = Math.max(updatedAt, (previousDraft.updatedAt ?? 0) + 1);
+            const timestamp = draftStampAfter(previousDraft, updatedAt);
             const draft: AgentDraftSnapshot = {
                 value: {
                     providerId: mode.providerId,
