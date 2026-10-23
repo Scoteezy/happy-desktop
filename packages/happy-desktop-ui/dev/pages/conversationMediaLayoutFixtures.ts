@@ -829,3 +829,59 @@ export const lenientEntries: readonly ConversationEntry[] = [
     ),
     activity(invalidTool, "m-38", "2026-10-20T10:03:21.000Z"),
 ];
+
+/*
+ * Layouts written into the reply itself. Each picture was shown earlier by a
+ * read; the reply names it by the path the read used, and the read no longer
+ * draws a picture the reply placed.
+ */
+
+function sourced(media: ConversationMediaItem, path: string): ConversationMediaItem {
+    return { ...media, source: { path, absolutePath: `/work/${path}` } };
+}
+
+const inlineReads = [
+    sourced(readWide, "screens/onboarding-desktop.png"),
+    sourced(readWideSecond, "screens/settings-models.png"),
+    sourced(thumbnails[0]!, "screens/thumb-0.png"),
+    sourced(readFlat, "screens/header-strip.png"),
+    sourced(readNarrow, "screens/sidebar-crop.png"),
+    sourced(retinaDialog, "screens/settings-dialog@2x.png"),
+].map((media, index) =>
+    mediaTool(`tool-inline-read-${String(index)}`, "Read", [media], COLUMNS_TWO),
+);
+
+const INLINE_REPLY = `Here is what I found, side by side.
+
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px">
+  <figure><img src="screens/onboarding-desktop.png" style="width: 100%"><figcaption>Overview</figcaption></figure>
+  <figure><img src="/work/screens/settings-models.png" style="width: 100%"><figcaption>Models</figcaption></figure>
+  <figure><img src="screens/thumb-0.png" style="width: 100%"><figcaption>Hero, first try</figcaption></figure>
+</div>
+
+The header strip runs the full width, and the sidebar sits beside the Retina dialog at its point size:
+
+<img src="screens/header-strip.png" style="width: 100%">
+
+<div style="display: flex; gap: 16px; align-items: flex-start">
+  <img src="screens/sidebar-crop.png" style="width: 120px">
+  <img src="screens/settings-dialog@2x.png">
+</div>
+
+<div style="color: red"><b>HTML with no picture stays text.</b></div>
+
+<div><img src="screens/not-shown.png"></div>`;
+
+/** A reply that lays out the pictures it read, among its own text. */
+export const inlineEntries: readonly ConversationEntry[] = [
+    message(
+        "m-40",
+        happyAgentOwnerAuthor,
+        "Compare the screens you just read.",
+        "2026-10-20T10:04:00.000Z",
+    ),
+    ...inlineReads.map((tool, index) =>
+        activity(tool, `m-4${String(index + 1)}`, `2026-10-20T10:04:0${String(index + 1)}.000Z`),
+    ),
+    message("m-48", agentAuthor, INLINE_REPLY, "2026-10-20T10:04:20.000Z"),
+];

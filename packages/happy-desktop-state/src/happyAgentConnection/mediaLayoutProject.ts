@@ -31,11 +31,13 @@ void cssPropertiesCovered;
  *
  * A tree is also made total over the call's items: an index out of range or
  * named a second time is skipped, and every item the tree never named is
- * appended after it, so each item is drawn exactly once.
+ * appended after it, so each item is drawn exactly once. `renumber` maps an
+ * item node's index on the wire to the item it shows, before that check.
  */
 export function mediaLayoutProject(
     value: unknown,
     itemCount: number,
+    renumber: (index: number) => number | undefined = (index) => index,
 ): ConversationMediaLayout | undefined {
     if (!isRecord(value)) return undefined;
     if (value.type === "columns")
@@ -44,7 +46,7 @@ export function mediaLayoutProject(
             : undefined;
     if (value.type !== "tree" || !Array.isArray(value.root)) return undefined;
     const seen = new Set<number>();
-    const root = nodesProject(value.root, itemCount, seen, 0);
+    const root = nodesProject(value.root, { itemCount, renumber, seen }, 0);
     for (let index = 0; index < itemCount; index += 1)
         if (!seen.has(index)) root.push({ type: "item", index });
     return root.length === 0 ? undefined : { type: "tree", root };
@@ -76,15 +78,20 @@ const TAGS: ReadonlySet<string> = new Set<ConversationMediaLayoutTag>([
     "code",
 ]);
 
+type ItemsProject = {
+    readonly itemCount: number;
+    readonly renumber: (index: number) => number | undefined;
+    readonly seen: Set<number>;
+};
+
 function nodesProject(
     values: readonly unknown[],
-    itemCount: number,
-    seen: Set<number>,
+    items: ItemsProject,
     depth: number,
 ): ConversationMediaLayoutNode[] {
     const nodes: ConversationMediaLayoutNode[] = [];
     for (const value of values) {
-        const node = nodeProject(value, itemCount, seen, depth);
+        const node = nodeProject(value, items, depth);
         if (node) nodes.push(node);
     }
     return nodes;
@@ -92,8 +99,7 @@ function nodesProject(
 
 function nodeProject(
     value: unknown,
-    itemCount: number,
-    seen: Set<number>,
+    items: ItemsProject,
     depth: number,
 ): ConversationMediaLayoutNode | undefined {
     if (!isRecord(value)) return undefined;
@@ -105,10 +111,11 @@ function nodeProject(
                 ? { type: "text", text: value.text }
                 : undefined;
         case "item": {
-            const index = value.index;
-            if (typeof index !== "number" || !Number.isInteger(index)) return undefined;
-            if (index < 0 || index >= itemCount || seen.has(index)) return undefined;
-            seen.add(index);
+            if (typeof value.index !== "number" || !Number.isInteger(value.index)) return undefined;
+            const index = items.renumber(value.index);
+            if (index === undefined || index < 0 || index >= items.itemCount) return undefined;
+            if (items.seen.has(index)) return undefined;
+            items.seen.add(index);
             const style = styleProject(value.style);
             return {
                 type: "item",
@@ -130,7 +137,7 @@ function nodeProject(
                 tag,
                 ...(style ? { style } : {}),
                 children: Array.isArray(value.children)
-                    ? nodesProject(value.children, itemCount, seen, depth + 1)
+                    ? nodesProject(value.children, items, depth + 1)
                     : [],
             };
         }

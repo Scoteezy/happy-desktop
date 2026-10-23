@@ -20,6 +20,8 @@ import {
     type AgentActivityMediaRun,
 } from "./AgentActivityRow";
 import type { ConversationMediaRun } from "./conversationMediaRuns";
+import type { MessageInlineLayouts } from "./conversationInlineLayouts";
+import { ConversationMedia } from "./ConversationMedia";
 import type { InlinePageProps } from "./InlinePage";
 import { ConversationComputeEvent } from "./ConversationComputeEvent";
 import { ConversationErrorCard } from "./ConversationErrorCard";
@@ -110,6 +112,14 @@ export type ConversationEntryViewProps = {
      * `conversationMediaRuns`. Absent, a tool call draws its own pictures.
      */
     mediaRun?: ConversationMediaRun;
+    /** This call's pictures a reply placed in its own layout, from `conversationInlineLayouts`. */
+    mediaPlaced?: ReadonlySet<number>;
+    /**
+     * The layouts this reply draws among its text, from
+     * `conversationInlineLayouts`; each picture opens as the item of the call
+     * that showed it.
+     */
+    messageLayouts?: MessageInlineLayouts;
     /** Opens one child session represented by a delegated-agent entry. */
     onDelegationSelect?: (sessionId: string) => void;
     /** Reference epoch millis used by live delegated-agent timers. */
@@ -284,6 +294,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                 {...((run) => (run ? { mediaRun: run } : {}))(
                     activityMediaRun(props.mediaRun, props.onToolMediaOpen),
                 )}
+                {...(props.mediaPlaced ? { mediaPlaced: props.mediaPlaced } : {})}
                 {...(props.references ? { references: props.references } : {})}
                 {...(props.inlinePage ? { inlinePage: props.inlinePage } : {})}
                 singleLine={entry.activity.kind === "tool"}
@@ -522,8 +533,11 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                 author?.imageUrl ??
                 (author?.avatar ? thumbhashDataUrl(author.avatar.thumbhash) : undefined)
             }
-            body={message.text}
+            body={props.messageLayouts?.text ?? message.text}
             bodyFormat={messageBodyFormat(author)}
+            {...(props.messageLayouts
+                ? { layoutRender: messageLayoutRender(props.messageLayouts, props.onToolMediaOpen) }
+                : {})}
             className={props.className}
             {...(props.contextNote === undefined ? {} : { contextNote: props.contextNote })}
             data-testid={props["data-testid"]}
@@ -694,5 +708,34 @@ function activityMediaRun(
                   },
               }
             : {}),
+    };
+}
+
+/**
+ * Draws a reply's layout by its placeholder's key: the tree over the pictures
+ * it placed, uncapped, each opening as the item of the call that showed it so
+ * the viewer steps through the whole transcript from there.
+ */
+function messageLayoutRender(
+    layouts: MessageInlineLayouts,
+    open: ConversationEntryViewProps["onToolMediaOpen"],
+) {
+    return function messageLayout(key: string): ReactNode {
+        const layout = layouts.layouts.get(key);
+        if (layout === undefined) return null;
+        return (
+            <ConversationMedia
+                items={layout.members.map((member) => member.item)}
+                layout={{ type: "tree", root: layout.root }}
+                {...(open
+                    ? {
+                          onItemOpen: (position: number) => {
+                              const member = layout.members[position];
+                              if (member) open(member.entryId, member.tool, member.index);
+                          },
+                      }
+                    : {})}
+            />
+        );
     };
 }

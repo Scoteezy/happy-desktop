@@ -170,6 +170,17 @@ export interface ConversationMediaItem {
     /** ThumbHash painted at the item's aspect ratio until the bytes load. */
     readonly thumbhash?: string;
     readonly url: string;
+    /**
+     * The file the tool showed this from: the path as the agent wrote it, and
+     * as it resolved on the agent's machine. A reply's layout names a picture
+     * by either. Absent for media recorded before sources were kept.
+     */
+    readonly source?: ConversationMediaSource;
+}
+
+export interface ConversationMediaSource {
+    readonly path: string;
+    readonly absolutePath: string;
 }
 
 /**

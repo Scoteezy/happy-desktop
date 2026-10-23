@@ -1350,6 +1350,14 @@ function projectToolPresentation(
                     ),
                     ...(item.thumbhash === undefined ? {} : { thumbhash: item.thumbhash }),
                     url: mediaUrl(index),
+                    ...(item.source === undefined
+                        ? {}
+                        : {
+                              source: {
+                                  path: item.source.path,
+                                  absolutePath: item.source.absolutePath,
+                              },
+                          }),
                 })),
                 ...((layout) => (layout === undefined ? {} : { layout }))(
                     mediaLayoutProject(presentation.layout, presentation.items.length),

@@ -21,6 +21,7 @@ import { InlinePage, type InlinePageProps } from "./InlinePage";
 import type { InlinePageGeometry } from "./inlinePageFit";
 import { useMessageListDisclosureAnchor } from "./messageListDisclosureAnchor";
 import { renderMessageMarkdown } from "./MessageMarkdown";
+import { conversationMediaVisible } from "./conversationInlineLayouts";
 import { messageReferencesPlainText, type MessageReferences } from "./messageReferences";
 import { ArtifactTypeGlyph } from "./pages/artifacts/artifactPresentation";
 import { ScrollingText } from "./ScrollingText";
@@ -80,6 +81,11 @@ export type AgentActivityRowProps = {
      * draws the whole run's. Absent, the call draws its own.
      */
     mediaRun?: AgentActivityMediaRun;
+    /**
+     * This call's pictures, by index, that a reply placed in its own layout.
+     * They are drawn there instead, so the call does not draw them again.
+     */
+    mediaPlaced?: ReadonlySet<number>;
     /** Start expanded (blueprint/tests). Otherwise rich bodies collapse by default. */
     defaultExpanded?: boolean;
     /** Controlled disclosure state for a virtualized transcript row. */
@@ -675,6 +681,7 @@ function AgentToolActivity(props: {
     onFileOpen?: (path: string) => void;
     onMediaOpen?: (tool: ConversationToolCall, index: number) => void;
     mediaRun?: AgentActivityMediaRun;
+    mediaPlaced?: ReadonlySet<number>;
     references?: MessageReferences;
     inlinePage?: InlinePageProps;
     singleLine?: boolean;
@@ -682,6 +689,11 @@ function AgentToolActivity(props: {
 }) {
     const { tool } = props;
     const presentation = tool.presentation;
+    /* What this call draws under its line: its files, less any a reply placed. */
+    const mediaVisible =
+        presentation?.type === "media"
+            ? conversationMediaVisible(presentation.items, presentation.layout, props.mediaPlaced)
+            : undefined;
     const [expanded, setExpanded] = useExpansion(
         props.defaultExpanded ?? false,
         props.expanded,
@@ -1038,8 +1050,8 @@ function AgentToolActivity(props: {
                 )}
             </div>
 
-            {presentation?.type !== "media" ||
-            presentation.items.length === 0 ||
+            {mediaVisible === undefined ||
+            mediaVisible.items.length === 0 ||
             props.mediaRun?.type === "deferred" ? null : props.mediaRun?.type === "end" ? (
                 <ConversationMedia
                     items={props.mediaRun.items}
@@ -1050,10 +1062,13 @@ function AgentToolActivity(props: {
                 />
             ) : (
                 <ConversationMedia
-                    items={presentation.items}
-                    {...(presentation.layout ? { layout: presentation.layout } : {})}
+                    items={mediaVisible.items}
+                    {...(mediaVisible.layout ? { layout: mediaVisible.layout } : {})}
                     {...(props.onMediaOpen
-                        ? { onItemOpen: (index: number) => props.onMediaOpen?.(tool, index) }
+                        ? {
+                              onItemOpen: (position: number) =>
+                                  props.onMediaOpen?.(tool, mediaVisible.indexes[position]!),
+                          }
                         : {})}
                 />
             )}
@@ -1622,6 +1637,7 @@ export function AgentActivityRow(props: AgentActivityRowProps) {
                     {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}
                     {...(props.onMediaOpen ? { onMediaOpen: props.onMediaOpen } : {})}
                     {...(props.mediaRun ? { mediaRun: props.mediaRun } : {})}
+                    {...(props.mediaPlaced ? { mediaPlaced: props.mediaPlaced } : {})}
                     {...(props.references ? { references: props.references } : {})}
                     {...(props.inlinePage ? { inlinePage: props.inlinePage } : {})}
                     singleLine={props.singleLine}

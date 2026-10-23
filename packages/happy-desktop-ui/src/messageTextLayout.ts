@@ -1462,6 +1462,12 @@ function messageMarkdownFootnotes(
     cache.markdownFootnotes[text] = footnotes;
     return footnotes;
 }
+/**
+ * The box a top-level HTML block draws, by its source, at `measure`; nothing
+ * for HTML that draws nothing, which is all of it unless a renderer gives a
+ * block a meaning (a reply's own layout).
+ */
+export type MarkdownHtmlBlockHeight = (html: string, measure: number) => number | undefined;
 function markdownBlocksHeight(
     nodes: readonly MarkdownRootContent[],
     measure: number,
@@ -1471,10 +1477,15 @@ function markdownBlocksHeight(
     codeMargins: boolean,
     trailing: MarkdownTrailingInline | undefined,
     mermaidEnabled: boolean,
+    htmlBlockHeight?: MarkdownHtmlBlockHeight,
 ): number {
     const blocks = nodes
-        .map((node) =>
-            markdownBlockHeight(
+        .map((node) => {
+            if (htmlBlockHeight !== undefined && node.type === "html") {
+                const height = htmlBlockHeight(node.value, measure);
+                return height === undefined ? undefined : flow(height);
+            }
+            return markdownBlockHeight(
                 node,
                 measure,
                 cache,
@@ -1483,8 +1494,8 @@ function markdownBlocksHeight(
                 trailing,
                 false,
                 mermaidEnabled,
-            ),
-        )
+            );
+        })
         .filter((block) => block !== undefined);
     let total = 0;
     let pendingMargin = 0;
@@ -2178,6 +2189,7 @@ export function markdownBodyHeight(
     trailingExtraWidth = 0,
     mermaidEnabled = true,
     streaming = false,
+    htmlBlockHeight?: MarkdownHtmlBlockHeight,
 ): number {
     /* A virtual row's size is authoritative even while it streams. Bound the
        lifetime of prefix layout, not its accuracy: use the same Markdown/font
@@ -2208,6 +2220,7 @@ export function markdownBodyHeight(
         true,
         trailing,
         mermaidEnabled,
+        htmlBlockHeight,
     );
     const footnotesHeight = markdownFootnotesHeight(footnotes, measure, ready, mermaidEnabled);
     const height =

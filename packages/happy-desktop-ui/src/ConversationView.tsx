@@ -92,6 +92,7 @@ import { Spinner } from "./Spinner";
 import { toolCallStillGlyph } from "./toolCallStillGlyph";
 import { WindowOverlay } from "./WindowOverlay";
 import { conversationMediaRunRows, conversationMediaRuns } from "./conversationMediaRuns";
+import { conversationInlineLayouts } from "./conversationInlineLayouts";
 
 export type ConversationViewProps = {
     /**
@@ -610,7 +611,19 @@ export function ConversationView(props: ConversationViewProps) {
             setInlinePageGeneration((generation) => generation + 1);
         },
     };
-    const mediaRuns = conversationMediaRuns(transcript);
+    const inlineLayouts = conversationInlineLayouts(transcript);
+    const mediaRuns = conversationMediaRuns(transcript, inlineLayouts.hidden);
+    /* What a row draws because of a reply's layouts: the pictures a call gave
+       up to one, or the layouts a reply draws. */
+    const placedOf = (entry: ConversationEntry | undefined) => {
+        if (entry === undefined) return {};
+        if (entry.kind === "message") {
+            const layouts = inlineLayouts.messages.get(entry.message.id);
+            return layouts ? { messageLayouts: layouts } : {};
+        }
+        const placed = inlineLayouts.hidden.get(entryKey(entry));
+        return placed ? { mediaPlaced: placed } : {};
+    };
     const inlinePages = props.inlinePages;
     const inlineLeads = inlinePages ? conversationInlineArtifactLeads(transcript) : undefined;
     const inlinePageOf = (entry: ConversationEntry | undefined) =>
@@ -830,6 +843,7 @@ export function ConversationView(props: ConversationViewProps) {
                     ? undefined
                     : mediaRuns.get(entryKey(transcript[index])),
             ),
+            ...placedOf(transcript[index]),
             viewerId: props.viewerId,
             width,
         };
@@ -971,7 +985,11 @@ export function ConversationView(props: ConversationViewProps) {
                                 rowHeightCache,
                             )
                         }
-                        estimateRows={conversationMediaRunRows(transcript, mediaRuns)}
+                        estimateRows={conversationMediaRunRows(transcript, mediaRuns, (entry) =>
+                            entry.kind === "message"
+                                ? (inlineLayouts.messages.get(entry.message.id)?.signature ?? "")
+                                : [...(inlineLayouts.hidden.get(entryKey(entry)) ?? [])].join(","),
+                        )}
                         estimateRowWidth={contentWidth}
                         estimateVersion={textLayoutGeneration}
                         footer={
@@ -1105,6 +1123,7 @@ export function ConversationView(props: ConversationViewProps) {
                                     {...((run) => (run ? { mediaRun: run } : {}))(
                                         mediaRuns.get(entryKey(entry)),
                                     )}
+                                    {...placedOf(entry)}
                                     onDelegationSelect={props.onDelegationSelect}
                                     now={props.now}
                                     {...(props.onFileOpen ? { onFileOpen: props.onFileOpen } : {})}

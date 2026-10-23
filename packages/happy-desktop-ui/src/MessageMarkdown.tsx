@@ -21,7 +21,8 @@ import { MathFormula } from "./MathFormula";
 import { mathFormulaRender } from "./mathFormulaRender";
 import { MermaidDiagram } from "./MermaidDiagram";
 import { FILE_REFERENCE_LINK_ATTRIBUTE } from "./messageFileReferences";
-import { MESSAGE_MARKDOWN_REMARK_PLUGINS } from "./messageMarkdownAst";
+import { MESSAGE_MARKDOWN_REMARK_PLUGINS, type MessageMarkdownAst } from "./messageMarkdownAst";
+import { messageInlineLayoutKey } from "./conversationInlineLayouts";
 import {
     messageReferenceFromHref,
     messageReferenceHrefIs,
@@ -196,13 +197,39 @@ export const MarkdownLayoutCacheContext = createContext<MessageTextLayoutCache |
 function remarkSizedTree(this: Processor, cache: MessageTextLayoutCache | undefined) {
     if (cache) this.parser = (source) => messageMarkdownRenderTree(source, cache);
 }
+/**
+ * Draws the layout a reply's placeholder block names, by its key; nothing for
+ * a key it does not know. Absent, every placeholder is the skipped HTML it is.
+ */
+export type MessageLayoutRender = (key: string) => ReactNode;
+const MarkdownLayoutRenderContext = createContext<MessageLayoutRender | undefined>(undefined);
+/**
+ * A top-level placeholder block becomes an element that names its layout, so
+ * it survives `skipHtml` and `MarkdownDiv` can draw the layout in its place.
+ * Only top-level blocks: that is where the reply's layouts are put, and the
+ * only place the row-height model gives one a box.
+ */
+function remarkInlineLayouts() {
+    return (tree: MessageMarkdownAst) => {
+        for (const node of tree.children) {
+            if (node.type !== "html") continue;
+            const key = messageInlineLayoutKey(node.value);
+            if (key === undefined) continue;
+            node.data = { hName: "div", hProperties: { dataHappyLayout: key } };
+        }
+    };
+}
 function SizedMarkdown({ children }: { children: string }) {
     const cache = useContext(MarkdownLayoutCacheContext);
     return (
         <MemoMarkdown
             components={markdownComponents}
             urlTransform={messageUrlTransform}
-            remarkPlugins={[...MESSAGE_MARKDOWN_REMARK_PLUGINS, [remarkSizedTree, cache]]}
+            remarkPlugins={[
+                ...MESSAGE_MARKDOWN_REMARK_PLUGINS,
+                remarkInlineLayouts,
+                [remarkSizedTree, cache],
+            ]}
             skipHtml
         >
             {children}
@@ -480,6 +507,9 @@ const MarkdownDiv = ({
     node,
     ...props
 }: ComponentPropsWithoutRef<"div"> & ExtraProps) => {
+    const layoutRender = useContext(MarkdownLayoutRenderContext);
+    const layout = node?.properties["dataHappyLayout"];
+    if (typeof layout === "string") return layoutRender?.(layout) ?? null;
     if (node?.properties["dataMath"] !== "display") return <div {...props}>{children}</div>;
     const source = markdownMathSource(node);
     const failed = mathFormulaRender(source, true).kind === "failed";
@@ -681,7 +711,9 @@ const messageUrlTransform: UrlTransform = (url, key, node) =>
  * into another agent's or workspace's folder. `onLinkOpen` gives a web link a context menu offering the
  * machine's browser, the side panel, or copying its destination. `references` resolves the Happy
  * reference tags an agent wrote to their live titles; without it each reads as
- * inert placeholder text, and a tag never shows raw.
+ * inert placeholder text, and a tag never shows raw. `layoutRender` draws the
+ * layouts a reply placed (see `conversationInlineLayouts`) where their
+ * placeholders stand.
  */
 export function renderMessageMarkdown(
     source: string,
@@ -692,6 +724,7 @@ export function renderMessageMarkdown(
     linkOpenDefault?: LinkOpenPlacement,
     references?: MessageReferences,
     onFileLinkOpen?: FileLinkOpenHandler,
+    layoutRender?: MessageLayoutRender,
 ): ReactNode {
     const text = messageReferencesResolve(source, references, generationStatus === "streaming");
     return (
@@ -709,7 +742,9 @@ export function renderMessageMarkdown(
                             <MarkdownFileLinkOpenContext.Provider value={onFileLinkOpen}>
                                 <MarkdownLinkOpenContext.Provider value={onLinkOpen}>
                                     <MarkdownLinkDefaultContext.Provider value={linkOpenDefault}>
-                                        <SizedMarkdown>{text}</SizedMarkdown>
+                                        <MarkdownLayoutRenderContext.Provider value={layoutRender}>
+                                            <SizedMarkdown>{text}</SizedMarkdown>
+                                        </MarkdownLayoutRenderContext.Provider>
                                     </MarkdownLinkDefaultContext.Provider>
                                 </MarkdownLinkOpenContext.Provider>
                             </MarkdownFileLinkOpenContext.Provider>

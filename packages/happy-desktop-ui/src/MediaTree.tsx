@@ -22,7 +22,8 @@ import { messageTextLayoutFontGenerationGet } from "./messageTextLayout";
  * tone is a theme colour role and a font size one of four type steps. There is
  * no HTML and no free CSS anywhere on the path. The whole tree sits in a
  * contained box (`.happy-media-tree`) that cannot paint outside itself or grow
- * past the transcript's width and a fixed height.
+ * past the transcript's width. Its height is never capped: inline means all of
+ * it.
  *
  * A picture with no width of its own, or `width: auto`, is drawn at its
  * natural size in points — its pixels over its density — and shrinks to fit
@@ -62,8 +63,6 @@ export type MediaTreeProps = {
     renderItem: (item: MediaTreeItemRender) => ReactNode;
 };
 
-/** `.happy-media-tree`'s max-height: a layout taller than this is clipped at it. */
-export const MEDIA_TREE_MAX_HEIGHT = 1200;
 /** `.happy-media-tree__item`'s max-height: the tallest a picture is drawn unless the layout says. */
 const MEDIA_TREE_ITEM_MAX_HEIGHT = 640;
 /** A document or file in a tree is one `ResultCard`. */
@@ -239,7 +238,7 @@ export function mediaTreeHeight(
     items: readonly MediaTreeItem[],
     width: number,
 ): number {
-    if (typeof document === "undefined") return MEDIA_TREE_MAX_HEIGHT / 2;
+    if (typeof document === "undefined") return 0;
     const key = `${String(width)}|${String(messageTextLayoutFontGenerationGet())}|${items
         .map(
             (item) =>

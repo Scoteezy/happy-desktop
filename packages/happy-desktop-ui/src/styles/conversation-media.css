@@ -76,10 +76,10 @@
 /* ---- MediaTree -------------------------------------------------------- */
 
 /* A layout the agent wrote. It is contained: it cannot paint outside its
-   box, reach the transcript's stacking, or grow past the transcript's width
-   or the height the row model caps it at (`MEDIA_TREE_MAX_HEIGHT`). Its
-   element defaults are reset to plain blocks and inline runs, so only the
-   typed style fields it carries shape it. */
+   box, reach the transcript's stacking, or grow past the transcript's width.
+   It is never capped in height — the chat shows all of it, at the height the
+   row model measured. Its element defaults are reset to plain blocks and
+   inline runs, so only the typed style fields it carries shape it. */
 .happy-media-tree {
     box-sizing: border-box;
     display: block;
@@ -87,7 +87,6 @@
     align-self: stretch;
     width: 100%;
     max-width: 100%;
-    max-height: 1200px;
     overflow: hidden;
     contain: layout paint;
     isolation: isolate;

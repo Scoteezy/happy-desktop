@@ -74,6 +74,11 @@ import {
 } from "./mediaLayout";
 import { mediaTreeHeight } from "./MediaTree";
 import { conversationMediaRunSignature, type ConversationMediaRun } from "./conversationMediaRuns";
+import {
+    conversationMediaVisible,
+    messageInlineLayoutKey,
+    type MessageInlineLayouts,
+} from "./conversationInlineLayouts";
 
 /**
  * Height of one conversation row, computed from the entry and the list's measure
@@ -125,6 +130,10 @@ export type ConversationRowContext = {
     readonly inlinePage?: InlinePageGeometry;
     /** This row's part in a run of calls whose pictures form one grid. */
     readonly mediaRun?: ConversationMediaRun;
+    /** This call's pictures a reply placed in its own layout, which its row no longer draws. */
+    readonly mediaPlaced?: ReadonlySet<number>;
+    /** The layouts this reply draws, and its text with each one's placeholder. */
+    readonly messageLayouts?: MessageInlineLayouts;
 };
 export type ConversationFailureRowContext = {
     /** The conversation has not moved past this failure, so its actions are offered. */
@@ -473,6 +482,7 @@ function toolResultHeight(
     measure: number,
     inlinePage: InlinePageGeometry | undefined,
     mediaRun: ConversationMediaRun | undefined,
+    mediaPlaced: ReadonlySet<number> | undefined,
 ): number {
     if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return 0;
     if (inlinePage !== undefined) return TOOL_MEDIA_GAP + inlinePageHeight(inlinePage);
@@ -493,15 +503,24 @@ function toolResultHeight(
                     measure,
                 )
             );
-        return (
-            TOOL_MEDIA_GAP +
-            conversationMediaHeight(presentation.items, measure, presentation.layout)
+        const visible = conversationMediaVisible(
+            presentation.items,
+            presentation.layout,
+            mediaPlaced,
         );
+        /* Every picture went to a reply's layout: the call is its line. */
+        if (visible.items.length === 0) return 0;
+        return TOOL_MEDIA_GAP + conversationMediaHeight(visible.items, measure, visible.layout);
     }
     // Without the transcript's own artifacts, a call's artifact is its title.
     if (presentation?.type === "artifact" || presentation?.type === "page")
         return TOOL_MEDIA_GAP + INLINE_PAGE_TITLE_HEIGHT;
     return 0;
+}
+
+/** Which of a call's pictures went to replies, as part of its row's cache key. */
+function mediaPlacedSignature(placed: ReadonlySet<number> | undefined): string {
+    return placed === undefined ? "" : [...placed].sort((a, b) => a - b).join(",");
 }
 
 /** What of an inline page a row's height reads, as part of its cache key. */
@@ -601,6 +620,8 @@ type MessageRowHeightInput = {
     readonly time: string;
     readonly treatment: MessageTreatment;
     readonly width: number;
+    /** The layouts the body's placeholders stand for. */
+    readonly layouts?: MessageInlineLayouts;
 };
 export function messageRowHeight(input: MessageRowHeightInput): number {
     const [leading, tight] = MESSAGE_CHROME[input.surface][input.treatment];
@@ -633,8 +654,30 @@ export function messageRowHeight(input: MessageRowHeightInput): number {
             input.trailingExtraWidth,
             input.mermaidEnabled,
             input.streaming,
+            messageLayoutsHeight(input.layouts),
         )
     );
+}
+
+/**
+ * A reply's layout is as tall as its tree laid out at the body's measure: the
+ * same off-screen measurement as a presented layout, uncapped. A placeholder
+ * naming no layout of this reply is HTML, which draws nothing.
+ */
+function messageLayoutsHeight(
+    layouts: MessageInlineLayouts | undefined,
+): ((html: string, measure: number) => number | undefined) | undefined {
+    if (layouts === undefined || layouts.layouts.size === 0) return undefined;
+    return (html, measure) => {
+        const key = messageInlineLayoutKey(html);
+        const layout = key === undefined ? undefined : layouts.layouts.get(key);
+        if (layout === undefined) return undefined;
+        return mediaTreeHeight(
+            layout.root,
+            layout.members.map((member) => member.item),
+            measure,
+        );
+    };
 }
 
 function conversationMessageHeightInput(
@@ -653,8 +696,9 @@ function conversationMessageHeightInput(
         trace.status !== "running" &&
         trace.entryCount > 0;
     const time = messageTimeSample(message.createdAt);
+    const layouts = context.messageLayouts;
     return {
-        body: message.text,
+        body: layouts?.text ?? message.text,
         bodyFormat: messageBodyFormat(message.sender),
         bodyVisible:
             (agent ? message.text.trim().length > 0 : message.text.length > 0) ||
@@ -673,6 +717,7 @@ function conversationMessageHeightInput(
                 : 0,
         treatment: agent ? "agent" : own ? "own" : "incoming",
         width: contentWidth(context.width),
+        ...(layouts ? { layouts } : {}),
     };
 }
 
@@ -884,7 +929,7 @@ export function conversationRowHeight(
         return rowHeightCached(
             cache,
             entry,
-            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${inlinePageSignature(context.inlinePage)}:${conversationMediaRunSignature(context.mediaRun)}:${messageReferencesSignature(
+            `activity:${context.surface}:${context.activityTreatment ?? "detailed"}:${String(width)}:${expanded ? "expanded" : "collapsed"}:${startsGroup ? "lead" : "plain"}:${inlinePageSignature(context.inlinePage)}:${conversationMediaRunSignature(context.mediaRun)}:${mediaPlacedSignature(context.mediaPlaced)}:${messageReferencesSignature(
                 conversationEntryReferences(entry),
                 context.references,
             )}`,
@@ -932,6 +977,7 @@ export function conversationRowHeight(
                                     width - activityInset,
                                     context.inlinePage,
                                     context.mediaRun,
+                                    context.mediaPlaced,
                                 )
                               : conversationActivityHeight(entry.activity.kind);
                 if (activityHeight === undefined) return undefined;
@@ -1178,6 +1224,7 @@ export function conversationRowHeight(
         precedesActivity ? "continues" : closedByStatus ? "closing" : "open",
         // What the body's references read as: a title changing re-sizes the row.
         messageReferencesSignature(conversationEntryReferences(entry), context.references),
+        context.messageLayouts?.signature ?? "",
     ].join(":");
     return rowHeightCached(cache, entry, cacheKey, () => {
         let height = messageRowHeight(

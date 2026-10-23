@@ -691,7 +691,9 @@ function mediaItemEqual(left: ConversationMediaItem, right: ConversationMediaIte
         left.height === right.height &&
         left.scale === right.scale &&
         left.thumbhash === right.thumbhash &&
-        left.url === right.url
+        left.url === right.url &&
+        left.source?.path === right.source?.path &&
+        left.source?.absolutePath === right.source?.absolutePath
     );
 }
 

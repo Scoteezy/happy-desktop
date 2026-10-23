@@ -44,6 +44,7 @@ import {
     type LinkOpenHandler,
     type LinkOpenPlacement,
     type MessageGenerationStatus,
+    type MessageLayoutRender,
 } from "./MessageMarkdown";
 import { ScrollArea } from "./Scrollbar";
 import { StemCell, type StemCellMark } from "./StemCell";
@@ -205,6 +206,11 @@ export type MessageProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     images?: MessageImage[];
     /** Opens an image (by id) — wire to a web-modal lightbox, never a new tab. */
     onImageOpen?: (id: string) => void;
+    /**
+     * Draws a layout the reply placed among its text, by the key its
+     * placeholder block names. Absent, placeholders draw nothing.
+     */
+    layoutRender?: MessageLayoutRender;
     /**
      * Opens a workspace file this message links to, in the product's own file
      * viewer. Absent leaves such links inert, which is what a surface with no
@@ -371,6 +377,7 @@ export function Message(props: MessageProps) {
         "stemCell",
         "images",
         "onImageOpen",
+        "layoutRender",
         "onFileOpen",
         "onFileLinkOpen",
         "onLinkOpen",
@@ -554,6 +561,7 @@ export function Message(props: MessageProps) {
                             local.linkOpenDefault,
                             local.references,
                             local.onFileLinkOpen,
+                            local.layoutRender,
                         )
                       : null}
                 {/* An empty generated reply keeps a non-breaking-space line box

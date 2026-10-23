@@ -27,6 +27,8 @@ import {
  * - Anything else ends the run: the agent's prose, a message, any other tool
  *   call, a notice, the turn's status, or a member with another column count.
  * - A run of one call is not a run: that call draws its own pictures.
+ * - A picture a reply placed in its own layout is not part of any run. A
+ *   call left with none to draw is passed over like an exploration row.
  */
 
 /** One picture of a run, and the call it belongs to. */
@@ -53,28 +55,38 @@ export type ConversationMediaRun =
 const DEFERRED: ConversationMediaRun = { type: "deferred" };
 
 /** The column count of a call that can join a run, or nothing. */
-function runColumns(entry: ConversationEntry): 1 | 2 | undefined {
+function runColumns(
+    entry: ConversationEntry,
+    hidden: ReadonlySet<number> | undefined,
+): 1 | 2 | undefined {
     if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return undefined;
     const presentation = entry.activity.tool.presentation;
     if (presentation?.type !== "media" || presentation.layout?.type !== "columns") return undefined;
-    if (presentation.items.length === 0) return undefined;
-    return presentation.items.every((item) => item.kind === "image")
-        ? presentation.layout.columns
-        : undefined;
+    const items = presentation.items.filter((_, index) => !hidden?.has(index));
+    if (items.length === 0) return undefined;
+    return items.every((item) => item.kind === "image") ? presentation.layout.columns : undefined;
 }
 
-/** A row a run continues across. */
-function runTransparent(entry: ConversationEntry): boolean {
+/** A row a run continues across: exploration, or a call whose pictures all went to replies. */
+function runTransparent(
+    entry: ConversationEntry,
+    hidden: ReadonlySet<number> | undefined,
+): boolean {
+    if (entry.kind !== "agentActivity" || entry.activity.kind !== "tool") return false;
+    const presentation = entry.activity.tool.presentation;
     return (
-        entry.kind === "agentActivity" &&
-        entry.activity.kind === "tool" &&
-        entry.activity.tool.presentation?.type === "exploration"
+        presentation?.type === "exploration" ||
+        (presentation?.type === "media" &&
+            presentation.items.length > 0 &&
+            presentation.items.every((_, index) => hidden?.has(index)))
     );
 }
 
 /** Every call in a run of two or more, by its entry key, with its part in the run. */
 export function conversationMediaRuns(
     entries: readonly ConversationEntry[],
+    /** Each call's pictures placed in a reply, by the call's entry key. */
+    hidden?: ReadonlyMap<string, ReadonlySet<number>>,
 ): ReadonlyMap<string, ConversationMediaRun> {
     const runs = new Map<string, ConversationMediaRun>();
     let columns: 1 | 2 | undefined;
@@ -86,9 +98,10 @@ export function conversationMediaRuns(
                 if (call.kind !== "agentActivity" || call.activity.kind !== "tool") continue;
                 const tool = call.activity.tool;
                 if (tool.presentation?.type !== "media") continue;
-                tool.presentation.items.forEach((item, index) =>
-                    members.push({ entryId: call.id, tool, index, item }),
-                );
+                const placed = hidden?.get(call.id);
+                tool.presentation.items.forEach((item, index) => {
+                    if (!placed?.has(index)) members.push({ entryId: call.id, tool, index, item });
+                });
             }
             for (const call of calls.slice(0, -1)) runs.set(entryKey(call), DEFERRED);
             runs.set(entryKey(calls.at(-1)!), {
@@ -107,9 +120,10 @@ export function conversationMediaRuns(
         calls = [];
     };
     for (const entry of entries) {
-        const entryColumns = runColumns(entry);
+        const placed = hidden?.get(entryKey(entry));
+        const entryColumns = runColumns(entry, placed);
         if (entryColumns === undefined) {
-            if (!runTransparent(entry)) close();
+            if (!runTransparent(entry, placed)) close();
             continue;
         }
         if (entryColumns !== columns) close();
@@ -133,19 +147,23 @@ const runRows = new WeakMap<
 /**
  * The value each row's height is estimated from, for `MessageList`'s
  * `estimateRows`. A row's part in a run can change because of a row several
- * places further on (a member appended after an exploration row), which is
- * further ahead than the list re-asks on its own; a row in a run is therefore
- * represented by a value that changes exactly when its part does, and every
- * other row by its entry.
+ * places further on (a member appended after an exploration row), and a call's
+ * pictures can leave it for a reply's layout further on still — both further
+ * ahead than the list re-asks on its own. Such a row is therefore represented
+ * by a value that changes exactly when its part does, and every other row by
+ * its entry. `placed` is what of a row's height depends on replies' layouts:
+ * the pictures taken from a call, or the layouts a reply draws.
  */
 export function conversationMediaRunRows(
     entries: readonly ConversationEntry[],
     runs: ReadonlyMap<string, ConversationMediaRun>,
+    placed: (entry: ConversationEntry) => string = () => "",
 ): readonly unknown[] {
     return entries.map((entry) => {
         const run = runs.get(entryKey(entry));
-        if (run === undefined) return entry;
-        const signature = conversationMediaRunSignature(run);
+        const layouts = placed(entry);
+        if (run === undefined && layouts === "") return entry;
+        const signature = `${conversationMediaRunSignature(run)}|${layouts}`;
         const held = runRows.get(entry);
         if (held?.signature === signature) return held.row;
         const row = { entry, signature };

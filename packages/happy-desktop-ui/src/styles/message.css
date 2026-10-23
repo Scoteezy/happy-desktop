@@ -584,7 +584,10 @@
 /* Body type ramp adopted from the original Happy Markdown view: 16px/24px
    paragraphs, headings that peak at h2, underlined body-color links, and
    unfilled inline code. */
-.happy-message__body--markdown p {
+/* A layout the reply placed among its text (`MediaTree`) keeps its own type:
+   the body's paragraph and code rules stop at its edge, as they do in the
+   off-screen box that measures it. */
+.happy-message__body--markdown p:not(.happy-media-tree *) {
     font-size: 16px;
     line-height: 24px;
 }
@@ -799,7 +802,7 @@
 }
 
 /* Inline code: mono, a touch smaller than the body, on a subtle raised fill. */
-.happy-message__body--markdown code {
+.happy-message__body--markdown code:not(.happy-media-tree *) {
     display: inline;
     font-family: var(--happy-font-mono);
     font-size: 14px;

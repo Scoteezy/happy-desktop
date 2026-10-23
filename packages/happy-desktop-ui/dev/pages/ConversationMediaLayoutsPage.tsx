@@ -8,6 +8,7 @@ import { ConversationView } from "../../src/ConversationView";
 import { ThemeScope } from "../../src/ThemeScope";
 import { ComponentPage, FullScreenSpecimen } from "../kit";
 import {
+    inlineEntries,
     lenientEntries,
     presentedEntries,
     readRunEntries,
@@ -73,13 +74,15 @@ const SCREENS = [
     { name: "reads", entries: readRunEntries, mode: "light", width: 720, height: 3000 },
     { name: "lenient", entries: lenientEntries, mode: "light", width: 1100, height: 3800 },
     { name: "lenient", entries: lenientEntries, mode: "dark", width: 1100, height: 3800 },
+    { name: "inline", entries: inlineEntries, mode: "light", width: 1100, height: 2400 },
+    { name: "inline", entries: inlineEntries, mode: "dark", width: 1100, height: 2400 },
 ] as const;
 
 export function ConversationMediaLayoutsPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="Pictures in the transcript, uncropped: consecutive screenshot reads continue one two-column grid under the run's last call, generated images stack in one column, an agent-written tree lays out captions and grids in its CSS subset with pictures at their natural point size, and an unarranged set falls into justified rows."
+            summary="Pictures in the transcript, uncropped: consecutive screenshot reads continue one two-column grid under the run's last call, generated images stack in one column, an agent-written tree lays out captions and grids in its CSS subset with pictures at their natural point size, an unarranged set falls into justified rows, and a reply lays out pictures it already showed among its own text."
             title="Conversation media layouts"
         >
             {SCREENS.map((screen, index) => {

@@ -5,6 +5,12 @@ export { happyAgentSyncRead } from "./happyAgentSyncRead.js";
 export { chatElementRequest, projectNumericIdentity } from "./projection.js";
 export { mediaLayoutProject } from "./mediaLayoutProject.js";
 export {
+    conversationTextLayoutParse,
+    conversationTextSegments,
+    type ConversationTextLayout,
+    type ConversationTextSegment,
+} from "./conversationTextLayouts.js";
+export {
     CHECKING_SERVER_COMPATIBILITY,
     MINIMUM_HAPPY_AGENT_PROTOCOL_VERSION,
     MINIMUM_HAPPY_AGENT_VERSION,
