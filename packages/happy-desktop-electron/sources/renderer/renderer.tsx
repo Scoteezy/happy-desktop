@@ -1553,11 +1553,12 @@ if (mediaPreviewBridge) {
         );
         appDisposers.push(keepAwakePublish(keepAwake, desktopBridge));
         configReceive = (next) => {
-            const settings = preferences.configReceived(next);
-            appearanceReceive?.(next);
-            settingsReceived(settings);
-            titleShimmerReceived(next.titleShimmerEnabled);
-            keepAwakeReceived(next.keepAwake ?? "agent");
+            preferences.configReceived(next, (settings) => {
+                appearanceReceive?.(next);
+                settingsReceived(settings);
+                titleShimmerReceived(next.titleShimmerEnabled);
+                keepAwakeReceived(next.keepAwake ?? "agent");
+            });
         };
         // This window renders the Happy Agent tree directly rather than through `App`, so
         // it has to start the highlighting pool itself: without this the file

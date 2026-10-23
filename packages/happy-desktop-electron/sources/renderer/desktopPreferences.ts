@@ -44,7 +44,10 @@ export interface DesktopPreferences {
     ): void;
     keepAwakeChanged(mode: DesktopKeepAwakeMode): void;
     settingsChanged(snapshot: HappyAgentSettingsSnapshot): void;
-    configReceived(config: DesktopConfig): HappyAgentSettingsInitial;
+    configReceived(
+        config: DesktopConfig,
+        apply: (settings: HappyAgentSettingsInitial) => void,
+    ): void;
 }
 
 /**
@@ -104,15 +107,15 @@ export function desktopPreferencesCreate(
     };
 
     return {
-        configReceived(next) {
+        configReceived(next, apply) {
             config = next;
             receiving = true;
             try {
+                apply(settingsInitial(next));
                 for (const listener of preferenceListeners) listener();
             } finally {
                 receiving = false;
             }
-            return settingsInitial(next);
         },
         initialAppearance: config.appearance,
         initialKeepAwake: config.keepAwake,
