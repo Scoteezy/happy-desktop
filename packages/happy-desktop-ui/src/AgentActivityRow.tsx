@@ -890,6 +890,7 @@ function AgentToolActivity(props: {
                 className="happy-agent-activity__glyph"
                 data-happy-desktop-ui="agent-activity-glyph"
                 data-still={stillGlyph}
+                data-waiting={running && stillGlyph !== undefined ? "" : undefined}
             >
                 {spinning ? (
                     <Spinner
@@ -1340,6 +1341,8 @@ function AgentMessageActivity(props: {
     agentId: string;
     agentName?: string;
     agentFace?: ConversationAgentFace;
+    /** The sender's one line on what the message is; without it the row names the sender. */
+    explanation?: string;
     references?: MessageReferences;
     text: string;
     defaultExpanded?: boolean;
@@ -1372,7 +1375,7 @@ function AgentMessageActivity(props: {
                     disclosureAnchor?.(event.currentTarget);
                     setExpanded(!expanded);
                 }}
-                title={props.agentName === undefined ? props.agentId : undefined}
+                title={props.agentName ?? props.agentId}
                 type="button"
             >
                 <span
@@ -1390,13 +1393,15 @@ function AgentMessageActivity(props: {
                     className="happy-agent-activity__verb"
                     data-happy-desktop-ui="agent-activity-verb"
                 >
-                    Message
+                    {props.explanation === undefined
+                        ? "Message"
+                        : (props.agentName ?? agentIdShort(props.agentId))}
                 </span>
                 <ScrollingText
                     className="happy-agent-activity__text"
                     data-happy-desktop-ui="agent-activity-text"
                 >
-                    from {props.agentName ?? agentIdShort(props.agentId)}
+                    {props.explanation ?? `from ${props.agentName ?? agentIdShort(props.agentId)}`}
                 </ScrollingText>
                 {hasBody ? (
                     <span aria-hidden="true" className="happy-agent-activity__chevron">
@@ -1657,6 +1662,9 @@ export function AgentActivityRow(props: AgentActivityRowProps) {
                     agentId={activity.agentId}
                     {...(activity.agentName === undefined ? {} : { agentName: activity.agentName })}
                     {...(activity.agentFace === undefined ? {} : { agentFace: activity.agentFace })}
+                    {...(activity.explanation === undefined
+                        ? {}
+                        : { explanation: activity.explanation })}
                     defaultExpanded={props.defaultExpanded}
                     expanded={props.expanded}
                     onExpandedChange={props.onExpandedChange}

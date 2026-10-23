@@ -36,8 +36,9 @@ export function conversationEntryResumesAfterActivity(
     const previous = entries[index - 1];
     return (
         entries[index]?.kind === "message" &&
-        previous?.kind === "agentActivity" &&
-        previous.activity.kind === "tool"
+        ((previous?.kind === "agentActivity" && previous.activity.kind === "tool") ||
+            // A quoted answer is as tight as a tool row.
+            answeredQuestionRow(previous))
     );
 }
 
@@ -69,10 +70,24 @@ export function conversationMessageGrouped(
     if (entry?.kind !== "message") return false;
     if (entry.message.sender?.kind === "agent") {
         const preceding = entries[index - 1];
-        if (preceding?.kind === "agentActivity" || preceding?.kind === "delegation") return true;
+        if (
+            preceding?.kind === "agentActivity" ||
+            preceding?.kind === "delegation" ||
+            answeredQuestionRow(preceding)
+        )
+            return true;
     }
     const previous = previousMessage(entries, index);
     return previous !== undefined && sameSender(entry, previous);
+}
+
+/**
+ * A question the agent asked and the reader answered. It is the agent's turn
+ * that asked it, so when nothing came before it the question opens that turn
+ * and carries its header.
+ */
+function answeredQuestionRow(entry: ConversationEntry | undefined): boolean {
+    return entry?.kind === "request" && entry.request.kind === "userInput";
 }
 
 /** Rows the agent itself produces, and which can therefore open its turn. */
@@ -80,8 +95,27 @@ function agentOwnedRow(entry: ConversationEntry | undefined): boolean {
     return (
         entry?.kind === "agentActivity" ||
         entry?.kind === "delegation" ||
+        answeredQuestionRow(entry) ||
         (entry?.kind === "notice" && entry.variant === "notice")
     );
+}
+
+/**
+ * Whether a turn opening here continues the agent's own group: the rows before
+ * it, past any settled status lines, are the agent's. A turn the agent starts
+ * again without the reader speaking — a subagent reporting back, an answered
+ * question resuming it — is still the agent going on, so it repeats no header.
+ */
+function agentGroupContinues(entries: readonly ConversationEntry[], index: number): boolean {
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+        const entry = entries[cursor];
+        if (!entry) break;
+        if (entry.kind === "turnStatus") continue;
+        if (agentOwnedRow(entry) || entry.kind === "request") return true;
+        if (entry.kind === "message") return entry.message.sender?.kind === "agent";
+        break;
+    }
+    return false;
 }
 
 /**
@@ -98,29 +132,14 @@ export function conversationAgentRowStartsGroup(
     entries: readonly ConversationEntry[],
     index: number,
 ): boolean {
-    if (!agentOwnedRow(entries[index])) return false;
-    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-        const entry = entries[cursor];
-        if (!entry) break;
-        if (agentOwnedRow(entry)) return false;
-        if (entry.kind === "message") return entry.message.sender?.kind !== "agent";
-        break;
-    }
-    return true;
+    return agentOwnedRow(entries[index]) && !agentGroupContinues(entries, index);
 }
 
 /** Whether the live footer is the first agent-owned thing after the user turn. */
 export function conversationWorkingStatusStartsGroup(
     entries: readonly ConversationEntry[],
 ): boolean {
-    for (let cursor = entries.length - 1; cursor >= 0; cursor -= 1) {
-        const entry = entries[cursor];
-        if (!entry) break;
-        if (agentOwnedRow(entry) || entry.kind === "request") return false;
-        if (entry.kind === "message") return entry.message.sender?.kind !== "agent";
-        if (entry.kind === "turnStatus") return true;
-    }
-    return true;
+    return !agentGroupContinues(entries, entries.length);
 }
 
 /**

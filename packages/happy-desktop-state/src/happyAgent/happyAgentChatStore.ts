@@ -884,6 +884,7 @@ export function happyAgentChatStoreCreate(
     /* Replaced rather than edited, so the transcript projection can settle
        "were these the images the last projection saw?" by identity. */
     let sentImages: ReadonlyMap<string, readonly HappyAgentImageInput[]> = new Map();
+    let sentMessageIds: ReadonlySet<string> = new Set();
     let sentImageBytes = 0;
     const conversationCache = happyAgentConversationCacheCreate();
     /* The agents that sent messages into this transcript, as the window knows
@@ -1005,6 +1006,7 @@ export function happyAgentChatStoreCreate(
                       providers: catalog.providers,
                       elements,
                       sentImages,
+                      sentMessageIds,
                       sessionId,
                       showReasoning,
                       ephemeral: NO_EPHEMERAL,
@@ -1266,9 +1268,12 @@ export function happyAgentChatStoreCreate(
         const requestId = requestMutationIds.get(rejection.mutationId);
         if (requestId !== undefined) {
             requestMutationIds.delete(rejection.mutationId);
+            const submitted = requestSubmissions.get(requestId);
+            if (submitted === undefined) return;
             requestSubmissions.set(requestId, {
                 requestId,
                 status: "failed",
+                answers: submitted.answers,
                 error: new UserError(rejection.message),
             });
             commit();
@@ -1326,6 +1331,7 @@ export function happyAgentChatStoreCreate(
             requestSubmissions.set(input.requestId, {
                 requestId: input.requestId,
                 status: "pending",
+                answers: input.answers,
             });
             commit();
             try {
@@ -1338,6 +1344,7 @@ export function happyAgentChatStoreCreate(
                 requestSubmissions.set(input.requestId, {
                     requestId: input.requestId,
                     status: "failed",
+                    answers: input.answers,
                     error: happyAgentUserError(error),
                 });
                 commit();
@@ -1473,6 +1480,7 @@ export function happyAgentChatStoreCreate(
                         : text,
                 );
                 if (images && images.length > 0) sentImagesRemember(mutationId, images);
+                sentMessageIds = new Set([...sentMessageIds, mutationId]);
                 connectMutationTrack(mutationId);
                 if (refused !== undefined)
                     void deps.connectActions.sendAcceptanceWait(mutationId).catch((error) => {
@@ -1661,6 +1669,7 @@ export function happyAgentChatStoreCreate(
             pendingMutationIds.clear();
             pendingMutationOrder.length = 0;
             sentImages = new Map();
+            sentMessageIds = new Set();
             sentImageBytes = 0;
             conversationCache.context = undefined;
             conversationCache.elements = undefined;

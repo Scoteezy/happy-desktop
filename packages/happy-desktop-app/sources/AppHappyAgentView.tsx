@@ -9302,6 +9302,7 @@ function HappyAgentConversationSurface(props: {
         titles,
         titlesStore,
         entities: props.referenceEntities,
+        subagents: conversation.subagents,
         onGroupOpen: (groupId, agentId) => {
             if (props.happyAgentOnline()) props.onReferenceGroupOpen(groupId, agentId);
         },

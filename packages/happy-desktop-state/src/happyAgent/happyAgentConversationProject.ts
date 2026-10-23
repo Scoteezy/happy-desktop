@@ -98,6 +98,8 @@ export function happyAgentConversationCacheCreate(): HappyAgentConversationCache
 }
 
 export interface HappyAgentConversationInput {
+    /** Messages submitted by this store, independent of daemon acceptance. */
+    readonly sentMessageIds?: ReadonlySet<string>;
     readonly models?: readonly HappyAgentModel[];
     /** The catalog's accounts, which name the one a failure was switched to. */
     readonly providers?: readonly HappyAgentModelProvider[];
@@ -504,6 +506,32 @@ function userInputRequestProject(
     };
 }
 
+function userInputPresentationProject(
+    requestId: string,
+    presentation: Extract<ToolPresentation, { kind: "user_input" }>,
+    sequence: string,
+): ConversationRequestEntry {
+    return {
+        kind: "request",
+        id: `request:${requestId}`,
+        sequence,
+        request: {
+            kind: "userInput",
+            requestId,
+            questions: presentation.questions.map((question) => ({
+                id: question.id,
+                header: question.header,
+                question: question.question,
+                multiSelect: question.multiSelect,
+                required: true,
+                options: question.options,
+            })),
+            status: "answered",
+            answers: presentation.answers,
+        },
+    };
+}
+
 /** The images one user message shows, from the element or this window's own send. */
 function userMessageAttachments(
     element: Extract<ChatElement, { kind: "user_message" }>,
@@ -599,6 +627,9 @@ function happyAgentConnectGroupProject(
                             kind: "agentMessage",
                             agentId: collaborator.agentId,
                             ...senderOf(input, collaborator.agentId),
+                            ...(collaborator.explanation === undefined
+                                ? {}
+                                : { explanation: collaborator.explanation }),
                             text: element.text,
                         },
                     });
@@ -608,6 +639,13 @@ function happyAgentConnectGroupProject(
                     kind: "message",
                     source: "server",
                     pendingSend: element.authority === "local",
+                    // The optimistic notification is synchronous, before the
+                    // sender receives its message ID. Its explicit authority
+                    // marks that first snapshot; the retained ID marks acceptance.
+                    ...(element.authority === "local" ||
+                    input.sentMessageIds?.has(element.messageId)
+                        ? { sentHere: true }
+                        : {}),
                     delivery: element.delivery,
                     message: messageProject({
                         id: element.messageId,
@@ -671,6 +709,9 @@ function happyAgentConnectGroupProject(
                         kind: "agentMessage",
                         agentId: element.agentId,
                         ...sender,
+                        ...(element.explanation === undefined
+                            ? {}
+                            : { explanation: element.explanation }),
                         text,
                     },
                 });
@@ -869,6 +910,16 @@ function happyAgentConnectGroupProject(
                            call it came from does not also show as a tool row. */
                         if (userInput.state === "answered")
                             entries.push(userInputRequestProject(userInput, sequence));
+                    } else if (element.presentation?.kind === "user_input") {
+                        /* The call recorded what was asked and answered, so the
+                           question keeps its place however long ago it was. */
+                        entries.push(
+                            userInputPresentationProject(
+                                element.toolCallId,
+                                element.presentation,
+                                sequence,
+                            ),
+                        );
                     } else if (child) {
                         // The child is the lasting state of this call, so it
                         // takes the call's place in the transcript.
@@ -1063,6 +1114,9 @@ function happyAgentConnectGroupProject(
             entry.kind === "delegation" ||
             index === actualAnchorIndex ||
             (entry.kind === "message" && entry.message.sender?.kind !== "agent") ||
+            // An answered question is the reader's own decision, so it stays with
+            // their messages rather than folding away with the work it steered.
+            entry.kind === "request" ||
             // What set the turn going stays visible for the same reason the
             // reader's own message does: folding it away would leave the answer
             // standing over nothing.

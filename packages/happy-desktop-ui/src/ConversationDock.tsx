@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, useContext, useState, type CSSProperties, type ReactNode } from "react";
 import type { ComposerMentionSubject, ComposerSnapshot } from "happy-desktop-state";
 import { Banner } from "./Banner";
 import { Button } from "./Button";
@@ -11,7 +11,22 @@ import type { ImageViewerLoadedImage } from "./ImageViewer";
 import { ModalOverlay } from "./ModalOverlay";
 import { surfaceTypeIcon, surfaceTypeLabel } from "./pages/surfaces/surfacePresentation";
 import { reviewCommentPlace } from "./ReviewComment";
+import { ScrollArea } from "./Scrollbar";
 import { WindowOverlay } from "./WindowOverlay";
+
+/**
+ * The questions a hosting `ConversationView` took out of its transcript, with
+ * the placeholder that invites the typed answer. The view takes its dock as an
+ * owner-built slot, so it hands these over through context.
+ */
+export type ConversationDockQuestion = {
+    question: ReactNode;
+    placeholder: string;
+};
+
+export const ConversationDockQuestionContext = createContext<ConversationDockQuestion | undefined>(
+    undefined,
+);
 
 export type ConversationDockProps = {
     className?: string;
@@ -25,6 +40,11 @@ export type ConversationDockProps = {
     composerControls?: ReactNode;
     /** Agent-authored contribution bar immediately above the composer card. */
     composerAboveControl?: ReactNode;
+    /**
+     * What the agent is waiting on the reader to answer, asked directly above
+     * the input that also answers it. Absent when nothing is waiting.
+     */
+    question?: ReactNode;
     /**
      * Lines said directly above the input, one per line, in the transcript's
      * muted service-line voice: why sending is held while the draft stays
@@ -153,6 +173,8 @@ function mentionsOf(composer: ComposerSnapshot): Mentionable[] {
  */
 export function ConversationDock(props: ConversationDockProps) {
     const composer = props.composer;
+    const hosted = useContext(ConversationDockQuestionContext);
+    const question = props.question ?? hosted?.question;
     const [preview, setPreview] = useState<{
         readonly id: string;
         readonly loadedImage?: ImageViewerLoadedImage;
@@ -286,6 +308,23 @@ export function ConversationDock(props: ConversationDockProps) {
             ) : null}
             <div className="happy-conversation__dock-inner">
                 {props.composerAboveControl}
+                {question === undefined ? null : (
+                    /* A long question scrolls inside its own region rather than
+                       pushing the conversation off the window. */
+                    <div
+                        className="happy-conversation__question"
+                        data-happy-desktop-ui="conversation-dock-question"
+                        role="group"
+                        aria-label="Agent questions"
+                    >
+                        <ScrollArea
+                            className="happy-conversation__question-scroll"
+                            viewportClassName="happy-conversation__question-viewport"
+                        >
+                            {question}
+                        </ScrollArea>
+                    </div>
+                )}
                 {props.notice === undefined || props.notice.length === 0 ? null : (
                     <div
                         className="happy-conversation__notice"
@@ -328,7 +367,9 @@ export function ConversationDock(props: ConversationDockProps) {
                     onStop={props.onAbort}
                     onValueChange={props.onComposerValueChange}
                     pending={composer.submission.status === "pending"}
-                    placeholder={props.composerPlaceholder ?? "Message the agent…"}
+                    placeholder={
+                        hosted?.placeholder ?? props.composerPlaceholder ?? "Message the agent…"
+                    }
                     running={props.running}
                     sendEnabled={sendEnabled}
                     submitDisabled={props.submitDisabled === true}

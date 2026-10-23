@@ -406,13 +406,17 @@ const STEERING_QUOTE_MEASURE = 560;
 const STEERING_QUOTE_INSET = 40;
 const STEERING_QUOTE_MARGIN = 16;
 /** Transcript request chrome from happy-agent-chat.css / approval-card.css. */
-const USER_INPUT_HORIZONTAL_MARGIN = 32;
-const USER_INPUT_LEGEND_HORIZONTAL_PADDING = 24;
+/* A transcript question is always answered history, inset to the agent column
+   with its context and legend flush to it; an answer pads its quoted text by
+   12px a side. */
+const USER_INPUT_HORIZONTAL_MARGIN = AGENT_INSET;
+const USER_INPUT_LEGEND_HORIZONTAL_PADDING = 0;
+const USER_INPUT_ANSWER_HORIZONTAL_PADDING = 24;
 /** The context block's 6px/8px vertical padding around its Markdown body. */
 const USER_INPUT_CONTEXT_VERTICAL_PADDING = 14;
 const USER_INPUT_OPTION_HORIZONTAL_CHROME = 51;
 const USER_INPUT_QUESTION_LEGEND_CHROME = 30;
-const USER_INPUT_QUESTION_GAP = 8;
+const USER_INPUT_QUESTION_GAP = 12;
 const USER_INPUT_OPTION_GAP = 2;
 const USER_INPUT_OPTION_VERTICAL_PADDING = 8;
 const USER_INPUT_FOOTER_HEIGHT = 36;
@@ -789,6 +793,7 @@ function userInputRequestHeight(
     const contentWidth = width - USER_INPUT_HORIZONTAL_MARGIN;
     const promptMeasure = contentWidth - USER_INPUT_LEGEND_HORIZONTAL_PADDING;
     const optionMeasure = contentWidth - USER_INPUT_OPTION_HORIZONTAL_CHROME;
+    const answerMeasure = contentWidth - USER_INPUT_ANSWER_HORIZONTAL_PADDING;
     /* The shared Markdown context reads above the first question in both
        states, through the same body model as an agent reply. */
     let total = request.context
@@ -810,9 +815,9 @@ function userInputRequestHeight(
             for (const [answerIndex, answer] of shown.entries()) {
                 if (answerIndex > 0) total += USER_INPUT_OPTION_GAP;
                 const option = question.options.find((candidate) => candidate.label === answer);
-                total += 10 + uiTextHeight(answer || "No answer", 14, 20, optionMeasure, cache);
+                total += 10 + uiTextHeight(answer || "No answer", 14, 20, answerMeasure, cache);
                 if (option?.description)
-                    total += uiTextHeight(option.description, 12, 16, optionMeasure, cache);
+                    total += uiTextHeight(option.description, 12, 16, answerMeasure, cache);
             }
             continue;
         }
@@ -826,7 +831,10 @@ function userInputRequestHeight(
             total += Math.max(32, USER_INPUT_OPTION_VERTICAL_PADDING + contentHeight);
         }
     }
-    return total + (request.status === "pending" ? USER_INPUT_FOOTER_HEIGHT : 0);
+    const submitVisible =
+        request.status === "pending" &&
+        request.questions.every((question) => question.options.length > 0);
+    return total + (submitVisible ? USER_INPUT_FOOTER_HEIGHT : 0);
 }
 
 /** Pending permission gate in its default collapsed transcript state. */
@@ -1166,14 +1174,20 @@ export function conversationRowHeight(
             () => lead + SYSTEM_NOTIFICATION_HEIGHT,
         );
     }
-    if (entry.kind === "request")
+    if (entry.kind === "request") {
+        /* An answered question that opens its turn carries the identity line. */
+        const lead =
+            entry.request.kind === "userInput" &&
+            context.surface === "conversation" &&
+            conversationAgentRowStartsGroup(entries, index);
         return rowHeightCached(
             cache,
             entry,
-            `request:${String(width)}:${context.expanded ? "expanded" : "collapsed"}`,
+            `request:${String(width)}:${context.expanded ? "expanded" : "collapsed"}:${lead ? "lead" : "plain"}`,
             () =>
                 entry.request.kind === "userInput"
-                    ? userInputRequestHeight(entry.request, width, cache?.text)
+                    ? (lead ? ACTIVITY_LEAD_CHROME : 0) +
+                      userInputRequestHeight(entry.request, width, cache?.text)
                     : permissionRequestHeight(
                           entry.request,
                           width,
@@ -1181,6 +1195,7 @@ export function conversationRowHeight(
                           cache?.text,
                       ),
         );
+    }
     if (entry.kind === "summary")
         return rowHeightCached(
             cache,

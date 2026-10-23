@@ -188,6 +188,8 @@ interface SessionEntry {
     workspace?: Workspace;
     activity?: AgentActivityResponse;
     question?: Question | null;
+    /** Every question seen answered while this connection followed the session, oldest first. */
+    answeredQuestions: readonly Question[];
     usage?: UsageBreakdown;
     context?: AgentContextUsage | null;
     draft?: AgentDraftSnapshot;
@@ -624,6 +626,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             ...(entry.context === undefined ? {} : { context: entry.context }),
             ...(entry.activity === undefined ? {} : { activity: entry.activity }),
             ...(entry.question === undefined ? {} : { question: entry.question }),
+            answeredQuestions: entry.answeredQuestions,
             slashCommands: entry.slashCommands,
             runs: runsOrderedOf(entry),
             runFinalContextTokens: entry.runFinalContextTokens,
@@ -632,7 +635,24 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
         };
     };
 
+    /**
+     * Keeps a question the daemon reports answered. Its pending question is the
+     * only one the agent API names, and the next one replaces it, so this is
+     * what lets an answered question keep its place in the transcript.
+     */
+    const answeredQuestionRecord = (entry: SessionEntry): void => {
+        const question = entry.question;
+        if (question === undefined || question === null || question.status !== "answered") return;
+        const at = entry.answeredQuestions.findIndex((known) => known.id === question.id);
+        if (at < 0) entry.answeredQuestions = [...entry.answeredQuestions, question];
+        else if (entry.answeredQuestions[at] !== question)
+            entry.answeredQuestions = entry.answeredQuestions.map((known, index) =>
+                index === at ? question : known,
+            );
+    };
+
     const publishSession = (entry: SessionEntry, force = false): void => {
+        answeredQuestionRecord(entry);
         // The connection-wide cache still owns inactive sessions, but there is
         // nobody to consume a projected ChatStore snapshot while a session is
         // not subscribed. In particular, do not parse/project the whole
@@ -1593,6 +1613,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             reconcileRequired: false,
             corruptedMessageIds: new Set(),
             questionRecovery: undefined,
+            answeredQuestions: [],
             slashCommands: [],
         };
         const known = agentOf(sessionId);

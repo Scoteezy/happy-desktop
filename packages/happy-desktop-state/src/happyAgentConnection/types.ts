@@ -18,6 +18,7 @@ import type {
 import type { ConversationMediaLayout } from "../conversation/conversationEntry.js";
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
 import type {
+    HappyAgentAnsweredUserInput,
     HappyAgentAvatarImage,
     HappyAgentSubtaskActivity,
 } from "../happyAgent/happyAgentTypes.js";
@@ -117,6 +118,18 @@ export type ToolPresentation =
           url: string;
           title: string;
           display: "inline_compact" | "inline_expanded" | "side" | null;
+      }
+    | {
+          /** What an answered question asked, and the values the person gave. */
+          kind: "user_input";
+          questions: readonly {
+              id: string;
+              header: string;
+              question: string;
+              multiSelect: boolean;
+              options: readonly { label: string; description: string }[];
+          }[];
+          answers: Readonly<Record<string, readonly string[]>>;
       };
 
 interface BaseChatElement {
@@ -150,6 +163,8 @@ export interface UserMessageElement extends BaseChatElement {
         readonly agentId: string;
         /** This agent driving itself, the agent that manages it, or any other. */
         readonly relation: "self" | "parent" | "other";
+        /** That agent's one-line account of what the message is, when it gave one. */
+        readonly explanation?: string;
     };
 }
 
@@ -169,6 +184,8 @@ export interface InboundAgentMessageElement extends BaseChatElement {
     agentId: string;
     /** The agent that manages this one, or any other agent talking to it. */
     relation: "parent" | "other";
+    /** The sender's one-line account of what the message is, when it gave one. */
+    explanation?: string;
     /** The message as it arrived, addressing envelope included. */
     text: string;
 }
@@ -484,6 +501,12 @@ export interface SessionState {
     };
     models: readonly unknown[];
     pendingUserInputs: readonly UserInputRequest[];
+    /**
+     * Questions the daemon reported answered while this connection followed the
+     * session, oldest first. The agent API keeps no answered history, so one
+     * answered before this connection saw it is not here.
+     */
+    answeredUserInputs: readonly HappyAgentAnsweredUserInput[];
     pendingSteeringMessages: readonly {
         message: { id: string; blocks: readonly MessageBlock[] };
     }[];

@@ -25,6 +25,8 @@ import {
     type AgentWorkingPhase,
 } from "./AgentWorkingStatus";
 import { ChannelHeader } from "./ChannelHeader";
+import { ConversationDockQuestionContext, type ConversationDockQuestion } from "./ConversationDock";
+import { ConversationRequestView } from "./ConversationRequestView";
 import {
     ConversationEntryView,
     type ConversationEntryFailureProps,
@@ -505,6 +507,33 @@ function conversationCurrentFailure(transcript: readonly ConversationEntry[]): s
     return undefined;
 }
 
+/** A question still waiting on the reader, which the dock asks above the input. */
+function conversationQuestionDocked(entry: ConversationEntry): boolean {
+    return (
+        entry.kind === "request" &&
+        entry.request.kind === "userInput" &&
+        entry.request.status !== "answered"
+    );
+}
+
+/**
+ * The newest message submitted through this store. Its local marker survives
+ * daemon acceptance. The list remembers it while queued and lifts it only
+ * once its own row enters the transcript, unless the reader has scrolled away.
+ */
+function conversationSendingMessageKey(
+    transcript: readonly ConversationEntry[],
+): string | undefined {
+    for (let index = transcript.length - 1; index >= 0; index -= 1) {
+        const entry = transcript[index]!;
+        if (entry.kind !== "message") continue;
+        return entry.delivery !== "failed" && entry.sentHere === true
+            ? entry.message.id
+            : undefined;
+    }
+    return undefined;
+}
+
 /** The geometry-relevant part of a failure row's props, for the row-height model. */
 function failureRowContext(failure: ConversationEntryFailureProps): ConversationFailureRowContext {
     return {
@@ -563,7 +592,73 @@ export function ConversationView(props: ConversationViewProps) {
     };
     const rowHeightCache = conversationRowHeightCacheGet(conversationCacheKey);
     conversationRowHeightCachePrune(rowHeightCache, props.entries);
-    const { transcript, queued } = conversationPendingSteering(props.entries);
+    const steering = conversationPendingSteering(props.entries);
+    const queued = steering.queued;
+    /* A question the agent is waiting on is asked at the input that answers it,
+       not in the transcript: it neither pushes the conversation up when it
+       arrives nor pulls it down when it is answered. A read-only view has no
+       input, so there it stays in the transcript. */
+    const dockedQuestions =
+        props.dock !== undefined ? steering.transcript.filter(conversationQuestionDocked) : [];
+    const transcript =
+        dockedQuestions.length === 0
+            ? steering.transcript
+            : steering.transcript.filter((entry) => !conversationQuestionDocked(entry));
+    /* The owner's dock is an opaque slot, so the questions reach it through
+       context; with none waiting the value stays undefined and the dock keeps
+       the owner's placeholder. */
+    const dockQuestion: ConversationDockQuestion | undefined =
+        dockedQuestions.length === 0
+            ? undefined
+            : {
+                  placeholder: dockedQuestions.some(
+                      (entry) =>
+                          entry.kind === "request" &&
+                          entry.request.kind === "userInput" &&
+                          entry.request.questions.some((question) => question.options.length === 0),
+                  )
+                      ? "Type your answer…"
+                      : "Or type your own answer…",
+                  question: dockedQuestions.map((entry) => {
+                      if (entry.kind !== "request") return null;
+                      const submission = props.requestSubmissions?.find(
+                          (candidate) => candidate.requestId === entry.request.requestId,
+                      );
+                      return (
+                          <ConversationRequestView
+                              key={entry.id}
+                              {...(submission?.status === "failed"
+                                  ? { error: submission.error, retryAnswers: submission.answers }
+                                  : {})}
+                              {...(props.onRequestAnswer
+                                  ? { onAnswer: props.onRequestAnswer }
+                                  : {})}
+                              {...(props.onRequestSelectionChange
+                                  ? { onSelectionChange: props.onRequestSelectionChange }
+                                  : {})}
+                              pending={submission?.status === "pending"}
+                              request={entry.request}
+                              {...((selection) => (selection ? { selection } : {}))(
+                                  props.requestSelections?.get(entry.request.requestId),
+                              )}
+                              variant="dock"
+                          />
+                      );
+                  }),
+              };
+    const turnAnchorKey = conversationSendingMessageKey(props.entries);
+    // The first send also creates an empty conversation's MessageList. Keep
+    // this view's mount boundary so that send is fresh even if React combines
+    // its queued and accepted snapshots; IDs already present on opening are history.
+    const [sendLifetime, setSendLifetime] = useState(() => ({
+        conversationId: props.conversationId,
+        initialKey: turnAnchorKey,
+    }));
+    if (sendLifetime.conversationId !== props.conversationId)
+        setSendLifetime({ conversationId: props.conversationId, initialKey: turnAnchorKey });
+    const turnAnchorOnMount =
+        sendLifetime.conversationId === props.conversationId &&
+        turnAnchorKey !== sendLifetime.initialKey;
     /* Every change to an inline page's collapse or height is one generation,
        which re-sizes the rows; the values themselves live in module memory. */
     const [inlinePageGeneration, setInlinePageGeneration] = useState(0);
@@ -679,12 +774,18 @@ export function ConversationView(props: ConversationViewProps) {
                 }),
         };
     };
-    const awaitingInput = transcript.some(
-        (entry) =>
-            entry.kind === "request" &&
-            entry.request.kind === "userInput" &&
-            entry.request.status !== "answered",
-    );
+    const awaitingInput = steering.transcript.some(conversationQuestionDocked);
+    /* The reader's message is on its way and nothing has answered it yet. The
+       status line arrives with the message, in the same commit, rather than a
+       beat later when the run is reported started. */
+    const awaitingReply =
+        props.running !== true &&
+        props.entries.some(
+            (entry) =>
+                entry.kind === "message" &&
+                entry.sentHere === true &&
+                (entry.delivery === "sending" || entry.delivery === "pending_steering"),
+        );
     /*
      * The turn ended and the agents it delegated to did not. That is a state of
      * its own rather than a continuation of the turn: the conversation is still
@@ -693,7 +794,11 @@ export function ConversationView(props: ConversationViewProps) {
      * label, and wait — and it never claims the identity header, because the
      * work it reports was set going by the turn above it.
      */
-    const delegating = props.running !== true && !awaitingInput && (props.delegatedAgents ?? 0) > 0;
+    const delegating =
+        props.running !== true &&
+        !awaitingInput &&
+        !awaitingReply &&
+        (props.delegatedAgents ?? 0) > 0;
     /* A wait whose end the owner did not supply still is not work: the footer
        takes a still clock rather than the loader. */
     const scheduledWait =
@@ -707,7 +812,7 @@ export function ConversationView(props: ConversationViewProps) {
      * line that reports what this conversation is doing is the place that says
      * so, rather than leaving the transcript looking finished.
      */
-    const statusVisible = props.running === true || awaitingInput || delegating;
+    const statusVisible = props.running === true || awaitingInput || delegating || awaitingReply;
     const workingStatusStartsGroup =
         statusVisible &&
         !delegating &&
@@ -727,7 +832,7 @@ export function ConversationView(props: ConversationViewProps) {
             ]
                 .filter(Boolean)
                 .join(" ")}
-            elapsedMs={delegating ? props.delegatedElapsedMs : props.elapsedMs}
+            elapsedMs={delegating ? props.delegatedElapsedMs : awaitingReply ? 0 : props.elapsedMs}
             label={
                 delegating
                     ? undefined
@@ -745,7 +850,7 @@ export function ConversationView(props: ConversationViewProps) {
                     ? "typewriter"
                     : "calm"
             }
-            phase={delegating ? "delegating" : props.workingPhase}
+            phase={delegating ? "delegating" : awaitingReply ? "waiting" : props.workingPhase}
             wait={delegating ? undefined : props.workingWait}
             waiting={scheduledWait}
         />
@@ -1027,6 +1132,8 @@ export function ConversationView(props: ConversationViewProps) {
                         onScrollPositionChange={props.onScrollPositionChange}
                         onStartReached={props.onStartReached}
                         paddingEnd={24}
+                        turnAnchorKey={turnAnchorKey}
+                        turnAnchorOnMount={turnAnchorOnMount}
                         virtualize
                     >
                         {transcript.map((entry, index) => {
@@ -1119,6 +1226,11 @@ export function ConversationView(props: ConversationViewProps) {
                                             ? submission.error
                                             : undefined
                                     }
+                                    requestRetryAnswers={
+                                        submission?.status === "failed"
+                                            ? submission.answers
+                                            : undefined
+                                    }
                                     requestPending={submission?.status === "pending"}
                                     rowExpanded={rowExpanded(entry)}
                                     viewerId={props.viewerId}
@@ -1129,7 +1241,9 @@ export function ConversationView(props: ConversationViewProps) {
                 </MarkdownLayoutCacheContext.Provider>
             )}
 
-            {props.dock}
+            <ConversationDockQuestionContext.Provider value={dockQuestion}>
+                {props.dock}
+            </ConversationDockQuestionContext.Provider>
 
             {props.overlay ? <WindowOverlay>{props.overlay}</WindowOverlay> : null}
         </section>

@@ -1,17 +1,10 @@
-import type {
-    HappyAgentAnsweredUserInput,
-    HappyAgentChatTranscriptConnect,
-    HappyAgentConnection,
-} from "happy-desktop-state";
-
-const NO_ANSWERED_INPUTS: readonly HappyAgentAnsweredUserInput[] = [];
+import type { HappyAgentChatTranscriptConnect, HappyAgentConnection } from "happy-desktop-state";
 
 /**
  * Adapts one Happy Agent session subscription to the retained chat store.
  *
  * Reconnection, gap recovery, and transcript hydration belong to the shared
- * connection itself. This boundary supplies the state package's answer-history
- * slot, which the current agent API does not expose independently.
+ * connection itself, and so does the answer history it has followed.
  */
 export function happyAgentTranscriptConnectCreate(
     connection: HappyAgentConnection,
@@ -19,7 +12,8 @@ export function happyAgentTranscriptConnectCreate(
     return (options) => {
         const session = connection.connectSession({
             sessionId: options.sessionId,
-            onChange: (elements, state) => options.onChange(elements, state, NO_ANSWERED_INPUTS),
+            onChange: (elements, state) =>
+                options.onChange(elements, state, state.answeredUserInputs),
             onError: options.onError,
         });
         return {

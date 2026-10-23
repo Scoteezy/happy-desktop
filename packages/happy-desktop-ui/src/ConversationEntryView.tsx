@@ -140,6 +140,7 @@ export type ConversationEntryViewProps = {
     requestPending?: boolean;
     /** Last failed submission for this request. */
     requestError?: UserError;
+    requestRetryAnswers?: Readonly<Record<string, readonly string[]>>;
     /** Renders rich activity bodies expanded from the first paint (blueprint/tests). */
     activityDefaultExpanded?: boolean;
     /** Controlled disclosure state for this transcript row. */
@@ -474,13 +475,15 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
             notice
         );
     }
-    if (entry.kind === "request")
-        return (
+    if (entry.kind === "request") {
+        const lead = props.activityAuthor !== undefined && entry.request.kind === "userInput";
+        const request = (
             <ConversationRequestView
-                className={props.className}
+                className={lead ? undefined : props.className}
                 data-testid={props["data-testid"]}
                 defaultExpanded={props.activityDefaultExpanded}
                 error={props.requestError}
+                retryAnswers={props.requestRetryAnswers}
                 expanded={props.rowExpanded}
                 {...(props.onRequestAnswer ? { onAnswer: props.onRequestAnswer } : {})}
                 {...(props.onRequestSelectionChange
@@ -491,9 +494,28 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                 pending={props.requestPending}
                 onExpandedChange={props.onRowExpandedChange}
                 request={entry.request}
-                style={props.style}
+                {...(lead ? {} : { style: props.style })}
             />
         );
+        /* An answered question the turn opens with carries the turn's identity,
+           as a tool-first turn's first call does. */
+        return lead && props.activityAuthor ? (
+            <Message
+                agent
+                author={props.activityAuthor.displayName}
+                body=""
+                className={["happy-message--activity-lead", props.className]
+                    .filter(Boolean)
+                    .join(" ")}
+                initials={initialsOf(props.activityAuthor.displayName)}
+                style={props.style}
+            >
+                {request}
+            </Message>
+        ) : (
+            request
+        );
+    }
     if (entry.kind === "summary")
         return (
             <div

@@ -478,6 +478,8 @@ export type ConversationActivity =
           readonly agentName?: string;
           /** How that agent is pictured wherever else it is listed, when known. */
           readonly agentFace?: ConversationAgentFace;
+          /** The sender's one-line account of what the message is, when it gave one. */
+          readonly explanation?: string;
           /** The message as it arrived, addressing envelope included. */
           readonly text: string;
       }
@@ -524,8 +526,9 @@ export type ConversationRequest =
           readonly questions: readonly ConversationRequestQuestion[];
           readonly status: "answered";
           readonly answers: Readonly<Record<string, readonly string[]>>;
-          readonly createdAt: number;
-          readonly resolvedAt: number;
+          /** When it was asked and answered; a call's recorded answer does not say. */
+          readonly createdAt?: number;
+          readonly resolvedAt?: number;
       }
     | {
           readonly kind: "permissionReview";
@@ -546,8 +549,17 @@ export type ConversationRequestStatus =
 
 /** One request-scoped local submission lifecycle rendered beside its request. */
 export type ConversationRequestSubmission =
-    | { readonly requestId: string; readonly status: "pending" }
-    | { readonly requestId: string; readonly status: "failed"; readonly error: UserError };
+    | {
+          readonly requestId: string;
+          readonly status: "pending";
+          readonly answers: Readonly<Record<string, readonly string[]>>;
+      }
+    | {
+          readonly requestId: string;
+          readonly status: "failed";
+          readonly error: UserError;
+          readonly answers: Readonly<Record<string, readonly string[]>>;
+      };
 
 /** The request's identity, stable across reconciles for every variant. */
 export function requestId(request: ConversationRequest): string {
@@ -574,6 +586,8 @@ export interface ConversationMessageEntry {
     readonly source: "server" | "local";
     /** Explicit send acceptance for daemon-projected user rows; voice never shares optimistic text. */
     readonly pendingSend?: boolean;
+    /** This conversation store submitted the message; retained after daemon acceptance. */
+    readonly sentHere?: boolean;
     readonly delivery: "sending" | "pending_steering" | "sent" | "failed";
     readonly clientMutationId?: string;
     readonly error?: UserError;

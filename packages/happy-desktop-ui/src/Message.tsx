@@ -9,6 +9,7 @@ import {
 import {
     Children,
     Fragment,
+    createElement,
     isValidElement,
     useLayoutEffect,
     useRef,
@@ -835,6 +836,17 @@ export type MessageListProps = {
      * Without it, row data belongs in `estimateDependencies`.
      */
     estimateRows?: readonly unknown[];
+    /**
+     * The row of the reader's newest message, while it is the one being sent.
+     * When it names a row it did not name before, the list moves that row to
+     * the top of the viewport and keeps the space beneath it for the reply, so
+     * what the reply brings grows down into room already held rather than
+     * pushing the transcript up line by line. The row named at mount is history
+     * and is left where it is.
+     */
+    turnAnchorKey?: Key;
+    /** A send after the owning view mounted may also be what first creates this list. */
+    turnAnchorOnMount?: boolean;
     /** Restores a previously detached reader position on this list's first layout. */
     initialScrollPosition?: MessageListScrollPosition | MessageListLegacyScrollPosition;
     /** Reports user scrolling and the final position before this list detaches. */
@@ -901,6 +913,8 @@ const MESSAGE_LIST_PADDING_START = 12;
 const MESSAGE_LIST_PADDING_END_DEFAULT = 8;
 /** Model-space point kept stable near a parked reader's lower viewport edge. */
 const VIRTUAL_ANCHOR_INSET = 32;
+/** Clearance kept above a just-sent message moved to the top of the viewport. */
+const TURN_ANCHOR_INSET = 8;
 /** Row height used only when a virtualized caller supplies no model for a row. */
 const ROW_SIZE_FALLBACK = 72;
 /** Rows TanStack mounts beyond the visible range on each side, once laid out. */
@@ -929,6 +943,11 @@ const MESSAGE_LIST_FOOTER_KEY = "__happy_message_list_footer__";
  * layout's fractions without including ancestor zoom or transforms. */
 function messageListViewportWidth(element: HTMLElement): number {
     return Number.parseFloat(element.ownerDocument.defaultView!.getComputedStyle(element).width);
+}
+/** The key `Children.toArray` gives a child its caller keyed `key`. */
+function childArrayKey(key: Key): Key {
+    const child = Children.toArray(createElement(Fragment, { key }))[0];
+    return isValidElement(child) && child.key !== null ? child.key : key;
 }
 function messageListRowWidth(
     scrollportWidth: number,
@@ -979,6 +998,34 @@ type MessageListVirtualAnchor =
 export function MessageList(props: MessageListProps) {
     const list = useRef<HTMLDivElement>(null);
     const spacer = useRef<HTMLDivElement>(null);
+    const virtualBox = useRef<HTMLDivElement>(null);
+    /*
+     * Room held below a follower's newest content. A follower's content only
+     * ever moves up: when content below the viewport's top grows, the list
+     * follows it, and when it shrinks — a question card collapsing to its
+     * answer, a live status line giving way to a shorter settled one, a
+     * composer that shrank after sending — this room takes the difference
+     * instead of the transcript sliding down to fill it. Its height is written
+     * by `followerPlace` in the same pre-paint commit that writes scrollTop.
+     */
+    const tail = useRef<HTMLDivElement>(null);
+    const tailReserve = useRef(0);
+    /* The row at the top of a follower's viewport, with its top's offset from
+       the viewport's top, so the next placement can keep it from moving down
+       whatever the rows above it do. */
+    const followHold = useRef<
+        { readonly key: Key; readonly index: number; readonly top: number } | undefined
+    >(undefined);
+    const followWidth = useRef<number | undefined>(undefined);
+    const reserveBudget = useRef(0);
+    const turnAnchorSeen = useRef(props.turnAnchorKey);
+    const turnAnchorPending = useRef<Key | undefined>(
+        props.turnAnchorOnMount &&
+            props.initialScrollPosition === undefined &&
+            props.turnAnchorKey !== undefined
+            ? childArrayKey(props.turnAnchorKey)
+            : undefined,
+    );
     const estimateRowWidth = props.estimateRowWidth;
     /* The restore payload is read once, at mount. This list reports its own
        position back out, and an owner that stores it where a later render can
@@ -1043,13 +1090,9 @@ export function MessageList(props: MessageListProps) {
     };
     const sparseInsetHold = () => {
         const spacerElement = spacer.current;
-        const firstRow = spacerElement?.nextElementSibling;
-        if (!spacerElement || !firstRow) return;
-        const inset = Math.max(
-            0,
-            firstRow.getBoundingClientRect().top - spacerElement.getBoundingClientRect().bottom,
-        );
-        if (inset > 0.5) spacerElement.style.marginTop = `${String(inset)}px`;
+        if (!spacerElement) return;
+        // Resolve auto before content can shrink; zero is also a held inset.
+        spacerElement.style.marginTop = getComputedStyle(spacerElement).marginTop;
     };
     const sparseInsetRelease = () => {
         spacer.current?.style.removeProperty("margin-top");
@@ -1067,6 +1110,7 @@ export function MessageList(props: MessageListProps) {
         sparseInsetHold();
         escapedFromFollow.current = true;
         following.current = false;
+        turnAnchorPending.current = undefined;
         pendingAnchor.current = undefined;
         /* Held by its row where the model has one, so the control also stays
            put when what is above it reflows, as when a panel opening beside
@@ -1498,6 +1542,7 @@ export function MessageList(props: MessageListProps) {
         const element = list.current;
         if (!element || following.current) return false;
         if (anchor.type === "scrollTop") {
+            readerReserve(anchor.scrollTop, viewportHeight);
             scrollTopWrite(element, anchor.scrollTop);
             readerAnchor.current = anchor;
             return true;
@@ -1507,10 +1552,120 @@ export function MessageList(props: MessageListProps) {
             readerAnchor.current = undefined;
             return false;
         }
+        readerReserve(place.scrollTop, viewportHeight);
         scrollTopWrite(element, place.scrollTop);
         readerAnchor.current = { ...anchor, index: place.index };
         return true;
     }
+    /** A shrinking footer must not clamp a parked reader's saved position. */
+    function readerReserve(scrollTop: number, viewportHeight: number) {
+        if (!virtualized) return;
+        tailReserveSet(
+            Math.max(
+                tailReserve.current,
+                Math.ceil(
+                    scrollTop +
+                        viewportHeight -
+                        virtualizer.getTotalSize() -
+                        (virtualBox.current?.offsetTop ?? 0),
+                ),
+            ),
+        );
+    }
+    /**
+     * How far down the content a viewport's top sits, in model coordinates:
+     * scrollTop less the auto margin that bottom-aligns content shorter than the
+     * viewport, so it is negative while the content does not fill it.
+     */
+    function followerOffset(element: HTMLElement) {
+        return element.scrollTop - (virtualBox.current?.offsetTop ?? 0);
+    }
+    /** Remembers the row at the top of the viewport for the next placement. */
+    function followHoldCapture(offset: number) {
+        const item = modeledItemAtOffset(Math.max(MESSAGE_LIST_PADDING_START, offset));
+        followHold.current = item
+            ? { key: item.key, index: item.index, top: item.start - offset }
+            : undefined;
+    }
+    function tailReserveSet(height: number) {
+        if (height === tailReserve.current) return;
+        tailReserve.current = height;
+        if (tail.current) tail.current.style.height = `${String(height)}px`;
+    }
+    /**
+     * Places a follower. It shows the newest content, except that nothing it
+     * was showing moves down: the row at the top of its viewport stays at or
+     * above where it was, and a just-sent message is lifted to the top. What
+     * the content no longer fills below that is held by the tail reserve.
+     */
+    function followerPlace(element: HTMLElement) {
+        if (!virtualized || !virtualBox.current) {
+            scrollTopWrite(element, element.scrollHeight - element.clientHeight);
+            return;
+        }
+        /* A commit whose rows the model has not caught up with yet sizes the
+           new rows by placeholder. Placing from that would lift the reader by
+           a guess the hold then keeps; the model's own update, before paint,
+           places them from real sizes. */
+        if (
+            rowSizeModel.keys.length !== items.length ||
+            props.estimateRows !== modelInputs.current.rows ||
+            props.estimateVersion !== modelInputs.current.estimateVersion
+        )
+            return;
+        const viewport = element.clientHeight;
+        const total = virtualizer.getTotalSize();
+        let target = total - viewport;
+        const hold = followHold.current;
+        if (hold) {
+            const index = itemIndexOf(hold.key, hold.index);
+            if (index !== undefined && rowSizeModel.keys[index] === hold.key) {
+                const held = rowSizeModel.starts[index]! - hold.top;
+                target = Math.max(
+                    target,
+                    followWidth.current === rowSizeModel.width
+                        ? held
+                        : Math.min(held, target + reserveBudget.current),
+                );
+            }
+        }
+        const anchorKey = turnAnchorPending.current;
+        if (anchorKey !== undefined) {
+            const index = itemIndexOf(anchorKey, items.length - 1);
+            /* The row reaches the model in the commit after it reaches the
+               list; it is lifted from the first one that knows where it is. */
+            if (index !== undefined && rowSizeModel.keys[index] === anchorKey) {
+                turnAnchorPending.current = undefined;
+                target = Math.max(target, rowSizeModel.starts[index]! - TURN_ANCHOR_INSET);
+            }
+        }
+        tailReserveSet(Math.max(0, Math.ceil(target + viewport - total)));
+        if (followWidth.current === rowSizeModel.width) reserveBudget.current = tailReserve.current;
+        followWidth.current = rowSizeModel.width;
+        scrollTopWrite(element, Math.max(0, target));
+        followHoldCapture(target);
+    }
+    /** A reader moving through history keeps only the reserve they are looking at. */
+    function tailReserveTrim(element: HTMLElement) {
+        if (tailReserve.current === 0) return;
+        const total = virtualizer.getTotalSize();
+        tailReserveSet(
+            Math.max(
+                0,
+                Math.min(
+                    tailReserve.current,
+                    Math.ceil(followerOffset(element) + element.clientHeight - total),
+                ),
+            ),
+        );
+        reserveBudget.current = tailReserve.current;
+    }
+    const followerPlaceCurrent = useRef(followerPlace);
+    followerPlaceCurrent.current = followerPlace;
+    const tailReserveTrimCurrent = useRef(tailReserveTrim);
+    tailReserveTrimCurrent.current = tailReserveTrim;
+    const followHoldCaptureCurrent = useRef(followHoldCapture);
+    followHoldCaptureCurrent.current = followHoldCapture;
     /**
      * Lays out every pending row within overscan of the viewport, in one
      * synchronous commit, before a gesture that could scroll one into view
@@ -1697,7 +1852,7 @@ export function MessageList(props: MessageListProps) {
         }
         const element = list.current;
         if (!element) return;
-        if (following.current) scrollTopWrite(element, element.scrollHeight - nextHeight);
+        if (following.current) followerPlace(element);
         else if (anchor) {
             modelAnchorRestore(anchor, nextHeight);
             pendingAnchor.current = undefined;
@@ -1892,11 +2047,25 @@ export function MessageList(props: MessageListProps) {
         overscanMountSchedule();
         const element = list.current;
         if (!element || !modelRendered) return;
+        /* Sending is the reader asking to see what they sent: whatever they
+           were reading, they follow the conversation from their new message. */
+        const turnAnchorKey = props.turnAnchorKey;
+        if (turnAnchorKey === undefined) turnAnchorPending.current = undefined;
+        if (turnAnchorKey !== undefined && turnAnchorKey !== turnAnchorSeen.current) {
+            turnAnchorSeen.current = turnAnchorKey;
+            if (initialPositionApplied.current) {
+                /* Rows carry the key `Children.toArray` gave them, not the
+                   caller's own; name the row the same way. */
+                turnAnchorPending.current = childArrayKey(turnAnchorKey);
+                escapedFromFollow.current = false;
+                following.current = true;
+                sparseInsetRelease();
+            }
+        }
         if (!initialPositionApplied.current) {
             initialPositionApplied.current = true;
             pendingAnchor.current = undefined;
-            if (following.current)
-                scrollTopWrite(element, element.scrollHeight - element.clientHeight);
+            if (following.current) followerPlace(element);
             else {
                 scrollTopWrite(element, openingScrollTop.current ?? readerScrollTop.current);
                 /* A restored anchor is the reader's fixed point already. */
@@ -1905,7 +2074,7 @@ export function MessageList(props: MessageListProps) {
         } else if (following.current) {
             pendingAnchor.current = undefined;
             readerAnchor.current = undefined;
-            scrollTopWrite(element, element.scrollHeight - element.clientHeight);
+            followerPlace(element);
         } else if (pendingAnchor.current) {
             const pending = pendingAnchor.current;
             pendingAnchor.current = undefined;
@@ -2034,6 +2203,19 @@ export function MessageList(props: MessageListProps) {
         const scrollToBottom = () => {
             scrollTopWrite(element, element.scrollHeight - element.clientHeight);
         };
+        /* The reader brought themselves back to the tail: follow from where
+           they are, holding the reserve they scrolled into. */
+        const followResume = () => {
+            if (!virtualized) {
+                sparseInsetRelease();
+                scrollToBottom();
+                return;
+            }
+            const offset = followerOffset(element);
+            sparseInsetRelease();
+            followHoldCaptureCurrent.current(offset);
+            followerPlaceCurrent.current(element);
+        };
         const onGeometryScrollIntent = () => {
             expectedScrollTop.current = undefined;
             overscanRequireCurrent.current();
@@ -2046,8 +2228,10 @@ export function MessageList(props: MessageListProps) {
              * cannot pin them back to the tail before that scroll is reported.
              */
             if (event.deltaY < 0) {
+                if (following.current || !escapedFromFollow.current) sparseInsetHold();
                 escapedFromFollow.current = true;
                 following.current = false;
+                turnAnchorPending.current = undefined;
                 readerAnchor.current = { scrollTop: element.scrollTop, type: "scrollTop" };
             } else if (event.deltaY > 0) {
                 const bottomOffset = Math.max(
@@ -2058,8 +2242,7 @@ export function MessageList(props: MessageListProps) {
                 if (bottomOffset <= FOLLOW_BOTTOM_THRESHOLD) {
                     escapedFromFollow.current = false;
                     following.current = true;
-                    sparseInsetRelease();
-                    scrollToBottom();
+                    followResume();
                 }
             }
         };
@@ -2108,8 +2291,11 @@ export function MessageList(props: MessageListProps) {
             previousScrollTop = element.scrollTop;
             readerScrollTop.current = element.scrollTop;
             scrollHeightBaseline.current = currentScrollHeight;
-            if (scrollDelta < 0) escapedFromFollow.current = true;
-            else if (
+            if (scrollDelta < 0) {
+                if (following.current || !escapedFromFollow.current) sparseInsetHold();
+                escapedFromFollow.current = true;
+                turnAnchorPending.current = undefined;
+            } else if (
                 scrollDelta > 0 &&
                 !contentHeightChanged &&
                 bottomOffset <= FOLLOW_BOTTOM_THRESHOLD
@@ -2118,9 +2304,8 @@ export function MessageList(props: MessageListProps) {
             following.current =
                 !escapedFromFollow.current && bottomOffset <= FOLLOW_BOTTOM_THRESHOLD;
             if (following.current) {
-                sparseInsetRelease();
-                scrollToBottom();
-            }
+                followResume();
+            } else if (virtualized) tailReserveTrimCurrent.current(element);
             pendingAnchor.current = undefined;
             readerAnchor.current = following.current
                 ? undefined
@@ -2196,6 +2381,7 @@ export function MessageList(props: MessageListProps) {
                         <div
                             className="happy-message-list__virtual"
                             data-happy-desktop-ui="message-list-virtual"
+                            ref={virtualBox}
                             style={{ height: `${String(virtualizer.getTotalSize())}px` }}
                         >
                             {virtualItems.map((virtualItem) => (
@@ -2219,6 +2405,15 @@ export function MessageList(props: MessageListProps) {
                     ) : (
                         items
                     )}
+                    {virtualized ? (
+                        /* Sized only by `followerPlace`, never by a render. */
+                        <div
+                            aria-hidden="true"
+                            className="happy-message-list__tail"
+                            data-happy-desktop-ui="message-list-tail"
+                            ref={tail}
+                        />
+                    ) : null}
                 </div>
             </ScrollArea>
         </MessageListDisclosureAnchorProvider>
