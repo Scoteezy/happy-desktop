@@ -55,10 +55,11 @@ const frames = async () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 };
-function renderConversation(count: number) {
+function renderConversation(count: number, withShell = false) {
     const view = createRenderer();
     let send!: () => void;
     let resize!: (height: number) => void;
+    let question!: (answered: boolean) => void;
     function Dock() {
         const [text, setText] = useState("");
         return (
@@ -71,16 +72,35 @@ function renderConversation(count: number) {
         );
     }
     function Harness() {
-        const [entries, setEntries] = useState<readonly ConversationEntry[]>(() =>
-            Array.from({ length: count }, (_, index) =>
+        const [entries, setEntries] = useState<readonly ConversationEntry[]>(() => {
+            const history = Array.from({ length: count }, (_, index) =>
                 message(
                     `history-${String(index)}`,
-                    `History ${String(index)}. ${"A completed reply stays in its place. ".repeat(8)}`,
+                    `History ${String(index)}. ${"A completed reply stays in its place. ".repeat(count > 100 ? 1 + (index % 13) * 3 : 8)}`,
                     index % 2 === 0,
                 ),
-            ),
-        );
+            );
+            if (withShell)
+                history.splice(Math.max(0, history.length - 2), 0, {
+                    kind: "agentActivity",
+                    id: "large-shell",
+                    sequence: "large-shell",
+                    activity: {
+                        kind: "shell",
+                        command: "cat build.log",
+                        output: Array.from(
+                            { length: 100 },
+                            (_, index) => `Build output ${String(index)}`,
+                        ).join("\n"),
+                        exitCode: 0,
+                        running: false,
+                        timedOut: false,
+                    },
+                });
+            return history;
+        });
         const [height, setHeight] = useState(700);
+        const [running, setRunning] = useState(false);
         send = () =>
             flushSync(() =>
                 setEntries((previous) => [
@@ -89,6 +109,40 @@ function renderConversation(count: number) {
                 ]),
             );
         resize = (next) => flushSync(() => setHeight(next));
+        question = (answered) =>
+            flushSync(() => {
+                const entry: ConversationEntry = {
+                    kind: "request",
+                    id: "geometry-question",
+                    sequence: "geometry-question",
+                    request: {
+                        kind: "userInput",
+                        requestId: "geometry-question",
+                        ...(answered
+                            ? { status: "answered" as const, answers: { choice: ["Keep"] } }
+                            : { status: "pending" as const }),
+                        questions: [
+                            {
+                                id: "choice",
+                                header: "Layout",
+                                question: "Keep this layout?",
+                                multiSelect: false,
+                                required: true,
+                                options: [
+                                    { label: "Keep", description: "Preserve the layout" },
+                                    { label: "Change", description: "Update the layout" },
+                                ],
+                            },
+                        ],
+                    },
+                };
+                setEntries((previous) =>
+                    previous.some((item) => item.kind === "request")
+                        ? previous.map((item) => (item.kind === "request" ? entry : item))
+                        : [...previous, entry],
+                );
+                setRunning(answered);
+            });
         return (
             <div style={{ height, width: 880 }}>
                 <ConversationView
@@ -97,13 +151,19 @@ function renderConversation(count: number) {
                     dock={<Dock />}
                     entries={entries}
                     motion="calm"
+                    running={running}
                     viewerId={reader.id}
                 />
             </div>
         );
     }
     view.render(Harness, { height: 900, width: 1000 });
-    return { view, send: () => send(), resize: (height: number) => resize(height) };
+    return {
+        view,
+        send: () => send(),
+        resize: (height: number) => resize(height),
+        question: (answered: boolean) => question(answered),
+    };
 }
 
 it.each([0, 40])("keeps a send at the natural bottom with %i preceding messages", async (count) => {
@@ -245,6 +305,94 @@ it.each([2, 40])(
         expect(viewport.querySelector(".happy-message-list__tail")).toBeNull();
     },
 );
+
+it.each([40, 640])(
+    "keeps %i transcript rows fixed when a docked question becomes answered history",
+    async (count) => {
+        const { view, question } = renderConversation(count, count > 100);
+        await view.ready();
+        await frames();
+        const anchor = [...view.container.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        const top = anchor.getBoundingClientRect().top;
+        question(false);
+        await frames();
+        expect(anchor.getBoundingClientRect().top).toBe(top);
+        question(true);
+        await frames();
+        await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+        expect(anchor.isConnected).toBe(true);
+        expect(anchor.getBoundingClientRect().top).toBe(top);
+    },
+);
+
+it("keeps a cold long history fixed while resize slack and idle refinement overlap", async () => {
+    const { view, resize } = renderConversation(400);
+    await view.ready();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    const anchor = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+    const top = anchor.getBoundingClientRect().top;
+    resize(800);
+    await frames();
+    expect(anchor.getBoundingClientRect().top).toBe(top);
+    await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+    expect(anchor.isConnected).toBe(true);
+    expect(anchor.getBoundingClientRect().top).toBe(top);
+    expect(viewport.getBoundingClientRect().bottom - anchor.getBoundingClientRect().bottom).toBe(
+        124,
+    );
+});
+
+it("keeps a parked text anchor and its DOM node through cold-history refinement while typing", async () => {
+    const { view, resize, send } = renderConversation(401, true);
+    await view.ready();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -220 }));
+    // A server append may commit before the wheel's native scroll event.
+    send();
+    viewport.scrollTop -= 220;
+    await frames();
+    const bounds = viewport.getBoundingClientRect();
+    const anchor = [
+        ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+    ].find((row) => {
+        const rect = row.getBoundingClientRect();
+        return rect.top <= bounds.bottom - 70 && rect.bottom > bounds.bottom - 70;
+    })!;
+    const top = anchor.getBoundingClientRect().top;
+    const walker = document.createTreeWalker(anchor, NodeFilter.SHOW_TEXT);
+    let text = walker.nextNode();
+    while (text && !text.textContent?.trim()) text = walker.nextNode();
+    const range = document.createRange();
+    range.setStart(text!, 0);
+    range.setEnd(text!, 1);
+    const textTop = range.getBoundingClientRect().top;
+    resize(800);
+    await frames();
+    const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+    let removed = false;
+    const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations)
+            for (const node of mutation.removedNodes)
+                if (node === anchor || node.contains(anchor)) removed = true;
+    });
+    observer.observe(viewport, { childList: true, subtree: true });
+    // Keep TanStack's real scroll listener active while idle sizes publish.
+    // Any synchronous range render must retain the exact visible DOM node.
+    const scrolling = setInterval(() => viewport.dispatchEvent(new Event("scroll")), 30);
+    await userEvent.click(textarea);
+    await userEvent.keyboard("x{Backspace}");
+    await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+    clearInterval(scrolling);
+    observer.disconnect();
+    expect(removed).toBe(false);
+    expect(anchor.isConnected).toBe(true);
+    expect(anchor.getBoundingClientRect().top).toBe(top);
+    expect(range.startContainer.isConnected).toBe(true);
+    expect(range.getBoundingClientRect().top).toBe(textTop);
+    expect(document.activeElement).toBe(textarea);
+});
 
 it.each([2, 40])(
     "keeps visible rows fixed while a multiline composer grows and clears with %i messages",

@@ -1014,12 +1014,16 @@ export function MessageList(props: MessageListProps) {
     );
     const viewportGeometry = useRef({ height: 0, width: 0 });
     const viewportGeometryCommitCurrent = useRef((_width: number, _height: number) => {});
+    const pendingViewportGeometry = useRef<{ width: number; height: number } | undefined>(
+        undefined,
+    );
     const virtualContent = useRef<HTMLDivElement | null>(null);
     // A viewport that grows keeps its previous content extent. New rows fill
     // this fixed space; it is discarded only after it leaves the viewport.
     const geometryExtent = useRef(0);
     const geometrySparseInset = useRef(0);
     const geometryFollowInset = useRef(0);
+    const pendingFollowerTop = useRef<number | undefined>(undefined);
     const readerAnchor = useRef<MessageListVirtualAnchor | undefined>(undefined);
     const pendingAnchor = useRef<
         | {
@@ -1057,10 +1061,15 @@ export function MessageList(props: MessageListProps) {
             viewportGeometryCommitCurrent.current(geometry.width, height);
             return;
         }
-        // scrollHeight/clientHeight round away fractional native geometry at
-        // browser zoom. Following must never pull a reader above their bottom;
-        // the browser already clamps the offset when the scroll range shrinks.
-        const bottom = element.scrollHeight - height - geometryFollowInset.current;
+        // Virtual rows already have authoritative geometry. Native scrollHeight
+        // can still include overflow from a previous virtual range mid-commit.
+        const total = virtualized
+            ? Math.max(estimatedContentHeight(), geometryExtent.current) +
+              geometrySparseInset.current
+            : element.scrollHeight;
+        // Native geometry may retain a fractional maximum at browser zoom.
+        // Following never writes upward; model compensation owns that change.
+        const bottom = total - height - geometryFollowInset.current;
         scrollTopWrite(element, Math.max(element.scrollTop, bottom));
     };
     const sparseInsetHold = () => {
@@ -1199,8 +1208,19 @@ export function MessageList(props: MessageListProps) {
         const { keys, sizes, starts, exact } = model;
         const count = items.length;
         const previousCount = keys.length;
-        const extentBefore = geometryExtent.current > 0 ? estimatedContentHeight() : 0;
-        const extentReflow = model.width !== rowWidth || from >= previousCount;
+        const previousKeys = keys.slice();
+        const previousSizes = sizes.slice();
+        const previousExact = exact.slice();
+        const footerBefore = keys.at(-1) === MESSAGE_LIST_FOOTER_KEY ? (sizes.at(-1) ?? 0) : 0;
+        const widthReflow = model.width !== rowWidth;
+        const parkedViewportHeight = viewportGeometry.current.height;
+        const parkedAnchor =
+            initialPositionApplied.current && !following.current && list.current
+                ? (pendingAnchor.current ?? {
+                      anchor: refinementAnchor(list.current, parkedViewportHeight),
+                      viewportHeight: parkedViewportHeight,
+                  })
+                : undefined;
         const kept =
             model.width === rowWidth ? Math.max(0, Math.min(from, count, previousCount)) : 0;
         /* Rows from `kept` on carry their previous size, found by key, as the
@@ -1335,14 +1355,56 @@ export function MessageList(props: MessageListProps) {
         model.width = rowWidth;
         model.version += 1;
         model.refined = undefined;
-        if (geometryExtent.current > 0 && extentReflow) {
+        const footerDelta =
+            (footerIndex === undefined ? 0 : (sizes[footerIndex] ?? 0)) - footerBefore;
+        if (following.current && initialPositionApplied.current)
+            geometryFollowInset.current = Math.max(0, geometryFollowInset.current + footerDelta);
+        // A content update can also discover cached sizes for cold rows. Only
+        // their placeholder correction (or a width reflow) changes coordinates;
+        // appended content and changes to already exact rows remain real growth.
+        let coordinateDelta = 0;
+        let previousIndex: Map<Key, number> | undefined;
+        for (let index = 0; index < count; index += 1) {
+            if (keys[index] === MESSAGE_LIST_FOOTER_KEY) continue;
+            let previous: number | undefined = index;
+            if (previousKeys[previous] !== keys[index]) {
+                previousIndex ??= new Map(previousKeys.map((key, index) => [key, index]));
+                previous = previousIndex.get(keys[index]!);
+            }
+            if (previous === undefined || (!widthReflow && previousExact[previous])) continue;
+            coordinateDelta += sizes[index]! - previousSizes[previous]!;
+        }
+        if (geometryExtent.current > 0 && coordinateDelta !== 0) {
             // Width changes and idle refinement change model coordinates,
             // not the amount of blank space a geometry change preserved.
-            geometryExtent.current += estimatedContentHeight() - extentBefore;
+            geometryExtent.current += coordinateDelta;
             if (virtualContent.current)
                 virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
         }
+        let nextOffset: number | undefined;
+        if (following.current && initialPositionApplied.current && coordinateDelta !== 0) {
+            // Refining unseen rows moves model coordinates, not the reader.
+            // Carry the same delta through the eventual DOM commit, including
+            // when estimates shrink while geometry slack prevents a clamp.
+            pendingFollowerTop.current = readerScrollTop.current + coordinateDelta;
+            readerScrollTop.current = pendingFollowerTop.current;
+            // The next render must select rows at the compensated offset.
+            // Waiting for its layout effect would briefly unmount visible rows.
+            nextOffset = Math.max(0, pendingFollowerTop.current);
+        } else if (parkedAnchor?.anchor) {
+            const anchor = parkedAnchor.anchor;
+            const top =
+                anchor.type === "scrollTop"
+                    ? anchor.scrollTop
+                    : modelAnchorPlace(anchor, parkedAnchor.viewportHeight)?.scrollTop;
+            pendingAnchor.current = { ...parkedAnchor, anchor };
+            if (top !== undefined) nextOffset = Math.max(0, top);
+        }
+        // Publish all compensation before notifying React. A scrolling offset
+        // report can render synchronously and must read the new measurements.
         if (virtualized) virtualizer.measure();
+        if (nextOffset !== undefined)
+            virtualOffsetReport.current?.(nextOffset, virtualizer.isScrolling);
         if (pending > 0) refinementSchedule();
     }
     /** Lays out pending rows in the browser's idle time, one bounded slice at a time. */
@@ -1383,11 +1445,11 @@ export function MessageList(props: MessageListProps) {
         const content = virtualContent.current;
         if (!element || !content) return;
         const naturalHeight = estimatedContentHeight();
+        const intendedTop = pendingFollowerTop.current ?? element.scrollTop;
         if (
             geometryExtent.current > 0 &&
             (naturalHeight >= geometryExtent.current ||
-                element.scrollTop + element.clientHeight <=
-                    geometrySparseInset.current + naturalHeight)
+                intendedTop + element.clientHeight <= geometrySparseInset.current + naturalHeight)
         ) {
             const removed = Math.max(0, geometryExtent.current - naturalHeight);
             geometryExtent.current = 0;
@@ -1395,14 +1457,23 @@ export function MessageList(props: MessageListProps) {
             geometryFollowInset.current = Math.max(0, geometryFollowInset.current - removed);
         }
         const inset = geometrySparseInset.current;
-        if (inset > 0 && element.scrollTop >= inset) {
+        if (inset > 0 && intendedTop >= inset) {
             // The leading gap is entirely above the reader. Remove it and
             // compensate in this commit so every visible row stays put.
-            const top = element.scrollTop;
+            const top = intendedTop;
+            if (pendingFollowerTop.current !== undefined) pendingFollowerTop.current -= inset;
             geometrySparseInset.current = 0;
             spacer.current?.style.removeProperty("margin-top");
             scrollTopWrite(element, top - inset);
         }
+    }
+    function geometryExtentRequire(top: number, height: number) {
+        const content = virtualContent.current;
+        if (!content) return;
+        const extent = top + height - geometrySparseInset.current;
+        if (extent <= estimatedContentHeight() || extent <= geometryExtent.current) return;
+        geometryExtent.current = extent;
+        content.style.minHeight = `${String(extent)}px`;
     }
     /**
      * Where the list opens: the restored reader position, or the newest
@@ -1556,6 +1627,7 @@ export function MessageList(props: MessageListProps) {
         const element = list.current;
         if (!element || following.current) return false;
         if (anchor.type === "scrollTop") {
+            geometryExtentRequire(anchor.scrollTop, viewportHeight);
             scrollTopWrite(element, anchor.scrollTop);
             readerAnchor.current = anchor;
             return true;
@@ -1565,6 +1637,7 @@ export function MessageList(props: MessageListProps) {
             readerAnchor.current = undefined;
             return false;
         }
+        geometryExtentRequire(place.scrollTop, viewportHeight);
         scrollTopWrite(element, place.scrollTop);
         readerAnchor.current = { ...anchor, index: place.index };
         return true;
@@ -1698,6 +1771,11 @@ export function MessageList(props: MessageListProps) {
         });
     }
     function viewportGeometryCommit(nextWidth: number, nextHeight: number) {
+        if (rowSizeModel.width !== undefined && !rowModelCurrent()) {
+            pendingViewportGeometry.current = { width: nextWidth, height: nextHeight };
+            return;
+        }
+        pendingViewportGeometry.current = undefined;
         const previous = viewportGeometry.current;
         if (previous.width === nextWidth && previous.height === nextHeight) return;
         const nextRowWidth = messageListRowWidth(nextWidth, estimateRowWidth);
@@ -1746,11 +1824,6 @@ export function MessageList(props: MessageListProps) {
         const previousHeight = previous.height || nextHeight;
         const widthChanged = nextRowWidth !== rowSizeModel.width;
         const element = list.current;
-        if (following.current)
-            geometryFollowInset.current = Math.max(
-                0,
-                geometryFollowInset.current + previousHeight - nextHeight,
-            );
         if (element && virtualContent.current && nextHeight !== previousHeight) {
             const naturalHeight = estimatedContentHeight();
             const inset =
@@ -1765,6 +1838,14 @@ export function MessageList(props: MessageListProps) {
                 geometryExtent.current = Math.max(geometryExtent.current, extent);
                 virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
             }
+            if (following.current)
+                geometryFollowInset.current = Math.max(
+                    0,
+                    Math.max(naturalHeight, geometryExtent.current) +
+                        inset -
+                        nextHeight -
+                        readerScrollTop.current,
+                );
         }
         const heldAnchor = readerAnchor.current ?? modelAnchorCapture(previousHeight);
         // A height change moves the viewport's lower edge, not the reader's
@@ -1794,6 +1875,14 @@ export function MessageList(props: MessageListProps) {
         positionReport();
     }
     viewportGeometryCommitCurrent.current = viewportGeometryCommit;
+    function rowModelCurrent() {
+        return (
+            !virtualized ||
+            (rowSizeModel.keys.length === items.length &&
+                props.estimateRows === modelInputs.current.rows &&
+                props.estimateVersion === modelInputs.current.estimateVersion)
+        );
+    }
     const observeScrollportRect = (
         instance: Virtualizer<HTMLDivElement, HTMLElement>,
         report: (rect: { width: number; height: number }) => void,
@@ -1979,7 +2068,15 @@ export function MessageList(props: MessageListProps) {
         overscanMountSchedule();
         const element = list.current;
         if (!element || !modelRendered) return;
+        if (!rowModelCurrent()) return;
+        const geometry = pendingViewportGeometry.current;
+        if (geometry) {
+            const version = rowSizeModel.version;
+            viewportGeometryCommit(geometry.width, geometry.height);
+            if (rowSizeModel.version !== version) return;
+        }
         geometryExtentCommit();
+        if (!following.current) pendingFollowerTop.current = undefined;
         if (!initialPositionApplied.current) {
             initialPositionApplied.current = true;
             pendingAnchor.current = undefined;
@@ -1992,6 +2089,17 @@ export function MessageList(props: MessageListProps) {
         } else if (following.current) {
             pendingAnchor.current = undefined;
             readerAnchor.current = undefined;
+            if (pendingFollowerTop.current !== undefined) {
+                const top = pendingFollowerTop.current;
+                pendingFollowerTop.current = undefined;
+                scrollTopWrite(element, top);
+            } else if (readerScrollTop.current > element.scrollTop) {
+                // A shorter footer or disclosure may clamp native scrollTop
+                // before this commit. Keep its previous extent and position.
+                const top = readerScrollTop.current;
+                geometryExtentRequire(top, element.clientHeight);
+                scrollTopWrite(element, top);
+            }
             scrollBottomFollow(element);
         } else if (pendingAnchor.current) {
             const pending = pendingAnchor.current;
@@ -2140,7 +2248,10 @@ export function MessageList(props: MessageListProps) {
                 geometryFollowInset.current = 0;
                 escapedFromFollow.current = true;
                 following.current = false;
-                readerAnchor.current = { scrollTop: element.scrollTop, type: "scrollTop" };
+                readerAnchor.current = modelAnchorCaptureCurrent.current(
+                    element.clientHeight,
+                    element.scrollTop,
+                ) ?? { scrollTop: element.scrollTop, type: "scrollTop" };
             } else if (event.deltaY > 0) {
                 geometryFollowInset.current = 0;
                 const bottomOffset = Math.max(

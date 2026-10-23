@@ -130,10 +130,12 @@ function useExpansion(
     onExpandedChange: ((expanded: boolean) => void) | undefined,
 ) {
     const [ownExpanded, setOwnExpanded] = useState(defaultExpanded);
+    const disclosureAnchor = useMessageListDisclosureAnchor();
     const value = expanded ?? ownExpanded;
     return [
         value,
-        (next: boolean) => {
+        (next: boolean, disclosure: HTMLElement) => {
+            disclosureAnchor?.(disclosure);
             if (expanded === undefined) setOwnExpanded(next);
             onExpandedChange?.(next);
         },
@@ -1018,7 +1020,7 @@ function AgentToolActivity(props: {
                         className="happy-agent-activity__header"
                         data-happy-desktop-ui="agent-activity-header"
                         disabled={!hasBody}
-                        onClick={() => hasBody && setExpanded(!expanded)}
+                        onClick={(event) => hasBody && setExpanded(!expanded, event.currentTarget)}
                         type="button"
                     >
                         {header}
@@ -1286,7 +1288,7 @@ function AgentReasoningActivity(props: {
                 aria-expanded={expanded ? "true" : "false"}
                 className="happy-agent-activity__header"
                 data-happy-desktop-ui="agent-activity-header"
-                onClick={() => setExpanded(!expanded)}
+                onClick={(event) => setExpanded(!expanded, event.currentTarget)}
                 type="button"
             >
                 <span
@@ -1355,7 +1357,6 @@ function AgentMessageActivity(props: {
         props.expanded,
         props.onExpandedChange,
     );
-    const disclosureAnchor = useMessageListDisclosureAnchor();
     const hasBody = props.text.trim().length > 0;
     return (
         <div
@@ -1372,8 +1373,7 @@ function AgentMessageActivity(props: {
                 disabled={!hasBody}
                 onClick={(event) => {
                     if (!hasBody) return;
-                    disclosureAnchor?.(event.currentTarget);
-                    setExpanded(!expanded);
+                    setExpanded(!expanded, event.currentTarget);
                 }}
                 title={props.agentName ?? props.agentId}
                 type="button"
@@ -1503,7 +1503,7 @@ function AgentShellActivity(props: {
                 className="happy-agent-activity__header"
                 data-happy-desktop-ui="agent-activity-header"
                 disabled={!hasBody}
-                onClick={() => hasBody && setExpanded(!expanded)}
+                onClick={(event) => hasBody && setExpanded(!expanded, event.currentTarget)}
                 type="button"
             >
                 <span
