@@ -13,12 +13,12 @@
     width: 100%;
     box-sizing: border-box;
     font-family: var(--happy-font-ui);
+    font-synthesis: none;
 }
 
 /* A question in a transcript is a quiet inline response block. It follows the
    same measure as the composer without introducing another card or table. */
 .happy-agent-input[data-variant="card"] {
-    gap: 0;
     padding: 0;
     background: transparent;
     border: 0;
@@ -61,10 +61,20 @@
    the message Markdown body supplies the type ramp and block rhythm. */
 .happy-agent-input__context {
     min-width: 0;
-    font-size: 15px;
-    line-height: 22px;
+    font-size: 16px;
+    line-height: 24px;
     color: var(--text);
     overflow-wrap: break-word;
+}
+
+/* Fenced code keeps the Markdown model's 16px inset; the inline-code rule's
+   :not() specificity must not reduce this block to a single inline line. */
+.happy-agent-input__context.happy-message__body--markdown pre code {
+    display: block;
+    padding: 16px;
+    line-height: 20px;
+    background: transparent;
+    border-radius: 0;
 }
 
 .happy-agent-input__questions {
@@ -83,7 +93,7 @@
 .happy-agent-input__question {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0;
     margin: 0;
     padding: 0;
     box-sizing: border-box;
@@ -95,7 +105,7 @@
 .happy-agent-input__legend {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
     padding: 0;
     width: 100%;
 }
@@ -106,31 +116,29 @@
     display: flex;
     align-items: baseline;
     gap: 8px;
+    flex-wrap: wrap;
     min-width: 0;
 }
 
 .happy-agent-input__header {
-    font-family: var(--happy-font-mono);
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 16px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
     color: var(--text-secondary);
 }
 
 .happy-agent-input__rule {
-    font-size: 12px;
-    line-height: 16px;
+    font-size: 13px;
+    line-height: 20px;
     color: var(--text-secondary);
 }
 
 .happy-agent-input__prompt {
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 20px;
-    letter-spacing: -0.01em;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
     color: var(--text);
+    overflow-wrap: anywhere;
 }
 
 .happy-agent-input__options {
@@ -138,32 +146,38 @@
     flex-direction: column;
     gap: 4px;
     width: 100%;
+    box-sizing: border-box;
+    /* A fieldset's legend sits outside its flex flow; its following gap is
+       the content's own inset, shared by options and settled answers. */
+    padding-top: 8px;
 }
 
 .happy-agent-input__option {
     display: flex;
     flex-direction: row;
     align-items: flex-start;
-    gap: 10px;
+    gap: 12px;
     box-sizing: border-box;
     width: 100%;
-    padding: 8px 12px;
-    border: 1px solid var(--divider);
+    padding: 4px 0;
+    border: 0;
     border-radius: var(--happy-radius-sm);
-    background: var(--surface);
+    background: transparent;
     cursor: pointer;
-    transition:
-        background-color 120ms ease,
-        border-color 120ms ease;
+    transition: background-color 120ms ease;
+}
+
+/* Align the 18px checkbox to the first 24px line, including wrapped options. */
+.happy-agent-input__option > .happy-checkbox {
+    margin-top: 3px;
 }
 
 .happy-agent-input__option:hover {
-    background: var(--surface-pressed);
+    background: var(--surface-ripple);
 }
 
 .happy-agent-input__option[data-selected] {
-    border-color: var(--text-link);
-    background: var(--surface-selected);
+    background: transparent;
 }
 
 /* While an answer is in flight the options are frozen rather than removed, so
@@ -174,11 +188,11 @@
 }
 
 .happy-agent-input__option[data-disabled]:hover {
-    background: var(--surface);
+    background: transparent;
 }
 
 .happy-agent-input__option[data-disabled][data-selected]:hover {
-    background: var(--surface-selected);
+    background: transparent;
 }
 
 .happy-agent-input__option-body {
@@ -190,15 +204,17 @@
 }
 
 .happy-agent-input__option-label {
-    font-size: 14px;
-    line-height: 20px;
+    font-size: 16px;
+    line-height: 24px;
     color: var(--text);
+    overflow-wrap: anywhere;
 }
 
 .happy-agent-input__option-description {
-    font-size: 12px;
-    line-height: 16px;
+    font-size: 14px;
+    line-height: 20px;
     color: var(--text-secondary);
+    overflow-wrap: anywhere;
 }
 
 .happy-agent-input__submit[aria-busy="true"] {
@@ -211,118 +227,38 @@
 .happy-agent-input__footer {
     display: flex;
     flex-direction: row;
-    justify-content: flex-end;
+    justify-content: flex-start;
     width: 100%;
-}
-
-/* Transcript variant: a restrained form embedded in the response flow. */
-.happy-agent-input[data-variant="card"] .happy-agent-input__context {
-    padding: 6px 12px 8px;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__questions {
-    gap: 0;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__question {
-    gap: 0;
-}
-
-.happy-agent-input[data-variant="card"]
-    .happy-agent-input__question
-    + .happy-agent-input__question {
-    /* A fieldset's top padding sits under its legend, so the space between
-       questions is margin. */
-    margin-top: 12px;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__legend {
-    gap: 3px;
-    padding: 6px 12px 5px;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__prompt {
-    font-size: 15px;
-    font-weight: 500;
-    line-height: 22px;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__options {
-    gap: 2px;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__option {
-    align-items: center;
-    gap: 9px;
-    min-height: 32px;
-    padding: 4px 12px;
-    border: 0;
-    border-radius: var(--happy-radius-sm);
-    background: transparent;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__option + .happy-agent-input__option {
-    border-top: 0;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__option:hover {
-    background: var(--surface-ripple);
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__option[data-selected] {
-    background: color-mix(in srgb, var(--surface-selected) 72%, transparent);
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__option-body {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__option-label {
-    font-size: 14px;
-    line-height: 19px;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__option-description {
-    min-width: 0;
-    font-size: 12px;
-    line-height: 16px;
-    white-space: normal;
-}
-
-.happy-agent-input[data-variant="card"] .happy-agent-input__footer {
-    padding: 4px 8px;
-    border-top: 0;
+    padding: 4px 0;
 }
 
 .happy-agent-input__answers {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 8px;
     width: 100%;
+    box-sizing: border-box;
+    padding-top: 8px;
 }
 
 .happy-agent-input__answer {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    padding: 5px 12px;
-    border-radius: var(--happy-radius-sm);
-    background: color-mix(in srgb, var(--surface-selected) 58%, transparent);
+    gap: 2px;
+    padding: 0;
 }
 
 .happy-agent-input__answer-label {
-    font-size: 14px;
-    font-weight: 500;
-    line-height: 20px;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 24px;
     color: var(--text);
     overflow-wrap: anywhere;
 }
 
 .happy-agent-input__answer-description {
-    font-size: 12px;
-    line-height: 16px;
+    font-size: 14px;
+    line-height: 20px;
     color: var(--text-secondary);
     overflow-wrap: anywhere;
 }
@@ -642,20 +578,12 @@
 }
 
 /*
- * A question docked above the conversation's input. It is the input's own
- * extension, so it takes the composer card's surface and radius rather than a
- * card of its own, and the transcript above it never moves for it.
+ * A docked question keeps the transcript's text measure. The dock itself starts
+ * at 12px and ends at 20px; these insets reach prose's 30px and 64px edges.
  */
 .happy-agent-input[data-variant="dock"] {
-    gap: 0;
-    padding: 6px 4px 4px;
-    background: var(--input-background);
-    border-radius: 16px;
-}
-
-.happy-agent-input[data-variant="dock"] > .happy-banner {
-    /* The error reaches the dock's bottom corners at its 4px content inset. */
-    border-radius: 12px;
+    padding: 0;
+    background: transparent;
 }
 
 /* Bounded to half the window: the reader must still see what the question is
@@ -664,10 +592,10 @@
     display: flex;
     flex: none;
     flex-direction: column;
+    margin-right: 44px;
+    margin-left: 18px;
     max-height: 50vh;
     overflow: hidden;
-    background: var(--input-background);
-    border-radius: 16px;
 }
 
 .happy-conversation__question-scroll {
@@ -684,74 +612,9 @@
     overflow-y: auto;
 }
 
-.happy-agent-input[data-variant="dock"] .happy-agent-input__questions,
-.happy-agent-input[data-variant="dock"] .happy-agent-input__question {
-    gap: 0;
-}
-
-.happy-agent-input[data-variant="dock"]
-    .happy-agent-input__question
-    + .happy-agent-input__question {
-    /* A fieldset's top padding sits under its legend, so the space between
-       questions is margin. */
-    margin-top: 16px;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__legend {
-    gap: 3px;
-    padding: 6px 12px 6px;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__prompt {
-    font-size: 15px;
-    font-weight: 500;
-    line-height: 22px;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__options {
-    gap: 2px;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__option {
-    align-items: center;
-    gap: 9px;
-    min-height: 32px;
-    padding: 4px 12px;
-    border: 0;
-    border-radius: 10px;
-    background: transparent;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__option:hover {
-    background: var(--surface-ripple);
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__option[data-selected] {
-    background: color-mix(in srgb, var(--surface-selected) 72%, transparent);
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__option-body {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__option-label {
-    font-size: 14px;
-    line-height: 19px;
-}
-
-.happy-agent-input[data-variant="dock"] .happy-agent-input__option-description {
-    min-width: 0;
-    font-size: 12px;
-    line-height: 16px;
-    white-space: normal;
-}
-
 .happy-agent-input[data-variant="dock"] .happy-agent-input__footer {
     position: sticky;
     bottom: 0;
-    padding: 4px 8px;
-    border-top: 0;
-    background: var(--input-background);
+    padding: 4px 0;
+    background: var(--surface);
 }

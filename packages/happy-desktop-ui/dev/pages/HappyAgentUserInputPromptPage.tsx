@@ -1,9 +1,164 @@
 import { HappyAgentUserInputPrompt } from "../../src/HappyAgentUserInputPrompt";
-import { ComponentPage, Specimen } from "../kit";
+import {
+    agentAuthor,
+    happyAgentOwnerAuthor,
+    type ComposerSnapshot,
+    type ConversationEntry,
+    type ConversationRequestQuestion,
+} from "happy-desktop-state";
+import { ConversationDock } from "../../src/ConversationDock";
+import { ConversationView } from "../../src/ConversationView";
+import { ComponentPage, FullScreenSpecimen, Specimen } from "../kit";
 import { happyAgentUserInput, happyAgentUserInputWithContext } from "./happyAgentChatFixtures";
 
 /** The component plan this page documents. The selector and the page header read the same value. */
 export const componentNumber = "C-150";
+
+const noop = () => undefined;
+const questions: readonly ConversationRequestQuestion[] = [
+    {
+        id: "approach",
+        header: "Approach",
+        question: "How should we roll out the migration?",
+        required: true,
+        multiSelect: false,
+        options: [
+            {
+                label: "In batches",
+                description: "Keep writes available while each batch completes.",
+            },
+            { label: "In one transaction", description: "Finish the whole migration together." },
+        ],
+    },
+    {
+        id: "notify",
+        header: "Notifications",
+        question:
+            "Who should receive a progress update and the final report when the migration has finished? Select every group that needs to know.",
+        required: true,
+        multiSelect: true,
+        options: [
+            {
+                label: "On-call engineer",
+                description: "Send operational details and any failures.",
+            },
+            {
+                label: "Project channel",
+                description: "Share the result with everyone following the work.",
+            },
+        ],
+    },
+    {
+        id: "checks",
+        header: "Validation",
+        question: "Which checks should run before we continue?",
+        required: false,
+        multiSelect: true,
+        options: [
+            { label: "Compare row counts", description: "Verify that no records were lost." },
+            {
+                label: "Check representative records",
+                description: "Inspect older and recently changed accounts.",
+            },
+        ],
+    },
+];
+const composer: ComposerSnapshot = {
+    scopeId: "question-layout",
+    text: "",
+    attachments: [],
+    revision: 0,
+    submission: { status: "idle" },
+    focused: false,
+    capabilities: { shellMode: false, commands: [], mentions: false },
+    mentionCandidates: [],
+    agentUserIds: [],
+};
+function message(id: string, text: string, agent: boolean): ConversationEntry {
+    return {
+        kind: "message",
+        source: "server",
+        delivery: "sent",
+        message: {
+            id,
+            chatId: "question-layout",
+            sequence: id,
+            changePts: id,
+            sender: agent ? agentAuthor : happyAgentOwnerAuthor,
+            text,
+            generationStatus: "complete",
+            attachments: [],
+            reactions: [],
+            createdAt: "2026-10-23T19:00:00.000Z",
+        },
+    };
+}
+function QuestionConversation(props: { count: number; answered: boolean; lead?: boolean }) {
+    const request: ConversationEntry = {
+        kind: "request",
+        id: "question-layout",
+        sequence: "3",
+        request: {
+            kind: "userInput",
+            requestId: "question-layout",
+            context: "The migration is ready. I need your choices before continuing.",
+            questions: questions.slice(0, props.count),
+            ...(props.answered
+                ? {
+                      status: "answered" as const,
+                      answers: {
+                          approach: ["In batches"],
+                          notify: ["On-call engineer", "Project channel"],
+                          checks: ["Compare row counts"],
+                      },
+                  }
+                : { status: "pending" as const }),
+        },
+    };
+    return (
+        <div
+            data-question-entry={JSON.stringify(request)}
+            data-question-lead={props.lead ? "true" : "false"}
+            style={{ display: "flex", flexDirection: "column" }}
+        >
+            <ConversationView
+                agentAuthor={agentAuthor}
+                conversationId={`question-layout-${props.count}-${props.answered}`}
+                dock={
+                    <ConversationDock
+                        composer={composer}
+                        onComposerSend={noop}
+                        onComposerValueChange={noop}
+                    />
+                }
+                entries={[
+                    message("1", "Prepare the migration and ask me before you start.", false),
+                    ...(props.lead
+                        ? []
+                        : [
+                              message(
+                                  "2",
+                                  "I have checked the migration. The questions below use the same text column as this paragraph.",
+                                  true,
+                              ),
+                          ]),
+                    request,
+                    ...(props.answered
+                        ? [
+                              message(
+                                  "4",
+                                  "I will use those choices. This paragraph continues the same text column after the answered questions.",
+                                  true,
+                              ),
+                          ]
+                        : []),
+                ]}
+                onRequestAnswer={noop}
+                viewerId={happyAgentOwnerAuthor.id}
+            />
+        </div>
+    );
+}
 
 export function HappyAgentUserInputPromptPage() {
     return (
@@ -12,6 +167,40 @@ export function HappyAgentUserInputPromptPage() {
             summary="Happy Agent user-input request: single- and multi-select option pickers with a submit gated on required questions. Each question states its own selection rule beside its name."
             title="HappyAgentUserInputPrompt"
         >
+            {[
+                { width: 1100, height: 760 },
+                { width: 720, height: 640 },
+            ].flatMap((window) =>
+                [1, 2, 3].flatMap((count) =>
+                    [false, true].map((answered) => (
+                        <FullScreenSpecimen
+                            key={`${window.width}-${count}-${answered}`}
+                            detail="Real conversation rows and composer; compare the question and assistant text columns."
+                            label={`${count} questions · ${answered ? "answered" : "pending"}`}
+                            number={`${componentNumber}.${count}`}
+                            screen={`${count}-${answered ? "answered" : "pending"}-${window.width}x${window.height}`}
+                            window={window}
+                        >
+                            <QuestionConversation count={count} answered={answered} />
+                        </FullScreenSpecimen>
+                    )),
+                ),
+            )}
+            {[
+                { width: 1100, height: 760 },
+                { width: 720, height: 640 },
+            ].map((window) => (
+                <FullScreenSpecimen
+                    key={`lead-${window.width}`}
+                    detail="An answered question opening the assistant's turn keeps the same column."
+                    label="Question opens the turn"
+                    number={`${componentNumber}.4`}
+                    screen={`4-answered-lead-${window.width}x${window.height}`}
+                    window={window}
+                >
+                    <QuestionConversation count={2} answered lead />
+                </FullScreenSpecimen>
+            ))}
             <Specimen
                 detail="single-select (required) + multi-select question, submit gated until required is answered"
                 label="Question set"

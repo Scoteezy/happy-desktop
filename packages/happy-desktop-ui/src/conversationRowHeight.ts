@@ -406,20 +406,21 @@ const STEERING_QUOTE_MEASURE = 560;
 const STEERING_QUOTE_INSET = 40;
 const STEERING_QUOTE_MARGIN = 16;
 /** Transcript request chrome from happy-agent-chat.css / approval-card.css. */
-/* A transcript question is always answered history, inset to the agent column
-   with its context and legend flush to it; an answer pads its quoted text by
-   12px a side. */
+/* Questions share the agent's 16px/24px prose and column. Options reserve only
+   the 18px checkbox and its 12px gap; settled answers have no inner padding. */
 const USER_INPUT_HORIZONTAL_MARGIN = AGENT_INSET;
-const USER_INPUT_LEGEND_HORIZONTAL_PADDING = 0;
-const USER_INPUT_ANSWER_HORIZONTAL_PADDING = 24;
-/** The context block's 6px/8px vertical padding around its Markdown body. */
-const USER_INPUT_CONTEXT_VERTICAL_PADDING = 14;
-const USER_INPUT_OPTION_HORIZONTAL_CHROME = 51;
-const USER_INPUT_QUESTION_LEGEND_CHROME = 30;
-const USER_INPUT_QUESTION_GAP = 12;
-const USER_INPUT_OPTION_GAP = 2;
+/** The prompt's gap after its Markdown context. */
+const USER_INPUT_CONTEXT_GAP = 12;
+const USER_INPUT_OPTION_HORIZONTAL_CHROME = 30;
+/** A 20px label line, followed by 4px before the question's prose. */
+const USER_INPUT_QUESTION_LEGEND_CHROME = 24;
+const USER_INPUT_QUESTION_GAP = 20;
+const USER_INPUT_CONTENT_INSET = 8;
+const USER_INPUT_OPTION_GAP = 4;
+const USER_INPUT_ANSWER_GAP = 8;
 const USER_INPUT_OPTION_VERTICAL_PADDING = 8;
-const USER_INPUT_FOOTER_HEIGHT = 36;
+/** 12px parent gap, 4px padding either side of the 28px button. */
+const USER_INPUT_FOOTER_HEIGHT = 48;
 const APPROVAL_CARD_FIXED_CHROME = 153;
 const APPROVAL_CARD_EXPANDED_DETAILS = 98;
 const APPROVAL_CARD_MAX_WIDTH = 680;
@@ -791,13 +792,13 @@ function userInputRequestHeight(
     cache?: MessageTextLayoutCache,
 ): number {
     const contentWidth = width - USER_INPUT_HORIZONTAL_MARGIN;
-    const promptMeasure = contentWidth - USER_INPUT_LEGEND_HORIZONTAL_PADDING;
+    const promptMeasure = contentWidth;
     const optionMeasure = contentWidth - USER_INPUT_OPTION_HORIZONTAL_CHROME;
-    const answerMeasure = contentWidth - USER_INPUT_ANSWER_HORIZONTAL_PADDING;
+    const answerMeasure = contentWidth;
     /* The shared Markdown context reads above the first question in both
        states, through the same body model as an agent reply. */
     let total = request.context
-        ? USER_INPUT_CONTEXT_VERTICAL_PADDING +
+        ? USER_INPUT_CONTEXT_GAP +
           markdownBodyHeight(
               messageReferencesResolve(request.context, undefined, false),
               promptMeasure,
@@ -808,25 +809,27 @@ function userInputRequestHeight(
         if (questionIndex > 0) total += USER_INPUT_QUESTION_GAP;
         total +=
             USER_INPUT_QUESTION_LEGEND_CHROME +
-            uiTextHeight(question.question, 15, 22, promptMeasure, cache);
+            uiTextHeight(question.question, 16, 24, promptMeasure, cache);
         if (request.status === "answered") {
+            total += USER_INPUT_CONTENT_INSET;
             const answers = request.answers[question.id] ?? [];
             const shown = answers.length > 0 ? answers : [""];
             for (const [answerIndex, answer] of shown.entries()) {
-                if (answerIndex > 0) total += USER_INPUT_OPTION_GAP;
+                if (answerIndex > 0) total += USER_INPUT_ANSWER_GAP;
                 const option = question.options.find((candidate) => candidate.label === answer);
-                total += 10 + uiTextHeight(answer || "No answer", 14, 20, answerMeasure, cache);
+                total += uiTextHeight(answer || "No answer", 16, 24, answerMeasure, cache);
                 if (option?.description)
-                    total += uiTextHeight(option.description, 12, 16, answerMeasure, cache);
+                    total += 2 + uiTextHeight(option.description, 14, 20, answerMeasure, cache);
             }
             continue;
         }
+        if (question.options.length > 0) total += USER_INPUT_CONTENT_INSET;
         for (const [optionIndex, option] of question.options.entries()) {
             if (optionIndex > 0) total += USER_INPUT_OPTION_GAP;
             const contentHeight =
-                uiTextHeight(option.label, 14, 19, optionMeasure, cache) +
+                uiTextHeight(option.label, 16, 24, optionMeasure, cache) +
                 (option.description
-                    ? uiTextHeight(option.description, 12, 16, optionMeasure, cache)
+                    ? 2 + uiTextHeight(option.description, 14, 20, optionMeasure, cache)
                     : 0);
             total += Math.max(32, USER_INPUT_OPTION_VERTICAL_PADDING + contentHeight);
         }
