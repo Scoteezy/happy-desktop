@@ -88,10 +88,49 @@ const LIST_ITEM_GAP = 6;
 /** Deterministic inline box reserved by a rendered GFM task checkbox. The
  * non-breaking space item beside it models remark-rehype's generated separator. */
 const TASK_CHECKBOX_INLINE = 19;
-/** The scrollport reports integer client widths while CSS inline layout retains
- * 1/64px units. Admit that one layout unit without accepting a genuinely wider
- * word at the next boundary. */
+/** Default layout quantum; table scrollports still expose integer client widths. */
 const INLINE_MEASURE_EPSILON = 1 / 64;
+let inlineLayoutUnit = INLINE_MEASURE_EPSILON;
+/** Browser layout rounds CSS lengths before wrapping. Native zoom changes
+ * that quantum in CSS pixels independently of the display's pixel ratio.
+ * Measure the engine's unit, never a transcript row or an inferred zoom. */
+function inlineLayoutUnitMeasure(): void {
+    const probe = document.createElement("span");
+    probe.style.cssText =
+        "position:fixed;visibility:hidden;contain:strict;box-sizing:border-box;height:0;padding:0;border:0;";
+    document.documentElement.append(probe);
+    try {
+        for (let width = 1 / 1024; width <= 1; width *= 2) {
+            probe.style.width = `${String(width)}px`;
+            const measured = probe.getBoundingClientRect().width;
+            if (measured > 0) {
+                inlineLayoutUnit = measured;
+                return;
+            }
+        }
+    } finally {
+        probe.remove();
+    }
+}
+function inlineLayoutResolutionWatch(): void {
+    const resolution = window.matchMedia(`(resolution: ${String(window.devicePixelRatio)}dppx)`);
+    resolution.addEventListener(
+        "change",
+        () => {
+            inlineLayoutUnitMeasure();
+            fontGenerationAdvance();
+            inlineLayoutResolutionWatch();
+        },
+        { once: true },
+    );
+}
+/** A fixed CSS inset after the browser's native-zoom layout rounding. */
+export function textLayoutCssSize(value: number): number {
+    watchFonts();
+    const units = value / inlineLayoutUnit;
+    // DOMRect can serialize the measured unit through float32 at native zoom.
+    return Math.floor(units + Math.abs(units) * 1e-7) * inlineLayoutUnit;
+}
 const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /** Browser inline layout is the external boundary Pretext cannot describe.
  * Blink decides whether a slice-decorated inline word must fragment from its
@@ -221,6 +260,8 @@ const sharedCache = messageTextLayoutCacheCreate();
 function watchFonts() {
     if (fontsWatched || typeof document === "undefined" || !document.fonts) return;
     fontsWatched = true;
+    inlineLayoutUnitMeasure();
+    inlineLayoutResolutionWatch();
     /* Canvas measurement does not reliably initiate a webfont request. Ask for
        both owned variable faces explicitly; `document.fonts.ready` alone can
        resolve while an as-yet-unused face is still absent, leaving the model's
@@ -499,7 +540,7 @@ function richItemsHeight(
 ): number {
     if (measure <= 0 || items.length === 0) return lineHeight;
     const measured = preparedRichItems(items, cache);
-    const relaxedMeasure = measure + INLINE_MEASURE_EPSILON;
+    const relaxedMeasure = measure + inlineLayoutUnit;
     const relaxed = measureRichInlineStats(measured, relaxedMeasure);
     /* Pretext can hang a token slightly beyond its supplied measure. Keep the
        one-layout-unit tolerance only when the resulting line also stays inside

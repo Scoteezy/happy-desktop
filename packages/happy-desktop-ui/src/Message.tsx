@@ -924,6 +924,12 @@ const ROW_REFINE_FORCED_MS = 4;
 const ROW_REFINE_COMMIT_MS = 200;
 /** Reserved stable entity key for the optional final footer row. */
 const MESSAGE_LIST_FOOTER_KEY = "__happy_message_list_footer__";
+/** The padding/border-free viewport uses an overlaid scrollbar, so its resolved
+ * CSS width is also its content width. Unlike clientWidth, this retains flex
+ * layout's fractions without including ancestor zoom or transforms. */
+function messageListViewportWidth(element: HTMLElement): number {
+    return Number.parseFloat(element.ownerDocument.defaultView!.getComputedStyle(element).width);
+}
 function messageListRowWidth(
     scrollportWidth: number,
     estimate: MessageListProps["estimateRowWidth"],
@@ -1709,18 +1715,21 @@ export function MessageList(props: MessageListProps) {
         const targetWindow = instance.targetWindow;
         if (!element || !targetWindow) return;
         const reportRect = (width: number, height: number) => {
-            const rect = { width: Math.round(width), height: Math.round(height) };
+            const rect = { width, height: Math.round(height) };
             report(rect);
         };
-        viewportGeometryCommitCurrent.current(element.clientWidth, element.clientHeight);
-        reportRect(element.clientWidth, element.clientHeight);
-        const geometryChanged = () => {
+        const width = messageListViewportWidth(element);
+        viewportGeometryCommitCurrent.current(width, element.clientHeight);
+        reportRect(width, element.clientHeight);
+        const geometryChanged: ResizeObserverCallback = (entries) => {
+            const width = entries[0]!.contentRect.width;
             /* ResizeObserver runs after layout. Rebuild every keyed size from
-               that settled client box before publishing the rect to TanStack,
-               so one render cannot combine new cell widths with old offsets. */
+               that fractional content box before publishing the rect to
+               TanStack. Rounding up can lose a wrapped line and overlap the
+               next row; even two widths with the same clientWidth can reflow. */
             flushSync(() => {
-                viewportGeometryCommitCurrent.current(element.clientWidth, element.clientHeight);
-                reportRect(element.clientWidth, element.clientHeight);
+                viewportGeometryCommitCurrent.current(width, element.clientHeight);
+                reportRect(width, element.clientHeight);
             });
         };
         const observer = targetWindow.ResizeObserver
@@ -2057,7 +2066,7 @@ export function MessageList(props: MessageListProps) {
         if (viewportGeometry.current.height === 0)
             viewportGeometry.current = {
                 height: element.clientHeight,
-                width: element.clientWidth,
+                width: messageListViewportWidth(element),
             };
         let previousScrollTop = element.scrollTop;
         scrollHeightBaseline.current = element.scrollHeight;
@@ -2081,7 +2090,9 @@ export function MessageList(props: MessageListProps) {
             const viewportHeight = viewportGeometry.current.height || element.clientHeight;
             if (
                 element.clientHeight !== viewportHeight ||
-                element.clientWidth !== viewportGeometry.current.width
+                // Resolved style serializes to fewer decimals than ResizeObserver.
+                Math.abs(messageListViewportWidth(element) - viewportGeometry.current.width) >
+                    1 / 64
             ) {
                 previousScrollTop = element.scrollTop;
                 scrollHeightBaseline.current = currentScrollHeight;

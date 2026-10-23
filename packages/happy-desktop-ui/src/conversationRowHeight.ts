@@ -33,6 +33,7 @@ import {
     noticeTextHeight,
     uiTextHeight,
     uiTextNaturalWidth,
+    textLayoutCssSize,
     type MessageTextLayoutCache,
 } from "./messageTextLayout";
 import {
@@ -315,6 +316,10 @@ const CLOSING_PADDING_BOTTOM = 4;
 const CONVERSATION_AGENT_PADDING_BOTTOM = { leading: 16, grouped: 2 } as const;
 /** Horizontal chrome: row padding, then the 76% bubble cap, then bubble padding. */
 const AGENT_INSET = 94;
+/** CSS rounds each padding edge separately at native zoom. */
+function agentInset(): number {
+    return textLayoutCssSize(30) + textLayoutCssSize(64);
+}
 const INCOMING_INSET = 50;
 const OWN_INSET = 48;
 const BUBBLE_CAP = 0.76;
@@ -542,7 +547,7 @@ export function messageBodyMeasure(
     time: string,
     cache?: MessageTextLayoutCache,
 ): number {
-    if (treatment === "agent") return width - AGENT_INSET;
+    if (treatment === "agent") return width - agentInset();
     if (treatment === "incoming") return (width - INCOMING_INSET) * BUBBLE_CAP - BUBBLE_PADDING;
     const column = width - OWN_INSET;
     const aside = asideTimeWidth(time, cache);
@@ -588,7 +593,7 @@ export function steeringNoticeRowHeight(
  * so its column is its body measure.
  */
 function messageContentMeasure(width: number, treatment: MessageTreatment): number {
-    if (treatment === "agent") return width - AGENT_INSET;
+    if (treatment === "agent") return width - agentInset();
     return width - (treatment === "incoming" ? INCOMING_INSET : OWN_INSET);
 }
 /** Height of a message's photos at the measure its treatment leaves them. */
