@@ -2170,7 +2170,11 @@ const COMPOSER_TYPING_TEXT =
 /** Milliseconds between keystrokes; roughly a fast typist's cadence. */
 const COMPOSER_TYPING_KEY_INTERVAL_MS = 60;
 
-/** How long the stream runs untouched first, so typing can be compared with it. */
+/**
+ * How long the stream runs untouched before typing and again after it. The
+ * response grows the whole time, so the two windows on either side of typing
+ * are the control it is compared with, rather than an earlier, shorter part.
+ */
 const COMPOSER_TYPING_STREAM_ONLY_MS = 3_000;
 
 /**
@@ -2209,6 +2213,12 @@ interface ComposerTypingKeystroke {
     readonly keydownToInputHandledMs: number;
     /** Keydown timestamp until the first animation frame after the input. */
     readonly keydownToNextFrameMs?: number;
+    /**
+     * Keydown timestamp until a task posted from that frame ran: after the
+     * frame's callbacks, style, layout, and paint, so after the work that
+     * frame did for anything else.
+     */
+    readonly keydownToFrameEndMs?: number;
     /** React commits inside this keystroke's own event dispatch. */
     readonly commits: number;
     /** React's render time for those commits, from the profiling build. */
@@ -2217,12 +2227,16 @@ interface ComposerTypingKeystroke {
     readonly rendered: Readonly<Record<string, number>>;
 }
 
+/** The stream alone, then typing over it, then the stream alone again. */
+type ComposerTypingPhase = "streamOnly" | "typing" | "streamOnlyAfter";
+
 interface ComposerTypingProbeCapture {
     readonly reactHook: boolean;
     readonly keystrokes: readonly ComposerTypingKeystroke[];
     readonly untrustedEvents: number;
     readonly eventTimings: readonly {
         readonly name: string;
+        readonly startTime: number;
         readonly duration: number;
         readonly processingMs: number;
         readonly inputDelayMs: number;
@@ -2230,7 +2244,7 @@ interface ComposerTypingProbeCapture {
     /** Commits outside any keystroke dispatch, by phase: the frame-coalesced stream work. */
     readonly background: Readonly<
         Record<
-            "streamOnly" | "typing",
+            ComposerTypingPhase,
             {
                 readonly durationMs: number;
                 readonly commits: number;
@@ -2286,7 +2300,8 @@ function composerTypingProbeInstall(): void {
         }
         const hook = (window as unknown as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: Hook })
             .__REACT_DEVTOOLS_GLOBAL_HOOK__;
-        const background: Record<"streamOnly" | "typing", Background> = {
+        type Phase = "streamOnly" | "typing" | "streamOnlyAfter";
+        const background: Record<Phase, Background> = {
             streamOnly: {
                 startedAt: performance.now(),
                 durationMs: 0,
@@ -2295,8 +2310,15 @@ function composerTypingProbeInstall(): void {
                 rendered: {},
             },
             typing: { startedAt: 0, durationMs: 0, commits: 0, renderMs: 0, rendered: {} },
+            streamOnlyAfter: { startedAt: 0, durationMs: 0, commits: 0, renderMs: 0, rendered: {} },
         };
-        let phase: "streamOnly" | "typing" = "streamOnly";
+        let phase: Phase = "streamOnly";
+        const phaseNext = (next: Phase): void => {
+            const now = performance.now();
+            background[phase].durationMs = now - background[phase].startedAt;
+            background[next].startedAt = now;
+            phase = next;
+        };
         const keystrokes: object[] = [];
         const eventTimings: object[] = [];
         let untrustedEvents = 0;
@@ -2390,6 +2412,14 @@ function composerTypingProbeInstall(): void {
             keystrokes.push(record);
             requestAnimationFrame(() => {
                 record.keydownToNextFrameMs = performance.now() - finished.keydownAt;
+                // A message posted from the frame is delivered once the frame
+                // has been produced.
+                const channel = new MessageChannel();
+                channel.port1.onmessage = () => {
+                    record.keydownToFrameEndMs = performance.now() - finished.keydownAt;
+                    channel.port1.close();
+                };
+                channel.port2.postMessage(undefined);
             });
         };
         const keyupCapture = (): void => {
@@ -2410,6 +2440,7 @@ function composerTypingProbeInstall(): void {
                     continue;
                 eventTimings.push({
                     name: entry.name,
+                    startTime: entry.startTime,
                     duration: entry.duration,
                     processingMs: entry.processingEnd - entry.processingStart,
                     inputDelayMs: entry.processingStart - entry.startTime,
@@ -2420,17 +2451,18 @@ function composerTypingProbeInstall(): void {
 
         const probe = {
             typingStart(): void {
-                const now = performance.now();
-                background.streamOnly.durationMs = now - background.streamOnly.startedAt;
-                background.typing.startedAt = now;
-                phase = "typing";
+                phaseNext("typing");
+            },
+            typingEnd(): void {
+                phaseNext("streamOnlyAfter");
             },
             stop(): unknown {
-                background.typing.durationMs = performance.now() - background.typing.startedAt;
+                background[phase].durationMs = performance.now() - background[phase].startedAt;
                 observer.disconnect();
                 for (const entry of observer.takeRecords() as PerformanceEventTiming[])
                     eventTimings.push({
                         name: entry.name,
+                        startTime: entry.startTime,
                         duration: entry.duration,
                         processingMs: entry.processingEnd - entry.processingStart,
                         inputDelayMs: entry.processingStart - entry.startTime,
@@ -2457,6 +2489,7 @@ function composerTypingProbeInstall(): void {
                     background: {
                         streamOnly: summary(background.streamOnly),
                         typing: summary(background.typing),
+                        streamOnlyAfter: summary(background.streamOnlyAfter),
                     },
                 };
             },
@@ -2480,6 +2513,14 @@ async function composerTypingProbeTypingStart(page: Page): Promise<void> {
         (
             window as unknown as { __happyGymComposerTyping?: { typingStart(): void } }
         ).__happyGymComposerTyping?.typingStart(),
+    );
+}
+
+async function composerTypingProbeTypingEnd(page: Page): Promise<void> {
+    await page.evaluate(() =>
+        (
+            window as unknown as { __happyGymComposerTyping?: { typingEnd(): void } }
+        ).__happyGymComposerTyping?.typingEnd(),
     );
 }
 
@@ -2526,6 +2567,19 @@ function renderedSum(
     for (const tally of tallies)
         for (const [name, count] of Object.entries(tally)) total[name] = (total[name] ?? 0) + count;
     return total;
+}
+
+/** One phase's frame-coalesced work, per second. */
+function backgroundReport(
+    phase: ComposerTypingProbeCapture["background"][ComposerTypingPhase],
+): Record<string, unknown> {
+    const seconds = phase.durationMs / 1_000;
+    return {
+        durationMs: phase.durationMs,
+        commits: phase.commits / seconds,
+        renderMs: phase.renderMs / seconds,
+        ...renderedReport(phase.rendered, seconds),
+    };
 }
 
 /** Each tracked component's renders, and every component's, divided by `per`. */
@@ -2581,57 +2635,111 @@ async function composerTypingRun(
     }
     const submission = await concurrentSubmissions(client, material, targets, "composer-typing");
     const visible = submission.submissions.find((entry) => entry.sessionId === targets[0]!.id)!;
-    // Typing starts once the open conversation's own response is arriving.
-    await page.waitForFunction(
-        (marker) =>
-            document
-                .querySelector('[data-happy-desktop-ui="conversation-view"]')
-                ?.textContent?.includes(`script=${String(marker)}`) === true,
-        visible.marker,
-        { timeout: 30_000 },
+    // When each response's text first and last arrived, as the daemon
+    // delivered it, so every phase is known to have run under every stream.
+    const streamWindows = new Map<string, { firstAt?: number; lastAt?: number }>(
+        submission.submissions.map((entry) => [entry.sessionId, {}]),
     );
-    await mark("composer-typing-stream-started");
-    await composerTypingProbeStart(page);
-    await page.waitForTimeout(COMPOSER_TYPING_STREAM_ONLY_MS);
-    await composer.focus();
-    await composerTypingProbeTypingStart(page);
-    await mark("composer-typing-start");
-    for (const character of COMPOSER_TYPING_TEXT) {
-        await page.keyboard.type(character);
-        await page.waitForTimeout(COMPOSER_TYPING_KEY_INTERVAL_MS);
-    }
-    await page.waitForTimeout(500);
-    await mark("composer-typing-complete");
-    const capture = await composerTypingProbeStop(page);
-    const typingEndedAt = Date.now();
-    const finalValue = await composer.inputValue();
-    // Leave the conversation as it was found, with keys rather than a fill.
-    await page.keyboard.press("ControlOrMeta+a");
-    await page.keyboard.press("Backspace");
-    // When each run finished, as the daemon delivered it, so the typing phase
-    // is known to have run under all four streams.
-    const finishedAt: number[] = [];
-    const barriers = await Promise.all(
+    // Followed from the start, so a failure anywhere below can still wait for
+    // the runs it started rather than leave them streaming into later phases.
+    const barriers = Promise.all(
         submission.submissions.map((entry) =>
             sessionRunBarrierWait(
                 client,
                 entry,
                 (streamEvent, observedAt) => {
-                    if (streamEvent.event.type === "run.finished")
-                        finishedAt.push(Date.parse(observedAt));
+                    const type = streamEvent.event.type;
+                    if (type !== "message.delta" && type !== "message.updated") return;
+                    const window = streamWindows.get(entry.sessionId)!;
+                    const at = Date.parse(observedAt);
+                    window.firstAt ??= at;
+                    window.lastAt = at;
                 },
                 submission.collectors.get(entry.sessionId),
             ),
         ),
     );
-    const streamStillRunning = finishedAt.every((at) => at > typingEndedAt);
+    barriers.catch(() => undefined);
+    let probing = false;
+    let typed = false;
+    let capture: ComposerTypingProbeCapture;
+    let finalValue: string;
+    let measuredFrom: number;
+    let measuredUntil: number;
+    try {
+        // Typing starts once the open conversation's own response is arriving.
+        await page.waitForFunction(
+            (marker) =>
+                document
+                    .querySelector('[data-happy-desktop-ui="conversation-view"]')
+                    ?.textContent?.includes(`script=${String(marker)}`) === true,
+            visible.marker,
+            { timeout: 30_000 },
+        );
+        await mark("composer-typing-stream-started");
+        measuredFrom = Date.now();
+        await composerTypingProbeStart(page);
+        probing = true;
+        await page.waitForTimeout(COMPOSER_TYPING_STREAM_ONLY_MS);
+        await composer.focus();
+        await composerTypingProbeTypingStart(page);
+        await mark("composer-typing-start");
+        typed = true;
+        for (const character of COMPOSER_TYPING_TEXT) {
+            await page.keyboard.type(character);
+            await page.waitForTimeout(COMPOSER_TYPING_KEY_INTERVAL_MS);
+        }
+        await page.waitForTimeout(500);
+        await mark("composer-typing-complete");
+        await composerTypingProbeTypingEnd(page);
+        await page.waitForTimeout(COMPOSER_TYPING_STREAM_ONLY_MS);
+        capture = await composerTypingProbeStop(page);
+        probing = false;
+        measuredUntil = Date.now();
+        finalValue = await composer.inputValue();
+    } finally {
+        if (probing) await composerTypingProbeStop(page).catch(() => undefined);
+        // Leave the conversation as it was found, with keys rather than a fill.
+        if (typed)
+            await composer
+                .focus()
+                .then(() => page.keyboard.press("ControlOrMeta+a"))
+                .then(() => page.keyboard.press("Backspace"))
+                .catch(() => undefined);
+        await barriers.catch(() => undefined);
+        for (const collector of submission.collectors.values()) collector.handle.close();
+    }
+    const runs = await barriers;
     await mark("composer-typing-streams-complete");
     const keystrokes = capture.keystrokes;
+    const streams = submission.submissions.map((entry) => {
+        const window = streamWindows.get(entry.sessionId)!;
+        return {
+            sessionId: entry.sessionId,
+            textFirstAt: window.firstAt,
+            textLastAt: window.lastAt,
+            spannedMeasurement:
+                window.firstAt !== undefined &&
+                window.lastAt !== undefined &&
+                window.firstAt <= measuredFrom &&
+                window.lastAt >= measuredUntil,
+        };
+    });
+    // Event Timing reports only events that took over 16ms to present, so a
+    // key it names nothing for was presented within that.
+    const presentedMs = keystrokes.map((entry, index) => {
+        const until = keystrokes[index + 1]?.keydownAt ?? Number.POSITIVE_INFINITY;
+        const ends = capture.eventTimings
+            .filter((timing) => timing.startTime >= entry.keydownAt && timing.startTime < until)
+            .map((timing) => timing.startTime + timing.duration - entry.keydownAt);
+        return ends.length === 0 ? 16 : Math.max(...ends);
+    });
+    const { streamOnly, typing, streamOnlyAfter } = capture.background;
     const details = {
         typedCharacters: [...COMPOSER_TYPING_TEXT].length,
         keyIntervalMs: COMPOSER_TYPING_KEY_INTERVAL_MS,
-        streams: submission.submissions.length,
-        streamStillRunningAfterTyping: streamStillRunning,
+        streamsIntended: targets.length,
+        streams,
         finalValueMatches: finalValue === COMPOSER_TYPING_TEXT,
         untrustedEvents: capture.untrustedEvents,
         keystrokesObserved: keystrokes.length,
@@ -2646,6 +2754,16 @@ async function composerTypingRun(
                     entry.keydownToNextFrameMs === undefined ? [] : [entry.keydownToNextFrameMs],
                 ),
             ),
+            keydownToFrameEnd: latencyStats(
+                keystrokes.flatMap((entry) =>
+                    entry.keydownToFrameEndMs === undefined ? [] : [entry.keydownToFrameEndMs],
+                ),
+            ),
+            // The browser's own measure: keydown until the frame showing it.
+            keydownToPresented: {
+                ...latencyStats(presentedMs),
+                over50ms: presentedMs.filter((value) => value > 50).length,
+            },
         },
         eventTiming: {
             over16ms: capture.eventTimings.length,
@@ -2666,36 +2784,20 @@ async function composerTypingRun(
                           keystrokes.length,
                       ),
                   },
-                  // Frame-coalesced stream work per second, without and then with typing.
-                  streamOnlyPerSecond: {
-                      durationMs: capture.background.streamOnly.durationMs,
-                      commits:
-                          capture.background.streamOnly.commits /
-                          (capture.background.streamOnly.durationMs / 1_000),
-                      renderMs:
-                          capture.background.streamOnly.renderMs /
-                          (capture.background.streamOnly.durationMs / 1_000),
-                      ...renderedReport(
-                          capture.background.streamOnly.rendered,
-                          capture.background.streamOnly.durationMs / 1_000,
-                      ),
-                  },
-                  typingBackgroundPerSecond: {
-                      durationMs: capture.background.typing.durationMs,
-                      commits:
-                          capture.background.typing.commits /
-                          (capture.background.typing.durationMs / 1_000),
-                      renderMs:
-                          capture.background.typing.renderMs /
-                          (capture.background.typing.durationMs / 1_000),
-                      ...renderedReport(
-                          capture.background.typing.rendered,
-                          capture.background.typing.durationMs / 1_000,
-                      ),
-                  },
+                  // Frame-coalesced stream work per second: the stream alone on
+                  // either side of typing, together and apart, then with typing.
+                  streamOnlyPerSecond: backgroundReport({
+                      durationMs: streamOnly.durationMs + streamOnlyAfter.durationMs,
+                      commits: streamOnly.commits + streamOnlyAfter.commits,
+                      renderMs: streamOnly.renderMs + streamOnlyAfter.renderMs,
+                      rendered: renderedSum([streamOnly.rendered, streamOnlyAfter.rendered]),
+                  }),
+                  streamOnlyBeforePerSecond: backgroundReport(streamOnly),
+                  streamOnlyAfterPerSecond: backgroundReport(streamOnlyAfter),
+                  typingBackgroundPerSecond: backgroundReport(typing),
               }
             : { status: "unavailable", reason: "No React DevTools hook in this build." },
-        barriers,
+        barriers: runs,
     };
     // Kept on its own as well, so a later phase of the lane failing does not
     // take the typing measurement down with it.
@@ -2710,6 +2812,22 @@ async function composerTypingRun(
         );
     if (keystrokes.length !== details.typedCharacters || capture.untrustedEvents > 0)
         throw new Error(`Composer typing was not measured key by key: ${JSON.stringify(details)}`);
+    if (
+        keystrokes.some(
+            (entry) =>
+                entry.keydownToNextFrameMs === undefined || entry.keydownToFrameEndMs === undefined,
+        )
+    )
+        throw new Error("A keystroke's frame was never sampled, so its latency is unknown.");
+    // Every response was streaming before the first window and still after the
+    // last one, so typing and both controls ran under the same load.
+    if (
+        streams.length !== details.streamsIntended ||
+        streams.some((stream) => !stream.spannedMeasurement)
+    )
+        throw new Error(
+            `The streams did not span the measurement: ${JSON.stringify({ measuredFrom, measuredUntil, streams })}`,
+        );
     if (!capture.reactHook) return details;
     // A keystroke reaches the composer and nothing drawn around it.
     const keyRendered = renderedSum(keystrokes.map((entry) => entry.rendered));
@@ -2723,10 +2841,9 @@ async function composerTypingRun(
         throw new Error(
             `Keystrokes re-rendered ${leaked.join(", ")}: ${JSON.stringify(details.reactProfiler)}`,
         );
-    // Frame-coalesced surface work while typing, against the stream alone, is
-    // reported in `streamOnlyPerSecond` and `typingBackgroundPerSecond` rather
-    // than asserted: a draft-only chat change still reaches the workspace once
-    // per frame, so typing raises it today.
+    // Frame-coalesced surface work while typing, against the stream alone on
+    // either side of it, is reported in `streamOnlyPerSecond` and
+    // `typingBackgroundPerSecond` rather than asserted.
     return details;
 }
 
