@@ -7645,6 +7645,28 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                         />
                     ) : (
                         <TabbedPane
+                            actions={
+                                /* A tab is a session, so adding one starts it
+                                   directly in the addressed project or worktree.
+                                   A checkout that cannot take one yet keeps the
+                                   control disabled rather than dropping it; a
+                                   bot or task can never take a second chat, so
+                                   it offers none. */
+                                openGroup.singleConversationId === undefined ? (
+                                    <Button
+                                        aria-label="Create a session in this project"
+                                        disabled={!sessionCreateAvailable}
+                                        icon="plus"
+                                        iconOnly
+                                        onClick={() => groupConversationCreate(openGroup)}
+                                        {...(props.spaces
+                                            ? {}
+                                            : { shortcut: APP_SHORTCUTS.sessionCreate })}
+                                        size="small"
+                                        variant="ghost"
+                                    />
+                                ) : null
+                            }
                             trailing={
                                 /* The strip's own controls hold the bar's far
                                    edge instead of sliding along with the tabs. */
