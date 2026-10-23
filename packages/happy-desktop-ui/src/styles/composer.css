@@ -341,10 +341,10 @@
 
 .happy-composer__send.happy-button {
     border-radius: 50%;
-    /* Availability fades this one stable light control in and out. Its black
+    /* Availability fades this one stable light control in and out. Its dark
      * arrow never swaps color as the draft becomes sendable. */
-    background: var(--button-primary-disabled);
-    color: var(--button-primary-background);
+    background: var(--composer-send-background);
+    color: var(--composer-send-icon);
 }
 
 /* The toolbar uses a 16px upward arrow in its 32px circular send control. The

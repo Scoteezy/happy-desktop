@@ -48,6 +48,10 @@ const DEFAULT_SNAPSHOT: TitleShimmerSnapshot = {
  * merely launching this version cannot pin today's default for future releases.
  */
 export function titleShimmerStoreCreate(persistence?: TitleShimmerPersistence): TitleShimmerStore {
+    return titleShimmerStoreOwnedCreate(persistence).store;
+}
+
+export function titleShimmerStoreOwnedCreate(persistence?: TitleShimmerPersistence) {
     let override: boolean | undefined;
     try {
         override = documentParse(persistence?.read())?.titleShimmerEnabled;
@@ -58,7 +62,7 @@ export function titleShimmerStoreCreate(persistence?: TitleShimmerPersistence): 
         override === undefined ? DEFAULT_SNAPSHOT : { titleShimmerEnabled: override };
     const listeners = new Set<() => void>();
 
-    return {
+    const store: TitleShimmerStore = {
         get: () => snapshot,
         subscribe(listener) {
             listeners.add(listener);
@@ -78,6 +82,16 @@ export function titleShimmerStoreCreate(persistence?: TitleShimmerPersistence): 
                 // when the host cannot remember it.
             }
             if (changed) for (const listener of listeners) listener();
+        },
+    };
+    return {
+        store,
+        preferenceReceived(enabled: boolean | undefined): void {
+            override = enabled;
+            const titleShimmerEnabled = enabled ?? TITLE_SHIMMER_ENABLED_DEFAULT;
+            if (snapshot.titleShimmerEnabled === titleShimmerEnabled) return;
+            snapshot = { titleShimmerEnabled };
+            for (const listener of listeners) listener();
         },
     };
 }

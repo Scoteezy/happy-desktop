@@ -1128,6 +1128,7 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                 />
             ) : (
                 <HappyAgentGeneralSettings
+                    appearanceModes={props.appearance.supportedModes}
                     {...(props.daemon
                         ? {
                               agent: daemonView,

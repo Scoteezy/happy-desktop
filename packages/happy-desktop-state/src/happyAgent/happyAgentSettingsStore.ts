@@ -131,6 +131,27 @@ export function happyAgentSettingsStoreOwnedCreate(initial: HappyAgentSettingsIn
     };
     return {
         store,
+        settingsReceived(next: HappyAgentSettingsInitial): void {
+            const replacement: HappyAgentSettingsSnapshot = {
+                defaultProviderId: next.defaultProviderId,
+                defaultModelId: next.defaultModelId,
+                defaultEffort: next.defaultEffort ?? HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
+                defaultPermissionMode: next.defaultPermissionMode ?? "auto",
+                linkOpenPlacement: next.linkOpenPlacement ?? "panel",
+                previewUpdatesEnabled: next.previewUpdatesEnabled ?? false,
+                disabledModels: snapshot.disabledModels,
+            };
+            if (
+                replacement.defaultProviderId === snapshot.defaultProviderId &&
+                replacement.defaultModelId === snapshot.defaultModelId &&
+                replacement.defaultEffort === snapshot.defaultEffort &&
+                replacement.defaultPermissionMode === snapshot.defaultPermissionMode &&
+                replacement.linkOpenPlacement === snapshot.linkOpenPlacement &&
+                replacement.previewUpdatesEnabled === snapshot.previewUpdatesEnabled
+            )
+                return;
+            publish(replacement);
+        },
         modelPreferencesChanged(document: HappyAgentModelPreferenceDocument): void {
             const defaultProviderId = document.defaultSelection?.providerId;
             const defaultModelId = document.defaultSelection?.modelId;

@@ -72,10 +72,19 @@ Core values (see `theme.css` for the full set):
 
 Text colors are solid (not alpha) so rendering tests can assert exact `rgb()`
 values in every engine. The `prefers-color-scheme` media query is the default
-runtime selector. `ThemeScope` applies `.happy-theme-light` or
-`.happy-theme-dark` to a single stable product tree when the user selects an
-explicit appearance; the same classes remain available for deterministic
-blueprint and test fixtures. Avatar tone names resolve to solid, direct Happy
+runtime selector. `ThemeScope` applies `.happy-theme-light`,
+`.happy-theme-dark`, or `.happy-theme-midnight` to a single stable product tree
+when the user selects an explicit appearance; the same classes remain available
+for deterministic blueprint and test fixtures. Midnight is the dark palette
+taken down to a neutral near-black (`#0b0b0b` app, `#121212` surface) with a
+white primary action. The custom appearance is one of those three classes plus
+the person's `customTheme.colors` values from `~/.happy/desktop/config.json`, declared on the
+same scope element (see `docs/custom-theme.md`); it is the only place colors
+outside `theme.css` reach the product, and only through the closed role list
+in `happy-desktop-state`. Permission (`permission-*`), error-box (`box-error-*`),
+and warning-box (`box-warning-*`) roles cannot be overridden. Invalid roles are
+ignored individually; valid roles still apply. The complete config is watched
+live, with per-field fallback and unknown fields preserved on writes. Avatar tone names resolve to solid, direct Happy
 roles; product code never passes raw CSS colors or utility classes for identity.
 
 ## Grid and dimensions

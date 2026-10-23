@@ -126,6 +126,10 @@ export function browserDevBridgeCreate(): HappyDesktopBridge {
         directoryPick: async () => undefined,
         desktopConfigGet: () => request<DesktopConfig>("desktopConfigGet"),
         desktopConfigWrite: (config) => request<void>("desktopConfigWrite", config),
+        desktopConfigUpdate: (previous, next) =>
+            request<void>("desktopConfigUpdate", { previous, next }),
+        // No live config subscription in browser development yet. Its appearance
+        // store withholds Midnight/Custom instead of exposing a non-live theme.
         daemonCheck: async () => {
             throw new Error("Happy Agent updates are available in the Electron desktop window.");
         },

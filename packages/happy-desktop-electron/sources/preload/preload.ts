@@ -13,6 +13,7 @@ import {
     type DesktopPreviewNavigation,
     type DesktopBuildIdentity,
     type DesktopDebugSnapshot,
+    type DesktopConfig,
     type DesktopDaemonSnapshot,
     type DesktopGuestKeyEvent,
     type DesktopMediaPreview,
@@ -167,6 +168,14 @@ const bridge: HappyDesktopBridge = {
     directoryPick: () => ipcRenderer.invoke(desktopIpc.directoryPick),
     desktopConfigGet: () => ipcRenderer.invoke(desktopIpc.desktopConfigGet),
     desktopConfigWrite: (config) => ipcRenderer.invoke(desktopIpc.desktopConfigWrite, config),
+    desktopConfigUpdate: (previous, next) =>
+        ipcRenderer.invoke(desktopIpc.desktopConfigUpdate, previous, next),
+    desktopConfigSubscribe(listener) {
+        const receive = (_event: Electron.IpcRendererEvent, config: DesktopConfig) =>
+            listener(config);
+        ipcRenderer.on(desktopIpc.desktopConfigChanged, receive);
+        return () => ipcRenderer.removeListener(desktopIpc.desktopConfigChanged, receive);
+    },
     daemonCheck: () => ipcRenderer.invoke(desktopIpc.daemonCheck),
     daemonDownload: () => ipcRenderer.invoke(desktopIpc.daemonDownload),
     daemonInstall: () => ipcRenderer.invoke(desktopIpc.daemonInstall),

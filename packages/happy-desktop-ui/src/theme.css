@@ -155,6 +155,10 @@
     --button-primary-ripple: rgb(255 255 255 / 0.16);
     --button-primary-disabled: #c0c0c0;
     --button-secondary-tint: #666666;
+    /* The composer's round send control: one stable disc whose arrow never
+       changes color as the draft becomes sendable; availability is its opacity. */
+    --composer-send-background: #c0c0c0;
+    --composer-send-icon: #000000;
     --input-background: #f5f5f5;
     /* The sidebar search sits on the sidebar itself, so it is lifted off it. */
     --sidebar-search-background: #ffffff;
@@ -398,6 +402,8 @@
         --button-primary-ripple: rgb(255 255 255 / 0.16);
         --button-primary-disabled: #c0c0c0;
         --button-secondary-tint: #8e8e93;
+        --composer-send-background: #c0c0c0;
+        --composer-send-icon: #000000;
         --input-background: #303030;
         --sidebar-search-background: #303030;
         --sidebar-search-border: rgb(255 255 255 / 0.1);
@@ -527,8 +533,10 @@
     }
 }
 
-/* Explicit preview/test override. */
-.happy-theme-dark {
+/* Explicit preview/test override. Midnight starts from the dark palette and
+   deepens it in its own block below. */
+.happy-theme-dark,
+.happy-theme-midnight {
     color-scheme: dark;
     --happy-brand-logo-source: url("./assets/brand/logo-white.png");
     --happy-wordmark-source: url("./assets/brand/happy-engineering-stacked-dark.svg");
@@ -584,6 +592,8 @@
     --button-primary-ripple: rgb(255 255 255 / 0.16);
     --button-primary-disabled: #c0c0c0;
     --button-secondary-tint: #8e8e93;
+    --composer-send-background: #c0c0c0;
+    --composer-send-icon: #000000;
     --input-background: #303030;
     --sidebar-search-background: #303030;
     --sidebar-search-border: rgb(255 255 255 / 0.1);
@@ -711,6 +721,64 @@
     --happy-calendar-event-chosen: var(--text-link);
     --happy-calendar-selection: color-mix(in srgb, var(--text-link) 12%, transparent);
     --happy-calendar-today: var(--text-link);
+}
+
+/* Midnight: the dark palette taken down to a neutral near-black. Surfaces step
+   lighter as they rise — app, panel, raised, input — so depth survives without
+   shadows, which barely read this dark. Secondary ink is neutral grey rather
+   than dark's violet-tinted grey, and the primary action turns white because
+   black would vanish into the canvas. Everything not named here is dark's. */
+.happy-theme-midnight {
+    --text: #ececec;
+    --text-secondary: #a3a3a3;
+    --surface: #121212;
+    --surface-ripple: rgb(255 255 255 / 0.06);
+    --surface-pressed: #1c1c1c;
+    --surface-selected: #1f1f1f;
+    --surface-high: #0d0d0d;
+    --surface-highest: #1c1c1c;
+    --divider: #1f1f1f;
+    --shadow-floating: rgb(0 0 0 / 0.6);
+    --shadow-elevated: rgb(0 0 0 / 0.7);
+    --overlay-backdrop: rgb(0 0 0 / 0.72);
+    --groupped-background: #0b0b0b;
+    --groupped-chevron: #8f8f8f;
+    --groupped-section-title: #8f8f8f;
+    --header-background: #121212;
+    --header-tint: #ececec;
+    --header-tint-secondary: #8f8f8f;
+    --switch-track-inactive: #2a2a2a;
+    --radio-inactive: #3a3a3a;
+    --modal-border: rgb(255 255 255 / 0.08);
+    --button-primary-background: #ececec;
+    --button-primary-tint: #0b0b0b;
+    --button-primary-ripple: rgb(0 0 0 / 0.12);
+    --button-secondary-tint: #8f8f8f;
+    --composer-send-background: #ececec;
+    --composer-send-icon: #0b0b0b;
+    --input-background: #1a1a1a;
+    --sidebar-search-background: #1a1a1a;
+    --sidebar-search-border: rgb(255 255 255 / 0.08);
+    --input-text: #ececec;
+    --input-placeholder: #6e6e6e;
+    --permission-button-inactive-background: #1c1c1c;
+    --permission-button-inactive-border: #2a2a2a;
+    --permission-button-selected-background: #141414;
+    --permission-button-selected-border: #2a2a2a;
+    --diff-outline: #262626;
+    --diff-context-bg: #0d0d0d;
+    --diff-line-number-bg: #0d0d0d;
+    --diff-hunk-header-bg: #0d0d0d;
+    --diff-leading-space-dot: #1f1f1f;
+    --user-message-background: #1f1f1f;
+    --user-message-text: #ececec;
+    --agent-message-text: #ececec;
+    --agent-event-text: #8f8f8f;
+    --git-branch-text: #8f8f8f;
+    --git-file-count-text: #8f8f8f;
+    --file-path-text: #6e6e6e;
+    --terminal-background: #0b0b0b;
+    --terminal-selection: #333338;
 }
 
 /* ThemeScope intentionally has no layout box. */

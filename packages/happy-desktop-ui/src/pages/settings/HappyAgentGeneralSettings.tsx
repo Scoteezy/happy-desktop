@@ -12,13 +12,14 @@ import { Switch } from "../../Switch";
 import { HappyAgentProductAnalyticsSettings } from "./HappyAgentProductAnalyticsSettings";
 import { HappyAgentSettingsSection } from "./HappyAgentSettingsShell";
 
-export type HappyAgentAppearanceChoice = "system" | "light" | "dark";
+export type HappyAgentAppearanceChoice = "system" | "light" | "dark" | "midnight" | "custom";
 export type HappyAgentScrollbarVisibilityChoice = "always" | "automatic";
 /** Where a clicked web link opens: the side panel's browser tab, or the machine's browser. */
 export type HappyAgentLinkOpenPlacementChoice = "panel" | "browser";
 
 export type HappyAgentGeneralSettingsProps = {
     appearance: HappyAgentAppearanceChoice;
+    appearanceModes?: readonly HappyAgentAppearanceChoice[];
     scrollbarVisibility: HappyAgentScrollbarVisibilityChoice;
     linkOpenPlacement: HappyAgentLinkOpenPlacementChoice;
     /** The default a new session starts on, keyed `${providerId}:${modelId}`. */
@@ -174,7 +175,9 @@ export function HappyAgentGeneralSettings(props: HappyAgentGeneralSettingsProps)
                             onChange={(value) =>
                                 props.onAppearanceChange(value as HappyAgentAppearanceChoice)
                             }
-                            segments={appearanceSegments}
+                            segments={appearanceSegments.filter(
+                                (option) => props.appearanceModes?.includes(option.value) ?? true,
+                            )}
                             size="small"
                             value={props.appearance}
                         />

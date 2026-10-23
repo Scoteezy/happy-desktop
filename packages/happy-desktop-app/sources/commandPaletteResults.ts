@@ -214,6 +214,7 @@ export interface CommandPaletteContext {
 export interface CommandPaletteInput extends CommandPaletteContext {
     readonly query: string;
     readonly themeMode: ThemeMode;
+    readonly themeModes?: readonly ThemeMode[];
     readonly scrollbarVisibility: ScrollbarVisibility;
     readonly linkOpenPlacement: HappyAgentLinkOpenPlacement;
     readonly titleShimmerEnabled: boolean;
@@ -230,6 +231,8 @@ const THEME_SEGMENTS: readonly { readonly value: ThemeMode; readonly label: stri
     { value: "system", label: "System" },
     { value: "light", label: "Light" },
     { value: "dark", label: "Dark" },
+    { value: "midnight", label: "Midnight" },
+    { value: "custom", label: "Custom" },
 ];
 
 const SCROLLBAR_SEGMENTS: readonly {
@@ -660,7 +663,10 @@ function tabRows(input: CommandPaletteInput): Ranked[] {
 
 /** The four settings the palette answers in place, as their own settings rows. */
 function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
-    const themeIndex = THEME_SEGMENTS.findIndex((segment) => segment.value === input.themeMode);
+    const themeSegments = THEME_SEGMENTS.filter(
+        (segment) => input.themeModes?.includes(segment.value) ?? true,
+    );
+    const themeIndex = themeSegments.findIndex((segment) => segment.value === input.themeMode);
     const scrollbarIndex = SCROLLBAR_SEGMENTS.findIndex(
         (segment) => segment.value === input.scrollbarVisibility,
     );
@@ -678,8 +684,8 @@ function settingRows(input: CommandPaletteInput): CommandPaletteSettingRow[] {
             control: {
                 kind: "segmented",
                 value: input.themeMode,
-                segments: THEME_SEGMENTS,
-                next: THEME_SEGMENTS[(themeIndex + 1) % THEME_SEGMENTS.length].value,
+                segments: themeSegments,
+                next: themeSegments[(themeIndex + 1) % themeSegments.length].value,
             },
         },
         {

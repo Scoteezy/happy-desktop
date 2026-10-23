@@ -23,7 +23,10 @@ import {
 import {
     HAPPY_AGENT_DEFAULT_THINKING_LEVEL,
     appearanceStoreCreate,
-    keepAwakeStoreCreate,
+    appearanceStoreOwnedCreate,
+    customThemeEmpty,
+    type ThemeMode,
+    keepAwakeStoreOwnedCreate,
     type KeepAwakeStore,
     commandPaletteStoreCreate,
     experimentsStoreCreate,
@@ -31,7 +34,7 @@ import {
     statusBarStoreCreate,
     gptLiveStoreCreate,
     gptLiveExperimentsConnect,
-    titleShimmerStoreCreate,
+    titleShimmerStoreOwnedCreate,
     welcomeStoreCreate,
     happyAgentNavigationOrderStoreCreate,
     happyAgentSidebarCollapseStoreCreate,
@@ -257,7 +260,7 @@ function desktopAppearanceSynchronize(
     appearance: AppearanceStore,
     bridge: HappyDesktopBridge,
 ): void {
-    let published: "dark" | "light" | "system" | undefined;
+    let published: ThemeMode | undefined;
     const publish = () => {
         const mode = appearance.get().mode;
         if (mode === published) return;
@@ -339,7 +342,11 @@ function DesktopAppearance(props: { appearance: AppearanceStore; children: React
         props.appearance.get,
     );
     return (
-        <ThemeScope mode={appearance.mode} scrollbarVisibility={appearance.scrollbarVisibility}>
+        <ThemeScope
+            customTheme={appearance.customTheme}
+            mode={appearance.mode}
+            scrollbarVisibility={appearance.scrollbarVisibility}
+        >
             {props.children}
         </ThemeScope>
     );
@@ -1116,7 +1123,16 @@ if (mediaPreviewBridge) {
         for (const dispose of appDisposers.splice(0)) dispose();
     };
     window.addEventListener("unload", appDispose, { once: true });
-    const start = (config: DesktopConfig): void => {
+    let latestConfig: DesktopConfig | undefined;
+    let configReceive: ((config: DesktopConfig) => void) | undefined;
+    // Subscribe before the initial IPC read. An event wins over an older reply.
+    const configUnsubscribe = desktopBridge.desktopConfigSubscribe?.((config) => {
+        latestConfig = config;
+        configReceive?.(config);
+    });
+    if (configUnsubscribe) appDisposers.push(configUnsubscribe);
+    const start = (initial: DesktopConfig): void => {
+        const config = latestConfig ?? initial;
         const runtimeStore = desktopRuntimeStoreCreate(desktopBridge);
         // Whether this machine's owner has been welcomed. Acknowledging this
         // deck enters machine setup; it does not wait for machine work to finish.
@@ -1155,12 +1171,24 @@ if (mediaPreviewBridge) {
         // document. The adapter keeps its current value synchronous so writes
         // from any product store preserve changes already made by the others.
         const preferences = desktopPreferencesCreate(desktopBridge, config);
+        let appearanceReceive: ((config: DesktopConfig) => void) | undefined;
         // Appearance is chosen for the window and shared by all connection UIs.
         shell ??= ((): DesktopShellStores => {
-            const created = appearanceStoreCreate({
+            const { store: created, writer } = appearanceStoreOwnedCreate({
                 mode: preferences.initialAppearance,
+                customTheme: config.customTheme ?? customThemeEmpty,
+                supportedModes:
+                    desktopBridge.desktopConfigSubscribe && desktopBridge.desktopConfigUpdate
+                        ? ["system", "dark", "light", "midnight", "custom"]
+                        : ["system", "dark", "light"],
                 scrollbarVisibility: preferences.initialScrollbarVisibility,
             });
+            appearanceReceive = (next) =>
+                writer.configReceived({
+                    mode: next.appearance,
+                    customTheme: next.customTheme ?? customThemeEmpty,
+                    scrollbarVisibility: next.scrollbarVisibility,
+                });
             desktopAppearanceSynchronize(created, desktopBridge);
             created.subscribe(() => {
                 const snapshot = created.get();
@@ -1177,9 +1205,11 @@ if (mediaPreviewBridge) {
         const profiler = desktopProfilerStoreCreate(desktopBridge);
         // The main connection keeps the existing desktop defaults. Remote UIs
         // receive their own settings and model preference persistence below.
-        const { store: settings, modelPreferencesChanged } = happyAgentSettingsStoreOwnedCreate(
-            preferences.initialSettings,
-        );
+        const {
+            store: settings,
+            modelPreferencesChanged,
+            settingsReceived,
+        } = happyAgentSettingsStoreOwnedCreate(preferences.initialSettings);
         appDisposers.push(settings.subscribe(() => preferences.settingsChanged(settings.get())));
         // How the reader arranged the sidebar's pinned rows. It is the window's
         // Those rows are window chrome whether or not any machine is reachable,
@@ -1223,7 +1253,8 @@ if (mediaPreviewBridge) {
         // Active-title motion is also this window's own choice. The store keeps
         // the product default in memory and writes only after the reader changes
         // the switch, so untouched installations follow future defaults.
-        const titleShimmer = titleShimmerStoreCreate(preferences.titleShimmerPersistence);
+        const { store: titleShimmer, preferenceReceived: titleShimmerReceived } =
+            titleShimmerStoreOwnedCreate(preferences.titleShimmerPersistence);
         // What the command palette is currently showing and asking. It is this
         // window's transient view state, so it is created here beside the other
         // window-lifetime stores and deliberately given nothing to persist: an
@@ -1508,7 +1539,7 @@ if (mediaPreviewBridge) {
         // doing is read from the same directory. The choice is remembered in the
         // desktop document beside the appearance; the resolved answer goes to
         // the shell, which is the only thing that can act on it.
-        const keepAwake = keepAwakeStoreCreate({
+        const { store: keepAwake, modeReceived: keepAwakeReceived } = keepAwakeStoreOwnedCreate({
             ...(preferences.initialKeepAwake === undefined
                 ? {}
                 : { mode: preferences.initialKeepAwake }),
@@ -1521,6 +1552,14 @@ if (mediaPreviewBridge) {
             keepAwake.subscribe(() => preferences.keepAwakeChanged(keepAwake.get().mode)),
         );
         appDisposers.push(keepAwakePublish(keepAwake, desktopBridge));
+        configReceive = (next) => {
+            preferences.configReceived(next, (settings) => {
+                appearanceReceive?.(next);
+                settingsReceived(settings);
+                titleShimmerReceived(next.titleShimmerEnabled);
+                keepAwakeReceived(next.keepAwake ?? "agent");
+            });
+        };
         // This window renders the Happy Agent tree directly rather than through `App`, so
         // it has to start the highlighting pool itself: without this the file
         // viewer and every diff in the primary desktop surface tokenize on the

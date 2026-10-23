@@ -4,11 +4,12 @@ import type {
     DesktopReactDevtoolsCommand,
     DesktopReactDevtoolsMessage,
 } from "./desktopProfiler";
+import type { CustomTheme } from "happy-desktop-state";
 
 export type DesktopMode = "local";
 
 /** Appearance source the Electron shell applies to every local renderer and guest. */
-export type DesktopAppearanceMode = "dark" | "light" | "system";
+export type DesktopAppearanceMode = "custom" | "dark" | "light" | "midnight" | "system";
 export type DesktopScrollbarVisibility = "always" | "automatic";
 /** When the shell holds this computer out of system sleep. Follows the agents when absent. */
 /** Where a plain click on a web link opens: the side panel's browser tab, or the machine's browser. */
@@ -50,6 +51,7 @@ export interface DesktopModelPreference extends DesktopModelIdentity {
  */
 export interface DesktopConfig {
     readonly appearance: DesktopAppearanceMode;
+    readonly customTheme?: CustomTheme;
     readonly defaultModel?: DesktopDefaultModel;
     readonly defaultEffort: string;
     readonly defaultPermissionMode: DesktopPermissionMode;
@@ -917,6 +919,10 @@ export interface HappyDesktopBridge {
     directoryPick(): Promise<string | undefined>;
     desktopConfigGet(): Promise<DesktopConfig>;
     desktopConfigWrite(config: DesktopConfig): Promise<void>;
+    /** Absent on older shells; subscribe before reading the initial config. */
+    desktopConfigSubscribe?(listener: (config: DesktopConfig) => void): () => void;
+    /** Only fields changed from previous to next are merged into the current disk document. */
+    desktopConfigUpdate?(previous: DesktopConfig, next: DesktopConfig): Promise<void>;
     /** Asks now for what the background check would otherwise find later. */
     daemonCheck(): Promise<void>;
     /**
@@ -1051,6 +1057,8 @@ export const desktopIpc = {
     zoomChanged: "happy:zoom:changed",
     desktopConfigGet: "happy:desktop-config:get",
     desktopConfigWrite: "happy:desktop-config:write",
+    desktopConfigUpdate: "happy:desktop-config:update",
+    desktopConfigChanged: "happy:desktop-config:changed",
     daemonChanged: "happy:daemon:changed",
     daemonCheck: "happy:daemon:check",
     daemonDownload: "happy:daemon:download",

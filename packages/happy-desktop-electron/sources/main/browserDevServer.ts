@@ -146,6 +146,7 @@ export function browserLocalHappyAgentPlugin(options: BrowserLocalHappyAgentOpti
                 next();
             });
             server.httpServer?.once("close", () => {
+                void desktopConfigTask?.then((store) => store.close());
                 terminals.close();
                 void deviceBridges.close();
                 void runtimeTask?.then(({ connection }) => connection.close());
@@ -168,6 +169,16 @@ async function desktopConfigActionHandle(
             return { handled: true, value: (await desktopConfig()).get() };
         case "desktopConfigWrite":
             await (await desktopConfig()).write(input);
+            return { handled: true, value: undefined };
+        case "desktopConfigUpdate":
+            if (
+                typeof input !== "object" ||
+                input === null ||
+                !("previous" in input) ||
+                !("next" in input)
+            )
+                throw new Error("Desktop config update requires previous and next snapshots.");
+            await (await desktopConfig()).update(input.previous, input.next);
             return { handled: true, value: undefined };
         default:
             return { handled: false };

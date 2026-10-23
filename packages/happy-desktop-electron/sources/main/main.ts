@@ -58,6 +58,7 @@ import {
     type DesktopNavigationStep,
     type DesktopPreviewNavigation,
     type DesktopPreviewNavigationStep,
+    type DesktopAppearanceMode,
 } from "../shared/desktopContract";
 import {
     desktopReactDevtoolsMessageValidate,
@@ -100,6 +101,7 @@ import {
 import { HappyAgentBrowser } from "./happyAgentBrowser";
 import { guestFitHeight, guestFitScript } from "../shared/guestFitScript";
 import { desktopConfigPath, DesktopConfigStore } from "./desktopConfig";
+import { customThemeEmpty } from "happy-desktop-state";
 import { DesktopDebugController } from "./desktopDebugController";
 import { desktopMainInspectorStart } from "./desktopInspector";
 import { DesktopProfilerController } from "./desktopProfilerController";
@@ -229,8 +231,59 @@ function errorMessage(error: unknown): string {
     return error instanceof Error ? (error.stack ?? error.message) : String(error);
 }
 
+/*
+ * The window's own paint, drawn before and around the renderer: the grouped
+ * background, and on Windows the caption overlay's header colours. These match
+ * happy-desktop-ui/src/theme.css for each built-in palette.
+ */
+const windowPaletteColors = {
+    light: { background: "#f5f5f5", header: "#ffffff", symbol: "#18171c" },
+    dark: { background: "#1e1e1e", header: "#212121", symbol: "#ffffff" },
+    midnight: { background: "#0b0b0b", header: "#121212", symbol: "#ececec" },
+} as const;
+
+/** The selection the window last published. Chromium only ever hears its scheme. */
+let appearanceMode: DesktopAppearanceMode = "system";
+
+/** Midnight is a dark palette, and a custom theme takes its base's scheme. */
+function appearanceThemeSource(mode: DesktopAppearanceMode): "dark" | "light" | "system" {
+    if (mode === "custom")
+        return (desktopConfigStore?.get().customTheme?.base ?? "midnight") === "light"
+            ? "light"
+            : "dark";
+    return mode === "midnight" ? "dark" : mode;
+}
+
+function appearanceApply(mode: DesktopAppearanceMode): void {
+    appearanceMode = mode;
+    nativeTheme.themeSource = appearanceThemeSource(mode);
+    windowAppearanceApply();
+}
+
+function windowColors(): { background: string; header: string; symbol: string } {
+    const palette =
+        appearanceMode === "system"
+            ? nativeTheme.shouldUseDarkColors
+                ? "dark"
+                : "light"
+            : appearanceMode === "custom"
+              ? (desktopConfigStore?.get().customTheme?.base ?? "midnight")
+              : appearanceMode;
+    const base = windowPaletteColors[palette];
+    if (appearanceMode !== "custom") return base;
+    const colors = (desktopConfigStore?.get().customTheme ?? customThemeEmpty).colors;
+    // Native window colours read alpha differently from CSS; only opaque ones carry over.
+    const opaque = (value: string | undefined) =>
+        value !== undefined && (value.length === 4 || value.length === 7) ? value : undefined;
+    return {
+        background: opaque(colors["groupped-background"]) ?? base.background,
+        header: opaque(colors["header-background"]) ?? base.header,
+        symbol: opaque(colors["header-tint"]) ?? base.symbol,
+    };
+}
+
 function windowBackgroundColor(): string {
-    return nativeTheme.shouldUseDarkColors ? "#1e1e1e" : "#f5f5f5";
+    return windowColors().background;
 }
 const developmentRendererOrigin = process.env.VITE_DEV_SERVER_URL
     ? new URL(process.env.VITE_DEV_SERVER_URL).origin
@@ -263,12 +316,8 @@ function platformWindowChrome(): Electron.BrowserWindowConstructorOptions {
 }
 
 function windowsTitleBarOverlay(): Electron.TitleBarOverlay {
-    // Match happy-desktop-ui/src/theme.css's header-background/header-tint.
-    return {
-        height: titleBarHeight,
-        color: nativeTheme.shouldUseDarkColors ? "#212121" : "#ffffff",
-        symbolColor: nativeTheme.shouldUseDarkColors ? "#ffffff" : "#18171c",
-    };
+    const colors = windowColors();
+    return { height: titleBarHeight, color: colors.header, symbolColor: colors.symbol };
 }
 
 function windowAppearanceApply(): void {
@@ -1589,11 +1638,20 @@ void app
         desktopWindowStateStore = await DesktopWindowStateStore.create(
             join(desktopRoot, "window-state.json"),
         );
-        desktopConfigStore = await DesktopConfigStore.create(desktopConfigPath());
+        desktopConfigStore = await DesktopConfigStore.create(desktopConfigPath(), (message) =>
+            desktopDebugError(message),
+        );
         // Apply the remembered source before the first window is created, so
         // its native background and Chromium guests start in the chosen theme.
-        nativeTheme.themeSource = desktopConfigStore.get().appearance;
+        appearanceApply(desktopConfigStore.get().appearance);
         nativeTheme.on("updated", windowAppearanceApply);
+        desktopConfigStore.subscribe((config) => {
+            appearanceApply(config.appearance);
+            for (const window of BrowserWindow.getAllWindows())
+                if (!window.isDestroyed())
+                    window.webContents.send(desktopIpc.desktopConfigChanged, config);
+        });
+        app.once("will-quit", () => desktopConfigStore.close());
         const launchEnvironment = await localRuntimeProbe().then(
             (probe) => probe.environment,
             () => process.env,
@@ -1745,9 +1803,14 @@ void app
             happyAgentRendererSession?.liveMicrophoneRevoke(event.sender, event.senderFrame);
         });
         ipcMain.handle(desktopIpc.desktopConfigGet, () => desktopConfigStore.get());
-        ipcMain.handle(desktopIpc.desktopConfigWrite, async (_event, config: unknown) => {
-            await desktopConfigStore.write(config);
-            const enabled = desktopConfigStore.get().previewUpdatesEnabled === true;
+        ipcMain.handle(desktopIpc.desktopConfigWrite, (_event, config: unknown) =>
+            desktopConfigStore.write(config),
+        );
+        ipcMain.handle(desktopIpc.desktopConfigUpdate, (_event, previous: unknown, next: unknown) =>
+            desktopConfigStore.update(previous, next),
+        );
+        desktopConfigStore.subscribe((config) => {
+            const enabled = config.previewUpdatesEnabled === true;
             if (previewUpdatesEnabled === enabled) return;
             previewUpdatesEnabled = enabled;
             updater.previewUpdate(enabled);
@@ -1943,9 +2006,15 @@ void app
         ipcMain.on(desktopIpc.appearanceSet, (event, raw: unknown) => {
             const presenting = windowLifecycle.get();
             if (!presenting || presenting.webContents !== event.sender) return;
-            if (raw !== "dark" && raw !== "light" && raw !== "system") return;
-            nativeTheme.themeSource = raw;
-            windowAppearanceApply();
+            if (
+                raw !== "custom" &&
+                raw !== "dark" &&
+                raw !== "light" &&
+                raw !== "midnight" &&
+                raw !== "system"
+            )
+                return;
+            appearanceApply(raw);
         });
         // One-way: the window states what is waiting and the shell marks the
         // icon. Only the window this shell is currently presenting may do so, so
@@ -2108,6 +2177,7 @@ app.on("before-quit", (event) => {
     void Promise.all([
         runtime.close(),
         desktopWindowStateStore?.flush(),
+        desktopConfigStore?.flush(),
         desktopProfilerController?.close(),
         // Closing a bridge's WebSocket is what detaches its device and stops its listener.
         deviceBridges.close(),
