@@ -10,9 +10,11 @@ export type HappyAgentUserInputAnswerMap = Record<string, string[]>;
 
 /**
  * Whether the prompt follows transcript or inbox spacing. `card` uses the
- * conversation's full composer measure; `flat` inherits the inbox row around it.
+ * conversation's full composer measure; `flat` inherits the inbox row around it;
+ * `dock` sits directly above the conversation's input, which is also where any
+ * question without options is answered.
  */
-export type HappyAgentUserInputPromptVariant = "card" | "flat";
+export type HappyAgentUserInputPromptVariant = "card" | "dock" | "flat";
 
 export type HappyAgentUserInputPromptProps = {
     request: HappyAgentUserInputRequest;
@@ -37,6 +39,8 @@ export type HappyAgentUserInputPromptProps = {
     submitDisabledReason?: string;
     /** Last failed answer submission; retry resubmits the retained selections. */
     error?: UserError;
+    /** The complete failed payload, including any text submitted through a composer. */
+    retryAnswers?: Readonly<Record<string, readonly string[]>>;
     /** Defaults to `card`; see `HappyAgentUserInputPromptVariant`. */
     variant?: HappyAgentUserInputPromptVariant;
     className?: string;
@@ -49,8 +53,22 @@ export type HappyAgentUserInputPromptProps = {
  * rule is read before the options rather than discovered by clicking one. An
  * optional question says so too: nothing under it is holding the submit back.
  */
-function selectionRule(question: { multiSelect: boolean; required: boolean }): string {
-    const count = question.multiSelect ? "Choose any" : "Choose one";
+function selectionRule(
+    question: {
+        multiSelect: boolean;
+        required: boolean;
+        options: readonly unknown[];
+    },
+    variant: HappyAgentUserInputPromptVariant,
+): string {
+    const count =
+        question.options.length === 0
+            ? variant === "card"
+                ? "Open chat to reply"
+                : "Reply in the message box"
+            : question.multiSelect
+              ? "Choose any"
+              : "Choose one";
     return question.required ? count : `${count} · optional`;
 }
 
@@ -155,7 +173,7 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
                                                 : question.required
                                                   ? "No answer"
                                                   : "Skipped"
-                                            : selectionRule(question)}
+                                            : selectionRule(question, props.variant ?? "card")}
                                     </span>
                                 </span>
                                 <span className="happy-agent-input__prompt">
@@ -257,7 +275,17 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
                         : {
                               action: {
                                   label: "Retry",
-                                  onClick: () => props.onAnswer?.(request.requestId, answers),
+                                  onClick: () =>
+                                      props.onAnswer?.(
+                                          request.requestId,
+                                          props.retryAnswers === undefined
+                                              ? answers
+                                              : Object.fromEntries(
+                                                    Object.entries(props.retryAnswers).map(
+                                                        ([id, values]) => [id, [...values]],
+                                                    ),
+                                                ),
+                                      ),
                               },
                           })}
                     data-testid="happy-agent-user-input-error"
@@ -267,7 +295,12 @@ export function HappyAgentUserInputPrompt(props: HappyAgentUserInputPromptProps)
                     {props.error.message}
                 </Banner>
             ) : null}
-            {resolved ? null : (
+            {/* A question with no options is answered in words, and words are
+                written in the message box the reader already has: sending there
+                answers every question left unticked. A Submit beside it could
+                only ever send nothing. */}
+            {resolved ||
+            request.questions.some((question) => question.options.length === 0) ? null : (
                 <div className="happy-agent-input__footer">
                     <Button
                         aria-busy={props.pending || undefined}

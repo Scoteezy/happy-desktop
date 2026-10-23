@@ -121,6 +121,8 @@ export function entryEquivalent(left: ConversationEntry, right: ConversationEntr
         if (
             left.delivery !== right.delivery ||
             left.source !== right.source ||
+            left.pendingSend !== right.pendingSend ||
+            left.sentHere !== right.sentHere ||
             left.clientMutationId !== right.clientMutationId ||
             left.error !== right.error
         )

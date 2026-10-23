@@ -127,6 +127,7 @@ function emptySession(sessionId: string): SessionState {
         },
         models: [],
         pendingUserInputs: [],
+        answeredUserInputs: [],
         pendingSteeringMessages: [],
         slashCommands: [],
         tasks: [],

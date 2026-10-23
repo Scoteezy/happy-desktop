@@ -139,9 +139,10 @@
     color: var(--text-secondary);
 }
 
-/* A question for the reader is the one still glyph that needs them, so it is
-   red where every other glyph — the wait's clock included — stays grey. */
-.happy-agent-activity__glyph[data-still="question"] {
+/* A question still waiting for the reader is the one still glyph that needs
+   them, so it is red where every other glyph — the wait's clock included —
+   stays grey. Once it is answered it is history, and greys like the rest. */
+.happy-agent-activity__glyph[data-still="question"][data-waiting] {
     color: var(--status-error);
 }
 
@@ -405,10 +406,17 @@
  * moves: a row leading its turn is inset by the Message around it, and a plain
  * row by its own padding, and the two put a trailing chevron 30px apart.
  */
+/* With an explanation the verb is the sender's name, which can be as long as a
+   subagent's task. It gives way before the explanation does. */
 .happy-agent-activity[data-presentation="agent-message"] .happy-agent-activity__verb {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    overflow: hidden;
     font-weight: 500;
     color: var(--text-secondary);
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .happy-agent-activity[data-presentation="agent-message"] .happy-agent-activity__text {

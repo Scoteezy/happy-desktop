@@ -24,14 +24,37 @@
     border: 0;
 }
 
-/* Match the composer's actual card edges, not only the shared max measure. */
+/* An interactive conversation asks pending questions in the dock; read-only
+   panels also keep pending questions in the transcript. Both keep the agent
+   column — the same edges as the prose and activity rows around it — rather
+   than the composer's wider measure. */
 .happy-conversation .happy-agent-input[data-variant="card"] {
     width: auto;
-    /* The scrollbar overlays the transcript, so it is exactly as wide as the
-       dock. The dock's own side insets (`.happy-conversation__dock > *`) put
-       this block's painted edges on the composer's. */
-    margin-right: 20px;
-    margin-left: 12px;
+    margin-right: 64px;
+    margin-left: 30px;
+}
+
+/* Opening its turn, the question sits in the Message that carries the agent's
+   identity line, which already supplies the agent column. */
+.happy-message--activity-lead .happy-agent-input[data-variant="card"] {
+    margin-right: 0;
+    margin-left: 0;
+}
+
+.happy-conversation .happy-agent-input[data-variant="card"] .happy-agent-input__context,
+.happy-conversation .happy-agent-input[data-variant="card"] .happy-agent-input__legend {
+    padding-right: 0;
+    padding-left: 0;
+}
+
+/* An answer is a quoted reply, as wide as what was said and no wider. */
+.happy-conversation .happy-agent-input[data-variant="card"] .happy-agent-input__answers {
+    align-items: flex-start;
+}
+
+.happy-conversation .happy-agent-input[data-variant="card"] .happy-agent-input__answer {
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 /* The agent's background for the questions, set as one more block of its reply:
@@ -208,7 +231,9 @@
 .happy-agent-input[data-variant="card"]
     .happy-agent-input__question
     + .happy-agent-input__question {
-    padding-top: 8px;
+    /* A fieldset's top padding sits under its legend, so the space between
+       questions is margin. */
+    margin-top: 12px;
 }
 
 .happy-agent-input[data-variant="card"] .happy-agent-input__legend {
@@ -292,12 +317,14 @@
     font-weight: 500;
     line-height: 20px;
     color: var(--text);
+    overflow-wrap: anywhere;
 }
 
 .happy-agent-input__answer-description {
     font-size: 12px;
     line-height: 16px;
     color: var(--text-secondary);
+    overflow-wrap: anywhere;
 }
 
 /* ---- Session controls / control menu --------------------------------------- */
@@ -608,4 +635,123 @@
     padding: 12px;
     text-align: center;
     color: var(--text-secondary);
+}
+
+.happy-agent-input__options:empty {
+    display: none;
+}
+
+/*
+ * A question docked above the conversation's input. It is the input's own
+ * extension, so it takes the composer card's surface and radius rather than a
+ * card of its own, and the transcript above it never moves for it.
+ */
+.happy-agent-input[data-variant="dock"] {
+    gap: 0;
+    padding: 6px 4px 4px;
+    background: var(--input-background);
+    border-radius: 16px;
+}
+
+.happy-agent-input[data-variant="dock"] > .happy-banner {
+    /* The error reaches the dock's bottom corners at its 4px content inset. */
+    border-radius: 12px;
+}
+
+/* Bounded to half the window: the reader must still see what the question is
+   about. Anything longer scrolls inside the region, Submit staying in reach. */
+.happy-conversation__question {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    max-height: 50vh;
+    overflow: hidden;
+    background: var(--input-background);
+    border-radius: 16px;
+}
+
+.happy-conversation__question-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.happy-conversation__question-viewport {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__questions,
+.happy-agent-input[data-variant="dock"] .happy-agent-input__question {
+    gap: 0;
+}
+
+.happy-agent-input[data-variant="dock"]
+    .happy-agent-input__question
+    + .happy-agent-input__question {
+    /* A fieldset's top padding sits under its legend, so the space between
+       questions is margin. */
+    margin-top: 16px;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__legend {
+    gap: 3px;
+    padding: 6px 12px 6px;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__prompt {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 22px;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__options {
+    gap: 2px;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__option {
+    align-items: center;
+    gap: 9px;
+    min-height: 32px;
+    padding: 4px 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__option:hover {
+    background: var(--surface-ripple);
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__option[data-selected] {
+    background: color-mix(in srgb, var(--surface-selected) 72%, transparent);
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__option-body {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__option-label {
+    font-size: 14px;
+    line-height: 19px;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__option-description {
+    min-width: 0;
+    font-size: 12px;
+    line-height: 16px;
+    white-space: normal;
+}
+
+.happy-agent-input[data-variant="dock"] .happy-agent-input__footer {
+    position: sticky;
+    bottom: 0;
+    padding: 4px 8px;
+    border-top: 0;
+    background: var(--input-background);
 }

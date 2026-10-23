@@ -23,7 +23,10 @@ import type {
 import { happyAgentServiceTierFromWire } from "../happyAgentServiceTier.js";
 import { deepEqual } from "../happyAgent/happyAgentSupport.js";
 import { happyAgentConversationActivityProject } from "../happyAgent/happyAgentConversationAuthors.js";
-import type { HappyAgentSubtaskActivity } from "../happyAgent/happyAgentTypes.js";
+import type {
+    HappyAgentAnsweredUserInput,
+    HappyAgentSubtaskActivity,
+} from "../happyAgent/happyAgentTypes.js";
 import type { UserProfile } from "./userProfiles.js";
 import type {
     BotGroup,
@@ -67,6 +70,8 @@ export interface SessionProjectionInput {
     context?: AgentContextUsage | null;
     activity?: AgentActivityResponse;
     question?: Question | null;
+    /** Every question seen answered while this connection followed the session, oldest first. */
+    answeredQuestions: readonly Question[];
     slashCommands: readonly SlashCommand[];
     runs: readonly Run[];
     /** Final conversation-context measurements captured at exact run boundaries. */
@@ -173,6 +178,7 @@ export function projectSession(input: SessionProjectionInput): SessionState {
         modelCatalog: modelCatalog(config),
         models: modelDefinitionsProject(config),
         pendingUserInputs,
+        answeredUserInputs: answeredQuestionsProject(input.answeredQuestions),
         pendingSteeringMessages: input.messages
             .filter(
                 (
@@ -920,6 +926,38 @@ function projectQuestion(question: Question): UserInputRequest {
     };
 }
 
+/* The connection replaces its list only when it records an answer, so the
+   projection is kept with it and every other publish hands back the same one. */
+const answeredInputs = new WeakMap<readonly Question[], readonly HappyAgentAnsweredUserInput[]>();
+function answeredQuestionsProject(
+    questions: readonly Question[],
+): readonly HappyAgentAnsweredUserInput[] {
+    const cached = answeredInputs.get(questions);
+    if (cached !== undefined) return cached;
+    const answered = questions.flatMap((question) =>
+        question.answers === null || question.answeredAt === null
+            ? []
+            : [
+                  {
+                      requestId: question.id,
+                      questions: question.questions.map((prompt) => ({
+                          id: prompt.id,
+                          header: prompt.header,
+                          question: prompt.question,
+                          multiSelect: prompt.multiSelect,
+                          required: true,
+                          options: prompt.options,
+                      })),
+                      answers: question.answers,
+                      createdAt: question.createdAt,
+                      resolvedAt: question.answeredAt,
+                  },
+              ],
+    );
+    answeredInputs.set(questions, answered);
+    return answered;
+}
+
 function projectSubagents(
     parent: Agent,
     activity: AgentActivityResponse | undefined,
@@ -1034,8 +1072,10 @@ function senderAgentOf(
 ): Extract<ChatElement, { kind: "user_message" }>["senderAgent"] {
     const agentId = message.metadata.senderAgentId;
     if (agentId === undefined) return undefined;
+    const explanation = message.metadata.senderAgentExplanation;
     return {
         agentId,
+        ...(explanation === undefined ? {} : { explanation }),
         relation:
             agentId === reader.agentId
                 ? "self"
@@ -1107,6 +1147,9 @@ function messageElementsProject(
                     messageId: message.id,
                     agentId: senderAgent.agentId,
                     relation: senderAgent.relation,
+                    ...(senderAgent.explanation === undefined
+                        ? {}
+                        : { explanation: senderAgent.explanation }),
                     text: messageText(message),
                 },
             ];
@@ -1373,6 +1416,12 @@ function projectToolPresentation(
                 url: presentation.url,
                 title: presentation.title,
                 display: artifactDisplayProject(presentation.display),
+            };
+        case "user_input":
+            return {
+                kind: "user_input",
+                questions: presentation.questions,
+                answers: presentation.answers,
             };
     }
 }

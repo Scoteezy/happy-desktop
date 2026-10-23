@@ -4,6 +4,7 @@ import { ApprovalCard, type ApprovalRequest, type ApprovalResolution } from "./A
 import {
     HappyAgentUserInputPrompt,
     type HappyAgentUserInputAnswerMap,
+    type HappyAgentUserInputPromptVariant,
 } from "./HappyAgentUserInputPrompt";
 
 export type ConversationRequestDecision = "approve" | "deny";
@@ -22,6 +23,9 @@ export type ConversationRequestViewProps = {
     pending?: boolean;
     /** Request-scoped submission failure shown with an in-place retry. */
     error?: UserError;
+    retryAnswers?: Readonly<Record<string, readonly string[]>>;
+    /** Where a question is drawn; see `HappyAgentUserInputPromptVariant`. */
+    variant?: HappyAgentUserInputPromptVariant;
     /** Renders the gate body expanded from the first paint (blueprint/tests). */
     defaultExpanded?: boolean;
     /** Controlled gate disclosure state for a virtualized transcript row. */
@@ -47,6 +51,7 @@ export function ConversationRequestView(props: ConversationRequestViewProps) {
                 className={props.className}
                 data-testid={props["data-testid"]}
                 {...(!answered && props.error ? { error: props.error } : {})}
+                {...(!answered && props.retryAnswers ? { retryAnswers: props.retryAnswers } : {})}
                 {...(!answered && props.onAnswer ? { onAnswer: props.onAnswer } : {})}
                 {...(!answered && props.onSelectionChange
                     ? { onSelectionChange: props.onSelectionChange }
@@ -59,6 +64,7 @@ export function ConversationRequestView(props: ConversationRequestViewProps) {
                       ? { selection: props.selection }
                       : {})}
                 style={props.style}
+                {...(props.variant ? { variant: props.variant } : {})}
             />
         );
     }

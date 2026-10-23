@@ -139,6 +139,7 @@ it("projects wire configuration and error data into stable, visible rows and pre
         hasMore: false,
         messages: messages.map((message) => ({ message, runId: run.id })),
         runs: [run],
+        answeredQuestions: [],
         slashCommands: [],
     });
     const rows = happyAgentConversationProject({

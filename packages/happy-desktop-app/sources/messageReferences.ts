@@ -10,6 +10,7 @@ import {
     type HappyAgentSurfaceCatalogSnapshot,
     type HappyAgentSurfaceId,
     type HappyReference,
+    type SubagentSummary,
 } from "happy-desktop-state";
 import type { MessageReferences, MessageReferenceView } from "happy-desktop-ui";
 
@@ -214,6 +215,11 @@ export function messageReferencesCreate(input: {
     readonly titles: HappyAgentArtifactTitlesSnapshot;
     readonly titlesStore: HappyAgentArtifactTitlesStore;
     readonly entities: MessageReferenceEntities;
+    /**
+     * The agents this conversation delegated to. The window does not open
+     * them, so a reference to one is named rather than offered.
+     */
+    readonly subagents?: readonly SubagentSummary[];
     /** Opens one artifact: its latest version, or the one a reference pinned. */
     readonly onArtifactOpen?: (artifactId: HappyAgentArtifactId, version?: number) => void;
     /** Opens a group on one of its conversations, or where it was left. */
@@ -233,6 +239,11 @@ export function messageReferencesCreate(input: {
                     ? inert(reference)
                     : artifactView(reference, input.titles, input.titlesStore);
             const entity = entityOf(reference, input.entities);
+            if (entity === undefined && reference.kind === "agent") {
+                const subagent = input.subagents?.find((one) => one.id === reference.id);
+                const name = subagent?.description.trim();
+                if (name) return { type: "text", label: name };
+            }
             if (entity === undefined || input.onGroupOpen === undefined) return inert(reference);
             return {
                 type: "link",
