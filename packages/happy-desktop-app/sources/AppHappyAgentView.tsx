@@ -6769,7 +6769,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
             : (props.spaces?.floatyKey(floatyChatId) ?? floatyChatId);
     const floatyShown =
         floatyKey !== undefined &&
-        !panel.floatyCollapsed.has(floatyKey) &&
+        panel.floatyOpened.has(floatyKey) &&
         (floatyPlaces.length > 0 ||
             floatyOutputs.length > 0 ||
             floatyAgents.current.length > 0 ||
@@ -7603,9 +7603,9 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                                     floatyOpen={floatyShown}
                                     onFloatyOpenChange={(open) => {
                                         if (floatyKey !== undefined)
-                                            props.workspace.panel.floatyCollapsedUpdate(
+                                            props.workspace.panel.floatyOpenedUpdate(
                                                 floatyKey,
-                                                !open,
+                                                open,
                                             );
                                     }}
                                 />

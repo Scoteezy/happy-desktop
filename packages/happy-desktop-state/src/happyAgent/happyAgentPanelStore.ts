@@ -158,10 +158,10 @@ export interface HappyAgentPanelSnapshot {
      */
     readonly fileViewOpen: boolean;
     /**
-     * The chats and spaces whose work floaty the reader folded by hand. The
-     * floaty opens on its own wherever there is work to show, except here.
+     * The chats and spaces whose work floaty the reader opened by hand. The
+     * floaty never opens on its own: it stays shut until opened here.
      */
-    readonly floatyCollapsed: ReadonlySet<string>;
+    readonly floatyOpened: ReadonlySet<string>;
     /** Whether the floaty's history fold is open. */
     readonly floatyHistoryExpanded: boolean;
     /**
@@ -251,8 +251,8 @@ export interface HappyAgentPanelStore {
      * Applied at once when it already is.
      */
     filesSelectOnArrival(groupId: HappyAgentGroupId): void;
-    /** Folds one chat's or space's floaty by hand, or opens it again and lets it open on its own. */
-    floatyCollapsedUpdate(key: string, collapsed: boolean): void;
+    /** Opens one chat's or space's floaty by hand, or shuts it again. */
+    floatyOpenedUpdate(key: string, opened: boolean): void;
     floatyHistoryExpandedUpdate(expanded: boolean): void;
     /**
      * Shows one artifact — at one version, when a link named one — in the
@@ -360,7 +360,7 @@ export interface HappyAgentPanelDeps {
      */
     readonly memoryRead?: (groupId: HappyAgentGroupId) => HappyAgentPanelMemory | undefined;
     readonly memoryWrite?: (groupId: HappyAgentGroupId, memory: HappyAgentPanelMemory) => void;
-    /** Which floaties were folded by hand, read once and written on every fold. */
+    /** Which floaties were opened by hand, read once and written on every change. */
     readonly floatyMemoryRead?: () => readonly string[];
     readonly floatyMemoryWrite?: (keys: readonly string[]) => void;
 }
@@ -461,7 +461,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
     let changeConversationId: HappyAgentSessionId | undefined;
     let fileViewShown = false;
     let filesViewShown = true;
-    let floatyCollapsed: ReadonlySet<string> = new Set(deps.floatyMemoryRead?.() ?? []);
+    let floatyOpened: ReadonlySet<string> = new Set(deps.floatyMemoryRead?.() ?? []);
     let floatyHistoryExpanded = false;
     let artifactView: HappyAgentPanelArtifactView | undefined;
     /** A group whose Files tab is shown when it is next addressed. */
@@ -477,7 +477,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
         fileViewOpen: false,
         filesViewOpen: true,
         browserRecent: NO_RECENT,
-        floatyCollapsed,
+        floatyOpened,
         floatyHistoryExpanded: false,
         open: false,
         tabs: NO_TABS,
@@ -494,7 +494,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             fileViewOpen: fileViewShown,
             filesViewOpen: filesViewShown,
             browserRecent: (groupId && recentByGroup.get(groupId)) || NO_RECENT,
-            floatyCollapsed,
+            floatyOpened,
             floatyHistoryExpanded,
             ...(artifactView === undefined ? {} : { artifactView }),
             open,
@@ -558,7 +558,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             next.fileViewOpen === snapshot.fileViewOpen &&
             next.filesViewOpen === snapshot.filesViewOpen &&
             next.browserRecent === snapshot.browserRecent &&
-            next.floatyCollapsed === snapshot.floatyCollapsed &&
+            next.floatyOpened === snapshot.floatyOpened &&
             next.floatyHistoryExpanded === snapshot.floatyHistoryExpanded &&
             next.artifactView === snapshot.artifactView &&
             next.terminalRefusal === snapshot.terminalRefusal &&
@@ -582,7 +582,7 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             fileViewOpen: next.fileViewOpen,
             filesViewOpen: next.filesViewOpen,
             browserRecent: next.browserRecent,
-            floatyCollapsed: next.floatyCollapsed,
+            floatyOpened: next.floatyOpened,
             floatyHistoryExpanded: next.floatyHistoryExpanded,
             ...(next.artifactView === undefined ? {} : { artifactView: next.artifactView }),
             open: next.open,
@@ -945,12 +945,12 @@ export function happyAgentPanelStoreCreate(deps: HappyAgentPanelDeps): HappyAgen
             remember();
             recompute();
         },
-        floatyCollapsedUpdate(key, collapsed) {
-            if (disposed || floatyCollapsed.has(key) === collapsed) return;
-            const next = new Set(floatyCollapsed);
-            if (collapsed) next.add(key);
+        floatyOpenedUpdate(key, opened) {
+            if (disposed || floatyOpened.has(key) === opened) return;
+            const next = new Set(floatyOpened);
+            if (opened) next.add(key);
             else next.delete(key);
-            floatyCollapsed = next;
+            floatyOpened = next;
             deps.floatyMemoryWrite?.([...next]);
             recompute();
         },
