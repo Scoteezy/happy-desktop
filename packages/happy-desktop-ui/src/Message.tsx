@@ -2717,6 +2717,7 @@ export function MessageList(props: MessageListProps) {
             ? [...props.estimateDependencies]
             : [props.children],
         estimateVersion: props.estimateVersion,
+        footerIndex,
         rows: props.estimateRows,
     });
     // eslint-disable-next-line happy-react/no-layout-effect -- authoritative row data changes rebuild modeled offsets before the browser can paint the new rows; the caller supplies the semantic dependency list
@@ -2727,6 +2728,7 @@ export function MessageList(props: MessageListProps) {
         modelInputs.current = {
             dependencies: previous.dependencies,
             estimateVersion: props.estimateVersion,
+            footerIndex,
             rows,
         };
         /* The first row whose estimate may differ from the model's, or the
@@ -2764,6 +2766,19 @@ export function MessageList(props: MessageListProps) {
                 from,
                 Math.max(0, Math.min(items.length, rowSizeModel.keys.length) - 1),
             );
+        /* Moving the footer also changes the old predecessor's closing
+           padding, even when the caller's entry identities did not change. */
+        if (previous.footerIndex !== undefined && previous.footerIndex !== footerIndex) {
+            const previousLast = previous.footerIndex - 1;
+            const key = rowSizeModel.keys[previousLast];
+            const index = key === undefined ? undefined : itemIndexOf(key, previousLast);
+            if (
+                index !== undefined &&
+                from > index &&
+                rowSizeModel.sizes[previousLast] !== estimateItemSize(index, rowWidth)
+            )
+                from = index;
+        }
         /* The footer reads state outside the rows, so it is asked on every
            commit, and so is the row above it, which reads the footer's state as
            its successor: a live turn starting or ending changes those two rows,
