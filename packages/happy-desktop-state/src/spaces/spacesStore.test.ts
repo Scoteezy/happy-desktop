@@ -1,9 +1,141 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { fakeHappyAgentDaemonCreate } from "../testing/fakeHappyAgentDaemon.js";
+import { HappyAgentApiError } from "@slopus/happy-agent-client";
+import {
+    fakeHappyAgentDaemonCreate,
+    type FakeHappyAgentDaemon,
+} from "../testing/fakeHappyAgentDaemon.js";
+import { connectHappyAgent } from "../happyAgentConnection/connectHappyAgent.js";
 import { happyAgentSyncCreate } from "../happyAgentConnection/happyAgentSync.js";
+import type { TaskGroup } from "../happyAgentConnection/types.js";
 import { happyAgentSpacesStoreCreate } from "./spacesStore.js";
 
 afterEach(() => vi.useRealTimers());
+
+/** One window on one daemon: its connection, and the Spaces store beside it. */
+async function windowOpen(daemon: FakeHappyAgentDaemon) {
+    const connection = connectHappyAgent({
+        endpoint: "http://happy-agent.test/",
+        token: "token",
+        client: daemon.client,
+        wait: () => new Promise((resolve) => setTimeout(resolve, 0)),
+        now: () => 1_000,
+    });
+    const listed: { tasks: readonly TaskGroup[] } = { tasks: [] };
+    connection.connectGroups({
+        onChange(_projects, _state, _bots, tasks) {
+            listed.tasks = tasks;
+        },
+        onError: () => undefined,
+    });
+    const store = happyAgentSpacesStoreCreate({
+        client: daemon.client,
+        sync: connection.sync,
+        stemCellTaskBegin: (identity, created) => connection.beginStemCellTask(identity, created),
+    });
+    const unsubscribe = store.subscribe(() => {});
+    await vi.waitFor(() => expect(store.get().availability).toBe("available"));
+    await vi.waitFor(() => expect(connection.config()).toBeDefined());
+    return {
+        connection,
+        store,
+        /** The reader's joined task at a workspace, as the task list shows it. */
+        joined: (workspaceId: string) =>
+            listed.tasks.find(
+                (task) => task.workspaceId === workspaceId && task.membership !== undefined,
+            ),
+        close() {
+            unsubscribe();
+            store[Symbol.dispose]();
+            connection.close();
+        },
+    };
+}
+
+it("makes new work in the click, and holds its first message until the daemon has made it", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.healthSet({ stemCellIdentities: true });
+    const window = await windowOpen(daemon);
+    try {
+        const release = daemon.pause("createStemCell");
+        const creation = window.store.stemCellCreate(null, null);
+        // Before the daemon has answered anything: the row, its joined task,
+        // and the chat the window opens, all under the names it chose.
+        const cell = creation.cell!;
+        expect(window.store.get().spaces.get(cell.space.id)?.icon).toEqual({ type: "stem_cell" });
+        expect(window.joined(cell.workspaceId)?.session.id).toBe(cell.agentId);
+        const sent = window.connection.sendMessage(cell.agentId, "Draft a release note");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(daemon.callCount("sendMessage")).toBe(0);
+        const [request] = daemon.calls.find((call) => call.method === "createStemCell")!.args;
+        expect(request).toMatchObject({
+            id: cell.space.id,
+            taskId: cell.space.target.id,
+            workspaceId: cell.workspaceId,
+            agentId: cell.agentId,
+        });
+
+        release();
+        await expect(creation.created).resolves.toMatchObject({
+            agentId: cell.agentId,
+            workspaceId: cell.workspaceId,
+        });
+        await vi.waitFor(() => expect(daemon.callCount("sendMessage")).toBe(1));
+        expect(daemon.calls.find((call) => call.method === "sendMessage")?.args[0]).toBe(
+            cell.agentId,
+        );
+        expect(sent).toEqual(expect.any(String));
+        // The daemon's row replaces the window's, and the task stays listed.
+        await vi.waitFor(() =>
+            expect(window.store.get().spaces.get(cell.space.id)?.version).toBe(1),
+        );
+        expect(window.joined(cell.workspaceId)).toBeDefined();
+        expect(window.store.get().stemCellError).toBeUndefined();
+    } finally {
+        window.close();
+    }
+});
+
+it("takes new work the daemon refuses back out of the sidebar and the task list, and says so", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    daemon.healthSet({ stemCellIdentities: true });
+    daemon.failOnce(
+        "createStemCell",
+        new HappyAgentApiError(409, "That name is taken.", "conflict", null),
+    );
+    const window = await windowOpen(daemon);
+    try {
+        const creation = window.store.stemCellCreate(null, null);
+        const cell = creation.cell!;
+        expect(window.store.get().spaces.has(cell.space.id)).toBe(true);
+        expect(window.joined(cell.workspaceId)).toBeDefined();
+        await expect(creation.created).rejects.toThrow("That name is taken.");
+        expect(window.store.get().spaces.has(cell.space.id)).toBe(false);
+        expect(window.joined(cell.workspaceId)).toBeUndefined();
+        expect(window.store.get().stemCellError?.message).toBe(
+            "New work could not be made. That name is taken.",
+        );
+        window.store.stemCellErrorDismiss();
+        expect(window.store.get().stemCellError).toBeUndefined();
+    } finally {
+        window.close();
+    }
+});
+
+it("leaves the naming to a daemon that does not take the window's names", async () => {
+    const daemon = fakeHappyAgentDaemonCreate();
+    const window = await windowOpen(daemon);
+    try {
+        const creation = window.store.stemCellCreate(null, null);
+        expect(creation.cell).toBeUndefined();
+        const cell = await creation.created;
+        const [request] = daemon.calls.find((call) => call.method === "createStemCell")!.args;
+        expect(request).not.toHaveProperty("taskId");
+        expect(request).not.toHaveProperty("agentId");
+        expect(window.store.get().spaces.get(cell.space.id)?.version).toBe(1);
+    } finally {
+        window.close();
+    }
+});
 
 it("holds incoming sidebar versions and attention through the saved drop", async () => {
     vi.useFakeTimers();

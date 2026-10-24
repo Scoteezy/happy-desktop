@@ -1,5 +1,7 @@
 import {
+    type Agent,
     HappyAgentApiError,
+    type CreateStemCellResponse,
     type HappyAgentClient,
     type HappyAgentEvent,
     type Space,
@@ -11,7 +13,7 @@ import {
 import type { HappyAgentSync } from "../happyAgentConnection/happyAgentSync.js";
 import { happyAgentSyncRead } from "../happyAgentConnection/happyAgentSyncRead.js";
 import { happyAgentUserError } from "../happyAgent/happyAgentSupport.js";
-import type { UserError } from "../types.js";
+import { UserError } from "../types.js";
 import {
     sidebarDocumentClassicApply,
     sidebarDocumentEdit,
@@ -89,12 +91,31 @@ function batchOf(batch: SpaceBatch): HappyAgentSpaceBatch {
     };
 }
 
-/** What the daemon answers when it makes new work. */
+/** New work: its row, and the conversation behind it. */
 export interface HappyAgentStemCell {
     readonly space: HappyAgentSpace;
     /** The conversation the first message goes to, and the workspace it runs in. */
     readonly agentId: string;
     readonly workspaceId: string;
+}
+
+/** New work being made. */
+export interface HappyAgentStemCellCreation {
+    /**
+     * The row and its conversation, already in the sidebar, when this window
+     * named them itself; absent on a daemon that names them, where the row
+     * appears once `created` settles.
+     */
+    readonly cell?: HappyAgentStemCell;
+    /** Settles once the daemon has made it; on a refusal the row is gone again. */
+    readonly created: Promise<HappyAgentStemCell>;
+}
+
+/** The task, workspace and conversation this window names for new work. */
+export interface HappyAgentStemCellIdentity {
+    readonly taskId: string;
+    readonly workspaceId: string;
+    readonly agentId: string;
 }
 
 /**
@@ -145,6 +166,8 @@ export interface HappyAgentSpacesSnapshot {
     readonly sidebar?: HappyAgentSpacesSidebarDocument;
     /** The last act the daemon refused. */
     readonly error?: UserError;
+    /** Why the last new work could not be made, until the reader dismisses it or makes more. */
+    readonly stemCellError?: UserError;
 }
 
 /** Whether the reader is mid-gesture in the sidebar, or calm enough for it to change. */
@@ -155,13 +178,17 @@ export interface HappyAgentSpacesStore {
     subscribe(listener: () => void): () => void;
     /**
      * Makes new work right after a section or separator, or for `null` right
-     * after Happy's row (`happySpaceId`, which the window knows by its bot), and
-     * resolves with the conversation to open once the daemon has made it.
+     * after Happy's row (`happySpaceId`, which the window knows by its bot).
+     * On a daemon that takes this window's names for it, the row and its
+     * conversation exist here at once and the daemon is told after; otherwise
+     * they exist once the daemon has made them.
      */
     stemCellCreate(
         sectionId: string | null,
         happySpaceId: string | null,
-    ): Promise<HappyAgentStemCell>;
+    ): HappyAgentStemCellCreation;
+    /** Puts away the note that new work could not be made. */
+    stemCellErrorDismiss(): void;
     /** Moves a row after another in a section, or first for `null`. */
     spaceMove(
         spaceId: HappyAgentSpaceId,
@@ -219,6 +246,15 @@ export interface HappyAgentSpacesStore {
 export interface HappyAgentSpacesDeps {
     readonly client: HappyAgentClient;
     readonly sync: HappyAgentSync;
+    /**
+     * Lists the task behind new work this window named, before the daemon has
+     * made it, so its chat opens and takes a first message at once; the
+     * message waits for `created`, and a refusal takes the task back out.
+     */
+    readonly stemCellTaskBegin?: (
+        identity: HappyAgentStemCellIdentity,
+        created: Promise<{ readonly agent: Agent }>,
+    ) => void;
     readonly now?: () => number;
 }
 
@@ -689,53 +725,149 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 if (listeners.size === 0) stop();
             };
         },
-        async stemCellCreate(placeSectionId, happySpaceId) {
-            const id = idCreate();
+        stemCellCreate(placeSectionId, happySpaceId) {
+            const id = idCreate() as HappyAgentSpaceId;
             const mutationId = idCreate();
             const sectionId = placeSectionId as HappyAgentSpaceSectionId | null;
             const placement = { sectionId: placeSectionId, happySpaceId };
+            // Names the daemon takes are names this window can use before it
+            // answers; one that does not take them names everything itself.
+            const identity: HappyAgentStemCellIdentity | undefined =
+                deps.sync.health()?.capabilities?.stemCellIdentities === true
+                    ? { taskId: idCreate(), workspaceId: idCreate(), agentId: idCreate() }
+                    : undefined;
             creating.set(id, placement);
-            try {
-                const response = await happyAgentSyncRead(
-                    life.signal,
-                    async () => {
-                        try {
-                            return await deps.client.createStemCell(
-                                { sectionId, id, mutationId },
-                                { signal: life.signal },
-                            );
-                        } catch (error) {
-                            if (error instanceof HappyAgentApiError && error.status < 500)
-                                return { refused: error };
-                            throw error;
-                        }
-                    },
-                    () => undefined,
-                );
+            // One request under one set of names, repeated until it is heard:
+            // a repeat after a lost answer settles on the work already made.
+            const request = happyAgentSyncRead(
+                life.signal,
+                async (): Promise<CreateStemCellResponse | { readonly refused: unknown }> => {
+                    try {
+                        return await deps.client.createStemCell(
+                            { sectionId, id, mutationId, ...identity },
+                            { signal: life.signal },
+                        );
+                    } catch (error) {
+                        if (error instanceof HappyAgentApiError && error.status < 500)
+                            return { refused: error };
+                        throw error;
+                    }
+                },
+                () => undefined,
+            ).then((response) => {
                 if ("refused" in response) throw response.refused;
-                const space = spaceRead(response.space);
-                const spaces = new Map(snapshot.spaces);
-                spaceAdopt(spaces, space);
-                const html = snapshot.sidebar && insert(snapshot.sidebar.html, space.id, placement);
+                return response;
+            });
+            let cell: HappyAgentStemCell | undefined;
+            if (identity !== undefined) {
+                // The task is listed before the row, so the row never points
+                // at a conversation the window cannot open.
+                deps.stemCellTaskBegin?.(identity, request);
+                const at = (deps.now ?? Date.now)();
+                const peers = happyAgentSpacesIn(snapshot.spaces, sectionId);
+                const after = peers.findIndex((peer) => peer.id === happySpaceId);
+                let orderKey: string;
+                try {
+                    orderKey = orderKeyDecimalBetween(
+                        peers[after]?.orderKey ?? null,
+                        peers[after + 1]?.orderKey ?? null,
+                    );
+                } catch {
+                    orderKey = peers[after]?.orderKey ?? "";
+                }
+                // Version 0 is older than anything the daemon says about it.
+                const space: HappyAgentSpace = {
+                    id,
+                    createdAt: at,
+                    updatedAt: at,
+                    icon: { type: "stem_cell" },
+                    orderKey,
+                    placement: "pending",
+                    sectionId,
+                    target: {
+                        kind: "task",
+                        id: identity.taskId,
+                        agentId: identity.agentId,
+                        workspaceId: identity.workspaceId,
+                    },
+                    title: null,
+                    version: 0,
+                    visibility: "shown",
+                    working: false,
+                };
+                const html = snapshot.sidebar && insert(snapshot.sidebar.html, id, placement);
                 publish({
-                    spaces,
+                    spaces: new Map(snapshot.spaces).set(id, space),
                     ...(html && snapshot.sidebar ? { sidebar: { ...snapshot.sidebar, html } } : {}),
                     agentWorkspaces: new Map(snapshot.agentWorkspaces).set(
-                        response.agent.id,
-                        response.agent.workspaceId,
+                        identity.agentId,
+                        identity.workspaceId,
                     ),
+                    stemCellError: undefined,
                 });
-                return {
-                    space,
-                    agentId: response.agent.id,
-                    workspaceId: response.agent.workspaceId,
-                };
-            } catch (error) {
-                throw happyAgentUserError(error);
-            } finally {
-                creating.delete(id);
-                if (creating.size === 0 && sidebarStale) sidebarLoad();
-            }
+                cell = { space, agentId: identity.agentId, workspaceId: identity.workspaceId };
+            } else if (snapshot.stemCellError !== undefined) publish({ stemCellError: undefined });
+            const created = request
+                .then(
+                    (response): HappyAgentStemCell => {
+                        const space = spaceRead(response.space);
+                        if (disposed)
+                            return {
+                                space,
+                                agentId: response.agent.id,
+                                workspaceId: response.agent.workspaceId,
+                            };
+                        const spaces = new Map(snapshot.spaces);
+                        spaceAdopt(spaces, space);
+                        const html =
+                            snapshot.sidebar && insert(snapshot.sidebar.html, space.id, placement);
+                        publish({
+                            spaces,
+                            ...(html && snapshot.sidebar
+                                ? { sidebar: { ...snapshot.sidebar, html } }
+                                : {}),
+                            agentWorkspaces: new Map(snapshot.agentWorkspaces).set(
+                                response.agent.id,
+                                response.agent.workspaceId,
+                            ),
+                        });
+                        return {
+                            space,
+                            agentId: response.agent.id,
+                            workspaceId: response.agent.workspaceId,
+                        };
+                    },
+                    (error: unknown) => {
+                        const failure = happyAgentUserError(error);
+                        if (!disposed && !life.signal.aborted) {
+                            // The row this window showed goes, and the
+                            // document is read back without it.
+                            const spaces = new Map(snapshot.spaces);
+                            if (spaces.get(id)?.version === 0) spaces.delete(id);
+                            sidebarStale = true;
+                            publish({
+                                spaces,
+                                stemCellError: new UserError(
+                                    `New work could not be made. ${failure.message}`,
+                                    failure.code,
+                                    failure,
+                                ),
+                            });
+                        }
+                        throw failure;
+                    },
+                )
+                .finally(() => {
+                    creating.delete(id);
+                    if (creating.size === 0 && sidebarStale) {
+                        sidebarStale = false;
+                        sidebarLoad();
+                    }
+                });
+            return { ...(cell === undefined ? {} : { cell }), created };
+        },
+        stemCellErrorDismiss() {
+            if (snapshot.stemCellError !== undefined) publish({ stemCellError: undefined });
         },
         spaceMove(spaceId, sectionId, afterId) {
             const space = snapshot.spaces.get(spaceId);
@@ -901,7 +1033,12 @@ const UNSUPPORTED: HappyAgentSpacesSnapshot = { ...EMPTY, availability: "unsuppo
 export const happyAgentSpacesStoreNoop: HappyAgentSpacesStore = {
     get: () => UNSUPPORTED,
     subscribe: () => () => undefined,
-    stemCellCreate: () => Promise.reject(new Error("No Happy Agent is connected.")),
+    stemCellCreate: () => {
+        const created = Promise.reject(new UserError("No Happy Agent is connected."));
+        void created.catch(() => undefined);
+        return { created };
+    },
+    stemCellErrorDismiss: () => undefined,
     spaceMove: () => undefined,
     sectionCollapsedUpdate: () => undefined,
     sectionTailExpandedUpdate: () => undefined,

@@ -792,6 +792,8 @@ export function happyAgentWorkspaceClientCreate(
             spaces ??= happyAgentSpacesStoreCreate({
                 client: deps.client,
                 sync: deps.connection.sync,
+                stemCellTaskBegin: (identity, created) =>
+                    deps.connection.beginStemCellTask(identity, created),
             });
             return spaces;
         },

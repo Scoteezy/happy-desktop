@@ -189,6 +189,7 @@ import {
     type HappyAgentSurfaceId,
     type HappyAgentSurfaces,
     type HappyAgentSpacesStore,
+    type HappyAgentStemCell,
     type HappyAgentTodoListStore,
     type HappyAgentSurfaceMessagesStore,
     type HappyAgentSurfaceDocumentStore,
@@ -3678,22 +3679,33 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         );
         return { foldedSpaceIds, foldedSectionIds, hiddenSpaceIds };
     })();
-    // New work is made on the daemon and opened the moment it exists: the
-    // stem cell and its empty chat are one thing, so there is nothing to show
-    // before the daemon has made it.
+    // The stem cell and its empty chat are one thing, opened together: in the
+    // click itself on a daemon that takes the window's names for them, where
+    // the first message waits for the daemon; otherwise once it has made them.
     const makeStuff = (): void => {
         if (!experimental.stemCells || !active || !activeHappyAgentOnline()) return;
         // New work lands right below Happy's row, wherever the reader keeps it.
         const happySpace = [...spaces.spaces.values()].find((space) =>
             happyAgentSpaceHappyIs(space, spacesPlaces),
         );
-        void spacesStore
-            .stemCellCreate(null, happySpace?.id ?? null)
-            .then((cell) => {
-                spacesStore.happyFocusUpdate(false);
-                props.onChatSelect(active.id, cell.workspaceId, cell.agentId);
-            })
-            .catch(() => undefined);
+        const creation = spacesStore.stemCellCreate(null, happySpace?.id ?? null);
+        const open = (cell: HappyAgentStemCell): void => {
+            spacesStore.happyFocusUpdate(false);
+            props.onChatSelect(active.id, cell.workspaceId, cell.agentId);
+        };
+        const opened = creation.cell;
+        if (opened === undefined) {
+            void creation.created.then(open).catch(() => undefined);
+            return;
+        }
+        const { groupId, chatId } = props;
+        open(opened);
+        // Refused — one round trip after the click — the chat never existed:
+        // the window forgets it and goes back to where the click was made.
+        void creation.created.catch(() => {
+            props.onChatClose?.(active.id, opened.workspaceId, opened.agentId);
+            props.onChatSelect(active.id, groupId, chatId, true);
+        });
     };
     // What can be made: the Surfaces this Happy Agent serves, and a bot. The
     // Create row's › lists them directly and a new stem cell offers the same.
@@ -3751,6 +3763,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 // The integrated header holds the toggle in this lane, so the
                 // spaces sidebar never shows the wordmark.
                 brand={false}
+                {...(spaces.stemCellError
+                    ? {
+                          headerAccessory: (
+                              <Banner
+                                  onDismiss={() => spacesStore.stemCellErrorDismiss()}
+                                  tone="danger"
+                              >
+                                  {spaces.stemCellError.message}
+                              </Banner>
+                          ),
+                      }
+                    : {})}
                 {...(sidebarSearchRow ? { search: sidebarSearchRow } : {})}
                 {...(experimental.stemCells
                     ? {

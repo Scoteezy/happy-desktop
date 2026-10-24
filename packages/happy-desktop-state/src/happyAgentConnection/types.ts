@@ -1121,6 +1121,19 @@ export interface HappyAgentConnection {
      * message. The task id doubles as the retry key.
      */
     createTask(name?: string): TaskCreationRequest;
+    /**
+     * Lists the unnamed task behind new work the window named and is asking
+     * the daemon to make (`created`), so its chat opens empty at once. A first
+     * message waits for `created`; when it fails the task leaves the list.
+     */
+    beginStemCellTask(
+        identity: {
+            readonly taskId: string;
+            readonly workspaceId: string;
+            readonly agentId: string;
+        },
+        created: Promise<{ readonly agent: Agent }>,
+    ): void;
     /** Renames a task for everyone, guarded by its version; ends automatic naming. */
     renameTask(taskId: string, name: string): MutationId;
     close(): void;

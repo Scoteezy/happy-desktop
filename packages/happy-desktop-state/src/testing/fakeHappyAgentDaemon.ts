@@ -27,6 +27,7 @@ import {
     type Run,
     type SaveUserSettingRequest,
     type SendMessageRequest,
+    type Space,
     type ServiceMessage,
     type StoredUserSetting,
     type Task,
@@ -160,6 +161,7 @@ export interface FakeHappyAgentDaemon {
         ready?: boolean;
         protocol?: number;
         desktopLiveControl?: boolean;
+        stemCellIdentities?: boolean;
     }): void;
     /** Replace what `getOnboarding` and the desktop bootstrap report. */
     onboardingSet(state: {
@@ -397,6 +399,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     /** Every event this process journaled; a replacement starts with none. */
     let journal: HappyAgentEvent[] = [];
     let desktopLiveControl: boolean | undefined;
+    let stemCellIdentities: boolean | undefined;
     const liveSessions = new Map<string, LiveSession>();
     const liveUrls = new HappyAgentClient({ endpoint: "http://fake-happy-agent.test/" });
     let protocol = HAPPY_AGENT_PROTOCOL_VERSION;
@@ -538,6 +541,55 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         [...memberships.values()].sort((left, right) =>
             left.orderKey < right.orderKey ? -1 : left.orderKey > right.orderKey ? 1 : 0,
         );
+    /** Makes a task the caller joins at the top of their list, under any names they chose. */
+    const taskMake = (request: {
+        readonly id?: string;
+        readonly workspaceId?: string;
+        readonly agentId?: string;
+        readonly name?: string;
+    }) => {
+        // Retried with the same id, the task already made is answered again.
+        if (request.id !== undefined && tasks.has(request.id)) return taskResponse(request.id);
+        const id = request.id ?? `task-${String((idCounter += 1))}`;
+        const workspaceId = request.workspaceId ?? `taskws-${id}`;
+        const name = request.name ?? "New Task";
+        const agent = seedAgent(workspaceId, {
+            ...(request.agentId === undefined ? {} : { id: request.agentId }),
+            title: name,
+        });
+        const task: Task = {
+            archivedAt: null,
+            canArchive: profile.userId !== undefined,
+            compute: { path: `/tmp/tasks/${id}`, type: "host" },
+            createdAt: 1,
+            creatorAgentId: null,
+            folderName: id,
+            name,
+            ownerUserId: profile.userId ?? null,
+            status: "active",
+            updatedAt: 1,
+            version: versionOf((versionCounter += 1)),
+            agent,
+            id,
+            workspaceId,
+        };
+        tasks.set(id, task);
+        // The maker joins it, at the top of their own list.
+        const first = membershipsOrdered()[0];
+        const membership: TaskMembership = {
+            joinedAt: 1,
+            orderKey: generateKeyBetween(null, first?.orderKey ?? null),
+            taskId: id,
+            userId: profile.userId ?? null,
+        };
+        memberships.set(id, membership);
+        emit("task.created", { task });
+        emit("agent.created", { agent });
+        emit("task.joined", { membership });
+        return taskResponse(id);
+    };
+    /** New work made, by its row's id, so a repeat answers the same. */
+    const stemCells = new Map<string, { readonly space: Space; readonly agent: Agent }>();
     const taskArchivalSet = (taskId: string, ifMatch: string, archived: boolean) => {
         const current = taskRequired(taskId);
         if (current.canArchive !== true)
@@ -615,7 +667,14 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         ready: healthReady,
         status: healthReady ? ("ready" as const) : ("starting" as const),
         version: { daemon: daemonVersion, protocol },
-        ...(desktopLiveControl === undefined ? {} : { capabilities: { desktopLiveControl } }),
+        ...(desktopLiveControl === undefined && stemCellIdentities === undefined
+            ? {}
+            : {
+                  capabilities: {
+                      ...(desktopLiveControl === undefined ? {} : { desktopLiveControl }),
+                      ...(stemCellIdentities === undefined ? {} : { stemCellIdentities }),
+                  },
+              }),
     });
 
     const client = {
@@ -837,45 +896,51 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             ...rest: unknown[]
         ) {
             await record("createTask", [request, ...rest]);
-            // Retried with the same id, the task already made is answered again.
-            if (request.id !== undefined && tasks.has(request.id)) return taskResponse(request.id);
-            const id = request.id ?? `task-${String((idCounter += 1))}`;
-            const workspaceId = request.workspaceId ?? `taskws-${id}`;
-            const name = request.name ?? "New Task";
-            const agent = seedAgent(workspaceId, {
-                ...(request.agentId === undefined ? {} : { id: request.agentId }),
-                title: name,
+            return taskMake(request);
+        },
+        async createStemCell(
+            request: {
+                readonly id?: string;
+                readonly taskId?: string;
+                readonly workspaceId?: string;
+                readonly agentId?: string;
+                readonly sectionId?: string | null;
+            } = {},
+            ...rest: unknown[]
+        ) {
+            await record("createStemCell", [request, ...rest]);
+            const id = request.id ?? `space-${String((idCounter += 1))}`;
+            // Repeated, the work already made is answered again.
+            const made = stemCells.get(id);
+            if (made !== undefined) return made;
+            const response = taskMake({
+                ...(request.taskId === undefined ? {} : { id: request.taskId }),
+                ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }),
+                ...(request.agentId === undefined ? {} : { agentId: request.agentId }),
             });
-            const task: Task = {
-                archivedAt: null,
-                canArchive: profile.userId !== undefined,
-                compute: { path: `/tmp/tasks/${id}`, type: "host" },
+            const space: Space = {
                 createdAt: 1,
-                creatorAgentId: null,
-                folderName: id,
-                name,
-                ownerUserId: profile.userId ?? null,
-                status: "active",
-                updatedAt: 1,
-                version: versionOf((versionCounter += 1)),
-                agent,
+                icon: { type: "stem_cell" },
                 id,
-                workspaceId,
+                orderKey: id,
+                placement: "pending",
+                sectionId: request.sectionId ?? null,
+                target: {
+                    agentId: response.task.agent.id,
+                    id: response.task.id,
+                    kind: "task",
+                    workspaceId: response.task.workspaceId,
+                },
+                title: null,
+                updatedAt: 1,
+                version: 1,
+                visibility: "shown",
+                working: false,
             };
-            tasks.set(id, task);
-            // The maker joins it, at the top of their own list.
-            const first = membershipsOrdered()[0];
-            const membership: TaskMembership = {
-                joinedAt: 1,
-                orderKey: generateKeyBetween(null, first?.orderKey ?? null),
-                taskId: id,
-                userId: profile.userId ?? null,
-            };
-            memberships.set(id, membership);
-            emit("task.created", { task });
-            emit("agent.created", { agent });
-            emit("task.joined", { membership });
-            return taskResponse(id);
+            const answer = { space, agent: response.task.agent };
+            stemCells.set(id, answer);
+            emit("space.created", { space });
+            return answer;
         },
         async renameTask(
             taskId: string,
@@ -1496,6 +1561,8 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
             if (options.daemon !== undefined) daemonVersion = options.daemon;
             if (options.desktopLiveControl !== undefined)
                 desktopLiveControl = options.desktopLiveControl;
+            if (options.stemCellIdentities !== undefined)
+                stemCellIdentities = options.stemCellIdentities;
         },
         liveSessionSet(session) {
             liveSessions.set(session.id, session);
