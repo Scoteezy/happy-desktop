@@ -1863,18 +1863,50 @@ export function MessageList(props: MessageListProps) {
             ? Math.max(0, estimatedContentHeight() - viewportGeometry.current.height)
             : (openingScrollTop.current ?? readerScrollTop.current);
     /** The reader's fixed point, as it is saved: the anchor it holds, not its pixel offset. */
-    function positionCurrent(): MessageListScrollPosition {
+    function positionCurrent(element: HTMLElement): MessageListScrollPosition {
         if (following.current) return { type: "bottom" };
-        const held = readerAnchor.current;
+        let top = readerScrollTop.current;
+        const nativeTop = element.scrollTop;
+        if (nativeTop !== top) {
+            const geometry = viewportGeometry.current;
+            const style = element.ownerDocument.defaultView!.getComputedStyle(element);
+            const width = Number.parseFloat(style.width);
+            const height = Number.parseFloat(style.height);
+            const boxMatches =
+                Math.abs(width - geometry.width) <= 1 / 64 &&
+                Math.abs(height - geometry.height) <= 1 / 64;
+            const scale = boxMatches
+                ? (element.getBoundingClientRect().width / width) *
+                  element.ownerDocument.defaultView!.devicePixelRatio
+                : 0;
+            const zoomChanged =
+                scale > 0 &&
+                viewportScale.current > 0 &&
+                Math.abs(scale / viewportScale.current - 1) > 0.01;
+            if (boxMatches && !zoomChanged) top = nativeTop;
+        }
+        const nativeMoved = top !== readerScrollTop.current;
+        const held = nativeMoved ? undefined : readerAnchor.current;
         const anchor =
             held?.type === "item" &&
-            held.viewportInset === Math.min(VIRTUAL_ANCHOR_INSET, viewportGeometry.current.height)
+            held.viewportInset >= 0 &&
+            held.viewportInset <= viewportGeometry.current.height
                 ? held
-                : /* A disclosure's own inset, or a raw scrollTop, is read back
+                : /* An out-of-view point, or a raw scrollTop, is read back
                      as the row at the standard anchor point. Native scrolling
                      may already be clamped by an undelivered viewport resize;
-                     pair the committed height with its committed offset. */
-                  modelAnchorCapture(viewportGeometry.current.height, readerScrollTop.current);
+                     only an unchanged box can supply a newer native position. */
+                  modelAnchorCapture(viewportGeometry.current.height, top);
+        if (nativeMoved) {
+            // Hide can precede the target scroll listener. Retained views must
+            // adopt the same native input this published cold position holds.
+            readerScrollTop.current = top;
+            readerAnchor.current = anchor;
+            // Activity may have disconnected the offset observer. TanStack
+            // reattaches by writing its cached offset, so keep that cache with
+            // the native position too, without notifying a hidden subtree.
+            virtualizer.scrollOffset = top;
+        }
         return anchor?.type === "item"
             ? {
                   type: "row",
@@ -1888,7 +1920,7 @@ export function MessageList(props: MessageListProps) {
     const positionReport = () => {
         const element = list.current;
         if (!element || !positionChange.current) return;
-        positionChange.current(positionCurrent());
+        positionChange.current(positionCurrent(element));
     };
     /* Model lookups use the model's own row order, which matches `items`
        except inside the commit that changed them, before the model follows. */
@@ -2624,7 +2656,11 @@ export function MessageList(props: MessageListProps) {
         getScrollElement: () => list.current,
         observeElementOffset: (instance, report) => {
             virtualOffsetReport.current = report;
+            let observing = true;
             const unobserve = observeElementOffset(instance, (offset, scrolling) => {
+                // TanStack's debounce can outlive unobserve. A hidden view no
+                // longer has a native element to validate its captured offset.
+                if (!observing) return;
                 // An idle callback can retain the native offset from before a
                 // model-owned restore. Its later scroll event has not arrived
                 // yet; read back that write instead of mounting the old range.
@@ -2635,6 +2671,7 @@ export function MessageList(props: MessageListProps) {
                 report(offset, scrolling);
             });
             return () => {
+                observing = false;
                 virtualOffsetReport.current = undefined;
                 unobserve?.();
             };
@@ -3131,14 +3168,17 @@ export function MessageList(props: MessageListProps) {
               });
         observer?.observe(element, { characterData: true, childList: true, subtree: true });
         return () => {
-            positionReport();
+            // Activity may have disconnected the ref already. Capture from
+            // this listener lifetime's element, and retain the held row point
+            // so a hidden width change restores the same reader when shown.
+            const position = positionCurrent(element);
+            positionChange.current?.(position);
             refinementCancel.current?.();
             refinementCancel.current = undefined;
             overscanMountCancel.current?.();
             overscanMountCancel.current = undefined;
             observer?.disconnect();
             pendingAnchor.current = undefined;
-            readerAnchor.current = undefined;
             expectedScrollTop.current = undefined;
             element.removeEventListener("scroll", onScroll, { capture: true });
             element.removeEventListener("scrollend", positionReport);

@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { expect, it, vi } from "vitest";
 import "./styles.css";
 import { MessageList } from "./Message";
+import { RetainedViews } from "./RetainedViews";
 import { createRenderer } from "./testing";
 
 const observer = vi.hoisted(() => ({
@@ -34,11 +35,14 @@ async function frames() {
 it("keeps the restored range when an old idle offset arrives before the native compensation event", async () => {
     const view = createRenderer();
     let prepend!: () => void;
+    let show!: (visible: boolean) => void;
     let viewport: HTMLElement | undefined;
     const blockScroll = (event: Event) => {
         if (event.target === viewport) event.stopImmediatePropagation();
     };
     function Harness() {
+        const [visible, setVisible] = useState(true);
+        show = (next) => flushSync(() => setVisible(next));
         const [rows, setRows] = useState(() =>
             Array.from({ length: 200 }, (_, index) => `history:${index}`),
         );
@@ -49,7 +53,7 @@ it("keeps the restored range when an old idle offset arrives before the native c
                     ...previous,
                 ]),
             );
-        return (
+        const content = (
             <div style={{ display: "flex", height: 360, width: 620 }}>
                 <MessageList
                     virtualize
@@ -65,6 +69,12 @@ it("keeps the restored range when an old idle offset arrives before the native c
                     ))}
                 </MessageList>
             </div>
+        );
+        return (
+            <RetainedViews
+                activeId={visible ? "chat" : undefined}
+                views={[{ id: "chat", content }]}
+            />
         );
     }
     try {
@@ -103,6 +113,18 @@ it("keeps the restored range when an old idle offset arrives before the native c
             index,
         );
         expect(held.isConnected, "idle callback replaced the original anchor DOM").toBe(true);
+        expect(viewport.querySelector(`[data-index="${index}"]`)).toBe(held);
+        expect(Math.abs(held.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
+        const retiredReport = observer.report!;
+        show(false);
+        const hiddenOffset = observer.offset();
+        // The library's debounce can still fire after its observer is removed.
+        // It must not overwrite the cached offset a retained view reattaches at.
+        flushSync(() => retiredReport(oldOffset, false));
+        expect(observer.offset()).toBe(hiddenOffset);
+        show(true);
+        await frames();
+        expect(viewport.scrollTop).toBe(hiddenOffset);
         expect(viewport.querySelector(`[data-index="${index}"]`)).toBe(held);
         expect(Math.abs(held.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
         document.removeEventListener("scroll", blockScroll, true);

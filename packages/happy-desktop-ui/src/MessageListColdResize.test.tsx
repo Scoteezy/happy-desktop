@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { flushSync } from "react-dom";
 import { expect, it } from "vitest";
+import { userEvent } from "vitest/browser";
 import "./styles.css";
 import { MessageList, type MessageListScrollPosition } from "./Message";
 import { RetainedViews } from "./RetainedViews";
@@ -16,9 +17,13 @@ it.each([
     { target: 25, nextHeight: 1223.875 },
     { target: 49, nextHeight: 620 },
     { target: 25, nextHeight: 620 },
+    { target: 10, nextHeight: 800, native: "write" },
+    { target: 10, nextHeight: 800, native: "wheel" },
+    { target: 10, nextHeight: 800, native: "track" },
+    { target: 10, nextHeight: 1223.875, native: "write" },
 ])(
-    "publishes the committed view when hidden before resize delivery: %j",
-    async ({ target, nextHeight }) => {
+    "publishes the visible view when hidden before native event or resize delivery: %j",
+    async ({ target, nextHeight, native }) => {
         const view = createRenderer();
         let update!: (height: number, active: boolean, cold?: boolean) => void;
         let latest: MessageListScrollPosition | undefined;
@@ -40,7 +45,10 @@ it.each([
                         {
                             id: "chat",
                             content: (
-                                <div style={{ display: "flex", height: state.height }}>
+                                <div
+                                    data-scrollbar-visibility="always"
+                                    style={{ display: "flex", height: state.height }}
+                                >
                                     <MessageList
                                         key={state.generation}
                                         virtualize
@@ -97,14 +105,42 @@ it.each([
             const committed = read();
             const committedTop = viewport().scrollTop;
             const element = viewport();
-            // Force native layout and its clamp, then hide in this same task:
-            // ResizeObserver cannot deliver the changed box in between.
-            element.style.flex = "none";
-            element.style.height = `${nextHeight}px`;
-            const pendingTop = element.scrollTop;
-            if (target === 49 && nextHeight > 800)
-                expect(pendingTop).toBeLessThan(committedTop - 400);
-            update(nextHeight, false);
+            let nativeTop = committedTop;
+            if (native === "wheel" || native === "track") {
+                let hidden = false;
+                const hideBeforeTarget = (event: Event) => {
+                    if (event.target !== element || element.scrollTop === committedTop) return;
+                    nativeTop = element.scrollTop;
+                    update(nextHeight, false);
+                    hidden = true;
+                };
+                document.addEventListener("scroll", hideBeforeTarget, true);
+                try {
+                    const target =
+                        native === "track"
+                            ? view.container.querySelector<HTMLElement>(
+                                  '[data-scrollbar-track][data-axis="vertical"]',
+                              )!
+                            : element;
+                    await userEvent.wheel(target, { delta: { y: 200 } });
+                    await expect.poll(() => hidden).toBe(true);
+                    expect(nativeTop - committedTop).toBeGreaterThan(1);
+                } finally {
+                    document.removeEventListener("scroll", hideBeforeTarget, true);
+                }
+            } else {
+                if (native === "write") element.scrollTop += 200;
+                if (nextHeight !== 800) {
+                    // Force native layout and its clamp, then hide in this task
+                    // before ResizeObserver can deliver the changed box.
+                    element.style.flex = "none";
+                    element.style.height = `${nextHeight}px`;
+                }
+                nativeTop = element.scrollTop;
+                if (target === 49 && nextHeight > 800)
+                    expect(nativeTop).toBeLessThan(committedTop - 400);
+                update(nextHeight, false);
+            }
             saved = latest;
             expect(saved?.type === "row" && saved.viewportHeight).toBe(800);
             element.style.removeProperty("height");
@@ -113,8 +149,11 @@ it.each([
             update(nextHeight, true);
             await settle();
             const warm = read();
+            // Pending geometry keeps its committed view, even if native input
+            // arrived in the same task. An unchanged box keeps the native move.
+            const movement = nextHeight === 800 ? nativeTop - committedTop : 0;
             for (let i = 0; i < warm.length; i++)
-                expect(Math.abs(warm[i]! - committed[i]!)).toBeLessThanOrEqual(1);
+                expect(Math.abs(warm[i]! - (committed[i]! - movement))).toBeLessThanOrEqual(1);
             update(nextHeight, true, true);
             await settle();
             const cold = read();
@@ -125,6 +164,123 @@ it.each([
         }
     },
 );
+
+it("publishes the held nonstandard point before a hidden width change", async () => {
+    const view = createRenderer();
+    let update!: (width: number, height: number, active: boolean, cold?: boolean) => void;
+    let latest: MessageListScrollPosition | undefined;
+    let saved: MessageListScrollPosition | undefined;
+    function Fixture() {
+        const [state, setState] = useState({
+            width: 820,
+            height: 650,
+            active: true,
+            generation: 0,
+        });
+        update = (width, height, active, cold = false) =>
+            flushSync(() =>
+                setState((previous) => ({
+                    width,
+                    height,
+                    active,
+                    generation: previous.generation + Number(cold),
+                })),
+            );
+        return (
+            <div style={{ width: state.width }}>
+                <RetainedViews
+                    activeId={state.active ? "chat" : undefined}
+                    views={[
+                        {
+                            id: "chat",
+                            content: (
+                                <div style={{ display: "flex", height: state.height }}>
+                                    <MessageList
+                                        key={state.generation}
+                                        virtualize
+                                        estimateDependencies={[]}
+                                        estimateRowSize={(index, width) =>
+                                            index === 10 && width < 600 ? 196 : 100
+                                        }
+                                        initialScrollPosition={
+                                            saved ?? {
+                                                type: "row",
+                                                rowKey: ".$10",
+                                                offset: 25,
+                                                viewportInset: 32,
+                                            }
+                                        }
+                                        onScrollPositionChange={(position) => {
+                                            latest = position;
+                                        }}
+                                    >
+                                        {Array.from({ length: 50 }, (_, index) => (
+                                            <div
+                                                key={index}
+                                                data-row={index}
+                                                style={{
+                                                    height:
+                                                        index === 10 && state.width < 600
+                                                            ? 196
+                                                            : 100,
+                                                }}
+                                            >
+                                                <span>Row {index} glyph</span>
+                                            </div>
+                                        ))}
+                                    </MessageList>
+                                </div>
+                            ),
+                        },
+                    ]}
+                />
+            </div>
+        );
+    }
+    const read = () => {
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const row = viewport.querySelector<HTMLElement>('[data-row="10"]')!;
+        const range = document.createRange();
+        range.selectNodeContents(row.querySelector("span")!);
+        return [
+            row.getBoundingClientRect().top - viewport.getBoundingClientRect().top,
+            range.getBoundingClientRect().top - viewport.getBoundingClientRect().top,
+        ];
+    };
+    try {
+        view.render(Fixture, { width: 900, height: 1000 });
+        await view.ready();
+        await settle();
+        update(820, 800, true);
+        await settle();
+        const before = read();
+        update(820, 800, false);
+        saved = latest;
+        expect(saved).toEqual({
+            type: "row",
+            rowKey: ".$10",
+            offset: 25,
+            viewportInset: 182,
+            viewportHeight: 800,
+        });
+        update(537, 800, false);
+        await settle();
+        update(537, 800, true);
+        await settle();
+        const warm = read();
+        update(537, 800, true, true);
+        await settle();
+        const cold = read();
+        for (let i = 0; i < before.length; i++) {
+            expect(Math.abs(warm[i]! - before[i]!)).toBeLessThanOrEqual(1);
+            expect(Math.abs(cold[i]! - before[i]!)).toBeLessThanOrEqual(1);
+        }
+    } finally {
+        view.destroy();
+    }
+});
 
 it("keeps the legacy bottom-relative restore when no viewport height was saved", async () => {
     const view = createRenderer();
