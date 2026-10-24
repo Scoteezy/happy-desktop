@@ -2445,14 +2445,14 @@ export function MessageList(props: MessageListProps) {
         undefined,
     );
     const admittedKeys = useRef<ReadonlySet<Key>>(new Set());
-    /* A prepended page changes indexes in the render before its row model is
-       committed. Keep the mounted keys in that intermediate range as well:
-       dropping them here would lose selection before the anchor is placed.
-       Only a changed first row needs this scan; scrolling and appends do not. */
+    /* Prepending history or accepting queued messages can move a mounted row
+       beyond the old range before its row model is committed. Keep its key in
+       that intermediate range too, preserving its DOM until the anchor moves
+       the range. Only relocated mounted rows need the full key scan. */
     const relocatedIndexes: number[] = [];
     if (
         rowSizeModel.width !== undefined &&
-        rowSizeModel.keys[headerOffset] !== itemKeyAt(headerOffset)
+        mountedRows.current.some(({ key, index }) => itemKeyAt(index) !== key)
     )
         for (let index = 0; index < items.length; index += 1)
             if (mountedKeys.current.has(itemKeyAt(index))) relocatedIndexes.push(index);
