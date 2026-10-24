@@ -1087,7 +1087,7 @@ export function conversationRowHeight(
                 : 0;
         if (entry.failure !== undefined) {
             const failure = entry.failure;
-            const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET - 2;
+            const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
             const options = context.failure ?? FAILURE_ROW_INERT;
             const layout = conversationFailureCardLayout(failure, {
                 current: options.current,

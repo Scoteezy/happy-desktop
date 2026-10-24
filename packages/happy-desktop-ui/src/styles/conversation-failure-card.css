@@ -17,6 +17,20 @@
     background: var(--box-warning-background);
 }
 
+/* The frame's border sits in the card's inset, so the icons and text inside it
+   keep the transcript content edge and the measure the row model lays out. */
+.happy-conversation-error-card.happy-conversation-failure-card {
+    padding-right: 95px;
+    padding-left: 29px;
+}
+
+.happy-message--activity-lead .happy-conversation-error-card.happy-conversation-failure-card {
+    width: calc(100% + 2px);
+    margin: 0 -1px;
+    padding-right: 0;
+    padding-left: 0;
+}
+
 .happy-conversation-failure-card__content {
     display: flex;
     flex: 1 1 auto;
