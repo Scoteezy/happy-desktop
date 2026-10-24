@@ -270,7 +270,7 @@ it("opens a nested row on a session, never on a bare workspace", () => {
     expect(destination({ kind: "worktree", worktreeId: "wt_nothing" })).toBeUndefined();
 });
 
-it("draws a bot's uploaded avatar as its classic row does, and named work without a picture as named work", () => {
+it("wears the row's own icon, and a round face only when the row has none", () => {
     const space = (
         id: string,
         title: string | null,
@@ -291,45 +291,33 @@ it("draws a bot's uploaded avatar as its classic row does, and named work withou
         working: false,
     });
     const avatar = "http://happy-agent/v0/bots/bot-uploaded/avatar";
+    const ownerFace = "http://happy-agent/v0/users/u/avatar";
     const places = {
         bots: [{ id: "bot-uploaded", avatar: { url: avatar, thumbhash: "" } }],
-        tasks: [
-            {
-                id: "task-owned",
-                owner: { avatar: { url: "http://happy-agent/v0/users/u/avatar" } },
-            },
-        ],
+        tasks: [{ id: "task-owned", owner: { avatar: { url: ownerFace } } }],
         chatGroupOf: () => undefined,
     } as unknown as HappyAgentSpacesPlaces;
     const bot = { kind: "bot", id: "bot-uploaded", agentId: "a", workspaceId: "w" } as const;
     const task = (id: string) => ({ kind: "task", id, agentId: "a", workspaceId: "w" }) as const;
-    // The uploaded picture outranks whatever was chosen for the row.
-    for (const icon of [
-        null,
-        { type: "library", slug: "rocket" },
-        { type: "image", url: "/v0/bots/bot-uploaded/avatar" },
-    ] as const)
-        expect(happyAgentSpaceMark(space("b", "Insight Miner", icon, bot), places, true)).toEqual({
-            imageMark: { src: avatar, alt: "" },
-        });
-    // New work is the stem cell for as long as it is one.
-    expect(happyAgentSpaceMark(space("n", null, null, task("t")), places, true)).toEqual({
-        stemCell: { id: "n" },
+    const mark = (row: HappyAgentSpace) => happyAgentSpaceMark(row, places, false);
+    // An icon beats the avatar: a clay icon stands as drawn, a chosen picture is a face.
+    expect(mark(space("c", "Insight Miner", { type: "library", slug: "code" }, bot))).toEqual({
+        imageMark: expect.objectContaining({ src: expect.any(String) }),
     });
     expect(
-        happyAgentSpaceMark(space("s", "Named", { type: "stem_cell" }, task("t")), places, true),
+        mark(space("i", "Insight Miner", { type: "image", url: "http://happy-agent/x.png" }, bot)),
     ).toEqual({
+        imageUrl: "http://happy-agent/x.png",
+    });
+    expect(mark(space("s", "Named", { type: "stem_cell" }, bot))).toEqual({
         stemCell: { id: "s" },
     });
-    // Named work with no picture wears its owner's face, or the tasks glyph.
-    expect(
-        happyAgentSpaceMark(space("o", "Preview Releases", null, task("task-owned")), places, true),
-    ).toEqual({
-        imageMark: { src: "http://happy-agent/v0/users/u/avatar", alt: "" },
+    // A row with no icon falls back to its bot's avatar, or its task owner's face, drawn round.
+    expect(mark(space("b", "Insight Miner", null, bot))).toEqual({ imageUrl: avatar });
+    expect(mark(space("o", "Preview Releases", null, task("task-owned")))).toEqual({
+        imageUrl: ownerFace,
     });
-    expect(
-        happyAgentSpaceMark(space("p", "Buried Alive flyer", null, task("t")), places, true),
-    ).toEqual({
-        icon: "tasks",
-    });
+    // With neither, new work is the stem cell and named work wears its glyph.
+    expect(mark(space("n", null, null, task("t")))).toEqual({ stemCell: { id: "n" } });
+    expect(mark(space("p", "Buried Alive flyer", null, task("t")))).toEqual({ icon: "tasks" });
 });

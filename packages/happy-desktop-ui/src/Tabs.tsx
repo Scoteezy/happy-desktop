@@ -1,4 +1,5 @@
 import { partitionComponentProps } from "./componentProps";
+import { Avatar } from "./Avatar";
 import {
     useLayoutEffect,
     useRef,
@@ -71,6 +72,11 @@ export type TabItem = {
     unread?: boolean;
     /** Unframed artwork for an explicitly opened entity. */
     imageMark?: ImageMark;
+    /**
+     * A face — a bot's or a person's picture — drawn by the same Avatar a
+     * sidebar row draws it with, so a tab and its row wear one shape.
+     */
+    imageUrl?: string;
     /** Identity for an item that has not taken shape yet, in the same 20px lane. */
     stemCell?: StemCellMark;
     /**
@@ -101,6 +107,8 @@ function tabLeadingMark(tab: TabItem, iconSize: 14 | 16 | 18) {
                 size={20}
                 stemCell={tab.stemCell}
             />
+        ) : tab.imageUrl !== undefined ? (
+            <Avatar imageUrl={tab.imageUrl} initials="" size="xs" type="agent" />
         ) : tab.filePath !== undefined ? (
             <FileKindIcon path={tab.filePath} size={iconSize === 14 ? 14 : 16} />
         ) : tab.icon ? (

@@ -196,34 +196,35 @@ export function happyAgentSpaceHappyIs(
     return targetBot(space.target, places)?.systemKey === HAPPY_BOT_KEY;
 }
 
-/** A picture Prioritizing chose, as a row or a tab wears it. */
+/**
+ * A picture Prioritizing chose, as a row or a tab wears it. A clay icon is
+ * shaped art and stands as drawn; any other picture is somebody's face and is
+ * drawn as one, by the same Avatar the classic sidebar uses.
+ */
 function iconMark(
     icon: HappyAgentSpaceIcon | null | undefined,
-): Pick<SidebarItem & TabItem, "imageMark"> | undefined {
+): Pick<SidebarItem & TabItem, "imageMark" | "imageUrl"> | undefined {
     if (icon?.type === "library" && clayIconSlugIs(icon.slug))
         return { imageMark: clayIconMark(icon.slug) };
-    if (icon?.type === "image") return { imageMark: { src: icon.url, alt: "" } };
+    if (icon?.type === "image") return { imageUrl: icon.url };
     return undefined;
 }
 
 /**
  * The identity a space wears in a row or a tab.
  *
- * A bot wears its own avatar whenever it has one, exactly as its classic row
- * does: a picture someone uploaded for it outranks whatever Prioritizing picked.
- * New work wears the stem cell for as long as the daemon says it is one. Named
- * work the daemon gave no picture is not new work any more, so it wears what its
- * classic row would — its owner's face, or the tasks glyph — rather than the
- * stem cell.
+ * The row's own icon comes first: the stem cell while the work is still taking
+ * shape, then the clay icon or picture chosen for it. Only a row with no icon
+ * at all reaches for a face — its bot's avatar or its task owner's, uploaded or
+ * not — drawn round as its classic row draws it. Without either, new work is the
+ * stem cell and named work wears the plain glyph of what it is.
  */
 export function happyAgentSpaceMark(
     space: HappyAgentSpace,
     places: HappyAgentSpacesPlaces,
     stemCellAnimation: boolean,
-): Pick<SidebarItem & TabItem, "icon" | "imageMark" | "stemCell"> {
+): Pick<SidebarItem & TabItem, "icon" | "imageMark" | "imageUrl" | "stemCell"> {
     if (happyAgentSpaceHappyIs(space, places)) return { imageMark: happyIconMark() };
-    const avatar = targetBot(space.target, places)?.avatar;
-    if (avatar) return { imageMark: { src: avatar.url, alt: "" } };
     const icon = space.icon;
     if (icon?.type === "stem_cell") return { stemCell: { id: space.id } };
     // A clay icon is what a stem cell becomes; unless the reader turned it
@@ -232,9 +233,10 @@ export function happyAgentSpaceMark(
         return { imageMark: { ...clayIconMark(icon.slug), growsFromStemCell: true } };
     const chosen = iconMark(icon);
     if (chosen) return chosen;
+    const face =
+        targetBot(space.target, places)?.avatar ?? targetTask(space.target, places)?.owner?.avatar;
+    if (face) return { imageUrl: face.url };
     if (space.title === null) return { stemCell: { id: space.id } };
-    const owner = targetTask(space.target, places)?.owner?.avatar;
-    if (owner) return { imageMark: { src: owner.url, alt: "" } };
     return {
         icon:
             space.target.kind === "bot"
@@ -249,7 +251,7 @@ export function happyAgentSpaceMark(
 export function happyAgentSessionMark(
     snapshot: HappyAgentSpacesSnapshot,
     agentId: string,
-): Pick<SidebarItem & TabItem, "imageMark"> | undefined {
+): Pick<SidebarItem & TabItem, "imageMark" | "imageUrl"> | undefined {
     return iconMark(snapshot.sidebar?.agentIcons.get(agentId));
 }
 

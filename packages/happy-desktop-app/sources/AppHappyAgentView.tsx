@@ -6465,7 +6465,10 @@ interface HappyAgentWorkspaceSpaces {
     /** The identity a chat's tab wears: its space's name and icon, or its stem cell. */
     chatMark(
         sessionId: string,
-    ): (Pick<TabItem, "imageMark" | "stemCell"> & Partial<Pick<TabItem, "label">>) | undefined;
+    ):
+        | (Pick<TabItem, "icon" | "imageMark" | "imageUrl" | "stemCell"> &
+              Partial<Pick<TabItem, "label">>)
+        | undefined;
     /** Which space a chat's hand-folded floaty is remembered for. */
     floatyKey(sessionId: string): string | undefined;
     /** What an empty conversation says instead of the default, such as new work's stem cell. */
