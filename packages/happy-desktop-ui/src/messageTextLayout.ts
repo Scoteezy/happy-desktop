@@ -32,7 +32,11 @@ import {
     mermaidDiagramNaturalHeight,
     type MermaidDiagramDimensions,
 } from "./mermaidDiagramRender";
-import { messageMarkdownParse, type MessageMarkdownAst } from "./messageMarkdownAst";
+import {
+    messageMarkdownListItemNeedsEmptyLine,
+    messageMarkdownParse,
+    type MessageMarkdownAst,
+} from "./messageMarkdownAst";
 import { messagePlainTextNormalize } from "./messagePlainText";
 
 /**
@@ -1590,7 +1594,10 @@ function markdownListHeight(
         }
         // A paragraph made empty by skipped HTML still owns the item's body
         // line, just like an item with no block yet.
-        let itemHeight = first.height === 0 ? PARAGRAPH_LINE : first.height;
+        let itemHeight =
+            first.height === 0 && messageMarkdownListItemNeedsEmptyLine(item)
+                ? PARAGRAPH_LINE
+                : first.height;
         for (let index = 1; index < blocks.length; index += 1) {
             /* Tight-list paragraphs unwrap into the `<li>`, so `li > * + *`
                does not apply when that phrasing is only text nodes. Inline

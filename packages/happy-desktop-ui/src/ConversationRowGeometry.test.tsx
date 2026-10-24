@@ -57,11 +57,63 @@ const agent: ConversationAuthor = {
     agentRole: "default",
 };
 
-it.each(["", "<!-- comment -->", "<span></span>"])(
-    "reserves one modeled line for empty ordered and unordered items: %j",
+it.each([
+    "",
+    "<!-- comment -->",
+    "<span></span>",
+    "<span> </span>",
+    "[<span></span>](https://example.com)",
+])("reserves one modeled line for empty ordered and unordered items: %j", async (empty) => {
+    const view = createRenderer();
+    const texts = [
+        `1. First\n\n2. ${empty}\n\n3. Next`,
+        `- First\n\n- ${empty}\n\n- Next`,
+        `1. First\n2. ${empty}\n3. Next`,
+        `- First\n- ${empty}\n- Next`,
+    ];
+    try {
+        view.render(
+            () => (
+                <>
+                    {texts.map((body, index) => (
+                        <Message agent author="Happy" body={body} key={index} />
+                    ))}
+                </>
+            ),
+            { width: 560, height: 500 },
+        );
+        await view.ready();
+        await nextLayout();
+        const bodies = [
+            ...view.container.querySelectorAll<HTMLElement>(".happy-message__body--markdown"),
+        ];
+        expect(bodies).toHaveLength(4);
+        for (const [index, body] of bodies.entries()) {
+            const items = [...body.querySelectorAll<HTMLElement>("li")];
+            expect(items).toHaveLength(3);
+            const middle = items[1]!;
+            const contentHeight =
+                middle.getBoundingClientRect().height -
+                parseFloat(getComputedStyle(middle).paddingTop);
+            expect(Math.abs(contentHeight - 24)).toBeLessThanOrEqual(1 / 64);
+            const modeled = markdownBodyHeight(texts[index]!, body.getBoundingClientRect().width);
+            expect(Math.abs(body.getBoundingClientRect().height - modeled)).toBeLessThanOrEqual(
+                1 / 64,
+            );
+            expect(
+                items[2]!.getBoundingClientRect().top - middle.getBoundingClientRect().bottom,
+            ).toBeGreaterThanOrEqual(0);
+        }
+    } finally {
+        view.destroy();
+    }
+});
+
+it.each(["##", ">"])(
+    "keeps empty list block geometry without adding a text line: %s",
     async (empty) => {
         const view = createRenderer();
-        const texts = [`1. First\n\n2. ${empty}\n\n3. Next`, `- First\n\n- ${empty}\n\n- Next`];
+        const texts = [`- ${empty}\n- Next`, `1. ${empty}\n2. Next`];
         try {
             view.render(
                 () => (
@@ -80,23 +132,14 @@ it.each(["", "<!-- comment -->", "<span></span>"])(
             ];
             expect(bodies).toHaveLength(2);
             for (const [index, body] of bodies.entries()) {
-                const items = [...body.querySelectorAll<HTMLElement>("li")];
-                expect(items).toHaveLength(3);
-                const middle = items[1]!;
-                const contentHeight =
-                    middle.getBoundingClientRect().height -
-                    parseFloat(getComputedStyle(middle).paddingTop);
-                expect(Math.abs(contentHeight - 24)).toBeLessThanOrEqual(1 / 64);
                 const modeled = markdownBodyHeight(
                     texts[index]!,
                     body.getBoundingClientRect().width,
                 );
+                expect(modeled).toBe(30);
                 expect(Math.abs(body.getBoundingClientRect().height - modeled)).toBeLessThanOrEqual(
                     1 / 64,
                 );
-                expect(
-                    items[2]!.getBoundingClientRect().top - middle.getBoundingClientRect().bottom,
-                ).toBeGreaterThanOrEqual(0);
             }
         } finally {
             view.destroy();
