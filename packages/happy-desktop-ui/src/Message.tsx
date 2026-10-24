@@ -2318,8 +2318,14 @@ export function MessageList(props: MessageListProps) {
             !(headerLeads && estimatedContentHeight() <= previousHeight)
         ) {
             const naturalHeight = estimatedContentHeight();
+            const previousInset = leadingGap(previousHeight);
+            const wasFloored =
+                readerScrollTop.current <= 1 &&
+                previousInset + Math.max(naturalHeight, geometryExtent.current) <=
+                    previousHeight + 1;
             if (
                 props.dockConsumesSpace &&
+                (following.current || wasFloored) &&
                 nextHeight < previousHeight &&
                 geometryExtent.current > naturalHeight
             ) {
@@ -2335,11 +2341,35 @@ export function MessageList(props: MessageListProps) {
             let inset =
                 geometrySparseInset.current ||
                 Math.max(0, previousHeight - Math.max(naturalHeight, geometryExtent.current));
-            if (
-                nextHeight < previousHeight &&
-                Math.max(naturalHeight, geometryExtent.current) <= nextHeight
-            )
-                inset = Math.max(0, inset - (previousHeight - nextHeight));
+            if (nextHeight < previousHeight) {
+                if (following.current || wasFloored)
+                    inset = Math.min(inset, Math.max(0, nextHeight - naturalHeight));
+                else {
+                    const held =
+                        pendingAnchor.current?.anchor ??
+                        readerAnchor.current ??
+                        modelAnchorCapture(previousHeight);
+                    const heldHeight = pendingAnchor.current?.viewportHeight ?? previousHeight;
+                    const point =
+                        held?.type === "item"
+                            ? heldHeight - held.viewportInset
+                            : previousHeight - Math.min(VIRTUAL_ANCHOR_INSET, previousHeight);
+                    if (point > nextHeight) {
+                        const correction =
+                            point - (nextHeight - Math.min(VIRTUAL_ANCHOR_INSET, nextHeight));
+                        const gap = Math.min(inset, correction);
+                        inset -= gap;
+                        const blank = Math.min(
+                            Math.max(0, geometryExtent.current - naturalHeight),
+                            correction - gap,
+                        );
+                        if (blank > 0) {
+                            geometryExtent.current -= blank;
+                            virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
+                        }
+                    }
+                }
+            }
             if (inset !== geometrySparseInset.current) {
                 geometrySparseInset.current = inset;
                 if (inset === 0) spacerHoldRelease();

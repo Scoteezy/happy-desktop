@@ -13,14 +13,15 @@ async function frames() {
 }
 
 it.each([
-    { count: 45, height: 360, dock: 0, afterDock: 0, above: false },
-    { count: 7, height: 820, dock: 0, afterDock: 0, above: false },
-    { count: 7, height: 820, dock: 155, afterDock: 0, above: false },
-    { count: 7, height: 820, dock: 0, afterDock: 0, above: true },
-    { count: 7, height: 820, dock: 0, afterDock: 155, above: true },
+    { count: 45, height: 360, dock: 0, afterDock: 0, above: false, covered: false },
+    { count: 7, height: 820, dock: 0, afterDock: 0, above: false, covered: false },
+    { count: 7, height: 820, dock: 155, afterDock: 0, above: false, covered: false },
+    { count: 7, height: 820, dock: 0, afterDock: 0, above: true, covered: false },
+    { count: 7, height: 820, dock: 0, afterDock: 155, above: true, covered: false },
+    { count: 7, height: 820, dock: 0, afterDock: 600, above: true, covered: true },
 ])(
     "keeps a disclosure at native zero when content arrives below it: %j",
-    async ({ count, height, dock, afterDock, above }) => {
+    async ({ count, height, dock, afterDock, above, covered }) => {
         const view = createRenderer();
         let insert!: () => void;
         function Disclosure({ expand }: { expand: () => void }) {
@@ -90,9 +91,10 @@ it.each([
             insert();
             await frames();
             expect(control.isConnected).toBe(true);
-            expect(
-                Math.abs(control.getBoundingClientRect().top - top + Math.max(0, afterDock - dock)),
-            ).toBeLessThanOrEqual(1);
+            const expectedTop = covered ? viewport.getBoundingClientRect().bottom - 32 : top;
+            expect(Math.abs(control.getBoundingClientRect().top - expectedTop)).toBeLessThanOrEqual(
+                1,
+            );
         } finally {
             view.destroy();
         }
