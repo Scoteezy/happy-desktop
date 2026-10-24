@@ -46,6 +46,7 @@ import {
     type HappyAgentSpacesStore,
     type HappyAgentSessionLocation,
     type HappyAgentWorkspaceMemoryDocument,
+    type HappyAgentStemCellsHintPersistence,
     type HappyAgentWorkspaceMemoryPersistence,
     type HappyAgentWorkspaceStore,
     type ServerCompatibility,
@@ -79,6 +80,7 @@ function protocolMismatchOf(
 }
 
 const WORKSPACE_MEMORY_PREFIX = "happy.happy-agent.workspace-memory.v1:";
+const STEM_CELLS_HINT_PREFIX = "happy.happy-agent.stem-cells-hint.v1:";
 const RETRY_MS = 1_000;
 const PRELOADED_SESSIONS = 12;
 
@@ -98,6 +100,34 @@ function workspaceMemoryPersistence(happyAgentId: string): HappyAgentWorkspaceMe
                 localStorage.setItem(key, JSON.stringify(document));
             } catch {
                 // Storage-denied windows retain the in-memory store for this run.
+            }
+        },
+    };
+}
+
+/**
+ * The connection's last Stem Cells answer, so a reload paints the sidebar that
+ * person chose at once instead of the classic one for a frame. A connection is
+ * one account (a team or remote connection is keyed by it), and the daemon's
+ * own answer replaces the hint as soon as it is read.
+ */
+function stemCellsHintPersistence(happyAgentId: string): HappyAgentStemCellsHintPersistence {
+    const key = `${STEM_CELLS_HINT_PREFIX}${happyAgentId}`;
+    return {
+        read() {
+            try {
+                const value = localStorage.getItem(key);
+                return value === "on" ? true : value === "off" ? false : undefined;
+            } catch {
+                return undefined;
+            }
+        },
+        write(enabled) {
+            try {
+                if (enabled === undefined) localStorage.removeItem(key);
+                else localStorage.setItem(key, enabled ? "on" : "off");
+            } catch {
+                // Storage-denied windows wait for the daemon's answer.
             }
         },
     };
@@ -441,6 +471,7 @@ export function happyAgentConnectionOpen(input: {
         hostServices,
         modelPreferencePersistence: input.modelPreferencePersistence,
         workspaceMemoryPersistence: workspaceMemoryPersistence(input.happyAgentId),
+        stemCellsHintPersistence: stemCellsHintPersistence(input.happyAgentId),
         catalogSource,
         profileActions: profile.actions,
         profilePhotoCodec: { open: imageCropOpen },

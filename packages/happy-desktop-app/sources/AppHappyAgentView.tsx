@@ -3643,10 +3643,13 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     );
     // The spaces sidebar comes with Stem Cells: the person turned it on for
     // this Happy Agent and it keeps one. It follows the switch at once, before
-    // the daemon confirms; anything older, or Stem Cells off, keeps the classic
-    // sidebar.
+    // the daemon confirms, and until the daemon first answers it follows this
+    // connection's last answer, so a reload paints the chosen sidebar at once.
+    // Anything older, or Stem Cells off, keeps the classic sidebar.
     const stemCellsChosen =
-        stemCellsSettings.status === "ready" && stemCellsSettings.stemCellsEnabled;
+        stemCellsSettings.status === "ready"
+            ? stemCellsSettings.stemCellsEnabled
+            : stemCellsSettings.status === "loading" && stemCellsSettings.hint === true;
     const spacesStore =
         (stemCellsChosen ? active?.session?.spaces : undefined) ?? happyAgentSpacesStoreNoop;
     const spaces = useSyncExternalStore(spacesStore.subscribe, spacesStore.get, spacesStore.get);

@@ -64,6 +64,7 @@ import {
 } from "./happyAgentSurfaceSettingsStore.js";
 import {
     happyAgentStemCellsSettingsStoreCreate,
+    type HappyAgentStemCellsHintPersistence,
     type HappyAgentStemCellsSettingsStore,
 } from "./happyAgentStemCellsSettingsStore.js";
 import {
@@ -440,6 +441,8 @@ export interface HappyAgentWorkspaceClientDeps {
     readonly modelPreferencePersistence?: HappyAgentModelPreferencePersistence;
     /** Where this Happy Agent's tab and read memory is kept; omitted keeps it in memory. */
     readonly workspaceMemoryPersistence?: HappyAgentWorkspaceMemoryPersistence;
+    /** Where this connection's last Stem Cells answer is kept; omitted keeps none. */
+    readonly stemCellsHintPersistence?: HappyAgentStemCellsHintPersistence;
     /**
      * Builds the driver behind a terminal: the app-layer machinery that owns the
      * terminal protocol client and the VT emulator. Omitting it leaves terminals
@@ -930,10 +933,10 @@ export function happyAgentWorkspaceClientCreate(
         },
         stemCellsSettings() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
-            stemCellsSettingsStore ??= happyAgentStemCellsSettingsStoreCreate({
-                client: deps.client,
-                sync: deps.connection.sync,
-            });
+            stemCellsSettingsStore ??= happyAgentStemCellsSettingsStoreCreate(
+                { client: deps.client, sync: deps.connection.sync },
+                deps.stemCellsHintPersistence,
+            );
             return stemCellsSettingsStore;
         },
         voiceSettings() {
