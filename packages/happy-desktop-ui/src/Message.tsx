@@ -1195,11 +1195,19 @@ export function MessageList(props: MessageListProps) {
             headerRestHold(headerRestGap());
             return;
         }
-        const inset = Math.max(
-            0,
-            firstRow.getBoundingClientRect().top - spacerElement.getBoundingClientRect().bottom,
-        );
-        if (inset > 0.5) spacerElement.style.marginTop = `${String(inset)}px`;
+        const inset = virtualized
+            ? leadingGap(viewportGeometry.current.height)
+            : Math.max(
+                  0,
+                  Number.parseFloat(
+                      spacerElement.ownerDocument.defaultView!.getComputedStyle(spacerElement)
+                          .marginTop,
+                  ) || 0,
+              );
+        if (inset > 0.5) {
+            if (virtualized) geometrySparseInset.current = inset;
+            spacerElement.style.marginTop = `${String(inset)}px`;
+        }
     };
     const sparseInsetRelease = () => {
         if (geometrySparseInset.current > 0) return;
@@ -1682,7 +1690,43 @@ export function MessageList(props: MessageListProps) {
             // Waiting for its layout effect would briefly unmount visible rows.
             nextOffset = Math.max(0, pendingFollowerTop.current);
         } else if (parkedAnchor?.anchor) {
-            const anchor = parkedAnchor.anchor;
+            let anchor = parkedAnchor.anchor;
+            if (!widthReflow && anchor.type === "item") {
+                const size = sizes[keys.indexOf(anchor.key)];
+                if (size !== undefined && anchor.itemOffset > size)
+                    anchor = {
+                        ...anchor,
+                        viewportInset: anchor.viewportInset + anchor.itemOffset - size,
+                        itemOffset: size,
+                    };
+            }
+            // Insertions above a parked point consume its free floor gap
+            // before scrolling; insertions below it keep that gap unchanged.
+            if (
+                !widthReflow &&
+                !headerLeads &&
+                geometrySparseInset.current > 0 &&
+                anchor.type === "item"
+            ) {
+                const before = previousKeys.indexOf(anchor.key);
+                const after = keys.indexOf(anchor.key);
+                if (before >= 0 && after >= 0) {
+                    const shift =
+                        starts[after]! +
+                        Math.min(anchor.itemOffset, sizes[after]!) -
+                        previousStarts[before]! -
+                        Math.min(anchor.itemOffset, previousSizes[before]!);
+                    if (shift !== 0) {
+                        geometrySparseInset.current = Math.max(
+                            0,
+                            geometrySparseInset.current - shift,
+                        );
+                        if (geometrySparseInset.current > 0)
+                            spacer.current!.style.marginTop = `${String(geometrySparseInset.current)}px`;
+                        else spacerHoldRelease();
+                    }
+                }
+            }
             const top =
                 anchor.type === "scrollTop"
                     ? anchor.scrollTop
@@ -2007,8 +2051,13 @@ export function MessageList(props: MessageListProps) {
            inset, as every scrolled transcript does. */
         const floored = leadingGap(viewportHeight) + point;
         return floored <= 0
-            ? { index, scrollTop: 0, floored: true }
-            : { index, scrollTop: geometrySparseInset.current + point, floored: false };
+            ? { index, scrollTop: 0, floored: true, clamped: floored < 0 }
+            : {
+                  index,
+                  scrollTop: geometrySparseInset.current + point,
+                  floored: false,
+                  clamped: false,
+              };
     }
     function modelAnchorRestore(anchor: MessageListVirtualAnchor, viewportHeight: number) {
         const element = list.current;
@@ -2040,7 +2089,7 @@ export function MessageList(props: MessageListProps) {
             // before reporting that offset can render another range.
             const held = readerAnchor.current;
             if (
-                place.floored ||
+                place.clamped ||
                 Math.abs(top - place.scrollTop) > 1 ||
                 (held?.type === "item" &&
                     (held.viewportInset < 0 ||
@@ -2286,8 +2335,11 @@ export function MessageList(props: MessageListProps) {
             let inset =
                 geometrySparseInset.current ||
                 Math.max(0, previousHeight - Math.max(naturalHeight, geometryExtent.current));
-            if (nextHeight < previousHeight)
-                inset = Math.min(inset, Math.max(0, nextHeight - naturalHeight));
+            if (
+                nextHeight < previousHeight &&
+                Math.max(naturalHeight, geometryExtent.current) <= nextHeight
+            )
+                inset = Math.max(0, inset - (previousHeight - nextHeight));
             if (inset !== geometrySparseInset.current) {
                 geometrySparseInset.current = inset;
                 if (inset === 0) spacerHoldRelease();
@@ -2825,6 +2877,20 @@ export function MessageList(props: MessageListProps) {
         if (from < items.length) {
             const anchor = readerAnchor.current ?? modelAnchorCapture(viewportHeight);
             if (anchor) pendingAnchor.current ??= { anchor, viewportHeight };
+            /* New transcript rows grow below a parked point without consuming
+               the floor gap that currently places it. A footer-only change
+               still rests on the floor; viewport changes own its resize. */
+            if (
+                !following.current &&
+                !headerLeads &&
+                (rows !== previous.rows || items.length !== rowSizeModel.keys.length)
+            ) {
+                const gap = leadingGap(viewportHeight);
+                if (gap > 0) {
+                    geometrySparseInset.current = gap;
+                    spacer.current!.style.marginTop = `${String(gap)}px`;
+                }
+            }
             rowSizeModelLayout(rowWidth, from, readerFocus(viewportHeight));
             return;
         }

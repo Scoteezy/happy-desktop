@@ -1,9 +1,19 @@
 import { useState } from "react";
 import { flushSync } from "react-dom";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import "./styles.css";
 import { MessageList } from "./Message";
 import { createRenderer } from "./testing";
+
+const observer = vi.hoisted(() => ({ offset: (): number | null => null }));
+vi.mock("@tanstack/react-virtual", async (importOriginal) => {
+    const actual = await importOriginal<typeof import("@tanstack/react-virtual")>();
+    const observeElementOffset: typeof actual.observeElementOffset = (instance, report) => {
+        observer.offset = () => instance.scrollOffset;
+        return actual.observeElementOffset(instance, report);
+    };
+    return { ...actual, observeElementOffset };
+});
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 async function frames() {
@@ -77,6 +87,9 @@ it("keeps the painted reading point when history follows a clamped cold jump", a
         viewport.scrollTop = 0;
         jump();
         await frames();
+        // Deliver the deferred native jump report before the next gesture.
+        document.removeEventListener("scroll", blockScroll, true);
+        viewport.dispatchEvent(new Event("scroll"));
         const bounds = viewport.getBoundingClientRect();
         const point = bounds.bottom - 32;
         const held = [
@@ -89,6 +102,8 @@ it("keeps the painted reading point when history follows a clamped cold jump", a
         const top = held.getBoundingClientRect().top;
         prepend();
         await frames();
+        await new Promise<void>((resolve) => setTimeout(resolve, 180));
+        expect(Math.abs(observer.offset()! - viewport.scrollTop)).toBeLessThanOrEqual(1);
         expect(held.isConnected, "prepending removed the cold jump's painted anchor").toBe(true);
         expect(Math.abs(held.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
     } finally {
