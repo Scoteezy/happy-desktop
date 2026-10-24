@@ -1895,16 +1895,28 @@ export function MessageList(props: MessageListProps) {
               }
             : { type: "end" };
     }
+    /**
+     * The blank space above the first row: the held inset, or, without a
+     * header, the spacer's free margin above a transcript shorter than the
+     * viewport, which sits on the viewport's floor.
+     */
+    function leadingGap(viewportHeight: number): number {
+        if (geometrySparseInset.current > 0 || headerLeads) return geometrySparseInset.current;
+        return Math.max(
+            0,
+            viewportHeight - Math.max(estimatedContentHeight(), geometryExtent.current),
+        );
+    }
     function modelAnchorCapture(
         viewportHeight: number,
         scrollTop = readerScrollTop.current,
     ): MessageListVirtualAnchor | undefined {
         if (following.current || items.length === 0) return undefined;
         const viewportInset = Math.min(VIRTUAL_ANCHOR_INSET, viewportHeight);
-        // Model starts exclude the held leading gap; native scroll offsets
+        // Model starts exclude the leading gap; native scroll offsets
         // include it. Capture and restore the same physical row point.
-        const point =
-            scrollTop + Math.max(0, viewportHeight - viewportInset) - geometrySparseInset.current;
+        const gap = leadingGap(viewportHeight);
+        const point = scrollTop + Math.max(0, viewportHeight - viewportInset) - gap;
         let item = modeledItemAtOffset(point);
         let heldPoint = point;
         if (!item || item.key === MESSAGE_LIST_FOOTER_KEY) {
@@ -1928,7 +1940,7 @@ export function MessageList(props: MessageListProps) {
             itemOffset: Math.max(0, Math.min(heldPoint - item.start, item.size)),
             key: item.key,
             type: "item",
-            viewportInset: viewportHeight - (heldPoint + geometrySparseInset.current - scrollTop),
+            viewportInset: viewportHeight - (heldPoint + gap - scrollTop),
         };
     }
     const modelAnchorCaptureCurrent = useRef(modelAnchorCapture);
@@ -1992,7 +2004,7 @@ export function MessageList(props: MessageListProps) {
         return {
             index,
             scrollTop:
-                geometrySparseInset.current +
+                leadingGap(viewportHeight) +
                 item.start +
                 Math.min(anchor.itemOffset, item.size) -
                 Math.max(0, viewportHeight - anchor.viewportInset),
