@@ -1098,6 +1098,8 @@ export function MessageList(props: MessageListProps) {
     const geometryFollowInset = useRef(0);
     const footerFollowed = useRef(false);
     const liftSeen = useRef(props.liftKey);
+    /* A send following just acquired, whose start must stay in view. */
+    const followSentPending = useRef<string | undefined>(undefined);
     const followSeen = useRef(props.followKey);
     const wheelScrollPending = useRef(false);
     footerFollowed.current = props.footerFollowed === true;
@@ -1401,6 +1403,7 @@ export function MessageList(props: MessageListProps) {
                 pendingAnchor.current = undefined;
                 readerAnchor.current = undefined;
                 geometryFollowInset.current = 0;
+                followSentPending.current = props.followKey;
                 focus = { type: "end" };
             }
         }
@@ -1536,6 +1539,13 @@ export function MessageList(props: MessageListProps) {
         }
         for (let index = Math.max(0, first); index <= Math.min(count - 1, last); index += 1)
             layout(index);
+        /* A send just followed is held by its start, measured from the end:
+           every row from it on is laid out, not only those the end shows. */
+        const sent =
+            followSentPending.current === undefined
+                ? undefined
+                : sentRowIndex(followSentPending.current);
+        if (sent !== undefined) for (let index = sent; index < count; index += 1) layout(index);
         /* Width changes and new rows can leave mounted neighbours at estimates.
            Their real bodies can overflow those estimates into the viewport.
            Keep their nodes and lay out this small mounted set before paint. */
@@ -1736,16 +1746,36 @@ export function MessageList(props: MessageListProps) {
             scrollTopWrite(element, top - inset);
         }
     }
-    /** Lifts the reader's send to `SEND_LIFT_TOP` down the viewport and holds the space under it, in this commit. */
-    function sendLift(element: HTMLElement, key: string) {
+    /** The newest row a caller's key names, else the footer. */
+    function sentRowIndex(key: string): number | undefined {
         const [keyed] = Children.toArray([<Fragment key={key} />]);
         const childKey = isValidElement(keyed) ? keyed.key : undefined;
-        let index = footerIndex;
-        for (let candidate = items.length - 1; candidate >= 0; candidate -= 1) {
-            if (itemKeyAt(candidate) !== childKey) continue;
-            index = candidate;
-            break;
-        }
+        for (let candidate = items.length - 1; candidate >= 0; candidate -= 1)
+            if (itemKeyAt(candidate) === childKey) return candidate;
+        return footerIndex;
+    }
+    /**
+     * A send followed mid-turn waits under the live footer. In a viewport too
+     * short for both, following the end would carry the send out of view
+     * above. Hold the end back instead: the whole send stays in view when it
+     * fits, and its end, the last thing written, when it does not.
+     */
+    function sentStartKeep(element: HTMLElement, key: string) {
+        const index = sentRowIndex(key);
+        const start = index === undefined ? undefined : rowSizeModel.starts[index];
+        const size = index === undefined ? undefined : rowSizeModel.sizes[index];
+        if (start === undefined || size === undefined) return;
+        const height = viewportGeometry.current.height;
+        const end = Math.max(estimatedContentHeight(), geometryExtent.current);
+        const withheld = end - start - Math.max(height, size);
+        if (withheld <= geometryFollowInset.current) return;
+        geometryFollowInset.current = withheld;
+        /* The end was followed past the send before it was held back. */
+        scrollTopWrite(element, geometrySparseInset.current + end - height - withheld);
+    }
+    /** Lifts the reader's send to `SEND_LIFT_TOP` down the viewport and holds the space under it, in this commit. */
+    function sendLift(element: HTMLElement, key: string) {
+        const index = sentRowIndex(key);
         const start = index === undefined ? undefined : rowSizeModel.starts[index];
         if (start === undefined) return;
         /* A resting header's gap is held from the first send on, so the rows
@@ -1754,10 +1784,23 @@ export function MessageList(props: MessageListProps) {
            send is already there. */
         const inset = headerLeads ? headerRestGap() : geometrySparseInset.current;
         if (headerLeads) headerRestHold(inset);
-        const top = inset + start - sendLiftLine(viewportGeometry.current.height);
+        const height = viewportGeometry.current.height;
+        /* What follows the send's top (the send and the live footer) may not
+           fit below the lift in a short viewport. Then the reader is carried
+           as far toward the end as still shows where the send starts. */
+        const end = Math.max(estimatedContentHeight(), geometryExtent.current) + inset;
+        const rowTop = inset + start;
+        const top = Math.min(rowTop, Math.max(rowTop - sendLiftLine(height), end - height));
         if (top <= element.scrollTop) return;
-        geometryExtentRequire(top, viewportGeometry.current.height);
-        geometryFollowInset.current = 0;
+        geometryExtentRequire(top, height);
+        /* Following holds that place until new content carries it on. */
+        geometryFollowInset.current = Math.max(
+            0,
+            Math.max(estimatedContentHeight(), geometryExtent.current) +
+                geometrySparseInset.current -
+                height -
+                top,
+        );
         scrollTopWrite(element, top);
     }
     function geometryExtentRequire(top: number, height: number) {
@@ -2625,6 +2668,9 @@ export function MessageList(props: MessageListProps) {
                 scrollTopWrite(element, top);
             }
             if (lift !== undefined) sendLift(element, lift);
+            const followed = followSentPending.current;
+            followSentPending.current = undefined;
+            if (followed !== undefined) sentStartKeep(element, followed);
             scrollBottomFollow(element);
         } else if (pendingAnchor.current) {
             const pending = pendingAnchor.current;
