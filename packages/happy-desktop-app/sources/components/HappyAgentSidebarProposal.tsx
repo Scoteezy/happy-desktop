@@ -82,82 +82,90 @@ export function HappyAgentSidebarProposal(props: HappyAgentSidebarProposalProps)
     };
     const anchorOf = drawn?.anchorOf;
     return (
+        // The inline frame stretches its child to the height it reserves, so the
+        // proposal is measured in a box of its own that keeps its content height.
         <div
             data-testid="sidebar-proposal-page"
-            // The chat sizes this row from its model, so every height the
-            // proposal settles on is reported; nothing scrolls inside it.
-            ref={(node) => {
-                if (!node) return;
-                const fit = props.fit;
-                const report = () => fit.heightChanged(node.getBoundingClientRect().height);
-                const observer = new ResizeObserver(report);
-                observer.observe(node);
-                report();
-                return () => observer.disconnect();
-            }}
             style={{ display: "flex", flexDirection: "column" }}
         >
-            {entry?.type === "missing" ? (
-                <span>This proposal is no longer available.</span>
-            ) : proposal && drawn ? (
-                <SidebarProposal
-                    {...(proposal.answering ? { answering: proposal.answering } : {})}
-                    {...(proposal.error ? { notice: proposal.error.message } : {})}
-                    itemMenuItems={(item) =>
-                        item.kind === "section"
-                            ? [
-                                  {
-                                      kind: "item",
-                                      id: MENU_RENAME,
-                                      label: "Rename section",
-                                      icon: "edit",
-                                  },
-                              ]
-                            : []
-                    }
-                    itemRename={{
-                        actionId: MENU_RENAME,
-                        onSubmit: (item, name) => {
-                            const label = name.trim();
-                            const key = anchorOf?.get(item.id);
-                            if (label && key)
-                                edit((current) => sidebarDocumentRelabel(current, key, label));
-                        },
-                    }}
-                    onAccept={() => store.proposalAccept(artifactId)}
-                    onDecline={() => store.proposalDecline(artifactId)}
-                    onItemCollapseToggle={(id) => {
-                        const key = anchorOf?.get(id);
-                        if (key) edit((current) => sidebarDocumentFold(current, key));
-                    }}
-                    onItemReorder={(_list, move) => {
-                        const key = anchorOf?.get(move.id);
-                        if (!key) return;
-                        const afterKey =
-                            move.afterId === null ? null : (anchorOf?.get(move.afterId) ?? null);
-                        const parentKey =
-                            move.parentId === undefined
-                                ? null
-                                : (anchorOf?.get(move.parentId) ?? undefined);
-                        const space =
-                            move.id.startsWith("space:") &&
-                            props.snapshot.spaces.has(
-                                move.id.slice("space:".length) as HappyAgentSpaceId,
+            <div
+                // The chat sizes this row from its model, so every height the
+                // proposal settles on is reported; nothing scrolls inside it.
+                ref={(node) => {
+                    if (!node) return;
+                    const fit = props.fit;
+                    const report = () => fit.heightChanged(node.getBoundingClientRect().height);
+                    const observer = new ResizeObserver(report);
+                    observer.observe(node);
+                    report();
+                    return () => observer.disconnect();
+                }}
+                style={{ display: "flex", flex: "none", flexDirection: "column" }}
+            >
+                {entry?.type === "missing" ? (
+                    <span>This proposal is no longer available.</span>
+                ) : proposal && drawn ? (
+                    <SidebarProposal
+                        {...(proposal.answering ? { answering: proposal.answering } : {})}
+                        {...(proposal.error ? { notice: proposal.error.message } : {})}
+                        itemMenuItems={(item) =>
+                            item.kind === "section"
+                                ? [
+                                      {
+                                          kind: "item",
+                                          id: MENU_RENAME,
+                                          label: "Rename section",
+                                          icon: "edit",
+                                      },
+                                  ]
+                                : []
+                        }
+                        itemRename={{
+                            actionId: MENU_RENAME,
+                            onSubmit: (item, name) => {
+                                const label = name.trim();
+                                const key = anchorOf?.get(item.id);
+                                if (label && key)
+                                    edit((current) => sidebarDocumentRelabel(current, key, label));
+                            },
+                        }}
+                        onAccept={() => store.proposalAccept(artifactId)}
+                        onDecline={() => store.proposalDecline(artifactId)}
+                        onItemCollapseToggle={(id) => {
+                            const key = anchorOf?.get(id);
+                            if (key) edit((current) => sidebarDocumentFold(current, key));
+                        }}
+                        onItemReorder={(_list, move) => {
+                            const key = anchorOf?.get(move.id);
+                            if (!key) return;
+                            const afterKey =
+                                move.afterId === null
+                                    ? null
+                                    : (anchorOf?.get(move.afterId) ?? null);
+                            const parentKey =
+                                move.parentId === undefined
+                                    ? null
+                                    : (anchorOf?.get(move.parentId) ?? undefined);
+                            const space =
+                                move.id.startsWith("space:") &&
+                                props.snapshot.spaces.has(
+                                    move.id.slice("space:".length) as HappyAgentSpaceId,
+                                );
+                            edit((current) =>
+                                attaching && space && parentKey !== undefined
+                                    ? sidebarDocumentPlace(current, key, parentKey, afterKey)
+                                    : sidebarDocumentMove(current, key, afterKey),
                             );
-                        edit((current) =>
-                            attaching && space && parentKey !== undefined
-                                ? sidebarDocumentPlace(current, key, parentKey, afterKey)
-                                : sidebarDocumentMove(current, key, afterKey),
-                        );
-                    }}
-                    sections={[{ id: LIST, items: drawn.items }]}
-                    status={proposal.status}
-                    // Version 1 is the sidebar it was drafted from; the first proposal is 2.
-                    version={Math.max(1, proposal.version - 1)}
-                />
-            ) : (
-                <span>Loading the proposed sidebar…</span>
-            )}
+                        }}
+                        sections={[{ id: LIST, items: drawn.items }]}
+                        status={proposal.status}
+                        // Version 1 is the sidebar it was drafted from; the first proposal is 2.
+                        version={Math.max(1, proposal.version - 1)}
+                    />
+                ) : (
+                    <span>Loading the proposed sidebar…</span>
+                )}
+            </div>
         </div>
     );
 }
