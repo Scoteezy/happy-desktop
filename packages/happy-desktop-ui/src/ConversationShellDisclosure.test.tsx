@@ -139,12 +139,11 @@ it.each([false, true])(
                     Math.abs(button.getBoundingClientRect().top - top),
                     "parked disclosure top moved on shrink",
                 ).toBeLessThanOrEqual(1);
-                const capped = held();
                 resize(650);
                 await frames();
-                expect(held(), "held space regrew on viewport expansion").toBeLessThanOrEqual(
-                    capped + 1,
-                );
+                // Expansion can create the space needed to keep this row fixed;
+                // the shrink cap does not move a parked reader on expansion.
+                expect(Math.abs(button.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
             }
             button.click();
             await frames();

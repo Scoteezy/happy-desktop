@@ -1080,7 +1080,7 @@ export function MessageList(props: MessageListProps) {
     );
     const viewportGeometry = useRef({ height: 0, width: 0 });
     const viewportScale = useRef(0);
-    const zoomPlacementPending = useRef(false);
+    const geometryPlacementPending = useRef(false);
     const viewportGeometryCommitCurrent = useRef((_width: number, _height: number) => {});
     const pendingViewportGeometry = useRef<{ width: number; height: number } | undefined>(
         undefined,
@@ -2092,7 +2092,7 @@ export function MessageList(props: MessageListProps) {
             if (virtualContent.current)
                 virtualContent.current.style.minHeight =
                     blank > 0 ? `${String(geometryExtent.current)}px` : "";
-            zoomPlacementPending.current = following.current;
+            geometryPlacementPending.current = following.current;
         }
         viewportScale.current = scale;
         if (previous.width === nextWidth && previous.height === nextHeight && !zoomChanged) return;
@@ -2169,9 +2169,17 @@ export function MessageList(props: MessageListProps) {
                 );
                 virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
             }
-            const inset =
+            let inset =
                 geometrySparseInset.current ||
                 Math.max(0, previousHeight - Math.max(naturalHeight, geometryExtent.current));
+            if (nextHeight < previousHeight)
+                inset = Math.min(inset, Math.max(0, nextHeight - naturalHeight));
+            if (inset !== geometrySparseInset.current) {
+                geometrySparseInset.current = inset;
+                if (inset === 0) spacerHoldRelease();
+                else if (headerLeads) spacer.current!.style.height = `${String(inset)}px`;
+                else spacer.current!.style.marginTop = `${String(inset)}px`;
+            }
             if (inset > 0) {
                 geometrySparseInset.current = inset;
                 // A held header gap is already pinned as the spacer's height.
@@ -2198,6 +2206,17 @@ export function MessageList(props: MessageListProps) {
                             readerScrollTop.current,
                     ),
                 );
+        }
+        // External geometry can leave an old hold larger than the scrollport.
+        // Bound it now, while the row anchor still owns this resize; scrolling
+        // and content updates never decay held space.
+        const naturalHeight = estimatedContentHeight();
+        const maximumExtent = naturalHeight + nextHeight * (1 - SEND_LIFT_TOP);
+        if (nextHeight < previousHeight && geometryExtent.current > maximumExtent) {
+            geometryExtent.current = maximumExtent;
+            if (virtualContent.current)
+                virtualContent.current.style.minHeight = `${String(maximumExtent)}px`;
+            geometryPlacementPending.current = following.current;
         }
         const pending = pendingAnchor.current;
         const heldAnchor =
@@ -2508,8 +2527,8 @@ export function MessageList(props: MessageListProps) {
             if (rowSizeModel.version !== version) return;
         }
         geometryExtentCommit();
-        if (zoomPlacementPending.current) {
-            zoomPlacementPending.current = false;
+        if (geometryPlacementPending.current) {
+            geometryPlacementPending.current = false;
             geometryFollowInset.current = Math.min(
                 geometryFollowInset.current,
                 footerIndex === undefined ? 0 : (rowSizeModel.sizes[footerIndex] ?? 0),

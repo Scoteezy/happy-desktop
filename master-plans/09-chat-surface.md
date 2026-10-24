@@ -37,7 +37,13 @@ A good chat with an AI follows a few principles:
   end of the transcript. It keeps its size wherever the reader scrolls, moves
   with the end when history above changes, and is only ever taken up by new
   content growing into it; once that content outgrows it, the transcript grows
-  as usual. It never shrinks, animates, or disappears on its own.
+  as usual. A window, composer, or dock shrinking the viewport clamps held
+  blank space to the 70% below a lifted send, in the same geometry commit;
+  zoom preserves its physical size within that limit. Enlarging the viewport
+  may add the blank needed to keep a parked row fixed, without applying the
+  shrink cap again or letting the viewport become entirely blank. Space never
+  decays with time, scrolling, or
+  streaming, and never animates or disappears on its own.
 - **Work folds away out of sight.** A finished turn's steps fold behind
   "View traces", but never while any row of it is on screen: a turn the reader
   watched finish, or steered, stays open until all of it has scrolled away, and
