@@ -21,11 +21,13 @@ A good chat with an AI follows a few principles:
   message once, in the commit that adds it, until its top edge sits 30% down
   the viewport: the turn before it stays in view and the reply has the rest.
   The space under it is added in that same frame. No animation, no pin to the
-  top edge. A send made while the agent is still working, or while scrolled up
-  into history, moves nothing. New work's first send lands on that same line:
-  its empty chat rests the intro so that the mark and its line sit above the
-  lift line and the create options begin on it, and the first message takes the
-  options' place there while the mark and its line stay where they are.
+  top edge. A send made while the agent is still working joins the queue below
+  its live status without a lift; a reader near the bottom follows the queued
+  message into view. A reader scrolled up into history stays put. New work's
+  first send lands on the lift line: its empty chat rests the intro so that the
+  mark and its line sit above the lift line and the create options begin on it,
+  and the first message takes the options' place there while the mark and its
+  line stay where they are.
 - **Returning to a chat is invisible.** A chat opened again is where it was
   left: following the bottom if the reader was following it, holding the same
   row if they had scrolled up, with whatever arrived meanwhile already in
@@ -57,7 +59,9 @@ A good chat with an AI follows a few principles:
 - **Order is truthful and readable.** Messages appear in the order they
   happened, never reorder or briefly disappear, and a message sent while the
   agent is still working is visibly distinct from the reply that continues
-  after it.
+  after it. Stopping a turn and accepting its queue preserve each message's
+  row identity: the stopped status, dequeue, and next stream never remount a
+  visible message or move content down. A parked reader keeps the same row.
 - **One text column.** Prose, tool rows, questions, and every other card share
   the transcript's left edge, width, and type rhythm. Nothing looks pasted in.
 - **Performance is not traded away.** Scrolling and streaming stay at frame rate

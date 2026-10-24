@@ -676,6 +676,9 @@ export function ConversationView(props: ConversationViewProps) {
         dockedQuestions.length === 0
             ? steering.transcript
             : steering.transcript.filter((entry) => !conversationQuestionDocked(entry));
+    // A queued message keeps its entity key and virtual row when Stop ends
+    // the turn and when the daemon accepts it into the next one.
+    const listEntries = queued.length === 0 ? transcript : [...transcript, ...queued];
     const traceSpans = conversationTraceSpans(transcript);
     /* This view, as the chat's owner counts the views holding a turn open:
        one whose list has left the document holds nothing. */
@@ -992,28 +995,34 @@ export function ConversationView(props: ConversationViewProps) {
         </div>
     ) : null;
     const rowContext = (index: number, width: number): ConversationRowContext => {
-        const inlinePage = inlinePageOf(transcript[index]);
+        const entry = listEntries[index];
+        const inlinePage = inlinePageOf(entry);
         return {
             activityTreatment: props.activityTreatment,
-            errorAssistance: errorAssistanceFor(transcript[index]),
+            errorAssistance: errorAssistanceFor(entry),
             ...((failure) => (failure ? { failure: failureRowContext(failure) } : {}))(
-                failureFor(transcript[index]),
+                failureFor(entry),
             ),
-            expanded: transcript[index] === undefined ? false : rowExpanded(transcript[index]),
+            expanded: entry === undefined ? false : rowExpanded(entry),
             surface: "conversation",
-            liveStatus: statusVisible,
+            liveStatus: index < transcript.length && statusVisible,
             ...(props.references ? { references: props.references } : {}),
             ...(inlinePage ? { inlinePage: inlinePage.geometry } : {}),
             ...((run) => (run ? { mediaRun: run } : {}))(
-                transcript[index] === undefined
-                    ? undefined
-                    : mediaRuns.get(entryKey(transcript[index])),
+                entry === undefined ? undefined : mediaRuns.get(entryKey(entry)),
             ),
-            ...placedOf(transcript[index]),
+            ...placedOf(entry),
             viewerId: props.viewerId,
             width,
         };
     };
+    const rowGeometry = (index: number, width: number) =>
+        [
+            index < transcript.length ? transcript : queued,
+            index < transcript.length ? index : index - transcript.length,
+            rowContext(index, width),
+            rowHeightCache,
+        ] as const;
     const workingStatusHeight = statusVisible
         ? workingStatusStartsGroup
             ? 68
@@ -1128,63 +1137,23 @@ export function ConversationView(props: ConversationViewProps) {
                             inlinePages?.liveRender === undefined,
                         ]}
                         estimateRowSize={(index, width) =>
-                            conversationRowHeight(
-                                transcript,
-                                index,
-                                rowContext(index, width),
-                                rowHeightCache,
-                            )
+                            conversationRowHeight(...rowGeometry(index, width))
                         }
                         cachedRowSize={(index, width) =>
-                            conversationRowHeightCached(
-                                transcript,
-                                index,
-                                rowContext(index, width),
-                                rowHeightCache,
-                            )
+                            conversationRowHeightCached(...rowGeometry(index, width))
                         }
                         prepareRowSize={(index, width) =>
-                            conversationRowHeightPrepare(
-                                transcript,
-                                index,
-                                rowContext(index, width),
-                                rowHeightCache,
-                            )
+                            conversationRowHeightPrepare(...rowGeometry(index, width))
                         }
-                        estimateRows={conversationMediaRunRows(transcript, mediaRuns, (entry) =>
+                        estimateRows={conversationMediaRunRows(listEntries, mediaRuns, (entry) =>
                             entry.kind === "message"
                                 ? (inlineLayouts.messages.get(entry.message.id)?.signature ?? "")
                                 : [...(inlineLayouts.hidden.get(entryKey(entry)) ?? [])].join(","),
                         )}
                         estimateRowWidth={contentWidth}
                         estimateVersion={textLayoutGeneration}
-                        footer={
-                            <>
-                                {workingStatusRow}
-                                {queued.length > 0 ? (
-                                    <div
-                                        className="happy-conversation__queued"
-                                        data-happy-desktop-ui="conversation-queued"
-                                    >
-                                        {queued.map((entry, index) => (
-                                            <ConversationEntryView
-                                                entry={entry}
-                                                grouped={conversationMessageGrouped(queued, index)}
-                                                key={
-                                                    entry.kind === "message"
-                                                        ? entry.message.id
-                                                        : entry.id
-                                                }
-                                                {...(props.references
-                                                    ? { references: props.references }
-                                                    : {})}
-                                                viewerId={props.viewerId}
-                                            />
-                                        ))}
-                                    </div>
-                                ) : null}
-                            </>
-                        }
+                        footer={workingStatusRow}
+                        footerBefore={transcript.length}
                         /* The status and any queued message arrive with a
                            send; a reader at the bottom sees where the reply
                            will start rather than having it held below. */
@@ -1199,37 +1168,12 @@ export function ConversationView(props: ConversationViewProps) {
                                   headerLift: props.leadingHeader.lift,
                               }
                             : {})}
-                        footerHeight={(width) =>
-                            Math.max(
-                                workingStatusHeight,
-                                props.activityControl
-                                    ? HAPPY_AGENT_ACTIVITY_CONTROL_TRANSCRIPT_HEIGHT
-                                    : 0,
-                            ) +
-                            queued.reduce(
-                                (total, entry, index) =>
-                                    total +
-                                    (conversationRowHeight(
-                                        queued,
-                                        index,
-                                        {
-                                            activityTreatment: props.activityTreatment,
-                                            expanded:
-                                                queued[index] === undefined
-                                                    ? false
-                                                    : rowExpanded(queued[index]),
-                                            surface: "conversation",
-                                            ...(props.references
-                                                ? { references: props.references }
-                                                : {}),
-                                            viewerId: props.viewerId,
-                                            width,
-                                        },
-                                        rowHeightCache,
-                                    ) ?? 0),
-                                0,
-                            )
-                        }
+                        footerHeight={Math.max(
+                            workingStatusHeight,
+                            props.activityControl
+                                ? HAPPY_AGENT_ACTIVITY_CONTROL_TRANSCRIPT_HEIGHT
+                                : 0,
+                        )}
                         initialScrollPosition={props.scrollPosition}
                         // The conversation is this list's lifetime: switching to
                         // another one mounts its own list, which is what lets each
@@ -1256,7 +1200,10 @@ export function ConversationView(props: ConversationViewProps) {
                         paddingEnd={24}
                         virtualize
                     >
-                        {transcript.map((entry, index) => {
+                        {listEntries.map((entry, index) => {
+                            const source = index < transcript.length ? transcript : queued;
+                            const rowIndex =
+                                index < transcript.length ? index : index - transcript.length;
                             const submission =
                                 entry.kind === "request"
                                     ? props.requestSubmissions?.find(
@@ -1285,20 +1232,29 @@ export function ConversationView(props: ConversationViewProps) {
                                         : {})}
                                     activityAuthor={
                                         props.agentAuthor &&
-                                        (conversationAgentRowStartsGroup(transcript, index) ||
-                                            conversationTurnStatusStartsGroup(transcript, index))
+                                        (conversationAgentRowStartsGroup(source, rowIndex) ||
+                                            conversationTurnStatusStartsGroup(source, rowIndex))
                                             ? props.agentAuthor
                                             : undefined
                                     }
-                                    className={conversationRowClassName(
-                                        transcript,
-                                        index,
-                                        statusVisible,
-                                    )}
+                                    className={
+                                        [
+                                            conversationRowClassName(
+                                                source,
+                                                rowIndex,
+                                                index < transcript.length && statusVisible,
+                                            ),
+                                            index >= transcript.length
+                                                ? "happy-conversation__queued"
+                                                : undefined,
+                                        ]
+                                            .filter(Boolean)
+                                            .join(" ") || undefined
+                                    }
                                     entry={entry}
                                     grouped={
                                         entry.kind === "message"
-                                            ? conversationMessageGrouped(transcript, index)
+                                            ? conversationMessageGrouped(source, rowIndex)
                                             : undefined
                                     }
                                     onImageOpen={props.onImageOpen}

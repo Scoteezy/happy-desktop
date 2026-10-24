@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { flushSync } from "react-dom";
 import { expect, it, vi } from "vitest";
-import { userEvent } from "vitest/browser";
+import { cdp, server, userEvent } from "vitest/browser";
 import type {
     ComposerSnapshot,
     ConversationAuthor,
@@ -101,6 +101,19 @@ const frames = async () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 };
+async function pageZoomMetrics(baseScale: number, zoom: number) {
+    await cdp().send("Emulation.setDeviceMetricsOverride", {
+        width: 1550,
+        height: 1550,
+        deviceScaleFactor: baseScale * zoom,
+        mobile: false,
+    });
+}
+async function pageZoomSet(panel: HTMLElement, baseScale: number, zoom: number) {
+    await pageZoomMetrics(baseScale, zoom);
+    panel.style.height = `${String(700 / zoom)}px`;
+    panel.style.width = `${String(880 / zoom)}px`;
+}
 function renderConversation(count: number, withShell = false, withTitle = false) {
     const view = createRenderer();
     let send!: () => void;
@@ -446,42 +459,46 @@ it.each([
     },
 );
 
-it.each(["send", "draft"] as const)(
+// Firefox CSS zoom changes native scrollTop: happy-file://agents/ebzk9bggqj0qt6wts9jv0tgh/.context/fuzz-plainzoom24.log
+it.skipIf(server.browser === "firefox").each(["send", "draft"] as const)(
     "keeps visible content above held %s space through zoom changes",
     async (source) => {
         const { view, send } = renderConversation(40);
-        await view.ready();
-        await frames();
-        if (source === "send") send();
-        else {
-            const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
-            await userEvent.click(textarea);
-            await userEvent.keyboard(
-                "one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five",
-            );
+        const baseScale = devicePixelRatio;
+        try {
+            await view.ready();
             await frames();
-            await draftClear(textarea);
-        }
-        await frames();
-        const viewport = view.container.querySelector<HTMLElement>(
-            ".happy-message-list__viewport",
-        )!;
-        const panel =
-            view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
-        for (const zoom of [2, 0.5, 1.5, 0.67, 1, 2, 1]) {
-            // Keep the panel's physical box fixed, as browser zoom does.
-            panel.style.zoom = String(zoom);
-            panel.style.height = `${String(700 / zoom)}px`;
-            panel.style.width = `${String(880 / zoom)}px`;
+            if (source === "send") send();
+            else {
+                const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+                await userEvent.click(textarea);
+                await userEvent.keyboard(
+                    "one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five",
+                );
+                await frames();
+                await draftClear(textarea);
+            }
             await frames();
-            const last = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
-            const rect = last.getBoundingClientRect();
-            const bounds = viewport.getBoundingClientRect();
-            expect(rect.bottom).toBeGreaterThan(bounds.top);
-            expect(rect.top).toBeLessThan(bounds.bottom);
-            const top = rect.top;
-            await frames();
-            expect(Math.abs(last.getBoundingClientRect().top - top)).toBeLessThan(1);
+            const viewport = view.container.querySelector<HTMLElement>(
+                ".happy-message-list__viewport",
+            )!;
+            const panel =
+                view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
+            for (const zoom of [2, 0.5, 1.5, 0.67, 1, 2, 1]) {
+                await pageZoomSet(panel, baseScale, zoom);
+                await frames();
+                const last = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+                const rect = last.getBoundingClientRect();
+                const bounds = viewport.getBoundingClientRect();
+                expect(rect.bottom).toBeGreaterThan(bounds.top);
+                expect(rect.top).toBeLessThan(bounds.bottom);
+                const top = rect.top;
+                await frames();
+                expect(Math.abs(last.getBoundingClientRect().top - top)).toBeLessThan(1);
+            }
+        } finally {
+            view.destroy();
+            await pageZoomMetrics(baseScale, 1);
         }
     },
 );
@@ -554,44 +571,49 @@ it.each([false, true])(
     },
 );
 
-it.each([false, true])(
+// Firefox CSS zoom changes native scrollTop: happy-file://agents/ebzk9bggqj0qt6wts9jv0tgh/.context/fuzz-plainzoom24.log
+it.skipIf(server.browser === "firefox").each([false, true])(
     "keeps a sent message visible while zooming a docked question and answering it, with header: %s",
     async (withTitle) => {
         const { view, send, question } = renderConversation(60, false, withTitle);
-        await view.ready();
-        await frames();
-        send();
-        await frames();
-        question(false);
-        await frames();
-        const viewport = view.container.querySelector<HTMLElement>(
-            ".happy-message-list__viewport",
-        )!;
-        const panel =
-            view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
-        for (const zoom of [1.5, 0.67, 2, 1]) {
-            panel.style.zoom = String(zoom);
-            panel.style.height = `${String(700 / zoom)}px`;
-            panel.style.width = `${String(880 / zoom)}px`;
+        const baseScale = devicePixelRatio;
+        try {
+            await view.ready();
             await frames();
+            send();
+            await frames();
+            question(false);
+            await frames();
+            const viewport = view.container.querySelector<HTMLElement>(
+                ".happy-message-list__viewport",
+            )!;
+            const panel =
+                view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
+            for (const zoom of [1.5, 0.67, 2, 1]) {
+                await pageZoomSet(panel, baseScale, zoom);
+                await frames();
+                const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].find(
+                    (item) => item.textContent?.includes("The newly sent message"),
+                )!;
+                expect(viewport.clientHeight).toBeGreaterThanOrEqual(48);
+                expect(row.getBoundingClientRect().bottom).toBeGreaterThan(
+                    viewport.getBoundingClientRect().top,
+                );
+                expect(row.getBoundingClientRect().top).toBeLessThan(
+                    viewport.getBoundingClientRect().bottom,
+                );
+            }
             const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].find((item) =>
                 item.textContent?.includes("The newly sent message"),
             )!;
-            expect(viewport.clientHeight).toBeGreaterThanOrEqual(48);
-            expect(row.getBoundingClientRect().bottom).toBeGreaterThan(
-                viewport.getBoundingClientRect().top,
-            );
-            expect(row.getBoundingClientRect().top).toBeLessThan(
-                viewport.getBoundingClientRect().bottom,
-            );
+            const top = row.getBoundingClientRect().top;
+            question(true);
+            await frames();
+            expect(row.getBoundingClientRect().top).toBe(top);
+        } finally {
+            view.destroy();
+            await pageZoomMetrics(baseScale, 1);
         }
-        const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].find((item) =>
-            item.textContent?.includes("The newly sent message"),
-        )!;
-        const top = row.getBoundingClientRect().top;
-        question(true);
-        await frames();
-        expect(row.getBoundingClientRect().top).toBe(top);
     },
 );
 
@@ -619,11 +641,10 @@ it("carries repeated queued sends into view near the bottom without holding repl
             viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!.style.minHeight,
         ).toBe("");
         const footer = viewport.querySelector<HTMLElement>('[data-item-id="working-status"]')!;
-        const content = viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!;
+        const nextRow = footer.nextElementSibling as HTMLElement;
         const modeled =
-            Number.parseFloat(content.style.height) -
-            new DOMMatrixReadOnly(footer.style.transform).m42 -
-            24;
+            new DOMMatrixReadOnly(nextRow.style.transform).m42 -
+            new DOMMatrixReadOnly(footer.style.transform).m42;
         expect(Math.abs(modeled - footer.getBoundingClientRect().height)).toBeLessThan(1);
     }
 });
@@ -637,11 +658,21 @@ it("keeps a reader in history parked when queued sends arrive", async () => {
     viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
     viewport.scrollTop -= 300;
     await frames();
-    const top = viewport.scrollTop;
+    const bounds = viewport.getBoundingClientRect();
+    const point = (bounds.top + bounds.bottom) / 2;
+    const anchor = [
+        ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+    ].find((row) => {
+        const rect = row.getBoundingClientRect();
+        return row.dataset.itemId !== "working-status" && rect.top <= point && rect.bottom > point;
+    })!;
+    expect(anchor).toBeDefined();
+    const top = anchor.getBoundingClientRect().top;
     for (let index = 0; index < 3; index += 1) {
         queue();
         await frames();
-        expect(viewport.scrollTop).toBe(top);
+        expect(anchor.isConnected).toBe(true);
+        expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
     }
 });
 
@@ -766,6 +797,42 @@ it("leaves a parked reader in place through a send and viewport height changes",
     expect(view.container.querySelector(".happy-message-list__viewport")).toBe(viewport);
 });
 
+it("holds the wheel's native position when a model commit precedes its scroll report", async () => {
+    const { view, stream } = renderConversation(60);
+    await view.ready();
+    stream(1);
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    const delayReport = (event: Event) => {
+        if (event.target === viewport) event.stopImmediatePropagation();
+    };
+    document.addEventListener("scroll", delayReport, true);
+    try {
+        viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true }));
+        viewport.scrollTop -= 120;
+        const bounds = viewport.getBoundingClientRect();
+        const anchor = [
+            ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+        ].find((row) => {
+            const rect = row.getBoundingClientRect();
+            return (
+                row.dataset.itemId !== "working-status" &&
+                rect.top < bounds.bottom &&
+                rect.bottom > bounds.top
+            );
+        })!;
+        expect(anchor).toBeDefined();
+        const top = anchor.getBoundingClientRect().top;
+        stream(2);
+        await frames();
+        expect(anchor.isConnected).toBe(true);
+        expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
+    } finally {
+        document.removeEventListener("scroll", delayReport, true);
+        view.destroy();
+    }
+});
+
 it("does not resume following on a small native offset adjustment after an upward wheel", async () => {
     const { view, send } = renderConversation(40);
     await view.ready();
@@ -783,42 +850,58 @@ it("does not resume following on a small native offset adjustment after an upwar
     expect(viewport.scrollTop).toBe(parked);
 });
 
-it.each([0.67, 0.9, 1.5, 2])(
+// Firefox CSS zoom changes native scrollTop: happy-file://agents/ebzk9bggqj0qt6wts9jv0tgh/.context/fuzz-plainzoom24.log
+it.skipIf(server.browser === "firefox").each([0.67, 0.9, 1.5, 2])(
     "never writes upward while following the fractional native bottom at zoom %f",
     async (zoom) => {
         const { view, send } = renderConversation(40);
-        await view.ready();
-        await frames();
-        const viewport = view.container.querySelector<HTMLElement>(
-            ".happy-message-list__viewport",
-        )!;
-        const panel =
-            view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
-        panel.style.zoom = String(zoom);
-        await frames();
-        const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop")!;
-        const upward: number[] = [];
-        Object.defineProperty(viewport, "scrollTop", {
-            configurable: true,
-            get: () => descriptor.get!.call(viewport) as number,
-            set: (value: number) => {
-                const before = descriptor.get!.call(viewport) as number;
-                descriptor.set!.call(viewport, value);
-                const after = descriptor.get!.call(viewport) as number;
-                if (after < before) upward.push(after - before);
-            },
-        });
+        const baseScale = devicePixelRatio;
         try {
-            // Native scrolling retains a fractional maximum that the integer
-            // scrollHeight/clientHeight calculation can undershoot.
-            descriptor.set!.call(viewport, Number.MAX_SAFE_INTEGER);
-            viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 20, cancelable: true }));
+            await view.ready();
             await frames();
-            send();
+            const viewport = view.container.querySelector<HTMLElement>(
+                ".happy-message-list__viewport",
+            )!;
+            const panel =
+                view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
+            await pageZoomSet(panel, baseScale, zoom);
             await frames();
-            expect(upward).toEqual([]);
+            expect(
+                [
+                    ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+                ].some((row) => {
+                    const rect = row.getBoundingClientRect();
+                    const bounds = viewport.getBoundingClientRect();
+                    return rect.height > 0 && rect.bottom > bounds.top && rect.top < bounds.bottom;
+                }),
+            ).toBe(true);
+            const descriptor = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop")!;
+            const upward: number[] = [];
+            Object.defineProperty(viewport, "scrollTop", {
+                configurable: true,
+                get: () => descriptor.get!.call(viewport) as number,
+                set: (value: number) => {
+                    const before = descriptor.get!.call(viewport) as number;
+                    descriptor.set!.call(viewport, value);
+                    const after = descriptor.get!.call(viewport) as number;
+                    if (after < before) upward.push(after - before);
+                },
+            });
+            try {
+                // Native scrolling retains a fractional maximum that the integer
+                // scrollHeight/clientHeight calculation can undershoot.
+                descriptor.set!.call(viewport, Number.MAX_SAFE_INTEGER);
+                viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 20, cancelable: true }));
+                await frames();
+                send();
+                await frames();
+                expect(upward).toEqual([]);
+            } finally {
+                Reflect.deleteProperty(viewport, "scrollTop");
+            }
         } finally {
-            Reflect.deleteProperty(viewport, "scrollTop");
+            view.destroy();
+            await pageZoomMetrics(baseScale, 1);
         }
     },
 );

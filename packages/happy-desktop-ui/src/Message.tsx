@@ -797,16 +797,18 @@ export type MessageListProps = {
      */
     headerLift?: number | ((width: number) => number);
     /**
-     * A row at the end of the list's content, below the last message. It is
+     * A chrome row below the last message by default. It is
      * part of the virtualized row collection with a reserved stable key, not an
      * overlay or sticky chrome, so it scrolls and reconciles like every other
      * transcript row.
      */
     footer?: ReactNode;
+    /** Insert the live chrome before this child; later children remain ordinary keyed rows. */
+    footerBefore?: number;
     /**
      * Height model supplied to the virtualizer for the stable footer row. It
      * reads state outside the rows, so it is asked on every commit, and so is
-     * the last row, which may read that same state as its successor.
+     * the row before it, which may read that same state as its successor.
      */
     footerHeight?: number | ((width: number) => number);
     /**
@@ -822,7 +824,7 @@ export type MessageListProps = {
      * and the space below it is held for the reply: the content extent grows in
      * the same commit and is removed only once the reply fills it or it is
      * entirely off screen. The key present at mount is history and never lifts.
-     * A key the rows do not carry yet names the footer, where a queued send waits.
+     * A key the rows do not carry yet falls back to the chrome row.
      */
     liftKey?: string;
     /** A send queued during a run: carry it into view from near the bottom, without reserving reply space. */
@@ -1097,6 +1099,7 @@ export function MessageList(props: MessageListProps) {
     const footerFollowed = useRef(false);
     const liftSeen = useRef(props.liftKey);
     const followSeen = useRef(props.followKey);
+    const wheelScrollPending = useRef(false);
     footerFollowed.current = props.footerFollowed === true;
     const pendingFollowerTop = useRef<number | undefined>(undefined);
     const readerAnchor = useRef<MessageListVirtualAnchor | undefined>(undefined);
@@ -1228,7 +1231,12 @@ export function MessageList(props: MessageListProps) {
     const headerLeads = props.header !== undefined;
     /* Where the caller's row `index` sits among the list's own rows. */
     const headerOffset = headerLeads ? 1 : 0;
-    const footerIndex = props.footer === undefined ? undefined : headerOffset + entryItems.length;
+    const footerChildIndex = Math.min(props.footerBefore ?? entryItems.length, entryItems.length);
+    const footerIndex = props.footer === undefined ? undefined : headerOffset + footerChildIndex;
+    const entryIndex = (index: number) =>
+        index - headerOffset - (footerIndex !== undefined && index > footerIndex ? 1 : 0);
+    const virtualIndex = (index: number) =>
+        headerOffset + index + (footerIndex !== undefined && index >= footerChildIndex ? 1 : 0);
     const items =
         !headerLeads && footerIndex === undefined
             ? entryItems
@@ -1244,7 +1252,7 @@ export function MessageList(props: MessageListProps) {
                             </div>,
                         ]
                       : []),
-                  ...entryItems,
+                  ...entryItems.slice(0, footerChildIndex),
                   ...(footerIndex === undefined
                       ? []
                       : [
@@ -1257,6 +1265,7 @@ export function MessageList(props: MessageListProps) {
                                 {props.footer}
                             </div>,
                         ]),
+                  ...entryItems.slice(footerChildIndex),
               ];
     const itemKeyAt = (index: number): Key => {
         const item = items[index];
@@ -1281,7 +1290,7 @@ export function MessageList(props: MessageListProps) {
               ? typeof props.footerHeight === "function"
                   ? props.footerHeight(rowWidth)
                   : (props.footerHeight ?? ROW_SIZE_FALLBACK)
-              : (props.estimateRowSize?.(index - headerOffset, rowWidth) ?? ROW_SIZE_FALLBACK);
+              : (props.estimateRowSize?.(entryIndex(index), rowWidth) ?? ROW_SIZE_FALLBACK);
     /** Where a send's top edge is lifted to, from the viewport's top edge. */
     const sendLiftLine = (viewportHeight: number) => Math.round(viewportHeight * SEND_LIFT_TOP);
     /**
@@ -1358,6 +1367,23 @@ export function MessageList(props: MessageListProps) {
      * the first row whose size or position moved.
      */
     function rowSizeModelLayout(rowWidth: number, from: number, focus: MessageListLayoutFocus) {
+        const element = list.current;
+        if (
+            wheelScrollPending.current &&
+            !following.current &&
+            element &&
+            element.scrollTop !== readerScrollTop.current
+        ) {
+            // The native offset can change before its scroll event arrives.
+            // An idle/model commit must hold that user position immediately.
+            readerScrollTop.current = element.scrollTop;
+            pendingAnchor.current = undefined;
+            readerAnchor.current = modelAnchorCapture(
+                viewportGeometry.current.height,
+                element.scrollTop,
+            );
+            focus = readerFocus(viewportGeometry.current.height);
+        }
         if (props.followKey !== followSeen.current) {
             followSeen.current = props.followKey;
             const bottom =
@@ -1367,7 +1393,8 @@ export function MessageList(props: MessageListProps) {
                 geometryFollowInset.current;
             if (
                 props.followKey !== undefined &&
-                bottom - readerScrollTop.current <= SEND_FOLLOW_THRESHOLD
+                bottom - (list.current?.scrollTop ?? readerScrollTop.current) <=
+                    SEND_FOLLOW_THRESHOLD
             ) {
                 following.current = true;
                 escapedFromFollow.current = false;
@@ -1385,7 +1412,8 @@ export function MessageList(props: MessageListProps) {
         const previousSizes = sizes.slice();
         const previousExact = exact.slice();
         const previousStarts = starts.slice();
-        const footerBefore = keys.at(-1) === MESSAGE_LIST_FOOTER_KEY ? (sizes.at(-1) ?? 0) : 0;
+        const previousFooterIndex = keys.indexOf(MESSAGE_LIST_FOOTER_KEY);
+        const footerBefore = previousFooterIndex < 0 ? 0 : (sizes[previousFooterIndex] ?? 0);
         const widthReflow = model.width !== rowWidth;
         const parkedViewportHeight = viewportGeometry.current.height;
         let parkedAnchor =
@@ -1508,15 +1536,13 @@ export function MessageList(props: MessageListProps) {
         }
         for (let index = Math.max(0, first); index <= Math.min(count - 1, last); index += 1)
             layout(index);
-        /* A new width leaves the rows already mounted around the viewport at
-           estimates, yet they stay painted at their real height. One short by
-           an estimate overlaps the rows below it, into the viewport, until
-           idle refinement reaches it. They are a handful, so lay them out now. */
-        if (widthReflow)
-            for (const row of mountedRows.current) {
-                const index = itemIndexOf(row.key, row.index);
-                if (index !== undefined) layout(index);
-            }
+        /* Width changes and new rows can leave mounted neighbours at estimates.
+           Their real bodies can overflow those estimates into the viewport.
+           Keep their nodes and lay out this small mounted set before paint. */
+        for (const row of mountedRows.current) {
+            const index = itemIndexOf(row.key, row.index);
+            if (index !== undefined) layout(index);
+        }
         /* Any other row the caller already holds at this width is exact for
            the price of a lookup, nearest the reader first. */
         const cachedRowSize = props.cachedRowSize;
@@ -1525,7 +1551,7 @@ export function MessageList(props: MessageListProps) {
             ((index: number, width: number) =>
                 headerLeads && index === 0
                     ? headerSize(width)
-                    : cachedRowSize(index - headerOffset, width));
+                    : cachedRowSize(entryIndex(index), width));
         const lookupDeadline = performance.now() + ROW_CACHE_LOOKUP_MS;
         for (let distance = 1; cached && pending > 0; distance += 1) {
             const above = first - distance;
@@ -1840,7 +1866,10 @@ export function MessageList(props: MessageListProps) {
             // that row's end when the point lands in blank space or a changing
             // status footer, so only history owns the reader's fixed point.
             const keys = rowSizeModel.keys;
-            const index = keys.length - (keys.at(-1) === MESSAGE_LIST_FOOTER_KEY ? 2 : 1);
+            const index =
+                item?.key === MESSAGE_LIST_FOOTER_KEY
+                    ? item.index - 1
+                    : keys.length - (keys.at(-1) === MESSAGE_LIST_FOOTER_KEY ? 2 : 1);
             const tail = modeledItemAtIndex(index);
             if (tail) {
                 item = { ...tail, index, key: keys[index]! };
@@ -2011,7 +2040,7 @@ export function MessageList(props: MessageListProps) {
             if (props.prepareRowSize) {
                 const active = (refined.active ??= {
                     index,
-                    work: props.prepareRowSize(index - headerOffset, rowWidth),
+                    work: props.prepareRowSize(entryIndex(index), rowWidth),
                 });
                 do {
                     if (active.work.next().done) {
@@ -2455,8 +2484,11 @@ export function MessageList(props: MessageListProps) {
         const report = props.onVisibleRowsChange;
         if (!report) visibleRowsReported.current = undefined;
         if (!report || !range || viewportGeometry.current.height <= 0) return;
-        const first = range.startIndex - headerOffset;
-        const last = Math.min(range.endIndex, headerOffset + entryItems.length - 1) - headerOffset;
+        const first = entryIndex(range.startIndex);
+        const last = Math.min(
+            entryItems.length - 1,
+            entryIndex(range.endIndex) - (range.endIndex === footerIndex ? 1 : 0),
+        );
         const rows = entryItems.length;
         const reported = visibleRowsReported.current;
         // Rows arriving or leaving move what the indices name, so they report too.
@@ -2639,7 +2671,7 @@ export function MessageList(props: MessageListProps) {
                     changed += 1;
                 /* The row before the first change reads it as its successor. */
                 if (changed < shared || rows.length !== previous.rows.length)
-                    from = Math.max(0, headerOffset + changed - 1);
+                    from = Math.max(0, virtualIndex(changed) - 1);
             }
         }
         /* Before the first scrollport report there is no model to update; that
@@ -2718,6 +2750,7 @@ export function MessageList(props: MessageListProps) {
         };
         const onGeometryScrollIntent = () => {
             wheelDirection = 0;
+            wheelScrollPending.current = false;
             expectedScrollTop.current = undefined;
             overscanRequireCurrent.current();
         };
@@ -2731,6 +2764,7 @@ export function MessageList(props: MessageListProps) {
              * cannot pin them back to the tail before that scroll is reported.
              */
             if (event.deltaY < 0) {
+                wheelScrollPending.current = true;
                 geometryFollowInset.current = 0;
                 escapedFromFollow.current = true;
                 following.current = false;
@@ -2763,6 +2797,13 @@ export function MessageList(props: MessageListProps) {
         let previousScrollTop = element.scrollTop;
         scrollHeightBaseline.current = element.scrollHeight;
         const onScroll = () => {
+            if (wheelScrollPending.current) {
+                wheelScrollPending.current = false;
+                readerAnchor.current = modelAnchorCaptureCurrent.current(
+                    viewportGeometry.current.height,
+                    element.scrollTop,
+                );
+            }
             const currentScrollHeight = element.scrollHeight;
             const expected = expectedScrollTop.current;
             if (expected !== undefined && Math.abs(element.scrollTop - expected) <= 1) {
@@ -2837,6 +2878,7 @@ export function MessageList(props: MessageListProps) {
            read the next scroll event as the reader's. */
         const onKeyDown = () => {
             wheelDirection = 0;
+            wheelScrollPending.current = false;
             overscanRequireCurrent.current();
         };
         element.addEventListener("keydown", onKeyDown);

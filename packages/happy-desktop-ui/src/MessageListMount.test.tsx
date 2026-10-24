@@ -4,8 +4,88 @@ import { expect, it, vi } from "vitest";
 import "./styles.css";
 import { MessageList } from "./Message";
 import { createRenderer } from "./testing";
+import { messageTextLayoutCacheCreate, plainTextHeight } from "./messageTextLayout";
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+it("reuses exact mounted history layouts while the final row streams", async () => {
+    const view = createRenderer();
+    const textCache = messageTextLayoutCacheCreate();
+    const initial = Array.from({ length: 60 }, (_, index) => ({
+        id: index,
+        text: `History ${index}`,
+    }));
+    const heights = new Map(
+        initial.map((row) => [
+            row.id,
+            { text: row.text, height: plainTextHeight(row.text, 600, textCache) },
+        ]),
+    );
+    const layouts: number[] = [];
+    let stream!: (lines: number) => void;
+    function Harness() {
+        const [rows, update] = useState(initial);
+        stream = (lines) =>
+            flushSync(() =>
+                update((previous) => [
+                    ...previous.slice(0, -1),
+                    {
+                        id: 59,
+                        text: Array.from(
+                            { length: lines },
+                            (_, index) => `Live line ${index}`,
+                        ).join("\n"),
+                    },
+                ]),
+            );
+        return (
+            <div style={{ height: 360, width: 620 }}>
+                <MessageList
+                    virtualize
+                    estimateDependencies={[]}
+                    estimateRows={rows}
+                    cachedRowSize={(index) => {
+                        const row = rows[index]!;
+                        const hit = heights.get(row.id);
+                        return hit?.text === row.text ? hit.height : undefined;
+                    }}
+                    estimateRowSize={(index, width) => {
+                        const row = rows[index]!;
+                        const hit = heights.get(row.id);
+                        if (hit?.text === row.text) return hit.height;
+                        layouts.push(row.id);
+                        const height = plainTextHeight(row.text, width, textCache);
+                        heights.set(row.id, { text: row.text, height });
+                        return height;
+                    }}
+                >
+                    {rows.map((row) => (
+                        <div
+                            key={row.id}
+                            style={{ fontSize: 14, lineHeight: "24px", whiteSpace: "pre-wrap" }}
+                        >
+                            {row.text}
+                        </div>
+                    ))}
+                </MessageList>
+            </div>
+        );
+    }
+    view.render(Harness, { width: 1550, height: 1550 });
+    try {
+        await view.ready();
+        await nextFrame();
+        for (let lines = 2; lines <= 25; lines += 1) {
+            layouts.length = 0;
+            stream(lines);
+            await nextFrame();
+            await nextFrame();
+            expect(layouts, `Pretext layouts for streaming commit ${lines}`).toEqual([59]);
+        }
+    } finally {
+        view.destroy();
+    }
+});
 
 it.each(["cached", "prepared"])(
     "mounts %s offscreen rows one per idle commit without replacing or moving the viewport",

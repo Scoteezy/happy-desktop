@@ -192,10 +192,6 @@
  * applied, at which point it becomes an ordinary row in the transcript above.
  */
 .happy-conversation__queued {
-    display: flex;
-    flex: none;
-    flex-direction: column;
-    width: 100%;
     opacity: 0.62;
     transition: opacity 160ms ease;
 }
