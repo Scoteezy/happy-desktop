@@ -34,7 +34,8 @@ import { createRenderer } from "./testing";
  * Rows attached under other rows are carried in, out and between rows too: a
  * random sideways path picks the level wherever both are open, the row lands
  * at the level it was let go of at, and its name never moves sideways after
- * the drop unless the move is put back; no other row's name ever does.
+ * the drop unless the move is put back; no other row's name ever does. A
+ * subtask's session under its row is carried too, and never leaves its row.
  */
 
 const GAP = 2;
@@ -101,6 +102,13 @@ const visibleIds = (items: readonly SidebarItem[]): string[] => {
 
 /* Whether the sidebar lets this row change parents: attachable, with nothing
    nested under it, at the top level or directly under a row. */
+/* The row a nested row stands under: the nearest one above it that is shallower. */
+const parentOf = (items: readonly SidebarItem[], id: string): string | null => {
+    const at = items.findIndex((item) => item.id === id);
+    for (let row = at - 1; row >= 0; row -= 1)
+        if (depthOf(items[row]) < depthOf(items[at])) return items[row]!.id;
+    return null;
+};
 const attaches = (items: readonly SidebarItem[], id: string): boolean => {
     const at = items.findIndex((item) => item.id === id);
     const item = items[at]!;
@@ -427,7 +435,9 @@ const chaos = async (seed: number, iterations: number) => {
 
     for (let iteration = 0; iteration < iterations; iteration += 1) {
         const outcome = pick<Outcome>(["confirm", "twice", "late", "async", "refuse", "decline"]);
-        const id = pick(visibleIds(shown));
+        const id =
+            next() < 0.15 && visibleIds(shown).includes("s1") ? "s1" : pick(visibleIds(shown));
+        const parentBefore = parentOf(shown, id);
         const slots = Math.floor(next() * 8) - 4 || 1;
         // A refusal puts back the document as the daemon has it, so every
         // earlier write is answered first.
@@ -570,6 +580,14 @@ const chaos = async (seed: number, iterations: number) => {
             landed,
             head.kind === "section" && head.collapsed === true,
         );
+        // A subtask's session stays under its own row, wherever it was carried.
+        if (!attaches(before, id) && depthOf(before.find((item) => item.id === id)) > 0) {
+            const parentAfter = parentOf(shown, id);
+            if (parentAfter !== parentBefore)
+                problems.push(
+                    `${id} left its row ${String(parentBefore)} for ${String(parentAfter)}`,
+                );
+        }
         if (Number(row(id)?.dataset.depth ?? 0) !== landedDepth)
             problems.push(
                 `${id} settled at level ${row(id)?.dataset.depth ?? "0"}, expected ${String(landedDepth)}`,
