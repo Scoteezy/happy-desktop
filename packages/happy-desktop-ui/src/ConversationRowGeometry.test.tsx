@@ -25,8 +25,9 @@ import {
     conversationTurnStatusAfterActivity,
     conversationTurnStatusStartsGroup,
 } from "./conversationMessageGrouped";
-import { MessageList } from "./Message";
+import { Message, MessageList } from "./Message";
 import {
+    markdownBodyHeight,
     messageTextLayoutFontGenerationGet,
     messageTextLayoutFontGenerationSubscribe,
 } from "./messageTextLayout";
@@ -55,6 +56,53 @@ const agent: ConversationAuthor = {
     kind: "agent",
     agentRole: "default",
 };
+
+it.each(["", "<!-- comment -->", "<span></span>"])(
+    "reserves one modeled line for empty ordered and unordered items: %j",
+    async (empty) => {
+        const view = createRenderer();
+        const texts = [`1. First\n\n2. ${empty}\n\n3. Next`, `- First\n\n- ${empty}\n\n- Next`];
+        try {
+            view.render(
+                () => (
+                    <>
+                        {texts.map((body, index) => (
+                            <Message agent author="Happy" body={body} key={index} />
+                        ))}
+                    </>
+                ),
+                { width: 560, height: 500 },
+            );
+            await view.ready();
+            await nextLayout();
+            const bodies = [
+                ...view.container.querySelectorAll<HTMLElement>(".happy-message__body--markdown"),
+            ];
+            expect(bodies).toHaveLength(2);
+            for (const [index, body] of bodies.entries()) {
+                const items = [...body.querySelectorAll<HTMLElement>("li")];
+                expect(items).toHaveLength(3);
+                const middle = items[1]!;
+                const contentHeight =
+                    middle.getBoundingClientRect().height -
+                    parseFloat(getComputedStyle(middle).paddingTop);
+                expect(Math.abs(contentHeight - 24)).toBeLessThanOrEqual(1 / 64);
+                const modeled = markdownBodyHeight(
+                    texts[index]!,
+                    body.getBoundingClientRect().width,
+                );
+                expect(Math.abs(body.getBoundingClientRect().height - modeled)).toBeLessThanOrEqual(
+                    1 / 64,
+                );
+                expect(
+                    items[2]!.getBoundingClientRect().top - middle.getBoundingClientRect().bottom,
+                ).toBeGreaterThanOrEqual(0);
+            }
+        } finally {
+            view.destroy();
+        }
+    },
+);
 
 function message(id: string, sender: "agent" | "human", text: string): ConversationMessageEntry {
     return {

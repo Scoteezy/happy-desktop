@@ -729,6 +729,13 @@
     line-height: 0;
 }
 
+/* Empty items and paragraphs left by skipped HTML need a real line baseline
+   as well as its height, so their marker cannot rise into the preceding item. */
+.happy-message__body--markdown li:empty::before,
+.happy-message__body--markdown li > p:empty::before {
+    content: "\00a0";
+}
+
 .happy-message__body--markdown li + li {
     margin-top: 0;
     padding-top: 6px;
