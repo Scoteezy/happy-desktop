@@ -8,6 +8,7 @@ import type {
     HappyAgentModelStore,
     HappyAgentPanelStore,
     HappyAgentSpacesStore,
+    HappyAgentStemCellsSettingsStore,
     HappyAgentWorkspaceStore,
 } from "happy-desktop-state";
 import { fakeHappyAgentDaemonCreate } from "happy-desktop-state/testing";
@@ -16,6 +17,8 @@ import {
     experimentsStoreCreate,
     happyAgentGroupAccessRefused,
     happyAgentSpacesStoreCreate,
+    happyAgentStemCellsSettingsStoreCreate,
+    HAPPY_AGENT_STEM_CELLS_SETTING,
     happyAgentHostNoop,
     happyAgentSettingsStoreCreate,
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
@@ -190,21 +193,30 @@ function spacesCreate() {
             calls.push(route);
             return answers[route]?.();
         };
+    const sync = {
+        async *follow({ signal }) {
+            yield { kind: "reconcile" as const };
+            await new Promise((resolve) => signal.addEventListener("abort", resolve));
+        },
+        health: () => undefined,
+    } satisfies import("happy-desktop-state").HappyAgentSync;
     const store = happyAgentSpacesStoreCreate({
         client: daemon.client,
-        sync: {
-            async *follow({ signal }) {
-                yield { kind: "reconcile" };
-                await new Promise((resolve) => signal.addEventListener("abort", resolve));
-            },
-            health: () => undefined,
-        },
+        sync,
+    });
+    const stemCellsSettings = happyAgentStemCellsSettingsStoreCreate({
+        client: daemon.client,
+        sync,
     });
     onTestFinished(() => store[Symbol.dispose]());
-    return { calls, store };
+    onTestFinished(() => stemCellsSettings[Symbol.dispose]());
+    return { calls, store, daemon, stemCellsSettings };
 }
 
-function directory(spaces: HappyAgentSpacesStore): AppHappyAgentDirectoryStore {
+function directory(
+    spaces: HappyAgentSpacesStore,
+    stemCellsSettings: HappyAgentStemCellsSettingsStore,
+): AppHappyAgentDirectoryStore {
     const snapshot: AppHappyAgentDirectorySnapshot = {
         happyAgents: [
             {
@@ -229,6 +241,7 @@ function directory(spaces: HappyAgentSpacesStore): AppHappyAgentDirectoryStore {
                     } as unknown as HappyAgentModelStore,
                     workspace: workspace(),
                     spaces,
+                    stemCellsSettings: () => stemCellsSettings,
                 },
                 status: "connected",
             },
@@ -248,10 +261,15 @@ async function windowOpen(address: string, spacesOn: boolean) {
     onTestFinished(() => router.history.destroy());
     const experiments = experimentsStoreCreate();
     experiments.featureUpdate("spacesSidebar", spacesOn);
-    experiments.featureUpdate("stemCells", spacesOn);
+    if (spacesOn)
+        await spaces.daemon.client.saveUserSetting(HAPPY_AGENT_STEM_CELLS_SETTING, {
+            value: true,
+            updatedAt: Date.now(),
+            mutationId: "stem-cells-fixture",
+        });
     const context: HappyAgentRouterContext = {
         appearance: appearanceStoreCreate({ mode: "light" }),
-        happyAgents: directory(spaces.store),
+        happyAgents: directory(spaces.store, spaces.stemCellsSettings),
         settings: happyAgentSettingsStoreCreate(),
         experiments,
     };

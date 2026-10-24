@@ -7,6 +7,7 @@ import {
     HappyAgentFileTierSettings,
     HappyAgentGeneralSettings,
     HappyAgentExperimentalSettings,
+    HappyAgentStemCellsSettings,
     HappyAgentInstructionsSettings,
     HappyAgentMobileSettings,
     HappyAgentProviderSettings,
@@ -719,12 +720,24 @@ export function HappyAgentSettingsBlueprintPage() {
                     <HappyAgentExperimentalSettings
                         features={[
                             { id: "spacesSidebar", label: "Spaces sidebar", enabled: true },
-                            { id: "stemCells", label: "Stem cells", enabled: true },
                             { id: "batchNotes", label: "Sidebar batch notes", enabled: false },
                             { id: "inbox", label: "Inbox", enabled: false },
                             { id: "voice", label: "Voice calls", enabled: false },
                         ]}
                         onFeatureChange={noop}
+                    />
+                    <HappyAgentStemCellsSettings
+                        connectionLabel="This Mac"
+                        status="ready"
+                        enabled={true}
+                        onEnabledChange={noop}
+                    />
+                    <HappyAgentStemCellsSettings
+                        connectionLabel="Team server"
+                        status="ready"
+                        enabled={false}
+                        saveError="Your preference could not be saved."
+                        onEnabledChange={noop}
                     />
                 </HappyAgentSettingsShell>
             </FullScreenSpecimen>

@@ -1,7 +1,6 @@
 /** Each unfinished feature is a separate choice, kept on this installation. */
 export const EXPERIMENTAL_FEATURES = [
     { id: "spacesSidebar", label: "Spaces sidebar" },
-    { id: "stemCells", label: "Stem cells" },
     { id: "batchNotes", label: "Sidebar batch notes" },
     { id: "inbox", label: "Inbox" },
     { id: "voice", label: "Voice calls" },
@@ -24,7 +23,6 @@ export interface ExperimentsStore {
 
 const DISABLED: ExperimentsSnapshot = {
     spacesSidebar: false,
-    stemCells: false,
     batchNotes: false,
     inbox: false,
     voice: false,
@@ -45,7 +43,6 @@ function documentParse(value: unknown): ExperimentsSnapshot {
         id in value ? Reflect.get(value, id) === true : legacy && LEGACY_SWITCH_FEATURES.has(id);
     return {
         spacesSidebar: enabled("spacesSidebar"),
-        stemCells: enabled("stemCells"),
         batchNotes: enabled("batchNotes"),
         inbox: enabled("inbox"),
         voice: enabled("voice"),

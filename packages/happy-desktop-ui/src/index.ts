@@ -884,6 +884,10 @@ export {
     type HappyAgentExperimentalSettingsProps,
 } from "./pages/settings/HappyAgentExperimentalSettings";
 export {
+    HappyAgentStemCellsSettings,
+    type HappyAgentStemCellsSettingsProps,
+} from "./pages/settings/HappyAgentStemCellsSettings";
+export {
     HappyAgentProductAnalyticsSettings,
     type HappyAgentProductAnalyticsSettingsProps,
 } from "./pages/settings/HappyAgentProductAnalyticsSettings";

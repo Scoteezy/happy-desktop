@@ -8,6 +8,7 @@ import type {
     HappyAgentModelStore,
     HappyAgentPanelStore,
     HappyAgentSpacesStore,
+    HappyAgentStemCellsSettingsStore,
     HappyAgentWorkspaceStore,
 } from "happy-desktop-state";
 import { fakeHappyAgentDaemonCreate } from "happy-desktop-state/testing";
@@ -17,6 +18,8 @@ import {
     HappyAgentApiError,
     happyAgentGroupAccessRefused,
     happyAgentSpacesStoreCreate,
+    happyAgentStemCellsSettingsStoreCreate,
+    HAPPY_AGENT_STEM_CELLS_SETTING,
     happyAgentHostNoop,
     happyAgentSettingsStoreCreate,
     HAPPY_AGENT_GROUP_UNLISTED_REFUSAL,
@@ -110,7 +113,10 @@ function daemonCreate() {
     return daemon;
 }
 
-function directory(spaces: HappyAgentSpacesStore): AppHappyAgentDirectoryStore {
+function directory(
+    spaces: HappyAgentSpacesStore,
+    stemCellsSettings: HappyAgentStemCellsSettingsStore,
+): AppHappyAgentDirectoryStore {
     const snapshot: AppHappyAgentDirectorySnapshot = {
         happyAgents: [
             {
@@ -135,6 +141,7 @@ function directory(spaces: HappyAgentSpacesStore): AppHappyAgentDirectoryStore {
                     } as unknown as HappyAgentModelStore,
                     workspace: workspace(),
                     spaces,
+                    stemCellsSettings: () => stemCellsSettings,
                 },
                 status: "connected",
             },
@@ -148,6 +155,22 @@ function directory(spaces: HappyAgentSpacesStore): AppHappyAgentDirectoryStore {
 }
 
 async function windowOpen(daemon: ReturnType<typeof daemonCreate>) {
+    await daemon.client.saveUserSetting(HAPPY_AGENT_STEM_CELLS_SETTING, {
+        value: true,
+        updatedAt: Date.now(),
+        mutationId: "stem-cells-fixture",
+    });
+    const stemCellsSettings = happyAgentStemCellsSettingsStoreCreate({
+        client: daemon.client,
+        sync: {
+            async *follow({ signal }) {
+                yield { kind: "reconcile" };
+                await new Promise((resolve) => signal.addEventListener("abort", resolve));
+            },
+            health: () => undefined,
+        },
+    });
+    onTestFinished(() => stemCellsSettings[Symbol.dispose]());
     const store = happyAgentSpacesStoreCreate({
         client: daemon.client,
         sync: {
@@ -169,10 +192,9 @@ async function windowOpen(daemon: ReturnType<typeof daemonCreate>) {
     onTestFinished(() => router.history.destroy());
     const experiments = experimentsStoreCreate();
     experiments.featureUpdate("spacesSidebar", true);
-    experiments.featureUpdate("stemCells", true);
     const context: HappyAgentRouterContext = {
         appearance: appearanceStoreCreate({ mode: "light" }),
-        happyAgents: directory(store),
+        happyAgents: directory(store, stemCellsSettings),
         settings: happyAgentSettingsStoreCreate(),
         experiments,
     };

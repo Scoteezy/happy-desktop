@@ -63,6 +63,10 @@ import {
     type HappyAgentSurfaceSettingsStore,
 } from "./happyAgentSurfaceSettingsStore.js";
 import {
+    happyAgentStemCellsSettingsStoreCreate,
+    type HappyAgentStemCellsSettingsStore,
+} from "./happyAgentStemCellsSettingsStore.js";
+import {
     happyAgentWorkspaceMemoryStoreCreate,
     type HappyAgentWorkspaceMemoryPersistence,
     type HappyAgentWorkspaceMemoryStore,
@@ -205,6 +209,8 @@ export interface HappyAgentWorkspaceClient {
     taskSettings(): HappyAgentTaskSettingsStore;
     /** The authenticated person's Surface autojoin preference, materialized on first access. */
     surfaceSettings(): HappyAgentSurfaceSettingsStore;
+    /** The authenticated person's Stem Cells preference, materialized on first access. */
+    stemCellsSettings(): HappyAgentStemCellsSettingsStore;
     /**
      * This Happy Agent's own machine-wide instructions, as one editable document.
      * Materialized on first access and shared, so the settings window and
@@ -572,6 +578,7 @@ export function happyAgentWorkspaceClientCreate(
     let voiceSettingsStore: HappyAgentVoiceSettingsStore | undefined;
     let taskSettingsStore: HappyAgentTaskSettingsStore | undefined;
     let surfaceSettingsStore: HappyAgentSurfaceSettingsStore | undefined;
+    let stemCellsSettingsStore: HappyAgentStemCellsSettingsStore | undefined;
     let instructionsStore: HappyAgentInstructionsStore | undefined;
     let securityPolicyStore: HappyAgentSecurityPolicyStore | undefined;
     let secretsStore: HappyAgentSecretsStore | undefined;
@@ -921,6 +928,14 @@ export function happyAgentWorkspaceClientCreate(
             });
             return surfaceSettingsStore;
         },
+        stemCellsSettings() {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            stemCellsSettingsStore ??= happyAgentStemCellsSettingsStoreCreate({
+                client: deps.client,
+                sync: deps.connection.sync,
+            });
+            return stemCellsSettingsStore;
+        },
         voiceSettings() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
             voiceSettingsStore ??= happyAgentVoiceSettingsStoreCreate({ client: deps.client });
@@ -1079,6 +1094,8 @@ export function happyAgentWorkspaceClientCreate(
             taskSettingsStore = undefined;
             surfaceSettingsStore?.[Symbol.dispose]();
             surfaceSettingsStore = undefined;
+            stemCellsSettingsStore?.[Symbol.dispose]();
+            stemCellsSettingsStore = undefined;
             instructionsStore?.[Symbol.dispose]();
             instructionsStore = undefined;
             securityPolicyStore?.[Symbol.dispose]();

@@ -38,6 +38,7 @@ import {
     happyAgentServiceName,
     happyAgentThinkingLabel,
     experimentsStoreNoop,
+    happyAgentStemCellsSettingsStoreNoop,
     projectsVisibilityStoreNoop,
     stemCellAnimationStoreNoop,
     gptLiveStoreNoop,
@@ -68,6 +69,7 @@ import {
     HappyAgentAccountSettings,
     HappyAgentGeneralSettings,
     HappyAgentExperimentalSettings,
+    HappyAgentStemCellsSettings,
     HappyAgentDebugLogPanel,
     HappyAgentDebugSettings,
     HappyAgentFileTierSettings,
@@ -697,30 +699,38 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
             sidebarWidth={props.sidebarVisibility?.get().width}
         >
             {section === "experimental" ? (
-                <HappyAgentExperimentalSettings
-                    features={EXPERIMENTAL_FEATURES.flatMap((feature) => [
-                        { ...feature, enabled: experiments[feature.id] },
-                        // How stem cells become their icons, beside the
-                        // experiment that brings stem cells.
-                        ...(feature.id === "stemCells" && props.stemCellAnimation
-                            ? [
-                                  {
-                                      id: STEM_CELL_ANIMATION_SETTING,
-                                      label: "Animate new work’s icon",
-                                      enabled: stemCellAnimation.stemCellAnimationEnabled,
-                                  },
-                              ]
-                            : []),
-                    ])}
-                    onFeatureChange={(id, enabled) => {
-                        if (id === STEM_CELL_ANIMATION_SETTING) {
-                            stemCellAnimationStore.stemCellAnimationUpdate(enabled);
-                            return;
-                        }
-                        const feature = EXPERIMENTAL_FEATURES.find((feature) => feature.id === id);
-                        if (feature) experimentsStore.featureUpdate(feature.id, enabled);
-                    }}
-                />
+                <>
+                    <HappyAgentExperimentalSettings
+                        features={[
+                            ...EXPERIMENTAL_FEATURES.map((feature) => ({
+                                ...feature,
+                                enabled: experiments[feature.id],
+                            })),
+                            ...(props.stemCellAnimation
+                                ? [
+                                      {
+                                          id: STEM_CELL_ANIMATION_SETTING,
+                                          label: "Animate new work’s icon",
+                                          enabled: stemCellAnimation.stemCellAnimationEnabled,
+                                      },
+                                  ]
+                                : []),
+                        ]}
+                        onFeatureChange={(id, enabled) => {
+                            if (id === STEM_CELL_ANIMATION_SETTING) {
+                                stemCellAnimationStore.stemCellAnimationUpdate(enabled);
+                                return;
+                            }
+                            const feature = EXPERIMENTAL_FEATURES.find(
+                                (feature) => feature.id === id,
+                            );
+                            if (feature) experimentsStore.featureUpdate(feature.id, enabled);
+                        }}
+                    />
+                    {directory.happyAgents.map((entry) => (
+                        <AppHappyAgentStemCellsSettings key={entry.id} entry={entry} />
+                    ))}
+                </>
             ) : section === "voice" ? (
                 props.gptLive ? (
                     <>
@@ -1399,6 +1409,41 @@ const SECURITY_POLICY_PATH = "~/Happy/Config/SECURITY.md";
 const noSubscribe = () => () => undefined;
 const autoJoinSettingsLoading: HappyAgentTaskSettingsSnapshot = { status: "loading" };
 const autoJoinSettingsUnloaded = () => autoJoinSettingsLoading;
+
+/** Settings is window-wide, but each connection edits only its authenticated person's choice. */
+function AppHappyAgentStemCellsSettings(props: { readonly entry: AppHappyAgentEntry }) {
+    const { entry } = props;
+    const store = entry.session?.stemCellsSettings?.() ?? happyAgentStemCellsSettingsStoreNoop;
+    const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const availability = entry.session
+        ? happyAgentAvailabilityProject(entry.session.connection.get(), true, {
+              status: entry.status,
+              ...(entry.message === undefined ? {} : { message: entry.message }),
+          })
+        : undefined;
+    const unavailable =
+        availability?.online === false
+            ? (availability.refusal ?? availability.message)
+            : !entry.session
+              ? "This connection is unavailable."
+              : snapshot.status === "ready" && !snapshot.online
+                ? "Reconnecting to this connection’s user settings."
+                : undefined;
+    return (
+        <HappyAgentStemCellsSettings
+            connectionLabel={entry.label}
+            status={snapshot.status}
+            enabled={snapshot.status === "ready" && snapshot.stemCellsEnabled}
+            saving={snapshot.status === "ready" && snapshot.saving}
+            error={snapshot.status !== "unsupported" ? snapshot.error?.message : undefined}
+            saveError={snapshot.status === "ready" ? snapshot.saveError?.message : undefined}
+            unavailable={unavailable}
+            onEnabledChange={(enabled) => {
+                if (availability?.online) store.stemCellsUpdate(enabled);
+            }}
+        />
+    );
+}
 
 /** Each connection owns one preference store and one coarse subscription while this page is open. */
 function AppHappyAgentAutoJoinSettings(props: {

@@ -18,6 +18,7 @@ export * from "./appearance/customTheme.js";
 export * from "./keepAwake/keepAwakeStore.js";
 export * from "./commandPalette/commandPaletteStore.js";
 export * from "./experiments/experimentsStore.js";
+export * from "./happyAgent/happyAgentStemCellsSettingsStore.js";
 export * from "./projectsVisibility/projectsVisibilityStore.js";
 export * from "./stemCellAnimation/stemCellAnimationStore.js";
 export * from "./statusBar/statusBarStore.js";

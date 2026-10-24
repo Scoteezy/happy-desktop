@@ -157,6 +157,7 @@ import {
     happyAgentArtifactSourceLabel,
     commandPaletteStoreNoop,
     experimentsStoreNoop,
+    happyAgentStemCellsSettingsStoreNoop,
     projectsVisibilityStoreNoop,
     stemCellAnimationStoreNoop,
     happyAgentVersionAtLeast,
@@ -615,6 +616,7 @@ export interface AppHappyAgentSession {
     readonly taskSettings?: () => import("happy-desktop-state").HappyAgentTaskSettingsStore;
     /** This connection's authenticated person's Surface membership preference. */
     readonly surfaceSettings?: () => import("happy-desktop-state").HappyAgentSurfaceSettingsStore;
+    readonly stemCellsSettings?: () => import("happy-desktop-state").HappyAgentStemCellsSettingsStore;
     /** This Happy Agent's machine-wide instructions, as the settings window edits them. */
     readonly instructions?: HappyAgentInstructionsStore;
     /** This Happy Agent's machine-wide permission-review policy. */
@@ -3389,6 +3391,19 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         directory.happyAgents[0] ??
         undefined;
     const viewerId = happyAgentOwnerAuthor.id;
+    const stemCellsSettingsStore =
+        active?.session?.stemCellsSettings?.() ?? happyAgentStemCellsSettingsStoreNoop;
+    const stemCellsSettings = useSyncExternalStore(
+        stemCellsSettingsStore.subscribe,
+        stemCellsSettingsStore.get,
+        stemCellsSettingsStore.get,
+    );
+    // Creation waits for the daemon to acknowledge an opt-in. Turning it off
+    // withholds creation immediately, including while the clear is in flight.
+    const stemCellsEnabled =
+        stemCellsSettings.status === "ready" &&
+        stemCellsSettings.stemCellsEnabled &&
+        !stemCellsSettings.saving;
     const activeAvailability = active ? happyAgentEntryAvailability(active) : undefined;
     const addressedProject =
         active && props.groupId ? rowOwnerFind(active.projects, props.groupId)?.project : undefined;
@@ -3683,7 +3698,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
     // click itself on a daemon that takes the window's names for them, where
     // the first message waits for the daemon; otherwise once it has made them.
     const makeStuff = (): void => {
-        if (!experimental.stemCells || !active || !activeHappyAgentOnline()) return;
+        if (!stemCellsEnabled || !active || !activeHappyAgentOnline()) return;
         // New work lands right below Happy's row, wherever the reader keeps it.
         const happySpace = [...spaces.spaces.values()].find((space) =>
             happyAgentSpaceHappyIs(space, spacesPlaces),
@@ -3776,7 +3791,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                       }
                     : {})}
                 {...(sidebarSearchRow ? { search: sidebarSearchRow } : {})}
-                {...(experimental.stemCells
+                {...(stemCellsEnabled
                     ? {
                           create: {
                               label: "Create",
@@ -4787,7 +4802,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                           },
                       }
                     : {})}
-                {...(spacesSidebar && experimental.stemCells
+                {...(spacesSidebar && stemCellsEnabled
                     ? {
                           sidebarCollapsedAction: {
                               label: "New work (⌘N or ⌘T)",
@@ -4829,7 +4844,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 the reader is, as the Tasks heading's + makes one. Bound only
                 while the machine on screen can make one, so an older Happy
                 Agent leaves the chord to do nothing at all. */}
-            {spacesSidebar && experimental.stemCells ? (
+            {spacesSidebar && stemCellsEnabled ? (
                 <WindowShortcuts
                     actions={[
                         { run: () => makeStuff(), shortcut: APP_SHORTCUTS.taskCreate },
