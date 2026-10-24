@@ -99,6 +99,12 @@ export type ConversationLeadingHeader = {
     readonly content: ReactNode;
     /** Computed from the block's own data, like every row's height; never measured. */
     readonly height: (width: number) => number;
+    /**
+     * Where the first entry lands, from the block's top: the line that rests
+     * at the height a send is lifted to, so the first send takes the same
+     * slot as every later one.
+     */
+    readonly lift: (width: number) => number;
 };
 export type ConversationViewProps = {
     /**
@@ -187,9 +193,9 @@ export type ConversationViewProps = {
     /**
      * A fixed block that opens the transcript as its first row, such as new
      * work's mark and the line under it. With one, an empty conversation is
-     * this row alone rather than `emptyContent`: it rests where the empty
-     * state would centre it, and the first message lands right under it
-     * without anything on screen moving.
+     * this row alone rather than `emptyContent`: it rests with its lift line
+     * at the height a send is lifted to, and the first message lands on that
+     * line without anything above it moving.
      */
     leadingHeader?: ConversationLeadingHeader;
     /** Agent identity shown when a tool/activity row opens a turn before prose exists. */
@@ -1120,6 +1126,7 @@ export function ConversationView(props: ConversationViewProps) {
                             ? {
                                   header: props.leadingHeader.content,
                                   headerHeight: props.leadingHeader.height,
+                                  headerLift: props.leadingHeader.lift,
                               }
                             : {})}
                         footerHeight={(width) =>

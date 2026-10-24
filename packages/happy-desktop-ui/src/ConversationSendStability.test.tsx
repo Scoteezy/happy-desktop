@@ -6,6 +6,7 @@ import type { ComposerSnapshot, ConversationAuthor, ConversationEntry } from "ha
 import "./styles.css";
 import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
+import { SEND_LIFT_TOP } from "./Message";
 import { createRenderer } from "./testing";
 
 const reader: ConversationAuthor = {
@@ -199,7 +200,7 @@ function renderConversation(count: number, withShell = false) {
 }
 
 it.each([0, 40])(
-    "lifts a send 30 percent down the viewport with %i preceding messages",
+    "lifts a send to SEND_LIFT_TOP down the viewport with %i preceding messages",
     async (count) => {
         const { view, send } = renderConversation(count);
         await view.ready();
@@ -220,11 +221,11 @@ it.each([0, 40])(
             expect(sent.top).toBeGreaterThan(bounds.top + bounds.height / 2);
             expect(bounds.bottom - sent.bottom).toBe(24);
         } else {
-            // Its top edge sits 30% down, the previous turn in view above it and
+            // Its top edge sits SEND_LIFT_TOP down, the previous turn in view above it and
             // the space below held for the reply.
-            expect(Math.abs(sent.top - bounds.top - Math.round(bounds.height * 0.3))).toBeLessThan(
-                1,
-            );
+            expect(
+                Math.abs(sent.top - bounds.top - Math.round(bounds.height * SEND_LIFT_TOP)),
+            ).toBeLessThan(1);
             expect(bounds.bottom - sent.bottom).toBeGreaterThan(bounds.height / 3);
         }
         expect(view.container.querySelector(".happy-message-list__tail")).toBeNull();
@@ -360,7 +361,9 @@ it.each([2, 40])(
             .getBoundingClientRect();
         // A send never lands below where it would sit lifted, and the space it
         // stands in never shrinks while it is in view.
-        expect(sent.top - bounds.top).toBeLessThanOrEqual(Math.round(bounds.height * 0.3) + 1);
+        expect(sent.top - bounds.top).toBeLessThanOrEqual(
+            Math.round(bounds.height * SEND_LIFT_TOP) + 1,
+        );
         expect(Number.parseFloat(content.style.minHeight || "0")).toBeGreaterThanOrEqual(
             Number.parseFloat(extent),
         );

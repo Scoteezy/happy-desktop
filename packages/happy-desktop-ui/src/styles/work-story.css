@@ -129,14 +129,21 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 16px;
     min-height: 0;
     padding: 16px;
 }
 
-/* Begun work keeps the block's size with only its mark showing. */
-.happy-make-stuff__empty[data-settled] > :not(:first-child) {
-    visibility: hidden;
+/* Begun work: the first message lands right under the line, where the options began. */
+.happy-make-stuff__empty[data-settled] {
+    padding-bottom: 0;
+}
+
+.happy-make-stuff__lead {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
 }
 
 .happy-make-stuff__image-mark {
@@ -146,21 +153,30 @@
     height: 64px;
 }
 
-.happy-make-stuff__explanation {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.happy-make-stuff__line,
+.happy-make-stuff__caption {
+    margin: 0;
     color: var(--text);
     font-size: 14px;
     line-height: 20px;
     text-align: center;
 }
 
-.happy-make-stuff__explanation p {
-    margin: 0;
+/* The line keeps its place once the work has begun, so the mark stays put. */
+.happy-make-stuff__empty[data-settled] .happy-make-stuff__line {
+    visibility: hidden;
 }
 
-.happy-make-stuff__explanation p + p {
+.happy-make-stuff__offer {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    padding-top: 4px;
+}
+
+.happy-make-stuff__caption {
     color: var(--text-secondary);
 }
 

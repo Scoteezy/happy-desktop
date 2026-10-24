@@ -22,7 +22,10 @@ A good chat with an AI follows a few principles:
   the viewport: the turn before it stays in view and the reply has the rest.
   The space under it is added in that same frame. No animation, no pin to the
   top edge. A send made while the agent is still working, or while scrolled up
-  into history, moves nothing.
+  into history, moves nothing. New work's first send lands on that same line:
+  its empty chat rests the intro so that the mark and its line sit above the
+  lift line and the create options begin on it, and the first message takes the
+  options' place there while the mark and its line stay where they are.
 - **Returning to a chat is invisible.** A chat opened again is where it was
   left: following the bottom if the reader was following it, holding the same
   row if they had scrolled up, with whatever arrived meanwhile already in
@@ -75,6 +78,9 @@ column for every kind of row.
   viewport in the frame that first shows it, the turn before it is visible
   above, and nothing moves until the reply fills the space below and the
   transcript follows the bottom again — also after scrolling away and back.
+- New work's first send lands, in place of the intro's options, with its top
+  edge at the same height as a later send's lifted top edge, within half a
+  pixel, and the intro's mark does not move.
 - The live status line's loader, clock, separator, and phase share one
   baseline.
 - Switching away from a chat that keeps streaming and back to it shows it, in

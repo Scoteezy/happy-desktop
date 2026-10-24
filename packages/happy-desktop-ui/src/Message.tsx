@@ -780,14 +780,21 @@ export type MessageListProps = {
      * A row at the start of the list's content, above the oldest message. Like
      * the footer it is part of the virtualized row collection with a reserved
      * stable key, so it scrolls, anchors, and reconciles as the transcript's
-     * first row. While the rows fit the scrollport the list rests this one
-     * where it would sit centred in the scrollport, and the rows after it fill
-     * in below it rather than lifting it; once they no longer fit, the list
-     * scrolls as it always does.
+     * first row. While the rows fit the scrollport the list rests it with its
+     * `headerLift` line at the height a send is lifted to, and the rows after
+     * it fill in below it rather than lifting it; once they no longer fit, the
+     * list scrolls as it always does.
      */
     header?: ReactNode;
     /** Height model supplied to the virtualizer for the header row. It is asked on every commit. */
     headerHeight?: number | ((width: number) => number);
+    /**
+     * How far below the header's top the row after it begins once there is
+     * one: the line the header rests at the send lift height, so the first
+     * send lands exactly where every later send is lifted to. Defaults to the
+     * header's height.
+     */
+    headerLift?: number | ((width: number) => number);
     /**
      * A row at the end of the list's content, below the last message. It is
      * part of the virtualized row collection with a reserved stable key, not an
@@ -810,7 +817,7 @@ export type MessageListProps = {
     footerFollowed?: boolean;
     /**
      * The row key of the reader's newest send. When it changes while the
-     * reader follows the bottom, that row is lifted to 30% down the viewport
+     * reader follows the bottom, that row is lifted to `SEND_LIFT_TOP` down the viewport
      * and the space below it is held for the reply: the content extent grows in
      * the same commit and is removed only once the reply fills it or it is
      * entirely off screen. The key present at mount is history and never lifts.
@@ -931,7 +938,7 @@ const MESSAGE_LIST_PADDING_START = 12;
  * its top: high enough to leave room for the reply, low enough that the turns
  * before it stay in view.
  */
-const SEND_LIFT_TOP = 0.3;
+export const SEND_LIFT_TOP = 0.3;
 const MESSAGE_LIST_PADDING_END_DEFAULT = 8;
 /** Model-space point kept stable near a parked reader's lower viewport edge. */
 const VIRTUAL_ANCHOR_INSET = 32;
@@ -1250,9 +1257,11 @@ export function MessageList(props: MessageListProps) {
                   ? props.footerHeight(rowWidth)
                   : (props.footerHeight ?? ROW_SIZE_FALLBACK)
               : (props.estimateRowSize?.(index - headerOffset, rowWidth) ?? ROW_SIZE_FALLBACK);
+    /** Where a send's top edge is lifted to, from the viewport's top edge. */
+    const sendLiftLine = (viewportHeight: number) => Math.round(viewportHeight * SEND_LIFT_TOP);
     /**
-     * Rests the header centred in the scrollport while the rows fit it: the
-     * spacer above it grows into the free space up to that point and no
+     * Rests the header's lift line at the send lift height while the rows fit:
+     * the spacer above it grows into the free space up to that point and no
      * further, so rows added below take the space under it first.
      */
     const headerRestApply = () => {
@@ -1263,8 +1272,14 @@ export function MessageList(props: MessageListProps) {
             element.style.removeProperty("max-height");
             return;
         }
-        const size = headerSize(messageListRowWidth(width, estimateRowWidth));
-        element.style.maxHeight = `${String(Math.max(0, (height - size) / 2 - MESSAGE_LIST_PADDING_START))}px`;
+        const rowWidth = messageListRowWidth(width, estimateRowWidth);
+        const lift =
+            props.headerLift === undefined
+                ? headerSize(rowWidth)
+                : typeof props.headerLift === "function"
+                  ? props.headerLift(rowWidth)
+                  : props.headerLift;
+        element.style.maxHeight = `${String(Math.max(0, sendLiftLine(height) - MESSAGE_LIST_PADDING_START - lift))}px`;
     };
     /*
      * This model is the only row-geometry authority. TanStack reads it to build
@@ -1642,7 +1657,7 @@ export function MessageList(props: MessageListProps) {
             scrollTopWrite(element, top - inset);
         }
     }
-    /** Lifts the reader's send to 30% down the viewport and holds the space under it, in this commit. */
+    /** Lifts the reader's send to `SEND_LIFT_TOP` down the viewport and holds the space under it, in this commit. */
     function sendLift(element: HTMLElement, key: string) {
         const [keyed] = Children.toArray([<Fragment key={key} />]);
         const childKey = isValidElement(keyed) ? keyed.key : undefined;
@@ -1654,13 +1669,14 @@ export function MessageList(props: MessageListProps) {
         }
         const start = index === undefined ? undefined : rowSizeModel.starts[index];
         if (start === undefined) return;
-        /* The first message under a header lands right below it: the header
-           stays where the empty conversation showed it. */
-        if (headerLeads && index === headerOffset) return;
+        /* A resting header's gap is held from the first send on, so the rows
+           that follow fill the space under it instead of lifting it. The
+           header rests with its lift line at the lift height, so the first
+           send is already there. */
         const inset = headerLeads ? headerRestGap() : geometrySparseInset.current;
-        const top = inset + start - Math.round(viewportGeometry.current.height * SEND_LIFT_TOP);
-        if (top <= element.scrollTop) return;
         if (headerLeads) headerRestHold(inset);
+        const top = inset + start - sendLiftLine(viewportGeometry.current.height);
+        if (top <= element.scrollTop) return;
         geometryExtentRequire(top, viewportGeometry.current.height);
         geometryFollowInset.current = 0;
         scrollTopWrite(element, top);

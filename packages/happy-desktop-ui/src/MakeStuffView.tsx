@@ -36,8 +36,9 @@ export type MakeStuffIntroProps = {
      */
     imageMark?: ImageMark;
     /**
-     * The conversation has begun: only the mark is shown. Everything under it
-     * keeps its place, hidden, so the block stays the size it was.
+     * The conversation has begun: the mark stays where it was, its line keeps
+     * its place hidden, and the kinds of thing to make give way to the first
+     * message, which lands where they began.
      */
     settled?: boolean;
     /** Things that can be made at once, offered under the line; the chat stays. */
@@ -49,12 +50,12 @@ export type MakeStuffIntroProps = {
 
 const INTRO_LINE = "Say what it is — it’ll find its place.";
 const INTRO_OPTIONS_LINE = "Or start one of these:";
-/** `.happy-make-stuff__empty`: 16px padding and 16px between the mark, the lines, and the options. */
+/** `.happy-make-stuff__empty`: 16px padding, and 16px between the mark, its line, and the options. */
 const INTRO_INSET = 16;
 const INTRO_MARK = 64;
-/** `.happy-make-stuff__explanation`: 14/20 lines, 4px apart. */
+/** `.happy-make-stuff__line` and the options' caption: 14/20, the caption 4px under the line. */
 const INTRO_LINE_HEIGHT = 20;
-const INTRO_LINE_GAP = 4;
+const INTRO_CAPTION_GAP = 4;
 /** `.happy-make-stuff__options`: wraps at 480px, 8px across and between lines. */
 const INTRO_OPTIONS_MEASURE = 480;
 const INTRO_OPTIONS_GAP = 8;
@@ -62,17 +63,31 @@ const INTRO_OPTIONS_GAP = 8;
 const INTRO_OPTION_CHROME = 22 + 14 + 6;
 const INTRO_OPTION_HEIGHT = 28;
 
+/**
+ * Where the options begin, from the intro's top: under the mark and its line.
+ * The intro rests with this line at the height a send is lifted to, and the
+ * first message takes the options' place on it.
+ */
+export function makeStuffIntroLift(width: number): number {
+    const measure = Math.max(0, width - INTRO_INSET * 2);
+    return (
+        INTRO_INSET +
+        INTRO_MARK +
+        INTRO_INSET +
+        uiTextHeight(INTRO_LINE, 14, INTRO_LINE_HEIGHT, measure)
+    );
+}
+
 /** The intro's height at a row `width`, from its own content, as the transcript's first row. */
 export function makeStuffIntroHeight(
-    props: Pick<MakeStuffIntroProps, "options">,
+    props: Pick<MakeStuffIntroProps, "options" | "settled">,
     width: number,
 ): number {
-    const measure = Math.max(0, width - INTRO_INSET * 2);
+    const lift = makeStuffIntroLift(width);
+    if (props.settled) return lift;
     const options = props.options ?? [];
-    let height = INTRO_INSET + INTRO_MARK + INTRO_INSET;
-    height += uiTextHeight(INTRO_LINE, 14, INTRO_LINE_HEIGHT, measure);
-    if (options.length === 0) return height + INTRO_INSET;
-    height += INTRO_LINE_GAP + uiTextHeight(INTRO_OPTIONS_LINE, 14, INTRO_LINE_HEIGHT, measure);
+    if (options.length === 0) return lift + INTRO_INSET;
+    const measure = Math.max(0, width - INTRO_INSET * 2);
     /* The options wrap as flex does: each joins the line while it fits. */
     const line = Math.min(INTRO_OPTIONS_MEASURE, measure);
     let lines = 0;
@@ -85,7 +100,9 @@ export function makeStuffIntroHeight(
         } else used += INTRO_OPTIONS_GAP + button;
     }
     return (
-        height +
+        lift +
+        INTRO_CAPTION_GAP +
+        uiTextHeight(INTRO_OPTIONS_LINE, 14, INTRO_LINE_HEIGHT, measure) +
         INTRO_INSET +
         lines * INTRO_OPTION_HEIGHT +
         (lines - 1) * INTRO_OPTIONS_GAP +
@@ -98,49 +115,54 @@ export function makeStuffIntroHeader(props: MakeStuffIntroProps): ConversationLe
     return {
         content: <MakeStuffIntro {...props} />,
         height: (width) => makeStuffIntroHeight(props, width),
+        lift: makeStuffIntroLift,
     };
 }
 
 /**
  * C-302 — new work before its first message: its stem cell, one short line,
  * and the kinds of thing it can be made as straight away. Once the work has a
- * conversation, the same block opens its transcript with only the mark shown.
+ * conversation, the same block opens its transcript: the mark stays, and the
+ * first message takes the options' place.
  */
 export function MakeStuffIntro(props: MakeStuffIntroProps) {
+    const options = props.settled ? [] : (props.options ?? []);
     return (
         <div
             className="happy-make-stuff__empty"
             data-happy-desktop-ui="make-stuff-intro"
             data-settled={props.settled ? "" : undefined}
         >
-            <StemCellGrowth
-                imageClassName="happy-make-stuff__image-mark"
-                size={64}
-                {...(props.imageMark
-                    ? { imageMark: props.imageMark }
-                    : { stemCell: { id: props.id } })}
-                {...(props.softwareRendering ? { softwareRendering: true } : {})}
-            />
-            <div className="happy-make-stuff__explanation">
-                <p>{INTRO_LINE}</p>
-                {props.options?.length ? <p>{INTRO_OPTIONS_LINE}</p> : null}
+            <div className="happy-make-stuff__lead">
+                <StemCellGrowth
+                    imageClassName="happy-make-stuff__image-mark"
+                    size={64}
+                    {...(props.imageMark
+                        ? { imageMark: props.imageMark }
+                        : { stemCell: { id: props.id } })}
+                    {...(props.softwareRendering ? { softwareRendering: true } : {})}
+                />
+                <p className="happy-make-stuff__line">{INTRO_LINE}</p>
             </div>
-            {props.options?.length ? (
-                <div
-                    className="happy-make-stuff__options"
-                    data-happy-desktop-ui="make-stuff-options"
-                >
-                    {props.options.map((option) => (
-                        <Button
-                            icon={option.icon}
-                            key={option.id}
-                            onClick={() => props.onOptionSelect?.(option.id)}
-                            size="small"
-                            variant="secondary"
-                        >
-                            {option.label}
-                        </Button>
-                    ))}
+            {options.length > 0 ? (
+                <div className="happy-make-stuff__offer" data-happy-desktop-ui="make-stuff-offer">
+                    <p className="happy-make-stuff__caption">{INTRO_OPTIONS_LINE}</p>
+                    <div
+                        className="happy-make-stuff__options"
+                        data-happy-desktop-ui="make-stuff-options"
+                    >
+                        {options.map((option) => (
+                            <Button
+                                icon={option.icon}
+                                key={option.id}
+                                onClick={() => props.onOptionSelect?.(option.id)}
+                                size="small"
+                                variant="secondary"
+                            >
+                                {option.label}
+                            </Button>
+                        ))}
+                    </div>
                 </div>
             ) : null}
         </div>

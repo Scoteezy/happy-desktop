@@ -1016,6 +1016,7 @@ export {
     MakeStuffView,
     makeStuffIntroHeader,
     makeStuffIntroHeight,
+    makeStuffIntroLift,
     type MakeStuffIntroProps,
     type MakeStuffOption,
     type MakeStuffStage,
