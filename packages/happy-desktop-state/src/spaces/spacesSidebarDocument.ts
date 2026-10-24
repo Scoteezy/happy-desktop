@@ -17,8 +17,12 @@
  *       <happy-space id="sAndroid"/>
  *     </nav>
  *
- * A top-level `happy-space` names a space; a nested one names a session by its
- * agent. A `happy-widget` is a row of markup Prioritizing wrote, drawn isolated.
+ * A top-level `happy-space` names a space. A nested one names either a session
+ * of the conversation it stands under, by its agent, or an attachment: another
+ * of the person's spaces, by its space ID, which then stands only there. The
+ * document does not say which; the daemon's list of spaces does, so the window
+ * reads a nested ID it finds there as that space and any other as a session.
+ * A `happy-widget` is a row of markup Prioritizing wrote, drawn isolated.
  * The daemon validates every write; the window validates again before it draws
  * anything, because the document is Prioritizing's to write and a window must
  * never render what it was not promised. It is read with the one parser the
@@ -42,7 +46,10 @@ import {
  */
 export type SidebarDocumentFoldRibbon = "hover" | "always";
 
-/** A session shown under its parent's agent, by its agent ID. */
+/**
+ * A node nested under a row or session: a session shown under its parent's
+ * agent, by its agent ID, or a space attached there, by its space ID.
+ */
 export interface SidebarDocumentSession {
     readonly kind: "session";
     readonly id: string;
@@ -332,6 +339,194 @@ export function sidebarDocumentFold(
         return node;
     });
     return { ...view, items: childrenReplace(view.items, siblings.parent, nodes) };
+}
+
+/** The node named by `key`, with the siblings it stands among. */
+function nodeLocate(
+    items: readonly SidebarDocumentItem[],
+    key: string,
+):
+    | {
+          readonly parent: string | null;
+          readonly nodes: readonly SidebarDocumentNode[];
+          readonly node: SidebarDocumentNode;
+      }
+    | undefined {
+    const siblings = siblingsOf(items, key);
+    const node = siblings?.nodes.find((candidate) => sidebarDocumentKey(candidate) === key);
+    return siblings && node ? { ...siblings, node } : undefined;
+}
+
+/** Whether `key` names `node` or anything nested under it. */
+function nodeHolds(node: SidebarDocumentNode, key: string): boolean {
+    if (sidebarDocumentKey(node) === key) return true;
+    return (
+        (node.kind === "space" || node.kind === "session") &&
+        node.children.some((child) => nodeHolds(child, key))
+    );
+}
+
+/**
+ * Sets a row or attachment down under another parent: under the node
+ * `parentKey`, after its nested node `afterKey` or first, or for `null` at the
+ * top level, after the item `afterKey` or first. It carries whatever is nested
+ * under it. A node set down under a row opens that row, so it stays in sight;
+ * one landing after a folded section lands after its run. Among its own
+ * siblings it is an ordinary move. `undefined` when the place names nothing
+ * the node can stand in.
+ *
+ * Only an attachment changes parents: the caller never carries a session out
+ * of the conversation it belongs to, which the daemon refuses anyway.
+ */
+export function sidebarDocumentPlace(
+    view: SidebarDocumentView,
+    key: string,
+    parentKey: string | null,
+    afterKey: string | null,
+): SidebarDocumentView | undefined {
+    const from = nodeLocate(view.items, key);
+    if (!from) return undefined;
+    if (from.parent === parentKey) return sidebarDocumentMove(view, key, afterKey);
+    const node = from.node;
+    if (node.kind !== "space" && node.kind !== "session") return undefined;
+    if (parentKey !== null && nodeHolds(node, parentKey)) return undefined;
+    const fields = {
+        id: node.id,
+        expanded: node.expanded,
+        ...(node.foldRibbon ? { foldRibbon: node.foldRibbon } : {}),
+        children: node.children,
+    };
+    const lifted = childrenReplace(
+        view.items,
+        from.parent,
+        from.nodes.filter((candidate) => candidate !== node),
+    );
+    if (parentKey === null) {
+        let at = 0;
+        if (afterKey !== null) {
+            const after = lifted.findIndex((item) => sidebarDocumentKey(item) === afterKey);
+            if (after < 0) return undefined;
+            at = runEnd(lifted, after);
+        }
+        const item: SidebarDocumentItem = { kind: "space", ...fields };
+        return { ...view, items: [...lifted.slice(0, at), item, ...lifted.slice(at)] };
+    }
+    const host = nodeLocate(lifted, parentKey);
+    if (!host || (host.node.kind !== "space" && host.node.kind !== "session")) return undefined;
+    const parent = host.node;
+    let at = 0;
+    if (afterKey !== null) {
+        const after = parent.children.findIndex((child) => sidebarDocumentKey(child) === afterKey);
+        if (after < 0) return undefined;
+        at = after + 1;
+    }
+    const nested: SidebarDocumentSession = { kind: "session", ...fields };
+    const opened = {
+        ...parent,
+        expanded: true,
+        children: [...parent.children.slice(0, at), nested, ...parent.children.slice(at)],
+    };
+    return {
+        ...view,
+        items: childrenReplace(
+            lifted,
+            host.parent,
+            host.nodes.map((candidate) => (candidate === parent ? opened : candidate)),
+        ),
+    };
+}
+
+/** A conversation's sessions as they nest, by agent ID. */
+export interface SidebarDocumentSessionTree {
+    readonly id: string;
+    readonly children: readonly SidebarDocumentSessionTree[];
+}
+
+/**
+ * Shows every session of the row or session `key`: each one the document does
+ * not hold yet joins its parent's nested nodes, after the ones already there,
+ * and every node a session joined under opens. A session the document holds
+ * stays where it stands. `undefined` when every session is already shown.
+ */
+export function sidebarDocumentSessionsReveal(
+    view: SidebarDocumentView,
+    key: string,
+    sessions: readonly SidebarDocumentSessionTree[],
+): SidebarDocumentView | undefined {
+    const located = nodeLocate(view.items, key);
+    if (!located || (located.node.kind !== "space" && located.node.kind !== "session"))
+        return undefined;
+    const held = new Set<string>();
+    const hold = (node: SidebarDocumentNode): void => {
+        if (node.kind !== "space" && node.kind !== "session") return;
+        held.add(node.id);
+        node.children.forEach(hold);
+    };
+    view.items.forEach(hold);
+    // The same node back when nothing joined anywhere under it.
+    const reveal = <Node extends Parent>(
+        node: Node,
+        wanted: readonly SidebarDocumentSessionTree[],
+    ): Node => {
+        let grew = false;
+        const children = node.children.map((child) => {
+            const tree = wanted.find((session) => session.id === child.id);
+            const next = tree ? reveal(child, tree.children) : child;
+            if (next !== child) grew = true;
+            return next;
+        });
+        const added = wanted
+            .filter((session) => !held.has(session.id))
+            .map((session) => {
+                held.add(session.id);
+                return reveal<SidebarDocumentSession>(
+                    { kind: "session", id: session.id, expanded: false, children: [] },
+                    session.children,
+                );
+            });
+        if (!grew && added.length === 0) return node;
+        return { ...node, expanded: true, children: [...children, ...added] };
+    };
+    const revealed = reveal(located.node, sessions);
+    if (revealed === located.node) return undefined;
+    return {
+        ...view,
+        items: childrenReplace(
+            view.items,
+            located.parent,
+            located.nodes.map((candidate) => (candidate === located.node ? revealed : candidate)),
+        ),
+    };
+}
+
+/**
+ * Takes every session out from under the row or session `key`, leaving what
+ * is attached there; an attachment that stood under one of those sessions
+ * stays under `key`, where the session stood. `attached` tells an attachment's
+ * space ID from a session's agent ID. `undefined` when no session is shown.
+ */
+export function sidebarDocumentSessionsHide(
+    view: SidebarDocumentView,
+    key: string,
+    attached: (id: string) => boolean,
+): SidebarDocumentView | undefined {
+    const located = nodeLocate(view.items, key);
+    if (!located || (located.node.kind !== "space" && located.node.kind !== "session"))
+        return undefined;
+    const node = located.node;
+    const kept = (nodes: readonly SidebarDocumentSession[]): readonly SidebarDocumentSession[] =>
+        nodes.flatMap((child) => (attached(child.id) ? [child] : kept(child.children)));
+    const children = kept(node.children);
+    if (node.children.every((child) => attached(child.id))) return undefined;
+    const hidden = { ...node, children };
+    return {
+        ...view,
+        items: childrenReplace(
+            view.items,
+            located.parent,
+            located.nodes.map((candidate) => (candidate === node ? hidden : candidate)),
+        ),
+    };
 }
 
 /**

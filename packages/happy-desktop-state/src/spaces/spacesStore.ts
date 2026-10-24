@@ -137,15 +137,24 @@ export interface HappyAgentSpacesSidebarDocument {
     readonly agentIcons: ReadonlyMap<string, HappyAgentSpaceIcon>;
     /** The daemon's untouched mirror of the classic sidebar, before any write. */
     readonly seed: boolean;
+    /**
+     * Whether a row may hold another of the person's spaces nested under it.
+     * Without it the daemon refuses such a write, so none is offered.
+     */
+    readonly attachments: boolean;
 }
 
-function sidebarOf(answer: SpaceSidebarResponse): HappyAgentSpacesSidebarDocument {
+function sidebarOf(
+    answer: SpaceSidebarResponse,
+    attachments: boolean,
+): HappyAgentSpacesSidebarDocument {
     return {
         artifactId: answer.artifactId,
         version: answer.version,
         html: answer.html,
         agentIcons: new Map(Object.entries(answer.agentIcons ?? {})),
         seed: answer.seed === true,
+        attachments,
     };
 }
 
@@ -457,6 +466,9 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     /** A daemon that takes edits as operations by node ID and announces each version. */
     const sidebarOperational = (): boolean =>
         deps.sync.health()?.capabilities?.sidebarOperations === true;
+    /** A daemon whose rows may hold the person's other spaces. */
+    const sidebarAttaching = (): boolean =>
+        deps.sync.health()?.capabilities?.sidebarAttachments === true;
     /** The held document with every unconfirmed edit and new work still being made on top. */
     const sidebarShown = (): string | undefined => {
         if (sidebarHeld === undefined) return undefined;
@@ -524,7 +536,12 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 if (current && current.version > answer.version) return;
                 if (current?.version === answer.version && current.html === answer.html) return;
                 sidebarHeld = { version: answer.version, html: answer.html };
-                publish({ sidebar: { ...sidebarOf(answer), html: sidebarShown() ?? answer.html } });
+                publish({
+                    sidebar: {
+                        ...sidebarOf(answer, sidebarAttaching()),
+                        html: sidebarShown() ?? answer.html,
+                    },
+                });
                 seedAdopt();
             })
             .catch(() => undefined);
@@ -1229,7 +1246,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     sidebarHeld = { version: answer.version, html: answer.html };
                     if (disposed) return;
                     const latest = snapshot.sidebar;
-                    const written = sidebarOf(answer);
+                    const written = sidebarOf(answer, sidebarAttaching());
                     publish({
                         sidebar: {
                             ...written,

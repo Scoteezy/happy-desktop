@@ -180,7 +180,14 @@ it("selects and opens a nested session at any depth, and the worktree it runs in
         ...props,
         snapshot: {
             ...props.snapshot,
-            sidebar: { artifactId: "a", version: 1, html, agentIcons: new Map(), seed: false },
+            sidebar: {
+                artifactId: "a",
+                version: 1,
+                html,
+                agentIcons: new Map(),
+                seed: false,
+                attachments: false,
+            },
         },
         sessionRow: (agentId) => ({
             id: agentId,

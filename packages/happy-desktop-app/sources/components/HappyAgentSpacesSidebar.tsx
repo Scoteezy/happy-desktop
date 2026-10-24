@@ -5,10 +5,14 @@ import {
     sidebarDocumentFold,
     sidebarDocumentKey,
     sidebarDocumentMove,
+    sidebarDocumentPlace,
+    sidebarDocumentSessionsHide,
+    sidebarDocumentSessionsReveal,
     sidebarDocumentView,
     type SidebarDocumentClassic,
     type SidebarDocumentItem,
     type SidebarDocumentSession,
+    type SidebarDocumentSessionTree,
     type SidebarDocumentView,
     type HappyAgentBot,
     type HappyAgentSpace,
@@ -29,6 +33,7 @@ import {
     makeStuffIntroHeader,
     Sidebar,
     type ConversationLeadingHeader,
+    type IconName,
     type KeyboardShortcut,
     type MakeStuffOption,
     type MenuItem,
@@ -49,6 +54,8 @@ export interface HappyAgentSpacesPlaces {
     readonly tasks: readonly HappyAgentTask[];
     /** The workspace one of the reader's project chats runs in. */
     readonly chatGroupOf: (agentId: string) => string | undefined;
+    /** The glyph of what a Surface is, from the catalog that lists it; absent until it does. */
+    readonly surfaceIcon?: (surfaceId: string) => IconName | undefined;
 }
 
 /** What the window is showing, so the matching row is the selected one. */
@@ -124,6 +131,8 @@ const MENU_SIDEBAR = "sidebar";
 const MENU_ASIDE = "aside";
 const MENU_DISCARD = "discard";
 const MENU_RENAME = "rename";
+const MENU_SUBTASKS_SHOW = "subtasks-show";
+const MENU_SUBTASKS_HIDE = "subtasks-hide";
 /** The one list every item stands in: the sidebar has no sections of its own. */
 const LIST = "spaces";
 /** Rows the window draws under a node, which the document does not name. */
@@ -239,14 +248,9 @@ export function happyAgentSpaceMark(
         targetBot(space.target, places)?.avatar ?? targetTask(space.target, places)?.owner?.avatar;
     if (face) return { imageUrl: face.url };
     if (space.title === null) return { stemCell: { id: space.id } };
-    return {
-        icon:
-            space.target.kind === "bot"
-                ? "agents"
-                : space.target.kind === "surface"
-                  ? "doc"
-                  : "tasks",
-    };
+    if (space.target.kind === "surface")
+        return { icon: places.surfaceIcon?.(space.target.id) ?? "doc" };
+    return { icon: space.target.kind === "task" ? "tasks" : "agents" };
 }
 
 /** The picture Prioritizing chose for a session, for its row and its tab. */
@@ -362,7 +366,20 @@ function spaceMenu(
                 { kind: "separator" },
                 { kind: "item", id: MENU_LEAVE, label: "Leave", icon: "close" },
             ];
+        // Prioritizing's own conversation is the window's to keep.
+        case "agent":
+            return [open];
     }
+}
+
+/** A conversation's subtasks as the sessions the document may show under it. */
+function sessionTreeOf(
+    subtasks: HappyAgentTask["subtasks"],
+): readonly SidebarDocumentSessionTree[] {
+    return subtasks.map((subtask) => ({
+        id: subtask.conversation.id,
+        children: sessionTreeOf(subtask.subtasks),
+    }));
 }
 
 /** The acts a row's menu reaches beyond opening it. */
@@ -503,6 +520,11 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         (own ?? view.foldRibbon) === "always" ? { foldReveal: "always" as const } : {};
     /** The document node each drawn row stands for, or the one a worktree follows. */
     const anchorOf = new Map<string, string | null>();
+    // Rows carry other spaces in and out of rows only where the daemon keeps
+    // them there; a session always stays under the conversation it belongs to.
+    const attaching = editable && sidebarDoc.attachments;
+    /** Whether a nested ID names one of the person's spaces rather than a session. */
+    const attached = (id: string): boolean => snapshot.spaces.has(id as HappyAgentSpaceId);
     // A node's own row, then — open or shut, the fold decides what shows —
     // its sessions and the worktrees its agent made.
     const nested = (
@@ -513,6 +535,32 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         const rows: SidebarItem[] = [];
         let last: string | null = null;
         for (const session of sessions) {
+            const space = snapshot.spaces.get(session.id as HappyAgentSpaceId);
+            if (space !== undefined) {
+                // An attachment: the space's own row, under the same ID it has
+                // at the top level, so carrying it in or out keeps the row.
+                const key = sidebarDocumentKey(session);
+                const id = `space:${space.id}`;
+                anchorOf.set(id, key);
+                last = key;
+                const children = nested(spaceAgentId(space), session.children, depth + 1);
+                rows.push(
+                    {
+                        ...spaceRow(
+                            space,
+                            places,
+                            props.titleShimmerEnabled,
+                            props.stemCellAnimation,
+                        ),
+                        depth,
+                        ...foldReveal(session.foldRibbon),
+                        ...(children.length > 0 ? { collapsed: !session.expanded } : {}),
+                        ...(attaching ? { attachable: true } : {}),
+                    },
+                    ...children,
+                );
+                continue;
+            }
             const row = props.sessionRow(session.id);
             if (row === undefined) continue;
             const key = sidebarDocumentKey(session);
@@ -600,6 +648,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 // A space this window does not know yet draws nothing until it does.
                 if (space === undefined) return [];
                 const children = nested(spaceAgentId(space), item.children, 1);
+                const happy = happyAgentSpaceHappyIs(space, places);
                 return [
                     {
                         ...spaceRow(
@@ -609,12 +658,18 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                             props.stemCellAnimation,
                         ),
                         // A tidy's note lands in Happy, which says so until it is read.
-                        ...(snapshot.noteUnread && happyAgentSpaceHappyIs(space, places)
-                            ? { unread: true }
-                            : {}),
+                        ...(snapshot.noteUnread && happy ? { unread: true } : {}),
                         ...foldReveal(item.foldRibbon),
                         ...(children.length > 0 ? { collapsed: !item.expanded } : {}),
                         ...(editable ? {} : { reorderable: false }),
+                        // Happy's row stays the window's own: it neither goes
+                        // under another row nor takes one under it.
+                        ...(attaching && !happy ? { attachable: true } : {}),
+                        ...(attaching &&
+                        !happy &&
+                        (space.target.kind === "task" || space.target.kind === "bot")
+                            ? { attachTarget: true }
+                            : {}),
                     },
                     ...children,
                 ];
@@ -632,6 +687,38 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         id.startsWith("space:")
             ? snapshot.spaces.get(id.slice("space:".length) as HappyAgentSpaceId)
             : undefined;
+    /** The sessions a space's conversation has, as its subtasks nest. */
+    const subtasksOf = (space: HappyAgentSpace): readonly SidebarDocumentSessionTree[] =>
+        sessionTreeOf(
+            (targetTask(space.target, places) ?? targetBot(space.target, places))?.subtasks ?? [],
+        );
+    /** Show subtasks where some are not drawn, Hide subtasks where some are. */
+    const subtasksMenu = (id: string, space: HappyAgentSpace): MenuItem[] => {
+        const key = anchorOf.get(id);
+        if (!editable || !key) return [];
+        return [
+            ...(sidebarDocumentSessionsReveal(view, key, subtasksOf(space))
+                ? [
+                      {
+                          kind: "item" as const,
+                          id: MENU_SUBTASKS_SHOW,
+                          label: "Show subtasks",
+                          icon: "eye" as const,
+                      },
+                  ]
+                : []),
+            ...(sidebarDocumentSessionsHide(view, key, attached)
+                ? [
+                      {
+                          kind: "item" as const,
+                          id: MENU_SUBTASKS_HIDE,
+                          label: "Hide subtasks",
+                          icon: "eye-off" as const,
+                      },
+                  ]
+                : []),
+        ];
+    };
     const open = (id: string) => {
         if (id === "search") return props.search?.onOpen();
         if (id === "create") return props.create?.onOpen();
@@ -738,19 +825,23 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 const space = spaceOf(item.id);
                 if (space === undefined) return [];
                 const agentId = spaceAgentId(space);
-                const menu: MenuItem[] =
-                    agentId !== undefined && props.onChatAside
+                const own = spaceMenu(space, places, props.actions);
+                // Opening comes first, then what the row shows under it.
+                const menu: MenuItem[] = [
+                    ...own.slice(0, 1),
+                    ...(agentId !== undefined && props.onChatAside
                         ? [
-                              ...spaceMenu(space, places, props.actions).slice(0, 1),
                               {
-                                  kind: "item",
+                                  kind: "item" as const,
                                   id: MENU_ASIDE,
                                   label: "Open in side panel",
-                                  icon: "panel-expand",
+                                  icon: "panel-expand" as const,
                               },
-                              ...spaceMenu(space, places, props.actions).slice(1),
                           ]
-                        : spaceMenu(space, places, props.actions);
+                        : []),
+                    ...subtasksMenu(item.id, space),
+                    ...own.slice(1),
+                ];
                 // The sidebar document is Happy's to show, from Happy's row.
                 return sidebarDoc && props.onSidebarOpen && happyAgentSpaceHappyIs(space, places)
                     ? [
@@ -798,7 +889,19 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 const target = space.target;
                 if (actionId === MENU_OPEN) open(item.id);
                 else if (actionId === MENU_TIDY) props.store.tidyRequest();
-                else if (actionId === MENU_ASIDE) {
+                else if (actionId === MENU_SUBTASKS_SHOW) {
+                    const key = anchorOf.get(item.id);
+                    if (key)
+                        documentEdit((current) =>
+                            sidebarDocumentSessionsReveal(current, key, subtasksOf(space)),
+                        );
+                } else if (actionId === MENU_SUBTASKS_HIDE) {
+                    const key = anchorOf.get(item.id);
+                    if (key)
+                        documentEdit((current) =>
+                            sidebarDocumentSessionsHide(current, key, attached),
+                        );
+                } else if (actionId === MENU_ASIDE) {
                     const agentId = spaceAgentId(space);
                     if (agentId !== undefined)
                         props.onChatAside?.(agentId, happyAgentSpaceLabel(space));
@@ -816,22 +919,29 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             }}
             // A move is an edit of the document: a node after one of its own
             // siblings, or first among them. A worktree is the window's, so a
-            // node landing after one lands after the session it follows.
+            // node landing after one lands after the session it follows. A
+            // space may change parents — set down under a row, taken back out,
+            // or moved to another row; a session never does.
             {...(editable
                 ? {
                       onItemReorder: (
                           _list: string,
-                          move: { id: string; afterId: string | null },
-                      ) =>
+                          move: { id: string; afterId: string | null; parentId?: string },
+                      ) => {
+                          const key = anchorOf.get(move.id);
+                          if (!key) return;
+                          const afterKey =
+                              move.afterId === null ? null : (anchorOf.get(move.afterId) ?? null);
+                          const parentKey =
+                              move.parentId === undefined
+                                  ? null
+                                  : (anchorOf.get(move.parentId) ?? undefined);
                           documentEdit((current) =>
-                              sidebarDocumentMove(
-                                  current,
-                                  move.id,
-                                  move.afterId === null
-                                      ? null
-                                      : (anchorOf.get(move.afterId) ?? null),
-                              ),
-                          ),
+                              attaching && spaceOf(move.id) !== undefined && parentKey !== undefined
+                                  ? sidebarDocumentPlace(current, key, parentKey, afterKey)
+                                  : sidebarDocumentMove(current, key, afterKey),
+                          );
+                      },
                   }
                 : {})}
             sections={[{ id: LIST, items }]}

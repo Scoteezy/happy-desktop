@@ -3658,6 +3658,10 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         bots: active?.bots ?? [],
         tasks: active?.tasks ?? NO_TASKS,
         chatGroupOf: (agentId) => chatGroupFind(active?.projects ?? NO_PROJECTS, agentId),
+        surfaceIcon: (surfaceId) => {
+            const surface = surfaceCatalog.surfaces.find((entry) => entry.id === surfaceId);
+            return surface ? surfaceTypeIcon(surface.type) : undefined;
+        },
     };
     const spacesProjects = active ? happyAgentSidebarTree(active).projects : [];
     const spacesNavigation: HappyAgentSpacesNavigation | undefined = active
