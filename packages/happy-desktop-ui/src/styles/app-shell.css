@@ -231,6 +231,7 @@
 }
 
 .happy-desktop-app-shell__sidebar-controls > button,
+.happy-desktop-app-shell__sidebar-controls > .happy-tooltip > button,
 .happy-desktop-app-shell__panel-toggle {
     box-sizing: border-box;
     display: flex;
@@ -251,15 +252,34 @@
 }
 
 .happy-desktop-app-shell__sidebar-controls > button:hover,
+.happy-desktop-app-shell__sidebar-controls > .happy-tooltip > button:hover,
 .happy-desktop-app-shell__panel-toggle:hover {
     background: var(--happy-hover-fill);
     color: var(--text);
 }
 
 .happy-desktop-app-shell__sidebar-controls > button:focus-visible,
+.happy-desktop-app-shell__sidebar-controls > .happy-tooltip > button:focus-visible,
 .happy-desktop-app-shell__panel-toggle:focus-visible {
     outline: 2px solid var(--surface-selected);
     outline-offset: 1px;
+}
+
+/* The toggle's bubble and its held-Command chord both hang under the toggle
+   itself, never under the controls' lane, which spans the sidebar. */
+.happy-desktop-app-shell__sidebar-tip {
+    flex: none;
+}
+
+.happy-desktop-app-shell__sidebar-toggle {
+    position: relative;
+}
+
+/* While Command is held the chord stands alone; the bubble would repeat it. */
+.happy-desktop-app-shell[data-shortcut-hints]
+    .happy-desktop-app-shell__sidebar-tip
+    > .happy-tooltip__bubble {
+    opacity: 0;
 }
 
 .happy-desktop-app-shell__sidebar-controls[data-collapsed] {

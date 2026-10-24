@@ -123,6 +123,24 @@
     transition-delay: 0ms;
 }
 
+/* Starting at the trigger's leading edge instead: the bubble keeps its rise
+   and only drops the half-width shift, so it never reaches past that edge. */
+.happy-tooltip__bubble[data-align="start"][data-placement="top"] {
+    left: 0;
+    transform: translateY(var(--happy-tooltip-rise));
+}
+
+.happy-tooltip__bubble[data-align="start"][data-placement="bottom"] {
+    left: 0;
+    transform: translateY(calc(-1 * var(--happy-tooltip-rise)));
+}
+
+.happy-tooltip:hover > .happy-tooltip__bubble[data-align="start"],
+.happy-tooltip:has(:focus-visible) > .happy-tooltip__bubble[data-align="start"],
+.happy-tooltip[data-open] > .happy-tooltip__bubble[data-align="start"] {
+    transform: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .happy-tooltip__bubble {
         --happy-tooltip-fade: 0s;

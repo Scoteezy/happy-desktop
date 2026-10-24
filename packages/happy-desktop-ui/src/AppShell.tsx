@@ -19,6 +19,7 @@ import {
     commandShortcutMatches,
     windowShortcutBlocked,
 } from "./keyboardShortcut";
+import { Tooltip } from "./Tooltip";
 import { WindowOverlayHostContext } from "./WindowOverlay";
 export type AppShellProps = Omit<HTMLAttributes<HTMLDivElement>, "style"> & {
     children: ReactNode;
@@ -785,37 +786,46 @@ export function AppShell(props: AppShellProps) {
             )}
         </div>
     ) : null;
+    const sidebarToggleLabel = sidebarHidden
+        ? (local.sidebarExpandLabel ?? "Show sidebar")
+        : (local.sidebarCollapseLabel ?? "Hide sidebar");
     const sidebarControls = sidebarTravel ? (
         <div
             className="happy-desktop-app-shell__sidebar-controls"
             data-collapsed={sidebarHidden ? "" : undefined}
             data-happy-desktop-ui="app-shell-sidebar-controls"
         >
-            <button
-                aria-label={
-                    sidebarHidden
-                        ? (local.sidebarExpandLabel ?? "Show sidebar")
-                        : (local.sidebarCollapseLabel ?? "Hide sidebar")
-                }
-                aria-keyshortcuts={shortcutHintsInteractive ? SIDEBAR_SHORTCUT.aria : undefined}
-                aria-pressed={!sidebarHidden}
-                className="happy-desktop-app-shell__sidebar-toggle"
-                data-happy-desktop-ui={
-                    sidebarHidden ? "app-shell-reveal-button" : "app-shell-sidebar-collapse"
-                }
-                data-shortcut-hint={shortcutHintsEnabled ? "" : undefined}
-                onClick={() => setSidebarCollapsed(!sidebarHidden)}
-                type="button"
+            {/* Hovered, the toggle says what it does and its chord in one
+                bubble hanging from it, never past the window's edge; held
+                Command shows the chord alone, under the same button. */}
+            <Tooltip
+                align="start"
+                className="happy-desktop-app-shell__sidebar-tip"
+                label={sidebarToggleLabel}
+                placement="bottom"
+                shortcut={shortcutHintsEnabled ? SIDEBAR_SHORTCUT : undefined}
             >
-                <Icon name={sidebarHidden ? "sidebar-expand" : "sidebar-collapse"} size={16} />
-                {shortcutHintsEnabled ? (
-                    <KeyCap
-                        className="happy-shortcut-hint--floating"
-                        decorative
-                        keys={SIDEBAR_SHORTCUT.caps}
-                    />
-                ) : null}
-            </button>
+                <button
+                    aria-label={sidebarToggleLabel}
+                    aria-keyshortcuts={shortcutHintsInteractive ? SIDEBAR_SHORTCUT.aria : undefined}
+                    aria-pressed={!sidebarHidden}
+                    className="happy-desktop-app-shell__sidebar-toggle"
+                    data-happy-desktop-ui={
+                        sidebarHidden ? "app-shell-reveal-button" : "app-shell-sidebar-collapse"
+                    }
+                    onClick={() => setSidebarCollapsed(!sidebarHidden)}
+                    type="button"
+                >
+                    <Icon name={sidebarHidden ? "sidebar-expand" : "sidebar-collapse"} size={16} />
+                    {shortcutHintsEnabled ? (
+                        <KeyCap
+                            className="happy-shortcut-hint--floating"
+                            decorative
+                            keys={SIDEBAR_SHORTCUT.caps}
+                        />
+                    ) : null}
+                </button>
+            </Tooltip>
             {local.sidebarCollapsedAction && (sidebarHidden || !local.sidebarOwnsCreate) ? (
                 <button
                     aria-label={local.sidebarCollapsedAction.label}

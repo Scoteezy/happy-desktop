@@ -85,6 +85,30 @@ export function TooltipPage() {
                     <DimensionRule label="640 px transcript measure · bubble anchored to the label" />
                 </div>
             </Specimen>
+
+            <Specimen
+                detail="A trigger at the window's leading edge, such as the sidebar toggle in full screen, starts its bubble at its own leading edge, so the bubble never runs off the window."
+                label="Start alignment"
+                number="04"
+                stage="surface"
+            >
+                <div style={{ display: "flex", flexDirection: "column", gap: "48px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "64px" }}>
+                        <Tooltip
+                            align="start"
+                            label="Hide sidebar"
+                            open
+                            placement="bottom"
+                            shortcut={{ aria: "Meta+B", caps: "⌘B" }}
+                        >
+                            <Button size="small" variant="secondary">
+                                Start
+                            </Button>
+                        </Tooltip>
+                    </div>
+                    <DimensionRule label="bubble starts at the trigger's leading edge · 4 px clear below it" />
+                </div>
+            </Specimen>
         </ComponentPage>
     );
 }
