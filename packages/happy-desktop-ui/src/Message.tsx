@@ -1100,6 +1100,9 @@ export function MessageList(props: MessageListProps) {
     const liftSeen = useRef(props.liftKey);
     /* A send following just acquired, whose start must stay in view. */
     const followSentPending = useRef<string | undefined>(undefined);
+    /* The row count while following holds the end back for a send. Any row
+       arriving, the reply first of all, releases the hold. */
+    const followSentHold = useRef<number | undefined>(undefined);
     const followSeen = useRef(props.followKey);
     const wheelScrollPending = useRef(false);
     footerFollowed.current = props.footerFollowed === true;
@@ -1770,6 +1773,7 @@ export function MessageList(props: MessageListProps) {
         const withheld = end - start - Math.max(height, size);
         if (withheld <= geometryFollowInset.current) return;
         geometryFollowInset.current = withheld;
+        followSentHold.current = items.length;
         /* The end was followed past the send before it was held back. */
         scrollTopWrite(element, geometrySparseInset.current + end - height - withheld);
     }
@@ -2680,6 +2684,10 @@ export function MessageList(props: MessageListProps) {
                 scrollTopWrite(element, top);
             }
             if (lift !== undefined) sendLift(element, lift);
+            if (followSentHold.current !== undefined && followSentHold.current !== items.length) {
+                followSentHold.current = undefined;
+                geometryFollowInset.current = 0;
+            }
             const followed = followSentPending.current;
             followSentPending.current = undefined;
             if (followed !== undefined) sentStartKeep(element, followed);
