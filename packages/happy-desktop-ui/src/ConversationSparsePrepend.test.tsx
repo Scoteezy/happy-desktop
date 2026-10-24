@@ -15,7 +15,7 @@ import {
 import "./styles.css";
 import { ConversationView } from "./ConversationView";
 import { ConversationDock } from "./ConversationDock";
-import { createRenderer } from "./testing";
+import { createRenderer, pageViewport } from "./testing";
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 async function frames() {
     await frame();
@@ -154,8 +154,7 @@ it.skipIf(server.browser !== "chromium").each([0, 2])(
         }
         const metrics = (scale: number) =>
             cdp().send("Emulation.setDeviceMetricsOverride", {
-                width: 1550,
-                height: 1550,
+                ...pageViewport(),
                 deviceScaleFactor: initialDpr * scale,
                 mobile: false,
             });

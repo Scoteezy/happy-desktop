@@ -10,7 +10,7 @@ import {
 } from "happy-desktop-state";
 import "./styles.css";
 import { ConversationView } from "./ConversationView";
-import { createRenderer } from "./testing";
+import { createRenderer, pageViewport } from "./testing";
 
 const catalog = {
     defaultModelId: "model",
@@ -66,8 +66,7 @@ async function frames() {
 const pageZoom = server.browser === "chromium";
 async function pageZoomSet(baseScale: number, zoom: number) {
     await cdp().send("Emulation.setDeviceMetricsOverride", {
-        width: 1550,
-        height: 1550,
+        ...pageViewport(),
         deviceScaleFactor: baseScale * zoom,
         mobile: false,
     });

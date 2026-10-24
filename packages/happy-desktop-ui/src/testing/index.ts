@@ -151,6 +151,20 @@ export function assertParallelRoundedCorners(root: ParentNode) {
         throw new Error(`Nested rounded-corner contract failed:\n${failures.join("\n")}`);
     }
 }
+/*
+ * The test page's own viewport, read before a test overrides device metrics.
+ * A page-zoom override must keep this size: a smaller one leaves the frame's
+ * right and bottom edges, and the renderer's pointer park pinned there, outside
+ * the viewport for every later test in the file.
+ */
+const PAGE_VIEWPORT = {
+    width: window.top?.innerWidth ?? innerWidth,
+    height: window.top?.innerHeight ?? innerHeight,
+} as const;
+/** The viewport size every device-metrics override in a test must keep. */
+export function pageViewport(): { readonly width: number; readonly height: number } {
+    return PAGE_VIEWPORT;
+}
 export function createRenderer(defaultOptions?: RendererOptions) {
     const renderer = createPlaywrightRenderer<ReactNode | (() => ReactNode)>(
         (component, surface) => {

@@ -15,7 +15,7 @@ import "./styles.css";
 import { ConversationView } from "./ConversationView";
 import { ConversationDock } from "./ConversationDock";
 import { RetainedViews } from "./RetainedViews";
-import { createRenderer } from "./testing";
+import { createRenderer, pageViewport } from "./testing";
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 async function frames() {
@@ -164,8 +164,7 @@ for (const mode of ["zoom", "panel"] as const) {
             }
             const metrics = (scale: number) =>
                 cdp().send("Emulation.setDeviceMetricsOverride", {
-                    width: 1550,
-                    height: 1550,
+                    ...pageViewport(),
                     deviceScaleFactor: initialDpr * scale,
                     mobile: false,
                 });

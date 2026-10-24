@@ -12,7 +12,7 @@ import "./styles.css";
 import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import { SEND_LIFT_TOP } from "./Message";
-import { createRenderer } from "./testing";
+import { createRenderer, pageViewport } from "./testing";
 import type { ConversationSwitchSource } from "./conversationSwitchTargets";
 
 const reader: ConversationAuthor = {
@@ -103,8 +103,7 @@ const frames = async () => {
 };
 async function pageZoomMetrics(baseScale: number, zoom: number) {
     await cdp().send("Emulation.setDeviceMetricsOverride", {
-        width: 1550,
-        height: 1550,
+        ...pageViewport(),
         deviceScaleFactor: baseScale * zoom,
         mobile: false,
     });
