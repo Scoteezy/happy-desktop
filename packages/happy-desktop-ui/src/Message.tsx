@@ -1081,6 +1081,8 @@ export function MessageList(props: MessageListProps) {
     const viewportGeometry = useRef({ height: 0, width: 0 });
     const viewportScale = useRef(0);
     const geometryPlacementPending = useRef(false);
+    /* The rows the last commit mounted, by key with the index each had there. */
+    const mountedRows = useRef<readonly { readonly key: Key; readonly index: number }[]>([]);
     const viewportGeometryCommitCurrent = useRef((_width: number, _height: number) => {});
     const pendingViewportGeometry = useRef<{ width: number; height: number } | undefined>(
         undefined,
@@ -1506,6 +1508,15 @@ export function MessageList(props: MessageListProps) {
         }
         for (let index = Math.max(0, first); index <= Math.min(count - 1, last); index += 1)
             layout(index);
+        /* A new width leaves the rows already mounted around the viewport at
+           estimates, yet they stay painted at their real height. One short by
+           an estimate overlaps the rows below it, into the viewport, until
+           idle refinement reaches it. They are a handful, so lay them out now. */
+        if (widthReflow)
+            for (const row of mountedRows.current) {
+                const index = itemIndexOf(row.key, row.index);
+                if (index !== undefined) layout(index);
+            }
         /* Any other row the caller already holds at this width is exact for
            the price of a lookup, nearest the reader first. */
         const cachedRowSize = props.cachedRowSize;
@@ -2502,6 +2513,7 @@ export function MessageList(props: MessageListProps) {
         markdownTablesSolve();
         overscanRequireCurrent.current = overscanRequire;
         mountedKeys.current = new Set(virtualItems.map((item) => item.key));
+        mountedRows.current = virtualItems.map(({ key, index }) => ({ key, index }));
         admittedKeys.current = mountedKeys.current;
         overscanMountCurrent.current = () => {
             const next = nextOverscanMount();
