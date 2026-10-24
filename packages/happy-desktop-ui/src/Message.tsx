@@ -2312,22 +2312,36 @@ export function MessageList(props: MessageListProps) {
         undefined,
     );
     const admittedKeys = useRef<ReadonlySet<Key>>(new Set());
+    /* A prepended page changes indexes in the render before its row model is
+       committed. Keep the mounted keys in that intermediate range as well:
+       dropping them here would lose selection before the anchor is placed.
+       Only a changed first row needs this scan; scrolling and appends do not. */
+    const relocatedIndexes: number[] = [];
+    if (
+        rowSizeModel.width !== undefined &&
+        rowSizeModel.keys[headerOffset] !== itemKeyAt(headerOffset)
+    )
+        for (let index = 0; index < items.length; index += 1)
+            if (mountedKeys.current.has(itemKeyAt(index))) relocatedIndexes.push(index);
     const [overscanMountVersion, setOverscanMountVersion] = useState(0);
     const rangeExtractor = useRef<
         | {
               readonly version: number;
               readonly mountVersion: number;
+              readonly relocating: boolean;
               readonly extract: (range: Range) => number[];
           }
         | undefined
     >(undefined);
     if (
         rangeExtractor.current?.version !== rowSizeModel.version ||
-        rangeExtractor.current.mountVersion !== overscanMountVersion
+        rangeExtractor.current.mountVersion !== overscanMountVersion ||
+        rangeExtractor.current.relocating !== relocatedIndexes.length > 0
     )
         rangeExtractor.current = {
             version: rowSizeModel.version,
             mountVersion: overscanMountVersion,
+            relocating: relocatedIndexes.length > 0,
             extract: (range) => {
                 const indexes: number[] = [];
                 const first = Math.max(0, range.startIndex - range.overscan);
@@ -2343,7 +2357,10 @@ export function MessageList(props: MessageListProps) {
                     )
                         indexes.push(index);
                 }
-                return indexes;
+                if (relocatedIndexes.length === 0) return indexes;
+                return [...new Set([...indexes, ...relocatedIndexes])].sort(
+                    (left, right) => left - right,
+                );
             },
         };
     // TanStack Virtual deliberately owns mutable measurement functions; this leaf

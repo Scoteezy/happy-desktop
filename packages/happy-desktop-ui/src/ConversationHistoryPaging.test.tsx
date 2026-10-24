@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import { expect, it } from "vitest";
+import { cdp, server } from "vitest/browser";
 import {
     happyAgentChatStoreCreate,
     type ChatElement,
@@ -38,6 +39,16 @@ async function frames() {
 it.each([1, 0.67, 2])(
     "retains the top reader's anchor while a history page arrives at zoom %f (seed 8191)",
     async (zoom) => {
+        const baseScale = devicePixelRatio;
+        const pageZoom = server.browser === "chromium";
+        const scale = pageZoom ? 1 : zoom;
+        const deviceScale = (factor: number) =>
+            cdp().send("Emulation.setDeviceMetricsOverride", {
+                width: 1550,
+                height: 1550,
+                deviceScaleFactor: factor,
+                mobile: false,
+            });
         const view = createRenderer();
         let elements = history("a", 65);
         let state: SessionState = {
@@ -87,7 +98,7 @@ it.each([1, 0.67, 2])(
         function Harness() {
             const snapshot = useSyncExternalStore(store.subscribe, store.get);
             return (
-                <div style={{ width: 820, height: 650, zoom }}>
+                <div style={{ width: 820, height: 650, zoom: scale }}>
                     <ConversationView
                         conversationId="a"
                         motion="calm"
@@ -109,6 +120,7 @@ it.each([1, 0.67, 2])(
         change();
         try {
             await view.ready();
+            if (pageZoom) await deviceScale(baseScale * zoom);
             await frames();
             const viewport = view.container.querySelector<HTMLElement>(
                 ".happy-message-list__viewport",
@@ -119,7 +131,7 @@ it.each([1, 0.67, 2])(
             viewport.scrollTop = 0;
             await frames();
             const bounds = viewport.getBoundingClientRect();
-            const point = bounds.bottom - 32 * zoom;
+            const point = bounds.bottom - 32 * scale;
             const anchor = [
                 ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
             ].find((row) => {
@@ -128,6 +140,13 @@ it.each([1, 0.67, 2])(
             })!;
             expect(anchor, "no initial anchor").toBeDefined();
             const top = anchor.getBoundingClientRect().top;
+            const text = document.createTreeWalker(anchor, NodeFilter.SHOW_TEXT).nextNode()!;
+            const range = document.createRange();
+            range.selectNodeContents(text);
+            const selection = window.getSelection()!;
+            selection.removeAllRanges();
+            selection.addRange(range);
+            const selected = selection.toString();
             elements = [...history("older", 23), ...elements];
             state = { ...state, loadingMore: false };
             change();
@@ -137,7 +156,10 @@ it.each([1, 0.67, 2])(
                 `reader anchor ${anchor.textContent?.slice(0, 80)} removed while paging; scrollTop=${viewport.scrollTop}`,
             ).toBe(true);
             expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
+            expect(text.isConnected).toBe(true);
+            expect(selection.toString()).toBe(selected);
         } finally {
+            if (pageZoom) await deviceScale(baseScale);
             view.destroy();
             store[Symbol.dispose]();
         }
