@@ -2476,7 +2476,7 @@ export function MessageList(props: MessageListProps) {
         | {
               readonly version: number;
               readonly mountVersion: number;
-              readonly relocating: boolean;
+              readonly relocatedIndexes: readonly number[];
               readonly extract: (range: Range) => number[];
           }
         | undefined
@@ -2484,12 +2484,15 @@ export function MessageList(props: MessageListProps) {
     if (
         rangeExtractor.current?.version !== rowSizeModel.version ||
         rangeExtractor.current.mountVersion !== overscanMountVersion ||
-        rangeExtractor.current.relocating !== relocatedIndexes.length > 0
+        rangeExtractor.current.relocatedIndexes.length !== relocatedIndexes.length ||
+        rangeExtractor.current.relocatedIndexes.some(
+            (index, offset) => index !== relocatedIndexes[offset],
+        )
     )
         rangeExtractor.current = {
             version: rowSizeModel.version,
             mountVersion: overscanMountVersion,
-            relocating: relocatedIndexes.length > 0,
+            relocatedIndexes,
             extract: (range) => {
                 const indexes: number[] = [];
                 const first = Math.max(0, range.startIndex - range.overscan);
