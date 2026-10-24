@@ -403,6 +403,7 @@ export { fileEntriesSort, fileNameCompare, filePathCompare } from "./fileTreeSor
 export {
     ConversationStatus,
     ConversationView,
+    type ConversationLeadingHeader,
     type ConversationViewProps,
 } from "./ConversationView";
 export {
@@ -1013,6 +1014,8 @@ export { ConversationSummaryRow, type ConversationSummaryRowProps } from "./Conv
 export {
     MakeStuffIntro,
     MakeStuffView,
+    makeStuffIntroHeader,
+    makeStuffIntroHeight,
     type MakeStuffIntroProps,
     type MakeStuffOption,
     type MakeStuffStage,
@@ -1021,6 +1024,7 @@ export {
 export {
     CLAY_ICON_SLUGS,
     clayIconMark,
+    clayIconMarkLarge,
     clayIconSlugIs,
     happyIconMark,
     type ClayIconSlug,

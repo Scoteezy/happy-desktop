@@ -94,6 +94,12 @@ import { WindowOverlay } from "./WindowOverlay";
 import { conversationMediaRunRows, conversationMediaRuns } from "./conversationMediaRuns";
 import { conversationInlineLayouts } from "./conversationInlineLayouts";
 
+/** The transcript's first row: what it shows, and how tall it is at a row width. */
+export type ConversationLeadingHeader = {
+    readonly content: ReactNode;
+    /** Computed from the block's own data, like every row's height; never measured. */
+    readonly height: (width: number) => number;
+};
 export type ConversationViewProps = {
     /**
      * Titles this conversation's own 56px header. Omit it when the surface that
@@ -178,6 +184,14 @@ export type ConversationViewProps = {
     onErrorAssistanceRequest?: (entryId: string) => void;
     /** Custom introduction for a loaded conversation with no transcript entries. */
     emptyContent?: ReactNode;
+    /**
+     * A fixed block that opens the transcript as its first row, such as new
+     * work's mark and the line under it. With one, an empty conversation is
+     * this row alone rather than `emptyContent`: it rests where the empty
+     * state would centre it, and the first message lands right under it
+     * without anything on screen moving.
+     */
+    leadingHeader?: ConversationLeadingHeader;
     /** Agent identity shown when a tool/activity row opens a turn before prose exists. */
     agentAuthor?: ConversationAuthor;
     /** Identity id of the reader, so their own messages take the own treatment. */
@@ -992,7 +1006,7 @@ export function ConversationView(props: ConversationViewProps) {
                     />
                     {activityFallback}
                 </ScrollArea>
-            ) : props.entries.length === 0 ? (
+            ) : props.entries.length === 0 && props.leadingHeader === undefined ? (
                 <ScrollArea
                     axes="both"
                     className="happy-conversation__empty"
@@ -1102,6 +1116,12 @@ export function ConversationView(props: ConversationViewProps) {
                            will start rather than having it held below. */
                         footerFollowed={sendPending}
                         liftKey={sendLift.liftKey}
+                        {...(props.leadingHeader
+                            ? {
+                                  header: props.leadingHeader.content,
+                                  headerHeight: props.leadingHeader.height,
+                              }
+                            : {})}
                         footerHeight={(width) =>
                             Math.max(
                                 workingStatusHeight,

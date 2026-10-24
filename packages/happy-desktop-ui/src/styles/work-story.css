@@ -134,6 +134,18 @@
     padding: 16px;
 }
 
+/* Begun work keeps the block's size with only its mark showing. */
+.happy-make-stuff__empty[data-settled] > :not(:first-child) {
+    visibility: hidden;
+}
+
+.happy-make-stuff__image-mark {
+    display: block;
+    flex: none;
+    width: 64px;
+    height: 64px;
+}
+
 .happy-make-stuff__explanation {
     display: flex;
     flex-direction: column;

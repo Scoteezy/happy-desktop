@@ -777,6 +777,18 @@ export type MessageListProps = {
     children: ReactNode;
     className?: string;
     /**
+     * A row at the start of the list's content, above the oldest message. Like
+     * the footer it is part of the virtualized row collection with a reserved
+     * stable key, so it scrolls, anchors, and reconciles as the transcript's
+     * first row. While the rows fit the scrollport the list rests this one
+     * where it would sit centred in the scrollport, and the rows after it fill
+     * in below it rather than lifting it; once they no longer fit, the list
+     * scrolls as it always does.
+     */
+    header?: ReactNode;
+    /** Height model supplied to the virtualizer for the header row. It is asked on every commit. */
+    headerHeight?: number | ((width: number) => number);
+    /**
      * A row at the end of the list's content, below the last message. It is
      * part of the virtualized row collection with a reserved stable key, not an
      * overlay or sticky chrome, so it scrolls and reconciles like every other
@@ -946,6 +958,8 @@ const ROW_REFINE_FORCED_MS = 4;
 const ROW_REFINE_COMMIT_MS = 200;
 /** Reserved stable entity key for the optional final footer row. */
 const MESSAGE_LIST_FOOTER_KEY = "__happy_message_list_footer__";
+/** Reserved stable entity key for the optional first header row. */
+const MESSAGE_LIST_HEADER_KEY = "__happy_message_list_header__";
 /** The padding/border-free viewport uses an overlaid scrollbar, so its resolved
  * CSS width is also its content width. Unlike clientWidth, this retains flex
  * layout's fractions without including ancestor zoom or transforms. */
@@ -1104,10 +1118,37 @@ export function MessageList(props: MessageListProps) {
         const current = element.scrollTop;
         if (bottom > current) scrollTopWrite(element, bottom);
     };
+    /**
+     * Holds a resting header's gap at its current size, as the list's sparse
+     * inset. Unheld, the gap is the spacer itself, which gives way to rows
+     * growing below it; held, it stays put until it is entirely above the
+     * reader, like any other inset.
+     */
+    const headerRestHold = (gap: number) => {
+        const spacerElement = spacer.current;
+        if (!spacerElement || geometrySparseInset.current > 0 || gap <= 0) return;
+        geometrySparseInset.current = gap;
+        spacerElement.style.flex = "none";
+        spacerElement.style.height = `${String(gap)}px`;
+        spacerElement.style.maxHeight = "none";
+    };
+    /** The resting header's gap as laid out now, or what is held of it. */
+    const headerRestGap = () =>
+        geometrySparseInset.current || (spacer.current?.getBoundingClientRect().height ?? 0);
+    const spacerHoldRelease = () => {
+        spacer.current?.style.removeProperty("margin-top");
+        spacer.current?.style.removeProperty("flex");
+        spacer.current?.style.removeProperty("height");
+        headerRestApply();
+    };
     const sparseInsetHold = () => {
         const spacerElement = spacer.current;
         const firstRow = spacerElement?.nextElementSibling;
         if (!spacerElement || !firstRow) return;
+        if (headerLeads) {
+            headerRestHold(headerRestGap());
+            return;
+        }
         const inset = Math.max(
             0,
             firstRow.getBoundingClientRect().top - spacerElement.getBoundingClientRect().bottom,
@@ -1116,7 +1157,7 @@ export function MessageList(props: MessageListProps) {
     };
     const sparseInsetRelease = () => {
         if (geometrySparseInset.current > 0) return;
-        spacer.current?.style.removeProperty("margin-top");
+        spacerHoldRelease();
     };
     /* Context identity stays fixed for the mounted list: thousands of rows may
        consume it, and ordinary transcript renders must not notify them all. */
@@ -1151,20 +1192,38 @@ export function MessageList(props: MessageListProps) {
         startReached.current?.();
     };
     const entryItems = Children.toArray(props.children);
-    const footerIndex = props.footer === undefined ? undefined : entryItems.length;
+    const headerLeads = props.header !== undefined;
+    /* Where the caller's row `index` sits among the list's own rows. */
+    const headerOffset = headerLeads ? 1 : 0;
+    const footerIndex = props.footer === undefined ? undefined : headerOffset + entryItems.length;
     const items =
-        footerIndex === undefined
+        !headerLeads && footerIndex === undefined
             ? entryItems
             : [
+                  ...(headerLeads
+                      ? [
+                            <div
+                                className="happy-message-list__header"
+                                data-happy-desktop-ui="message-list-header"
+                                key={MESSAGE_LIST_HEADER_KEY}
+                            >
+                                {props.header}
+                            </div>,
+                        ]
+                      : []),
                   ...entryItems,
-                  <div
-                      className="happy-message-list__footer"
-                      data-happy-desktop-ui="message-list-footer"
-                      data-item-id="working-status"
-                      key={MESSAGE_LIST_FOOTER_KEY}
-                  >
-                      {props.footer}
-                  </div>,
+                  ...(footerIndex === undefined
+                      ? []
+                      : [
+                            <div
+                                className="happy-message-list__footer"
+                                data-happy-desktop-ui="message-list-footer"
+                                data-item-id="working-status"
+                                key={MESSAGE_LIST_FOOTER_KEY}
+                            >
+                                {props.footer}
+                            </div>,
+                        ]),
               ];
     const itemKeyAt = (index: number): Key => {
         const item = items[index];
@@ -1178,12 +1237,34 @@ export function MessageList(props: MessageListProps) {
     const [virtualItemKey] = useState(() => (index: number) => itemKeyAtCurrent.current(index));
     const virtualized = props.virtualize === true;
     const paddingEnd = props.paddingEnd ?? MESSAGE_LIST_PADDING_END_DEFAULT;
+    const headerSize = (rowWidth: number) =>
+        typeof props.headerHeight === "function"
+            ? props.headerHeight(rowWidth)
+            : (props.headerHeight ?? ROW_SIZE_FALLBACK);
     const estimateItemSize = (index: number, rowWidth: number) =>
-        index === footerIndex
-            ? typeof props.footerHeight === "function"
-                ? props.footerHeight(rowWidth)
-                : (props.footerHeight ?? ROW_SIZE_FALLBACK)
-            : (props.estimateRowSize?.(index, rowWidth) ?? ROW_SIZE_FALLBACK);
+        headerLeads && index === 0
+            ? headerSize(rowWidth)
+            : index === footerIndex
+              ? typeof props.footerHeight === "function"
+                  ? props.footerHeight(rowWidth)
+                  : (props.footerHeight ?? ROW_SIZE_FALLBACK)
+              : (props.estimateRowSize?.(index - headerOffset, rowWidth) ?? ROW_SIZE_FALLBACK);
+    /**
+     * Rests the header centred in the scrollport while the rows fit it: the
+     * spacer above it grows into the free space up to that point and no
+     * further, so rows added below take the space under it first.
+     */
+    const headerRestApply = () => {
+        const element = spacer.current;
+        if (!element || geometrySparseInset.current > 0) return;
+        const { height, width } = viewportGeometry.current;
+        if (!headerLeads || width <= 0) {
+            element.style.removeProperty("max-height");
+            return;
+        }
+        const size = headerSize(messageListRowWidth(width, estimateRowWidth));
+        element.style.maxHeight = `${String(Math.max(0, (height - size) / 2 - MESSAGE_LIST_PADDING_START))}px`;
+    };
     /*
      * This model is the only row-geometry authority. TanStack reads it to build
      * offsets, but no mounted row can write back into it. New data or a changed
@@ -1323,6 +1404,11 @@ export function MessageList(props: MessageListProps) {
             exact[footerIndex] = false;
             layout(footerIndex);
         }
+        if (headerLeads) {
+            if (exact[0]) pending += 1;
+            exact[0] = false;
+            layout(0);
+        }
         const viewportHeight = viewportGeometry.current.height || list.current?.clientHeight || 0;
         /* The rows the reader's viewport covers in the commit this produces. */
         let first = 0;
@@ -1364,7 +1450,13 @@ export function MessageList(props: MessageListProps) {
             layout(index);
         /* Any other row the caller already holds at this width is exact for
            the price of a lookup, nearest the reader first. */
-        const cached = props.cachedRowSize;
+        const cachedRowSize = props.cachedRowSize;
+        const cached =
+            cachedRowSize &&
+            ((index: number, width: number) =>
+                headerLeads && index === 0
+                    ? headerSize(width)
+                    : cachedRowSize(index - headerOffset, width));
         const lookupDeadline = performance.now() + ROW_CACHE_LOOKUP_MS;
         for (let distance = 1; cached && pending > 0; distance += 1) {
             const above = first - distance;
@@ -1538,7 +1630,7 @@ export function MessageList(props: MessageListProps) {
             const top = intendedTop;
             if (pendingFollowerTop.current !== undefined) pendingFollowerTop.current -= inset;
             geometrySparseInset.current = 0;
-            spacer.current?.style.removeProperty("margin-top");
+            spacerHoldRelease();
             scrollTopWrite(element, top - inset);
         }
     }
@@ -1554,11 +1646,13 @@ export function MessageList(props: MessageListProps) {
         }
         const start = index === undefined ? undefined : rowSizeModel.starts[index];
         if (start === undefined) return;
-        const top =
-            geometrySparseInset.current +
-            start -
-            Math.round(viewportGeometry.current.height * SEND_LIFT_TOP);
+        /* The first message under a header lands right below it: the header
+           stays where the empty conversation showed it. */
+        if (headerLeads && index === headerOffset) return;
+        const inset = headerLeads ? headerRestGap() : geometrySparseInset.current;
+        const top = inset + start - Math.round(viewportGeometry.current.height * SEND_LIFT_TOP);
         if (top <= element.scrollTop) return;
+        if (headerLeads) headerRestHold(inset);
         geometryExtentRequire(top, viewportGeometry.current.height);
         geometryFollowInset.current = 0;
         scrollTopWrite(element, top);
@@ -1821,7 +1915,7 @@ export function MessageList(props: MessageListProps) {
             if (props.prepareRowSize) {
                 const active = (refined.active ??= {
                     index,
-                    work: props.prepareRowSize(index, rowWidth),
+                    work: props.prepareRowSize(index - headerOffset, rowWidth),
                 });
                 do {
                     if (active.work.next().done) {
@@ -1900,6 +1994,7 @@ export function MessageList(props: MessageListProps) {
                scrollport with no width yet has nothing to model rows at. */
             if (nextRowWidth <= 0) return;
             viewportGeometry.current = { height: nextHeight, width: nextWidth };
+            headerRestApply();
             const opening = following.current ? undefined : restore.current;
             if (opening !== undefined && "type" in opening) {
                 /* A saved anchor names its row by key. Lay out that row and the
@@ -1939,14 +2034,22 @@ export function MessageList(props: MessageListProps) {
         const previousHeight = previous.height || nextHeight;
         const widthChanged = nextRowWidth !== rowSizeModel.width;
         const element = list.current;
-        if (element && virtualContent.current && nextHeight !== previousHeight) {
+        if (
+            element &&
+            virtualContent.current &&
+            nextHeight !== previousHeight &&
+            /* Rows that fit under a resting header stay with it, as it
+               re-centres in the new scrollport. */
+            !(headerLeads && estimatedContentHeight() <= previousHeight)
+        ) {
             const naturalHeight = estimatedContentHeight();
             const inset =
                 geometrySparseInset.current ||
                 Math.max(0, previousHeight - Math.max(naturalHeight, geometryExtent.current));
             if (inset > 0) {
                 geometrySparseInset.current = inset;
-                spacer.current!.style.marginTop = `${String(inset)}px`;
+                // A held header gap is already pinned as the spacer's height.
+                if (!headerLeads) spacer.current!.style.marginTop = `${String(inset)}px`;
             }
             const extent = readerScrollTop.current + nextHeight - inset;
             if (extent > naturalHeight) {
@@ -1980,6 +2083,7 @@ export function MessageList(props: MessageListProps) {
                 : heldAnchor;
         const focus = readerFocus(previousHeight);
         viewportGeometry.current = { height: nextHeight, width: nextWidth };
+        headerRestApply();
         if (anchor) pendingAnchor.current = { ...pending, anchor, viewportHeight: nextHeight };
         if (widthChanged) {
             rowSizeModelLayout(nextRowWidth, 0, focus);
@@ -2176,6 +2280,7 @@ export function MessageList(props: MessageListProps) {
     const virtualItems = modelRendered ? virtualizer.getVirtualItems() : [];
     // eslint-disable-next-line happy-react/no-layout-effect -- streaming React commits publish a new modeled scrollHeight; a follower must pin in this same pre-paint commit
     useLayoutEffect(() => {
+        headerRestApply();
         rowSizeModelRefineCurrent.current = rowSizeModelRefine;
         // Scroll-height reads must see this commit's tables at their solved widths.
         markdownTablesSolve();
@@ -2290,7 +2395,7 @@ export function MessageList(props: MessageListProps) {
                     changed += 1;
                 /* The row before the first change reads it as its successor. */
                 if (changed < shared || rows.length !== previous.rows.length)
-                    from = Math.max(0, changed - 1);
+                    from = Math.max(0, headerOffset + changed - 1);
             }
         }
         /* Before the first scrollport report there is no model to update; that
@@ -2324,6 +2429,12 @@ export function MessageList(props: MessageListProps) {
                 rowSizeModel.sizes[footerIndex] !== estimateItemSize(footerIndex, rowWidth))
         )
             from = footerIndex;
+        /* A header arriving, leaving, or changing height moves every row after it. */
+        if (
+            (rowSizeModel.keys[0] === MESSAGE_LIST_HEADER_KEY) !== headerLeads ||
+            (headerLeads && rowSizeModel.sizes[0] !== estimateItemSize(0, rowWidth))
+        )
+            from = 0;
         const viewportHeight = viewportGeometry.current.height || element.clientHeight;
         if (from < items.length) {
             const anchor = readerAnchor.current ?? modelAnchorCapture(viewportHeight);
@@ -2398,11 +2509,13 @@ export function MessageList(props: MessageListProps) {
                 }
             }
         };
-        if (viewportGeometry.current.height === 0)
+        if (viewportGeometry.current.height === 0) {
             viewportGeometry.current = {
                 height: messageListViewportHeight(element),
                 width: messageListViewportWidth(element),
             };
+            headerRestApply();
+        }
         let previousScrollTop = element.scrollTop;
         scrollHeightBaseline.current = element.scrollHeight;
         const onScroll = () => {
@@ -2516,6 +2629,7 @@ export function MessageList(props: MessageListProps) {
             <ScrollArea
                 className={["happy-message-list", props.className].filter(Boolean).join(" ")}
                 data-happy-desktop-ui="message-list"
+                data-header={headerLeads ? "" : undefined}
                 style={props.style}
                 viewportClassName="happy-message-list__viewport"
                 viewportRef={list}

@@ -226,6 +226,7 @@ import {
     type ComposerModelUsageWatch,
     ConversationDock,
     type ConversationDockProps,
+    type ConversationLeadingHeader,
     type ConversationSwitchTarget,
     ConversationView,
     DeferredPane,
@@ -334,7 +335,7 @@ import {
     happyAgentSpacesNotes,
     happyAgentSessionMark,
     happyAgentSpacesChildDestination,
-    happyAgentSpacesStemCellIntro,
+    happyAgentSpacesIntroHeader,
     HappyAgentSpacesSidebar,
     type HappyAgentSpacesNavigation,
     type HappyAgentSpacesPlaces,
@@ -3911,8 +3912,17 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 : happyAgentSessionMark(spaces, sessionId);
         },
         floatyKey: (sessionId) => spaceOfChat(sessionId)?.id,
-        chatEmpty: (sessionId) =>
-            happyAgentSpacesStemCellIntro(spaceOfChat(sessionId), createOffers, createOfferSelect),
+        chatHeader: (sessionId, settled) => {
+            const space = spaceOfChat(sessionId);
+            return space === undefined || happyAgentSpaceHappyIs(space, spacesPlaces)
+                ? undefined
+                : happyAgentSpacesIntroHeader(space, {
+                      settled,
+                      stemCellAnimation,
+                      options: createOffers,
+                      onOptionSelect: createOfferSelect,
+                  });
+        },
         chatNotes: (sessionId) =>
             experimental.batchNotes &&
             happySpace !== undefined &&
@@ -6514,8 +6524,11 @@ interface HappyAgentWorkspaceSpaces {
         | undefined;
     /** Which space a chat's hand-folded floaty is remembered for. */
     floatyKey(sessionId: string): string | undefined;
-    /** What an empty conversation says instead of the default, such as new work's stem cell. */
-    chatEmpty(sessionId: string): ReactNode | undefined;
+    /**
+     * The block that opens a chat's transcript, such as new work's stem cell
+     * and the line under it; `settled` once the chat has begun.
+     */
+    chatHeader(sessionId: string, settled: boolean): ConversationLeadingHeader | undefined;
     /** Bookkeeping a conversation reads as one-line summaries, such as Happy's sidebar batches. */
     chatNotes(sessionId: string): ReadonlyMap<string, ConversationNote> | undefined;
 }
@@ -7314,12 +7327,17 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 {...(props.spaces && props.chatId
                     ? { notes: props.spaces.chatNotes(props.chatId) }
                     : {})}
+                {...((spaces, chatId) =>
+                    spaces && chatId
+                        ? {
+                              leadingHeader: (settled: boolean) =>
+                                  spaces.chatHeader(chatId, settled),
+                          }
+                        : {})(props.spaces, props.chatId)}
                 emptyContent={
-                    props.spaces && props.chatId && props.spaces.chatEmpty(props.chatId) ? (
-                        props.spaces.chatEmpty(props.chatId)
-                    ) : openBot?.systemKey === "chief_of_staff" &&
-                      conversation.type === "ready" &&
-                      openBot.conversation.id === conversation.value.conversationId ? (
+                    openBot?.systemKey === "chief_of_staff" &&
+                    conversation.type === "ready" &&
+                    openBot.conversation.id === conversation.value.conversationId ? (
                         <EmptyState
                             animation="chief-of-staff"
                             description="This bot has elevated permissions to configure Happy around your needs. Tell it how you want Happy to work for you."
@@ -8773,6 +8791,8 @@ function HappyAgentConversationBody(props: {
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentWorkspaceSnapshot["conversation"];
     emptyContent?: ReactNode;
+    /** The block that opens the transcript; `settled` once the conversation has begun. */
+    leadingHeader?: (settled: boolean) => ConversationLeadingHeader | undefined;
     /** Messages that are bookkeeping, by message ID, each read as one summary row. */
     notes?: ReadonlyMap<string, ConversationNote> | undefined;
     focusOnType: boolean;
@@ -8835,6 +8855,7 @@ function HappyAgentConversationBody(props: {
                 modelUsageWatch={props.modelUsageWatch}
                 conversation={conversation.value}
                 emptyContent={props.emptyContent}
+                {...(props.leadingHeader ? { leadingHeader: props.leadingHeader } : {})}
                 notes={props.notes}
                 focusOnType={props.focusOnType}
                 groupId={props.groupId}
@@ -9228,6 +9249,8 @@ function HappyAgentConversationSurface(props: {
     modelUsageWatch?: ComposerModelUsageWatch;
     conversation: HappyAgentConversationSnapshot;
     emptyContent?: ReactNode;
+    /** The block that opens the transcript; `settled` once the conversation has begun. */
+    leadingHeader?: (settled: boolean) => ConversationLeadingHeader | undefined;
     notes?: ReadonlyMap<string, ConversationNote> | undefined;
     focusOnType: boolean;
     groupId: string;
@@ -9378,6 +9401,12 @@ function HappyAgentConversationSurface(props: {
               }
             : {}),
     });
+    /* The header opens the transcript, so it is drawn only above its first
+       entry: while older history is still to load, it waits for it. */
+    const leadingHeader =
+        conversation.entries.length === 0 || conversation.transcriptComplete
+            ? props.leadingHeader?.(conversation.entries.length > 0)
+            : undefined;
     const inlineEngines = props.inlineEngines;
     const inlinePages = inlineEngines
         ? conversationInlinePagesCreate({
@@ -9402,6 +9431,7 @@ function HappyAgentConversationSurface(props: {
             references={references}
             {...(inlinePages ? { inlinePages } : {})}
             emptyContent={props.emptyContent}
+            {...(leadingHeader ? { leadingHeader } : {})}
             agentAuthor={agentAuthor}
             activityControl={
                 activityTotal > 0 ? (

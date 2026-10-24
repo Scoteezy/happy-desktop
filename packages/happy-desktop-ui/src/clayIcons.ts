@@ -191,6 +191,16 @@ export function clayIconMark(slug: ClayIconSlug): {
     return { src, srcSet: `${src} 2x, ${highDensity} 3.2x`, alt: "" };
 }
 
+/** The image mark a 64px mark wears for one clay subject, such as new work's intro. */
+export function clayIconMarkLarge(slug: ClayIconSlug): {
+    readonly src: string;
+    readonly alt: string;
+} {
+    const src = large.get(slug);
+    if (src === undefined) throw new Error(`Clay icon ${slug} is not bundled at 64px.`);
+    return { src, alt: "" };
+}
+
 /** Happy's own mark, the one identity the library does not assign. */
 export function happyIconMark(): { readonly src: string; readonly alt: string } {
     return { src: happyMarkUrl, alt: "" };

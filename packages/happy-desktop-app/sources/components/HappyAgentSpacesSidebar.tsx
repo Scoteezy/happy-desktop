@@ -23,10 +23,12 @@ import {
 } from "happy-desktop-state";
 import {
     clayIconMark,
+    clayIconMarkLarge,
     clayIconSlugIs,
     happyIconMark,
-    MakeStuffIntro,
+    makeStuffIntroHeader,
     Sidebar,
+    type ConversationLeadingHeader,
     type KeyboardShortcut,
     type MakeStuffOption,
     type MenuItem,
@@ -866,20 +868,33 @@ export function happyAgentSpacesNotes(
 }
 
 /**
- * New work before its first message: its stem cell, centred above the
- * composer, with the kinds of thing that can be made from it straight away.
+ * The block that opens a space's chat: its 64px mark — the stem cell while the
+ * work is taking shape, then the clay icon it grows into — over the line that
+ * introduces new work. Before the chat's first message the line and the kinds
+ * of thing to make are shown; once it has begun they keep their place, hidden,
+ * and the mark stays at the top of the chat. Spaces with any other picture,
+ * or none, open their chat on its first message.
  */
-export function happyAgentSpacesStemCellIntro(
-    space: HappyAgentSpace | undefined,
-    options?: readonly MakeStuffOption[],
-    onOptionSelect?: (id: string) => void,
-): ReactNode {
-    if (space === undefined || space.icon?.type !== "stem_cell") return undefined;
-    return (
-        <MakeStuffIntro
-            id={space.id}
-            {...(options ? { options } : {})}
-            {...(onOptionSelect ? { onOptionSelect } : {})}
-        />
-    );
+export function happyAgentSpacesIntroHeader(
+    space: HappyAgentSpace,
+    intro: {
+        readonly settled: boolean;
+        readonly stemCellAnimation: boolean;
+        readonly options?: readonly MakeStuffOption[];
+        readonly onOptionSelect?: (id: string) => void;
+    },
+): ConversationLeadingHeader | undefined {
+    const icon = space.icon;
+    const imageMark =
+        icon?.type === "library" && clayIconSlugIs(icon.slug)
+            ? { ...clayIconMarkLarge(icon.slug), growsFromStemCell: intro.stemCellAnimation }
+            : undefined;
+    if (icon?.type !== "stem_cell" && imageMark === undefined) return undefined;
+    return makeStuffIntroHeader({
+        id: space.id,
+        ...(imageMark ? { imageMark } : {}),
+        settled: intro.settled,
+        ...(intro.options ? { options: intro.options } : {}),
+        ...(intro.onOptionSelect ? { onOptionSelect: intro.onOptionSelect } : {}),
+    });
 }
