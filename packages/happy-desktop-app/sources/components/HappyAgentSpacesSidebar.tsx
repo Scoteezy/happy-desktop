@@ -487,7 +487,7 @@ function legacyViewOf(snapshot: HappyAgentSpacesSnapshot): SidebarDocumentView {
 }
 
 /** The document with one section's heading renamed; labels need not be unique. */
-function sidebarDocumentRelabel(
+export function sidebarDocumentRelabel(
     view: SidebarDocumentView,
     key: string,
     label: string,
@@ -502,29 +502,36 @@ function sidebarDocumentRelabel(
     };
 }
 
+/** What the document's rows are drawn from, beside the document itself. */
+export interface HappyAgentSpacesItemsInput {
+    readonly view: SidebarDocumentView;
+    readonly snapshot: HappyAgentSpacesSnapshot;
+    readonly places: HappyAgentSpacesPlaces;
+    /** Whether rows may be carried; a read-only document holds them in place. */
+    readonly editable: boolean;
+    /** Whether spaces may be carried in and out of rows. */
+    readonly attaching: boolean;
+    readonly titleShimmerEnabled: boolean;
+    readonly stemCellAnimation: boolean;
+    readonly search?: HappyAgentSpacesCommand;
+    readonly create?: HappyAgentSpacesCommand;
+    readonly sessionRow: (agentId: string) => SidebarItem | undefined;
+    readonly worktreeRows: (agentId: string) => readonly SidebarItem[];
+}
+
 /**
- * The spaces sidebar: the person's document drawn as it stands. Search,
- * Create, sections, separators and spaces are items of one list, and any of them can be
- * carried anywhere in it; a session moves among its own siblings. A click opens
- * what a row holds, and a section folds the run after it.
+ * A sidebar document as the rows the Sidebar draws, and the document node each
+ * drawn row stands for (or, for a worktree, the node it follows). The window's
+ * own sidebar and a proposal of one are drawn by this one function.
  */
-export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
-    const { snapshot, places } = props;
-    const sidebarDoc = snapshot.sidebar;
-    const documentView = useMemo(() => documentViewOf(sidebarDoc?.html), [sidebarDoc?.html]);
-    const view = documentView ?? legacyViewOf(snapshot);
-    const editable = documentView !== undefined && sidebarDoc !== undefined;
-    const visible = props.visible !== false;
-    const focused = happyAgentSpaceFocused(snapshot, props.focus);
+export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
+    readonly items: SidebarItem[];
+    readonly anchorOf: ReadonlyMap<string, string | null>;
+} {
+    const { view, snapshot, places, editable, attaching } = input;
+    const anchorOf = new Map<string, string | null>();
     const foldReveal = (own: "hover" | "always" | undefined) =>
         (own ?? view.foldRibbon) === "always" ? { foldReveal: "always" as const } : {};
-    /** The document node each drawn row stands for, or the one a worktree follows. */
-    const anchorOf = new Map<string, string | null>();
-    // Rows carry other spaces in and out of rows only where the daemon keeps
-    // them there; a session always stays under the conversation it belongs to.
-    const attaching = editable && sidebarDoc.attachments;
-    /** Whether a nested ID names one of the person's spaces rather than a session. */
-    const attached = (id: string): boolean => snapshot.spaces.has(id as HappyAgentSpaceId);
     // A node's own row, then — open or shut, the fold decides what shows —
     // its sessions and the worktrees its agent made.
     const nested = (
@@ -549,8 +556,8 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                         ...spaceRow(
                             space,
                             places,
-                            props.titleShimmerEnabled,
-                            props.stemCellAnimation,
+                            input.titleShimmerEnabled,
+                            input.stemCellAnimation,
                         ),
                         depth,
                         ...foldReveal(session.foldRibbon),
@@ -561,7 +568,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 );
                 continue;
             }
-            const row = props.sessionRow(session.id);
+            const row = input.sessionRow(session.id);
             if (row === undefined) continue;
             const key = sidebarDocumentKey(session);
             anchorOf.set(key, key);
@@ -581,7 +588,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             );
         }
         if (agentId !== undefined)
-            for (const worktree of props.worktreeRows(agentId)) {
+            for (const worktree of input.worktreeRows(agentId)) {
                 const id = `${WORKTREE_PREFIX}${worktree.id}`;
                 anchorOf.set(id, last);
                 rows.push({
@@ -600,7 +607,7 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
         switch (item.kind) {
             case "search":
             case "create": {
-                const command = item.kind === "search" ? props.search : props.create;
+                const command = item.kind === "search" ? input.search : input.create;
                 if (!command) return [];
                 return [
                     {
@@ -654,8 +661,8 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                         ...spaceRow(
                             space,
                             places,
-                            props.titleShimmerEnabled,
-                            props.stemCellAnimation,
+                            input.titleShimmerEnabled,
+                            input.stemCellAnimation,
                         ),
                         // A tidy's note lands in Happy, which says so until it is read.
                         ...(snapshot.noteUnread && happy ? { unread: true } : {}),
@@ -675,6 +682,41 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 ];
             }
         }
+    });
+    return { items, anchorOf };
+}
+
+/**
+ * The spaces sidebar: the person's document drawn as it stands. Search,
+ * Create, sections, separators and spaces are items of one list, and any of them can be
+ * carried anywhere in it; a session moves among its own siblings. A click opens
+ * what a row holds, and a section folds the run after it.
+ */
+export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
+    const { snapshot, places } = props;
+    const sidebarDoc = snapshot.sidebar;
+    const documentView = useMemo(() => documentViewOf(sidebarDoc?.html), [sidebarDoc?.html]);
+    const view = documentView ?? legacyViewOf(snapshot);
+    const editable = documentView !== undefined && sidebarDoc !== undefined;
+    const visible = props.visible !== false;
+    const focused = happyAgentSpaceFocused(snapshot, props.focus);
+    // Rows carry other spaces in and out of rows only where the daemon keeps
+    // them there; a session always stays under the conversation it belongs to.
+    const attaching = editable && sidebarDoc.attachments;
+    /** Whether a nested ID names one of the person's spaces rather than a session. */
+    const attached = (id: string): boolean => snapshot.spaces.has(id as HappyAgentSpaceId);
+    const { items, anchorOf } = happyAgentSpacesItems({
+        view,
+        snapshot,
+        places,
+        editable,
+        attaching,
+        titleShimmerEnabled: props.titleShimmerEnabled,
+        stemCellAnimation: props.stemCellAnimation,
+        ...(props.search ? { search: props.search } : {}),
+        ...(props.create ? { create: props.create } : {}),
+        sessionRow: props.sessionRow,
+        worktreeRows: props.worktreeRows,
     });
     const documentEdit = (
         change: (view: SidebarDocumentView) => SidebarDocumentView | undefined,

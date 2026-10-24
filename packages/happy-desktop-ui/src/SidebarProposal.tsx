@@ -17,6 +17,8 @@ export interface SidebarProposalProps {
     readonly version: number;
     /** What the agent changed, in one line, above the rows. */
     readonly summary?: string;
+    /** Why the last edit or answer did not go through, beside the buttons. */
+    readonly notice?: string;
     /** An answer is on its way; both buttons wait. */
     readonly answering?: "accept" | "decline";
     readonly onAccept?: () => void;
@@ -106,6 +108,15 @@ export function SidebarProposal(props: SidebarProposalProps): ReactNode {
             <footer className="happy-sidebar-proposal__footer">
                 {open ? (
                     <>
+                        {props.notice ? (
+                            <span
+                                className="happy-sidebar-proposal__notice"
+                                data-happy-desktop-ui="sidebar-proposal-notice"
+                                role="alert"
+                            >
+                                {props.notice}
+                            </span>
+                        ) : null}
                         <Button
                             disabled={props.answering !== undefined}
                             loading={props.answering === "decline"}

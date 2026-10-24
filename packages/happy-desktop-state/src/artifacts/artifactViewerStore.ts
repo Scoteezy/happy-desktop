@@ -296,7 +296,8 @@ export function happyAgentArtifactViewerStoreCreate(
                     ),
                 };
             }
-            case "sidebar": {
+            case "sidebar":
+            case "sidebar_proposal": {
                 // Its custom tags draw nothing as a page; what it says is its markup.
                 const { data } = await fileText(id, number, version.entry.path, signal);
                 return {

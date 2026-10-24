@@ -34,6 +34,7 @@ export function happyAgentArtifactTypeProject(type: string): HappyAgentArtifactT
         case "video":
         case "document":
         case "sidebar":
+        case "sidebar_proposal":
             return type;
         default:
             return "unknown";

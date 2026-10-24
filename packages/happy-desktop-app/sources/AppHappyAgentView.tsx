@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { HappyAgentSystemMonitorStore } from "happy-desktop-state";
-import { HappyAgentSystemMonitorSurfacePage } from "happy-desktop-ui";
+import { HappyAgentSystemMonitorSurfacePage, type InlinePageFit } from "happy-desktop-ui";
 import {
     conversationFileChanges,
     conversationFileDiff,
@@ -326,7 +326,11 @@ import {
     type WorkspaceLifecyclePhase,
 } from "happy-desktop-ui";
 import { APP_SHORTCUTS } from "./appShortcuts";
-import { happyAgentSpacesStoreNoop } from "happy-desktop-state";
+import {
+    happyAgentSpacesStoreNoop,
+    type HappyAgentSidebarProposalsStore,
+} from "happy-desktop-state";
+import { HappyAgentSidebarProposal } from "./components/HappyAgentSidebarProposal";
 import {
     happyAgentSpaceFocused,
     happyAgentSpaceHappyIs,
@@ -637,6 +641,8 @@ export interface AppHappyAgentSession {
     readonly surfaces?: HappyAgentSurfaces;
     /** The spaces sidebar, on a Happy Agent new enough to keep one. */
     readonly spaces?: HappyAgentSpacesStore;
+    /** The sidebar proposals Prioritizing's chat shows inline. */
+    readonly sidebarProposals?: HappyAgentSidebarProposalsStore;
 }
 
 export interface AppHappyAgentDirectorySnapshot {
@@ -3664,6 +3670,55 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
         },
     };
     const spacesProjects = active ? happyAgentSidebarTree(active).projects : [];
+    const spacesSessionRow = (agentId: string): SidebarItem | undefined => {
+        // A session is a subtask at any depth, or a task of its own
+        // that Prioritizing shows under the work that started it.
+        const subtask =
+            subtaskFind(
+                [...spacesPlaces.tasks, ...spacesPlaces.bots].flatMap((owner) => owner.subtasks),
+                agentId,
+            ) ?? spacesPlaces.tasks.find((task) => task.conversation.id === agentId);
+        if (!subtask) return undefined;
+        // A subtask with a checkout of its own is that checkout's
+        // row, and wears its project's picture like the task's
+        // other worktrees, or the worktree glyph where the project
+        // has none.
+        const [row] = botSubtaskSidebarItems(
+            [
+                {
+                    workspaceId: subtask.workspaceId,
+                    path: subtask.path,
+                    conversation: subtask.conversation,
+                    subtasks: [],
+                },
+            ],
+            active?.projects ?? NO_PROJECTS,
+            titleShimmerEnabled,
+        );
+        if (!row) return undefined;
+        const { contextAvatars, ...rest } = row;
+        return contextAvatars?.some((avatar) => avatar.imageUrl !== undefined)
+            ? { ...rest, contextAvatars }
+            : contextAvatars?.length
+              ? { ...rest, icon: "branch" as const }
+              : rest;
+    };
+    // A proposal Prioritizing makes is drawn in its chat by the sidebar's own rows.
+    const sidebarProposalsStore = spacesEnabled ? active?.session?.sidebarProposals : undefined;
+    const sidebarProposal = sidebarProposalsStore
+        ? (artifactId: string, fit: InlinePageFit) => (
+              <HappyAgentSidebarProposal
+                  artifactId={artifactId}
+                  fit={fit}
+                  places={spacesPlaces}
+                  sessionRow={spacesSessionRow}
+                  snapshot={spaces}
+                  stemCellAnimation={stemCellAnimation}
+                  store={sidebarProposalsStore}
+                  titleShimmerEnabled={titleShimmerEnabled}
+              />
+          )
+        : undefined;
     const spacesNavigation: HappyAgentSpacesNavigation | undefined = active
         ? {
               onChatSelect: (groupId, chatId) => props.onChatSelect(active.id, groupId, chatId),
@@ -3829,41 +3884,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 now={spaces.readAt}
                 titleShimmerEnabled={titleShimmerEnabled}
                 stemCellAnimation={stemCellAnimation}
-                sessionRow={(agentId) => {
-                    // A session is a subtask at any depth, or a task of its own
-                    // that Prioritizing shows under the work that started it.
-                    const subtask =
-                        subtaskFind(
-                            [...spacesPlaces.tasks, ...spacesPlaces.bots].flatMap(
-                                (owner) => owner.subtasks,
-                            ),
-                            agentId,
-                        ) ?? spacesPlaces.tasks.find((task) => task.conversation.id === agentId);
-                    if (!subtask) return undefined;
-                    // A subtask with a checkout of its own is that checkout's
-                    // row, and wears its project's picture like the task's
-                    // other worktrees, or the worktree glyph where the project
-                    // has none.
-                    const [row] = botSubtaskSidebarItems(
-                        [
-                            {
-                                workspaceId: subtask.workspaceId,
-                                path: subtask.path,
-                                conversation: subtask.conversation,
-                                subtasks: [],
-                            },
-                        ],
-                        active?.projects ?? NO_PROJECTS,
-                        titleShimmerEnabled,
-                    );
-                    if (!row) return undefined;
-                    const { contextAvatars, ...rest } = row;
-                    return contextAvatars?.some((avatar) => avatar.imageUrl !== undefined)
-                        ? { ...rest, contextAvatars }
-                        : contextAvatars?.length
-                          ? { ...rest, icon: "branch" as const }
-                          : rest;
-                }}
+                sessionRow={spacesSessionRow}
                 worktreeRows={(agentId) =>
                     agentWorktreeSidebarItems(agentId, spacesProjects, titleShimmerEnabled)
                 }
@@ -4709,6 +4730,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             return (
                 <HappyAgentWorkspaceSurface
                     {...(referenceSurfaces ? { referenceSurfaces } : {})}
+                    {...(sidebarProposal ? { sidebarProposal } : {})}
                     availability={
                         activeAvailability ??
                         happyAgentAvailabilityProject(active.session.connection.get(), true, {
@@ -6464,6 +6486,8 @@ function HappyAgentArtifactsPanelSurface(props: {
 interface HappyAgentWorkspaceSurfaceProps {
     /** The Surfaces the transcript's references can name, and where one opens. */
     referenceSurfaces?: MessageReferenceSurfaces;
+    /** Draws a sidebar proposal in Prioritizing's chat; absent without Spaces. */
+    sidebarProposal?: (artifactId: string, fit: InlinePageFit) => ReactNode;
     /** The machine's artifacts, present only once it has said it keeps them. */
     artifacts?: HappyAgentArtifacts;
     /** Shows an HTML artifact opened beside the conversation as a site of its own. */
@@ -7302,6 +7326,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                 inlineEngines={{
                     ...(props.artifactPage ? { artifactPage: props.artifactPage } : {}),
                     ...(props.browserContent ? { browserContent: props.browserContent } : {}),
+                    ...(props.sidebarProposal ? { proposalRender: props.sidebarProposal } : {}),
                     browserConnectionId: props.browserConnectionId,
                 }}
                 referenceEntities={messageReferenceEntities(workspace.list)}
@@ -8790,6 +8815,8 @@ function HappyAgentConversationBody(props: {
     inlineEngines?: {
         readonly artifactPage?: HtmlPreviewRenderer;
         readonly browserContent?: BrowserContentRenderer;
+        /** Draws a sidebar proposal the transcript shows. */
+        readonly proposalRender?: (artifactId: string, fit: InlinePageFit) => ReactNode;
         readonly browserConnectionId: string | null;
     };
     /** The agents, workspaces, and projects the transcript's references can name. */
@@ -9248,6 +9275,8 @@ function HappyAgentConversationSurface(props: {
     inlineEngines?: {
         readonly artifactPage?: HtmlPreviewRenderer;
         readonly browserContent?: BrowserContentRenderer;
+        /** Draws a sidebar proposal the transcript shows. */
+        readonly proposalRender?: (artifactId: string, fit: InlinePageFit) => ReactNode;
         readonly browserConnectionId: string | null;
     };
     /** The agents, workspaces, and projects the transcript's references can name. */
@@ -9427,6 +9456,9 @@ function HappyAgentConversationSurface(props: {
                   : {}),
               ...(inlineEngines.browserContent
                   ? { browserContent: inlineEngines.browserContent }
+                  : {}),
+              ...(inlineEngines.proposalRender
+                  ? { proposalRender: inlineEngines.proposalRender }
                   : {}),
               browserConnectionId: inlineEngines.browserConnectionId,
               workspaceId: props.groupId,

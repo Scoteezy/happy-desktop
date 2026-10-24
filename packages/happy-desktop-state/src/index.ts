@@ -264,3 +264,4 @@ export type {
 export * from "./spaces/spaceTypes.js";
 export * from "./spaces/spacesStore.js";
 export * from "./spaces/spacesSidebarDocument.js";
+export * from "./spaces/sidebarProposalsStore.js";

@@ -88,3 +88,15 @@
     font-size: 12px;
     line-height: 16px;
 }
+
+/* Left of the answers, on the one line the footer has: it never adds a row. */
+.happy-sidebar-proposal__notice {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--status-error);
+    font-size: 12px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

@@ -24,6 +24,8 @@ export type HappyAgentArtifactType =
     | "document"
     /** Experimental: a person's sidebar document, shown as the HTML it is. */
     | "sidebar"
+    /** A sidebar Prioritizing proposes, shown in its chat as a sidebar the person can edit. */
+    | "sidebar_proposal"
     | "unknown";
 
 /**

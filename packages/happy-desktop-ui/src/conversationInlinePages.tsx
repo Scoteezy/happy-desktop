@@ -42,6 +42,11 @@ export interface ConversationInlinePages {
         fit: InlinePageFit,
     ) => ReactNode;
     /**
+     * Draws a sidebar proposal as the sidebar it proposes, live and editable,
+     * at its full height; absent where the host does not draw proposals.
+     */
+    readonly proposalRender?: (artifactId: HappyAgentArtifactId, fit: InlinePageFit) => ReactNode;
+    /**
      * Opens an artifact beside the conversation: the numbered version a call
      * recorded, or without one its latest version, followed as it changes.
      */
@@ -135,12 +140,20 @@ export function conversationInlinePage(
                 ? live
                     ? pages.liveRender !== undefined
                     : pages.artifactRender !== undefined && site?.type !== "unavailable"
-                : type === "markdown" ||
-                  type === "image" ||
-                  type === "image_series" ||
-                  type === "video");
+                : type === "sidebar_proposal"
+                  ? pages.proposalRender !== undefined
+                  : type === "markdown" ||
+                    type === "image" ||
+                    type === "image_series" ||
+                    type === "video");
         const placement = expandable ? "inline" : "title";
-        if (placement === "inline" && !collapsed && type !== "html" && artifact)
+        if (
+            placement === "inline" &&
+            !collapsed &&
+            type !== "html" &&
+            type !== "sidebar_proposal" &&
+            artifact
+        )
             pages.artifactsContentRequest([artifactId]);
         const height = local.height(rowKey);
         const geometry: InlinePageGeometry = {
@@ -169,9 +182,10 @@ export function conversationInlinePage(
                 ? `Version ${String(recorded)} · showing the latest, ${String(latest)}`
                 : `Version ${String(recorded)}`;
         // A live artifact's files are only a placeholder, so the panel beside
-        // the chat has nothing of it to show yet: it is read in the chat.
+        // the chat has nothing of it to show yet: it is read in the chat. So
+        // is a proposal, which is answered where it was asked.
         const openSide =
-            gone || live
+            gone || live || type === "sidebar_proposal"
                 ? undefined
                 : () => {
                       // Opened beside the chat, it is not also open in it; closing
@@ -181,32 +195,40 @@ export function conversationInlinePage(
                   };
         const liveRender = pages.liveRender;
         const render = pages.artifactRender;
+        const proposalRender = pages.proposalRender;
         const content = artifact?.content;
         const page =
             !expandable || artifact === undefined
                 ? undefined
-                : live && liveRender
+                : type === "sidebar_proposal" && proposalRender
                   ? {
-                        key: `${artifactId}:${live.networkId}:${live.url}`,
-                        render: (fit: InlinePageFit) => liveRender(artifactId, live, fit),
+                        // One page across every version: it is edited in place,
+                        // and a revision redraws its rows without a new frame.
+                        key: `proposal:${artifactId}`,
+                        render: (fit: InlinePageFit) => proposalRender(artifactId, fit),
                     }
-                  : type === "html"
-                    ? site?.type === "opened" && render
-                        ? { key: site.url, render: (fit: InlinePageFit) => render(site.url, fit) }
-                        : undefined
-                    : content
-                      ? {
-                            key: `${artifactId}:${String(content.version)}`,
-                            render: (fit: InlinePageFit) => (
-                                <ArtifactInlineContent
-                                    artifactType={type}
-                                    content={content}
-                                    fit={fit}
-                                    {...(openSide ? { onOpen: openSide } : {})}
-                                />
-                            ),
-                        }
-                      : undefined;
+                  : live && liveRender
+                    ? {
+                          key: `${artifactId}:${live.networkId}:${live.url}`,
+                          render: (fit: InlinePageFit) => liveRender(artifactId, live, fit),
+                      }
+                    : type === "html"
+                      ? site?.type === "opened" && render
+                          ? { key: site.url, render: (fit: InlinePageFit) => render(site.url, fit) }
+                          : undefined
+                      : content
+                        ? {
+                              key: `${artifactId}:${String(content.version)}`,
+                              render: (fit: InlinePageFit) => (
+                                  <ArtifactInlineContent
+                                      artifactType={type}
+                                      content={content}
+                                      fit={fit}
+                                      {...(openSide ? { onOpen: openSide } : {})}
+                                  />
+                              ),
+                          }
+                        : undefined;
         return {
             geometry,
             props: {

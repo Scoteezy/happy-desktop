@@ -61,6 +61,7 @@ export function conversationInlinePagesCreate(input: {
     readonly store: HappyAgentInlineArtifactsStore;
     readonly artifactPage?: HtmlPreviewRenderer;
     readonly browserContent?: BrowserContentRenderer;
+    readonly proposalRender?: ConversationInlinePages["proposalRender"];
     readonly browserConnectionId: string | null;
     readonly workspaceId: string;
     readonly agentId: string;
@@ -108,6 +109,7 @@ export function conversationInlinePagesCreate(input: {
                       }),
               }
             : {}),
+        ...(input.proposalRender ? { proposalRender: input.proposalRender } : {}),
         artifactOpen: input.artifactOpen,
         pageOpen: input.pageOpen,
     };

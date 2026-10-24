@@ -44,6 +44,7 @@ import {
     type HappyAgentArtifacts,
     type HappyAgentSurfaces,
     type HappyAgentSpacesStore,
+    type HappyAgentSidebarProposalsStore,
     type HappyAgentSessionLocation,
     type HappyAgentWorkspaceMemoryDocument,
     type HappyAgentStemCellsHintPersistence,
@@ -164,6 +165,8 @@ export interface HappyAgentSession {
     readonly surfaces: HappyAgentSurfaces;
     /** The redesigned sidebar, read once something subscribes to it. */
     readonly spaces: HappyAgentSpacesStore;
+    /** The sidebar proposals Prioritizing's chat shows, read as a chat asks for them. */
+    readonly sidebarProposals: HappyAgentSidebarProposalsStore;
     readonly clock: HappyAgentClockStore;
 }
 
@@ -618,6 +621,7 @@ export function happyAgentConnectionOpen(input: {
                     surfaces: client.surfaces(),
                     clock,
                     spaces: client.spaces(),
+                    sidebarProposals: client.sidebarProposals(),
                 };
                 debugEntry({
                     level: "info",
