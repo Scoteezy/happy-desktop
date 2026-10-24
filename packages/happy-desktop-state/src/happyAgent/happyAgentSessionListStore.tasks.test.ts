@@ -62,6 +62,7 @@ function listCreate(initial: readonly HappyAgentTask[]) {
         setPermissionMode: vi.fn(() => `mut_${String(++mutation)}`),
         setServiceTier: vi.fn(() => `mut_${String(++mutation)}`),
         sessionModeSaveWait: vi.fn((_id: string) => Promise.resolve()),
+        renameWait: vi.fn((_id: string) => Promise.resolve()),
     };
     const deps = {
         client: {},
@@ -318,22 +319,62 @@ it("creates a task, answering with its conversation once the host lists it at th
     expect(harness.list.get().mutationError?.message).not.toContain("other");
 });
 
-it("renames at once, and states the host's refusal under the task", async () => {
+it("renames at once and never shows the old name again, whatever the host answers when", async () => {
     using harness = listCreate([task("a", { orderKey: "a1" })]);
     await vi.waitFor(() => expect(harness.list.get().tasks).toHaveLength(1));
+    const shown: string[] = ["a"];
+    const unsubscribe = harness.list.subscribe(() => {
+        const name = harness.list.get().tasks[0]?.name;
+        if (name !== undefined && name !== shown.at(-1)) shown.push(name);
+    });
+    let reply!: () => void;
+    harness.actions.renameWait.mockImplementationOnce(
+        () => new Promise<void>((resolve) => (reply = resolve)),
+    );
 
-    await harness.list.taskRename("a" as HappyAgentTaskId, "Alpha");
+    const renamed = harness.list.taskRename("a" as HappyAgentTaskId, "Alpha");
     expect(harness.actions.renameTask).toHaveBeenCalledWith("a", "Alpha");
+    await vi.waitFor(() => expect(harness.actions.renameWait).toHaveBeenCalled());
     expect(harness.list.get().tasks[0]?.name).toBe("Alpha");
+    // The host's reply is late, and a catalog it read before the rename
+    // landed comes in first: the row keeps the new name through it.
+    harness.hostAnswers([task("a", { orderKey: "a1" })]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(harness.list.get().tasks[0]?.name).toBe("Alpha");
+    reply();
+    await expect(renamed).resolves.toBe(true);
+    harness.hostAnswers([{ ...task("a", { orderKey: "a1" }), name: "Alpha" }]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Carried by the host now, the name is the host's: a later rename by
+    // someone else shows.
+    harness.hostAnswers([{ ...task("a", { orderKey: "a1" }), name: "Alpha 2" }]);
+    await vi.waitFor(() => expect(harness.list.get().tasks[0]?.name).toBe("Alpha 2"));
+    unsubscribe();
+    expect(shown).toEqual(["a", "Alpha", "Alpha 2"]);
+});
 
+it("states the host's refusal of a rename under the task, and puts the host's name back", async () => {
+    using harness = listCreate([task("a", { orderKey: "a1" })]);
+    await vi.waitFor(() => expect(harness.list.get().tasks).toHaveLength(1));
+    let refuse!: (error: Error) => void;
+    harness.actions.renameWait.mockImplementationOnce(
+        () => new Promise<void>((_resolve, reject) => (refuse = reject)),
+    );
+
+    const renamed = harness.list.taskRename("a" as HappyAgentTaskId, "Alpha");
+    await vi.waitFor(() => expect(harness.actions.renameWait).toHaveBeenCalled());
+    expect(harness.list.get().tasks[0]?.name).toBe("Alpha");
     harness.reject({
         type: "mutation_rejected",
         action: "rename_task",
         message: "“a” changed while you were renaming it. Try again.",
         mutationId: "mut_1",
     });
+    refuse(new Error("“a” changed while you were renaming it. Try again."));
+    await expect(renamed).resolves.toBe(false);
     expect(harness.list.get().taskFailures.get("a" as HappyAgentTaskId)).toMatchObject({
         action: "rename",
         error: { message: "“a” changed while you were renaming it. Try again." },
     });
+    await vi.waitFor(() => expect(harness.list.get().tasks[0]?.name).toBe("a"));
 });

@@ -2033,9 +2033,12 @@ export interface HappyAgentWorkspaceStore {
     taskCreateSubmit(): Promise<void>;
     /** Opens the name dialog for a task. Any member may rename it. */
     taskRenameOpen(taskId: HappyAgentTaskId): void;
-    /** Saves a sidebar label without opening a settings dialog. */
-    taskRename(taskId: HappyAgentTaskId, name: string): Promise<void>;
-    botRename(botId: string, name: string): Promise<void>;
+    /**
+     * Saves a sidebar label without opening a settings dialog; resolves
+     * whether the host took it.
+     */
+    taskRename(taskId: HappyAgentTaskId, name: string): Promise<boolean>;
+    botRename(botId: string, name: string): Promise<boolean>;
     projectRename(projectId: HappyAgentProjectId, name: string): Promise<void>;
     worktreeRename(
         projectId: HappyAgentProjectId,

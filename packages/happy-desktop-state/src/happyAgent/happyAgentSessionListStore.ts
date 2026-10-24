@@ -332,7 +332,8 @@ export interface HappyAgentSessionListStore {
      * host refuses creation, having withdrawn the row.
      */
     botCreate(input: HappyAgentBotCreateInput): Promise<HappyAgentBotCreation>;
-    botRename(botId: string, name: string): Promise<void>;
+    /** Renames a bot the way `taskRename` renames a task. */
+    botRename(botId: string, name: string): Promise<boolean>;
     /** Archives a bot, preserving its dedicated folder for a later restore. */
     botArchive(botId: HappyAgentBotId): Promise<void>;
     /** Moves one bot after `afterId`, or to the front of the bot list when null. */
@@ -343,8 +344,12 @@ export interface HappyAgentSessionListStore {
      * its conversation; rejects with a displayable reason when the host refuses.
      */
     taskCreate(input: HappyAgentTaskCreateInput): Promise<HappyAgentTaskCreation>;
-    /** Renames a task for everyone. The row wears the new name at once. */
-    taskRename(taskId: HappyAgentTaskId, name: string): Promise<void>;
+    /**
+     * Renames a task for everyone. The row wears the new name at once and
+     * keeps it through any read that predates the rename; resolves `true` once
+     * the host has taken it, `false` when it refused and the old name is back.
+     */
+    taskRename(taskId: HappyAgentTaskId, name: string): Promise<boolean>;
     /** Joins a task, which the host puts at the top of the reader's own list. */
     taskJoin(taskId: HappyAgentTaskId): Promise<void>;
     /**
@@ -566,6 +571,7 @@ export interface HappyAgentSessionListDeps {
         | "reorderTask"
         | "reorderWorkspace"
         | "renameTask"
+        | "renameWait"
         | "setBotAvatar"
         | "setEffort"
         | "setPermissionMode"
@@ -1027,6 +1033,67 @@ export function happyAgentSessionListStoreCreate(
     };
 
     /**
+     * Names this window gave tasks and bots that the host has not listed yet,
+     * by the task's or bot's id. Each is laid over every catalog read until a
+     * read carries it, so a read taken before the rename landed never puts the
+     * old name back for a frame; a refusal takes it off.
+     */
+    const nameIntents = new Map<string, { readonly name: string; readonly mutationId: string }>();
+    const nameIntentsApply = <Row extends { readonly id: string; readonly name: string }>(
+        rows: readonly Row[],
+    ): readonly Row[] => {
+        if (nameIntents.size === 0) return rows;
+        let changed = false;
+        const applied = rows.map((row) => {
+            const intent = nameIntents.get(row.id);
+            if (intent === undefined) return row;
+            if (row.name === intent.name) {
+                nameIntents.delete(row.id);
+                return row;
+            }
+            changed = true;
+            return { ...row, name: intent.name };
+        });
+        return changed ? applied : rows;
+    };
+    /** Drops one rename's intent, if it is still the latest for its row. */
+    const nameIntentWithdraw = (mutationId: string): void => {
+        for (const [id, intent] of nameIntents)
+            if (intent.mutationId === mutationId) nameIntents.delete(id);
+    };
+    /**
+     * Renames a task or a bot in place and sends it: the row wears the name at
+     * once, and the answer says whether the host took it.
+     */
+    const nameSave = async (
+        kind: "tasks" | "bots",
+        id: string,
+        name: string,
+        send: () => string,
+    ): Promise<boolean> => {
+        const mutationId = await mutate(async () => {
+            const rows: readonly { readonly id: string }[] = internal.getState().catalog[kind];
+            if (!rows.some((row) => row.id === id)) return undefined;
+            if (kind === "tasks") taskFailureWithdraw(id as HappyAgentTaskId);
+            const sent = connectMutationTrack(send());
+            nameIntents.set(id, { name, mutationId: sent });
+            internal.setState((state) => ({
+                catalog:
+                    kind === "tasks"
+                        ? { ...state.catalog, tasks: nameIntentsApply(state.catalog.tasks) }
+                        : { ...state.catalog, bots: nameIntentsApply(state.catalog.bots) },
+            }));
+            publish();
+            return sent;
+        });
+        if (mutationId === undefined) return false;
+        return deps.connectActions.renameWait(mutationId).then(
+            () => true,
+            () => false,
+        );
+    };
+
+    /**
      * Sibling orders of bot subtasks this window moved and the host has not yet
      * echoed, keyed by the parent's conversation — the bot's own or a task's.
      * Each is laid over every catalog read until the host's tree lists the
@@ -1421,8 +1488,10 @@ export function happyAgentSessionListStoreCreate(
                     snapshot.sessions,
                     observedArchivedSessions,
                 );
-                const bots = subtaskOrdersApply(botAvatarIntentsApply(snapshot.catalog.bots));
-                const tasks = subtaskOrdersApply(snapshot.catalog.tasks);
+                const bots = nameIntentsApply(
+                    subtaskOrdersApply(botAvatarIntentsApply(snapshot.catalog.bots)),
+                );
+                const tasks = nameIntentsApply(subtaskOrdersApply(snapshot.catalog.tasks));
                 internal.setState({
                     archivedSessions: pending.archivedSessions,
                     catalog:
@@ -1707,6 +1776,8 @@ export function happyAgentSessionListStoreCreate(
                       error,
                   )
                 : previous.sessionCreateFailures;
+        // A refused rename's name comes off; the reconcile below puts the host's back.
+        nameIntentWithdraw(rejection.mutationId);
         const refusedTask = taskMutations.get(rejection.mutationId);
         taskMutations.delete(rejection.mutationId);
         if (refusedTask !== undefined) {
@@ -1869,6 +1940,7 @@ export function happyAgentSessionListStoreCreate(
                 if (sessionId && sessionArchiveIntents.get(sessionId)?.mutationId === expired)
                     sessionArchiveIntents.delete(sessionId);
                 botAvatarIntentWithdraw(expired);
+                nameIntentWithdraw(expired);
             }
         }
         return mutationId;
@@ -2480,19 +2552,9 @@ export function happyAgentSessionListStoreCreate(
             }
         },
         botRename: (botId, name) =>
-            mutate(async () => {
-                if (!internal.getState().catalog.bots.some((bot) => bot.id === botId)) return;
-                internal.setState((state) => ({
-                    catalog: {
-                        ...state.catalog,
-                        bots: state.catalog.bots.map((bot) =>
-                            bot.id === botId ? { ...bot, name } : bot,
-                        ),
-                    },
-                }));
-                publish();
-                connectMutationTrack(deps.connectActions.renameGroup({ kind: "bot", botId }, name));
-            }),
+            nameSave("bots", botId, name, () =>
+                deps.connectActions.renameGroup({ kind: "bot", botId }, name),
+            ),
         botArchive: (botId) =>
             mutate(async () => {
                 if (!internal.getState().catalog.bots.some((bot) => bot.id === botId)) return;
@@ -2637,22 +2699,10 @@ export function happyAgentSessionListStoreCreate(
             }
         },
         taskRename: (taskId, name) =>
-            mutate(async () => {
-                if (!internal.getState().catalog.tasks.some((task) => task.id === taskId)) return;
-                taskFailureWithdraw(taskId);
-                internal.setState((state) => ({
-                    catalog: {
-                        ...state.catalog,
-                        tasks: state.catalog.tasks.map((task) =>
-                            task.id === taskId ? { ...task, name } : task,
-                        ),
-                    },
-                }));
-                publish();
-                const mutationId = connectMutationTrack(
-                    deps.connectActions.renameTask(taskId, name),
-                );
+            nameSave("tasks", taskId, name, () => {
+                const mutationId = deps.connectActions.renameTask(taskId, name);
                 taskMutations.set(mutationId, { taskId, action: "rename" });
+                return mutationId;
             }),
         taskJoin: (taskId) =>
             mutate(async () => {
@@ -2854,6 +2904,7 @@ export function happyAgentSessionListStoreCreate(
             sessionArchiveMutationIds.clear();
             botAvatarIntents.clear();
             botAvatarMutationIds.clear();
+            nameIntents.clear();
             botCreations.clear();
             stop();
             storeUnsub();

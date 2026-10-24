@@ -291,6 +291,122 @@ it("reads the sidebar document again when the daemon removes a row from it", asy
     }
 });
 
+/** One task's row as the daemon sends it, at a version and under a title. */
+function taskRow(version: number, title: string | null, working = false) {
+    return {
+        createdAt: 1,
+        icon: null,
+        id: "space-release",
+        orderKey: "a0",
+        placement: "settled" as const,
+        sectionId: null,
+        target: {
+            agentId: "agent-release",
+            id: "task-release",
+            kind: "task" as const,
+            workspaceId: "ws-release",
+        },
+        title,
+        updatedAt: version,
+        version,
+        visibility: "shown" as const,
+        working,
+    };
+}
+
+/** A store over a daemon whose sidebar lists one task, with every title it showed. */
+async function renameWindowOpen() {
+    const daemon = fakeHappyAgentDaemonCreate();
+    let listed = taskRow(1, "Release");
+    daemon.client.listSpaces = vi.fn(async () => ({ cursor: "0", sections: [], spaces: [listed] }));
+    const sync = happyAgentSyncCreate();
+    sync.writer.bootstrapReceived(await daemon.client.getDesktopBootstrap());
+    const store = happyAgentSpacesStoreCreate({ client: daemon.client, sync: sync.source });
+    const shown: (string | null)[] = [];
+    const title = () => store.get().spaces.get("space-release" as never)?.title;
+    const unsubscribe = store.subscribe(() => {
+        const current = title();
+        if (current !== undefined && current !== shown.at(-1)) shown.push(current);
+    });
+    await vi.waitFor(() => expect(title()).toBe("Release"));
+    return {
+        store,
+        shown,
+        title,
+        spaceId: "space-release" as never,
+        /** Delivers one `space.updated` as the journal would. */
+        async echo(row: ReturnType<typeof taskRow>) {
+            const event = daemon.eventEmit("space.updated", { space: row });
+            sync.writer.updateReceived({ kind: "event", cursor: event.cursor, event });
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        },
+        /** Has the next full read of the sidebar answer this row. */
+        listedSet(row: ReturnType<typeof taskRow>) {
+            listed = row;
+        },
+        /** Has the store read the whole sidebar again, as after a reconnect. */
+        async reread() {
+            const reads = vi.mocked(daemon.client.listSpaces).mock.calls.length;
+            sync.writer.bootstrapReceived(await daemon.client.getDesktopBootstrap());
+            await vi.waitFor(() =>
+                expect(vi.mocked(daemon.client.listSpaces).mock.calls.length).toBe(reads + 1),
+            );
+            await new Promise((resolve) => setTimeout(resolve, 0));
+        },
+        close() {
+            unsubscribe();
+            store[Symbol.dispose]();
+            sync.writer.close();
+        },
+    };
+}
+
+it("wears a hand-given name from the keystroke, through late and out-of-order echoes, until the daemon's own carries it", async () => {
+    const window = await renameWindowOpen();
+    try {
+        // Enter: the name is the row's in the same call, before any reply.
+        window.store.spaceTitleUpdate(window.spaceId, "Release train");
+        expect(window.title()).toBe("Release train");
+
+        // The daemon's reply is late. Meanwhile the journal delivers a change
+        // it made before the rename landed — newer, under the old name — and
+        // then an older one out of order, and a full read taken before it.
+        await window.echo(taskRow(2, "Release", true));
+        expect(window.title()).toBe("Release train");
+        expect(window.store.get().spaces.get(window.spaceId)?.working).toBe(true);
+        await window.echo(taskRow(1, "Release"));
+        window.listedSet(taskRow(2, "Release", true));
+        await window.reread();
+        expect(window.title()).toBe("Release train");
+
+        // The rename's own echo carries the name; from then on the daemon's
+        // word is the row's again, so the next rename by anyone shows.
+        await window.echo(taskRow(3, "Release train", true));
+        await window.echo(taskRow(4, "Release train 2"));
+        expect(window.title()).toBe("Release train 2");
+        expect(window.shown).toEqual(["Release", "Release train", "Release train 2"]);
+    } finally {
+        window.close();
+    }
+});
+
+it("puts the daemon's latest title back when it refuses a hand-given name", async () => {
+    const window = await renameWindowOpen();
+    try {
+        window.store.spaceTitleUpdate(window.spaceId, "Release train");
+        await window.echo(taskRow(2, "Release notes"));
+        expect(window.title()).toBe("Release train");
+        // A withdrawal of a name no longer shown changes nothing.
+        window.store.spaceTitleWithdraw(window.spaceId, "Something else");
+        expect(window.title()).toBe("Release train");
+        window.store.spaceTitleWithdraw(window.spaceId, "Release train");
+        expect(window.title()).toBe("Release notes");
+        expect(window.shown).toEqual(["Release", "Release train", "Release notes"]);
+    } finally {
+        window.close();
+    }
+});
+
 it("puts a row's daemon picture behind the endpoint this connection talks to", async () => {
     const daemon = fakeHappyAgentDaemonCreate();
     const row = (id: string, icon: { type: "image"; url: string } | null) => ({

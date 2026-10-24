@@ -3765,15 +3765,19 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     ...(active && happyAgentTaskCreateSupported(active)
                         ? {
                               taskRename: (taskId: string, name: string) =>
-                                  void active.session?.workspace
-                                      .taskRename(taskId as HappyAgentTaskId, name)
-                                      .catch(() => undefined),
+                                  (
+                                      active.session?.workspace.taskRename(
+                                          taskId as HappyAgentTaskId,
+                                          name,
+                                      ) ?? Promise.resolve(false)
+                                  ).catch(() => false),
                           }
                         : {}),
                     botRename: (botId, name) =>
-                        void active?.session?.workspace
-                            .botRename(botId as HappyAgentBotId, name)
-                            .catch(() => undefined),
+                        (
+                            active?.session?.workspace.botRename(botId as HappyAgentBotId, name) ??
+                            Promise.resolve(false)
+                        ).catch(() => false),
                 }}
                 // The integrated header holds the toggle in this lane, so the
                 // spaces sidebar never shows the wordmark.

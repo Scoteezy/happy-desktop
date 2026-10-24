@@ -346,6 +346,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
     const workspaceCreationOutcomes = new Map<string, Promise<void>>();
     const sendAcceptance = new Map<string, Promise<void>>();
     const modeSaveOutcomes = new Map<string, Promise<void>>();
+    const renameOutcomes = new Map<string, Promise<void>>();
     const sendAcceptanceCreate = (id: string) => {
         let resolve!: () => void;
         let reject!: (error: Error) => void;
@@ -3642,6 +3643,12 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             while (modeSaveOutcomes.size > 256)
                 modeSaveOutcomes.delete(modeSaveOutcomes.keys().next().value!);
         }
+        if (action === "rename_task" || action === "rename_group") {
+            renameOutcomes.set(mutationId, completed);
+            void completed.catch(() => undefined);
+            while (renameOutcomes.size > 256)
+                renameOutcomes.delete(renameOutcomes.keys().next().value!);
+        }
         const creationOutcomes =
             action === "create_session"
                 ? sessionCreationOutcomes
@@ -4558,6 +4565,11 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             modeSaveOutcomes.delete(mutationId);
             return outcome ?? Promise.reject(new Error("This model save is no longer tracked."));
         },
+        renameWait(mutationId) {
+            const outcome = renameOutcomes.get(mutationId);
+            renameOutcomes.delete(mutationId);
+            return outcome ?? Promise.reject(new Error("This rename is no longer tracked."));
+        },
         workspaceCreationWait(workspaceId) {
             return (
                 workspaceCreationOutcomes.get(workspaceId) ??
@@ -5429,6 +5441,7 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
             draftRevisions.clear();
             mutationQueues.clear();
             modeSaveOutcomes.clear();
+            renameOutcomes.clear();
             sessionCreations.clear();
             sessionMutationCounts.clear();
             processOwners.clear();

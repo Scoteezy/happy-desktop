@@ -227,6 +227,14 @@ export interface HappyAgentSpacesStore {
      */
     stemCellDiscard(spaceId: HappyAgentSpaceId): void;
     /**
+     * Shows the name the person just gave a row's task or bot, whose rename is
+     * on its way: the row and its tab wear it at once and keep it through any
+     * read or event that does not carry it yet, until one does.
+     */
+    spaceTitleUpdate(spaceId: HappyAgentSpaceId, title: string): void;
+    /** Takes back a name the host refused, if it is still the one shown. */
+    spaceTitleWithdraw(spaceId: HappyAgentSpaceId, title: string): void;
+    /**
      * Writes the sidebar document this window edited, against the version it
      * edited. It shows at once; a stale base reads the daemon's version back
      * and reports the refusal, without merging.
@@ -358,13 +366,38 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
         publish({ error: happyAgentUserError(error) });
     };
 
+    /**
+     * Names given here whose rename no read has carried yet, by space, with
+     * the title the daemon last said, which a refusal puts back.
+     */
+    const titleIntents = new Map<
+        HappyAgentSpaceId,
+        { readonly title: string; base: string | null }
+    >();
+    const titled = (space: HappyAgentSpace): HappyAgentSpace => {
+        const intent = titleIntents.get(space.id);
+        if (intent === undefined) return space;
+        if (space.title === intent.title) {
+            titleIntents.delete(space.id);
+            return space;
+        }
+        intent.base = space.title;
+        return { ...space, title: intent.title };
+    };
+    const spaceTitleShow = (spaceId: HappyAgentSpaceId, title: string | null): void => {
+        const current = snapshot.spaces.get(spaceId);
+        if (current === undefined || current.title === title) return;
+        const spaces = new Map(snapshot.spaces);
+        spaces.set(spaceId, { ...current, title });
+        publish({ spaces });
+    };
     const spaceAdopt = (
         spaces: Map<HappyAgentSpaceId, HappyAgentSpace>,
         space: HappyAgentSpace,
     ): boolean => {
         const current = spaces.get(space.id);
         if (current !== undefined && current.version > space.version) return false;
-        spaces.set(space.id, space);
+        spaces.set(space.id, titled(space));
         return true;
     };
 
@@ -454,7 +487,8 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             .then((response) => {
                 if (disposed || active.signal.aborted) return;
                 const spaces = new Map<HappyAgentSpaceId, HappyAgentSpace>();
-                for (const space of response.spaces.map(spaceRead)) spaces.set(space.id, space);
+                for (const space of response.spaces.map(spaceRead))
+                    spaces.set(space.id, titled(space));
                 const pending = held ?? [];
                 held = undefined;
                 snapshot = {
@@ -1011,6 +1045,21 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 () => undefined,
             ).catch(() => undefined);
         },
+        spaceTitleUpdate(spaceId, title) {
+            const current = snapshot.spaces.get(spaceId);
+            if (current === undefined) return;
+            const prior = titleIntents.get(spaceId);
+            const base = prior === undefined ? current.title : prior.base;
+            if (base === title) titleIntents.delete(spaceId);
+            else titleIntents.set(spaceId, { title, base });
+            spaceTitleShow(spaceId, title);
+        },
+        spaceTitleWithdraw(spaceId, title) {
+            const intent = titleIntents.get(spaceId);
+            if (intent?.title !== title) return;
+            titleIntents.delete(spaceId);
+            spaceTitleShow(spaceId, intent.base);
+        },
         sidebarClassicUpdate(next) {
             classic = next;
             seedAdopt();
@@ -1049,6 +1098,8 @@ export const happyAgentSpacesStoreNoop: HappyAgentSpacesStore = {
     attentionVisibleUpdate: () => undefined,
     tidyRequest: () => undefined,
     stemCellDiscard: () => undefined,
+    spaceTitleUpdate: () => undefined,
+    spaceTitleWithdraw: () => undefined,
     sidebarWrite: () => undefined,
     sidebarDragUpdate: () => undefined,
     sidebarClassicUpdate: () => undefined,

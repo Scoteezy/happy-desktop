@@ -1050,6 +1050,8 @@ export interface HappyAgentConnection {
     sessionCreationWait(sessionId: string): Promise<void>;
     /** Waits for the host to acknowledge this mode mutation, including a refusal. */
     sessionModeSaveWait(mutationId: MutationId): Promise<void>;
+    /** Waits for the host to take a task or group rename, rejecting when it refuses. */
+    renameWait(mutationId: MutationId): Promise<void>;
     markSessionRead(sessionId: string): MutationId;
     sendMessage(sessionId: string, message: string | SendMessageInput): MutationId;
     /** Same send/idempotency path, resolving only after authoritative acceptance. */

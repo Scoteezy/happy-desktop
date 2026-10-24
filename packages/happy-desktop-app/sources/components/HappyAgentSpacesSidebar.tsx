@@ -369,10 +369,13 @@ export interface HappyAgentSpacesActions {
     taskArchive(taskId: string): void;
     botArchive(botId: string): void;
     surfaceLeave(surfaceId: string): void;
-    /** Renames a task by hand; absent for a Happy Agent that cannot. */
-    taskRename?(taskId: string, name: string): void;
-    /** Renames a bot by hand. */
-    botRename?(botId: string, name: string): void;
+    /**
+     * Renames a task by hand, resolving whether the host took the name;
+     * absent for a Happy Agent that cannot.
+     */
+    taskRename?(taskId: string, name: string): Promise<boolean>;
+    /** Renames a bot by hand, the same way. */
+    botRename?(botId: string, name: string): Promise<boolean>;
 }
 
 /** The window's two commands, which stand in the list like any item. */
@@ -759,9 +762,21 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                             documentEdit((current) => sidebarDocumentRelabel(current, key, label));
                         return;
                     }
-                    const target = spaceOf(item.id)?.target;
-                    if (target?.kind === "task") props.actions.taskRename?.(target.id, label);
-                    else if (target?.kind === "bot") props.actions.botRename?.(target.id, label);
+                    const space = spaceOf(item.id);
+                    const rename =
+                        space?.target.kind === "task"
+                            ? props.actions.taskRename
+                            : space?.target.kind === "bot"
+                              ? props.actions.botRename
+                              : undefined;
+                    if (space === undefined || rename === undefined) return;
+                    // The row and its tab wear the name in the keystroke that
+                    // saves it, not when the daemon's word comes back.
+                    const store = props.store;
+                    store.spaceTitleUpdate(space.id, label);
+                    void rename(space.target.id, label).then((taken) => {
+                        if (!taken) store.spaceTitleWithdraw(space.id, label);
+                    });
                 },
             }}
             onItemMenuSelect={(item, actionId) => {
