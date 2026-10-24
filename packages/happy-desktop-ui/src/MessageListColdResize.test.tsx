@@ -333,6 +333,10 @@ it.each([
     { count: 2, before: 650, after: 180, zoom: 1 },
     { count: 50, before: 650, after: 1223.875, zoom: 0.67 },
     { count: 2, before: 360, after: 650, zoom: 0.67 },
+    { count: 2, before: 650, after: 1223.875, zoom: 0.67 },
+    { count: 2, before: 650, after: 1223.875, zoom: 1.5 },
+    { count: 2, before: 650, after: 1223.875, zoom: 0.67, pending: true },
+    { count: 2, before: 650, after: 1223.875, zoom: 1.5, pending: true },
 ])("restores the same row and glyph as a retained view: %j", async (scenario) => {
     const view = createRenderer();
     let change!: (active: boolean, height: number, zoom: number, cold?: boolean) => void;
@@ -357,14 +361,22 @@ it.each([
                 })),
             );
         return (
-            <div style={{ height: state.height, width: 537.3125, zoom: state.zoom }}>
+            <div
+                style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    height: state.height,
+                    width: scenario.count === 2 && scenario.after === 1223.875 ? 600 : 537.3125,
+                    zoom: state.zoom,
+                }}
+            >
                 <RetainedViews
                     activeId={state.active ? "chat" : undefined}
                     views={[
                         {
                             id: "chat",
                             content: (
-                                <div style={{ display: "flex", height: state.height }}>
+                                <div style={{ display: "flex", height: "100%" }}>
                                     <MessageList
                                         key={state.generation}
                                         virtualize
@@ -418,11 +430,23 @@ it.each([
         await view.ready();
         await settle();
         const before = read();
+        const element = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+        if (scenario.pending === true) {
+            element.style.flex = "none";
+            element.style.height = `${scenario.after}px`;
+            void element.scrollTop;
+        }
         change(false, scenario.before, 1);
+        element.style.removeProperty("height");
+        element.style.removeProperty("flex");
         await settle();
         saved = latest;
         expect(saved?.type).toBe("row");
         expect(saved?.type === "row" && saved.viewportHeight).toBe(scenario.before);
+        if (scenario.count === 2 && scenario.after === 1223.875 && saved?.type === "row")
+            expect(
+                Math.abs(before[0]! + saved.offset - (scenario.before - saved.viewportInset!)),
+            ).toBeLessThanOrEqual(1);
         const live = scenario.live === true;
         if (live) {
             change(true, scenario.before, 1);

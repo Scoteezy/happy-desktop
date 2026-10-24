@@ -1890,18 +1890,19 @@ export function MessageList(props: MessageListProps) {
         const anchor =
             held?.type === "item" &&
             held.viewportInset >= 0 &&
-            held.viewportInset <= viewportGeometry.current.height
+            held.viewportInset <= viewportGeometry.current.height &&
+            modelAnchorRealized(held, viewportGeometry.current.height, top)
                 ? held
                 : /* An out-of-view point, or a raw scrollTop, is read back
                      as the row at the standard anchor point. Native scrolling
                      may already be clamped by an undelivered viewport resize;
                      only an unchanged box can supply a newer native position. */
                   modelAnchorCapture(viewportGeometry.current.height, top);
+        readerAnchor.current = anchor;
         if (nativeMoved) {
             // Hide can precede the target scroll listener. Retained views must
             // adopt the same native input this published cold position holds.
             readerScrollTop.current = top;
-            readerAnchor.current = anchor;
             // Activity may have disconnected the offset observer. TanStack
             // reattaches by writing its cached offset, so keep that cache with
             // the native position too, without notifying a hidden subtree.
@@ -2095,6 +2096,25 @@ export function MessageList(props: MessageListProps) {
                   floored: false,
                   clamped: false,
               };
+    }
+    /** Whether this point was actually painted, rather than clamped by a floor. */
+    function modelAnchorRealized(
+        anchor: Extract<MessageListVirtualAnchor, { type: "item" }>,
+        viewportHeight: number,
+        scrollTop: number,
+    ): boolean {
+        const index = itemIndexOf(anchor.key, anchor.index);
+        const item = index === undefined ? undefined : modeledItemAtIndex(index);
+        return (
+            item !== undefined &&
+            Math.abs(
+                leadingGap(viewportHeight) +
+                    item.start +
+                    anchor.itemOffset -
+                    scrollTop -
+                    (viewportHeight - anchor.viewportInset),
+            ) <= 1
+        );
     }
     function modelAnchorRestore(anchor: MessageListVirtualAnchor, viewportHeight: number) {
         const element = list.current;
@@ -2827,7 +2847,22 @@ export function MessageList(props: MessageListProps) {
                     opening.viewportHeight !== undefined
                 )
                     modelAnchorRestore(readerAnchor.current, viewportGeometry.current.height);
-                else scrollTopWrite(element, openingScrollTop.current ?? readerScrollTop.current);
+                else
+                    scrollTopWrite(
+                        element,
+                        openingScrollTop.current ?? readerScrollTop.current,
+                        (top) => {
+                            const held = readerAnchor.current;
+                            if (
+                                held?.type === "item" &&
+                                !modelAnchorRealized(held, viewportGeometry.current.height, top)
+                            )
+                                readerAnchor.current = modelAnchorCapture(
+                                    viewportGeometry.current.height,
+                                    top,
+                                );
+                        },
+                    );
                 /* A restored anchor is the reader's fixed point already. */
                 readerAnchor.current ??= modelAnchorCapture(viewportGeometry.current.height);
             }
