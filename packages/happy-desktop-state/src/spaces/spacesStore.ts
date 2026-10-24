@@ -48,6 +48,7 @@ const SPACE_EVENT_TYPES = [
     "space.section.removed",
     "space.batch.applied",
     "space.sidebar.changed",
+    "space.sidebar.proposal.changed",
     "artifact.updated",
 ] as const satisfies readonly HappyAgentEvent["type"][];
 
@@ -158,6 +159,18 @@ function sidebarOf(
     };
 }
 
+/** Prioritizing's open sidebar proposal, at its latest version. */
+export interface HappyAgentSpacesProposal {
+    readonly artifactId: string;
+    readonly version: number;
+}
+
+/** Where this device remembers the proposal version the person last saw in Prioritizing's chat. */
+export interface HappyAgentSpacesProposalSeenMemory {
+    read(): HappyAgentSpacesProposal | undefined;
+    write(seen: HappyAgentSpacesProposal): void;
+}
+
 export interface HappyAgentSpacesSnapshot {
     /** `unsupported` for a daemon from before spaces, which answers 404. */
     readonly availability: "loading" | "available" | "unsupported";
@@ -180,6 +193,13 @@ export interface HappyAgentSpacesSnapshot {
     readonly readAt: number;
     /** The sidebar document, which arranges the rows when present. */
     readonly sidebar?: HappyAgentSpacesSidebarDocument;
+    /** Prioritizing's proposal while it waits for an answer; `null` once none does. */
+    readonly proposal: HappyAgentSpacesProposal | null;
+    /**
+     * Whether the person opened Prioritizing's chat on this device at or after
+     * the open proposal's version. Without an open proposal, nothing waits.
+     */
+    readonly proposalSeen: boolean;
     /** The last act the daemon refused. */
     readonly error?: UserError;
     /** Why the last new work could not be made, until the reader dismisses it or makes more. */
@@ -213,6 +233,8 @@ export interface HappyAgentSpacesStore {
     olderExpandedUpdate(expanded: boolean): void;
     /** Whether Happy's chat is on screen; opening it reads its note. */
     happyFocusUpdate(focused: boolean): void;
+    /** Prioritizing's chat is on screen: the open proposal, as it is now, has been seen. */
+    proposalSeenRecord(): void;
     /** Asks the manager to tidy now; its batch applies as soon as it is done. */
     tidyRequest(): void;
     /**
@@ -266,6 +288,7 @@ export interface HappyAgentSpacesDeps {
         identity: HappyAgentStemCellIdentity,
         created: Promise<{ readonly agent: Agent }>,
     ) => void;
+    readonly proposalSeenMemory?: HappyAgentSpacesProposalSeenMemory;
     readonly now?: () => number;
 }
 
@@ -275,6 +298,8 @@ const EMPTY: HappyAgentSpacesSnapshot = {
     sections: [],
     batches: [],
     noteUnread: false,
+    proposal: null,
+    proposalSeen: false,
     agentWorkspaces: new Map(),
     olderExpanded: false,
     readAt: 0,
@@ -354,6 +379,25 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
         sidebarDocumentEdit(html, (view) =>
             sidebarDocumentInsert(view, spaceId, placement.sectionId, placement.happySpaceId),
         );
+
+    let proposalSeenHeld = deps.proposalSeenMemory?.read();
+    const proposalSeenOf = (proposal: HappyAgentSpacesProposal | null): boolean =>
+        proposal !== null &&
+        proposalSeenHeld?.artifactId === proposal.artifactId &&
+        proposalSeenHeld.version >= proposal.version;
+    /** The open proposal as the daemon names it, or none once it is answered. */
+    const proposalPatch = (
+        proposal: HappyAgentSpacesProposal | null,
+    ): Pick<HappyAgentSpacesSnapshot, "proposal" | "proposalSeen"> => {
+        const current = snapshot.proposal;
+        const next =
+            proposal !== null &&
+            current?.artifactId === proposal.artifactId &&
+            current.version === proposal.version
+                ? current
+                : proposal;
+        return { proposal: next, proposalSeen: proposalSeenOf(next) };
+    };
 
     const publish = (next: Partial<HappyAgentSpacesSnapshot>): void => {
         snapshot = { ...snapshot, ...next };
@@ -511,6 +555,20 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             })
             .then((answer) => {
                 if (disposed) return;
+                // A mark beside a row moves nothing, so it follows the daemon even mid-drag.
+                const open =
+                    answer.proposal?.status === "open"
+                        ? {
+                              artifactId: answer.proposal.artifactId,
+                              version: answer.proposal.version,
+                          }
+                        : null;
+                const proposal = proposalPatch(open);
+                if (
+                    proposal.proposal !== snapshot.proposal ||
+                    proposal.proposalSeen !== snapshot.proposalSeen
+                )
+                    publish(proposal);
                 if (sidebarWrites > 0 || sidebarDragging || creating.size > 0) {
                     sidebarStale = true;
                     return;
@@ -661,6 +719,28 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     batch,
                     ...snapshot.batches.filter((entry) => entry.id !== batch.id),
                 ].slice(0, BATCH_LIMIT);
+                break;
+            }
+            case "space.sidebar.proposal.changed": {
+                const proposal = event.payload.proposal;
+                const current = snapshot.proposal;
+                if (proposal.status === "open") {
+                    if (
+                        current?.artifactId === proposal.artifactId &&
+                        current.version >= proposal.version
+                    )
+                        break;
+                    Object.assign(
+                        next,
+                        proposalPatch({
+                            artifactId: proposal.artifactId,
+                            version: proposal.version,
+                        }),
+                    );
+                } else if (current?.artifactId === proposal.artifactId) {
+                    next.proposal = null;
+                    next.proposalSeen = false;
+                }
                 break;
             }
             case "space.sidebar.changed": {
@@ -1115,6 +1195,13 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             if (snapshot.olderExpanded === expanded) return;
             publish({ olderExpanded: expanded });
         },
+        proposalSeenRecord() {
+            const proposal = snapshot.proposal;
+            if (proposal === null || snapshot.proposalSeen) return;
+            proposalSeenHeld = proposal;
+            deps.proposalSeenMemory?.write(proposal);
+            publish({ proposalSeen: true });
+        },
         happyFocusUpdate(focused) {
             happyOnScreen = focused;
             if (focused && snapshot.noteUnread) publish({ noteUnread: false });
@@ -1285,6 +1372,7 @@ export const happyAgentSpacesStoreNoop: HappyAgentSpacesStore = {
     sectionTailExpandedUpdate: () => undefined,
     olderExpandedUpdate: () => undefined,
     happyFocusUpdate: () => undefined,
+    proposalSeenRecord: () => undefined,
     tidyRequest: () => undefined,
     stemCellDiscard: () => undefined,
     spaceTitleUpdate: () => undefined,

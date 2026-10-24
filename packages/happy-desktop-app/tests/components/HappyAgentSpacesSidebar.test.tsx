@@ -8,6 +8,7 @@ import {
 import {
     happyAgentSpaceMark,
     happyAgentSpacesChildDestination,
+    happyAgentSpaceProposalWaits,
     HappyAgentSpacesSidebar,
     type HappyAgentSpacesPlaces,
     type HappyAgentSpacesSidebarProps,
@@ -283,4 +284,56 @@ it("ends a row's work with its conversation's, whatever the space last said", ()
     expect(status(view, "parent")).toBeNull();
     // A row whose conversation the window does not hold has only the space's word.
     expect(status(view, "watcher")).toBe("working");
+});
+
+it("marks Prioritizing's row while its proposal waits, by its chat's unread state or this device's", () => {
+    const { props } = fixture();
+    const focus: HappyAgentSpace = {
+        id: "focus" as HappyAgentSpaceId,
+        title: "Prioritizing",
+        icon: { type: "library", slug: "prioritize" },
+        target: { kind: "agent", id: "prioritizing", agentId: "prioritizing", workspaceId: "w" },
+        sectionId: null,
+        orderKey: "2",
+        placement: "settled",
+        visibility: "shown",
+        version: 1,
+        createdAt: 1,
+        updatedAt: 1,
+        working: false,
+    };
+    const waiting = {
+        ...props.snapshot,
+        proposal: { artifactId: "proposal", version: 2 },
+        proposalSeen: false,
+    };
+    // A hidden subtask the window does not hold: this device's record decides.
+    expect(happyAgentSpaceProposalWaits(focus, waiting, props.places)).toBe(true);
+    expect(
+        happyAgentSpaceProposalWaits(focus, { ...waiting, proposalSeen: true }, props.places),
+    ).toBe(false);
+    expect(happyAgentSpaceProposalWaits(focus, { ...waiting, proposal: null }, props.places)).toBe(
+        false,
+    );
+    // Held as one of Happy's subtasks: its unread state decides.
+    const held = (unread: boolean): HappyAgentSpacesPlaces => ({
+        ...props.places,
+        bots: [
+            {
+                subtasks: [
+                    {
+                        workspaceId: "w",
+                        path: "/w",
+                        conversation: { id: "prioritizing", title: "Prioritizing", unread },
+                        subtasks: [],
+                    },
+                ],
+            } as unknown as HappyAgentSpacesPlaces["bots"][number],
+        ],
+    });
+    expect(happyAgentSpaceProposalWaits(focus, waiting, held(true))).toBe(true);
+    expect(happyAgentSpaceProposalWaits(focus, waiting, held(false))).toBe(false);
+    // Only Prioritizing's own row says so.
+    const parent = props.snapshot.spaces.get("parent" as HappyAgentSpaceId)!;
+    expect(happyAgentSpaceProposalWaits(parent, waiting, props.places)).toBe(false);
 });

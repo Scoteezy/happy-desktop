@@ -268,12 +268,38 @@ export function happyAgentSpaceLabel(space: HappyAgentSpace): string {
 }
 
 /**
+ * Whether Prioritizing's row says its proposal waits for an answer. Where the
+ * window holds Prioritizing's conversation, its unread state decides, and
+ * opening the chat reads it. Where it does not — Prioritizing is a hidden
+ * subtask of Happy's bot — the proposal waits until the person has opened
+ * the chat on this device at or after its latest version.
+ */
+export function happyAgentSpaceProposalWaits(
+    space: HappyAgentSpace,
+    snapshot: HappyAgentSpacesSnapshot,
+    places: HappyAgentSpacesPlaces,
+): boolean {
+    if (space.target.kind !== "agent" || snapshot.proposal === null) return false;
+    const agentId = spaceAgentId(space);
+    const conversation =
+        agentId === undefined
+            ? undefined
+            : (subtaskWhere(
+                  [...places.tasks, ...places.bots],
+                  (subtask) => subtask.conversation.id === agentId,
+              )?.conversation ??
+              places.tasks.find((task) => task.conversation.id === agentId)?.conversation);
+    return conversation ? conversation.unread === true : !snapshot.proposalSeen;
+}
+
+/**
  * A space as its row: a task's row as the current sidebar draws one, with the
  * waiting and question marks, unread dot, and title shimmer. Running work
  * shimmers its title and spins only in its tab.
  */
 function spaceRow(
     space: HappyAgentSpace,
+    snapshot: HappyAgentSpacesSnapshot,
     places: HappyAgentSpacesPlaces,
     titleShimmerEnabled: boolean,
     stemCellAnimation: boolean,
@@ -304,7 +330,9 @@ function spaceRow(
               : activity === "waiting"
                 ? { status: "waiting" as const }
                 : {}),
-        ...(conversation?.unread ? { unread: true } : {}),
+        ...(conversation?.unread || happyAgentSpaceProposalWaits(space, snapshot, places)
+            ? { unread: true }
+            : {}),
     };
 }
 
@@ -563,6 +591,7 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
                     {
                         ...spaceRow(
                             space,
+                            snapshot,
                             places,
                             input.titleShimmerEnabled,
                             input.stemCellAnimation,
@@ -668,6 +697,7 @@ export function happyAgentSpacesItems(input: HappyAgentSpacesItemsInput): {
                     {
                         ...spaceRow(
                             space,
+                            snapshot,
                             places,
                             input.titleShimmerEnabled,
                             input.stemCellAnimation,
@@ -810,6 +840,18 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
             footer={
                 <>
                     {props.footer}
+                    {focused?.target.kind === "agent" &&
+                    snapshot.proposal !== null &&
+                    !snapshot.proposalSeen ? (
+                        // Prioritizing's chat is on screen with a proposal it
+                        // has not shown here yet: the person sees it now.
+                        <span
+                            hidden
+                            ref={(node) => {
+                                if (node) props.store.proposalSeenRecord();
+                            }}
+                        />
+                    ) : null}
                     {props.classic ? (
                         // Mounted with the sidebar and replaced when the folds
                         // change, so the store always holds the current ones.

@@ -181,6 +181,96 @@ it("holds incoming sidebar versions through the saved drop", async () => {
     }
 });
 
+it("keeps an open proposal unseen until Prioritizing's chat shows its latest version", async () => {
+    vi.useFakeTimers();
+    const daemon = fakeHappyAgentDaemonCreate();
+    const proposal = (version: number, status: "open" | "accepted" | "declined" = "open") => ({
+        artifactId: "proposal",
+        version,
+        baseVersion: 4,
+        status,
+        createdAt: 1,
+        decidedAt: status === "open" ? null : 2,
+        acceptedVersion: null,
+    });
+    daemon.client.getSpaceSidebar = vi.fn(async () => ({
+        artifactId: "sidebar",
+        version: 1,
+        html: "<nav></nav>",
+        spaces: [],
+        proposal: proposal(2),
+    }));
+    const writes: { artifactId: string; version: number }[] = [];
+    const memory = {
+        read: () => writes.at(-1),
+        write: (seen: { artifactId: string; version: number }) => void writes.push(seen),
+    };
+    const open = async () => {
+        const sync = happyAgentSyncCreate();
+        sync.writer.bootstrapReceived(await daemon.client.getDesktopBootstrap());
+        const store = happyAgentSpacesStoreCreate({
+            client: daemon.client,
+            sync: sync.source,
+            proposalSeenMemory: memory,
+        });
+        const unsubscribe = store.subscribe(() => {});
+        await vi.advanceTimersByTimeAsync(0);
+        const deliver = (status: "open" | "accepted" | "declined", version: number) => {
+            const event = daemon.eventEmit("space.sidebar.proposal.changed", {
+                proposal: proposal(version, status),
+                previousVersion: version - 1,
+                author: "prioritizing",
+                operations: [],
+            });
+            sync.writer.updateReceived({ kind: "event", cursor: event.cursor, event });
+        };
+        const close = () => {
+            unsubscribe();
+            store[Symbol.dispose]();
+            sync.writer.close();
+        };
+        return { store, deliver, close };
+    };
+    const first = await open();
+    try {
+        expect(first.store.get().proposal).toEqual({ artifactId: "proposal", version: 2 });
+        expect(first.store.get().proposalSeen).toBe(false);
+        first.store.proposalSeenRecord();
+        expect(first.store.get().proposalSeen).toBe(true);
+        expect(writes).toEqual([{ artifactId: "proposal", version: 2 }]);
+        // Seen once, recording it again writes nothing.
+        first.store.proposalSeenRecord();
+        expect(writes).toHaveLength(1);
+        // A revision waits again; an answer leaves nothing waiting.
+        first.deliver("open", 3);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(first.store.get().proposal).toEqual({ artifactId: "proposal", version: 3 });
+        expect(first.store.get().proposalSeen).toBe(false);
+        first.store.proposalSeenRecord();
+        first.deliver("declined", 3);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(first.store.get().proposal).toBeNull();
+        expect(first.store.get().proposalSeen).toBe(false);
+    } finally {
+        first.close();
+    }
+    // The next window on this device remembers what was seen.
+    daemon.client.getSpaceSidebar = vi.fn(async () => ({
+        artifactId: "sidebar",
+        version: 1,
+        html: "<nav></nav>",
+        spaces: [],
+        proposal: proposal(3),
+    }));
+    const second = await open();
+    try {
+        expect(second.store.get().proposal).toEqual({ artifactId: "proposal", version: 3 });
+        expect(second.store.get().proposalSeen).toBe(true);
+    } finally {
+        second.close();
+    }
+});
+
 it("aborts offline read retries on last unsubscribe and reads again on resubscribe", async () => {
     vi.useFakeTimers();
     const daemon = fakeHappyAgentDaemonCreate();

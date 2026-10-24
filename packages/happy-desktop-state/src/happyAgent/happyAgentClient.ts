@@ -814,6 +814,10 @@ export function happyAgentWorkspaceClientCreate(
                 sync: deps.connection.sync,
                 stemCellTaskBegin: (identity, created) =>
                     deps.connection.beginStemCellTask(identity, created),
+                proposalSeenMemory: {
+                    read: () => memory.sidebarProposalSeenRead(),
+                    write: (seen) => memory.sidebarProposalSeenWrite(seen),
+                },
             });
             return spaces;
         },
