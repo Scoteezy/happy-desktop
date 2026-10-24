@@ -9,6 +9,7 @@ import type {
     ConversationMessageEntry,
 } from "happy-desktop-state";
 import "./styles.css";
+import { testDepthCount } from "./testing/testDepth";
 import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import { SEND_LIFT_TOP } from "./Message";
@@ -353,7 +354,7 @@ it("reads no row or viewport boxes for repeated native scroll reports", async ()
         ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
     ].map((element) => vi.spyOn(element, "getBoundingClientRect"));
     try {
-        for (let index = 0; index < 12; index += 1) {
+        for (let index = 0; index < testDepthCount(3, 12); index += 1) {
             viewport.dispatchEvent(new Event("scroll"));
             await frames();
         }
@@ -704,7 +705,7 @@ it("lifts repeated idle sends in their first commit while retaining the visible 
     await view.ready();
     await frames();
     const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
-    for (let index = 0; index < 12; index += 1) {
+    for (let index = 0; index < testDepthCount(3, 12); index += 1) {
         send();
         const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
         const bounds = viewport.getBoundingClientRect();

@@ -6,8 +6,13 @@ import tailwindcss from "@tailwindcss/vite";
 import { playwright } from "@vitest/browser-playwright";
 import { configDefaults, defineConfig } from "vitest/config";
 import { lottieLocalWasmPlugin } from "./vite/lottiePlugin";
+import { testDepthBrowsers, testDepthRead } from "happy-desktop-gym/test-depth";
+
+const depth = testDepthRead(process.env.HAPPY_TEST_DEPTH);
+const browsers = testDepthBrowsers(depth);
 
 export default defineConfig({
+    define: { "import.meta.env.HAPPY_TEST_DEPTH": JSON.stringify(depth) },
     plugins: [
         tailwindcss(),
         react(),
@@ -31,7 +36,7 @@ export default defineConfig({
         // tight under ordinary desktop contention even when every assertion
         // is healthy.
         testTimeout: 30_000,
-        /* The three engines below run as three parallel projects, and Vitest sizes
+        /* The selected engines run as parallel projects, and Vitest sizes
          * each project's browser pool on its own at min(12, cpus - 1). That is 36
          * concurrent tabs on a 16-core machine, every one a real browser painting a
          * 1660² surface at 2x — roughly 20 GB resident and far more runnable threads
@@ -44,12 +49,15 @@ export default defineConfig({
          * that the single node process driving all three chokes, which is what the cap
          * in its source is for. Bounding it this way is also strictly faster in wall
          * clock (61.6s against 89.6s), so developers and release validation share one
-         * setting. */
-        maxWorkers: Math.max(1, Math.min(12, Math.round((availableParallelism() * 0.75) / 3))),
+         * setting. Cheap and full divide the same budget across their engine count. */
+        maxWorkers: Math.max(
+            1,
+            Math.min(12, Math.round((availableParallelism() * 0.75) / browsers.length)),
+        ),
         browser: {
             enabled: true,
             headless: true,
-            instances: [{ browser: "chromium" }, { browser: "firefox" }, { browser: "webkit" }],
+            instances: browsers.map((browser) => ({ browser })),
             provider: playwright({
                 launchOptions: {
                     /* Firefox honours HTTP_PROXY/ALL_PROXY from the environment,

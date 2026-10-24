@@ -3,6 +3,7 @@ import { Profiler, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
 import type { ComposerSnapshot, ConversationEntry } from "happy-desktop-state";
 import { expect, it } from "vitest";
+import { testDepthCount } from "./testing/testDepth";
 import { AppShell } from "./AppShell";
 import { ContextMenu } from "./ContextMenu";
 import { ConversationDock } from "./ConversationDock";
@@ -233,7 +234,7 @@ it.each(["following", "parked"] as const)(
         })!;
         const top = anchor.getBoundingClientRect().top;
         let entries = TRANSCRIPTS.get("a")!;
-        for (let cycle = 0; cycle < 8; cycle += 1) {
+        for (let cycle = 0; cycle < testDepthCount(2, 8); cycle += 1) {
             shown.set({ activeId: "b", ids: ["a", "b"], entries });
             await frame();
             entries = [...entries, ...transcript(`extra-${String(cycle)}`).slice(0, 3)];

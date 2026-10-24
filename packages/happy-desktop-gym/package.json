@@ -6,7 +6,8 @@
     "exports": {
         ".": "./sources/index.ts",
         "./playwright": "./sources/playwright/index.ts",
-        "./electron": "./sources/electron/index.ts"
+        "./electron": "./sources/electron/index.ts",
+        "./test-depth": "./sources/testDepth.ts"
     },
     "scripts": {
         "test": "pnpm test:playwright",

@@ -1,5 +1,6 @@
 import "./styles.css";
 import { expect, it } from "vitest";
+import { testDepthCount } from "./testing/testDepth";
 import { useState } from "react";
 import { Sidebar, type SidebarItem, type SidebarReorder } from "./Sidebar";
 import { createRenderer } from "./testing";
@@ -602,5 +603,5 @@ const chaos = async (seed: number, iterations: number) => {
 
 for (const seed of [11, 29, 47])
     it(`nothing jumps through chaotic drags, replies and name batches (seed ${String(seed)})`, async () => {
-        await chaos(seed, 24);
+        await chaos(seed, testDepthCount(6, 24));
     }, 180_000);

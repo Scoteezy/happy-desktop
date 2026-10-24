@@ -1,9 +1,21 @@
 import { spawnSync } from "node:child_process";
+import { basename } from "node:path";
+import {
+    testDepthBrowsers,
+    testDepthRead,
+} from "../packages/happy-desktop-gym/sources/testDepth.ts";
+import { runInteractionFuzzStress } from "./run-interaction-fuzz-stress.mjs";
 
 if (process.env.CI) {
     console.log("Skipping UI alignment tests in remote CI.");
     process.exit(0);
 }
+
+const depthFlags = process.argv.slice(2).filter((arg) => arg.startsWith("--depth="));
+if (depthFlags.length > 1) throw new Error("Pass --depth only once.");
+const depth = testDepthRead(depthFlags[0]?.slice(8) ?? process.env.HAPPY_TEST_DEPTH);
+process.env.HAPPY_TEST_DEPTH = depth;
+const browsers = testDepthBrowsers(depth);
 
 function assertBrowserLaunchAllowed() {
     if (process.platform !== "darwin") {
@@ -53,12 +65,40 @@ function run(command, args) {
 
 assertBrowserLaunchAllowed();
 
-const vitestArgs = process.argv.slice(2);
+const vitestArgs = process.argv.slice(2).filter((arg) => !arg.startsWith("--depth="));
 const watchIndex = vitestArgs.indexOf("--watch");
 const vitestMode = watchIndex === -1 ? ["run"] : ["--watch"];
 if (watchIndex !== -1) {
     vitestArgs.splice(watchIndex, 1);
 }
 
-run("pnpm", ["exec", "playwright", "install", "chromium", "firefox", "webkit"]);
+run("pnpm", ["exec", "playwright", "install", ...browsers]);
 run("pnpm", ["exec", "vitest", ...vitestMode, ...vitestArgs]);
+
+// Targeted unrelated files and watch mode do not start a twenty-round stress run.
+const files = vitestArgs.filter((arg) => /\.(?:test\.)?[cm]?[jt]sx?$/.test(arg));
+const includesFuzz =
+    files.length === 0 || files.some((arg) => arg.includes("ConversationInteractionFuzz"));
+if (
+    depth === "full" &&
+    watchIndex === -1 &&
+    basename(process.cwd()) === "happy-desktop-ui" &&
+    includesFuzz
+) {
+    const projects = vitestArgs.flatMap((arg, index) =>
+        arg === "--project"
+            ? [vitestArgs[index + 1]]
+            : arg.startsWith("--project=")
+              ? [arg.slice(10)]
+              : [],
+    );
+    const selected = projects.length
+        ? browsers.filter((browser) => projects.includes(browser))
+        : browsers;
+    const windows = process.platform === "win32";
+    await runInteractionFuzzStress(
+        windows ? process.execPath : "pnpm",
+        windows ? [process.env.npm_execpath] : [],
+        selected,
+    );
+}

@@ -1,6 +1,7 @@
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { testDepthRead } from "../testDepth.js";
 import type { ElectronApplication, Locator, Page } from "playwright";
 
 import { gymGoldReplayMaterialRead, type GymGoldReplayMaterial } from "./goldReplay.js";
@@ -416,6 +417,7 @@ export async function electronWorkloadsRun(options: {
     readonly workload: GymWorkloadName;
     readonly uiTrace: boolean;
 }): Promise<ElectronRunResult> {
+    testDepthRead(process.env.HAPPY_TEST_DEPTH);
     const startedAt = new Date().toISOString();
     const entrypoint = electronEntrypointResolve(options.paths.workspaceRoot);
     const app = await gymElectronLaunch({
@@ -715,6 +717,7 @@ async function workloadRun(
         profilerActive(): boolean;
     },
 ): Promise<GymMeasurement> {
+    const depth = testDepthRead(process.env.HAPPY_TEST_DEPTH);
     const started = performance.now();
     const scenarioStartedAt = new Date().toISOString();
     const marks: GymScenarioMark[] = [];
@@ -722,7 +725,7 @@ async function workloadRun(
         scenarioMark(page, marks, started, `${workload}:${name}`);
     const finish = async (details: Record<string, unknown>): Promise<GymMeasurement> => {
         await mark("scenario-end");
-        return measurement(workload, started, details, marks, scenarioStartedAt);
+        return measurement(workload, started, { depth, ...details }, marks, scenarioStartedAt);
     };
 
     await mark("scenario-start");
@@ -742,8 +745,9 @@ async function workloadRun(
         await mark("background-drafts-start");
         const before = await performanceCapture(page, app, options.profilerActive());
         const updateStarted = performance.now();
+        const updates = depth === "full" ? 100 : 20;
         try {
-            for (let index = 0; index < 100; index += 1) {
+            for (let index = 0; index < updates; index += 1) {
                 await options.runtime.client.draftSave(background!.id, {
                     text: `A phone edits a background conversation: ${"review ".repeat(index + 1)}`,
                     providerId: "gym",
@@ -767,7 +771,7 @@ async function workloadRun(
             throw new Error("Background drafts changed the selected conversation.");
         await page.screenshot({ path: join(options.paths.artifacts, "background-drafts.png") });
         return finish({
-            updates: 100,
+            updates,
             updateDurationMs,
             before,
             after: await performanceCapture(page, app, options.profilerActive()),
@@ -949,7 +953,7 @@ async function workloadRun(
             .waitFor({ timeout: 45_000 });
         await mark("sidebar-ready");
         const result = await sidebarDragChaosRun(page, {
-            drags: 10,
+            drags: depth === "full" ? 10 : 3,
             echo: () => options.runtime.client.spaceSidebarEcho(),
             seed: 7,
         });
@@ -1034,13 +1038,14 @@ async function workloadRun(
     }
     if (workload === "memory-idle") {
         const before = await performanceCapture(page, app, options.profilerActive());
-        for (let index = 0; index < 3; index += 1) {
+        const cycles = depth === "full" ? 3 : 1;
+        for (let index = 0; index < cycles; index += 1) {
             await navigateRoute(page, location.route);
             await waitForAny(page, ["body"]);
             await mark(`memory-cycle-${index + 1}`);
         }
         const after = await performanceCapture(page, app, options.profilerActive());
-        return finish({ before, after });
+        return finish({ before, after, cycles });
     }
     return finish({ reason: "No implementation for workload.", status: "skipped" });
 }

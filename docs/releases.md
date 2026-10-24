@@ -6,6 +6,16 @@ Markdown notes covering every included commit. Do not ask the person to type a
 version. Merging to `main` no longer deploys the hosted renderer; all previews
 are explicitly requested.
 
+Validation uses one depth flag for the same stability tests and gyms. Before a
+preview, run `pnpm --dir packages/happy-desktop-ui test --depth=cheap` and
+`pnpm --dir packages/happy-desktop-gym test:playwright --depth=cheap`. Before
+production, run both commands with `--depth=full`. Cheap is the local default;
+full runs all three browser engines, the certified interaction seed matrix and
+20 repetitions of its concurrent stress schedule. Neither command changes the
+remote CI skip or dispatches a release. Electron gym commands read the same
+`HAPPY_TEST_DEPTH=cheap|full` environment variable; use cheap for previews and
+full for production when running the affected workloads.
+
 Before choosing production, check that the user explicitly requested a production or stable
 release for this product in the current task. A generic "release" or "ship" request defaults to
 preview; permission to push does not authorize production. An existing explicit request is

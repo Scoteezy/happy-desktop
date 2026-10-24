@@ -1,7 +1,11 @@
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig } from "vitest/config";
+import { testDepthBrowsers, testDepthRead } from "./sources/testDepth.js";
+
+const depth = testDepthRead(process.env.HAPPY_TEST_DEPTH);
 
 export default defineConfig({
+    define: { "import.meta.env.HAPPY_TEST_DEPTH": JSON.stringify(depth) },
     test: {
         include: ["tests/playwright/**/*.test.ts"],
         // Retina pixel sweeps run in three browsers at once and can exceed
@@ -10,7 +14,7 @@ export default defineConfig({
         browser: {
             enabled: true,
             headless: true,
-            instances: [{ browser: "chromium" }, { browser: "firefox" }, { browser: "webkit" }],
+            instances: testDepthBrowsers(depth).map((browser) => ({ browser })),
             provider: playwright({
                 contextOptions: {
                     deviceScaleFactor: 2,

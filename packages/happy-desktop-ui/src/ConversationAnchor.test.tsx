@@ -6,6 +6,7 @@ import type {
     ConversationMessageEntry,
 } from "happy-desktop-state";
 import { expect, it } from "vitest";
+import { testDepthCount } from "./testing/testDepth";
 import "./styles.css";
 import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
@@ -311,7 +312,7 @@ it("keeps a parked reader's anchor through repeated resize drags", async () => {
         ...Array.from({ length: 15 }, (_, step) => 600 + step * 20),
         880,
     ];
-    for (let cycle = 0; cycle < 4; cycle += 1) {
+    for (let cycle = 0; cycle < testDepthCount(1, 4); cycle += 1) {
         for (const width of drag) {
             harness.widthUpdate(width);
             await nextFrame();
@@ -334,7 +335,7 @@ it("keeps a follower pinned to the bottom through resize drags", async () => {
     const atBottom = () => element.scrollHeight - element.scrollTop - element.clientHeight;
     expect(atBottom()).toBeLessThanOrEqual(1);
     const before = geometryRead();
-    for (let cycle = 0; cycle < 3; cycle += 1)
+    for (let cycle = 0; cycle < testDepthCount(1, 3); cycle += 1)
         for (const width of [860, 800, 700, 600, 500, 600, 700, 800, 860, 880]) {
             harness.widthUpdate(width);
             await nextFrame();
