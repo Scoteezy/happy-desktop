@@ -2,7 +2,7 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import { expect, it } from "vitest";
 import "./styles.css";
-import { MessageList } from "./Message";
+import { MessageList, type MessageListScrollPosition } from "./Message";
 import { createRenderer } from "./testing";
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -13,17 +13,29 @@ it.each(["queued", "insert-only", "trim"] as const)(
         const view = createRenderer();
         let grow!: () => void;
         let commit!: () => void;
+        let stop!: () => void;
+        let position: MessageListScrollPosition | undefined;
         function Fixture() {
             const [state, setState] = useState({
                 height: mode === "trim" ? 832 : 732,
                 inserted: false,
+                stopped: false,
             });
             grow = () =>
-                flushSync(() => setState({ height: mode === "trim" ? 920 : 820, inserted: false }));
-            commit = () => flushSync(() => setState({ height: 665, inserted: true }));
+                flushSync(() =>
+                    setState({
+                        height: mode === "trim" ? 920 : 820,
+                        inserted: false,
+                        stopped: false,
+                    }),
+                );
+            commit = () =>
+                flushSync(() => setState({ height: 665, inserted: true, stopped: false }));
+            stop = () => flushSync(() => setState((previous) => ({ ...previous, stopped: true })));
             const rows = [
                 { key: "prefix", height: 499 },
-                ...(state.inserted ? [{ key: "reply", height: 76 }] : []),
+                ...(state.inserted ? [{ key: "reply", height: state.stopped ? 78 : 76 }] : []),
+                ...(state.stopped ? [{ key: "stopped", height: 32 }] : []),
                 { key: "question", height: 80 },
                 ...(mode === "trim" && !state.inserted ? [{ key: "removed", height: 100 }] : []),
                 { key: "tail", height: 16 },
@@ -33,15 +45,21 @@ it.each(["queued", "insert-only", "trim"] as const)(
                 <div style={{ display: "flex", height: state.height }}>
                     <MessageList
                         virtualize
-                        estimateDependencies={[state.inserted]}
-                        estimateVersion={state.inserted ? 1 : 0}
+                        estimateDependencies={[state.inserted, state.stopped]}
+                        estimateVersion={Number(state.inserted) + Number(state.stopped)}
+                        onScrollPositionChange={(next) => {
+                            position = next;
+                        }}
                         estimateRowSize={(index) => rows[index]!.height}
                         footer={
-                            state.inserted && mode === "queued" ? (
+                            state.inserted && !state.stopped && mode === "queued" ? (
                                 <div style={{ height: 36 }} />
                             ) : undefined
                         }
-                        footerHeight={state.inserted && mode === "queued" ? 36 : 0}
+                        footerHeight={
+                            state.inserted && !state.stopped && mode === "queued" ? 36 : 0
+                        }
+                        footerBefore={rows.length - 1}
                         initialScrollPosition={{
                             type: "row",
                             rowKey: ".$question",
@@ -88,6 +106,124 @@ it.each(["queued", "insert-only", "trim"] as const)(
             expect(
                 Math.abs(viewport.scrollHeight - (mode === "queued" ? 803 : 779)),
             ).toBeLessThanOrEqual(1);
+            if (mode === "queued") {
+                const top = row.getBoundingClientRect().top;
+                // One echo consumes expectedScrollTop; a repeated native echo
+                // and scrollend must retain the same nonstandard row point.
+                viewport.dispatchEvent(new Event("scroll"));
+                viewport.dispatchEvent(new Event("scroll"));
+                viewport.dispatchEvent(new Event("scrollend"));
+                expect(position).toMatchObject({
+                    type: "row",
+                    rowKey: ".$question",
+                    offset: 80,
+                    viewportInset: 112,
+                });
+                const nativeTop = viewport.scrollTop;
+                const descriptor = Object.getOwnPropertyDescriptor(viewport, "scrollTop");
+                try {
+                    Object.defineProperty(viewport, "scrollTop", {
+                        configurable: true,
+                        get: () => nativeTop + 0.5,
+                    });
+                    viewport.dispatchEvent(new Event("scroll"));
+                    viewport.dispatchEvent(new Event("scrollend"));
+                    expect(position).toMatchObject({
+                        type: "row",
+                        rowKey: ".$question",
+                        offset: 80,
+                        viewportInset: 112,
+                    });
+                } finally {
+                    if (descriptor) Object.defineProperty(viewport, "scrollTop", descriptor);
+                    else Reflect.deleteProperty(viewport, "scrollTop");
+                }
+                stop();
+                await frame();
+                await frame();
+                expect(Math.abs(row.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
+                expect(position).toMatchObject({
+                    type: "row",
+                    rowKey: ".$question",
+                    offset: 80,
+                    viewportInset: 112,
+                });
+                viewport.scrollTop -= 1;
+                viewport.dispatchEvent(new Event("scroll"));
+                viewport.dispatchEvent(new Event("scrollend"));
+                expect(position).toMatchObject({
+                    type: "row",
+                    rowKey: ".$queued",
+                    viewportInset: 32,
+                });
+            }
+        } finally {
+            view.destroy();
+        }
+    },
+);
+
+it.each(["wheel", "End"] as const)(
+    "resumes following from a parked maximum through %s intent",
+    async (intent) => {
+        const view = createRenderer();
+        let append!: () => void;
+        let position: MessageListScrollPosition | undefined;
+        function Fixture() {
+            const [rows, setRows] = useState([0, 1]);
+            append = () => flushSync(() => setRows([0, 1, 2]));
+            return (
+                <div style={{ display: "flex", height: 100, width: 620 }}>
+                    <MessageList
+                        virtualize
+                        estimateRows={rows}
+                        estimateDependencies={[]}
+                        estimateRowSize={() => 70}
+                        footer={<div style={{ height: 34 }} />}
+                        footerHeight={34}
+                        initialScrollPosition={{
+                            type: "row",
+                            rowKey: ".$1",
+                            offset: 70,
+                            viewportInset: 42,
+                        }}
+                        onScrollPositionChange={(next) => {
+                            position = next;
+                        }}
+                    >
+                        {rows.map((row) => (
+                            <div key={row} data-row={row} style={{ height: 70 }}>
+                                Row {row}
+                            </div>
+                        ))}
+                    </MessageList>
+                </div>
+            );
+        }
+        try {
+            view.render(Fixture, { width: 1000, height: 1000 });
+            await view.ready();
+            await frame();
+            await frame();
+            const viewport = view.container.querySelector<HTMLElement>(
+                ".happy-message-list__viewport",
+            )!;
+            expect(viewport.scrollTop).toBe(viewport.scrollHeight - viewport.clientHeight);
+            const before = viewport.scrollTop;
+            if (intent === "wheel")
+                viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 10, cancelable: true }));
+            else
+                viewport.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true }));
+            expect(viewport.scrollTop).toBe(before);
+            append();
+            await frame();
+            await frame();
+            expect(position).toEqual({ type: "bottom" });
+            expect(viewport.scrollTop).toBe(viewport.scrollHeight - viewport.clientHeight);
+            const row = viewport.querySelector<HTMLElement>('[data-row="2"]')!;
+            expect(row.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+                viewport.getBoundingClientRect().bottom,
+            );
         } finally {
             view.destroy();
         }

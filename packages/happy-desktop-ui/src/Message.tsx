@@ -991,6 +991,10 @@ const ROW_REFINE_COMMIT_MS = 200;
 const MESSAGE_LIST_FOOTER_KEY = "__happy_message_list_footer__";
 /** Reserved stable entity key for the optional first header row. */
 const MESSAGE_LIST_HEADER_KEY = "__happy_message_list_header__";
+/** Native read-back can differ by a fraction; one pixel starts a new reading point. */
+function messageListScrollOffsetMoved(next: number, previous: number): boolean {
+    return Math.abs(next - previous) >= 1;
+}
 /** The padding/border-free viewport uses an overlaid scrollbar, so its resolved
  * CSS width is also its content width. Unlike clientWidth, this retains flex
  * layout's fractions without including ancestor zoom or transforms. */
@@ -1878,7 +1882,7 @@ export function MessageList(props: MessageListProps) {
         if (following.current) return { type: "bottom" };
         let top = readerScrollTop.current;
         const nativeTop = element.scrollTop;
-        if (nativeTop !== top) {
+        if (messageListScrollOffsetMoved(nativeTop, top)) {
             const geometry = viewportGeometry.current;
             const style = element.ownerDocument.defaultView!.getComputedStyle(element);
             const width = Number.parseFloat(style.width);
@@ -1896,7 +1900,7 @@ export function MessageList(props: MessageListProps) {
                 Math.abs(scale / viewportScale.current - 1) > 0.01;
             if (boxMatches && !zoomChanged) top = nativeTop;
         }
-        const nativeMoved = top !== readerScrollTop.current;
+        const nativeMoved = messageListScrollOffsetMoved(top, readerScrollTop.current);
         const held = nativeMoved ? undefined : readerAnchor.current;
         const anchor =
             held?.type === "item" &&
@@ -3167,7 +3171,10 @@ export function MessageList(props: MessageListProps) {
             }
             const currentScrollHeight = element.scrollHeight;
             const expected = expectedScrollTop.current;
-            if (expected !== undefined && Math.abs(element.scrollTop - expected) <= 1) {
+            if (
+                expected !== undefined &&
+                !messageListScrollOffsetMoved(element.scrollTop, expected)
+            ) {
                 expectedScrollTop.current = undefined;
                 previousScrollTop = element.scrollTop;
                 readerScrollTop.current = element.scrollTop;
@@ -3176,6 +3183,17 @@ export function MessageList(props: MessageListProps) {
                 return;
             }
             expectedScrollTop.current = undefined;
+            if (!messageListScrollOffsetMoved(element.scrollTop, readerScrollTop.current)) {
+                // A browser can emit more than one event for a model write.
+                // Its echoes retain the actual held point, including an inset
+                // that differs from the standard point used for user input.
+                previousScrollTop = element.scrollTop;
+                scrollHeightBaseline.current = currentScrollHeight;
+                positionReport();
+                startReachedReport(element);
+                endAwayUpdateCurrent.current(element);
+                return;
+            }
             /*
              * A growing viewport can clamp scrollTop before ResizeObserver runs.
              * Ignore that transient scroll event so it cannot replace the bottom
@@ -3237,10 +3255,29 @@ export function MessageList(props: MessageListProps) {
         element.addEventListener("pointerdown", onGeometryScrollIntent);
         /* Keyboard scrolling moves the viewport too; it is not a reason to
            read the next scroll event as the reader's. */
-        const onKeyDown = () => {
+        const onKeyDown = (event: KeyboardEvent) => {
             wheelDirection = 0;
             wheelScrollPending.current = false;
+            expectedScrollTop.current = undefined;
             overscanRequireCurrent.current();
+            if (
+                event.key === "End" &&
+                !event.defaultPrevented &&
+                !(
+                    event.target instanceof HTMLElement &&
+                    event.target.closest("input, textarea, select, [contenteditable]")
+                ) &&
+                element.scrollHeight - element.scrollTop - element.clientHeight <=
+                    FOLLOW_BOTTOM_THRESHOLD
+            ) {
+                // End at the maximum has no scroll event. The key itself owns
+                // resuming following, just as a downward wheel at the end does.
+                escapedFromFollow.current = false;
+                following.current = true;
+                sparseInsetRelease();
+                scrollToBottom();
+                positionReport();
+            }
         };
         element.addEventListener("keydown", onKeyDown);
         element.addEventListener("touchstart", onGeometryScrollIntent, { passive: true });
