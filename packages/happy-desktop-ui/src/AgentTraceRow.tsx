@@ -2,6 +2,7 @@ import { partitionComponentProps } from "./componentProps";
 import { type CSSProperties } from "react";
 import { Icon, type IconName } from "./Icon";
 import { agentTraceMetaStats, agentTraceMetaTitle } from "./agentTraceMeta";
+import { useMessageListDisclosureAnchor } from "./messageListDisclosureAnchor";
 export type AgentTraceRowKind =
     | "reasoning"
     | "response"
@@ -36,6 +37,8 @@ export interface AgentTraceRowProps {
     readonly label?: string;
     /** A compact metadata link placed beside an assistant name. */
     readonly variant?: "meta" | "row";
+    /** Closing the trace takes this row away too, so what stays put is what is above it. */
+    readonly foldsAway?: boolean;
 }
 const KIND_ICONS: Record<AgentTraceRowKind, IconName> = {
     reasoning: "spark",
@@ -78,7 +81,9 @@ export function AgentTraceRow(props: AgentTraceRowProps) {
         "toggles",
         "label",
         "variant",
+        "foldsAway",
     ]);
+    const disclosureAnchor = useMessageListDisclosureAnchor();
     const running = () => local.status === "running";
     const meta = () => local.variant === "meta";
     const stats = () => agentTraceMetaStats(local.toolCallCount, local.totalTokens);
@@ -99,7 +104,17 @@ export function AgentTraceRow(props: AgentTraceRowProps) {
             data-status={local.status}
             data-variant={meta() ? "meta" : "row"}
             data-testid={local["data-testid"]}
-            onClick={() => local.onOpen?.()}
+            onClick={(event) => {
+                /* Opening or closing the turn in place is a reading action:
+                   the control stays under the pointer while the steps arrive
+                   or leave above it, so the next click lands on it again. */
+                if (local.toggles)
+                    disclosureAnchor?.(
+                        event.currentTarget,
+                        local.foldsAway && local.open ? "above" : undefined,
+                    );
+                local.onOpen?.();
+            }}
             style={local.style}
             type="button"
         >

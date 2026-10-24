@@ -1134,7 +1134,7 @@ function happyAgentConnectGroupProject(
     const hiddenCount = entries.length - visibleCollapsed.length;
     if (hiddenCount === 0) return entries;
 
-    const trace: AgentTurnTraceSummary = {
+    const turnTrace: AgentTurnTraceSummary = {
         turnId: groupEnd.groupId,
         agentUserId: agentAuthor.id,
         status: groupEnd.reason === "error" || groupEnd.reason === "abort" ? "failed" : "complete",
@@ -1147,7 +1147,10 @@ function happyAgentConnectGroupProject(
     };
 
     /** The same entry carrying this turn's trace, or nothing if it cannot hold one. */
-    const withTrace = (entry: ConversationEntry): ConversationEntry | undefined => {
+    const withTrace = (
+        entry: ConversationEntry,
+        trace: AgentTurnTraceSummary = turnTrace,
+    ): ConversationEntry | undefined => {
         if (entry.kind === "agentActivity") return { ...entry, agentTrace: trace };
         if (entry.kind === "delegation") return { ...entry, agentTrace: trace };
         if (entry.kind === "message" && entry.message.sender?.kind === "agent")
@@ -1163,10 +1166,21 @@ function happyAgentConnectGroupProject(
      */
     if (input.expandedGroupIds.has(groupEnd.groupId)) {
         for (let index = 0; index < entries.length; index += 1) {
-            const traced = withTrace(entries[index]!);
+            const traced = withTrace(
+                entries[index]!,
+                index === actualAnchorIndex ? turnTrace : { ...turnTrace, foldsAway: true },
+            );
             if (!traced) continue;
             entries[index] = traced;
             break;
+        }
+        /* It also rides the row the folded turn would keep, so "Hide traces"
+           sits where "View traces" was: opening and closing again is two
+           clicks in one place. */
+        const anchor = entries[actualAnchorIndex];
+        if (anchor) {
+            const traced = withTrace(anchor);
+            if (traced) entries[actualAnchorIndex] = traced;
         }
         return entries;
     }

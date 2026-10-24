@@ -64,6 +64,12 @@ export interface AgentTurnTraceSummary {
     readonly totalTokens?: number;
     readonly subagents: readonly AgentTurnSubagentSummary[];
     readonly backgroundTerminals: readonly AgentTurnBackgroundTerminalSummary[];
+    /**
+     * The row carrying this is one of the steps folding the turn hides: the
+     * row an open turn starts on. Closing the turn from it takes the row away,
+     * so what stays put is what is above it.
+     */
+    readonly foldsAway?: true;
 }
 
 export class UserError extends Error {

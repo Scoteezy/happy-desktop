@@ -193,6 +193,7 @@ function traceControl(
     return (
         <AgentTraceRow
             entryCount={trace.entryCount}
+            foldsAway={trace.foldsAway === true}
             onOpen={onToggle ? () => onToggle(trace.turnId) : undefined}
             open={open}
             status={trace.status === "failed" ? "failed" : "complete"}

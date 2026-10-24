@@ -226,7 +226,10 @@ function payloadEqual(left: ConversationEntry, right: ConversationEntry): boolea
         );
     }
     if (left.kind === "agentActivity" && right.kind === "agentActivity")
-        return activityEqual(left.activity, right.activity);
+        return (
+            activityEqual(left.activity, right.activity) &&
+            traceEqual(left.agentTrace, right.agentTrace)
+        );
     if (left.kind === "request" && right.kind === "request")
         return requestEqual(left.request, right.request);
     if (left.kind === "delegation" && right.kind === "delegation")
@@ -405,6 +408,7 @@ function traceEqual(
         left.totalTokens === right.totalTokens &&
         left.startedAt === right.startedAt &&
         left.completedAt === right.completedAt &&
+        left.foldsAway === right.foldsAway &&
         left.latest?.kind === right.latest?.kind &&
         left.latest?.title === right.latest?.title &&
         left.latest?.detail === right.latest?.detail

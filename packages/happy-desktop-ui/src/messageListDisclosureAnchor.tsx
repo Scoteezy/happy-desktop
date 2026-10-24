@@ -1,6 +1,11 @@
 import { createContext, useContext, type ReactNode } from "react";
 
-export type MessageListDisclosureAnchor = (disclosure: HTMLElement) => void;
+/**
+ * Keeps a disclosure in place while what it opens or closes changes size.
+ * `above` holds the edge above the disclosure's row instead, for a control
+ * whose own row goes away with what it closes.
+ */
+export type MessageListDisclosureAnchor = (disclosure: HTMLElement, hold?: "above") => void;
 
 const MessageListDisclosureAnchorContext = createContext<MessageListDisclosureAnchor | undefined>(
     undefined,

@@ -749,6 +749,12 @@ export interface HappyAgentChatStore {
     imageClose(): void;
     reasoningToggle(): void;
     turnTraceToggle(turnId: string): void;
+    /**
+     * Folds a turn that was left open because the reader watched it finish,
+     * once its rows have all left the screen. A turn the reader opened stays
+     * open.
+     */
+    turnTraceSettle(turnId: string): void;
     [Symbol.dispose](): void;
 }
 
@@ -935,7 +941,46 @@ export function happyAgentChatStoreCreate(
     let runStartedAt: number | undefined;
     let turnElapsedMs: number | undefined;
     let showReasoning = false;
+    /* Turns the reader opened. */
+    let openedTurnIds: ReadonlySet<string> = new Set();
+    /* Turns that finished while this store followed them. Folding a turn the
+       reader is looking at would pull its work out from under them, so it
+       stays open until its rows leave the screen. */
+    let settlingTurnIds: ReadonlySet<string> = new Set();
+    /* Every turn open, either way: what the projection and the view read. */
     let expandedTurnIds: ReadonlySet<string> = new Set();
+    /* Groups seen finished, and seen still running, in the transcript. */
+    const endedGroupIds = new Set<string>();
+    const runningGroupIds = new Set<string>();
+    const turnsOpenPublish = (): void => {
+        expandedTurnIds =
+            settlingTurnIds.size === 0
+                ? openedTurnIds
+                : openedTurnIds.size === 0
+                  ? settlingTurnIds
+                  : new Set([...openedTurnIds, ...settlingTurnIds]);
+    };
+    /*
+     * Finds the turns that finished since the last read. Only the tail can
+     * change, so the scan walks back from the end and stops at the first group
+     * already seen finished; history loaded above was never seen running and
+     * opens folded, as does everything finished before the first read.
+     */
+    const turnsSettledFollow = (elements: readonly ChatElement[]): void => {
+        let settled: Set<string> | undefined;
+        for (let index = elements.length - 1; index >= 0; index -= 1) {
+            const element = elements[index]!;
+            if (element.kind === "group_end") {
+                if (endedGroupIds.has(element.groupId)) break;
+                endedGroupIds.add(element.groupId);
+                if (runningGroupIds.delete(element.groupId) && element.turnKind !== "compaction")
+                    (settled ??= new Set(settlingTurnIds)).add(element.groupId);
+            } else if (!endedGroupIds.has(element.groupId)) runningGroupIds.add(element.groupId);
+        }
+        if (!settled) return;
+        settlingTurnIds = settled;
+        turnsOpenPublish();
+    };
     let activityPanelOpen = false;
     let openImageRef: HappyAgentImageRef | undefined;
     const requestSubmissions = new Map<string, ConversationRequestSubmission>();
@@ -1161,6 +1206,7 @@ export function happyAgentChatStoreCreate(
             onChange: (elements, connected, answeredUserInputs) => {
                 if (!active || disposed) return;
                 transcriptElements = elements;
+                turnsSettledFollow(elements);
                 // A refusal belongs to the connection that made it. Once a
                 // new one is live — after an update or an outage — it no
                 // longer describes anything, so it does not outlive it.
@@ -1652,9 +1698,23 @@ export function happyAgentChatStoreCreate(
             commit();
         },
         turnTraceToggle(turnId) {
-            const next = new Set(expandedTurnIds);
-            if (!next.delete(turnId)) next.add(turnId);
-            expandedTurnIds = next;
+            if (expandedTurnIds.has(turnId)) {
+                const opened = new Set(openedTurnIds);
+                const settling = new Set(settlingTurnIds);
+                opened.delete(turnId);
+                settling.delete(turnId);
+                openedTurnIds = opened;
+                settlingTurnIds = settling;
+            } else openedTurnIds = new Set([...openedTurnIds, turnId]);
+            turnsOpenPublish();
+            commit();
+        },
+        turnTraceSettle(turnId) {
+            if (!settlingTurnIds.has(turnId)) return;
+            const settling = new Set(settlingTurnIds);
+            settling.delete(turnId);
+            settlingTurnIds = settling;
+            turnsOpenPublish();
             commit();
         },
         [Symbol.dispose]() {

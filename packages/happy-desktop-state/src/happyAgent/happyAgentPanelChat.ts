@@ -16,6 +16,7 @@ export interface HappyAgentPanelChatStore {
     subscribe(listener: () => void): () => void;
     /** Opens or closes one finished turn's intermediate steps. */
     turnTraceToggle(turnId: string): void;
+    turnTraceSettle(turnId: string): void;
 }
 
 /** The panel owns a chat tab's store for as long as the tab is open. */
@@ -77,6 +78,9 @@ export function happyAgentPanelChatOpen(
         },
         turnTraceToggle(turnId) {
             store?.turnTraceToggle(turnId);
+        },
+        turnTraceSettle(turnId) {
+            store?.turnTraceSettle(turnId);
         },
         [Symbol.dispose]() {
             if (disposed) return;

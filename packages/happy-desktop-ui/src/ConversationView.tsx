@@ -259,6 +259,12 @@ export type ConversationViewProps = {
     onTraceToggle?: (turnId: string) => void;
     /** Finished turns currently listing their intermediate entries. */
     expandedTurnIds?: ReadonlySet<string>;
+    /**
+     * Told an open turn's rows have all left the screen. The owner folds it if
+     * it was only left open because the reader watched it finish; a turn
+     * folds only out of sight, so nothing the reader sees moves.
+     */
+    onTraceSettle?: (turnId: string) => void;
     /** @deprecated Pending steering now renders as an ordered transcript message. */
     queued?: readonly { readonly id: string; readonly text: string }[];
     /** Opens one transcript image full size; the owner hosts the viewer in `overlay`. */
@@ -365,6 +371,35 @@ function inlinePageRemember<Value>(memory: Map<string, Value>, key: string, valu
         if (oldest === undefined) break;
         memory.delete(oldest);
     }
+}
+
+/**
+ * Tells `settle` about every open turn none of whose rows, from the one its
+ * control opens on to the one the folded turn keeps, is among `first`–`last`.
+ * Runs only when the visible range changes, and only while a turn is open.
+ */
+function conversationTracesOffscreen(
+    transcript: readonly ConversationEntry[],
+    expandedTurnIds: ReadonlySet<string>,
+    first: number,
+    last: number,
+    settle: (turnId: string) => void,
+): void {
+    const spans = new Map<string, { first: number; last: number }>();
+    for (let index = 0; index < transcript.length; index += 1) {
+        const entry = transcript[index]!;
+        const trace =
+            entry.kind === "message"
+                ? entry.message.agentTrace
+                : entry.kind === "agentActivity" || entry.kind === "delegation"
+                  ? entry.agentTrace
+                  : undefined;
+        if (!trace || !expandedTurnIds.has(trace.turnId)) continue;
+        const span = spans.get(trace.turnId);
+        if (span) span.last = index;
+        else spans.set(trace.turnId, { first: index, last: index });
+    }
+    for (const [turnId, span] of spans) if (span.last < first || span.first > last) settle(turnId);
 }
 
 /** Whether the turn this row carries the trace control for is currently open. */
@@ -1167,6 +1202,18 @@ export function ConversationView(props: ConversationViewProps) {
                         key={props.conversationId}
                         onScrollPositionChange={props.onScrollPositionChange}
                         onStartReached={props.onStartReached}
+                        {...(props.onTraceSettle && props.expandedTurnIds?.size
+                            ? {
+                                  onVisibleRowsChange: (first: number, last: number) =>
+                                      conversationTracesOffscreen(
+                                          transcript,
+                                          props.expandedTurnIds!,
+                                          first,
+                                          last,
+                                          props.onTraceSettle!,
+                                      ),
+                              }
+                            : {})}
                         paddingEnd={24}
                         virtualize
                     >

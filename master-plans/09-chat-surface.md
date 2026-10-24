@@ -38,6 +38,13 @@ A good chat with an AI follows a few principles:
   with the end when history above changes, and is only ever taken up by new
   content growing into it; once that content outgrows it, the transcript grows
   as usual. It never shrinks, animates, or disappears on its own.
+- **Work folds away out of sight.** A finished turn's steps fold behind
+  "View traces", but never while any row of it is on screen: a turn the reader
+  watched finish, or steered, stays open until all of it has scrolled away, and
+  only then folds — nothing visible moves. History and turns finished before
+  the chat was opened arrive folded. An open turn offers "Hide traces" at its
+  first step and on its answer, where "View traces" was, so opening and closing
+  it again is two clicks in one place.
 - **Order is truthful and readable.** Messages appear in the order they
   happened, never reorder or briefly disappear, and a message sent while the
   agent is still working is visibly distinct from the reply that continues

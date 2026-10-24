@@ -824,6 +824,12 @@ export type MessageListProps = {
      * A key the rows do not carry yet names the footer, where a queued send waits.
      */
     liftKey?: string;
+    /**
+     * Told the first and last of the caller's rows on screen, partly or wholly,
+     * each time that range or the number of rows changes. Read from the range
+     * the virtual list already computes, so it adds no layout work.
+     */
+    onVisibleRowsChange?: (first: number, last: number) => void;
     /** Bottom clearance represented inside the virtualizer's coordinate space. */
     paddingEnd?: number;
     /**
@@ -1169,7 +1175,7 @@ export function MessageList(props: MessageListProps) {
     };
     /* Context identity stays fixed for the mounted list: thousands of rows may
        consume it, and ordinary transcript renders must not notify them all. */
-    const disclosureAnchor = useRef<MessageListDisclosureAnchor>((disclosure) => {
+    const disclosureAnchor = useRef<MessageListDisclosureAnchor>((disclosure, hold) => {
         const element = list.current;
         if (!element || !element.contains(disclosure)) return;
         /* Expanding a row is a reading action, not new transcript content.
@@ -1184,7 +1190,7 @@ export function MessageList(props: MessageListProps) {
         /* Held by its row where the model has one, so the control also stays
            put when what is above it reflows, as when a panel opening beside
            the transcript narrows it; otherwise by the scroll offset. */
-        readerAnchor.current = disclosureRowAnchorCurrent.current(element, disclosure) ?? {
+        readerAnchor.current = disclosureRowAnchorCurrent.current(element, disclosure, hold) ?? {
             scrollTop: element.scrollTop,
             type: "scrollTop",
         };
@@ -1808,6 +1814,7 @@ export function MessageList(props: MessageListProps) {
     function disclosureRowAnchor(
         element: HTMLElement,
         disclosure: HTMLElement,
+        hold?: "above",
     ): MessageListVirtualAnchor | undefined {
         if (!virtualized) return undefined;
         const row = disclosure.closest<HTMLElement>(".happy-message-list__virtual-row");
@@ -1818,6 +1825,19 @@ export function MessageList(props: MessageListProps) {
         const top = disclosure.getBoundingClientRect().top;
         const offset = top - element.getBoundingClientRect().top;
         if (offset < 0 || offset > viewportHeight) return undefined;
+        const above = index - 1;
+        const aboveSize = rowSizeModel.sizes[above];
+        if (hold === "above" && above >= 0 && aboveSize !== undefined)
+            /* The lower edge of the row above, which is where this row starts. */
+            return {
+                index: above,
+                itemOffset: aboveSize,
+                key: itemKeyAt(above),
+                type: "item",
+                viewportInset:
+                    viewportHeight -
+                    (row.getBoundingClientRect().top - element.getBoundingClientRect().top),
+            };
         return {
             index,
             itemOffset: Math.max(0, top - row.getBoundingClientRect().top),
@@ -2184,6 +2204,9 @@ export function MessageList(props: MessageListProps) {
      * that or the visible range changes.
      */
     const mountedKeys = useRef<ReadonlySet<Key>>(new Set());
+    const visibleRowsReported = useRef<{ first: number; last: number; rows: number } | undefined>(
+        undefined,
+    );
     const admittedKeys = useRef<ReadonlySet<Key>>(new Set());
     const [overscanMountVersion, setOverscanMountVersion] = useState(0);
     const rangeExtractor = useRef<
@@ -2261,6 +2284,20 @@ export function MessageList(props: MessageListProps) {
         paddingEnd,
         paddingStart: MESSAGE_LIST_PADDING_START,
     });
+    function visibleRowsReport() {
+        const range = virtualizer.range;
+        const report = props.onVisibleRowsChange;
+        if (!report) visibleRowsReported.current = undefined;
+        if (!report || !range || viewportGeometry.current.height <= 0) return;
+        const first = range.startIndex - headerOffset;
+        const last = Math.min(range.endIndex, headerOffset + entryItems.length - 1) - headerOffset;
+        const rows = entryItems.length;
+        const reported = visibleRowsReported.current;
+        // Rows arriving or leaving move what the indices name, so they report too.
+        if (reported?.first === first && reported.last === last && reported.rows === rows) return;
+        visibleRowsReported.current = { first, last, rows };
+        report(first, last);
+    }
     /** Exact geometry can be published without mounting every newly ready row.
      * Mount one offscreen neighbour per idle callback: a burst of table/Markdown
      * mounts otherwise spends an entire task in React commit and forced layout. */
@@ -2321,6 +2358,7 @@ export function MessageList(props: MessageListProps) {
         const element = list.current;
         if (!element || !modelRendered) return;
         if (!rowModelCurrent()) return;
+        visibleRowsReport();
         const actualHeight = messageListViewportHeight(element);
         const geometry =
             pendingViewportGeometry.current ??
