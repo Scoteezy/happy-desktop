@@ -235,3 +235,52 @@ it("wears the row's own icon, and a round face only when the row has none", () =
     expect(mark(space("n", null, null, task("t")))).toEqual({ stemCell: { id: "n" } });
     expect(mark(space("p", "Buried Alive flyer", null, task("t")))).toEqual({ icon: "tasks" });
 });
+
+it("ends a row's work with its conversation's, whatever the space last said", () => {
+    const { props } = fixture();
+    const parent = props.snapshot.spaces.get("parent" as HappyAgentSpaceId)!;
+    const watcher: HappyAgentSpace = {
+        ...parent,
+        id: "watcher" as HappyAgentSpaceId,
+        title: "Watcher",
+        target: { kind: "agent", id: "watcher", agentId: "watcher", workspaceId: null },
+        orderKey: "1",
+    };
+    const places = (activity: "running" | "idle") =>
+        ({
+            bots: [],
+            tasks: [
+                {
+                    id: "task",
+                    workspaceId: "workspace",
+                    conversation: { id: "agent", title: "Parent", activity, updatedAt: 1 },
+                    subtasks: [],
+                },
+            ],
+            chatGroupOf: () => undefined,
+        }) as unknown as HappyAgentSpacesPlaces;
+    // The daemon read both rows while their runs were live, and does not send
+    // the space again when a run ends.
+    const snapshot = {
+        ...props.snapshot,
+        spaces: new Map([
+            [parent.id, { ...parent, working: true }],
+            [watcher.id, { ...watcher, working: true }],
+        ]),
+    };
+    const status = (view: ReturnType<typeof render>, id: string) =>
+        view.container
+            .querySelector(`[data-happy-desktop-ui="sidebar-item"][data-item-id="space:${id}"]`)
+            ?.getAttribute("data-status");
+    const view = render(
+        <HappyAgentSpacesSidebar {...props} snapshot={snapshot} places={places("running")} />,
+    );
+    expect(status(view, "parent")).toBe("working");
+    // Stopped: the task's conversation settles, and its row with it.
+    view.rerender(
+        <HappyAgentSpacesSidebar {...props} snapshot={snapshot} places={places("idle")} />,
+    );
+    expect(status(view, "parent")).toBeNull();
+    // A row whose conversation the window does not hold has only the space's word.
+    expect(status(view, "watcher")).toBe("working");
+});

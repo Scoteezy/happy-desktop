@@ -280,7 +280,16 @@ function spaceRow(
 ): SidebarItem {
     const conversation = (targetTask(space.target, places) ?? targetBot(space.target, places))
         ?.conversation;
-    const activity = conversation?.activity;
+    // The conversation the window holds is live: its agent's own events end
+    // its work the moment a turn settles or is stopped. The space's `working`
+    // is the daemon's reading at the row's last change and is not sent again
+    // when the run ends, so it is only for a row whose conversation the
+    // window does not hold.
+    const activity = conversation
+        ? conversation.activity
+        : space.working
+          ? ("running" as const)
+          : undefined;
     return {
         id: `space:${space.id}`,
         kind: "project",
@@ -290,7 +299,7 @@ function spaceRow(
         ...happyAgentSpaceMark(space, places, stemCellAnimation),
         ...(activity === "awaitingInput"
             ? { status: "awaitingInput" as const }
-            : activity === "running" || space.working
+            : activity === "running"
               ? { status: "working" as const }
               : activity === "waiting"
                 ? { status: "waiting" as const }
