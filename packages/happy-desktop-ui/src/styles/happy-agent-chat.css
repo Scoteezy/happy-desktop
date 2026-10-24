@@ -611,10 +611,18 @@
 .happy-conversation__question-viewport {
     display: flex;
     flex-direction: column;
+    overflow-y: auto;
+}
+
+/* The scrollport stays edge to edge, so the option hover fills reach its
+   edges; its content carries the 8px back to the text column. */
+.happy-conversation__question-content {
+    display: flex;
+    flex: none;
+    flex-direction: column;
     gap: 8px;
     box-sizing: border-box;
     padding-inline: 8px;
-    overflow-y: auto;
 }
 
 .happy-agent-input[data-variant="dock"] .happy-agent-input__footer {

@@ -321,7 +321,7 @@ export function ConversationDock(props: ConversationDockProps) {
                             className="happy-conversation__question-scroll"
                             viewportClassName="happy-conversation__question-viewport"
                         >
-                            {question}
+                            <div className="happy-conversation__question-content">{question}</div>
                         </ScrollArea>
                     </div>
                 )}
