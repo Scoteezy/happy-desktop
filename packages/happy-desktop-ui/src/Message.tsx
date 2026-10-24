@@ -1128,12 +1128,17 @@ export function MessageList(props: MessageListProps) {
     const virtualOffsetReport = useRef<
         ((offset: number, isScrolling: boolean) => void) | undefined
     >(undefined);
-    const scrollTopWrite = (element: HTMLElement, value: number) => {
+    const scrollTopWrite = (
+        element: HTMLElement,
+        value: number,
+        placed?: (top: number) => void,
+    ) => {
         // Reassigning WebKit's reported offset at fractional zoom can round
         // its native position down a pixel, even though the value is equal.
         if (element.scrollTop !== value) element.scrollTop = value;
         expectedScrollTop.current = element.scrollTop;
         readerScrollTop.current = element.scrollTop;
+        placed?.(element.scrollTop);
         virtualOffsetReport.current?.(element.scrollTop, virtualizer.isScrolling);
     };
     const scrollBottomFollow = (
@@ -2029,7 +2034,20 @@ export function MessageList(props: MessageListProps) {
             index: place.index,
             viewportInset: anchor.viewportInset + viewportGeometry.current.height - viewportHeight,
         };
-        scrollTopWrite(element, place.scrollTop);
+        scrollTopWrite(element, place.scrollTop, (top) => {
+            // A clamp or a growing dock can leave the old point outside the
+            // viewport. Hold the point actually painted in the new geometry,
+            // before reporting that offset can render another range.
+            const held = readerAnchor.current;
+            if (
+                place.floored ||
+                Math.abs(top - place.scrollTop) > 1 ||
+                (held?.type === "item" &&
+                    (held.viewportInset < 0 ||
+                        held.viewportInset > viewportGeometry.current.height))
+            )
+                readerAnchor.current = modelAnchorCapture(viewportGeometry.current.height, top);
+        });
         return true;
     }
     /**
