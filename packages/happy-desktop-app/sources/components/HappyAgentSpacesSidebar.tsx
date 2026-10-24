@@ -891,10 +891,12 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                 else if (actionId === MENU_TIDY) props.store.tidyRequest();
                 else if (actionId === MENU_SUBTASKS_SHOW) {
                     const key = anchorOf.get(item.id);
-                    if (key)
-                        documentEdit((current) =>
-                            sidebarDocumentSessionsReveal(current, key, subtasksOf(space)),
-                        );
+                    if (!editable || !key) return;
+                    const html = sidebarDocumentEdit(sidebarDoc.html, (current) =>
+                        sidebarDocumentSessionsReveal(current, key, subtasksOf(space)),
+                    );
+                    // The person opened the row to show them, so its fold is theirs.
+                    if (html !== undefined) props.store.sidebarSessionsRevealWrite(html, space.id);
                 } else if (actionId === MENU_SUBTASKS_HIDE) {
                     const key = anchorOf.get(item.id);
                     if (key)

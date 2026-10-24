@@ -256,6 +256,13 @@ export interface HappyAgentSpacesStore {
      * and reports the refusal, without merging.
      */
     sidebarWrite(html: string, force?: boolean): void;
+    /**
+     * Writes the document with a row's sessions revealed under it, opening the
+     * row as the person's own choice: the batch sets `expanded` on the row
+     * even when it was already open, so the daemon records the person as the
+     * author of its fold. `rowId` is the row's node ID in the document.
+     */
+    sidebarSessionsRevealWrite(html: string, rowId: string): void;
     /** Holds the document and daemon edits through the gesture and its saved drop. */
     sidebarDragUpdate(active: boolean): void;
     /**
@@ -884,6 +891,8 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     const sidebarOperationsSend = (
         current: HappyAgentSpacesSidebarDocument,
         html: string,
+        /** Rows whose `expanded` the person sets in this batch whether or not it changes. */
+        expandedClaims: readonly string[] = [],
     ): void => {
         let base: SpaceSidebarDocument;
         let proposed: SpaceSidebarDocument;
@@ -895,6 +904,16 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
         }
         const operations = diffSpaceSidebar(base, proposed);
         if (operations.length === 0) return;
+        for (const id of expandedClaims)
+            if (
+                !operations.some(
+                    (operation) =>
+                        operation.type === "set" &&
+                        operation.id === id &&
+                        operation.expanded !== undefined,
+                )
+            )
+                operations.push({ type: "set", id, expanded: true });
         const batch = { mutationId: idCreate(), operations, base };
         sidebarBatches = [...sidebarBatches, batch];
         publish({
@@ -1189,6 +1208,15 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 () => undefined,
             );
         },
+        sidebarSessionsRevealWrite(html, rowId) {
+            const current = snapshot.sidebar;
+            if (current === undefined || current.html === html) return;
+            if (creating.size === 0 && sidebarHeld !== undefined && sidebarOperational()) {
+                sidebarOperationsSend(current, html, [rowId]);
+                return;
+            }
+            store.sidebarWrite(html);
+        },
         sidebarWrite(html, force = false) {
             const current = snapshot.sidebar;
             if (current === undefined || (current.html === html && !force)) return;
@@ -1346,6 +1374,7 @@ export const happyAgentSpacesStoreNoop: HappyAgentSpacesStore = {
     spaceTitleUpdate: () => undefined,
     spaceTitleWithdraw: () => undefined,
     sidebarWrite: () => undefined,
+    sidebarSessionsRevealWrite: () => undefined,
     sidebarDragUpdate: () => undefined,
     sidebarClassicUpdate: () => undefined,
     [Symbol.dispose]: () => undefined,
