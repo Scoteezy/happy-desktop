@@ -38,9 +38,9 @@ const composer: ComposerSnapshot = {
     submission: { status: "idle" },
     text: "",
 };
-it.skipIf(server.browser !== "chromium")(
-    "models cold history prepended above a sparse delegation at page zoom 0.67 (seed7)",
-    async () => {
+it.skipIf(server.browser !== "chromium").each([0, 2])(
+    "models cold history prepended above a sparse delegation at page zoom 0.67 (seed7; history %i)",
+    async (historyCount) => {
         const initialDpr = devicePixelRatio;
         const view = createRenderer();
         const zoom = 0.67;
@@ -71,7 +71,16 @@ it.skipIf(server.browser !== "chromium")(
             loadMoreToken: "older-page",
             loadingMore: false,
         };
-        let elements: ChatElement[] = [];
+        let elements: ChatElement[] = Array.from({ length: historyCount }, (_, index) => ({
+            id: `initial:${index}`,
+            groupId: `initial:${index}`,
+            runId: `run:initial:${index}`,
+            createdAt: 1_790_000_000_000,
+            kind: "agent_text" as const,
+            messageId: `initial:${index}`,
+            complete: true,
+            text: `History seed:7:c:${index}. ${"A stable paragraph stays where the reader left it. ".repeat(2 + (index % 5))}`,
+        }));
         let publish!: () => void;
         let delegate!: () => void;
         const store = happyAgentChatStoreCreate("sparse-prepend" as HappyAgentSessionId, {
@@ -158,7 +167,14 @@ it.skipIf(server.browser !== "chromium")(
             await frames();
             delegate();
             await frames();
+            const viewport = view.container.querySelector<HTMLElement>(
+                ".happy-message-list__viewport",
+            )!;
+            viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 633, cancelable: true }));
+            viewport.scrollTop += 633;
+            await frames();
             elements = [
+                ...elements,
                 {
                     id: "notice",
                     groupId: "notice",
@@ -170,9 +186,6 @@ it.skipIf(server.browser !== "chromium")(
             ];
             publish();
             await frames();
-            const viewport = view.container.querySelector<HTMLElement>(
-                ".happy-message-list__viewport",
-            )!;
             viewport.tabIndex = 0;
             viewport.focus();
             await userEvent.keyboard("{PageUp}");
@@ -230,6 +243,26 @@ it.skipIf(server.browser !== "chromium")(
                 ).toBeLessThanOrEqual(1);
             }
             expect(visible).toBeGreaterThan(0);
+            const summaryAnchorTop = held.getBoundingClientRect().top;
+            elements = [
+                ...elements,
+                {
+                    id: "summary",
+                    groupId: "summary",
+                    runId: "run:summary",
+                    createdAt: 1_790_000_000_000,
+                    kind: "agent_text",
+                    messageId: "summary",
+                    complete: true,
+                    text: "A compact summary of the work so far.",
+                },
+            ];
+            publish();
+            await frames();
+            expect(
+                Math.abs(held.getBoundingClientRect().top - summaryAnchorTop),
+                "parked delegation moved on summary after prepend",
+            ).toBeLessThanOrEqual(1);
         } finally {
             view.destroy();
             release();
