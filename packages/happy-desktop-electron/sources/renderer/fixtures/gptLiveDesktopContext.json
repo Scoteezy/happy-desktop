@@ -49,12 +49,12 @@
         },
         "status": "idle",
         "messages": [
+            { "id": "message-human", "role": "user", "text": "Please inspect the build result." },
             {
                 "id": "message:message-agent:1",
                 "role": "assistant",
                 "text": "The build completed successfully."
-            },
-            { "id": "message-human", "role": "user", "text": "Please inspect the build result." }
+            }
         ],
         "composerHasDraft": false,
         "writeRefusal": null
