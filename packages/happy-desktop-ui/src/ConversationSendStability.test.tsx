@@ -879,12 +879,27 @@ it("does not resume following on a small native offset adjustment after an upwar
     viewport.scrollTop -= 4;
     await frames();
     viewport.scrollTop += 1;
-    const parked = viewport.scrollTop;
+    const point = viewport.getBoundingClientRect().bottom - 32;
+    const anchor = [
+        ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+    ].find((row) => {
+        const rect = row.getBoundingClientRect();
+        return rect.top <= point && rect.bottom > point;
+    });
+    expect(anchor).toBeDefined();
+    const anchorTop = () =>
+        anchor!.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+    // Idle measurements above this row can change native scrollTop while
+    // compensating to keep the reader's text at the same screen position.
+    const parked = anchorTop();
     await frames();
-    expect(viewport.scrollTop).toBe(parked);
+    expect(anchor!.isConnected).toBe(true);
+    expect(Math.abs(anchorTop() - parked)).toBeLessThanOrEqual(1);
     send();
     await frames();
-    expect(viewport.scrollTop).toBe(parked);
+    expect(anchor!.isConnected).toBe(true);
+    expect(Math.abs(anchorTop() - parked)).toBeLessThanOrEqual(1);
+    expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeGreaterThan(1);
 });
 
 // Firefox CSS zoom changes native scrollTop: happy-file://agents/ebzk9bggqj0qt6wts9jv0tgh/.context/fuzz-plainzoom24.log
