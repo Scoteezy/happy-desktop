@@ -23,6 +23,11 @@ export interface HappyAgentSidebarProposal {
     readonly artifactId: string;
     /** The proposal artifact's latest version; version 1 is the sidebar it was drafted from. */
     readonly version: number;
+    /**
+     * Prioritizing's drafts of it: 1 for the proposal as first made, one more
+     * for each revision it sends. The person's own edits never count.
+     */
+    readonly revision: number;
     readonly status: HappyAgentSidebarProposalStatus;
     /** The proposed sidebar, in the sidebar's own grammar. */
     readonly html: string;
@@ -75,6 +80,7 @@ export interface HappyAgentSidebarProposalsDeps {
         | "applySpaceSidebarProposalOperations"
         | "acceptSpaceSidebarProposal"
         | "declineSpaceSidebarProposal"
+        | "listArtifactVersions"
     >;
     readonly sync: HappyAgentSync;
     readonly now?: () => number;
@@ -88,6 +94,7 @@ const PROPOSAL_EVENT_TYPES = [
 interface Held {
     readonly proposal: SpaceSidebarProposal;
     readonly html: string;
+    readonly revision: number;
     readonly edits: readonly {
         readonly mutationId: string;
         readonly operations: readonly SpaceSidebarOperation[];
@@ -147,6 +154,7 @@ export function happyAgentSidebarProposalsStoreCreate(
             proposal: {
                 artifactId,
                 version: entry.proposal.version,
+                revision: entry.revision,
                 status: entry.proposal.status,
                 html: shownHtml(entry),
                 ...(entry.answering ? { answering: entry.answering } : {}),
@@ -161,13 +169,46 @@ export function happyAgentSidebarProposalsStoreCreate(
         show(artifactId);
     };
 
+    /**
+     * Prioritizing's drafts up to `version`: the versions its agent wrote, past
+     * version 1, which is the sidebar the proposal was drafted from.
+     */
+    const revisionRead = async (
+        artifactId: string,
+        version: number,
+        signal: AbortSignal,
+    ): Promise<number> => {
+        let drafts = 0;
+        let pageCursor: string | undefined;
+        do {
+            const page = await deps.client.listArtifactVersions(
+                artifactId,
+                pageCursor === undefined ? {} : { pageCursor },
+                { signal },
+            );
+            for (const candidate of page.versions)
+                if (
+                    candidate.number > 1 &&
+                    candidate.number <= version &&
+                    candidate.createdBy.kind === "agent"
+                )
+                    drafts += 1;
+            pageCursor = page.nextPageCursor ?? undefined;
+        } while (pageCursor !== undefined);
+        return Math.max(1, drafts);
+    };
+
     const proposalRead = (artifactId: string, signal: AbortSignal): void => {
         if (reading.has(artifactId)) return;
         reading.add(artifactId);
         if (!snapshot.has(artifactId)) entrySet(artifactId, { type: "loading" });
         void deps.client
             .getSpaceSidebarProposal(artifactId, { signal })
-            .then((answer) => {
+            .then(async (answer) => ({
+                answer,
+                revision: await revisionRead(artifactId, answer.proposal.version, signal),
+            }))
+            .then(({ answer, revision }) => {
                 if (disposed || signal.aborted) return;
                 const current = held.get(artifactId);
                 // A version this window already holds, its own edit included, stands.
@@ -175,6 +216,7 @@ export function happyAgentSidebarProposalsStoreCreate(
                 held.set(artifactId, {
                     proposal: answer.proposal,
                     html: answer.html,
+                    revision,
                     edits: current?.edits ?? [],
                     ...(current?.answering ? { answering: current.answering } : {}),
                 });
@@ -225,6 +267,7 @@ export function happyAgentSidebarProposalsStoreCreate(
             ...entry,
             proposal: payload.proposal,
             html,
+            revision: entry.revision + (payload.author === "prioritizing" ? 1 : 0),
             // The person's own edit, confirmed: it is already on screen.
             edits:
                 payload.mutationId === undefined

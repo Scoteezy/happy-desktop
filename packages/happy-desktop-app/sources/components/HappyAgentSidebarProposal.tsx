@@ -159,8 +159,7 @@ export function HappyAgentSidebarProposal(props: HappyAgentSidebarProposalProps)
                         }}
                         sections={[{ id: LIST, items: drawn.items }]}
                         status={proposal.status}
-                        // Version 1 is the sidebar it was drafted from; the first proposal is 2.
-                        version={Math.max(1, proposal.version - 1)}
+                        revision={proposal.revision}
                     />
                 ) : (
                     <span>Loading the proposed sidebar…</span>

@@ -90,7 +90,7 @@ function LiveProposal() {
             <SidebarProposal
                 sections={[{ id: "v1", items: V1, label: "" }]}
                 status="superseded"
-                version={1}
+                revision={1}
             />
             <SidebarProposal
                 answering={answering}
@@ -123,7 +123,7 @@ function LiveProposal() {
                 sections={[{ id: "v2", items, label: "" }]}
                 status={status}
                 summary="Grouped what you touched this week at the top; Distractions stays folded."
-                version={2}
+                revision={2}
             />
         </Column>
     );
@@ -157,12 +157,12 @@ export function SidebarProposalPage() {
                     <SidebarProposal
                         sections={[{ id: "a", items: V2, label: "" }]}
                         status="accepted"
-                        version={2}
+                        revision={2}
                     />
                     <SidebarProposal
                         sections={[{ id: "d", items: V1, label: "" }]}
                         status="declined"
-                        version={1}
+                        revision={1}
                     />
                 </Column>
             </Specimen>

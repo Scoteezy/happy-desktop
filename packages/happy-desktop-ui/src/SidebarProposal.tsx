@@ -13,8 +13,11 @@ export interface SidebarProposalProps {
     /** The proposed sidebar's rows, drawn by the same `Sidebar` the window uses. */
     readonly sections: SidebarProps["sections"];
     readonly status: SidebarProposalStatus;
-    /** Which revision this is, counted from 1. */
-    readonly version: number;
+    /**
+     * The agent's drafts of it, counted from 1: the first reads as the
+     * proposal alone, a revision says which it is. The person's own edits never count.
+     */
+    readonly revision: number;
     /** What the agent changed, in one line, above the rows. */
     readonly summary?: string;
     /** Why the last edit or answer did not go through, beside the buttons. */
@@ -71,16 +74,22 @@ export function SidebarProposal(props: SidebarProposalProps): ReactNode {
         });
     return (
         <section
-            aria-label={`Proposed sidebar, version ${String(props.version)}`}
+            aria-label={
+                props.revision > 1
+                    ? `Proposed sidebar, revision ${String(props.revision)}`
+                    : "Proposed sidebar"
+            }
             className="happy-sidebar-proposal"
             data-happy-desktop-ui="sidebar-proposal"
             data-status={props.status}
         >
             <header className="happy-sidebar-proposal__header">
                 <span className="happy-sidebar-proposal__title">Proposed sidebar</span>
-                <span className="happy-sidebar-proposal__version">
-                    {`v${String(props.version)}`}
-                </span>
+                {props.revision > 1 ? (
+                    <span className="happy-sidebar-proposal__version">
+                        {`v${String(props.revision)}`}
+                    </span>
+                ) : null}
             </header>
             {props.summary ? (
                 <p className="happy-sidebar-proposal__summary">{props.summary}</p>
