@@ -11,6 +11,121 @@ const settle = async () => {
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 };
 
+it.each([
+    { target: 49, nextHeight: 1223.875 },
+    { target: 25, nextHeight: 1223.875 },
+    { target: 49, nextHeight: 620 },
+    { target: 25, nextHeight: 620 },
+])(
+    "publishes the committed view when hidden before resize delivery: %j",
+    async ({ target, nextHeight }) => {
+        const view = createRenderer();
+        let update!: (height: number, active: boolean, cold?: boolean) => void;
+        let latest: MessageListScrollPosition | undefined;
+        let saved: MessageListScrollPosition | undefined;
+        function Fixture() {
+            const [state, setState] = useState({ height: 650, active: true, generation: 0 });
+            update = (height, active, cold = false) =>
+                flushSync(() =>
+                    setState((previous) => ({
+                        height,
+                        active,
+                        generation: previous.generation + Number(cold),
+                    })),
+                );
+            return (
+                <RetainedViews
+                    activeId={state.active ? "chat" : undefined}
+                    views={[
+                        {
+                            id: "chat",
+                            content: (
+                                <div style={{ display: "flex", height: state.height }}>
+                                    <MessageList
+                                        key={state.generation}
+                                        virtualize
+                                        estimateDependencies={[]}
+                                        estimateRowSize={() => 100}
+                                        initialScrollPosition={
+                                            saved ?? {
+                                                type: "row",
+                                                rowKey: `.$${target}`,
+                                                offset: 25,
+                                                viewportInset: 32,
+                                            }
+                                        }
+                                        onScrollPositionChange={(position) => {
+                                            latest = position;
+                                        }}
+                                    >
+                                        {Array.from({ length: 50 }, (_, index) => (
+                                            <div
+                                                key={index}
+                                                data-row={index}
+                                                style={{ height: 100 }}
+                                            >
+                                                <span>Row {index} glyph</span>
+                                            </div>
+                                        ))}
+                                    </MessageList>
+                                </div>
+                            ),
+                        },
+                    ]}
+                />
+            );
+        }
+        const viewport = () =>
+            view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+        const read = () => {
+            const element = viewport();
+            const row = element.querySelector<HTMLElement>(`[data-row="${target}"]`)!;
+            expect(row).not.toBeNull();
+            const range = document.createRange();
+            range.selectNodeContents(row.querySelector("span")!);
+            return [
+                row.getBoundingClientRect().top - element.getBoundingClientRect().top,
+                range.getBoundingClientRect().top - element.getBoundingClientRect().top,
+            ];
+        };
+        try {
+            view.render(Fixture, { width: 560, height: 1400 });
+            await view.ready();
+            await settle();
+            update(800, true);
+            await settle();
+            const committed = read();
+            const committedTop = viewport().scrollTop;
+            const element = viewport();
+            // Force native layout and its clamp, then hide in this same task:
+            // ResizeObserver cannot deliver the changed box in between.
+            element.style.flex = "none";
+            element.style.height = `${nextHeight}px`;
+            const pendingTop = element.scrollTop;
+            if (target === 49 && nextHeight > 800)
+                expect(pendingTop).toBeLessThan(committedTop - 400);
+            update(nextHeight, false);
+            saved = latest;
+            expect(saved?.type === "row" && saved.viewportHeight).toBe(800);
+            element.style.removeProperty("height");
+            element.style.removeProperty("flex");
+            await settle();
+            update(nextHeight, true);
+            await settle();
+            const warm = read();
+            for (let i = 0; i < warm.length; i++)
+                expect(Math.abs(warm[i]! - committed[i]!)).toBeLessThanOrEqual(1);
+            update(nextHeight, true, true);
+            await settle();
+            const cold = read();
+            for (let i = 0; i < warm.length; i++)
+                expect(Math.abs(cold[i]! - warm[i]!)).toBeLessThanOrEqual(1);
+        } finally {
+            view.destroy();
+        }
+    },
+);
+
 it("keeps the legacy bottom-relative restore when no viewport height was saved", async () => {
     const view = createRenderer();
     try {

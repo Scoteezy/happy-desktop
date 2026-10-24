@@ -1863,7 +1863,7 @@ export function MessageList(props: MessageListProps) {
             ? Math.max(0, estimatedContentHeight() - viewportGeometry.current.height)
             : (openingScrollTop.current ?? readerScrollTop.current);
     /** The reader's fixed point, as it is saved: the anchor it holds, not its pixel offset. */
-    function positionCurrent(element: HTMLElement): MessageListScrollPosition {
+    function positionCurrent(): MessageListScrollPosition {
         if (following.current) return { type: "bottom" };
         const held = readerAnchor.current;
         const anchor =
@@ -1871,8 +1871,10 @@ export function MessageList(props: MessageListProps) {
             held.viewportInset === Math.min(VIRTUAL_ANCHOR_INSET, viewportGeometry.current.height)
                 ? held
                 : /* A disclosure's own inset, or a raw scrollTop, is read back
-                     as the row at the standard anchor point. */
-                  modelAnchorCapture(viewportGeometry.current.height, element.scrollTop);
+                     as the row at the standard anchor point. Native scrolling
+                     may already be clamped by an undelivered viewport resize;
+                     pair the committed height with its committed offset. */
+                  modelAnchorCapture(viewportGeometry.current.height, readerScrollTop.current);
         return anchor?.type === "item"
             ? {
                   type: "row",
@@ -1886,7 +1888,7 @@ export function MessageList(props: MessageListProps) {
     const positionReport = () => {
         const element = list.current;
         if (!element || !positionChange.current) return;
-        positionChange.current(positionCurrent(element));
+        positionChange.current(positionCurrent());
     };
     /* Model lookups use the model's own row order, which matches `items`
        except inside the commit that changed them, before the model follows. */
