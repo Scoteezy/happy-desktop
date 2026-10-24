@@ -2,7 +2,12 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import { expect, it } from "vitest";
 import { userEvent } from "vitest/browser";
-import type { ComposerSnapshot, ConversationAuthor, ConversationEntry } from "happy-desktop-state";
+import type {
+    ComposerSnapshot,
+    ConversationAuthor,
+    ConversationEntry,
+    ConversationMessageEntry,
+} from "happy-desktop-state";
 import "./styles.css";
 import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
@@ -33,7 +38,12 @@ const composer: ComposerSnapshot = {
     submission: { status: "idle" },
     text: "",
 };
-function message(id: string, text: string, own = false, sentHere = false): ConversationEntry {
+function message(
+    id: string,
+    text: string,
+    own = false,
+    sentHere = false,
+): ConversationMessageEntry {
     return {
         kind: "message",
         source: "server",
@@ -61,13 +71,15 @@ const frames = async () => {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 };
-function renderConversation(count: number, withShell = false) {
+function renderConversation(count: number, withShell = false, withTitle = false) {
     const view = createRenderer();
     let send!: () => void;
     let resize!: (height: number) => void;
     let question!: (answered: boolean) => void;
     let stream!: (lines: number) => void;
     let finish!: () => void;
+    let queue!: () => void;
+    let sent = 0;
     function Dock() {
         const [text, setText] = useState("");
         return (
@@ -81,7 +93,7 @@ function renderConversation(count: number, withShell = false) {
     }
     function Harness() {
         const [entries, setEntries] = useState<readonly ConversationEntry[]>(() => {
-            const history = Array.from({ length: count }, (_, index) =>
+            const history: ConversationEntry[] = Array.from({ length: count }, (_, index) =>
                 message(
                     `history-${String(index)}`,
                     `History ${String(index)}. ${"A completed reply stays in its place. ".repeat(count > 100 ? 1 + (index % 13) * 3 : 8)}`,
@@ -110,13 +122,31 @@ function renderConversation(count: number, withShell = false) {
         const [height, setHeight] = useState(700);
         const [running, setRunning] = useState(false);
         finish = () => flushSync(() => setRunning(false));
+        queue = () =>
+            flushSync(() => {
+                setRunning(true);
+                sent += 1;
+                const entry = message(
+                    `queued-${String(sent)}`,
+                    `Queued instruction ${String(sent)}`,
+                    true,
+                    true,
+                );
+                setEntries((previous) => [...previous, { ...entry, delivery: "pending_steering" }]);
+            });
         send = () =>
-            flushSync(() =>
+            flushSync(() => {
+                sent += 1;
                 setEntries((previous) => [
                     ...previous,
-                    message("sent-message", "The newly sent message", true, true),
-                ]),
-            );
+                    message(
+                        `sent-message-${String(sent)}`,
+                        `The newly sent message ${String(sent)}`,
+                        true,
+                        true,
+                    ),
+                ]);
+            });
         resize = (next) => flushSync(() => setHeight(next));
         stream = (lines) =>
             flushSync(() =>
@@ -183,6 +213,7 @@ function renderConversation(count: number, withShell = false) {
                     entries={entries}
                     motion="calm"
                     running={running}
+                    title={withTitle ? "Conversation" : undefined}
                     viewerId={reader.id}
                 />
             </div>
@@ -196,8 +227,267 @@ function renderConversation(count: number, withShell = false) {
         question: (answered: boolean) => question(answered),
         stream: (lines: number) => stream(lines),
         finish: () => finish(),
+        queue: () => queue(),
     };
 }
+
+it("follows streaming bursts and appended rows without losing the bottom", async () => {
+    const { view, stream, question } = renderConversation(60);
+    await view.ready();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    question(true);
+    await frames();
+    for (let lines = 1; lines <= 24; lines += 1) {
+        viewport.dispatchEvent(new Event("scroll"));
+        stream(lines);
+        await frames();
+        const last = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        expect(
+            Math.round(
+                viewport.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom,
+            ),
+        ).toBe(24);
+    }
+});
+
+it.each(["send", "draft"] as const)(
+    "keeps visible content above held %s space through zoom changes",
+    async (source) => {
+        const { view, send } = renderConversation(40);
+        await view.ready();
+        await frames();
+        if (source === "send") send();
+        else {
+            const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+            await userEvent.click(textarea);
+            await userEvent.keyboard(
+                "one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three{Shift>}{Enter}{/Shift}four{Shift>}{Enter}{/Shift}five",
+            );
+            await frames();
+            await draftClear(textarea);
+        }
+        await frames();
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const panel =
+            view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
+        for (const zoom of [2, 0.5, 1.5, 0.67, 1, 2, 1]) {
+            // Keep the panel's physical box fixed, as browser zoom does.
+            panel.style.zoom = String(zoom);
+            panel.style.height = `${String(700 / zoom)}px`;
+            panel.style.width = `${String(880 / zoom)}px`;
+            await frames();
+            const last = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+            const rect = last.getBoundingClientRect();
+            const bounds = viewport.getBoundingClientRect();
+            expect(rect.bottom).toBeGreaterThan(bounds.top);
+            expect(rect.top).toBeLessThan(bounds.bottom);
+            const top = rect.top;
+            await frames();
+            expect(last.getBoundingClientRect().top).toBe(top);
+        }
+    },
+);
+
+it.each(["following", "parked"] as const)(
+    "lets a docked question use send space and returns it on answer for a %s reader",
+    async (mode) => {
+        const { view, send, question } = renderConversation(60);
+        await view.ready();
+        await frames();
+        send();
+        await frames();
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        if (mode === "parked") {
+            viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+            viewport.scrollTop -= 4;
+            await frames();
+        }
+        const top = row.getBoundingClientRect().top;
+        question(false);
+        await frames();
+        expect(row.getBoundingClientRect().top).toBe(top);
+        question(true);
+        await frames();
+        expect(row.getBoundingClientRect().top).toBe(top);
+    },
+);
+
+it.each([false, true])(
+    "uses draft slack before a taller question, including a multiline draft: %s",
+    async (multiline) => {
+        const { view, question } = renderConversation(60);
+        await view.ready();
+        await frames();
+        const textarea = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+        await userEvent.click(textarea);
+        await userEvent.keyboard("one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three");
+        await frames();
+        await draftClear(textarea);
+        await frames();
+        if (multiline) {
+            await userEvent.keyboard("one{Shift>}{Enter}{/Shift}two");
+            await frames();
+        }
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const content = viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!;
+        const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        const top = row.getBoundingClientRect().top;
+        const height = viewport.clientHeight;
+        const blank = Math.max(
+            0,
+            content.getBoundingClientRect().bottom - row.getBoundingClientRect().bottom - 24,
+        );
+        question(false);
+        await frames();
+        const shrink = height - viewport.clientHeight;
+        expect(shrink).toBeGreaterThan(blank);
+        const carried = top - row.getBoundingClientRect().top;
+        expect(carried).toBeGreaterThan(0);
+        expect(carried).toBeLessThanOrEqual(shrink - blank + 1);
+        const held = row.getBoundingClientRect().top;
+        question(true);
+        await frames();
+        expect(row.getBoundingClientRect().top).toBe(held);
+    },
+);
+
+it.each([false, true])(
+    "keeps a sent message visible while zooming a docked question and answering it, with header: %s",
+    async (withTitle) => {
+        const { view, send, question } = renderConversation(60, false, withTitle);
+        await view.ready();
+        await frames();
+        send();
+        await frames();
+        question(false);
+        await frames();
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const panel =
+            view.container.querySelector<HTMLElement>(".happy-conversation")!.parentElement!;
+        for (const zoom of [1.5, 0.67, 2, 1]) {
+            panel.style.zoom = String(zoom);
+            panel.style.height = `${String(700 / zoom)}px`;
+            panel.style.width = `${String(880 / zoom)}px`;
+            await frames();
+            const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].find((item) =>
+                item.textContent?.includes("The newly sent message"),
+            )!;
+            expect(viewport.clientHeight).toBeGreaterThanOrEqual(48);
+            expect(row.getBoundingClientRect().bottom).toBeGreaterThan(
+                viewport.getBoundingClientRect().top,
+            );
+            expect(row.getBoundingClientRect().top).toBeLessThan(
+                viewport.getBoundingClientRect().bottom,
+            );
+        }
+        const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].find((item) =>
+            item.textContent?.includes("The newly sent message"),
+        )!;
+        const top = row.getBoundingClientRect().top;
+        question(true);
+        await frames();
+        expect(row.getBoundingClientRect().top).toBe(top);
+    },
+);
+
+it("carries repeated queued sends into view near the bottom without holding reply space", async () => {
+    const { view, question, queue } = renderConversation(60);
+    await view.ready();
+    question(true);
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    // A small reader nudge is close enough to carry a send, without resuming streaming follow.
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
+    viewport.scrollTop -= 4;
+    await frames();
+    for (let index = 1; index <= 12; index += 1) {
+        queue();
+        await frames();
+        const last = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        expect(last.textContent).toContain(`Queued instruction ${String(index)}`);
+        expect(last.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+            viewport.getBoundingClientRect().bottom,
+        );
+        expect(
+            viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!.style.minHeight,
+        ).toBe("");
+        const footer = viewport.querySelector<HTMLElement>('[data-item-id="working-status"]')!;
+        const content = viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!;
+        const modeled =
+            Number.parseFloat(content.style.height) -
+            new DOMMatrixReadOnly(footer.style.transform).m42 -
+            24;
+        expect(Math.abs(modeled - footer.getBoundingClientRect().height)).toBeLessThan(1);
+    }
+});
+
+it("keeps a reader in history parked when queued sends arrive", async () => {
+    const { view, question, queue } = renderConversation(60);
+    await view.ready();
+    question(true);
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
+    viewport.scrollTop -= 300;
+    await frames();
+    const top = viewport.scrollTop;
+    for (let index = 0; index < 3; index += 1) {
+        queue();
+        await frames();
+        expect(viewport.scrollTop).toBe(top);
+    }
+});
+
+it("keeps following after answering restores the viewport and native scrolling reports it", async () => {
+    const { view, question, stream } = renderConversation(60);
+    await view.ready();
+    await frames();
+    question(false);
+    await frames();
+    question(true);
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    let gap: number | undefined;
+    for (let lines = 5; lines <= 12; lines += 1) {
+        viewport.dispatchEvent(new Event("scroll"));
+        stream(lines);
+        await frames();
+        const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        const next = Math.round(
+            viewport.getBoundingClientRect().bottom - row.getBoundingClientRect().bottom,
+        );
+        gap ??= next;
+        expect(next).toBe(gap);
+        expect(next).toBeLessThanOrEqual(56);
+    }
+});
+
+it("lifts repeated idle sends in their first commit while retaining the visible message node", async () => {
+    const { view, send } = renderConversation(60);
+    await view.ready();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    for (let index = 0; index < 12; index += 1) {
+        send();
+        const row = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        const bounds = viewport.getBoundingClientRect();
+        const top = row.getBoundingClientRect().top;
+        expect(Math.abs(top - bounds.top - Math.round(bounds.height * 0.3))).toBeLessThan(1);
+        await frames();
+        expect(row.isConnected).toBe(true);
+        expect(row.getBoundingClientRect().top).toBe(top);
+    }
+});
 
 it.each([0, 40])(
     "lifts a send to SEND_LIFT_TOP down the viewport with %i preceding messages",
@@ -451,12 +741,12 @@ it("keeps a parked row fixed when answering grows the viewport", async () => {
     viewport.scrollTop -= 200;
     await frames();
     const bounds = viewport.getBoundingClientRect();
-    const anchor = [
-        ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
-    ].find((row) => {
-        const rect = row.getBoundingClientRect();
-        return rect.top <= bounds.bottom - 60 && rect.bottom > bounds.bottom - 60;
-    })!;
+    const anchor = [...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row")]
+        .filter((row) => {
+            const rect = row.getBoundingClientRect();
+            return rect.top <= bounds.bottom - 32 && rect.bottom > bounds.top;
+        })
+        .at(-1)!;
     const top = anchor.getBoundingClientRect().top;
     question(true);
     await frames();

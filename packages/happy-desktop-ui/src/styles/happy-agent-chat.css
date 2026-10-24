@@ -598,10 +598,11 @@
  * keep, so the question's text column is where it always was. */
 .happy-conversation__question {
     display: flex;
-    flex: none;
+    flex: 0 1 auto;
     flex-direction: column;
     box-sizing: border-box;
-    max-height: 50vh;
+    min-height: 0;
+    max-height: 50cqh;
     padding: 8px 35px 8px 9px;
     overflow: hidden;
     border: 1px solid var(--divider);

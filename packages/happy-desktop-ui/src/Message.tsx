@@ -2085,10 +2085,6 @@ export function MessageList(props: MessageListProps) {
             if (virtualContent.current)
                 virtualContent.current.style.minHeight =
                     blank > 0 ? `${String(geometryExtent.current)}px` : "";
-            geometryFollowInset.current = Math.min(
-                geometryFollowInset.current * ratio,
-                nextHeight * (1 - SEND_LIFT_TOP),
-            );
             zoomPlacementPending.current = following.current;
         }
         viewportScale.current = scale;
