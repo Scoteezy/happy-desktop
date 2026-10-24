@@ -84,7 +84,7 @@ export function ConversationFailureCard(props: ConversationFailureCardProps) {
             data-happy-desktop-ui="conversation-error-card"
             data-kind={props.failure.kind}
             data-testid={props["data-testid"]}
-            data-tone="error"
+            data-tone="warning"
             role="alert"
             style={props.style}
         >

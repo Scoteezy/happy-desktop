@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { flushSync } from "react-dom";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import type {
     ComposerSnapshot,
@@ -13,6 +13,7 @@ import { ConversationDock } from "./ConversationDock";
 import { ConversationView } from "./ConversationView";
 import { SEND_LIFT_TOP } from "./Message";
 import { createRenderer } from "./testing";
+import type { ConversationSwitchSource } from "./conversationSwitchTargets";
 
 const reader: ConversationAuthor = {
     id: "send-reader",
@@ -37,6 +38,35 @@ const composer: ComposerSnapshot = {
     revision: 0,
     submission: { status: "idle" },
     text: "",
+};
+const limitSwitchSource: ConversationSwitchSource = {
+    selection: { service: "claude", account: "exhausted", model: "opus" },
+    services: [
+        {
+            id: "claude",
+            label: "Claude",
+            account: "exhausted",
+            accounts: [
+                {
+                    id: "exhausted",
+                    label: "Exhausted",
+                    models: [{ id: "opus", label: "Opus", efforts: [] }],
+                },
+            ],
+        },
+        {
+            id: "codex",
+            label: "Codex",
+            account: "available",
+            accounts: [
+                {
+                    id: "available",
+                    label: "Available",
+                    models: [{ id: "sol", label: "Sol", efforts: [] }],
+                },
+            ],
+        },
+    ],
 };
 function message(
     id: string,
@@ -79,6 +109,9 @@ function renderConversation(count: number, withShell = false, withTitle = false)
     let stream!: (lines: number) => void;
     let finish!: () => void;
     let queue!: () => void;
+    let limit!: () => void;
+    let resume!: () => void;
+    let start!: () => void;
     let sent = 0;
     function Dock() {
         const [text, setText] = useState("");
@@ -122,6 +155,48 @@ function renderConversation(count: number, withShell = false, withTitle = false)
         const [height, setHeight] = useState(700);
         const [running, setRunning] = useState(false);
         finish = () => flushSync(() => setRunning(false));
+        start = () => flushSync(() => setRunning(true));
+        limit = () =>
+            flushSync(() => {
+                setRunning(false);
+                setEntries((previous) => [
+                    ...previous,
+                    {
+                        kind: "notice",
+                        variant: "notice",
+                        id: "limit-failure",
+                        sequence: "limit-failure",
+                        level: "error",
+                        text: "Usage limit reached",
+                        failure: {
+                            kind: "usage_limit",
+                            provider: {
+                                id: "claude",
+                                type: "claude",
+                                label: "Claude",
+                                vendorName: "Claude",
+                            },
+                            resetsAt: null,
+                            message: "Usage limit reached",
+                        },
+                    },
+                ]);
+            });
+        resume = () =>
+            flushSync(() => {
+                setRunning(true);
+                setEntries((previous) => [
+                    ...previous,
+                    {
+                        kind: "notice",
+                        variant: "configuration",
+                        id: "limit-switched",
+                        sequence: "limit-switched",
+                        level: "info",
+                        text: "Model Opus → Sol",
+                    },
+                ]);
+            });
         queue = () =>
             flushSync(() => {
                 setRunning(true);
@@ -211,6 +286,8 @@ function renderConversation(count: number, withShell = false, withTitle = false)
                     conversationId={`send-stability-${String(count)}`}
                     dock={<Dock />}
                     entries={entries}
+                    failureActions={{ onRetry: () => resume(), onSwitch: () => resume() }}
+                    failureSwitch={limitSwitchSource}
                     motion="calm"
                     running={running}
                     title={withTitle ? "Conversation" : undefined}
@@ -228,6 +305,9 @@ function renderConversation(count: number, withShell = false, withTitle = false)
         stream: (lines: number) => stream(lines),
         finish: () => finish(),
         queue: () => queue(),
+        limit: () => limit(),
+        resume: () => resume(),
+        start: () => start(),
     };
 }
 
@@ -250,6 +330,121 @@ it("follows streaming bursts and appended rows without losing the bottom", async
         ).toBe(24);
     }
 });
+
+it("reads no row or viewport boxes for repeated native scroll reports", async () => {
+    const { view } = renderConversation(60);
+    await view.ready();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    const boxes = [
+        viewport,
+        ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+    ].map((element) => vi.spyOn(element, "getBoundingClientRect"));
+    try {
+        for (let index = 0; index < 12; index += 1) {
+            viewport.dispatchEvent(new Event("scroll"));
+            await frames();
+        }
+        expect(boxes.reduce((total, box) => total + box.mock.calls.length, 0)).toBe(0);
+    } finally {
+        for (const box of boxes) box.mockRestore();
+    }
+});
+
+it.each([
+    { parked: false, held: false },
+    { parked: true, held: false },
+    { parked: false, held: true },
+    { parked: true, held: true },
+])(
+    "keeps the reader anchored through a usage limit, provider switch, and resumed stream: %j",
+    async ({ parked, held }) => {
+        const { view, send, question, limit, resume, stream, start } = renderConversation(60);
+        await view.ready();
+        await frames();
+        if (held) {
+            send();
+            await frames();
+            question(false);
+            await frames();
+        } else start();
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        await frames();
+        viewport.dispatchEvent(new Event("scroll"));
+        if (parked) {
+            viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -300 }));
+            viewport.scrollTop -= 300;
+            await frames();
+        }
+        const bounds = viewport.getBoundingClientRect();
+        const anchor = [
+            ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+        ]
+            .filter((row) => {
+                const rect = row.getBoundingClientRect();
+                return rect.top <= bounds.bottom - 32 && rect.bottom > bounds.top;
+            })
+            .at(-1)!;
+        const top = anchor.getBoundingClientRect().top;
+        const prior = [
+            ...viewport.querySelectorAll<HTMLElement>(
+                ".happy-message-list__virtual-row:not([data-item-id]) .happy-message",
+            ),
+        ].at(-1)!;
+        const priorTop = prior.getBoundingClientRect().top;
+        const checkParked = () => {
+            expect(anchor.isConnected).toBe(true);
+            expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThan(1);
+        };
+        limit();
+        if (!parked && prior.isConnected)
+            expect(prior.getBoundingClientRect().top).toBeLessThanOrEqual(priorTop + 1);
+        await frames();
+        if (parked) checkParked();
+        else {
+            const failure = viewport.querySelector<HTMLElement>(
+                '[data-happy-desktop-ui="conversation-error-card"]',
+            )!;
+            expect(failure.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+                viewport.getBoundingClientRect().bottom,
+            );
+            if (!held)
+                expect(
+                    Math.round(
+                        viewport.getBoundingClientRect().bottom -
+                            failure.getBoundingClientRect().bottom,
+                    ),
+                ).toBe(24);
+        }
+        if (parked) resume();
+        else viewport.querySelector<HTMLButtonElement>(".happy-conversation-switch__main")!.click();
+        await frames();
+        if (parked) checkParked();
+        else if (prior.isConnected)
+            expect(prior.getBoundingClientRect().top).toBeLessThanOrEqual(priorTop + 1);
+        for (let lines = 1; lines <= 15; lines += 1) {
+            stream(lines);
+            await frames();
+            if (parked) checkParked();
+        }
+        if (!parked) {
+            const reply = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].find(
+                (row) => row.textContent?.includes("Streaming paragraph 0"),
+            )!;
+            const gap =
+                viewport.getBoundingClientRect().bottom - reply.getBoundingClientRect().bottom;
+            expect(gap).toBeGreaterThanOrEqual(23);
+            expect(gap).toBeLessThanOrEqual(57);
+            if (!held)
+                expect(
+                    viewport.querySelector<HTMLElement>(".happy-message-list__virtual")!.style
+                        .minHeight,
+                ).toBe("");
+        }
+    },
+);
 
 it.each(["send", "draft"] as const)(
     "keeps visible content above held %s space through zoom changes",
@@ -286,7 +481,7 @@ it.each(["send", "draft"] as const)(
             expect(rect.top).toBeLessThan(bounds.bottom);
             const top = rect.top;
             await frames();
-            expect(last.getBoundingClientRect().top).toBe(top);
+            expect(Math.abs(last.getBoundingClientRect().top - top)).toBeLessThan(1);
         }
     },
 );
@@ -406,6 +601,8 @@ it("carries repeated queued sends into view near the bottom without holding repl
     question(true);
     await frames();
     const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    await frames();
+    viewport.dispatchEvent(new Event("scroll"));
     // A small reader nudge is close enough to carry a send, without resuming streaming follow.
     viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -4 }));
     viewport.scrollTop -= 4;

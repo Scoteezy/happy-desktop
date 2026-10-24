@@ -380,8 +380,8 @@ const NOTICE_INSET = 50;
 const ERROR_TEXT_INSET = 22;
 /** Error card: 6px vertical padding per side, plus 4px between heading and reason. */
 const ERROR_TEXT_CHROME = 16;
-/** Failure card: 6px vertical padding per side. */
-const FAILURE_CHROME = 12;
+/** Failure card: 6px vertical padding and a 1px warning border per side. */
+const FAILURE_CHROME = 14;
 /** Failure card: between the message line and the button row, and below that row. */
 const FAILURE_SECTION_GAP = 12;
 /** Failure card: between the message line and the record of what was done. */
@@ -1045,7 +1045,7 @@ export function conversationRowHeight(
                 : 0;
         if (entry.failure !== undefined) {
             const failure = entry.failure;
-            const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET;
+            const measure = width - (lead > 0 ? AGENT_INSET : 126) - ERROR_TEXT_INSET - 2;
             const options = context.failure ?? FAILURE_ROW_INERT;
             const layout = conversationFailureCardLayout(failure, {
                 current: options.current,

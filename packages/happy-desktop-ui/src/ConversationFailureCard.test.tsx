@@ -111,6 +111,56 @@ const notice = (failure: ConversationFailure): ConversationServiceNoticeEntry =>
     failure,
 });
 
+it.each(["light", "dark"] as const)(
+    "frames a usage limit in warning tokens with normal text in %s mode",
+    async (theme) => {
+        const view = createRenderer();
+        const failure: ConversationFailure = {
+            kind: "usage_limit",
+            provider: CLAUDE,
+            resetsAt: null,
+            message: "Usage limit reached",
+        };
+        view.render(
+            () => (
+                <div
+                    className={`happy-theme-${theme}`}
+                    style={{ padding: 24, background: "var(--surface)" }}
+                >
+                    <Row
+                        failure={failure}
+                        onRetry={() => undefined}
+                        onSwitch={() => undefined}
+                        targets={TARGETS}
+                    />
+                </div>
+            ),
+            { width: 880, height: 180 },
+        );
+        await view.ready();
+        const card = view.container.querySelector<HTMLElement>(".happy-conversation-failure-card")!;
+        const message = card.querySelector<HTMLElement>(
+            ".happy-conversation-failure-card__message",
+        )!;
+        const style = getComputedStyle(card);
+        expect(style.borderTopWidth).toBe("1px");
+        expect(style.borderTopStyle).toBe("solid");
+        expect(style.borderTopColor).toBe(
+            theme === "light" ? "rgb(255, 149, 0)" : "rgb(255, 159, 10)",
+        );
+        expect(style.backgroundColor).toBe(
+            theme === "light" ? "rgb(255, 248, 240)" : "rgba(255, 159, 10, 0.15)",
+        );
+        expect(getComputedStyle(message).color).toBe(
+            theme === "light" ? "rgb(0, 0, 0)" : "rgb(255, 255, 255)",
+        );
+        expect(style.borderTopLeftRadius).toBe("12px");
+        expect(card.getBoundingClientRect().height).toBe(
+            modeled(failure, 832, { retry: true, newChat: false, switch: true }),
+        );
+    },
+);
+
 it("writes every kind's text itself, and the daemon's only for an unknown kind", () => {
     const text = (failure: ConversationFailure) =>
         conversationFailureMessage(failure, CLOCK)
