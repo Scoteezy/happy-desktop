@@ -914,7 +914,7 @@ export type MessageListProps = {
 /**
  * Where a reader is, as the list's fixed point rather than a pixel offset. A
  * follower is held by the bottom. A parked reader is held by one row: the
- * point `offset` px below that row's top stays `VIRTUAL_ANCHOR_INSET` px above
+ * point `offset` px below that row's top stays `viewportInset` px above
  * the viewport's lower edge, whatever the rows above it measure, so a restore
  * needs only that row and its viewport laid out.
  */
@@ -925,6 +925,8 @@ export type MessageListScrollPosition =
           /** The row's React key within this list. */
           readonly rowKey: string;
           readonly offset: number;
+          /** Distance from the viewport's lower edge; absent in older saved positions. */
+          readonly viewportInset?: number;
       };
 /**
  * The pixel position lists used to report, accepted only as a restore input. A
@@ -1750,7 +1752,12 @@ export function MessageList(props: MessageListProps) {
                      as the row at the standard anchor point. */
                   modelAnchorCapture(viewportGeometry.current.height, element.scrollTop);
         return anchor?.type === "item"
-            ? { type: "row", rowKey: String(anchor.key), offset: anchor.itemOffset }
+            ? {
+                  type: "row",
+                  rowKey: String(anchor.key),
+                  offset: anchor.itemOffset,
+                  viewportInset: anchor.viewportInset,
+              }
             : { type: "bottom" };
     }
     const positionReport = () => {
@@ -2113,7 +2120,10 @@ export function MessageList(props: MessageListProps) {
                         index,
                         itemOffset: opening.offset,
                         key: itemKeyAt(index),
-                        viewportInset: Math.min(VIRTUAL_ANCHOR_INSET, nextHeight),
+                        viewportInset: Math.min(
+                            opening.viewportInset ?? VIRTUAL_ANCHOR_INSET,
+                            nextHeight,
+                        ),
                     };
                     readerAnchor.current = anchor;
                     rowSizeModelLayout(nextRowWidth, 0, readerFocus(nextHeight));

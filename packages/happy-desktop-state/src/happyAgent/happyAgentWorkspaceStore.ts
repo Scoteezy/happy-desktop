@@ -8712,7 +8712,11 @@ function scrollPositionEqual(
 ): boolean {
     if (left?.type !== right.type) return false;
     if (left.type === "bottom" || right.type === "bottom") return true;
-    return left.rowKey === right.rowKey && left.offset === right.offset;
+    return (
+        left.rowKey === right.rowKey &&
+        left.offset === right.offset &&
+        left.viewportInset === right.viewportInset
+    );
 }
 
 function conversationEqual(

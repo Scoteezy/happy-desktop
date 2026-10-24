@@ -923,6 +923,8 @@ export type HappyAgentScrollPosition =
           /** The transcript row's list key. */
           readonly rowKey: string;
           readonly offset: number;
+          /** Distance from the viewport's lower edge; absent in older saved positions. */
+          readonly viewportInset?: number;
       };
 
 /** One physical child of a checkout directory. Symlinks are file-like leaves. */
