@@ -12,6 +12,11 @@ import type {
     GymProfile,
 } from "./types.js";
 
+/** Opens a turn the inference server streams slowly enough to be stopped mid-way. */
+export const GYM_STOP_SHIMMER_PROMPT = "Take your time. gym-stop-shimmer";
+/** Opens a turn that hands a slow turn to a subtask of its own. */
+export const GYM_STOP_SHIMMER_PARENT_PROMPT = "Delegate it. gym-stop-shimmer-parent";
+
 export function gymLiveToolMutationLineCount(profile: GymProfile): number {
     if (profile === "smoke") return 96;
     if (profile === "realistic") return 320;
@@ -194,6 +199,43 @@ class DeterministicInferenceServer implements GymInferenceServer {
 
         const latestUserText = contextLatestUserText(request.context);
         const scriptKey = responseScriptKey(request, latestUserText);
+        const latestPrompt = contextLatestPromptText(request.context);
+        if (latestPrompt.startsWith(GYM_STOP_SHIMMER_PARENT_PROMPT)) {
+            // Hands the slow turn to a subtask once, then answers at once, so
+            // only the subtask is still working when it is stopped.
+            if (this.#toolCallEmittedScriptKeys.has(scriptKey))
+                return { content: [{ type: "text", text: "The subtask is on it." }] };
+            this.#toolCallEmittedScriptKeys.add(scriptKey);
+            return {
+                content: [
+                    {
+                        type: "toolCall",
+                        name: "create_subtask",
+                        arguments: {
+                            title: "Slow subtask",
+                            text: `${GYM_STOP_SHIMMER_PROMPT}-subtask`,
+                            model: request.modelId,
+                            provider: request.providerId,
+                            effort: "medium",
+                        },
+                    },
+                ],
+            };
+        }
+        if (latestPrompt.startsWith(GYM_STOP_SHIMMER_PROMPT)) {
+            // A turn slow enough to still be streaming when the person presses
+            // Stop: about a minute of small deltas, which the abort cuts short.
+            // Only a turn this prompt opens: Prioritizing quotes it in its
+            // notices and must answer as quickly as ever.
+            return {
+                content: [
+                    { type: "text", text: `script=${scriptKey} ${"still going ".repeat(400)}` },
+                ],
+                textDeltaChunkSize: 12,
+                textDeltaDelayMs: 150,
+                completionDelayMs: 0,
+            };
+        }
         const longChat = this.longChatRequest(latestUserText);
         const toolHeavy = toolHeavyCall(this.#manifest, scriptKey, latestUserText);
         const replay = replayRequest(latestUserText);
@@ -506,6 +548,22 @@ function contextLatestUserText(context: unknown): string {
         const message = context.messages[index];
         if (!isRecord(message) || message.role !== "user") continue;
         return messageContentTextRead(message.content);
+    }
+    return "";
+}
+
+/**
+ * The latest prompt from the person or another agent. An agent's message
+ * reaches its recipient inside a "Message from agent …" envelope, which is
+ * left off so both read the same.
+ */
+function contextLatestPromptText(context: unknown): string {
+    if (!isRecord(context) || !Array.isArray(context.messages)) return "";
+    for (let index = context.messages.length - 1; index >= 0; index -= 1) {
+        const message = context.messages[index];
+        if (!isRecord(message) || (message.role !== "user" && message.role !== "agent")) continue;
+        const text = messageContentTextRead(message.content);
+        return message.role === "agent" ? text.replace(/^Message from agent \S+:\n\n/u, "") : text;
     }
     return "";
 }

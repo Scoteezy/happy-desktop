@@ -79,10 +79,15 @@ export class GymHappyAgentClient {
 
     /** Turns on Stem Cells for the person, which the Spaces sidebar's Create row needs. */
     async stemCellsEnable(): Promise<void> {
+        await this.stemCellsSet(true);
+    }
+
+    /** Turns Stem Cells on or off for the person, which picks the Spaces or classic sidebar. */
+    async stemCellsSet(value: boolean): Promise<void> {
         await this.#client.saveUserSetting("happy-desktop.experiments.stemCells", {
             mutationId: randomUUID(),
             updatedAt: Date.now(),
-            value: true,
+            value,
         });
     }
 
@@ -189,6 +194,12 @@ export class GymHappyAgentClient {
     async getAgent(agentId: string): Promise<{ readonly agent: HappyAgent }> {
         const response = await this.#client.getAgent(cuid(agentId));
         return { agent: await this.#agentProject(response.agent) };
+    }
+
+    /** The agent's direct, non-archived subtasks. */
+    async subtaskIds(agentId: string): Promise<readonly string[]> {
+        const response = await this.#client.getAgent(cuid(agentId));
+        return (response.agent.subtasks ?? []).map((subtask) => subtask.id);
     }
 
     async agentMessageCount(agentId: string): Promise<number> {

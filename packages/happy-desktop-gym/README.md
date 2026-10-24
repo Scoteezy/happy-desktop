@@ -250,6 +250,17 @@ pnpm --dir packages/happy-desktop-gym gym:electron run \
   --workload window-edge-resize
 ```
 
+`stop-shimmer` starts a slow turn, presses the composer's Stop, and requires
+every sidebar row the turn made `working` to settle within a second. It runs
+on a project conversation in the classic sidebar, then turns on Stem Cells and
+runs on new work made from the Spaces sidebar's Create row, and on a subtask
+that work hands its turn to, opened from its row under the work's row. The
+inference server streams any turn opened by `GYM_STOP_SHIMMER_PROMPT` for
+about a minute. Each run writes `stop-shimmer-<sidebar>.json` with the rows
+sampled every 50ms after Stop, before/after screenshots, and a video. Prepare
+a fresh root for it: a daemon restart resumes a turn that was stopped
+mid-stream.
+
 `window-zoom` sweeps the window's zoom over 80, 90, 100, 110, 125 and 150%,
 each reached as the View menu does it and again after a reload (which keeps the
 zoom but not the menu's report of it), with the sidebar open and folded, in a

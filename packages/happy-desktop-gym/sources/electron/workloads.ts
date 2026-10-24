@@ -6,8 +6,13 @@ import type { ElectronApplication, Locator, Page } from "playwright";
 import { gymGoldReplayMaterialRead, type GymGoldReplayMaterial } from "./goldReplay.js";
 import { hiddenWindowRun } from "./hiddenWindow.js";
 import { sidebarDragChaosRun } from "./sidebarDragChaos.js";
+import {
+    stopShimmerRun,
+    stopShimmerSpacesSubtaskStart,
+    stopShimmerSpacesWorkStart,
+} from "./stopShimmer.js";
 import { windowZoomRun } from "./windowZoom.js";
-import { gymLiveToolMutationLineCount } from "./inferenceServer.js";
+import { GYM_STOP_SHIMMER_PROMPT, gymLiveToolMutationLineCount } from "./inferenceServer.js";
 import { gymElectronInvisibleAssert, gymElectronLaunch } from "./launch.js";
 import { electronEntrypointResolve } from "./paths.js";
 import { gymProfilerArtifactReferenceRead } from "./profilerArtifacts.js";
@@ -863,6 +868,66 @@ async function workloadRun(
         return finish({
             projectsVisited: Math.min(options.projects.length, 4),
             ...(await performanceCapture(page, app, options.profilerActive())),
+        });
+    }
+    if (workload === "stop-shimmer") {
+        if (location === undefined)
+            return finish({ reason: "No seeded session location.", status: "skipped" });
+        // The classic sidebar first, whatever an earlier run left the setting at.
+        await options.runtime.client.stemCellsSet(false);
+        await page.reload();
+        await navigateRoute(page, location.route);
+        await waitForSessionUiReady(page, location.route, location.sessionId);
+        await mark("classic-ready");
+        const results = [
+            await stopShimmerRun(page, options.runtime.client, {
+                artifacts: options.paths.artifacts,
+                sidebar: "classic",
+                start: async () => {
+                    await options.runtime.client.sendMessage(
+                        location.sessionId,
+                        `${GYM_STOP_SHIMMER_PROMPT}-${Date.now()}`,
+                    );
+                    return location.sessionId;
+                },
+                video: true,
+            }),
+        ];
+        await mark("classic-stopped");
+        await options.runtime.client.stemCellsEnable();
+        await page.reload();
+        await page
+            .locator('[data-happy-desktop-ui="sidebar-item"][data-item-id="create"]')
+            .first()
+            .waitFor({ timeout: 45_000 });
+        await mark("spaces-ready");
+        results.push(
+            await stopShimmerRun(page, options.runtime.client, {
+                artifacts: options.paths.artifacts,
+                sidebar: "spaces",
+                start: () => stopShimmerSpacesWorkStart(page),
+                video: true,
+            }),
+        );
+        await mark("spaces-stopped");
+        results.push(
+            await stopShimmerRun(page, options.runtime.client, {
+                artifacts: options.paths.artifacts,
+                sidebar: "spaces-subtask",
+                start: () => stopShimmerSpacesSubtaskStart(page, options.runtime.client),
+                video: true,
+            }),
+        );
+        await mark("spaces-subtask-stopped");
+        const problems = results.flatMap((result) =>
+            result.problems.map((problem) => `${result.sidebar}: ${problem}`),
+        );
+        if (problems.length > 0)
+            throw new Error(`Stop left the sidebar working:\n${problems.join("\n")}`);
+        return finish({
+            settledMs: Object.fromEntries(
+                results.map((result) => [result.sidebar, result.settledMs]),
+            ),
         });
     }
     if (location === undefined)
