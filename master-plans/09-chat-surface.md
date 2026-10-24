@@ -18,7 +18,7 @@ A good chat with an AI follows a few principles:
   docked question does the same. A draft that shrinks, or empties on send,
   leaves space behind that holds still. Typing on one line moves nothing.
 - **Sending gives the reply room.** A send from the bottom lifts the sent
-  message once, in the commit that adds it, until its top edge sits 40% down
+  message once, in the commit that adds it, until its top edge sits 30% down
   the viewport: the turn before it stays in view and the reply has the rest.
   The space under it is added in that same frame. No animation, no pin to the
   top edge. A send made while the agent is still working, or while scrolled up
@@ -29,9 +29,12 @@ A good chat with an AI follows a few principles:
   place. It appears at that point in its first frame and does not move after.
   A chat out of sight does no work to stay placed; it is placed once, in the
   commit that shows it, and not shown until its content is current.
-- **Space that exists stays put.** If blank space is ever needed to keep content
-  still, it keeps its size while any part of it is visible and is removed in one
-  step only once it is fully offscreen. It never shrinks or animates.
+- **Space that exists stays put.** Blank space added to keep content still —
+  under a send, under a shrinking draft, below a grown window — belongs to the
+  end of the transcript. It keeps its size wherever the reader scrolls, moves
+  with the end when history above changes, and is only ever taken up by new
+  content growing into it; once that content outgrows it, the transcript grows
+  as usual. It never shrinks, animates, or disappears on its own.
 - **Order is truthful and readable.** Messages appear in the order they
   happened, never reorder or briefly disappear, and a message sent while the
   agent is still working is visibly distinct from the reply that continues
@@ -45,8 +48,7 @@ A good chat with an AI follows a few principles:
 
 First, remove behavior that fights the reader: the pin-to-top send and its
 shrinking tail reserve are gone, and the transcript follows only a reader who is
-at the bottom. A send lifts once, to 40%, into space that never shrinks while
-it is visible.
+at the bottom. A send lifts once, to 30%, into space that only the reply takes up.
 
 Then make every geometry change preserve what the reader sees: composer
 resizing, window and pane resizing, browser zoom, late-loading images and code
@@ -69,10 +71,10 @@ column for every kind of row.
   and very short, very long, and empty conversations. They find no programmatic
   scroll against the person and no visible row moving 1px or more without a
   gesture.
-- After a send from the bottom, the sent message's top edge is 40% down the
+- After a send from the bottom, the sent message's top edge is 30% down the
   viewport in the frame that first shows it, the turn before it is visible
   above, and nothing moves until the reply fills the space below and the
-  transcript follows the bottom again.
+  transcript follows the bottom again — also after scrolling away and back.
 - The live status line's loader, clock, separator, and phase share one
   baseline.
 - Switching away from a chat that keeps streaming and back to it shows it, in

@@ -199,7 +199,7 @@ function renderConversation(count: number, withShell = false) {
 }
 
 it.each([0, 40])(
-    "lifts a send 40 percent down the viewport with %i preceding messages",
+    "lifts a send 30 percent down the viewport with %i preceding messages",
     async (count) => {
         const { view, send } = renderConversation(count);
         await view.ready();
@@ -220,9 +220,9 @@ it.each([0, 40])(
             expect(sent.top).toBeGreaterThan(bounds.top + bounds.height / 2);
             expect(bounds.bottom - sent.bottom).toBe(24);
         } else {
-            // Its top edge sits 40% down, the previous turn in view above it and
+            // Its top edge sits 30% down, the previous turn in view above it and
             // the space below held for the reply.
-            expect(Math.abs(sent.top - bounds.top - Math.round(bounds.height * 0.4))).toBeLessThan(
+            expect(Math.abs(sent.top - bounds.top - Math.round(bounds.height * 0.3))).toBeLessThan(
                 1,
             );
             expect(bounds.bottom - sent.bottom).toBeGreaterThan(bounds.height / 3);
@@ -360,7 +360,7 @@ it.each([2, 40])(
             .getBoundingClientRect();
         // A send never lands below where it would sit lifted, and the space it
         // stands in never shrinks while it is in view.
-        expect(sent.top - bounds.top).toBeLessThanOrEqual(Math.round(bounds.height * 0.4) + 1);
+        expect(sent.top - bounds.top).toBeLessThanOrEqual(Math.round(bounds.height * 0.3) + 1);
         expect(Number.parseFloat(content.style.minHeight || "0")).toBeGreaterThanOrEqual(
             Number.parseFloat(extent),
         );
@@ -607,3 +607,42 @@ it.each([2, 40])(
         expect(anchorTop()).toBe(top);
     },
 );
+
+it("keeps the space under a send until the reply grows into it", async () => {
+    const { view, send, stream } = renderConversation(40);
+    await view.ready();
+    await frames();
+    send();
+    await frames();
+    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
+    const sentRow = () =>
+        [...viewport.querySelectorAll<HTMLElement>(".happy-message")].find((element) =>
+            element.textContent?.includes("The newly sent message"),
+        )!;
+    const top = sentRow().getBoundingClientRect().top;
+    // Scrolled far enough that the space is entirely off screen, and back.
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -900 }));
+    viewport.scrollTop -= 900;
+    await frames();
+    viewport.scrollTop = viewport.scrollHeight;
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: 40, cancelable: true }));
+    await frames();
+    expect(sentRow().getBoundingClientRect().top).toBe(top);
+    // The reply grows into the space without moving what is above it, and
+    // once it outgrows the space the transcript follows its end.
+    const bounds = viewport.getBoundingClientRect();
+    let held = 0;
+    for (let lines = 1; lines < 40; lines += 1) {
+        stream(lines);
+        await frames();
+        if (sentRow().getBoundingClientRect().top === top) {
+            held += 1;
+            continue;
+        }
+        const reply = [...viewport.querySelectorAll<HTMLElement>(".happy-message")].at(-1)!;
+        expect(Math.round(bounds.bottom - reply.getBoundingClientRect().bottom)).toBe(24);
+        break;
+    }
+    expect(held).toBeGreaterThan(2);
+    expect(sentRow().getBoundingClientRect().top).toBeLessThan(top);
+});

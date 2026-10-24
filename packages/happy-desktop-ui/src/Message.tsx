@@ -810,7 +810,7 @@ export type MessageListProps = {
     footerFollowed?: boolean;
     /**
      * The row key of the reader's newest send. When it changes while the
-     * reader follows the bottom, that row is lifted to 40% down the viewport
+     * reader follows the bottom, that row is lifted to 30% down the viewport
      * and the space below it is held for the reply: the content extent grows in
      * the same commit and is removed only once the reply fills it or it is
      * entirely off screen. The key present at mount is history and never lifts.
@@ -931,7 +931,7 @@ const MESSAGE_LIST_PADDING_START = 12;
  * its top: high enough to leave room for the reply, low enough that the turns
  * before it stay in view.
  */
-const SEND_LIFT_TOP = 0.4;
+const SEND_LIFT_TOP = 0.3;
 const MESSAGE_LIST_PADDING_END_DEFAULT = 8;
 /** Model-space point kept stable near a parked reader's lower viewport edge. */
 const VIRTUAL_ANCHOR_INSET = 32;
@@ -1057,8 +1057,9 @@ export function MessageList(props: MessageListProps) {
         undefined,
     );
     const virtualContent = useRef<HTMLDivElement | null>(null);
-    // A viewport that grows keeps its previous content extent. New rows fill
-    // this fixed space; it is discarded only after it leaves the viewport.
+    // Space held below the transcript: by a send's lift, or a viewport that
+    // grows keeping its previous content extent. It moves with the
+    // transcript's end, and only content added there grows into it and ends it.
     const geometryExtent = useRef(0);
     const geometrySparseInset = useRef(0);
     const geometryFollowInset = useRef(0);
@@ -1525,25 +1526,36 @@ export function MessageList(props: MessageListProps) {
             if (previous === undefined || (!widthReflow && previousExact[previous])) continue;
             coordinateDelta += sizes[index]! - previousSizes[previous]!;
         }
-        if (following.current && !widthReflow) {
-            // An answered request can enter history before newer messages.
-            // Keep the retained tail in the same place; content appended after
-            // it still follows naturally. This also covers cold prefix sizes.
+        /* How far the last row the model already had moved: everything
+           inserted, removed, refined, or reflowed above it. Content from that
+           row on is what is new at the end. */
+        const tailShift = () => {
             for (let previous = previousCount - 1; previous >= 0; previous -= 1) {
                 const key = previousKeys[previous]!;
                 if (key === MESSAGE_LIST_FOOTER_KEY) continue;
                 const index = keys.lastIndexOf(key);
                 if (index < 0) continue;
-                coordinateDelta = starts[index]! - previousStarts[previous]!;
-                if (!previousExact[previous])
-                    coordinateDelta += sizes[index]! - previousSizes[previous]!;
-                break;
+                return (
+                    starts[index]! -
+                    previousStarts[previous]! +
+                    (widthReflow || !previousExact[previous]
+                        ? sizes[index]! - previousSizes[previous]!
+                        : 0)
+                );
             }
-        }
-        if (geometryExtent.current > 0 && coordinateDelta !== 0) {
-            // Width changes and idle refinement change model coordinates,
-            // not the amount of blank space a geometry change preserved.
-            geometryExtent.current += coordinateDelta;
+            return 0;
+        };
+        const extentShift = geometryExtent.current > 0 ? tailShift() : 0;
+        if (following.current && !widthReflow)
+            // An answered request can enter history before newer messages.
+            // Keep the retained tail in the same place; content appended after
+            // it still follows naturally. This also covers cold prefix sizes.
+            coordinateDelta = geometryExtent.current > 0 ? extentShift : tailShift();
+        if (extentShift !== 0) {
+            // The held space belongs to the end of the transcript: rows that
+            // arrive, leave, or change above its last row carry it along, so
+            // only content added at the end grows into it.
+            geometryExtent.current += extentShift;
             if (virtualContent.current)
                 virtualContent.current.style.minHeight = `${String(geometryExtent.current)}px`;
         }
@@ -1612,12 +1624,8 @@ export function MessageList(props: MessageListProps) {
         if (!element || !content) return;
         const naturalHeight = estimatedContentHeight();
         const intendedTop = pendingFollowerTop.current ?? element.scrollTop;
-        if (
-            geometryExtent.current > 0 &&
-            (naturalHeight >= geometryExtent.current ||
-                intendedTop + viewportGeometry.current.height <=
-                    geometrySparseInset.current + naturalHeight)
-        ) {
+        // Held space is never taken back: only content growing into it ends it.
+        if (geometryExtent.current > 0 && naturalHeight >= geometryExtent.current) {
             const removed = Math.max(0, geometryExtent.current - naturalHeight);
             geometryExtent.current = 0;
             content.style.removeProperty("min-height");
@@ -1634,7 +1642,7 @@ export function MessageList(props: MessageListProps) {
             scrollTopWrite(element, top - inset);
         }
     }
-    /** Lifts the reader's send to 40% down the viewport and holds the space under it, in this commit. */
+    /** Lifts the reader's send to 30% down the viewport and holds the space under it, in this commit. */
     function sendLift(element: HTMLElement, key: string) {
         const [keyed] = Children.toArray([<Fragment key={key} />]);
         const childKey = isValidElement(keyed) ? keyed.key : undefined;
