@@ -27,6 +27,7 @@ const workloads: readonly GymWorkloadName[] = [
     "window-edge-resize",
     "archive-reconcile",
     "sidebar-drag",
+    "window-zoom",
     "all",
 ];
 
@@ -191,7 +192,8 @@ Commands:
 Workloads:
   hidden-window, boot, catalog-switch, long-transcript, file-switch-warm,
   long-chat-scroll, session-switch-load, highlight-warm, changed-files-warm,
-  streaming, mixed-replay, memory-idle, window-edge-resize, archive-reconcile, public-repository, background-drafts, all
+  streaming, mixed-replay, memory-idle, window-edge-resize, archive-reconcile, sidebar-drag, window-zoom, public-repository,
+  background-drafts, all
 
 The default root is ${gymRunsRootResolve()}/g-<run-id>.
 Only roots carrying the Gym ownership marker can be cleaned.`);

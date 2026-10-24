@@ -250,6 +250,15 @@ pnpm --dir packages/happy-desktop-gym gym:electron run \
   --workload window-edge-resize
 ```
 
+`window-zoom` sweeps the window's zoom over 80, 90, 100, 110, 125 and 150%,
+each reached as the View menu does it and again after a reload (which keeps the
+zoom but not the menu's report of it), with the sidebar open and folded, in a
+window and in full screen (the app's own window-state report; a hidden window
+never really goes full screen). In a window the sidebar toggle must start at
+84pt, 16pt past the traffic lights, at every zoom. Every title-band control
+with a shortcut is hovered, and what it reveals must hang under it, inside the
+window. Screenshots of each step land in the run's artifacts.
+
 The Gym selects the Happy Agent installation recorded by the current Happy home.
 To use another installed executable, set
 `HAPPY_DESKTOP_AGENT_EXECUTABLE=/absolute/path/to/happy-agent`.

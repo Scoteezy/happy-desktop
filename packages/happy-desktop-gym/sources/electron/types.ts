@@ -21,6 +21,7 @@ export type GymWorkloadName =
     | "window-edge-resize"
     | "archive-reconcile"
     | "sidebar-drag"
+    | "window-zoom"
     | "all";
 
 export interface GymTargetCounts {

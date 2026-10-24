@@ -6,6 +6,7 @@ import type { ElectronApplication, Locator, Page } from "playwright";
 import { gymGoldReplayMaterialRead, type GymGoldReplayMaterial } from "./goldReplay.js";
 import { hiddenWindowRun } from "./hiddenWindow.js";
 import { sidebarDragChaosRun } from "./sidebarDragChaos.js";
+import { windowZoomRun } from "./windowZoom.js";
 import { gymLiveToolMutationLineCount } from "./inferenceServer.js";
 import { gymElectronInvisibleAssert, gymElectronLaunch } from "./launch.js";
 import { electronEntrypointResolve } from "./paths.js";
@@ -829,6 +830,19 @@ async function workloadRun(
                 ? await longChatScrollRun(page, app, options, material, targets, mark)
                 : await sessionSwitchLoadRun(page, app, options, material, targets, mark),
         );
+    }
+    if (workload === "window-zoom") {
+        const result = await windowZoomRun(page, app, {
+            artifacts: options.paths.artifacts,
+            zooms: [0.8, 0.9, 1, 1.1, 1.25, 1.5],
+        });
+        await writeFile(
+            join(options.paths.artifacts, "window-zoom.json"),
+            JSON.stringify(result, null, 2),
+        );
+        if (result.problems.length > 0)
+            throw new Error(`The window's controls are misplaced:\n${result.problems.join("\n")}`);
+        return finish({ steps: result.steps.length });
     }
     const location = await firstSessionLocation(
         options.sessionIds,

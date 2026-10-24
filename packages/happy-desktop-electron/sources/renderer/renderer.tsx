@@ -1074,10 +1074,19 @@ function DesktopCloudSignInNotice(props: { store: DesktopCloudSignInNoticeStore 
     );
 }
 /* The traffic lights do not zoom with the page, so the safe area reserved for
-   them is divided by the zoom the View menu reports. A cold start is at 100%. */
-bridge?.zoomSubscribe((percent) => {
-    document.documentElement.style.setProperty("--happy-window-zoom", String(percent / 100));
-});
+   them is divided by the page's zoom. That zoom outlives a reload (a renderer
+   update, ⌘R, another window of this origin) while the View menu reports only
+   its own steps, so it is read from the window itself: the page fills the
+   whole window, whose width is in screen points and whose viewport is in CSS
+   pixels. A zoom step resizes the viewport, so it is read again then. */
+const windowZoomApply = () => {
+    const viewport = window.visualViewport?.width ?? window.innerWidth;
+    if (!(viewport > 0) || !(window.outerWidth > 0)) return;
+    const zoom = Math.round((window.outerWidth / viewport) * 1000) / 1000;
+    document.documentElement.style.setProperty("--happy-window-zoom", String(zoom));
+};
+windowZoomApply();
+window.addEventListener("resize", windowZoomApply);
 
 function DesktopZoomIndicator(): ReactNode {
     const asks = useSyncExternalStore(zoomSubscribe, () => zoomAsks);
