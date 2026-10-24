@@ -449,6 +449,12 @@ export interface ConversationToolCall {
     readonly presentation?: ConversationActivityPresentation;
     readonly review?: ConversationActivityReview;
     /**
+     * The few words the call gave about what it does — a command's
+     * description, a new agent's title, a message's explanation — when it
+     * gave them. The row reads as this rather than as its raw input.
+     */
+    readonly summary?: string;
+    /**
      * The call asked for a review and was granted temporary Full access, so it
      * ran outside the sandbox. Present only on that call: everything else, both
      * unreviewed and reviewed-but-sandboxed, is the ordinary case.

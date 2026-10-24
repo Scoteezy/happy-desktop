@@ -337,3 +337,53 @@ it("keeps a completed file edit visible while command traces are folded", () => 
         ),
     ).toBe(true);
 });
+
+it("carries the few words a call gave about itself, and nothing that is not a line", () => {
+    const call = (name: string, input: unknown, id = name): ChatElement => ({
+        id,
+        groupId: "g1",
+        runId: "r1",
+        createdAt: 1_000,
+        kind: "tool_call",
+        toolCallId: id,
+        name,
+        arguments: input,
+        argumentsComplete: true,
+        status: "running",
+    });
+    const entries = happyAgentConversationProject({
+        elements: [
+            call("exec_command", { cmd: "pnpm test", description: "  Run the UI tests " }),
+            call("Bash", { command: "ls", description: "List files\nand more" }),
+            call("create_subtask", { title: "Fix trace folding", prompt: "…" }),
+            call("send_agent_message", {
+                toAgentId: "a",
+                text: "…",
+                explanation: "Asks for the diff",
+            }),
+            call("create_task", { name: "Nightly triage", description: "Triage the night's bugs" }),
+            call("exec_command", { cmd: "ls", description: "x".repeat(121) }, "long"),
+        ],
+        sessionId: "s1",
+        showReasoning: false,
+        ephemeral: [],
+        pendingUserInputs: [],
+        answeredUserInputs: [],
+        expandedGroupIds: new Set(),
+        subagents: [],
+    });
+    expect(
+        entries.map((entry) =>
+            entry.kind === "agentActivity" && entry.activity.kind === "tool"
+                ? entry.activity.tool.summary
+                : entry.kind,
+        ),
+    ).toEqual([
+        "Run the UI tests",
+        undefined,
+        "Fix trace folding",
+        "Asks for the diff",
+        "Nightly triage",
+        undefined,
+    ]);
+});

@@ -1223,6 +1223,7 @@ function toolProject(
 ): ConversationToolCall {
     const waitWokeFromInput =
         groupSteered && element.name === "wait_agent" && element.status === "interrupted";
+    const summary = toolSummary(element.name, element.arguments);
     return {
         toolCallId: element.toolCallId,
         toolName: element.name,
@@ -1241,6 +1242,7 @@ function toolProject(
         failed: element.status === "failed",
         ...presentationEntry(element.presentation),
         ...(element.elevated === true ? { elevated: true } : {}),
+        ...(summary === undefined ? {} : { summary }),
         // A review still running has only the action it is weighing: no
         // verdict, no reason, no risk. The row states a decision, so it waits
         // for one rather than painting a blank verdict beside the call.
@@ -1256,6 +1258,33 @@ function toolProject(
               }
             : {}),
     };
+}
+
+/**
+ * The argument in which a tool states, in a few words, what one call does.
+ * Shell-like tools take a `description`; the tools that start another agent
+ * name it, and the tools that message one explain the message.
+ */
+const TOOL_SUMMARY_ARGUMENT: Readonly<Record<string, string>> = {
+    create_agent: "title",
+    create_subtask: "title",
+    create_task: "name",
+    send_agent_message: "explanation",
+    send_bot_message: "explanation",
+    send_task_message: "explanation",
+};
+/** A summary is a line, not a paragraph: anything longer was not written as one. */
+const TOOL_SUMMARY_LIMIT = 120;
+
+/** What a call said it does, as the row can show it; nothing when it said nothing usable. */
+function toolSummary(name: string, input: unknown): string | undefined {
+    if (typeof input !== "object" || input === null) return undefined;
+    const value = (input as Record<string, unknown>)[TOOL_SUMMARY_ARGUMENT[name] ?? "description"];
+    if (typeof value !== "string") return undefined;
+    const summary = value.trim();
+    return summary.length > 0 && summary.length <= TOOL_SUMMARY_LIMIT && !summary.includes("\n")
+        ? summary
+        : undefined;
 }
 
 /**

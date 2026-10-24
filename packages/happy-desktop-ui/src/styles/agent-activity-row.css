@@ -460,6 +460,23 @@
     font-size: 13px;
 }
 
+/* A call that said what it does reads in its own words, which are prose. */
+.happy-agent-activity[data-single-line][data-described] .happy-agent-activity__text {
+    font-family: var(--happy-font-ui);
+    font-size: 14px;
+}
+
+/* An agent a message names: its name, marked as something to open only under
+   the pointer, since a run of these rows would otherwise be a run of links. */
+.happy-agent-activity__agent-reference {
+    cursor: pointer;
+}
+
+.happy-agent-activity__agent-reference:hover {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
 /* The edited file is a subject like an explored path or a command — same
    monospace, same weight — so the row's only bold word stays the verb. It
    shrinks to fit rather than flexing wide, keeping the diff stats beside the

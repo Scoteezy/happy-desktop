@@ -563,6 +563,7 @@ function toolEqual(left: ConversationToolCall, right: ConversationToolCall): boo
         left.display === right.display &&
         left.failed === right.failed &&
         left.elevated === right.elevated &&
+        left.summary === right.summary &&
         jsonEqual(left.arguments, right.arguments) &&
         failureEqual(left.failure, right.failure) &&
         presentationEqual(left.presentation, right.presentation) &&

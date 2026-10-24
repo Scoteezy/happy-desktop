@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
 import type {
     ConversationActivity,
     ConversationActivityPresentation,
@@ -208,6 +208,16 @@ const TERMINAL_INPUT_TOOL = /stdin|terminal_?input|taskinput/;
 /** Happy Agent's own artifact and page tools, which name what they did themselves. */
 const ARTIFACT_TOOL = /^(create_artifact|edit_artifact_files|update_artifact|show_page)$/;
 
+/** Tools that start or message another agent, by the noun their row leads with. */
+const DELEGATION_TOOL_NOUN: Readonly<Record<string, string>> = {
+    create_agent: "Agent",
+    create_subtask: "Subtask",
+    create_task: "Task",
+    send_agent_message: "Message",
+    send_bot_message: "Message",
+    send_task_message: "Message",
+};
+
 /** Active/done verb for a tool by name + status (A2/A3). */
 function toolVerb(
     name: string,
@@ -261,6 +271,10 @@ function toolVerb(
     if (still === "question") return active ? "Asking" : "Asked";
     if (presentation?.type === "execCommand" || /(bash|exec|shell|command|run)/.test(lower))
         return lower === "powershell" ? "PowerShell" : lower === "bash" ? "Bash" : "Shell";
+    // Starting or messaging another agent is named like a command is: by what
+    // it is, with the call's own words on it beside.
+    const delegation = DELEGATION_TOOL_NOUN[lower];
+    if (delegation) return status === "failed" ? "Failed" : delegation;
     if (/(grep|find|glob|^ls$|list|search)/.test(lower)) return active ? "Exploring" : "Explored";
     if (/(read|view|cat|open)/.test(lower)) return active ? "Reading" : "Read";
     if (/(write|edit|patch|update|apply)/.test(lower)) return active ? "Editing" : "Edited";
@@ -336,6 +350,7 @@ function toolGlyph(
         return { set: "ionicons", name: "terminal-outline" };
     if (presentation?.type === "execCommand") return { set: "octicons", name: "code" };
     if (/(bash|exec|shell|command|run)/.test(lower)) return { set: "octicons", name: "code" };
+    if (DELEGATION_TOOL_NOUN[lower]) return { set: "house", name: "agents" };
     if (/(grep|find|glob|^ls$|list|search)/.test(lower)) return { set: "house", name: "search" };
     if (/(read|view|cat|open)/.test(lower)) return { set: "house", name: "doc" };
     if (/(write|edit|patch|update|apply)/.test(lower))
@@ -720,6 +735,10 @@ function AgentToolActivity(props: {
     // do the same, but only when no richer presentation (diff/exec) applies.
     const mcp = presentation ? undefined : parseMcpToolName(tool.toolName);
 
+    /* The call's own few words, with any agent it names by ID read as that
+       agent's name. */
+    const summary =
+        tool.summary === undefined ? undefined : agentIdsNamed(tool.summary, props.references);
     let primaryText: string;
     let stats: { added: number; deleted: number } | undefined;
     let verb: string;
@@ -778,7 +797,7 @@ function AgentToolActivity(props: {
         );
     } else if (presentation?.type === "execCommand") {
         verb = toolVerb(tool.toolName, tool.status, presentation);
-        primaryText = presentation.command;
+        primaryText = summary ?? presentation.command;
     } else if (presentation?.type === "backgroundTerminalInteraction") {
         verb = toolVerb(tool.toolName, tool.status, presentation);
         // What was typed, not the command that started the terminal: several
@@ -794,8 +813,12 @@ function AgentToolActivity(props: {
                 : stillGlyph === "question"
                   ? "a question"
                   : ((stillGlyph === "clock" ? waitSubject(tool) : undefined) ??
+                    summary ??
                     humanizeToolName(tool.toolName));
     }
+    /* Said in the call's own words, which are prose, not input: they read in
+       the transcript's type rather than the monospace a command takes. */
+    const described = summary !== undefined && primaryText === summary;
     if (focused && presentation?.type !== "fileDiff") verb = toolVerbFocused(verb);
     /* Ran outside the sandbox. Said in colour alone — the whole line turns
        amber — because a word in the verb would push the command itself out of
@@ -829,6 +852,8 @@ function AgentToolActivity(props: {
        part. Both are elided on screen, so the copy is the unabridged text. */
     const copyText = [
         primaryText,
+        // A described command copies with the command itself, which the row no longer shows.
+        described && presentation?.type === "execCommand" ? presentation.command : undefined,
         presentation?.type === "execCommand"
             ? presentation.output
             : presentation?.type === "search"
@@ -988,6 +1013,7 @@ function AgentToolActivity(props: {
             data-failed={tool.failed || tool.status === "failed" ? "" : undefined}
             data-tone={tone}
             data-presentation={presentation?.type ?? "generic"}
+            data-described={described ? "" : undefined}
             data-review={tool.review ? "" : undefined}
             data-elevated={elevated ? "" : undefined}
             data-single-line={singleLine ? "" : undefined}
@@ -1401,7 +1427,14 @@ function AgentMessageActivity(props: {
                     className="happy-agent-activity__text"
                     data-happy-desktop-ui="agent-activity-text"
                 >
-                    {props.explanation ?? `from ${props.agentName ?? agentIdShort(props.agentId)}`}
+                    {props.explanation === undefined ? (
+                        `from ${props.agentName ?? agentIdShort(props.agentId)}`
+                    ) : (
+                        <AgentMessageExplanation
+                            references={props.references}
+                            text={props.explanation}
+                        />
+                    )}
                 </ScrollingText>
                 {hasBody ? (
                     <span aria-hidden="true" className="happy-agent-activity__chevron">
@@ -1462,6 +1495,87 @@ function AgentMessageFace(props: { face: ConversationAgentFace }) {
  * whole id stays in the message, where the receiving model replies to it, and
  * on the row's tooltip.
  */
+/**
+ * An agent ID as Happy Agent mints them: 24 lowercase letters and digits.
+ * Agents name each other this way in the few words they say about a message.
+ */
+const AGENT_ID = /\b[a-z0-9]{24}\b/g;
+
+/**
+ * `text` with every agent it names by ID split out, so each reads as that
+ * agent's live name. An ID that names no agent the reader can see stays as
+ * written.
+ */
+function agentIdSegments(
+    text: string,
+    references: MessageReferences | undefined,
+): readonly (string | { readonly id: string; readonly label: string })[] {
+    if (references === undefined) return [text];
+    const segments: (string | { readonly id: string; readonly label: string })[] = [];
+    let cursor = 0;
+    for (const match of text.matchAll(AGENT_ID)) {
+        const id = match[0];
+        // Words and numbers are this long too; an ID mixes letters and digits.
+        if (!/[a-z]/.test(id) || !/[0-9]/.test(id)) continue;
+        const view = references.view({ kind: "agent", id });
+        if (view.type !== "link") continue;
+        if (match.index > cursor) segments.push(text.slice(cursor, match.index));
+        segments.push({ id, label: view.label });
+        cursor = match.index + id.length;
+    }
+    if (cursor === 0) return [text];
+    if (cursor < text.length) segments.push(text.slice(cursor));
+    return segments;
+}
+
+/** `text` with the agents it names by ID read as their names, for a row that shows only text. */
+function agentIdsNamed(text: string, references: MessageReferences | undefined): string {
+    const segments = agentIdSegments(text, references);
+    return segments.length === 1 && typeof segments[0] === "string"
+        ? segments[0]
+        : segments
+              .map((segment) => (typeof segment === "string" ? segment : segment.label))
+              .join("");
+}
+
+/**
+ * The sender's few words on a message, each agent it names by ID shown as
+ * that agent — underlined only under the pointer, because a column of these
+ * rows would otherwise be a column of links — and opened on click.
+ */
+function AgentMessageExplanation(props: {
+    text: string;
+    references: MessageReferences | undefined;
+}) {
+    const references = props.references;
+    const segments = agentIdSegments(props.text, references);
+    if (references === undefined || segments.length === 1) return <>{props.text}</>;
+    return (
+        <>
+            {segments.map((segment, index) =>
+                typeof segment === "string" ? (
+                    // The runs of one line never move, so their order is their identity.
+                    <Fragment key={index}>{segment}</Fragment>
+                ) : (
+                    // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- a pointer shortcut inside the row's own button, which keyboard users open instead
+                    <span
+                        className="happy-agent-activity__agent-reference"
+                        data-happy-desktop-ui="agent-activity-agent-reference"
+                        key={index}
+                        onClick={(event) => {
+                            // The row's own click opens the message; this one opens the agent.
+                            event.stopPropagation();
+                            references.open({ kind: "agent", id: segment.id });
+                        }}
+                    >
+                        {segment.label}
+                    </span>
+                ),
+            )}
+        </>
+    );
+}
+
 function agentIdShort(agentId: string): string {
     return agentId.length > 10 ? `${agentId.slice(0, 8)}…` : agentId;
 }

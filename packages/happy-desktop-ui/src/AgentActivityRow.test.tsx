@@ -426,3 +426,85 @@ it("names a message's sender with its face, and an unnamed one by the start of i
         ),
     );
 }, 120_000);
+
+it("reads a call and a message in their own few words, naming the agents they mention", async () => {
+    const opened: string[] = [];
+    const references = {
+        view: (reference: { kind: string; id: string }) =>
+            reference.id === "zsyz6h9mborjt94esaykcqjs"
+                ? ({ type: "link", label: "Tool descriptions", busy: false } as const)
+                : ({ type: "text", label: reference.id } as const),
+        open: (reference: { kind: string; id: string }) => opened.push(reference.id),
+    };
+    const view = createRenderer();
+    view.render(
+        () => (
+            <div>
+                <AgentActivityRow
+                    activity={{ kind: "tool", tool: { ...execTool, summary: "Run the UI tests" } }}
+                    data-testid="described"
+                    singleLine
+                />
+                <AgentActivityRow
+                    activity={{
+                        kind: "tool",
+                        tool: {
+                            toolCallId: "t-subtask",
+                            toolName: "create_subtask",
+                            arguments: { title: "Fix trace folding" },
+                            status: "running",
+                            failed: false,
+                            summary: "Fix trace folding",
+                        },
+                    }}
+                    data-testid="subtask"
+                    references={references}
+                    singleLine
+                />
+                <AgentActivityRow
+                    activity={{
+                        kind: "agentMessage",
+                        agentId: "zsyz6h9mborjt94esaykcqjs",
+                        agentName: "Tool descriptions",
+                        explanation: "zsyz6h9mborjt94esaykcqjs finished the daemon work",
+                        text: "Done.",
+                    }}
+                    data-testid="message"
+                    references={references}
+                />
+            </div>
+        ),
+        { width: 520, height: 320, padding: 16 },
+    );
+    await view.ready();
+    const part = (row: string, name: string) =>
+        view.container.querySelector<HTMLElement>(
+            `[data-testid="${row}"] [data-happy-desktop-ui="${name}"]`,
+        );
+
+    // The description stands where the command did, in prose type.
+    await vi.waitFor(() =>
+        expect(part("described", "agent-activity-text")?.textContent).toBe("Run the UI tests"),
+    );
+    expect(part("described", "agent-activity-verb")?.textContent).toBe("Bash");
+    const call = part("described", "agent-activity-call")!;
+    expect(call.dataset.described).toBe("");
+    expect(getComputedStyle(part("described", "agent-activity-text")!).fontFamily).not.toContain(
+        "mono",
+    );
+    await vi.waitFor(() =>
+        expect(part("subtask", "agent-activity-text")?.textContent).toBe("Fix trace folding"),
+    );
+    expect(part("subtask", "agent-activity-verb")?.textContent).toBe("Subtask");
+
+    // The message says what it is, and the agent it names reads as that agent:
+    // not underlined until the pointer is on it, and opened from there.
+    expect(part("message", "agent-activity-text")?.textContent).toBe(
+        "Tool descriptions finished the daemon work",
+    );
+    const mention = part("message", "agent-activity-agent-reference")!;
+    expect(getComputedStyle(mention).textDecorationLine).toBe("none");
+    mention.click();
+    expect(opened).toEqual(["zsyz6h9mborjt94esaykcqjs"]);
+    expect(part("message", "agent-activity-message-body")).toBeNull();
+}, 120_000);
