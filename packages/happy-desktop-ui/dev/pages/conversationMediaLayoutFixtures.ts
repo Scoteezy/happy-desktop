@@ -9,6 +9,12 @@ import {
     type ConversationMediaLayoutNode,
     type ConversationToolCall,
 } from "happy-desktop-state";
+import {
+    mediaDesktopRecording,
+    mediaPhoneInbox,
+    mediaPhoneProfile,
+    mediaPhoneSettings,
+} from "./conversationMediaFixtures";
 import { happyAgentExplorationTool } from "./happyAgentChatFixtures";
 
 /*
@@ -884,4 +890,56 @@ export const inlineEntries: readonly ConversationEntry[] = [
         activity(tool, `m-4${String(index + 1)}`, `2026-10-20T10:04:0${String(index + 1)}.000Z`),
     ),
     message("m-48", agentAuthor, INLINE_REPLY, "2026-10-20T10:04:20.000Z"),
+];
+
+/* Recordings an agent made on a phone and presented, then laid out again. */
+const phoneTakes = [mediaPhoneInbox, mediaPhoneProfile, mediaPhoneSettings];
+const phoneRetakes = phoneTakes.map((take) =>
+    sourced(
+        { ...take, name: take.name.replace(".webm", "-dark.webm") },
+        `recordings/${take.name.replace(".webm", "-dark.webm")}`,
+    ),
+);
+
+const VIDEO_REPLY = `Same three screens in dark mode, side by side:
+
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px">
+  <figure><img src="recordings/inbox-dark.webm" style="width: 100%"><figcaption>Inbox</figcaption></figure>
+  <figure><img src="recordings/profile-dark.webm" style="width: 100%"><figcaption>Profile</figcaption></figure>
+  <figure><img src="recordings/settings-dark.webm" style="width: 100%"><figcaption>Settings</figcaption></figure>
+</div>
+
+The profile screen still jumps when the keyboard opens.`;
+
+/** Phone recordings presented together, a desktop one, and a reply's grid of retakes. */
+export const videoEntries: readonly ConversationEntry[] = [
+    message(
+        "m-60",
+        happyAgentOwnerAuthor,
+        "Record the onboarding screens on the iPhone and show me.",
+        "2026-10-20T10:06:00.000Z",
+    ),
+    message(
+        "m-61",
+        agentAuthor,
+        "Recorded the three onboarding screens on the iPhone 12.",
+        "2026-10-20T10:06:30.000Z",
+    ),
+    activity(
+        mediaTool("tool-present-phones", "present_files", phoneTakes),
+        "m-62",
+        "2026-10-20T10:06:31.000Z",
+    ),
+    message("m-63", agentAuthor, "And the desktop walkthrough:", "2026-10-20T10:06:40.000Z"),
+    activity(
+        mediaTool("tool-present-desktop", "present_files", [mediaDesktopRecording]),
+        "m-64",
+        "2026-10-20T10:06:41.000Z",
+    ),
+    activity(
+        mediaTool("tool-present-retakes", "present_files", phoneRetakes),
+        "m-65",
+        "2026-10-20T10:07:00.000Z",
+    ),
+    message("m-66", agentAuthor, VIDEO_REPLY, "2026-10-20T10:07:10.000Z"),
 ];

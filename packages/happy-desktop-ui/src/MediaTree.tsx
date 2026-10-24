@@ -208,10 +208,16 @@ function mediaTreeItemStyle(
     if (naturalWidth) {
         /* Given only a fixed height, the width follows from the shape. It is
            spelled out rather than left to `aspect-ratio`, which a block box
-           with an automatic width does not consult in every engine. */
+           with an automatic width does not consult in every engine.
+           Otherwise the natural width is bounded by the container in the
+           width itself, not only by `max-width`: a tile is not a replaced
+           element, so a bare length would be its whole contribution to a
+           grid track and would blow a `1fr` column out to a recording's
+           1170 pixels, where a width that depends on the container
+           contributes only its minimum. */
         if (sized.height !== undefined && DEFINITE_HEIGHT.test(String(sized.height)))
             sized.width = `calc(${String(sized.height)} * ${String(ratio)})`;
-        else sized.width = natural ? `${String(natural.width)}px` : "100%";
+        else sized.width = natural ? `min(100%, ${String(natural.width)}px)` : "100%";
     }
     if (sized.maxHeight === undefined && sized.height !== undefined) sized.maxHeight = "none";
     /* A picture at its own size that would pass the height cap narrows to

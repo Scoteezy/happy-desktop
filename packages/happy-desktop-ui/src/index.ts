@@ -742,11 +742,10 @@ export { ResultCard, type ResultCardProps } from "./ResultCard";
 export {
     ConversationMedia,
     MediaImageTile,
-    MediaVideoTile,
     type ConversationMediaProps,
     type MediaImageTileProps,
-    type MediaVideoTileProps,
 } from "./ConversationMedia";
+export { MediaVideoTile, type MediaVideoTileProps } from "./MediaVideoTile";
 export { type EmojiItem, EmojiPicker, type EmojiPickerProps } from "./EmojiPicker";
 export { TerminalPanel, type TerminalPanelProps } from "./TerminalPanel";
 export {

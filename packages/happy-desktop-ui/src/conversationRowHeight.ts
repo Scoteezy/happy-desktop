@@ -70,7 +70,6 @@ import {
     mediaColumnsPlan,
     mediaFlowHeight,
     mediaJustifiedPlan,
-    mediaVideoBox,
     type MediaFlowImage,
 } from "./mediaLayout";
 import { mediaTreeHeight } from "./MediaTree";
@@ -462,8 +461,8 @@ const RESULT_CARD_HEIGHT = 64;
 /**
  * Painted height of the files one tool call presented, laid out the way
  * `ConversationMedia` lays them out: a tree the agent wrote, measured at this
- * width; otherwise every image together first, as one flow, then each
- * recording at its frame, then one card per document or file.
+ * width; otherwise every picture and recording together first, as one flow,
+ * then one card per document or file.
  */
 export function conversationMediaHeight(
     items: readonly ConversationMediaItem[],
@@ -471,13 +470,12 @@ export function conversationMediaHeight(
     layout?: ConversationMediaLayout,
 ): number {
     if (layout?.type === "tree") return mediaTreeHeight(layout.root, items, measure);
-    const images = items.filter((item) => item.kind === "image");
+    const visuals = items.filter((item) => item.kind === "image" || item.kind === "video");
     const blocks: number[] = [];
-    if (images.length > 0)
-        blocks.push(mediaFlowHeight(conversationMediaPlan(images, layout), measure));
+    if (visuals.length > 0)
+        blocks.push(mediaFlowHeight(conversationMediaPlan(visuals, layout), measure));
     for (const item of items)
-        if (item.kind === "video") blocks.push(mediaVideoBox(item).height);
-        else if (item.kind !== "image") blocks.push(RESULT_CARD_HEIGHT);
+        if (item.kind !== "image" && item.kind !== "video") blocks.push(RESULT_CARD_HEIGHT);
     if (blocks.length === 0) return 0;
     return blocks.reduce((total, block) => total + block, 0) + (blocks.length - 1) * TOOL_MEDIA_GAP;
 }

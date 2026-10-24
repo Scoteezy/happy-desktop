@@ -348,19 +348,3 @@ export function mediaFlowGeometry(plan: MediaFlowPlan, measure: number): MediaFl
 export function mediaFlowHeight(plan: MediaFlowPlan, measure: number): number {
     return mediaFlowGeometry(plan, measure).height;
 }
-
-/**
- * The box a lone recording is drawn in, from its intrinsic size alone: scaled
- * down into 380 × 320, never up, its frame letterboxed by the player.
- */
-export function mediaVideoBox(item: { readonly width?: number; readonly height?: number }): {
-    readonly width: number;
-    readonly height: number;
-} {
-    if (!item.width || !item.height) return { width: 380, height: 214 };
-    const ratio = item.width / item.height;
-    const width = Math.min(item.width, 380);
-    const height = width / ratio;
-    if (height <= 320) return { width: Math.round(width), height: Math.round(height) };
-    return { width: Math.round(Math.min(Math.max(320 * ratio, 240), width)), height: 320 };
-}

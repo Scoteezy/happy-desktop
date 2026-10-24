@@ -197,6 +197,54 @@ export const mediaVideo: ConversationMediaItem = {
     url: videoClipWide,
 };
 
+/*
+ * Screen recordings as an agent presents them: the clips are small offline
+ * stand-ins drawn at an iPhone screen's shape, declared at the size a real
+ * capture reports, so their boxes are the ones a real recording gets.
+ */
+function recording(
+    name: string,
+    width: number,
+    height: number,
+    asset: string,
+): ConversationMediaItem {
+    return {
+        kind: "video",
+        name,
+        mimeType: "video/webm",
+        size: 2_400_000,
+        width,
+        height,
+        url: asset,
+        source: { path: name, absolutePath: `/work/recordings/${name}` },
+    };
+}
+
+export const mediaPhoneInbox = recording(
+    "inbox.webm",
+    1170,
+    2532,
+    new URL("../assets/phone-recording-inbox.webm", import.meta.url).href,
+);
+export const mediaPhoneProfile = recording(
+    "profile.webm",
+    1170,
+    2532,
+    new URL("../assets/phone-recording-profile.webm", import.meta.url).href,
+);
+export const mediaPhoneSettings = recording(
+    "settings.webm",
+    1170,
+    2532,
+    new URL("../assets/phone-recording-settings.webm", import.meta.url).href,
+);
+export const mediaDesktopRecording = recording(
+    "desktop-walkthrough.webm",
+    1920,
+    1080,
+    new URL("../assets/screen-recording-desktop.webm", import.meta.url).href,
+);
+
 export const mediaDocument: ConversationMediaItem = {
     kind: "document",
     name: "Q3 launch readiness review.pdf",

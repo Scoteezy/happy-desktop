@@ -121,7 +121,7 @@ const specimens: readonly {
     },
     {
         label: "Mixed presentation",
-        detail: "picture · inline recording · PDF card · file card, 8px apart",
+        detail: "picture and inline recording share a row · PDF card · file card, 8px apart",
         items: [mediaImageSquare, mediaVideo, mediaDocument, mediaFile],
     },
 ];
@@ -130,7 +130,7 @@ export function ConversationMediaPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The files one tool call presented, beneath its transcript line: an agent-written tree, or pictures first as one uncropped flow (the producer's column grid, else justified rows), then recordings, then a card per document or file."
+            summary="The files one tool call presented, beneath its transcript line: an agent-written tree, or pictures and recordings first as one uncropped flow (the producer's column grid, else justified rows), then a card per document or file."
             title="ConversationMedia"
         >
             {specimens.map((specimen, index) => {

@@ -14,9 +14,9 @@ import { mediaTreeSound } from "./MediaTree";
 /**
  * Layouts an agent wrote into its reply as HTML, drawn where it wrote them.
  *
- * An `<img src>` in a layout names a picture already shown earlier in the
- * conversation — read, presented, or generated — by the path a tool showed it
- * from. Nothing is loaded from disk or the network: the source resolves to that
+ * An `<img src>` in a layout names a picture or recording already shown
+ * earlier in the conversation — read, presented, or generated — by the path a
+ * tool showed it from, the same way a `present_files` layout names its files. Nothing is loaded from disk or the network: the source resolves to that
  * call's existing item, the latest call that showed the path winning, and an
  * image that names nothing is left out. A block in which no image resolves is
  * not a layout and stays the inert HTML it always was. So does one the client
@@ -67,7 +67,7 @@ export function messageInlineLayoutKey(html: string): string | undefined {
 
 const NONE: ConversationInlineLayouts = { messages: new Map(), hidden: new Map() };
 
-/** Each path a picture was shown from, to the latest picture shown from it. */
+/** Each path a picture or recording was shown from, to the latest item shown from it. */
 type Shown = Map<string, ConversationMediaRunMember>;
 
 /** Every reply's layouts in `entries`, and the pictures they take from their calls. */
@@ -82,7 +82,8 @@ export function conversationInlineLayouts(
             const tool = entry.activity.tool;
             if (tool.presentation?.type !== "media") continue;
             for (const [index, item] of tool.presentation.items.entries()) {
-                if (item.kind !== "image" || item.source === undefined) continue;
+                if ((item.kind !== "image" && item.kind !== "video") || item.source === undefined)
+                    continue;
                 const member = memberOf(entry.id, tool, index, item);
                 shown.set(item.source.path, member);
                 shown.set(item.source.absolutePath, member);

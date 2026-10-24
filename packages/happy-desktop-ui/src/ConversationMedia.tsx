@@ -1,8 +1,9 @@
 import { Fragment, useState, type CSSProperties } from "react";
 import type { ConversationMediaItem, ConversationMediaLayout } from "happy-desktop-state";
 import { artifactSizeText } from "./pages/artifacts/artifactPresentation";
-import { conversationMediaPlan, mediaFlowPointSize, mediaVideoBox } from "./mediaLayout";
+import { conversationMediaPlan, mediaFlowPointSize } from "./mediaLayout";
 import { MediaFlow } from "./MediaFlow";
+import { MediaVideoTile } from "./MediaVideoTile";
 import { MediaTree } from "./MediaTree";
 import { FileTreeFamilyIcon, fileTreeFamily } from "./FileTree";
 import { Icon } from "./Icon";
@@ -149,53 +150,6 @@ function imagePlacement(props: MediaImageTileProps): CSSProperties | undefined {
     return props.position ? position : undefined;
 }
 
-export type MediaVideoTileProps = {
-    className?: string;
-    "data-testid"?: string;
-    style?: CSSProperties;
-    /** Where the recording is streamed from; the server answers ranges. */
-    url: string;
-    /** A still shown before playback starts, such as a decoded placeholder. */
-    posterUrl?: string;
-    /** What the recording is, for assistive technology. */
-    name: string;
-    /** The box the player reserves. Absent, `style` sizes it, as a layout tree does. */
-    width?: number;
-    height?: number;
-};
-
-/**
- * C-293 MediaVideoTile — a recording played where it was presented. The box is
- * reserved up front, the browser reads only what it needs to start, and the
- * native controls carry play, scrub, volume, and full screen.
- */
-export function MediaVideoTile(props: MediaVideoTileProps) {
-    return (
-        <span
-            className={["happy-media-video-tile", props.className].filter(Boolean).join(" ")}
-            data-happy-desktop-ui="media-video-tile"
-            data-testid={props["data-testid"]}
-            style={
-                props.width === undefined || props.height === undefined
-                    ? props.style
-                    : { ...props.style, width: `${props.width}px`, height: `${props.height}px` }
-            }
-        >
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption -- a presented file has no caption track to offer */}
-            <video
-                aria-label={props.name}
-                className="happy-media-video-tile__video"
-                controls
-                data-happy-desktop-ui="media-video-tile-video"
-                playsInline
-                poster={props.posterUrl}
-                preload="auto"
-                src={props.url}
-            />
-        </span>
-    );
-}
-
 export type ConversationMediaProps = {
     className?: string;
     "data-testid"?: string;
@@ -203,7 +157,10 @@ export type ConversationMediaProps = {
     items: readonly ConversationMediaItem[];
     /** How the producer asked the items to be arranged; absent, justified rows. */
     layout?: ConversationMediaLayout;
-    /** Opens one item by its position in `items`: a picture full size, a file in its preview. */
+    /**
+     * Opens one item by its position in `items`: a picture full size, a
+     * recording or a file in its preview.
+     */
     onItemOpen?: (index: number) => void;
 };
 
@@ -224,9 +181,10 @@ function mediaTypeLabel(item: ConversationMediaItem): string {
  * beneath its line in the transcript.
  *
  * A layout the agent wrote is drawn as its `MediaTree`. Otherwise every
- * picture comes first, together, as one `MediaFlow`: the column grid the
- * producer asked for, or justified rows. Each recording follows at its frame,
- * then one full width card per document or file. Every box is known before a
+ * picture and recording comes first, together and in order, as one
+ * `MediaFlow`: the column grid the producer asked for, or justified rows — a
+ * few phone recordings side by side, each at its own shape. Then one full
+ * width card per document or file. Every box is known before a
  * byte arrives — from the producer's dimensions and the layout's arithmetic,
  * which `conversationRowHeight` shares — so the transcript reserves exactly
  * the height this paints. Nothing is cropped unless a tree asks for it.
@@ -254,6 +212,26 @@ export function ConversationMedia(props: ConversationMediaProps) {
                 {...(tile.position ? { position: tile.position } : {})}
                 {...(pointSize ? { pointSize } : {})}
                 {...(placeholderUrl ? { placeholderUrl } : {})}
+                {...(open ? { onOpen: () => open(index) } : {})}
+                style={tile.style}
+                url={item.url}
+            />
+        );
+    };
+    const video = (tile: {
+        index: number;
+        style: CSSProperties;
+        name?: string;
+        className?: string;
+    }) => {
+        const index = tile.index;
+        const item = props.items[index]!;
+        const posterUrl = item.thumbhash ? thumbhashDataUrl(item.thumbhash) : undefined;
+        return (
+            <MediaVideoTile
+                {...(tile.className ? { className: tile.className } : {})}
+                name={tile.name ?? item.name}
+                {...(posterUrl ? { posterUrl } : {})}
                 {...(open ? { onOpen: () => open(index) } : {})}
                 style={tile.style}
                 url={item.url}
@@ -299,20 +277,13 @@ export function ConversationMedia(props: ConversationMediaProps) {
                                 ...(rendered.alt === undefined ? {} : { alt: rendered.alt }),
                                 className: "happy-media-tree__item",
                             });
-                        if (item.kind === "video") {
-                            const posterUrl = item.thumbhash
-                                ? thumbhashDataUrl(item.thumbhash)
-                                : undefined;
-                            return (
-                                <MediaVideoTile
-                                    className="happy-media-tree__item"
-                                    name={rendered.alt ?? item.name}
-                                    {...(posterUrl ? { posterUrl } : {})}
-                                    style={rendered.style}
-                                    url={item.url}
-                                />
-                            );
-                        }
+                        if (item.kind === "video")
+                            return video({
+                                index: rendered.index,
+                                style: rendered.style,
+                                ...(rendered.alt === undefined ? {} : { name: rendered.alt }),
+                                className: "happy-media-tree__item",
+                            });
                         return (
                             <div className={rendered.className} style={rendered.style}>
                                 {card(rendered.index)}
@@ -324,9 +295,9 @@ export function ConversationMedia(props: ConversationMediaProps) {
             </div>
         );
     const indexed = props.items.map((item, index) => ({ item, index }));
-    const images = indexed.filter(({ item }) => item.kind === "image");
+    const visuals = indexed.filter(({ item }) => item.kind === "image" || item.kind === "video");
     const plan = conversationMediaPlan(
-        images.map(({ item }) => item),
+        visuals.map(({ item }) => item),
         layout,
     );
     return (
@@ -337,35 +308,25 @@ export function ConversationMedia(props: ConversationMediaProps) {
             data-testid={props["data-testid"]}
             style={props.style}
         >
-            {images.length > 0 ? (
+            {visuals.length > 0 ? (
                 <MediaFlow
                     data-testid={
                         props["data-testid"] ? `${props["data-testid"]}-images` : undefined
                     }
                     plan={plan}
-                    renderTile={(position, style) =>
-                        image({ index: images[position]!.index, style })
-                    }
+                    renderTile={(position, style) => {
+                        const index = visuals[position]!.index;
+                        return props.items[index]!.kind === "video"
+                            ? video({ index, style })
+                            : image({ index, style });
+                    }}
                 />
             ) : null}
-            {indexed.map(({ item, index }) => {
-                if (item.kind === "image") return null;
-                if (item.kind === "video") {
-                    const box = mediaVideoBox(item);
-                    const posterUrl = item.thumbhash ? thumbhashDataUrl(item.thumbhash) : undefined;
-                    return (
-                        <MediaVideoTile
-                            height={box.height}
-                            key={index}
-                            name={item.name}
-                            {...(posterUrl ? { posterUrl } : {})}
-                            url={item.url}
-                            width={box.width}
-                        />
-                    );
-                }
-                return <Fragment key={index}>{card(index)}</Fragment>;
-            })}
+            {indexed.map(({ item, index }) =>
+                item.kind === "image" || item.kind === "video" ? null : (
+                    <Fragment key={index}>{card(index)}</Fragment>
+                ),
+            )}
         </div>
     );
 }

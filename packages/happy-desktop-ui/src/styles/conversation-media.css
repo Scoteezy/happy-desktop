@@ -308,20 +308,279 @@ button.happy-media-image-tile:focus-visible {
 
 /* ---- MediaVideoTile --------------------------------------------------- */
 
+/* The recording at its own shape, with a picture's corners and hairline. Every
+   part inside is an overlay of this one box, so the box is exactly the one the
+   layout reserved (and the one `mediaTreeHeight` measures with no children),
+   and nothing in it moves as the chrome comes and goes. */
 .happy-media-video-tile {
+    position: relative;
     box-sizing: border-box;
     display: flex;
     flex: none;
     overflow: hidden;
     background: var(--surface-pressed);
-    border: 1px solid var(--divider);
     border-radius: var(--happy-radius-window);
+    container-type: inline-size;
+    /* Played fraction, painted per frame by the component. */
+    --happy-media-video-tile-progress: 0;
+}
+
+/* Over the picture, not around it, exactly as a picture's hairline. */
+.happy-media-video-tile::after {
+    /* Absolute: the hairline is an overlay of the tile's own box. */
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--divider);
+    border-radius: inherit;
+    pointer-events: none;
+    content: "";
+}
+
+.happy-media-video-tile[data-resting] {
+    cursor: none;
+}
+
+.happy-media-video-tile:has(.happy-media-video-tile__surface:focus-visible) {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+.happy-media-video-tile__video,
+.happy-media-video-tile__surface {
+    /* Absolute: the recording and the surface that plays it are two layers
+       of one box, which flex cannot stack. */
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
 }
 
 .happy-media-video-tile__video {
     display: block;
-    width: 100%;
-    height: 100%;
     object-fit: contain;
     background: transparent;
+}
+
+.happy-media-video-tile__surface {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    outline: none;
+    cursor: pointer;
+}
+
+/* The controls' layer: a column of the corner row, the centre, and the
+   timeline, inset 8px. The corner row and the timeline are both 28px, so the
+   centre button sits on the frame's true middle. The layer itself lets every
+   click through to the surface; only a control takes one. */
+.happy-media-video-tile__chrome {
+    /* Absolute: an overlay of the frame, never a box beside it. */
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    pointer-events: none;
+}
+
+.happy-media-video-tile__corners {
+    display: flex;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    height: 28px;
+}
+
+.happy-media-video-tile__corner {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+}
+
+.happy-media-video-tile__middle {
+    display: flex;
+    flex: 1 1 0%;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+}
+
+/* The system's translucent media material: dark glass whatever the theme,
+   with the primary action's white ink, because it sits on a recording rather
+   than on one of Happy's surfaces. */
+.happy-media-video-tile__center,
+.happy-media-video-tile__control,
+.happy-media-video-tile__bar {
+    background: var(--overlay-panel);
+    color: var(--button-primary-tint);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(16px) saturate(180%);
+}
+
+.happy-media-video-tile__center {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--happy-radius-pill);
+}
+
+.happy-media-video-tile__control {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--happy-radius-pill);
+    appearance: none;
+    cursor: pointer;
+}
+
+.happy-media-video-tile__control:focus-visible,
+.happy-media-video-tile__timeline:focus-visible {
+    outline: 2px solid var(--radio-active);
+    outline-offset: 2px;
+}
+
+.happy-media-video-tile__bar {
+    display: flex;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: var(--happy-radius-pill);
+}
+
+/* Tabular digits, so the readout never shuffles its own width. */
+.happy-media-video-tile__time {
+    flex: none;
+    font-family: var(--happy-font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums lining-nums;
+    line-height: 16px;
+}
+
+/* A 16px band to aim at, holding a 4px track. */
+.happy-media-video-tile__timeline {
+    display: flex;
+    flex: 1 1 0%;
+    align-items: center;
+    min-width: 0;
+    height: 16px;
+    border-radius: var(--happy-radius-pill);
+    cursor: pointer;
+    touch-action: none;
+}
+
+.happy-media-video-tile__track {
+    position: relative;
+    display: flex;
+    flex: 1 1 0%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: var(--happy-radius-pill);
+    background: color-mix(in srgb, var(--button-primary-tint) 32%, transparent);
+}
+
+/* The thin line a playing recording keeps along its bottom edge while the
+   chrome is away. The tile's corners clip it into their curve. */
+.happy-media-video-tile__line {
+    /* Absolute: the line is an overlay of the frame's bottom edge. */
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    height: 3px;
+    background: color-mix(in srgb, var(--button-primary-tint) 24%, transparent);
+    pointer-events: none;
+}
+
+/* What has been played, scaled from the left edge by the painted fraction:
+   a transform, so a frame of progress is a compositor change, not a layout. */
+.happy-media-video-tile__played {
+    /* Absolute: the fill is laid over its track from the left edge. */
+    position: absolute;
+    inset: 0;
+    background: var(--button-primary-tint);
+    transform: scaleX(var(--happy-media-video-tile-progress));
+    transform-origin: left center;
+}
+
+/* ---- What shows when ----
+
+   Idle: the frame alone; the pointer brings only the play button.
+   Started: the pointer brings the corners and the timeline as well, and
+   they rest after a moment of stillness while it plays; otherwise only the
+   line shows. Keyboard focus inside brings everything, so a control is never
+   operated unseen. Hidden controls take no clicks. */
+.happy-media-video-tile__center,
+.happy-media-video-tile__corners,
+.happy-media-video-tile__bar,
+.happy-media-video-tile__line {
+    opacity: 0;
+    transition: opacity 160ms ease;
+}
+
+.happy-media-video-tile__control,
+.happy-media-video-tile__bar {
+    pointer-events: none;
+}
+
+.happy-media-video-tile:hover:not([data-resting]) .happy-media-video-tile__center,
+.happy-media-video-tile:has(:focus-visible) .happy-media-video-tile__center {
+    opacity: 1;
+}
+
+.happy-media-video-tile:not([data-playback="idle"]):hover:not([data-resting])
+    :is(.happy-media-video-tile__corners, .happy-media-video-tile__bar),
+.happy-media-video-tile:not([data-playback="idle"]):has(:focus-visible)
+    :is(.happy-media-video-tile__corners, .happy-media-video-tile__bar) {
+    opacity: 1;
+}
+
+.happy-media-video-tile:not([data-playback="idle"]):hover:not([data-resting])
+    :is(.happy-media-video-tile__control, .happy-media-video-tile__bar),
+.happy-media-video-tile:not([data-playback="idle"]):has(:focus-visible)
+    :is(.happy-media-video-tile__control, .happy-media-video-tile__bar) {
+    pointer-events: auto;
+}
+
+.happy-media-video-tile:not([data-playback="idle"]) .happy-media-video-tile__line {
+    opacity: 1;
+}
+
+.happy-media-video-tile:not([data-playback="idle"]):hover:not([data-resting])
+    .happy-media-video-tile__line,
+.happy-media-video-tile:has(:focus-visible) .happy-media-video-tile__line {
+    opacity: 0;
+}
+
+/* A tile this narrow keeps the timeline and lets the readouts go. */
+@container (max-width: 159px) {
+    .happy-media-video-tile__time {
+        display: none;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-media-video-tile__center,
+    .happy-media-video-tile__corners,
+    .happy-media-video-tile__bar,
+    .happy-media-video-tile__line {
+        transition: none;
+    }
 }

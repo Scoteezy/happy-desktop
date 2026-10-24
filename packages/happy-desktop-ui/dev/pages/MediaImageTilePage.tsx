@@ -1,4 +1,3 @@
-import { mediaVideoBox } from "../../src/mediaLayout";
 import { MediaImageTile } from "../../src/ConversationMedia";
 import { thumbhashDataUrl } from "../../src/thumbhashDataUrl";
 import { ComponentPage, DimensionRule, Specimen } from "../kit";
@@ -21,6 +20,19 @@ const row: Record<string, string> = {
     gap: "16px",
 };
 
+/** A picture's box scaled down into 380 × 320, never up: the specimen's shared cap. */
+function specimenBox(item: { readonly width?: number; readonly height?: number }): {
+    readonly width: number;
+    readonly height: number;
+} {
+    if (!item.width || !item.height) return { width: 380, height: 214 };
+    const ratio = item.width / item.height;
+    const width = Math.min(item.width, 380);
+    const height = width / ratio;
+    if (height <= 320) return { width: Math.round(width), height: Math.round(height) };
+    return { width: Math.round(Math.min(Math.max(320 * ratio, 240), width)), height: 320 };
+}
+
 export function MediaImageTilePage() {
     return (
         <ComponentPage
@@ -36,7 +48,7 @@ export function MediaImageTilePage() {
             >
                 <div style={row}>
                     {[mediaImageSquare, mediaImageWide, mediaImageTall].map((item) => {
-                        const box = mediaVideoBox(item);
+                        const box = specimenBox(item);
                         return (
                             <MediaImageTile
                                 alt={item.name}
