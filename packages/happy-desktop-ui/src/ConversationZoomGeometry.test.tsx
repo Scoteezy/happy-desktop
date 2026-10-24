@@ -1,5 +1,6 @@
 import { useState, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
+import { cdp, server } from "vitest/browser";
 import { expect, it } from "vitest";
 import {
     happyAgentChatStoreCreate,
@@ -49,9 +50,29 @@ async function frames() {
     await frame();
 }
 
+/*
+ * The desktop app zooms the way a browser does: Electron's page zoom scales the
+ * device pixel ratio, and Chromium then lays text out exactly as at 100%, as
+ * the canvas the text model measures with does. CSS `zoom` is not that in
+ * Chromium: it lays text out at the zoomed font size, whose hinted advances do
+ * not scale, so lines near a wrap boundary break differently from any model.
+ * Chromium therefore zooms here through the device scale; Firefox, whose CSS
+ * zoom scales text linearly, keeps CSS zoom.
+ */
+const pageZoom = server.browser === "chromium";
+async function deviceScale(scale: number) {
+    await cdp().send("Emulation.setDeviceMetricsOverride", {
+        width: 1550,
+        height: 1550,
+        deviceScaleFactor: scale,
+        mobile: false,
+    });
+}
+
 it.each([1, 0.5, 0.67, 0.9, 1.5, 2])(
-    "matches painted text heights after a width change at CSS zoom %f (seed 733)",
+    "matches painted text heights after a width change at zoom %f (seed 733)",
     async (zoom) => {
+        const baseScale = devicePixelRatio;
         const view = createRenderer();
         let change!: (elements: readonly ChatElement[]) => void;
         let resize!: () => void;
@@ -67,7 +88,7 @@ it.each([1, 0.5, 0.67, 0.9, 1.5, 2])(
         function Harness() {
             const snapshot = useSyncExternalStore(store.subscribe, store.get);
             const [geometry, update] = useState({ width: 820, zoom: 1 });
-            resize = () => flushSync(() => update({ width: 880, zoom }));
+            resize = () => flushSync(() => update({ width: 880, zoom: pageZoom ? 1 : zoom }));
             return (
                 <div style={{ height: 650, width: geometry.width, zoom: geometry.zoom }}>
                     <ConversationView
@@ -133,10 +154,12 @@ it.each([1, 0.5, 0.67, 0.9, 1.5, 2])(
             await view.ready();
             await frames();
             check(1, "before");
+            if (pageZoom) await deviceScale(baseScale * zoom);
             resize();
             await frames();
-            check(zoom, "after");
+            check(pageZoom ? 1 : zoom, "after");
         } finally {
+            if (pageZoom) await deviceScale(baseScale);
             view.destroy();
             store[Symbol.dispose]();
         }
