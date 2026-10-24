@@ -925,6 +925,8 @@ export type HappyAgentScrollPosition =
           readonly offset: number;
           /** Distance from the viewport's lower edge; absent in older saved positions. */
           readonly viewportInset?: number;
+          /** Viewport height when this point was saved, before any hidden resize. */
+          readonly viewportHeight?: number;
       };
 
 /** One physical child of a checkout directory. Symlinks are file-like leaves. */

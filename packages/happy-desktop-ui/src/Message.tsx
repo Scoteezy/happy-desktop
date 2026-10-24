@@ -929,6 +929,8 @@ export type MessageListScrollPosition =
           readonly offset: number;
           /** Distance from the viewport's lower edge; absent in older saved positions. */
           readonly viewportInset?: number;
+          /** Viewport height when this point was saved, before any hidden resize. */
+          readonly viewportHeight?: number;
       };
 /**
  * The pixel position lists used to report, accepted only as a restore input. A
@@ -1877,6 +1879,7 @@ export function MessageList(props: MessageListProps) {
                   rowKey: String(anchor.key),
                   offset: anchor.itemOffset,
                   viewportInset: anchor.viewportInset,
+                  viewportHeight: viewportGeometry.current.height,
               }
             : { type: "bottom" };
     }
@@ -2265,9 +2268,15 @@ export function MessageList(props: MessageListProps) {
                anchored in, only the model to build at its real width. A
                scrollport with no width yet has nothing to model rows at. */
             if (nextRowWidth <= 0) return;
-            viewportGeometry.current = { height: nextHeight, width: nextWidth };
-            headerRestApply();
             const opening = following.current ? undefined : restore.current;
+            const openingHeight =
+                opening && "type" in opening && opening.type === "row"
+                    ? (opening.viewportHeight ?? nextHeight)
+                    : nextHeight;
+            // Build the saved viewport first. The next report passes its
+            // resize through the same geometry transition as a retained view.
+            viewportGeometry.current = { height: openingHeight, width: nextWidth };
+            headerRestApply();
             if (opening !== undefined && "type" in opening) {
                 /* A saved anchor names its row by key. Lay out that row and the
                    viewport around it; the rows above it are laid out later
@@ -2285,12 +2294,12 @@ export function MessageList(props: MessageListProps) {
                         key: itemKeyAt(index),
                         viewportInset: Math.min(
                             opening.viewportInset ?? VIRTUAL_ANCHOR_INSET,
-                            nextHeight,
+                            openingHeight,
                         ),
                     };
                     readerAnchor.current = anchor;
-                    rowSizeModelLayout(nextRowWidth, 0, readerFocus(nextHeight));
-                    openingScrollTop.current = modelAnchorPlace(anchor, nextHeight)?.scrollTop;
+                    rowSizeModelLayout(nextRowWidth, 0, readerFocus(openingHeight));
+                    openingScrollTop.current = modelAnchorPlace(anchor, openingHeight)?.scrollTop;
                     return;
                 }
                 /* The row is gone: the reader returns to the newest content. */
@@ -2770,7 +2779,16 @@ export function MessageList(props: MessageListProps) {
             pendingAnchor.current = undefined;
             if (following.current) scrollBottomFollow(element);
             else {
-                scrollTopWrite(element, openingScrollTop.current ?? readerScrollTop.current);
+                const opening = restore.current;
+                if (
+                    readerAnchor.current &&
+                    opening &&
+                    "type" in opening &&
+                    opening.type === "row" &&
+                    opening.viewportHeight !== undefined
+                )
+                    modelAnchorRestore(readerAnchor.current, viewportGeometry.current.height);
+                else scrollTopWrite(element, openingScrollTop.current ?? readerScrollTop.current);
                 /* A restored anchor is the reader's fixed point already. */
                 readerAnchor.current ??= modelAnchorCapture(viewportGeometry.current.height);
             }

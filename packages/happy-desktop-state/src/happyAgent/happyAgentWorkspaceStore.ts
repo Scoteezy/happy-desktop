@@ -8715,7 +8715,8 @@ function scrollPositionEqual(
     return (
         left.rowKey === right.rowKey &&
         left.offset === right.offset &&
-        left.viewportInset === right.viewportInset
+        left.viewportInset === right.viewportInset &&
+        left.viewportHeight === right.viewportHeight
     );
 }
 

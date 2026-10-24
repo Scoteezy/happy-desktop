@@ -288,10 +288,16 @@ it("shows the oldest kept conversation as it was left even when keeping the one 
 it("restores the latest parked position in a cached stand-in without an intervening chat update", async () => {
     const view = workspaceCreate({ count: 2, size: 1_000 });
     await view.open("a");
-    const position = { type: "row" as const, rowKey: "a:1", offset: 240, viewportInset: 52 };
+    const position = {
+        type: "row" as const,
+        rowKey: "a:1",
+        offset: 240,
+        viewportInset: 52,
+        viewportHeight: 650,
+    };
     view.workspace.conversationScrollUpdate("a" as HappyAgentSessionId, {
         ...position,
-        viewportInset: 32,
+        viewportHeight: 360,
     });
     view.workspace.conversationScrollUpdate("a" as HappyAgentSessionId, position);
     await view.open("b");
