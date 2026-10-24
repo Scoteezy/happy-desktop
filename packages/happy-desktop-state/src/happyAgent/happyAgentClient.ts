@@ -131,6 +131,8 @@ import {
     happyAgentSidebarProposalsStoreCreate,
     type HappyAgentSidebarProposalsStore,
 } from "../spaces/sidebarProposalsStore.js";
+import { happyAgentStoriesCreate, type HappyAgentStories } from "../stories/stories.js";
+import type { HappyAgentStoriesHintPersistence } from "../stories/storiesSettingsStore.js";
 import {
     happyAgentDeviceBridgesStoreCreate,
     type HappyAgentDeviceBridgesStore,
@@ -216,6 +218,8 @@ export interface HappyAgentWorkspaceClient {
     surfaceSettings(): HappyAgentSurfaceSettingsStore;
     /** The authenticated person's Stem Cells preference, materialized on first access. */
     stemCellsSettings(): HappyAgentStemCellsSettingsStore;
+    /** Stories: the experiment's setting, the row, stickers and the editor; materialized on first access. */
+    stories(): HappyAgentStories;
     /**
      * This Happy Agent's own machine-wide instructions, as one editable document.
      * Materialized on first access and shared, so the settings window and
@@ -452,6 +456,7 @@ export interface HappyAgentWorkspaceClientDeps {
     readonly workspaceMemoryPersistence?: HappyAgentWorkspaceMemoryPersistence;
     /** Where this connection's last Stem Cells answer is kept; omitted keeps none. */
     readonly stemCellsHintPersistence?: HappyAgentStemCellsHintPersistence;
+    readonly storiesHintPersistence?: HappyAgentStoriesHintPersistence;
     /**
      * Builds the driver behind a terminal: the app-layer machinery that owns the
      * terminal protocol client and the VT emulator. Omitting it leaves terminals
@@ -591,6 +596,7 @@ export function happyAgentWorkspaceClientCreate(
     let taskSettingsStore: HappyAgentTaskSettingsStore | undefined;
     let surfaceSettingsStore: HappyAgentSurfaceSettingsStore | undefined;
     let stemCellsSettingsStore: HappyAgentStemCellsSettingsStore | undefined;
+    let stories: HappyAgentStories | undefined;
     let instructionsStore: HappyAgentInstructionsStore | undefined;
     let securityPolicyStore: HappyAgentSecurityPolicyStore | undefined;
     let secretsStore: HappyAgentSecretsStore | undefined;
@@ -961,6 +967,17 @@ export function happyAgentWorkspaceClientCreate(
             );
             return stemCellsSettingsStore;
         },
+        stories() {
+            if (disposed) throw new Error("The Happy Agent client is disposed.");
+            stories ??= happyAgentStoriesCreate({
+                client: deps.client,
+                sync: deps.connection.sync,
+                ...(deps.storiesHintPersistence
+                    ? { hintPersistence: deps.storiesHintPersistence }
+                    : {}),
+            });
+            return stories;
+        },
         voiceSettings() {
             if (disposed) throw new Error("The Happy Agent client is disposed.");
             voiceSettingsStore ??= happyAgentVoiceSettingsStoreCreate({ client: deps.client });
@@ -1121,6 +1138,8 @@ export function happyAgentWorkspaceClientCreate(
             surfaceSettingsStore = undefined;
             stemCellsSettingsStore?.[Symbol.dispose]();
             stemCellsSettingsStore = undefined;
+            stories?.[Symbol.dispose]();
+            stories = undefined;
             instructionsStore?.[Symbol.dispose]();
             instructionsStore = undefined;
             securityPolicyStore?.[Symbol.dispose]();

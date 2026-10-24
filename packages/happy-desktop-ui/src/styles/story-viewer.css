@@ -1,0 +1,417 @@
+/*
+ * StoryViewer — the full-window dark room a story is watched in. The canvas
+ * is as tall as the window allows, less a 16px margin above and below, and
+ * never wider than the window less the 64px step lanes on either side.
+ */
+
+.happy-story-viewer {
+    background: var(--story-backdrop);
+}
+
+.happy-story-viewer__room {
+    display: flex;
+    flex: 1;
+    /* The canvas is sized against the room, not the window, so a hosting
+       frame of any size holds it whole. */
+    container-type: size;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-width: 0;
+    min-height: 0;
+    color: var(--story-ink);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+}
+
+.happy-story-viewer__stage {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    touch-action: none;
+}
+
+.happy-story-viewer__canvas {
+    height: min(calc(100cqh - 32px), calc((100cqw - 160px) * 16 / 9));
+    border-radius: var(--happy-radius-md);
+    background-color: var(--story-stage);
+    cursor: pointer;
+}
+
+/* The caption clears the bottom chrome's 56px row, so views and delete never
+   sit on its text. */
+.happy-story-viewer__canvas .happy-story-canvas__caption {
+    padding-bottom: 56px;
+}
+
+.happy-story-viewer__gone {
+    display: flex;
+    color: var(--story-ink-secondary);
+    font-size: 15px;
+}
+
+.happy-story-viewer__step {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--story-control);
+    color: var(--story-ink);
+    cursor: pointer;
+}
+
+.happy-story-viewer__step:hover:not(:disabled) {
+    background: var(--story-control-hover);
+}
+
+.happy-story-viewer__step:disabled {
+    opacity: 0;
+    cursor: default;
+}
+
+/* The chrome lies over the frame: progress and author above, actions below.
+   Holding the frame hides it, as Telegram does, without moving anything. */
+.happy-story-viewer__chrome {
+    /* Laid over its parent rather than in its flow, so it is placed by position. */
+    position: absolute;
+    right: 0;
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px;
+}
+
+.happy-story-viewer__chrome[data-part="top"] {
+    top: 0;
+    background: linear-gradient(to bottom, var(--story-scrim), transparent);
+    pointer-events: none;
+}
+
+.happy-story-viewer__chrome[data-part="bottom"] {
+    bottom: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.happy-story-viewer__stage[data-held] .happy-story-viewer__chrome {
+    opacity: 0;
+}
+
+.happy-story-viewer__progress {
+    display: flex;
+    gap: 3px;
+}
+
+.happy-story-viewer__segment {
+    display: flex;
+    flex: 1 1 0;
+    height: 2px;
+    overflow: hidden;
+    border-radius: 1px;
+    background: var(--story-ink-faint);
+}
+
+.happy-story-viewer__segment-fill {
+    display: flex;
+    width: 100%;
+    background: var(--story-ink);
+    transform-origin: 0 50%;
+}
+
+.happy-story-viewer__segment-fill[data-state="waiting"] {
+    transform: scaleX(0);
+}
+
+.happy-story-viewer__segment-fill[data-state="playing"] {
+    animation-name: happy-story-progress;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+
+@keyframes happy-story-progress {
+    from {
+        transform: scaleX(0);
+    }
+    to {
+        transform: scaleX(1);
+    }
+}
+
+.happy-story-viewer__header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    pointer-events: auto;
+}
+
+.happy-story-viewer__avatar {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--story-control);
+    color: var(--story-ink);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.happy-story-viewer__avatar img {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.happy-story-viewer__who {
+    display: flex;
+    flex: 1;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+.happy-story-viewer__name {
+    overflow: hidden;
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-story-viewer__when {
+    flex: none;
+    color: var(--story-ink-secondary);
+    font-size: 13px;
+}
+
+.happy-story-viewer__icon {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--happy-hover-radius);
+    background: transparent;
+    color: var(--story-ink);
+    cursor: pointer;
+}
+
+.happy-story-viewer__icon:hover {
+    background: var(--story-control);
+}
+
+.happy-story-viewer__pill {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    margin: 0;
+    padding: 0 12px;
+    border: 0;
+    border-radius: var(--happy-radius-pill);
+    background: var(--story-control);
+    color: var(--story-ink);
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.happy-story-viewer__pill:hover {
+    background: var(--story-control-hover);
+}
+
+.happy-story-viewer__reaction-tally {
+    margin-left: auto;
+    color: var(--story-ink-secondary);
+    font-weight: 500;
+}
+
+.happy-story-viewer__heart {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--story-control);
+    cursor: pointer;
+}
+
+.happy-story-viewer__heart:hover {
+    background: var(--story-control-hover);
+}
+
+.happy-story-viewer__heart-emoji {
+    display: flex;
+    font-family: var(--happy-font-emoji);
+    font-size: 22px;
+    line-height: 1;
+}
+
+.happy-story-viewer__heart-emoji[data-off] {
+    filter: grayscale(1) brightness(1.6);
+    opacity: 0.8;
+}
+
+/* A sheet rises over the frame's lower part and pauses it. */
+.happy-story-viewer__sheet-scrim {
+    /* Laid over its parent rather than in its flow, so it is placed by position. */
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    background: var(--story-scrim);
+    cursor: default;
+}
+
+.happy-story-viewer__sheet {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 60%;
+    padding: 16px;
+    border-radius: var(--happy-radius-md) var(--happy-radius-md) 0 0;
+    background: var(--story-sheet);
+}
+
+.happy-story-viewer__sheet-title {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.happy-story-viewer__url {
+    color: var(--story-ink-secondary);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.happy-story-viewer__sheet-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.happy-story-viewer__sheet-button {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    margin: 0;
+    border: 0;
+    border-radius: var(--happy-radius-sm);
+    background: var(--story-control);
+    color: var(--story-ink);
+    cursor: pointer;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.happy-story-viewer__sheet-button:hover:not(:disabled) {
+    background: var(--story-control-hover);
+}
+
+.happy-story-viewer__sheet-button[data-primary] {
+    background: var(--story-ink);
+    color: var(--story-backdrop);
+}
+
+.happy-story-viewer__sheet-button[data-danger] {
+    color: var(--story-danger);
+}
+
+.happy-story-viewer__reaction-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+.happy-story-viewer__reaction-choice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--happy-font-emoji);
+    font-size: 24px;
+}
+
+.happy-story-viewer__reaction-choice:hover,
+.happy-story-viewer__reaction-choice[aria-pressed="true"] {
+    background: var(--story-control);
+}
+
+.happy-story-viewer__viewers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.happy-story-viewer__viewers-scroll {
+    display: flex;
+    min-height: 0;
+}
+
+.happy-story-viewer__viewers-viewport {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.happy-story-viewer__viewer {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.happy-story-viewer__viewer-name {
+    flex: 1;
+    overflow: hidden;
+    font-size: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-story-viewer__viewer-reaction {
+    font-family: var(--happy-font-emoji);
+    font-size: 20px;
+}
+
+.happy-story-viewer__viewer-empty {
+    color: var(--story-ink-secondary);
+    font-size: 13px;
+}

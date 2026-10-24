@@ -48,6 +48,7 @@ import {
     type HappyAgentSessionLocation,
     type HappyAgentWorkspaceMemoryDocument,
     type HappyAgentStemCellsHintPersistence,
+    type HappyAgentStoriesHintPersistence,
     type HappyAgentWorkspaceMemoryPersistence,
     type HappyAgentWorkspaceStore,
     type ServerCompatibility,
@@ -82,6 +83,7 @@ function protocolMismatchOf(
 
 const WORKSPACE_MEMORY_PREFIX = "happy.happy-agent.workspace-memory.v1:";
 const STEM_CELLS_HINT_PREFIX = "happy.happy-agent.stem-cells-hint.v1:";
+const STORIES_HINT_PREFIX = "happy.happy-agent.stories-hint.v1:";
 const RETRY_MS = 1_000;
 const PRELOADED_SESSIONS = 12;
 
@@ -101,6 +103,32 @@ function workspaceMemoryPersistence(happyAgentId: string): HappyAgentWorkspaceMe
                 localStorage.setItem(key, JSON.stringify(document));
             } catch {
                 // Storage-denied windows retain the in-memory store for this run.
+            }
+        },
+    };
+}
+
+/**
+ * The connection's last Stories answer, so a reload draws the stories row's
+ * band at once instead of pushing the sidebar down when the daemon answers.
+ */
+function storiesHintPersistence(happyAgentId: string): HappyAgentStoriesHintPersistence {
+    const key = `${STORIES_HINT_PREFIX}${happyAgentId}`;
+    return {
+        read() {
+            try {
+                const value = localStorage.getItem(key);
+                return value === "on" ? true : value === "off" ? false : undefined;
+            } catch {
+                return undefined;
+            }
+        },
+        write(enabled) {
+            try {
+                if (enabled === undefined) localStorage.removeItem(key);
+                else localStorage.setItem(key, enabled ? "on" : "off");
+            } catch {
+                // Storage-denied windows wait for the daemon's answer.
             }
         },
     };
@@ -155,6 +183,7 @@ export interface HappyAgentSession {
     readonly taskSettings: () => import("happy-desktop-state").HappyAgentTaskSettingsStore;
     readonly surfaceSettings: () => import("happy-desktop-state").HappyAgentSurfaceSettingsStore;
     readonly stemCellsSettings: () => import("happy-desktop-state").HappyAgentStemCellsSettingsStore;
+    readonly stories: () => import("happy-desktop-state").HappyAgentStories;
     readonly workspace: HappyAgentWorkspaceStore;
     readonly instructions: HappyAgentInstructionsStore;
     readonly securityPolicy: HappyAgentSecurityPolicyStore;
@@ -475,6 +504,7 @@ export function happyAgentConnectionOpen(input: {
         modelPreferencePersistence: input.modelPreferencePersistence,
         workspaceMemoryPersistence: workspaceMemoryPersistence(input.happyAgentId),
         stemCellsHintPersistence: stemCellsHintPersistence(input.happyAgentId),
+        storiesHintPersistence: storiesHintPersistence(input.happyAgentId),
         catalogSource,
         profileActions: profile.actions,
         profilePhotoCodec: { open: imageCropOpen },
@@ -613,6 +643,7 @@ export function happyAgentConnectionOpen(input: {
                     taskSettings: () => client.taskSettings(),
                     surfaceSettings: () => client.surfaceSettings(),
                     stemCellsSettings: () => client.stemCellsSettings(),
+                    stories: () => client.stories(),
                     workspace: preparedWorkspace,
                     instructions: client.instructions(),
                     securityPolicy: client.securityPolicy(),

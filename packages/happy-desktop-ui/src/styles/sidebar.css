@@ -113,6 +113,13 @@
     transform: translateY(var(--happy-sidebar-header-optical-y, 0px));
 }
 
+.happy-sidebar__top-accessory {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    min-width: 0;
+}
+
 .happy-sidebar__header-accessory {
     display: flex;
     flex: none;

@@ -1,0 +1,69 @@
+/*
+ * StoryInlineCard — a story in its chat: a 162 × 288px canvas on the
+ * transcript's left edge, with its state and plain-text actions beside it.
+ */
+
+.happy-story-inline {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+}
+
+.happy-story-inline__frame {
+    display: flex;
+    flex: none;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--happy-radius-md);
+    background: var(--surface-ripple);
+    cursor: pointer;
+}
+
+.happy-story-inline__frame:disabled {
+    cursor: default;
+}
+
+.happy-story-inline__frame:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: 2px;
+}
+
+.happy-story-inline__canvas {
+    width: 100%;
+}
+
+.happy-story-inline__side {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding-top: 4px;
+}
+
+.happy-story-inline__label {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-story-inline__detail {
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.happy-story-inline__actions {
+    display: flex;
+    gap: 4px;
+    padding-top: 4px;
+}
+
+.happy-story-inline__error {
+    color: var(--text-destructive);
+    font-size: 13px;
+    line-height: 18px;
+}

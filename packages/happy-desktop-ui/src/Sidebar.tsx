@@ -503,6 +503,12 @@ export type SidebarProps = Omit<HTMLAttributes<HTMLElement>, "style"> & {
     footer?: ReactNode;
     /** Stable product context rendered between the 56px heading and scrollport. */
     headerAccessory?: ReactNode;
+    /**
+     * A band directly under the 56px heading, above the search field and every
+     * row, such as the stories row. It owns its height, so it never moves what
+     * is under it.
+     */
+    topAccessory?: ReactNode;
     /** Compact context anchored at the trailing edge of the 56px top heading. */
     headerTrailing?: ReactNode;
     /**
@@ -2639,6 +2645,7 @@ export function Sidebar(props: SidebarProps) {
         "foldControlPlacement",
         "foldControlReveal",
         "headerAccessory",
+        "topAccessory",
         "headerAction",
         "onHeaderMenuSelect",
         "headerTrailing",
@@ -4183,6 +4190,14 @@ export function Sidebar(props: SidebarProps) {
                     </button>
                 ) : null}
             </header>
+            {local.topAccessory ? (
+                <div
+                    className="happy-sidebar__top-accessory"
+                    data-happy-desktop-ui="sidebar-top-accessory"
+                >
+                    {local.topAccessory}
+                </div>
+            ) : null}
             {local.search ? (
                 // Escape empties a search that holds anything, which puts the
                 // sidebar's usual contents back.

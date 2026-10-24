@@ -26,6 +26,8 @@ export type HappyAgentArtifactType =
     | "sidebar"
     /** A sidebar Prioritizing proposes, shown in its chat as a sidebar the person can edit. */
     | "sidebar_proposal"
+    /** A person's story, shown in its chat as the story itself, never as its files. */
+    | "story"
     | "unknown";
 
 /**

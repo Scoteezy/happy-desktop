@@ -47,6 +47,11 @@ export interface ConversationInlinePages {
      */
     readonly proposalRender?: (artifactId: HappyAgentArtifactId, fit: InlinePageFit) => ReactNode;
     /**
+     * Draws a story as the story itself, from its latest version, with Post
+     * and Edit while it is the reader's draft; absent where the host has none.
+     */
+    readonly storyRender?: (artifactId: HappyAgentArtifactId, fit: InlinePageFit) => ReactNode;
+    /**
      * Opens an artifact beside the conversation: the numbered version a call
      * recorded, or without one its latest version, followed as it changes.
      */
@@ -99,7 +104,13 @@ function artifactStartsExpanded(
     type: HappyAgentArtifactType,
 ): boolean {
     if (display !== null) return display === "inline_expanded";
-    return type === "html" || type === "image" || type === "image_series" || type === "video";
+    return (
+        type === "html" ||
+        type === "image" ||
+        type === "image_series" ||
+        type === "video" ||
+        type === "story"
+    );
 }
 
 /**
@@ -121,10 +132,14 @@ export function conversationInlinePage(
     const presentation = entry.activity.tool.presentation;
     if (presentation?.type === "artifact") {
         const artifactId = presentation.artifactId;
+        // A story the host draws reads itself, and says for itself whether it
+        // is gone: its artifact is not readable to everyone who may read the
+        // chat it was drafted in.
+        const storyDrawn = presentation.artifactType === "story" && pages.storyRender !== undefined;
         const held = pages.artifacts.get(artifactId);
-        if (held === undefined) pages.artifactsRequest([artifactId]);
+        if (held === undefined && !storyDrawn) pages.artifactsRequest([artifactId]);
         const artifact = held?.type === "ready" ? held : undefined;
-        const gone = held?.type === "missing" || artifact?.status === "deleted";
+        const gone = !storyDrawn && (held?.type === "missing" || artifact?.status === "deleted");
         const type = artifact?.artifactType ?? presentation.artifactType;
         const live = artifact?.live;
         const site = artifact?.site;
@@ -142,16 +157,19 @@ export function conversationInlinePage(
                     : pages.artifactRender !== undefined && site?.type !== "unavailable"
                 : type === "sidebar_proposal"
                   ? pages.proposalRender !== undefined
-                  : type === "markdown" ||
-                    type === "image" ||
-                    type === "image_series" ||
-                    type === "video");
+                  : type === "story"
+                    ? pages.storyRender !== undefined
+                    : type === "markdown" ||
+                      type === "image" ||
+                      type === "image_series" ||
+                      type === "video");
         const placement = expandable ? "inline" : "title";
         if (
             placement === "inline" &&
             !collapsed &&
             type !== "html" &&
             type !== "sidebar_proposal" &&
+            type !== "story" &&
             artifact
         )
             pages.artifactsContentRequest([artifactId]);
@@ -185,7 +203,7 @@ export function conversationInlinePage(
         // the chat has nothing of it to show yet: it is read in the chat. So
         // is a proposal, which is answered where it was asked.
         const openSide =
-            gone || live || type === "sidebar_proposal"
+            gone || live || type === "sidebar_proposal" || type === "story"
                 ? undefined
                 : () => {
                       // Opened beside the chat, it is not also open in it; closing
@@ -196,39 +214,50 @@ export function conversationInlinePage(
         const liveRender = pages.liveRender;
         const render = pages.artifactRender;
         const proposalRender = pages.proposalRender;
+        const storyRender = pages.storyRender;
         const content = artifact?.content;
         const page =
-            !expandable || artifact === undefined
+            !expandable || (artifact === undefined && !storyDrawn)
                 ? undefined
-                : type === "sidebar_proposal" && proposalRender
+                : type === "story" && storyRender
                   ? {
-                        // One page across every version: it is edited in place,
-                        // and a revision redraws its rows without a new frame.
-                        key: `proposal:${artifactId}`,
-                        render: (fit: InlinePageFit) => proposalRender(artifactId, fit),
+                        // One page for the story's whole life: it follows the
+                        // latest version in place, posted or deleted.
+                        key: `story:${artifactId}`,
+                        render: (fit: InlinePageFit) => storyRender(artifactId, fit),
                     }
-                  : live && liveRender
+                  : type === "sidebar_proposal" && proposalRender
                     ? {
-                          key: `${artifactId}:${live.networkId}:${live.url}`,
-                          render: (fit: InlinePageFit) => liveRender(artifactId, live, fit),
+                          // One page across every version: it is edited in place,
+                          // and a revision redraws its rows without a new frame.
+                          key: `proposal:${artifactId}`,
+                          render: (fit: InlinePageFit) => proposalRender(artifactId, fit),
                       }
-                    : type === "html"
-                      ? site?.type === "opened" && render
-                          ? { key: site.url, render: (fit: InlinePageFit) => render(site.url, fit) }
-                          : undefined
-                      : content
-                        ? {
-                              key: `${artifactId}:${String(content.version)}`,
-                              render: (fit: InlinePageFit) => (
-                                  <ArtifactInlineContent
-                                      artifactType={type}
-                                      content={content}
-                                      fit={fit}
-                                      {...(openSide ? { onOpen: openSide } : {})}
-                                  />
-                              ),
-                          }
-                        : undefined;
+                    : live && liveRender
+                      ? {
+                            key: `${artifactId}:${live.networkId}:${live.url}`,
+                            render: (fit: InlinePageFit) => liveRender(artifactId, live, fit),
+                        }
+                      : type === "html"
+                        ? site?.type === "opened" && render
+                            ? {
+                                  key: site.url,
+                                  render: (fit: InlinePageFit) => render(site.url, fit),
+                              }
+                            : undefined
+                        : content
+                          ? {
+                                key: `${artifactId}:${String(content.version)}`,
+                                render: (fit: InlinePageFit) => (
+                                    <ArtifactInlineContent
+                                        artifactType={type}
+                                        content={content}
+                                        fit={fit}
+                                        {...(openSide ? { onOpen: openSide } : {})}
+                                    />
+                                ),
+                            }
+                          : undefined;
         return {
             geometry,
             props: {

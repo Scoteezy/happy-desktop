@@ -1,0 +1,158 @@
+/*
+ * StoriesRow — the band of author circles at the top of the sidebar.
+ * Band 88px high whatever it holds; circles 56px with a 48px photo inside, so
+ * a ring appearing, greying or going never moves the photo; 64px per author.
+ */
+
+.happy-stories-row {
+    display: flex;
+    flex: none;
+    height: 88px;
+    min-width: 0;
+}
+
+.happy-stories-row__viewport {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+
+.happy-stories-row__list {
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+    gap: 4px;
+    margin: 0;
+    padding: 6px var(--happy-panel-inset) 8px;
+    list-style: none;
+}
+
+.happy-stories-row__item {
+    position: relative;
+    display: flex;
+    flex: none;
+    width: 64px;
+}
+
+.happy-stories-row__author {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font: inherit;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+.happy-stories-row__ring {
+    display: flex;
+    flex: none;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+}
+
+.happy-stories-row__author[data-ring="unseen"] .happy-stories-row__ring {
+    box-shadow: inset 0 0 0 2px var(--story-ring-unseen);
+}
+
+.happy-stories-row__author[data-ring="seen"] .happy-stories-row__ring {
+    box-shadow: inset 0 0 0 1px var(--story-ring-seen);
+}
+
+.happy-stories-row__author:focus-visible {
+    outline: none;
+}
+
+.happy-stories-row__author:focus-visible .happy-stories-row__ring {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: 1px;
+}
+
+.happy-stories-row__photo {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--surface-ripple);
+}
+
+.happy-stories-row__photo img {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    background-size: cover;
+    object-fit: cover;
+}
+
+.happy-stories-row__initials {
+    display: flex;
+    color: var(--text-secondary);
+    font-family: var(--happy-font-ui);
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 16px;
+}
+
+.happy-stories-row__name {
+    display: block;
+    max-width: 64px;
+    overflow: hidden;
+    font-family: var(--happy-font-ui);
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.happy-stories-row__author:hover .happy-stories-row__name {
+    color: var(--text);
+}
+
+/* The "+" sits on the bottom-right of the person's own circle, cut out of it
+   by a ring of the sidebar's own background. */
+.happy-stories-row__add {
+    /* Laid over its parent rather than in its flow, so it is placed by position. */
+    position: absolute;
+    top: 38px;
+    left: 40px;
+    display: flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    padding: 0;
+    border: 2px solid var(--groupped-background);
+    border-radius: 50%;
+    background: var(--story-ring-unseen);
+    color: var(--story-ink);
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+}
+
+.happy-stories-row__add:focus-visible {
+    outline: 2px solid var(--surface-selected);
+    outline-offset: 1px;
+}

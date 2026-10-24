@@ -39,6 +39,7 @@ import {
     happyAgentThinkingLabel,
     experimentsStoreNoop,
     happyAgentStemCellsSettingsStoreNoop,
+    happyAgentStoriesSettingsStoreNoop,
     projectsVisibilityStoreNoop,
     stemCellAnimationStoreNoop,
     gptLiveStoreNoop,
@@ -70,6 +71,7 @@ import {
     HappyAgentGeneralSettings,
     HappyAgentExperimentalSettings,
     HappyAgentStemCellsSettings,
+    HappyAgentStoriesSettings,
     HappyAgentDebugLogPanel,
     HappyAgentDebugSettings,
     HappyAgentFileTierSettings,
@@ -729,6 +731,9 @@ export function AppHappyAgentSettingsView(props: AppHappyAgentSettingsViewProps)
                     />
                     {directory.happyAgents.map((entry) => (
                         <AppHappyAgentStemCellsSettings key={entry.id} entry={entry} />
+                    ))}
+                    {directory.happyAgents.map((entry) => (
+                        <AppHappyAgentStoriesSettings key={entry.id} entry={entry} />
                     ))}
                 </>
             ) : section === "voice" ? (
@@ -1440,6 +1445,41 @@ function AppHappyAgentStemCellsSettings(props: { readonly entry: AppHappyAgentEn
             unavailable={unavailable}
             onEnabledChange={(enabled) => {
                 if (availability?.online) store.stemCellsUpdate(enabled);
+            }}
+        />
+    );
+}
+
+/** Stories, like Stem Cells, are each connection's authenticated person's own choice. */
+function AppHappyAgentStoriesSettings(props: { readonly entry: AppHappyAgentEntry }) {
+    const { entry } = props;
+    const store = entry.session?.stories?.().settings() ?? happyAgentStoriesSettingsStoreNoop;
+    const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
+    const availability = entry.session
+        ? happyAgentAvailabilityProject(entry.session.connection.get(), true, {
+              status: entry.status,
+              ...(entry.message === undefined ? {} : { message: entry.message }),
+          })
+        : undefined;
+    const unavailable =
+        availability?.online === false
+            ? (availability.refusal ?? availability.message)
+            : !entry.session
+              ? "This connection is unavailable."
+              : snapshot.status === "ready" && !snapshot.online
+                ? "Reconnecting to this connection’s user settings."
+                : undefined;
+    return (
+        <HappyAgentStoriesSettings
+            connectionLabel={entry.label}
+            status={snapshot.status}
+            enabled={snapshot.status === "ready" && snapshot.storiesEnabled}
+            saving={snapshot.status === "ready" && snapshot.saving}
+            error={snapshot.status !== "unsupported" ? snapshot.error?.message : undefined}
+            saveError={snapshot.status === "ready" ? snapshot.saveError?.message : undefined}
+            unavailable={unavailable}
+            onEnabledChange={(enabled) => {
+                if (availability?.online) store.storiesUpdate(enabled);
             }}
         />
     );

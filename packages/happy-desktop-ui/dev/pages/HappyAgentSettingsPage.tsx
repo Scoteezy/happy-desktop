@@ -8,6 +8,7 @@ import {
     HappyAgentGeneralSettings,
     HappyAgentExperimentalSettings,
     HappyAgentStemCellsSettings,
+    HappyAgentStoriesSettings,
     HappyAgentInstructionsSettings,
     HappyAgentMobileSettings,
     HappyAgentProviderSettings,
@@ -736,6 +737,12 @@ export function HappyAgentSettingsBlueprintPage() {
                         status="ready"
                         enabled={false}
                         saveError="Your preference could not be saved."
+                        onEnabledChange={noop}
+                    />
+                    <HappyAgentStoriesSettings
+                        connectionLabel="This Mac"
+                        status="ready"
+                        enabled={true}
                         onEnabledChange={noop}
                     />
                 </HappyAgentSettingsShell>

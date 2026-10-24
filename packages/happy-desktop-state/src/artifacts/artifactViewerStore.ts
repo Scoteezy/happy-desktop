@@ -378,6 +378,8 @@ export function happyAgentArtifactViewerStoreCreate(
                 inlineUrl = url;
                 return { type: "document", document: entry, inlineUrl: url };
             }
+            // A story is drawn from its story object, never from its files.
+            case "story":
             case "unknown":
                 return { type: "files" };
         }

@@ -158,6 +158,7 @@ import {
     commandPaletteStoreNoop,
     experimentsStoreNoop,
     happyAgentStemCellsSettingsStoreNoop,
+    happyAgentStoriesSettingsStoreNoop,
     projectsVisibilityStoreNoop,
     stemCellAnimationStoreNoop,
     happyAgentVersionAtLeast,
@@ -331,6 +332,11 @@ import {
     type HappyAgentSidebarProposalsStore,
 } from "happy-desktop-state";
 import { HappyAgentSidebarProposal } from "./components/HappyAgentSidebarProposal";
+import {
+    HappyAgentStoriesRow,
+    HappyAgentStoriesScreens,
+    HappyAgentStoryInline,
+} from "./components/HappyAgentStories";
 import {
     happyAgentSpaceFocused,
     happyAgentSpaceHappyIs,
@@ -622,6 +628,8 @@ export interface AppHappyAgentSession {
     /** This connection's authenticated person's Surface membership preference. */
     readonly surfaceSettings?: () => import("happy-desktop-state").HappyAgentSurfaceSettingsStore;
     readonly stemCellsSettings?: () => import("happy-desktop-state").HappyAgentStemCellsSettingsStore;
+    /** Stories on this connection: its setting, the row, stickers and the editor. */
+    readonly stories?: () => import("happy-desktop-state").HappyAgentStories;
     /** This Happy Agent's machine-wide instructions, as the settings window edits them. */
     readonly instructions?: HappyAgentInstructionsStore;
     /** This Happy Agent's machine-wide permission-review policy. */
@@ -3703,6 +3711,27 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
               ? { ...rest, icon: "branch" as const }
               : rest;
     };
+    // Stories are an experiment each person turns on. Until the daemon answers,
+    // the device's last answer decides, so the row's band is there (or not)
+    // from the first frame and never pushes the sidebar down afterwards.
+    const storiesHub = active?.session?.stories?.();
+    const storiesSettingsStore = storiesHub?.settings() ?? happyAgentStoriesSettingsStoreNoop;
+    const storiesSettings = useSyncExternalStore(
+        storiesSettingsStore.subscribe,
+        storiesSettingsStore.get,
+        storiesSettingsStore.get,
+    );
+    const storiesOn =
+        storiesSettings.status === "ready"
+            ? storiesSettings.storiesEnabled
+            : storiesSettings.status === "loading" && storiesSettings.hint === true;
+    const stories = storiesOn ? storiesHub : undefined;
+    const storiesRow = stories ? <HappyAgentStoriesRow hub={stories} /> : undefined;
+    const storyRender = stories
+        ? (artifactId: string, fit: InlinePageFit) => (
+              <HappyAgentStoryInline fit={fit} hub={stories} storyId={artifactId} />
+          )
+        : undefined;
     // A proposal Prioritizing makes is drawn in its chat by the sidebar's own rows.
     const sidebarProposalsStore = spacesEnabled ? active?.session?.sidebarProposals : undefined;
     const sidebarProposal = sidebarProposalsStore
@@ -3848,6 +3877,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 // The integrated header holds the toggle in this lane, so the
                 // spaces sidebar never shows the wordmark.
                 brand={false}
+                {...(storiesRow ? { topAccessory: storiesRow } : {})}
                 {...(spaces.stemCellError
                     ? {
                           headerAccessory: (
@@ -4018,6 +4048,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             // The integrated band holds the toggle and search in this lane, so
             // the product mark stands down.
             brand={false}
+            {...(storiesRow ? { topAccessory: storiesRow } : {})}
             footer={sidebarFooter}
             headerAccessory={
                 // Reachability is the footer's line, not this heading's. What
@@ -4730,6 +4761,7 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                 <HappyAgentWorkspaceSurface
                     {...(referenceSurfaces ? { referenceSurfaces } : {})}
                     {...(sidebarProposal ? { sidebarProposal } : {})}
+                    {...(storyRender ? { storyRender } : {})}
                     availability={
                         activeAvailability ??
                         happyAgentAvailabilityProject(active.session.connection.get(), true, {
@@ -4925,6 +4957,18 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
                     {...(activeAvailability?.refusal === undefined
                         ? {}
                         : { unavailable: activeAvailability.refusal })}
+                />
+            ) : null}
+            {/* Stories' viewer and editor fill the window over whatever it shows. */}
+            {stories && active ? (
+                <HappyAgentStoriesScreens
+                    hub={stories}
+                    {...(props.chatId !== undefined ? { agentId: props.chatId } : {})}
+                    onLinkOpen={props.onExternalLinkOpen ?? openExternalLink}
+                    onSourceOpen={(agentId) => {
+                        const groupId = chatGroupFind(active.projects ?? NO_PROJECTS, agentId);
+                        if (groupId !== undefined) props.onChatSelect(active.id, groupId, agentId);
+                    }}
                 />
             ) : null}
             {/* Making a Surface is the sidebar's, so it belongs to the window
@@ -6487,6 +6531,8 @@ interface HappyAgentWorkspaceSurfaceProps {
     referenceSurfaces?: MessageReferenceSurfaces;
     /** Draws a sidebar proposal in Prioritizing's chat; absent without Spaces. */
     sidebarProposal?: (artifactId: string, fit: InlinePageFit) => ReactNode;
+    /** Draws a story an agent drafted, in its chat; absent while Stories are off. */
+    storyRender?: (artifactId: string, fit: InlinePageFit) => ReactNode;
     /** The machine's artifacts, present only once it has said it keeps them. */
     artifacts?: HappyAgentArtifacts;
     /** Shows an HTML artifact opened beside the conversation as a site of its own. */
@@ -7326,6 +7372,7 @@ function HappyAgentWorkspaceSurface(props: HappyAgentWorkspaceSurfaceProps) {
                     ...(props.artifactPage ? { artifactPage: props.artifactPage } : {}),
                     ...(props.browserContent ? { browserContent: props.browserContent } : {}),
                     ...(props.sidebarProposal ? { proposalRender: props.sidebarProposal } : {}),
+                    ...(props.storyRender ? { storyRender: props.storyRender } : {}),
                     browserConnectionId: props.browserConnectionId,
                 }}
                 referenceEntities={messageReferenceEntities(workspace.list)}
@@ -8816,6 +8863,8 @@ function HappyAgentConversationBody(props: {
         readonly browserContent?: BrowserContentRenderer;
         /** Draws a sidebar proposal the transcript shows. */
         readonly proposalRender?: (artifactId: string, fit: InlinePageFit) => ReactNode;
+        /** Draws a story the transcript shows. */
+        readonly storyRender?: (artifactId: string, fit: InlinePageFit) => ReactNode;
         readonly browserConnectionId: string | null;
     };
     /** The agents, workspaces, and projects the transcript's references can name. */
@@ -9276,6 +9325,8 @@ function HappyAgentConversationSurface(props: {
         readonly browserContent?: BrowserContentRenderer;
         /** Draws a sidebar proposal the transcript shows. */
         readonly proposalRender?: (artifactId: string, fit: InlinePageFit) => ReactNode;
+        /** Draws a story the transcript shows. */
+        readonly storyRender?: (artifactId: string, fit: InlinePageFit) => ReactNode;
         readonly browserConnectionId: string | null;
     };
     /** The agents, workspaces, and projects the transcript's references can name. */
@@ -9459,6 +9510,7 @@ function HappyAgentConversationSurface(props: {
               ...(inlineEngines.proposalRender
                   ? { proposalRender: inlineEngines.proposalRender }
                   : {}),
+              ...(inlineEngines.storyRender ? { storyRender: inlineEngines.storyRender } : {}),
               browserConnectionId: inlineEngines.browserConnectionId,
               workspaceId: props.groupId,
               agentId: conversation.conversationId,

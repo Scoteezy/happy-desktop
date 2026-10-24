@@ -51,6 +51,8 @@ export function ArtifactTypeGlyph(props: { type: HappyAgentArtifactType; size: 1
         case "sidebar":
         case "sidebar_proposal":
             return <Icon name="sidebar-expand" size={props.size} />;
+        case "story":
+            return <Ionicon name="aperture-outline" size={props.size} />;
         case "unknown":
             return <Icon name="package" size={props.size} />;
     }

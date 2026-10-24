@@ -337,6 +337,22 @@
        where a long name and its path sprawl away from the column beneath them. */
     --happy-chat-heading-measure: 1120px;
     --happy-z-overlay: 1000;
+    /* Stories are watched on black in every appearance, as photos are: the
+       viewer and the editor are a dark room, and their ink is white. The ring
+       of an author with something unseen is Happy teal; a seen one is a thin
+       grey hairline. */
+    --story-backdrop: #000000;
+    --story-stage: #111111;
+    --story-ink: #ffffff;
+    --story-ink-secondary: rgb(255 255 255 / 0.72);
+    --story-ink-faint: rgb(255 255 255 / 0.32);
+    --story-control: rgb(255 255 255 / 0.14);
+    --story-control-hover: rgb(255 255 255 / 0.24);
+    --story-scrim: rgb(0 0 0 / 0.56);
+    --story-sheet: #1c1c1e;
+    --story-danger: var(--status-error);
+    --story-ring-unseen: var(--text-link);
+    --story-ring-seen: var(--file-path-text);
     /* Window chrome: what the window reports about itself, which has to be
        legible over whatever the window is showing — including a modal. */
     --happy-z-window-chrome: 1100;
@@ -530,6 +546,10 @@
         --happy-calendar-event-chosen: var(--text-link);
         --happy-calendar-selection: color-mix(in srgb, var(--text-link) 12%, transparent);
         --happy-calendar-today: var(--text-link);
+        /* Declared again here, so they resolve against the dark palette. */
+        --story-danger: var(--status-error);
+        --story-ring-unseen: var(--text-link);
+        --story-ring-seen: var(--file-path-text);
     }
 }
 
@@ -721,6 +741,10 @@
     --happy-calendar-event-chosen: var(--text-link);
     --happy-calendar-selection: color-mix(in srgb, var(--text-link) 12%, transparent);
     --happy-calendar-today: var(--text-link);
+    /* Declared again here, so they resolve against the dark palette. */
+    --story-danger: var(--status-error);
+    --story-ring-unseen: var(--text-link);
+    --story-ring-seen: var(--file-path-text);
 }
 
 /* Midnight: the dark palette taken down to a neutral near-black. Surfaces step
