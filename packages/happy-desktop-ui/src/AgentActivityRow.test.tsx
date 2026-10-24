@@ -482,26 +482,25 @@ it("reads a call and a message in their own few words, naming the agents they me
             `[data-testid="${row}"] [data-happy-desktop-ui="${name}"]`,
         );
 
-    // The description stands where the command did, in prose type.
+    // The description stands where the command did.
     await vi.waitFor(() =>
         expect(part("described", "agent-activity-text")?.textContent).toBe("Run the UI tests"),
     );
     expect(part("described", "agent-activity-verb")?.textContent).toBe("Bash");
     const call = part("described", "agent-activity-call")!;
     expect(call.dataset.described).toBe("");
-    expect(getComputedStyle(part("described", "agent-activity-text")!).fontFamily).not.toContain(
-        "mono",
-    );
     await vi.waitFor(() =>
         expect(part("subtask", "agent-activity-text")?.textContent).toBe("Fix trace folding"),
     );
     expect(part("subtask", "agent-activity-verb")?.textContent).toBe("Subtask");
 
     // The message says what it is, and the agent it names reads as that agent:
-    // not underlined until the pointer is on it, and opened from there.
+    // not underlined until the pointer is on it, and opened from there. Naming
+    // its sender, it does not name it twice.
     expect(part("message", "agent-activity-text")?.textContent).toBe(
         "Tool descriptions finished the daemon work",
     );
+    expect(part("message", "agent-activity-verb")?.textContent).toBe("");
     const mention = part("message", "agent-activity-agent-reference")!;
     expect(getComputedStyle(mention).textDecorationLine).toBe("none");
     mention.click();

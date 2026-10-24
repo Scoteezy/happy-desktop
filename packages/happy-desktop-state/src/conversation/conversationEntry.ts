@@ -960,6 +960,8 @@ export interface ConversationTurnStatusEntry {
     readonly tools?: number;
     /** The run this footer settles. */
     readonly runId?: string;
+    /** The open turn this footer closes, when it offers to hide the turn's steps. */
+    readonly agentTrace?: AgentTurnTraceSummary;
 }
 
 /**

@@ -76,6 +76,7 @@ interface ConversationContext {
     readonly pendingUserInputs: readonly HappyAgentUserInputRequest[];
     readonly answeredUserInputs: readonly HappyAgentAnsweredUserInput[];
     readonly expandedGroupIds: ReadonlySet<string>;
+    readonly settlingGroupIds?: ReadonlySet<string>;
     readonly subagents: readonly SubagentSummary[];
     readonly sentImages?: HappyAgentConversationInput["sentImages"];
     readonly agentIdentities?: HappyAgentConversationInput["agentIdentities"];
@@ -110,6 +111,11 @@ export interface HappyAgentConversationInput {
     readonly pendingUserInputs: readonly HappyAgentUserInputRequest[];
     readonly answeredUserInputs: readonly HappyAgentAnsweredUserInput[];
     readonly expandedGroupIds: ReadonlySet<string>;
+    /**
+     * Of those, the ones open only because the reader watched them finish.
+     * Their rows keep the shape they had while the turn ran.
+     */
+    readonly settlingGroupIds?: ReadonlySet<string>;
     /** Children delegated from this session, matched to the call that spawned each. */
     readonly subagents: readonly SubagentSummary[];
     /**
@@ -185,6 +191,9 @@ export function happyAgentConversationProject(
         pendingUserInputs: input.pendingUserInputs,
         answeredUserInputs: input.answeredUserInputs,
         expandedGroupIds: input.expandedGroupIds,
+        ...(input.settlingGroupIds === undefined
+            ? {}
+            : { settlingGroupIds: input.settlingGroupIds }),
         subagents: input.subagents,
         ...(input.sentImages === undefined ? {} : { sentImages: input.sentImages }),
         ...(input.agentIdentities === undefined ? {} : { agentIdentities: input.agentIdentities }),
@@ -343,6 +352,8 @@ function senderOf(
     return description === undefined ? {} : { agentName: description };
 }
 
+const NO_GROUP_IDS: ReadonlySet<string> = new Set();
+
 function conversationContextEqual(left: ConversationContext, right: ConversationContext): boolean {
     return (
         left.sessionId === right.sessionId &&
@@ -353,6 +364,7 @@ function conversationContextEqual(left: ConversationContext, right: Conversation
         left.agentIdentities === right.agentIdentities &&
         listEqual(left.ephemeral, right.ephemeral, referenceEqual) &&
         setEqual(left.expandedGroupIds, right.expandedGroupIds) &&
+        setEqual(left.settlingGroupIds ?? NO_GROUP_IDS, right.settlingGroupIds ?? NO_GROUP_IDS) &&
         listEqual(left.pendingUserInputs, right.pendingUserInputs, userInputRequestEqual) &&
         listEqual(left.answeredUserInputs, right.answeredUserInputs, answeredUserInputEqual) &&
         listEqual(left.subagents, right.subagents, subagentEqual)
@@ -1165,14 +1177,25 @@ function happyAgentConnectGroupProject(
      * prose.
      */
     if (input.expandedGroupIds.has(groupEnd.groupId)) {
+        const quiet = input.settlingGroupIds?.has(groupEnd.groupId) === true;
         for (let index = 0; index < entries.length; index += 1) {
-            const traced = withTrace(
-                entries[index]!,
-                index === actualAnchorIndex ? turnTrace : { ...turnTrace, foldsAway: true },
-            );
+            const traced = withTrace(entries[index]!, {
+                ...turnTrace,
+                ...(index === actualAnchorIndex ? {} : { foldsAway: true as const }),
+                ...(quiet ? { quiet: true as const } : {}),
+            });
             if (!traced) continue;
             entries[index] = traced;
             break;
+        }
+        /* Watched to the end, the turn keeps the rows it ran with: its answer
+           gains no header, and the footer that arrived with the end offers to
+           hide the steps instead. */
+        const status = entries[statusIndex];
+        if (quiet) {
+            if (status?.kind === "turnStatus")
+                entries[statusIndex] = { ...status, agentTrace: { ...turnTrace, quiet: true } };
+            return entries;
         }
         /* It also rides the row the folded turn would keep, so "Hide traces"
            sits where "View traces" was: opening and closing again is two

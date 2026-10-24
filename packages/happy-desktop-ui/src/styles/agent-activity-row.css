@@ -460,12 +460,6 @@
     font-size: 13px;
 }
 
-/* A call that said what it does reads in its own words, which are prose. */
-.happy-agent-activity[data-single-line][data-described] .happy-agent-activity__text {
-    font-family: var(--happy-font-ui);
-    font-size: 14px;
-}
-
 /* An agent a message names: its name, marked as something to open only under
    the pointer, since a run of these rows would otherwise be a run of links. */
 .happy-agent-activity__agent-reference {

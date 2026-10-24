@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import {
     happyAgentChatStoreCreate,
     type ChatElement,
@@ -159,7 +159,7 @@ function renderChat(history: readonly ChatElement[]) {
                     entries={snapshot.entries}
                     expandedTurnIds={snapshot.expandedTurnIds}
                     motion="calm"
-                    onTraceSettle={store.turnTraceSettle}
+                    onTracesSeen={store.turnTracesSeen}
                     onTraceToggle={store.turnTraceToggle}
                     running={snapshot.runStatus === "running"}
                 />
@@ -194,6 +194,22 @@ function rowsOf(viewport: HTMLElement) {
 function rowWith(viewport: HTMLElement, text: string) {
     return rowsOf(viewport).find((row) => row.textContent?.includes(text));
 }
+/**
+ * Where a row's content starts: its first glyph, and what that glyph begins.
+ * A row that gains a header, or remounts its body somewhere else, moves this
+ * even when the row's own box stays put.
+ */
+function rowContent(row: HTMLElement): string {
+    const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const text = node.textContent?.trim();
+        if (!text) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        return `${text.slice(0, 12)}@${String(Math.round(range.getBoundingClientRect().top))}`;
+    }
+    return "";
+}
 /** Every row at least partly on screen, each a row React keeps by key, with its top edge. */
 function visibleRows(viewport: HTMLElement): Map<HTMLElement, number> {
     const bounds = viewport.getBoundingClientRect();
@@ -204,6 +220,10 @@ function visibleRows(viewport: HTMLElement): Map<HTMLElement, number> {
         rows.set(row, rect.top);
     }
     return rows;
+}
+/** The content of every row on screen, as `rowContent` reads it. */
+function visibleContent(viewport: HTMLElement): Map<HTMLElement, string> {
+    return new Map([...visibleRows(viewport).keys()].map((row) => [row, rowContent(row)]));
 }
 const label = (row: HTMLElement) => row.textContent?.slice(0, 60);
 
@@ -225,6 +245,7 @@ it("keeps every row of a steered turn where it was until all of it scrolls away"
     viewport.scrollTop -= 120;
     await frames();
     const watched = visibleRows(viewport);
+    const watchedContent = visibleContent(viewport);
     expect([...watched.keys()].some((row) => row.textContent?.includes("live-step-0"))).toBe(true);
 
     push(end("live", "steering"), prompt("steer", "Actually, stop after the tests."));
@@ -233,6 +254,10 @@ it("keeps every row of a steered turn where it was until all of it scrolls away"
     const after = visibleRows(viewport);
     for (const [row, top] of watched)
         expect([label(row), row.isConnected, after.get(row)]).toEqual([label(row), true, top]);
+    // Nor does anything inside them: no row gains a header for the turn ending.
+    const afterContent = visibleContent(viewport);
+    for (const [row, content] of watchedContent)
+        expect([label(row), afterContent.get(row)]).toEqual([label(row), content]);
 
     // The steered work goes on below; the reader follows it down. Step by
     // step nothing on screen jumps, and the turn folds once it is all gone.
@@ -266,6 +291,42 @@ it("keeps every row of a steered turn where it was until all of it scrolls away"
     // A turn the steer cut short has no answer, so its last step stays standing for it.
     expect(rowWith(viewport, "live-step-0")).toBeUndefined();
     expect(rowWith(viewport, "live-step-7")?.textContent).toContain("View traces");
+});
+
+it("changes nothing on screen when a watched turn finishes with an answer", async () => {
+    const { view, store, push } = renderChat([...turn("a", 6), ...turn("b", 6)]);
+    await view.ready();
+    await frames();
+    const viewport = viewportOf(view);
+    push(prompt("live", "Prompt live: run every step."));
+    for (let index = 0; index < 6; index += 1) push(step("live", index));
+    push(answer("live", `Answer live. ${"Every step passed and nothing moved. ".repeat(4)}`));
+    await frames();
+    viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -60 }));
+    viewport.scrollTop -= 60;
+    await frames();
+    const watched = visibleContent(viewport);
+    expect([...watched.keys()].some((row) => row.textContent?.includes("Answer live"))).toBe(true);
+
+    push(end("live"));
+    await frames();
+    expect(store.get().expandedTurnIds).toEqual(new Set(["live"]));
+    const after = visibleContent(viewport);
+    for (const [row, content] of watched)
+        expect([label(row), row.isConnected, after.get(row)]).toEqual([label(row), true, content]);
+    // The footer the end brought offers to hide the steps.
+    // Laid out once idle time reaches it, like any row arriving below the reader.
+    viewport.scrollTop = viewport.scrollHeight;
+    await vi.waitFor(() =>
+        expect(
+            rowsOf(viewport).findLast((row) => row.textContent?.includes("Completed"))?.textContent,
+        ).toContain("Hide traces"),
+    );
+    const footer = rowsOf(viewport).findLast((row) => row.textContent?.includes("Completed"))!;
+    footer.querySelector<HTMLButtonElement>("button[aria-expanded]")!.click();
+    await frames();
+    expect(store.get().expandedTurnIds.size).toBe(0);
+    expect(rowWith(viewport, "live-step-0")).toBeUndefined();
 });
 
 it("keeps the rows of a turn steered at the bottom on screen while it follows", async () => {

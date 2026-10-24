@@ -224,7 +224,12 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
         /* A delegated child opens its turn the same way a tool call does, so it
            carries the identity header and the trace control when it is the
            first agent-owned row of the turn. */
-        const traceRow = traceControl(entry.agentTrace, props.traceOpen, props.onTraceToggle);
+        /* A quiet control waits for a header to ride: appended below, it
+           would grow a row the reader is looking at. */
+        const traceRow =
+            entry.agentTrace?.quiet && !props.activityAuthor
+                ? undefined
+                : traceControl(entry.agentTrace, props.traceOpen, props.onTraceToggle);
         const activity = (
             <DelegatedAgentActivity
                 child={entry.child}
@@ -348,6 +353,7 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
                 finalContextTokens={entry.finalContextTokens}
                 reason={entry.reason}
                 status={entry.status}
+                accessory={traceControl(entry.agentTrace, props.traceOpen, props.onTraceToggle)}
                 {...(props.activityAuthor ? {} : { style: props.style })}
             />
         );
@@ -547,7 +553,11 @@ export function ConversationEntryView(props: ConversationEntryViewProps) {
     );
     const trace = message.agentTrace;
     const traceCollapsible = traceSettled(trace);
-    const traceRow = traceControl(trace, props.traceOpen, props.onTraceToggle);
+    /* A grouped row has no header to carry a quiet control in. */
+    const traceRow =
+        trace?.quiet && props.grouped
+            ? undefined
+            : traceControl(trace, props.traceOpen, props.onTraceToggle);
     return (
         <Message
             agent={author?.kind === "agent"}

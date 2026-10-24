@@ -39,7 +39,7 @@ export function conversationEntryResumesAfterActivity(
         entry?.kind === "message" &&
         // A row carrying the trace control leads with its own header, as it
         // does folded, so opening the turn moves nothing in it.
-        entry.message.agentTrace === undefined &&
+        (entry.message.agentTrace === undefined || entry.message.agentTrace.quiet === true) &&
         ((previous?.kind === "agentActivity" && previous.activity.kind === "tool") ||
             // A quoted answer is as tight as a tool row.
             answeredQuestionRow(previous))
@@ -75,7 +75,7 @@ export function conversationMessageGrouped(
     /* A row carrying a turn's trace control shows it in its header, so it
        keeps one: an open turn's answer offers "Hide traces" right where the
        folded one offered "View traces". */
-    if (entry.message.agentTrace) return false;
+    if (entry.message.agentTrace && !entry.message.agentTrace.quiet) return false;
     if (entry.message.sender?.kind === "agent") {
         const preceding = entries[index - 1];
         if (
@@ -142,7 +142,7 @@ export function conversationAgentRowStartsGroup(
 ): boolean {
     const entry = entries[index];
     // The trace control rides the header, so a row carrying it opens one.
-    if (entry?.kind === "agentActivity" && entry.agentTrace) return true;
+    if (entry?.kind === "agentActivity" && entry.agentTrace && !entry.agentTrace.quiet) return true;
     return agentOwnedRow(entry) && !agentGroupContinues(entries, index);
 }
 

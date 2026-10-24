@@ -1,4 +1,8 @@
-import type { HappyAgentChatSnapshot, HappyAgentChatStore } from "./happyAgentChatStore.js";
+import type {
+    HappyAgentChatSnapshot,
+    HappyAgentChatStore,
+    HappyAgentTraceViewer,
+} from "./happyAgentChatStore.js";
 import type { HappyAgentChatHandle } from "./happyAgentClient.js";
 
 /** One chat read beside another: loading until its transcript store arrives. */
@@ -16,7 +20,7 @@ export interface HappyAgentPanelChatStore {
     subscribe(listener: () => void): () => void;
     /** Opens or closes one finished turn's intermediate steps. */
     turnTraceToggle(turnId: string): void;
-    turnTraceSettle(turnId: string): void;
+    turnTracesSeen(viewer: HappyAgentTraceViewer, turnIds: ReadonlySet<string>): void;
 }
 
 /** The panel owns a chat tab's store for as long as the tab is open. */
@@ -79,8 +83,8 @@ export function happyAgentPanelChatOpen(
         turnTraceToggle(turnId) {
             store?.turnTraceToggle(turnId);
         },
-        turnTraceSettle(turnId) {
-            store?.turnTraceSettle(turnId);
+        turnTracesSeen(viewer, turnIds) {
+            store?.turnTracesSeen(viewer, turnIds);
         },
         [Symbol.dispose]() {
             if (disposed) return;

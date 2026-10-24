@@ -70,6 +70,12 @@ export interface AgentTurnTraceSummary {
      * so what stays put is what is above it.
      */
     readonly foldsAway?: true;
+    /**
+     * The turn is open only because the reader watched it finish. Its rows
+     * carry this so the view knows where the turn is, but none of them changes
+     * shape for it: a control appears only where a row already has room.
+     */
+    readonly quiet?: true;
 }
 
 export class UserError extends Error {

@@ -66,6 +66,7 @@ import type {
     HappyAgentChatSnapshot,
     HappyAgentChatStore,
     HappyAgentOpenImage,
+    HappyAgentTraceViewer,
     HappyAgentWorkingWait,
 } from "./happyAgentChatStore.js";
 import {
@@ -2110,8 +2111,8 @@ export interface HappyAgentWorkspaceStore {
     projectInitialPromptSubmit(): Promise<void>;
     /** Shows or hides one finished turn's intermediate entries in the transcript. */
     turnTraceToggle(turnId: string): void;
-    /** Folds a turn left open while the reader watched it finish, once it is off screen. */
-    turnTraceSettle(turnId: string): void;
+    /** Reports the watched-to-the-end turns one view has on screen; see `HappyAgentChatStore`. */
+    turnTracesSeen(viewer: HappyAgentTraceViewer, turnIds: ReadonlySet<string>): void;
     /**
      * Records where one conversation is being read, so returning to it resumes
      * there rather than at the newest message. Kept for the workspace's lifetime
@@ -8595,7 +8596,7 @@ export function happyAgentWorkspaceStoreCreate(
             recompute();
         },
         turnTraceToggle: (turnId) => chatStore?.turnTraceToggle(turnId),
-        turnTraceSettle: (turnId) => chatStore?.turnTraceSettle(turnId),
+        turnTracesSeen: (viewer, turnIds) => chatStore?.turnTracesSeen(viewer, turnIds),
         conversationScrollUpdate(conversationId, position) {
             // Deliberately no `recompute()`. The transcript is the one thing
             // that already knows this position — it just reported it — and

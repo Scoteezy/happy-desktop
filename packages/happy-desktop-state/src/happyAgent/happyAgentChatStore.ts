@@ -750,12 +750,21 @@ export interface HappyAgentChatStore {
     reasoningToggle(): void;
     turnTraceToggle(turnId: string): void;
     /**
-     * Folds a turn that was left open because the reader watched it finish,
-     * once its rows have all left the screen. A turn the reader opened stays
-     * open.
+     * Tells which of the turns left open because the reader watched them
+     * finish one view of this chat has on screen. Each such turn folds once no
+     * view showing the chat has any of it on screen; a turn the reader opened
+     * stays open.
      */
-    turnTraceSettle(turnId: string): void;
+    turnTracesSeen(viewer: HappyAgentTraceViewer, turnIds: ReadonlySet<string>): void;
     [Symbol.dispose](): void;
+}
+
+/**
+ * One view of a chat that reports what it has on screen. Several views can
+ * show the same chat; one that is gone no longer holds a turn open.
+ */
+export interface HappyAgentTraceViewer {
+    live(): boolean;
 }
 
 export interface HappyAgentChatDeps {
@@ -952,6 +961,8 @@ export function happyAgentChatStoreCreate(
     /* Groups seen finished, and seen still running, in the transcript. */
     const endedGroupIds = new Set<string>();
     const runningGroupIds = new Set<string>();
+    /* What each view showing this chat last reported on screen. */
+    const traceViewers = new Map<HappyAgentTraceViewer, ReadonlySet<string>>();
     const turnsOpenPublish = (): void => {
         expandedTurnIds =
             settlingTurnIds.size === 0
@@ -1058,6 +1069,7 @@ export function happyAgentChatStoreCreate(
                       pendingUserInputs,
                       answeredUserInputs: transcriptAnsweredUserInputs,
                       expandedGroupIds: expandedTurnIds,
+                      settlingGroupIds: settlingTurnIds,
                       subagents,
                       agentIdentities: senders,
                   });
@@ -1709,10 +1721,21 @@ export function happyAgentChatStoreCreate(
             turnsOpenPublish();
             commit();
         },
-        turnTraceSettle(turnId) {
-            if (!settlingTurnIds.has(turnId)) return;
-            const settling = new Set(settlingTurnIds);
-            settling.delete(turnId);
+        turnTracesSeen(viewer, turnIds) {
+            traceViewers.set(viewer, turnIds);
+            if (settlingTurnIds.size === 0) return;
+            const seen = new Set<string>();
+            for (const [other, ids] of traceViewers) {
+                if (!other.live()) {
+                    traceViewers.delete(other);
+                    continue;
+                }
+                for (const id of ids) seen.add(id);
+            }
+            let settling: Set<string> | undefined;
+            for (const id of settlingTurnIds)
+                if (!seen.has(id)) (settling ??= new Set(settlingTurnIds)).delete(id);
+            if (!settling) return;
             settlingTurnIds = settling;
             turnsOpenPublish();
             commit();

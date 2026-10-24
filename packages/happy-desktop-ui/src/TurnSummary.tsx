@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { partitionComponentProps } from "./componentProps";
 import { Icon } from "./Icon";
 import { Tooltip } from "./Tooltip";
@@ -16,6 +16,8 @@ export interface TurnSummaryProps {
     readonly reason?: "completed" | "steering" | "compaction" | "abort" | "error";
     readonly status: "complete" | "failed" | "steered";
     readonly style?: CSSProperties;
+    /** A control that follows the label on the same line, such as "Hide traces". */
+    readonly accessory?: ReactNode;
 }
 
 /** Formats a final turn duration without allowing its units to split across lines. */
@@ -53,6 +55,7 @@ export function TurnSummary(props: TurnSummaryProps) {
         "reason",
         "status",
         "style",
+        "accessory",
     ]);
     const [copied, setCopied] = useState(false);
     const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -114,6 +117,7 @@ export function TurnSummary(props: TurnSummaryProps) {
                     {label}
                 </span>
             </Tooltip>
+            {local.accessory}
         </div>
     );
 }

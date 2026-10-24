@@ -42,9 +42,12 @@ A good chat with an AI follows a few principles:
   "View traces", but never while any row of it is on screen: a turn the reader
   watched finish, or steered, stays open until all of it has scrolled away, and
   only then folds — nothing visible moves. History and turns finished before
-  the chat was opened arrive folded. An open turn offers "Hide traces" at its
-  first step and on its answer, where "View traces" was, so opening and closing
-  it again is two clicks in one place.
+  the chat was opened arrive folded. A turn left open this way keeps every row
+  exactly as it ran — no header appears, nothing regroups — and offers "Hide
+  traces" at its first step and on the footer its end brought. A turn the reader
+  opens offers it on the answer, where "View traces" was, so opening and closing
+  it again is two clicks in one place. With the chat in several views, a turn
+  folds only once none of them shows any of it.
 - **Order is truthful and readable.** Messages appear in the order they
   happened, never reorder or briefly disappear, and a message sent while the
   agent is still working is visibly distinct from the reply that continues

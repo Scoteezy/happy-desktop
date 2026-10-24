@@ -9703,7 +9703,7 @@ function HappyAgentConversationSurface(props: {
                 : {})}
             expandedTurnIds={conversation.expandedTurnIds}
             onTraceToggle={(turnId) => workspace.turnTraceToggle(turnId)}
-            onTraceSettle={(turnId) => workspace.turnTraceSettle(turnId)}
+            onTracesSeen={(viewer, turnIds) => workspace.turnTracesSeen(viewer, turnIds)}
             overlay={
                 openImage ? (
                     <ModalOverlay onDismiss={() => workspace.imageClose()} placement="fill">
@@ -11207,7 +11207,7 @@ function HappyAgentPanelChatSurface(props: {
             {...(chatSnapshot ? { expandedTurnIds: chatSnapshot.expandedTurnIds } : {})}
             loading={chatSnapshot === undefined}
             onTraceToggle={chat.turnTraceToggle}
-            onTraceSettle={chat.turnTraceSettle}
+            onTracesSeen={chat.turnTracesSeen}
             running={chatSnapshot?.runStatus === "running"}
         />
     );
@@ -11218,7 +11218,7 @@ const happyAgentPanelChatNone: HappyAgentPanelChatStore = {
     get: () => ({ type: "loading" }),
     subscribe: () => () => undefined,
     turnTraceToggle: () => undefined,
-    turnTraceSettle: () => undefined,
+    turnTracesSeen: () => undefined,
 };
 
 function HappyAgentToolBodies(props: {

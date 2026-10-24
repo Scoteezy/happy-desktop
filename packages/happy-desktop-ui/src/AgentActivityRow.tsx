@@ -747,7 +747,8 @@ function AgentToolActivity(props: {
         primaryText = `${mcp.server} · ${mcp.tool}`;
     } else if (presentation?.type === "agentSpawn") {
         verb = toolVerb(tool.toolName, tool.failed ? "failed" : tool.status, presentation);
-        primaryText = presentation.model ? `${presentation.model.name} sub-agent` : "sub-agent";
+        primaryText =
+            summary ?? (presentation.model ? `${presentation.model.name} sub-agent` : "sub-agent");
     } else if (presentation?.type === "compaction") {
         verb = toolVerb(tool.toolName, tool.status, presentation);
         primaryText = compactionSummary(presentation);
@@ -816,8 +817,7 @@ function AgentToolActivity(props: {
                     summary ??
                     humanizeToolName(tool.toolName));
     }
-    /* Said in the call's own words, which are prose, not input: they read in
-       the transcript's type rather than the monospace a command takes. */
+    /* Said in the call's own words rather than its raw input. */
     const described = summary !== undefined && primaryText === summary;
     if (focused && presentation?.type !== "fileDiff") verb = toolVerbFocused(verb);
     /* Ran outside the sandbox. Said in colour alone — the whole line turns
@@ -1421,7 +1421,10 @@ function AgentMessageActivity(props: {
                 >
                     {props.explanation === undefined
                         ? "Message"
-                        : (props.agentName ?? agentIdShort(props.agentId))}
+                        : // A line that names its sender already says who it is from.
+                          props.explanation.includes(props.agentId)
+                          ? null
+                          : (props.agentName ?? agentIdShort(props.agentId))}
                 </span>
                 <ScrollingText
                     className="happy-agent-activity__text"
@@ -1501,26 +1504,29 @@ function AgentMessageFace(props: { face: ConversationAgentFace }) {
  */
 const AGENT_ID = /\b[a-z0-9]{24}\b/g;
 
+/** An agent a line names, read as its name; `link` when the reader can open it. */
+type AgentIdSegment = { readonly id: string; readonly label: string; readonly link: boolean };
+
 /**
  * `text` with every agent it names by ID split out, so each reads as that
- * agent's live name. An ID that names no agent the reader can see stays as
- * written.
+ * agent's name. An ID the window knows no name for stays as written.
  */
 function agentIdSegments(
     text: string,
     references: MessageReferences | undefined,
-): readonly (string | { readonly id: string; readonly label: string })[] {
+): readonly (string | AgentIdSegment)[] {
     if (references === undefined) return [text];
-    const segments: (string | { readonly id: string; readonly label: string })[] = [];
+    const segments: (string | AgentIdSegment)[] = [];
     let cursor = 0;
     for (const match of text.matchAll(AGENT_ID)) {
         const id = match[0];
-        // Words and numbers are this long too; an ID mixes letters and digits.
-        if (!/[a-z]/.test(id) || !/[0-9]/.test(id)) continue;
+        // A run of 24 digits is a number, whatever else it might name.
+        if (!/[a-z]/.test(id)) continue;
         const view = references.view({ kind: "agent", id });
-        if (view.type !== "link") continue;
+        // A child the reader cannot open still has a name worth more than its ID.
+        if (view.type !== "link" && (view.label === id || view.label.length === 0)) continue;
         if (match.index > cursor) segments.push(text.slice(cursor, match.index));
-        segments.push({ id, label: view.label });
+        segments.push({ id, label: view.label, link: view.type === "link" });
         cursor = match.index + id.length;
     }
     if (cursor === 0) return [text];
@@ -1549,13 +1555,16 @@ function AgentMessageExplanation(props: {
 }) {
     const references = props.references;
     const segments = agentIdSegments(props.text, references);
-    if (references === undefined || segments.length === 1) return <>{props.text}</>;
+    if (references === undefined || (segments.length === 1 && typeof segments[0] === "string"))
+        return <>{props.text}</>;
     return (
         <>
             {segments.map((segment, index) =>
-                typeof segment === "string" ? (
+                typeof segment === "string" || !segment.link ? (
                     // The runs of one line never move, so their order is their identity.
-                    <Fragment key={index}>{segment}</Fragment>
+                    <Fragment key={index}>
+                        {typeof segment === "string" ? segment : segment.label}
+                    </Fragment>
                 ) : (
                     // eslint-disable-next-line jsx-a11y/click-events-have-key-events -- a pointer shortcut inside the row's own button, which keyboard users open instead
                     <span

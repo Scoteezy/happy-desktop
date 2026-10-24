@@ -1,4 +1,4 @@
-import { type CSSProperties, type ReactNode, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, type ReactNode, useRef, useState, useSyncExternalStore } from "react";
 import type { FileLinkOpenHandler, FileOpenHandler } from "./fileReference";
 import {
     MarkdownLayoutCacheContext,
@@ -15,6 +15,7 @@ import {
     type ConversationRequestSubmission,
     type ConversationRetrying,
     type ConversationToolCall,
+    type HappyAgentTraceViewer,
 } from "happy-desktop-state";
 import { type ActivityMotion, type ActivityTreatment } from "./AgentActivityRow";
 import { HAPPY_AGENT_ACTIVITY_CONTROL_TRANSCRIPT_HEIGHT } from "./HappyAgentActivityControl";
@@ -260,11 +261,11 @@ export type ConversationViewProps = {
     /** Finished turns currently listing their intermediate entries. */
     expandedTurnIds?: ReadonlySet<string>;
     /**
-     * Told an open turn's rows have all left the screen. The owner folds it if
-     * it was only left open because the reader watched it finish; a turn
-     * folds only out of sight, so nothing the reader sees moves.
+     * Told which turns left open because the reader watched them finish this
+     * view has on screen. The owner folds one once no view shows any of it, so
+     * nothing the reader sees moves.
      */
-    onTraceSettle?: (turnId: string) => void;
+    onTracesSeen?: (viewer: HappyAgentTraceViewer, turnIds: ReadonlySet<string>) => void;
     /** @deprecated Pending steering now renders as an ordered transcript message. */
     queued?: readonly { readonly id: string; readonly text: string }[];
     /** Opens one transcript image full size; the owner hosts the viewer in `overlay`. */
@@ -373,33 +374,47 @@ function inlinePageRemember<Value>(memory: Map<string, Value>, key: string, valu
     }
 }
 
+/** Where each turn left open because the reader watched it finish lies, by row. */
+type ConversationTraceSpans = ReadonlyMap<
+    string,
+    { readonly first: number; readonly last: number }
+>;
+
 /**
- * Tells `settle` about every open turn none of whose rows, from the one its
- * control opens on to the one the folded turn keeps, is among `first`–`last`.
- * Runs only when the visible range changes, and only while a turn is open.
+ * The rows of every turn left open because the reader watched it finish, from
+ * the one its control opens on to the footer that closes it. Read once per
+ * transcript, so reporting what is on screen costs only the open turns.
  */
-function conversationTracesOffscreen(
-    transcript: readonly ConversationEntry[],
-    expandedTurnIds: ReadonlySet<string>,
-    first: number,
-    last: number,
-    settle: (turnId: string) => void,
-): void {
+function conversationTraceSpans(transcript: readonly ConversationEntry[]): ConversationTraceSpans {
     const spans = new Map<string, { first: number; last: number }>();
     for (let index = 0; index < transcript.length; index += 1) {
         const entry = transcript[index]!;
         const trace =
             entry.kind === "message"
                 ? entry.message.agentTrace
-                : entry.kind === "agentActivity" || entry.kind === "delegation"
+                : entry.kind === "agentActivity" ||
+                    entry.kind === "delegation" ||
+                    entry.kind === "turnStatus"
                   ? entry.agentTrace
                   : undefined;
-        if (!trace || !expandedTurnIds.has(trace.turnId)) continue;
+        if (!trace?.quiet) continue;
         const span = spans.get(trace.turnId);
         if (span) span.last = index;
         else spans.set(trace.turnId, { first: index, last: index });
     }
-    for (const [turnId, span] of spans) if (span.last < first || span.first > last) settle(turnId);
+    return spans;
+}
+
+/** The watched turns any of whose rows is among `first`–`last`. */
+function conversationTracesOnScreen(
+    spans: ConversationTraceSpans,
+    first: number,
+    last: number,
+): ReadonlySet<string> {
+    const seen = new Set<string>();
+    for (const [turnId, span] of spans)
+        if (span.last >= first && span.first <= last) seen.add(turnId);
+    return seen;
 }
 
 /** Whether the turn this row carries the trace control for is currently open. */
@@ -410,7 +425,9 @@ function conversationEntryTraceOpen(
     const trace =
         entry.kind === "message"
             ? entry.message.agentTrace
-            : entry.kind === "agentActivity" || entry.kind === "delegation"
+            : entry.kind === "agentActivity" ||
+                entry.kind === "delegation" ||
+                entry.kind === "turnStatus"
               ? entry.agentTrace
               : undefined;
     return trace !== undefined && expandedTurnIds?.has(trace.turnId) === true;
@@ -659,6 +676,13 @@ export function ConversationView(props: ConversationViewProps) {
         dockedQuestions.length === 0
             ? steering.transcript
             : steering.transcript.filter((entry) => !conversationQuestionDocked(entry));
+    const traceSpans = conversationTraceSpans(transcript);
+    /* This view, as the chat's owner counts the views holding a turn open:
+       one whose list has left the document holds nothing. */
+    const traceList = useRef<HTMLElement | undefined>(undefined);
+    const [traceViewer] = useState(() => ({
+        live: () => traceList.current?.isConnected === true,
+    }));
     /* The owner's dock is an opaque slot, so the questions reach it through
        context; with none waiting the value stays undefined and the dock keeps
        the owner's placeholder. */
@@ -1202,16 +1226,19 @@ export function ConversationView(props: ConversationViewProps) {
                         key={props.conversationId}
                         onScrollPositionChange={props.onScrollPositionChange}
                         onStartReached={props.onStartReached}
-                        {...(props.onTraceSettle && props.expandedTurnIds?.size
+                        {...(props.onTracesSeen && traceSpans.size > 0
                             ? {
-                                  onVisibleRowsChange: (first: number, last: number) =>
-                                      conversationTracesOffscreen(
-                                          transcript,
-                                          props.expandedTurnIds!,
-                                          first,
-                                          last,
-                                          props.onTraceSettle!,
-                                      ),
+                                  onVisibleRowsChange: (
+                                      first: number,
+                                      last: number,
+                                      element: HTMLElement,
+                                  ) => {
+                                      traceList.current = element;
+                                      props.onTracesSeen!(
+                                          traceViewer,
+                                          conversationTracesOnScreen(traceSpans, first, last),
+                                      );
+                                  },
                               }
                             : {})}
                         paddingEnd={24}

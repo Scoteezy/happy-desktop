@@ -245,7 +245,8 @@ function payloadEqual(left: ConversationEntry, right: ConversationEntry): boolea
             left.durationMs === right.durationMs &&
             left.usedTokens === right.usedTokens &&
             left.finalContextTokens === right.finalContextTokens &&
-            left.tools === right.tools
+            left.tools === right.tools &&
+            traceEqual(left.agentTrace, right.agentTrace)
         );
     return false;
 }
@@ -409,6 +410,7 @@ function traceEqual(
         left.startedAt === right.startedAt &&
         left.completedAt === right.completedAt &&
         left.foldsAway === right.foldsAway &&
+        left.quiet === right.quiet &&
         left.latest?.kind === right.latest?.kind &&
         left.latest?.title === right.latest?.title &&
         left.latest?.detail === right.latest?.detail

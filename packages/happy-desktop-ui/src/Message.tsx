@@ -829,7 +829,7 @@ export type MessageListProps = {
      * each time that range or the number of rows changes. Read from the range
      * the virtual list already computes, so it adds no layout work.
      */
-    onVisibleRowsChange?: (first: number, last: number) => void;
+    onVisibleRowsChange?: (first: number, last: number, list: HTMLElement) => void;
     /** Bottom clearance represented inside the virtualizer's coordinate space. */
     paddingEnd?: number;
     /**
@@ -2284,7 +2284,7 @@ export function MessageList(props: MessageListProps) {
         paddingEnd,
         paddingStart: MESSAGE_LIST_PADDING_START,
     });
-    function visibleRowsReport() {
+    function visibleRowsReport(element: HTMLElement) {
         const range = virtualizer.range;
         const report = props.onVisibleRowsChange;
         if (!report) visibleRowsReported.current = undefined;
@@ -2296,7 +2296,7 @@ export function MessageList(props: MessageListProps) {
         // Rows arriving or leaving move what the indices name, so they report too.
         if (reported?.first === first && reported.last === last && reported.rows === rows) return;
         visibleRowsReported.current = { first, last, rows };
-        report(first, last);
+        report(first, last, element);
     }
     /** Exact geometry can be published without mounting every newly ready row.
      * Mount one offscreen neighbour per idle callback: a burst of table/Markdown
@@ -2358,7 +2358,7 @@ export function MessageList(props: MessageListProps) {
         const element = list.current;
         if (!element || !modelRendered) return;
         if (!rowModelCurrent()) return;
-        visibleRowsReport();
+        visibleRowsReport(element);
         const actualHeight = messageListViewportHeight(element);
         const geometry =
             pendingViewportGeometry.current ??

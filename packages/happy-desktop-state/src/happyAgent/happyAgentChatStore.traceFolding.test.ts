@@ -145,28 +145,47 @@ it("keeps a turn the reader watched finish open until it settles off screen", ()
     // Nothing the reader was looking at goes away when the turn ends.
     expect(rows(chat.store)).toContain("live:tool");
     // Both ends of the open turn offer to hide it: the row it began with, and
-    // the answer that keeps "View traces" once folded.
+    // the footer the end brought. The answer between keeps the shape it ran
+    // with, so it carries nothing.
     const traced = chat.store
         .get()
         .entries.filter((entry) =>
             entry.kind === "message"
                 ? entry.message.agentTrace?.turnId === "live"
-                : (entry.kind === "agentActivity" || entry.kind === "delegation") &&
+                : (entry.kind === "agentActivity" ||
+                      entry.kind === "delegation" ||
+                      entry.kind === "turnStatus") &&
                   entry.agentTrace?.turnId === "live",
         )
         .map((entry) => (entry.kind === "message" ? entry.message.id : entry.id));
-    expect(traced).toEqual(["live:tool", "live:text"]);
+    expect(traced).toEqual(["live:tool", "group-end:live:status"]);
 
     // Later reads that do not touch the turn leave it as it is.
     chat.change([...history, ...turn("live", 2_000), end("live", 2_100), ...turn("next", 3_000)]);
     expect(chat.store.get().expandedTurnIds).toEqual(new Set(["live"]));
 
-    chat.store.turnTraceSettle("live");
+    // Two views show the chat. While either has any of the turn on screen it
+    // stays open; once neither does, it folds.
+    const main = { live: () => true };
+    const panel = { live: () => true };
+    chat.store.turnTracesSeen(main, new Set(["live"]));
+    chat.store.turnTracesSeen(panel, new Set());
+    expect(chat.store.get().expandedTurnIds).toEqual(new Set(["live"]));
+    chat.store.turnTracesSeen(main, new Set());
     expect(chat.store.get().expandedTurnIds.size).toBe(0);
     expect(rows(chat.store)).not.toContain("live:tool");
     expect(rows(chat.store)).toContain("live:text");
-    // History never opened, and settling it again is nothing.
-    chat.store.turnTraceSettle("old");
+});
+
+it("lets a view that is gone hold nothing open", () => {
+    using chat = storeOpen();
+    chat.change(turn("live", 2_000));
+    chat.change([...turn("live", 2_000), end("live", 2_100)]);
+    let mounted = true;
+    chat.store.turnTracesSeen({ live: () => mounted }, new Set(["live"]));
+    expect(chat.store.get().expandedTurnIds).toEqual(new Set(["live"]));
+    mounted = false;
+    chat.store.turnTracesSeen({ live: () => true }, new Set());
     expect(chat.store.get().expandedTurnIds.size).toBe(0);
 });
 
@@ -185,7 +204,7 @@ it("keeps a steered turn open, and a turn the reader opened stays open off scree
     chat.store.turnTraceToggle("live");
     expect(chat.store.get().expandedTurnIds.size).toBe(0);
     chat.store.turnTraceToggle("live");
-    chat.store.turnTraceSettle("live");
+    chat.store.turnTracesSeen({ live: () => true }, new Set());
     expect(chat.store.get().expandedTurnIds).toEqual(new Set(["live"]));
     chat.store.turnTraceToggle("live");
     expect(chat.store.get().expandedTurnIds.size).toBe(0);
