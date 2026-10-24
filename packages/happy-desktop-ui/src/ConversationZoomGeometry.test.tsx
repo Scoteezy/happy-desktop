@@ -59,8 +59,9 @@ async function frames() {
  * with does. CSS `zoom` is not
  * that in Chromium: it lays text out at the zoomed font size, whose hinted
  * advances do not scale, so lines near a wrap boundary break differently from
- * any model. Chromium therefore zooms here the way the app does; Firefox, whose
- * CSS zoom scales text linearly, keeps CSS zoom.
+ * any model. Chromium therefore zooms here the way the app does. Firefox's
+ * ancestor CSS zoom changes native scroll units, so it covers width changes
+ * at scale 1; page zoom is covered in Chromium.
  */
 const pageZoom = server.browser === "chromium";
 async function pageZoomSet(baseScale: number, zoom: number) {
@@ -72,7 +73,7 @@ async function pageZoomSet(baseScale: number, zoom: number) {
     });
 }
 
-it.each([1, 0.5, 0.67, 0.9, 1.5, 2])(
+it.each(pageZoom ? [1, 0.5, 0.67, 0.9, 1.5, 2] : [1])(
     "matches painted text heights after a width change at zoom %f (seed 733)",
     async (zoom) => {
         const baseScale = devicePixelRatio;

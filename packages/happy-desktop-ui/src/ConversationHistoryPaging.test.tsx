@@ -36,7 +36,7 @@ async function frames() {
     await frame();
 }
 
-it.each([1, 0.67, 2])(
+it.each(server.browser === "chromium" ? [1, 0.67, 2] : [1])(
     "retains the top reader's anchor while a history page arrives at zoom %f (seed 8191)",
     async (zoom) => {
         const baseScale = devicePixelRatio;
