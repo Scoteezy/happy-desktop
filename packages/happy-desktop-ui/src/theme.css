@@ -338,9 +338,8 @@
     --happy-chat-heading-measure: 1120px;
     --happy-z-overlay: 1000;
     /* Stories are watched on black in every appearance, as photos are: the
-       viewer and the editor are a dark room, and their ink is white. The ring
-       of an author with something unseen is Happy teal; a seen one is a thin
-       grey hairline. */
+       viewer and the editor are a dark room, and their ink is white. A story's
+       own marks of the reader's choice (a chosen reaction) are Happy teal. */
     --story-backdrop: #000000;
     --story-stage: #111111;
     --story-ink: #ffffff;
@@ -352,7 +351,13 @@
     --story-sheet: #1c1c1e;
     --story-danger: var(--status-error);
     --story-ring-unseen: var(--text-link);
-    --story-ring-seen: var(--file-path-text);
+    /* The stories row is drawn to the iOS row's colours, which are Telegram's:
+       an unseen ring runs green to blue from top to bottom in every appearance. */
+    --story-ring-unseen-top: #34c76f;
+    --story-ring-unseen-bottom: #3da1fd;
+    --story-ring-seen: #d8d8e1;
+    --story-add: #007aff;
+    --story-avatar-fill: #b8bbc4;
     /* Window chrome: what the window reports about itself, which has to be
        legible over whatever the window is showing — including a modal. */
     --happy-z-window-chrome: 1100;
@@ -549,7 +554,9 @@
         /* Declared again here, so they resolve against the dark palette. */
         --story-danger: var(--status-error);
         --story-ring-unseen: var(--text-link);
-        --story-ring-seen: var(--file-path-text);
+        --story-ring-seen: #48484a;
+        --story-add: #3e88f7;
+        --story-avatar-fill: #5a5a5f;
     }
 }
 
@@ -744,7 +751,9 @@
     /* Declared again here, so they resolve against the dark palette. */
     --story-danger: var(--status-error);
     --story-ring-unseen: var(--text-link);
-    --story-ring-seen: var(--file-path-text);
+    --story-ring-seen: #48484a;
+    --story-add: #3e88f7;
+    --story-avatar-fill: #5a5a5f;
 }
 
 /* Midnight: the dark palette taken down to a neutral near-black. Surfaces step

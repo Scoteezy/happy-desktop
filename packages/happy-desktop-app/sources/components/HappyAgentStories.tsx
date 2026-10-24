@@ -108,6 +108,10 @@ export function HappyAgentStoriesRow(props: HappyAgentStoriesRowProps) {
                   ...(author.photo ? { photoUrl: props.hub.urls.photo(author.photo) } : {}),
                   initials: initialsOf(author.name),
                   self: author.isSelf,
+                  stories: {
+                      total: author.storyIds.length,
+                      unseen: author.isSelf ? 0 : author.unseenCount,
+                  },
                   ring: author.isSelf
                       ? author.storyIds.length > 0
                           ? "seen"

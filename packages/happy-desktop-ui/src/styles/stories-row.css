@@ -1,13 +1,20 @@
 /*
- * StoriesRow — the band of author circles at the top of the sidebar.
- * Band 88px high whatever it holds; circles 56px with a 48px photo inside, so
- * a ring appearing, greying or going never moves the photo; 64px per author.
+ * StoriesRow — the band of author circles at the top of the sidebar, to the
+ * iOS row's numbers (Telegram's): a 98px band; each author a 60 × 77 item,
+ * 14px apart from 12px in, holding a 52px photo 4px from its top, its ring
+ * around it, and its 11px name 10px under the photo.
+ *
+ * Each author's button is the item widened by the 5px the name may overhang
+ * on each side and 4px above and below: a 70 × 87 box 4px from the next, so
+ * its hover fill is the sidebar's own rounded rectangle. The circles stand at
+ * their slots by translation: arrivals and departures fade over 200ms where
+ * they stand, and a new order glides once over 250ms, as on iOS.
  */
 
 .happy-stories-row {
     display: flex;
     flex: none;
-    height: 88px;
+    height: 98px;
     min-width: 0;
 }
 
@@ -21,78 +28,110 @@
 }
 
 .happy-stories-row__list {
+    /* The circles are placed at their slots by translation, so this box is their containing block. */
+    position: relative;
     display: flex;
     flex: none;
-    align-items: flex-start;
-    gap: 4px;
+    box-sizing: content-box;
+    height: 87px;
     margin: 0;
-    padding: 6px var(--happy-panel-inset) 8px;
+    padding: 8px 7px 3px;
     list-style: none;
 }
 
 .happy-stories-row__item {
-    position: relative;
+    /* Placed by translation at its slot, so a new order glides and never reflows its neighbours. */
+    position: absolute;
+    top: 8px;
+    left: 7px;
     display: flex;
-    flex: none;
-    width: 64px;
+    width: 70px;
+    height: 87px;
+    opacity: 1;
+    /* Opacity is a transition, not an animation, so a fade that turns around
+       starts from the opacity it has. */
+    transition:
+        translate 250ms ease-in-out,
+        opacity 200ms ease-out;
+}
+
+@starting-style {
+    .happy-stories-row__item[data-entering] {
+        opacity: 0;
+    }
+}
+
+.happy-stories-row__item[data-exiting] {
+    opacity: 0;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .happy-stories-row__item {
+        /* The fades still end, so a departed circle is still let go. */
+        transition: opacity 1ms;
+    }
+}
+
+.happy-stories-row__defs {
+    /* Holds the shared ring gradient; it takes no room. */
+    position: absolute;
+    width: 0;
+    height: 0;
 }
 
 .happy-stories-row__author {
+    /* The photo, ring and name sit at fixed points of the 70 × 87 box, as on iOS. */
+    position: relative;
     display: flex;
     flex: 1;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
     min-width: 0;
     margin: 0;
     padding: 0;
     border: 0;
+    border-radius: var(--happy-hover-radius);
     background: transparent;
-    color: var(--text-secondary);
+    color: var(--text);
     cursor: pointer;
     font: inherit;
     -webkit-app-region: no-drag;
     app-region: no-drag;
 }
 
-.happy-stories-row__ring {
-    display: flex;
-    flex: none;
-    box-sizing: border-box;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-}
-
-.happy-stories-row__author[data-ring="unseen"] .happy-stories-row__ring {
-    box-shadow: inset 0 0 0 2px var(--story-ring-unseen);
-}
-
-.happy-stories-row__author[data-ring="seen"] .happy-stories-row__ring {
-    box-shadow: inset 0 0 0 1px var(--story-ring-seen);
+.happy-stories-row__author:hover:not(:disabled),
+.happy-stories-row__item:has(.happy-stories-row__add:hover:not(:disabled))
+    .happy-stories-row__author {
+    background: var(--happy-hover-fill);
 }
 
 .happy-stories-row__author:focus-visible {
-    outline: none;
-}
-
-.happy-stories-row__author:focus-visible .happy-stories-row__ring {
     outline: 2px solid var(--surface-selected);
-    outline-offset: 1px;
+    outline-offset: -2px;
 }
 
 .happy-stories-row__photo {
+    /* Laid over the button at the iOS photo's point rather than in a flow. */
+    position: absolute;
+    top: 8px;
+    left: 9px;
     display: flex;
-    flex: none;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
+    width: 52px;
+    height: 52px;
     overflow: hidden;
     border-radius: 50%;
-    background: var(--surface-ripple);
+    background: var(--story-avatar-fill);
+}
+
+/* The "+" is cut out of the person's own photo by an 18px circle around it. */
+.happy-stories-row__author[data-self] .happy-stories-row__photo {
+    mask-image: radial-gradient(circle at 43px 42px, transparent 8.5px, var(--story-ink) 9.25px);
+}
+
+/* And from its ring, which passes under the "+". */
+.happy-stories-row__author[data-self] .happy-stories-row__ring {
+    mask-image: radial-gradient(circle at 48px 47px, transparent 8.5px, var(--story-ink) 9.25px);
 }
 
 .happy-stories-row__photo img {
@@ -105,51 +144,82 @@
 
 .happy-stories-row__initials {
     display: flex;
-    color: var(--text-secondary);
+    color: var(--story-ink);
     font-family: var(--happy-font-ui);
-    font-size: 16px;
-    font-weight: 700;
-    line-height: 16px;
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.happy-stories-row__ring {
+    /* Centred on the photo, 5px wider each way so the ring's outer edge fits. */
+    position: absolute;
+    top: 3px;
+    left: 4px;
+    display: flex;
+    overflow: visible;
+}
+
+.happy-stories-row__ring-top {
+    stop-color: var(--story-ring-unseen-top);
+}
+
+.happy-stories-row__ring-bottom {
+    stop-color: var(--story-ring-unseen-bottom);
 }
 
 .happy-stories-row__name {
+    /* At the photo's centre plus 36px, the full 70px wide, as on iOS. */
+    position: absolute;
+    top: 70px;
+    left: 0;
     display: block;
-    max-width: 64px;
+    width: 70px;
     overflow: hidden;
     font-family: var(--happy-font-ui);
     font-size: 11px;
-    font-weight: 500;
-    line-height: 14px;
+    font-weight: 400;
+    line-height: 13px;
+    text-align: center;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.happy-stories-row__author:hover .happy-stories-row__name {
-    color: var(--text);
+/* Everything of theirs is seen: their name steps back. */
+.happy-stories-row__author[data-ring="seen"]:not([data-self]) .happy-stories-row__name {
+    color: color-mix(in srgb, var(--text) 50%, transparent);
 }
 
-/* The "+" sits on the bottom-right of the person's own circle, cut out of it
-   by a ring of the sidebar's own background. */
+/* The "+" is a 16px disc 1px in from the photo's right and 2px from its bottom;
+   the photo and ring are cut 1px around it, so whatever is behind shows through.
+   Its press reaches 7px past the disc. */
 .happy-stories-row__add {
     /* Laid over its parent rather than in its flow, so it is placed by position. */
     position: absolute;
-    top: 38px;
-    left: 40px;
+    top: 42px;
+    left: 44px;
     display: flex;
-    box-sizing: border-box;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     margin: 0;
     padding: 0;
-    border: 2px solid var(--groupped-background);
+    border: 0;
     border-radius: 50%;
-    background: var(--story-ring-unseen);
+    background: var(--story-add);
     color: var(--story-ink);
     cursor: pointer;
     -webkit-app-region: no-drag;
     app-region: no-drag;
+}
+
+.happy-stories-row__add::before {
+    /* The press area around the disc, laid over its neighbours. */
+    position: absolute;
+    inset: -7px;
+    border-radius: 50%;
+    content: "";
 }
 
 .happy-stories-row__add:focus-visible {

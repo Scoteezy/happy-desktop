@@ -16,22 +16,31 @@ const self: StoriesRowAuthor = {
 };
 
 const team: readonly StoriesRowAuthor[] = [
-    { ...self, ring: "unseen", photoUrl: storyAvatar("#5b6cff") },
+    { ...self, ring: "seen", stories: { total: 1, unseen: 0 }, photoUrl: storyAvatar("#5b6cff") },
     {
         id: "ana",
         name: "Ana",
         initials: "AN",
         self: false,
         ring: "unseen",
+        stories: { total: 2, unseen: 2 },
         photoUrl: storyAvatar("#ff7a59"),
     },
-    { id: "sam", name: "Sam", initials: "SA", self: false, ring: "unseen" },
+    {
+        id: "sam",
+        name: "Sam",
+        initials: "SA",
+        self: false,
+        ring: "unseen",
+        stories: { total: 4, unseen: 1 },
+    },
     {
         id: "lee",
         name: "Leonardo",
         initials: "LE",
         self: false,
         ring: "seen",
+        stories: { total: 3, unseen: 0 },
         photoUrl: storyAvatar("#2bb673"),
     },
     {
@@ -49,12 +58,12 @@ export function StoriesRowPage() {
     return (
         <ComponentPage
             number={componentNumber}
-            summary="The stories band above the sidebar's search: the person's own circle first with its plus badge, then every author with a coloured ring while unseen and a grey one once seen. The band is 88px tall in every state, so the sidebar below never moves."
+            summary="The stories band above the sidebar's search: the person's own circle first with its plus badge, then every author with a green-to-blue ring segmented per story while unseen and a thin grey one once seen. The band is 98px tall, to the iOS row's numbers, in every state, so the sidebar below never moves."
             title="Stories row"
         >
             <div className="specimen-grid">
                 <Specimen
-                    detail="Sidebar width 260 · band 88 · nobody has posted"
+                    detail="Sidebar width 260 · band 98 · nobody has posted"
                     label="Only my circle"
                     number="SR-01"
                     stage="chrome"
