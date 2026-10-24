@@ -22,7 +22,6 @@ it.each([false, true])(
             );
         store.featureUpdate("inbox", true);
         expect(store.get().inbox).toBe(true);
-        expect(store.get().spacesSidebar).toBe(false);
         expect(store.get().batchNotes).toBe(false);
         expect(experimentsStoreCreate(persistence).get()).toEqual(store.get());
     },

@@ -719,7 +719,6 @@ export function HappyAgentSettingsBlueprintPage() {
                 >
                     <HappyAgentExperimentalSettings
                         features={[
-                            { id: "spacesSidebar", label: "Spaces sidebar", enabled: true },
                             { id: "batchNotes", label: "Sidebar batch notes", enabled: false },
                             { id: "inbox", label: "Inbox", enabled: false },
                             { id: "voice", label: "Voice calls", enabled: false },

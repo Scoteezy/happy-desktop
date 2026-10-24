@@ -254,13 +254,12 @@ function directory(
     };
 }
 
-/** A window at an address, with the Spaces experiments on or off. */
+/** A window at an address, with Stem Cells, and so the Spaces sidebar, on or off. */
 async function windowOpen(address: string, spacesOn: boolean) {
     const spaces = spacesCreate();
     const router = happyAgentRouterCreate(happyAgentMemoryHistoryCreate(address));
     onTestFinished(() => router.history.destroy());
     const experiments = experimentsStoreCreate();
-    experiments.featureUpdate("spacesSidebar", spacesOn);
     if (spacesOn)
         await spaces.daemon.client.saveUserSetting(HAPPY_AGENT_STEM_CELLS_SETTING, {
             value: true,

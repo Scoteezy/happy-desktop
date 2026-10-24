@@ -191,7 +191,6 @@ async function windowOpen(daemon: ReturnType<typeof daemonCreate>) {
     const router = happyAgentRouterCreate(happyAgentMemoryHistoryCreate("/chats/local"));
     onTestFinished(() => router.history.destroy());
     const experiments = experimentsStoreCreate();
-    experiments.featureUpdate("spacesSidebar", true);
     const context: HappyAgentRouterContext = {
         appearance: appearanceStoreCreate({ mode: "light" }),
         happyAgents: directory(store, stemCellsSettings),

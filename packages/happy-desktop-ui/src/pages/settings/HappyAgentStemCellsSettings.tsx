@@ -17,7 +17,10 @@ export interface HappyAgentStemCellsSettingsProps {
     onEnabledChange(enabled: boolean): void;
 }
 
-/** A person's opt-in to new-work creation and Prioritizing on one connection. */
+/**
+ * A person's opt-in to Stem Cells on one connection: the Spaces sidebar, new
+ * work made as stem cells, and Prioritizing, which files it into the sidebar.
+ */
 export function HappyAgentStemCellsSettings(props: HappyAgentStemCellsSettingsProps) {
     const id = useId();
     return (
@@ -47,7 +50,7 @@ export function HappyAgentStemCellsSettings(props: HappyAgentStemCellsSettingsPr
             ) : null}
             <FormRow
                 label="Stem cells"
-                description="Create new work as stem cells and let Prioritizing organize your sidebar. Ordinary task and bot naming stays on when this is off."
+                description="Brings the new sidebar, with Create at its top, and the focus agent that files your work into topic sections as it takes shape. Off, you keep the classic sidebar; ordinary task and bot naming stays on either way."
                 htmlFor={id}
                 control={
                     <Box className="happy-agent-settings__pending">

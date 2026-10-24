@@ -3641,13 +3641,16 @@ export function AppHappyAgentView(props: AppHappyAgentViewProps) {
             onSettingsOpen={props.onSettingsOpen}
         />
     );
-    // The spaces sidebar: the reader asked for unfinished work and this Happy
-    // Agent keeps one. Anything older keeps the sidebar it has.
+    // The spaces sidebar comes with Stem Cells: the person turned it on for
+    // this Happy Agent and it keeps one. It follows the switch at once, before
+    // the daemon confirms; anything older, or Stem Cells off, keeps the classic
+    // sidebar.
+    const stemCellsChosen =
+        stemCellsSettings.status === "ready" && stemCellsSettings.stemCellsEnabled;
     const spacesStore =
-        (experimental.spacesSidebar ? active?.session?.spaces : undefined) ??
-        happyAgentSpacesStoreNoop;
+        (stemCellsChosen ? active?.session?.spaces : undefined) ?? happyAgentSpacesStoreNoop;
     const spaces = useSyncExternalStore(spacesStore.subscribe, spacesStore.get, spacesStore.get);
-    const spacesEnabled = experimental.spacesSidebar && spaces.availability !== "unsupported";
+    const spacesEnabled = stemCellsChosen && spaces.availability !== "unsupported";
     const spacesPlaces: HappyAgentSpacesPlaces = {
         bots: active?.bots ?? [],
         tasks: active?.tasks ?? NO_TASKS,

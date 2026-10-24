@@ -1,6 +1,9 @@
-/** Each unfinished feature is a separate choice, kept on this installation. */
+/**
+ * Each unfinished feature is a separate choice, kept on this installation. The
+ * Spaces sidebar is not one of them: it comes with Stem Cells, the person's own
+ * setting on each daemon, and an installation's old Spaces switch is ignored.
+ */
 export const EXPERIMENTAL_FEATURES = [
-    { id: "spacesSidebar", label: "Spaces sidebar" },
     { id: "batchNotes", label: "Sidebar batch notes" },
     { id: "inbox", label: "Inbox" },
     { id: "voice", label: "Voice calls" },
@@ -22,7 +25,6 @@ export interface ExperimentsStore {
 }
 
 const DISABLED: ExperimentsSnapshot = {
-    spacesSidebar: false,
     batchNotes: false,
     inbox: false,
     voice: false,
@@ -42,7 +44,6 @@ function documentParse(value: unknown): ExperimentsSnapshot {
     const enabled = (id: ExperimentalFeature) =>
         id in value ? Reflect.get(value, id) === true : legacy && LEGACY_SWITCH_FEATURES.has(id);
     return {
-        spacesSidebar: enabled("spacesSidebar"),
         batchNotes: enabled("batchNotes"),
         inbox: enabled("inbox"),
         voice: enabled("voice"),

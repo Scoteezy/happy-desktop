@@ -875,10 +875,7 @@ async function workloadRun(
     if (workload === "sidebar-drag") {
         await options.runtime.client.stemCellsEnable();
         await page.evaluate(() =>
-            localStorage.setItem(
-                "happy.experiments.v1",
-                JSON.stringify({ spacesSidebar: true, batchNotes: false }),
-            ),
+            localStorage.setItem("happy.experiments.v1", JSON.stringify({ batchNotes: false })),
         );
         await page.reload();
         await page
