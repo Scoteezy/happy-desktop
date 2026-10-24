@@ -1,0 +1,49 @@
+/*
+ * C-310 ConfirmPopover — a question asked beside the control that raised it.
+ * The card is the menus' raised surface (hairline, 10px corners, soft
+ * shadow) at a fixed 280px, on the 4px grid: 12px padding, a 4px step from
+ * the title to the message and 12px to the right-aligned 28px actions.
+ */
+
+.happy-confirm-popover,
+.happy-confirm-popover * {
+    box-sizing: border-box;
+}
+
+.happy-confirm-popover {
+    display: flex;
+    flex-direction: column;
+    width: 280px;
+    padding: 12px;
+    border: 1px solid var(--modal-border);
+    border-radius: var(--happy-radius-md);
+    background: var(--surface);
+    box-shadow: 0 2px 8px var(--shadow-color);
+    color: var(--text);
+    font-family: var(--happy-font-ui);
+    font-synthesis: none;
+    cursor: default;
+}
+
+/* Fixed words: never truncated, so a longer question wraps instead. */
+.happy-confirm-popover__title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+}
+
+.happy-confirm-popover__message {
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+    overflow-wrap: anywhere;
+}
+
+.happy-confirm-popover__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}

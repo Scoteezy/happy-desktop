@@ -196,6 +196,7 @@ export function projectSession(input: SessionProjectionInput): SessionState {
         slashCommands: input.slashCommands,
         tasks: [],
         subagents: projectSubagents(agent, input.activity),
+        subagentsRunning: subagentsRunningOf(agent, input.activity),
         backgroundProcesses: (input.activity?.processes ?? [])
             .filter((process) => process.status === "running")
             .map((process) => ({
@@ -822,6 +823,32 @@ function subtaskActivityOf(agent: Agent): HappyAgentSubtaskActivity | undefined 
     };
     subtaskActivityCache.set(agent, value);
     return value;
+}
+
+/**
+ * Whether one agent, or anything it delegated to, is still working: a run of
+ * its own, a direct child the host counts as running, or an interactive
+ * subtask anywhere in the tree it carries.
+ */
+export function agentWorkRunning(agent: Agent): boolean {
+    return (
+        agent.status !== "idle" ||
+        agent.subagents.running > 0 ||
+        (subtaskActivityOf(agent)?.activity ?? "idle") !== "idle"
+    );
+}
+
+/**
+ * Whether work a session delegated is still going. The host's own count covers
+ * its direct children; the activity's copies of those children say whether one
+ * that has itself gone idle still has work running below it.
+ */
+function subagentsRunningOf(agent: Agent, activity: AgentActivityResponse | undefined): boolean {
+    if (agent.subagents.running > 0) return true;
+    if ((subtaskActivityOf(agent)?.activity ?? "idle") !== "idle") return true;
+    return (activity?.subagents ?? []).some(
+        (child) => child.archivedAt === null && agentWorkRunning(child),
+    );
 }
 
 function projectAgent(

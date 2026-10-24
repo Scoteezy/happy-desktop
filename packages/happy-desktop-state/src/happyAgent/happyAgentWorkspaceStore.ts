@@ -267,6 +267,11 @@ export interface HappyAgentConversationSnapshot {
      */
     readonly composer: ComposerSource;
     readonly running: boolean;
+    /**
+     * Agents this conversation delegated to are still working. With `running`
+     * false, it is only their work that is going.
+     */
+    readonly subagentsRunning: boolean;
     readonly workingPhase: HappyAgentWorkingPhase;
     /** Display-ready activity text from the agent, when it describes its work. */
     readonly workingLabel?: string;
@@ -1903,6 +1908,8 @@ export interface HappyAgentWorkspaceStore {
 
     // Conversation actions (forwarded to the currently open chat store).
     runAbort(): Promise<void>;
+    /** Stops the open conversation's working subagents; see `HappyAgentChatStore.subagentsAbort`. */
+    subagentsAbort(): Promise<void>;
     answerInput(input: HappyAgentUserInputAnswers): Promise<void>;
     /**
      * Records the options ticked into the open conversation's pending question
@@ -2906,6 +2913,7 @@ export function happyAgentWorkspaceStoreCreate(
             errorAssistance: errorAssistanceProject(chat),
             composer: draft,
             running: chat.runStatus === "running",
+            subagentsRunning: chat.subagentsRunning,
             workingPhase: chat.workingPhase,
             ...(chat.workingLabel !== undefined ? { workingLabel: chat.workingLabel } : {}),
             ...(chat.workingWait !== undefined ? { workingWait: chat.workingWait } : {}),
@@ -8023,6 +8031,7 @@ export function happyAgentWorkspaceStoreCreate(
         // able to end it; refusing here would leave them watching something they
         // can neither write to nor stop.
         runAbort: () => withChat((store) => store.runAbort()),
+        subagentsAbort: () => withChat((store) => store.subagentsAbort()),
         // Ticking an option is not yet an answer, so it is not a write into the
         // checkout and is not guarded like one: nothing leaves this machine until
         // the reader submits.
@@ -8685,6 +8694,7 @@ function conversationAcquiring(
         errorAssistance: NO_ERROR_ASSISTANCE,
         composer,
         running: false,
+        subagentsRunning: false,
         workingPhase: "working",
         transcriptComplete: true,
         loadingMore: false,

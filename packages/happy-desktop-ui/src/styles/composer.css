@@ -399,6 +399,23 @@
     right: auto;
 }
 
+/* The stop circle's own box, so the question it asks can hang from it. The
+ * anchor is exactly the circle: nothing in the toolbar moves when it wraps it. */
+.happy-composer__stop-anchor {
+    position: relative;
+    display: flex;
+    flex: none;
+}
+
+/* Right edges shared with the stop circle, 8px above it. It may cover the
+ * draft; it is a question about the work, asked over the input. */
+.happy-composer__stop-popover {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: var(--happy-z-overlay);
+}
+
 .happy-composer__file-input {
     position: absolute;
     width: 1px;

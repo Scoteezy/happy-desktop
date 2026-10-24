@@ -568,6 +568,11 @@ export {
     type TransferZoneState,
 } from "./tabTransfer";
 export { Toolbar, type ToolbarProps, type ToolbarSearch } from "./Toolbar";
+export {
+    ConfirmPopover,
+    type ConfirmPopoverProps,
+    type ConfirmPopoverTone,
+} from "./ConfirmPopover";
 export { Menu, type MenuItem, type MenuProps } from "./Menu";
 export { MenuButton, type MenuButtonProps } from "./MenuButton";
 export { Modal, type ModalProps, type ModalSize, type ModalTone } from "./Modal";

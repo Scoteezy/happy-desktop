@@ -54,6 +54,7 @@ const session = (running: boolean): SessionState => ({
     slashCommands: [],
     tasks: [],
     subagents: [],
+    subagentsRunning: false,
     backgroundProcesses: [],
     connection: "live",
     transcriptComplete: true,

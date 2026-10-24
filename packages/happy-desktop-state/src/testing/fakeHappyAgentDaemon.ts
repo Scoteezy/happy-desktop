@@ -3,6 +3,7 @@ import {
     HappyAgentClient,
     HappyAgentApiError,
     type Agent,
+    type AgentActivityResponse,
     type AgentContextUsage,
     type AgentDraftSnapshot,
     type CompactionMessage,
@@ -116,6 +117,12 @@ export interface FakeHappyAgentDaemon {
     /** Mark whether `getMessages` reports more history behind the oldest run. */
     historyHasMoreSet(agentId: string, hasMore: boolean): void;
     questionSet(agentId: string, question: Question | null): void;
+    /**
+     * Replace what `getAgentActivity` answers for one agent: its delegated
+     * agents, each served as currently held, and background processes. Unset,
+     * it is empty.
+     */
+    activitySet(agentId: string, activity: AgentActivityResponse): void;
 
     /** Mint the next journal cursor; strictly increasing under localeCompare. */
     cursorNext(): string;
@@ -374,6 +381,7 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
     const histories = new Map<string, { runs: HistoryRun[]; pending: UserMessage[] }>();
     const hasMore = new Map<string, boolean>();
     const questions = new Map<string, Question | null>();
+    const activities = new Map<string, AgentActivityResponse>();
     const userSettings = new Map<string, StoredUserSetting>();
     let userSettingsSupported = true;
     const userSettingsOrdered = (): StoredUserSetting[] =>
@@ -1132,7 +1140,13 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         async getAgentActivity(agentId: string, ...rest: unknown[]) {
             await record("getAgentActivity", [agentId, ...rest]);
-            return { subagents: [], processes: [] };
+            const activity = activities.get(agentId);
+            if (activity === undefined) return { subagents: [], processes: [] };
+            // The listed agents are answered as they stand now, as the daemon's are.
+            return {
+                ...activity,
+                subagents: activity.subagents.map((agent) => agents.get(agent.id) ?? agent),
+            };
         },
         async getPendingQuestion(agentId: string, ...rest: unknown[]) {
             await record("getPendingQuestion", [agentId, ...rest]);
@@ -1529,6 +1543,9 @@ export function fakeHappyAgentDaemonCreate(): FakeHappyAgentDaemon {
         },
         questionSet(agentId, question) {
             questions.set(agentId, question);
+        },
+        activitySet(agentId, activity) {
+            activities.set(agentId, activity);
         },
         cursorNext: () => (latestCursor = cursorOf((cursorCounter += 1))),
         cursorLatest: () => latestCursor,

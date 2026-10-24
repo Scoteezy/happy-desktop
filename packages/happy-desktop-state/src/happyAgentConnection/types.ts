@@ -552,6 +552,12 @@ export interface SessionState {
         latestText?: string;
         totalTokens?: number;
     }[];
+    /**
+     * Whether an agent this session delegated to is still working anywhere
+     * below it, whatever the session's own turn is doing. Stopping that work
+     * is `stopSubagents`.
+     */
+    subagentsRunning: boolean;
     backgroundProcesses: readonly {
         sessionId: number;
         command: string;
@@ -799,6 +805,7 @@ export type MutationAction =
     | "invoke_slash_command"
     | "stop_background_process"
     | "stop_run"
+    | "stop_subagents"
     | "switch_model"
     | "set_effort"
     | "set_service_tier"
@@ -1065,6 +1072,12 @@ export interface HappyAgentConnection {
     invokeSlashCommand(sessionId: string, name: string, argumentsValue?: string): MutationId;
     stopBackgroundProcess(sessionId: string, projectedProcessId: number): MutationId;
     stopRun(sessionId: string): MutationId;
+    /**
+     * Stops the work of every agent this session delegated to that is still
+     * working, each with its own subtree, while leaving the session's own run,
+     * background processes, and conversation alone. Nothing is archived.
+     */
+    stopSubagents(sessionId: string): MutationId;
     compactSession(sessionId: string): MutationId;
     /** Runs a failed turn again; the failed message comes back resolved as retried. */
     retryFailedTurn(sessionId: string, messageId: string): MutationId;

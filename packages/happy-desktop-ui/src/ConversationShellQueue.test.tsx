@@ -91,6 +91,7 @@ it("retains a parked shell node when queued messages are accepted atomically (se
         slashCommands: [],
         tasks: [],
         subagents: [],
+        subagentsRunning: false,
         backgroundProcesses: [],
         connection: "live",
         transcriptComplete: false,

@@ -42,6 +42,7 @@ import { happyAgentDraftAppended } from "../happyAgent/happyAgentChatDraftAppend
 import type { HappyAgentDebugLogInput } from "../happyAgent/happyAgentDebugLogStore.js";
 import { cuid2Create } from "../utils/cuid2Create.js";
 import {
+    agentWorkRunning,
     applyChanges,
     archivedAgentsMerge,
     defaultMode,
@@ -4660,6 +4661,49 @@ export function connectHappyAgent(options: ConnectHappyAgentOptions): HappyAgent
                 mutationId,
                 () => client.abortAgent(sessionId, { mutationId }, { signal: deadlineSignal() }),
                 ({ agent }) => adoptAgent(agent),
+                undefined,
+                sessionId,
+                `agent:${sessionId}`,
+            );
+        },
+        stopSubagents(sessionId) {
+            const mutationId = nextId();
+            return mutation(
+                "stop_subagents",
+                mutationId,
+                async () => {
+                    // What is working is read again rather than taken from the copy on
+                    // screen, so a child that started since is stopped too. Each child is
+                    // aborted on its own: the host stops its whole subtree, while the
+                    // session's own run and background processes stay as they are.
+                    const activity = await client.getAgentActivity(sessionId, {
+                        signal: deadlineSignal(),
+                    });
+                    const entry = sessions.get(sessionId);
+                    if (entry !== undefined && !closed) {
+                        setActivity(entry, activity);
+                        publishSession(entry);
+                    }
+                    const working = activity.subagents.filter(
+                        (child) => child.archivedAt === null && agentWorkRunning(child),
+                    );
+                    const outcomes = await Promise.allSettled(
+                        working.map((child) =>
+                            client.abortAgent(
+                                child.id,
+                                { mutationId: nextId() },
+                                { signal: deadlineSignal() },
+                            ),
+                        ),
+                    );
+                    for (const outcome of outcomes) {
+                        if (outcome.status === "fulfilled" && !closed)
+                            adoptAgent(outcome.value.agent);
+                    }
+                    const refused = outcomes.find((outcome) => outcome.status === "rejected");
+                    if (refused !== undefined) throw refused.reason;
+                },
+                undefined,
                 undefined,
                 sessionId,
                 `agent:${sessionId}`,

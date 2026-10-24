@@ -9574,6 +9574,13 @@ function HappyAgentConversationSurface(props: {
                               }
                             : undefined
                     }
+                    onSubagentsAbort={
+                        props.canAbort
+                            ? () => {
+                                  if (props.happyAgentOnline()) swallow(workspace.subagentsAbort());
+                              }
+                            : undefined
+                    }
                     onCommandInvoke={
                         !modelsNotConfigured && props.unavailable === undefined
                             ? (commandId) => {
@@ -9593,6 +9600,7 @@ function HappyAgentConversationSurface(props: {
                     }}
                     onComposerValueChange={(value) => workspace.composerTextUpdate(value)}
                     running={conversation.running}
+                    subagentsRunning={conversation.subagentsRunning}
                 />
             }
             conversationId={conversation.conversationId}

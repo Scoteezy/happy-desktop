@@ -75,6 +75,7 @@ function session(running: boolean, docked: boolean): SessionState {
         slashCommands: [],
         tasks: [],
         subagents: [],
+        subagentsRunning: false,
         backgroundProcesses: [],
         connection: "live",
         transcriptComplete: true,

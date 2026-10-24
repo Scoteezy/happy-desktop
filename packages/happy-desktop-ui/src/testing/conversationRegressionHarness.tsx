@@ -129,6 +129,7 @@ export function conversationRegressionHarness(id: string, historyCount: number) 
             slashCommands: [],
             tasks: [],
             subagents: [],
+            subagentsRunning: false,
             backgroundProcesses: [],
             connection: "live",
             transcriptComplete: false,

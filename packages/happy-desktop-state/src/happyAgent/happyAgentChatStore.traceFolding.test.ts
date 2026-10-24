@@ -35,6 +35,7 @@ const session: SessionState = {
     slashCommands: [],
     tasks: [],
     subagents: [],
+    subagentsRunning: false,
     backgroundProcesses: [],
     connection: "live",
     transcriptComplete: true,

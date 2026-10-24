@@ -65,6 +65,7 @@ it.skipIf(server.browser !== "chromium").each([0, 2])(
             slashCommands: [],
             tasks: [],
             subagents: [],
+            subagentsRunning: false,
             backgroundProcesses: [],
             connection: "live",
             transcriptComplete: false,

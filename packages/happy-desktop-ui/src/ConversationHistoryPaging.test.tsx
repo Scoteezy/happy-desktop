@@ -71,6 +71,7 @@ it.each(server.browser === "chromium" ? [1, 0.67, 2] : [1])(
             slashCommands: [],
             tasks: [],
             subagents: [],
+            subagentsRunning: false,
             backgroundProcesses: [],
             connection: "live",
             transcriptComplete: false,

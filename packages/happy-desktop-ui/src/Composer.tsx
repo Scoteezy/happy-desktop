@@ -22,6 +22,7 @@ import {
     type ComposerAttachmentPreview,
     type ComposerAttachmentPreviewsProps,
 } from "./ComposerAttachmentPreviews";
+import { ConfirmPopover } from "./ConfirmPopover";
 import { EmojiPicker, type EmojiItem } from "./EmojiPicker";
 import { Icon, type IconName } from "./Icon";
 import { ScrollbarTracks, useScrollbarController } from "./Scrollbar";
@@ -329,12 +330,21 @@ export type ComposerProps = {
      * Escape in the text control calls it too, whatever the draft holds.
      */
     onStop?: () => void;
+    /**
+     * Stops the agents this conversation delegated to. Offered while
+     * `subagentsRunning` and not `running`: the same circle then stays a stop
+     * control after the conversation's own turn has ended, and asks before
+     * calling this. While `running`, Stop is `onStop` exactly as before.
+     */
+    onSubagentsStop?: () => void;
     onValueChange: (value: string) => void;
     placeholder?: string;
     /** Keeps the composer geometry stable while the current send is being acknowledged. */
     pending?: boolean;
     /** True while the agent is producing a reply, which is what `onStop` ends. */
     running?: boolean;
+    /** True while agents this conversation delegated to are still working. */
+    subagentsRunning?: boolean;
     /** Emoji available to the composer's searchable picker. */
     emoji?: EmojiItem[];
     /** Emoji ids rendered in the picker's recent section. */
@@ -388,7 +398,7 @@ function cutLineFade(hidden: number) {
  * in the card is the draft's own dead space.
  */
 const SURFACE_CLAIMED_TARGETS =
-    '[data-happy-desktop-ui="composer-popover"], [data-happy-desktop-ui="composer-emoji-popover"], [data-happy-desktop-ui="context-chips-chip"], button, input, textarea, select, a, [contenteditable], [tabindex], [role="button"], [role="combobox"], [role="listbox"], [role="option"], [role="menu"], [role="menuitem"]';
+    '[data-happy-desktop-ui="composer-popover"], [data-happy-desktop-ui="composer-emoji-popover"], [data-happy-desktop-ui="composer-stop-popover"], [data-happy-desktop-ui="context-chips-chip"], button, input, textarea, select, a, [contenteditable], [tabindex], [role="button"], [role="combobox"], [role="listbox"], [role="option"], [role="menu"], [role="menuitem"]';
 
 /**
  * Below the card the composer stops being one input surface. The footer row
@@ -480,6 +490,9 @@ export function Composer(props: ComposerProps) {
     const [commandIndex, setCommandIndex] = useState(0);
     const [emojiOpen, setEmojiOpen] = useState(false);
     const [emojiQuery, setEmojiQuery] = useState("");
+    /* Whether Stop has asked to stop the subagents and is waiting for an answer. */
+    const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+    const stopAnchorEl = useRef<HTMLDivElement>(null);
     /* Whether a file drag this composer will take is currently in flight. */
     const [dropActive, setDropActive] = useState(false);
     const restoreFocusAfterSend = useRef(false);
@@ -528,8 +541,25 @@ export function Composer(props: ComposerProps) {
      * be able to end. Whenever sending is impossible, stopping takes the
      * circle back regardless of what is written.
      */
+    const subagentsStopOffered = () =>
+        !props.running && Boolean(props.subagentsRunning && props.onSubagentsStop);
     const stopShown = () =>
-        Boolean(props.running && props.onStop) && (busy || props.value.trim().length === 0);
+        (Boolean(props.running && props.onStop) || subagentsStopOffered()) &&
+        (busy || props.value.trim().length === 0);
+    /*
+     * The question belongs to the moment it was asked. Once the subagents are
+     * done, the conversation's own turn has started, or the circle has gone
+     * back to sending, there is nothing left to answer, and a later stretch of
+     * subagent work must not find the question already open.
+     */
+    const stopConfirmAvailable = subagentsStopOffered() && stopShown();
+    if (stopConfirmOpen && !stopConfirmAvailable) setStopConfirmOpen(false);
+    const stopConfirmClose = (returnFocus: "stop" | "draft" | "none") => {
+        setStopConfirmOpen(false);
+        if (returnFocus === "stop")
+            stopAnchorEl.current?.querySelector<HTMLElement>('[data-action="stop"]')?.focus();
+        if (returnFocus === "draft") textareaEl.current?.focus();
+    };
     const emoji = () => props.emoji ?? [];
     const filteredEmoji = () => {
         const needle = emojiQuery.trim().toLowerCase();
@@ -605,6 +635,10 @@ export function Composer(props: ComposerProps) {
     useLayoutEffect(() => {
         const onPointerDown = (event: PointerEvent) => {
             if (!composerEl.current?.contains(event.target as Node)) closePopovers();
+            // The stop question is answered by its own two actions or by
+            // pressing anywhere else, the composer's own text included.
+            if (stopConfirmOpen && !stopAnchorEl.current?.contains(event.target as Node))
+                stopConfirmClose("none");
         };
         document.addEventListener("pointerdown", onPointerDown);
         return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -1126,16 +1160,59 @@ export function Composer(props: ComposerProps) {
                             </div>
                         ) : null}
                         {stopShown() ? (
-                            <Button
-                                aria-label="Stop the agent"
-                                className="happy-composer__send happy-composer__stop"
-                                data-action="stop"
-                                icon="stop"
-                                iconOnly
-                                onClick={() => props.onStop?.()}
-                                size="small"
-                                variant="primary"
-                            />
+                            <div
+                                className="happy-composer__stop-anchor"
+                                data-happy-desktop-ui="composer-stop-anchor"
+                                ref={stopAnchorEl}
+                            >
+                                {props.running ? (
+                                    <Button
+                                        aria-label="Stop the agent"
+                                        className="happy-composer__send happy-composer__stop"
+                                        data-action="stop"
+                                        icon="stop"
+                                        iconOnly
+                                        onClick={() => props.onStop?.()}
+                                        size="small"
+                                        variant="primary"
+                                    />
+                                ) : (
+                                    <Button
+                                        aria-expanded={stopConfirmOpen}
+                                        aria-haspopup="dialog"
+                                        aria-label="Stop subagents"
+                                        className="happy-composer__send happy-composer__stop"
+                                        data-action="stop"
+                                        icon="stop"
+                                        iconOnly
+                                        onClick={() =>
+                                            stopConfirmOpen
+                                                ? stopConfirmClose("stop")
+                                                : setStopConfirmOpen(true)
+                                        }
+                                        size="small"
+                                        variant="primary"
+                                    />
+                                )}
+                                {stopConfirmOpen && stopConfirmAvailable ? (
+                                    <div
+                                        className="happy-composer__stop-popover"
+                                        data-happy-desktop-ui="composer-stop-popover"
+                                    >
+                                        <ConfirmPopover
+                                            confirmLabel="Stop subagents"
+                                            message="Agents this chat started will stop their current work. Nothing is archived."
+                                            onCancel={() => stopConfirmClose("stop")}
+                                            onConfirm={() => {
+                                                stopConfirmClose("draft");
+                                                props.onSubagentsStop?.();
+                                            }}
+                                            title="Stop all subagents?"
+                                            tone="danger"
+                                        />
+                                    </div>
+                                ) : null}
+                            </div>
                         ) : (
                             <Button
                                 aria-label="Send message"

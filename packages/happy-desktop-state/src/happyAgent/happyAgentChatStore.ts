@@ -634,6 +634,11 @@ export interface HappyAgentChatSnapshot {
     readonly session: Loadable<HappyAgentSession>;
     readonly entries: readonly ConversationEntry[];
     readonly runStatus: "idle" | "running";
+    /**
+     * Whether agents this conversation delegated to are still working, which
+     * can outlast its own turn. `subagentsAbort` stops them.
+     */
+    readonly subagentsRunning: boolean;
     readonly workingPhase: HappyAgentWorkingPhase;
     readonly workingLabel?: string;
     readonly workingWait?: HappyAgentWorkingWait;
@@ -683,6 +688,7 @@ export type HappyAgentChatOutput =
           readonly steered: boolean;
       }
     | { readonly type: "runAborted"; readonly sessionId: HappyAgentSessionId }
+    | { readonly type: "subagentsAborted"; readonly sessionId: HappyAgentSessionId }
     | {
           readonly type: "inputAnswered";
           readonly sessionId: HappyAgentSessionId;
@@ -717,6 +723,12 @@ export interface HappyAgentChatStore {
     draftSet(draft: string, updatedAt: number, origin: string): Promise<void>;
     draftAppendConfirmed(text: string, updatedAt: number): Promise<void>;
     runAbort(): Promise<void>;
+    /**
+     * Stops every agent this conversation delegated to that is still working,
+     * and everything below them, without stopping the conversation's own run
+     * or archiving anyone.
+     */
+    subagentsAbort(): Promise<void>;
     answerInput(input: HappyAgentUserInputAnswers): Promise<void>;
     requestSelectionUpdate(
         requestId: string,
@@ -795,6 +807,7 @@ export interface HappyAgentChatDeps {
         | "setServiceTier"
         | "stopBackgroundProcess"
         | "stopRun"
+        | "stopSubagents"
         | "switchModel"
         | "sessionModeSaveWait"
     >;
@@ -858,6 +871,7 @@ export function happyAgentChatStoreCreate(
         archived: false,
         entries: [],
         runStatus: "idle",
+        subagentsRunning: false,
         workingPhase: "working",
         transcriptComplete: true,
         loadingMore: false,
@@ -1149,6 +1163,7 @@ export function happyAgentChatStoreCreate(
             session: sessionLoadable(),
             entries,
             runStatus,
+            subagentsRunning: connected?.subagentsRunning ?? false,
             workingPhase: workingPhaseProject(connected, waitingForModel),
             ...(workingLabel === undefined ? {} : { workingLabel }),
             ...(workingWait === undefined ? {} : { workingWait }),
@@ -1606,6 +1621,11 @@ export function happyAgentChatStoreCreate(
             rejecting(() => {
                 connectMutationTrack(deps.connectActions.stopRun(sessionId));
                 output({ type: "runAborted", sessionId });
+            }),
+        subagentsAbort: () =>
+            rejecting(() => {
+                connectMutationTrack(deps.connectActions.stopSubagents(sessionId));
+                output({ type: "subagentsAborted", sessionId });
             }),
         answerInput: answerInputRun,
         requestSelectionUpdate(requestId, answers) {

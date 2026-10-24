@@ -132,6 +132,7 @@ function emptySession(sessionId: string): SessionState {
         slashCommands: [],
         tasks: [],
         subagents: [],
+        subagentsRunning: false,
         backgroundProcesses: [],
         connection: "connecting",
         transcriptComplete: true,

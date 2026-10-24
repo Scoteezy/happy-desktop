@@ -68,6 +68,12 @@ export type ConversationDockProps = {
      * stopping is offered is said by giving this or withholding it.
      */
     onAbort?: () => void;
+    /**
+     * Stops the agents this conversation delegated to, after the reader
+     * confirms. Offered by the stop control while `subagentsRunning` and not
+     * `running`; withhold it, like `onAbort`, where stopping is not allowed.
+     */
+    onSubagentsAbort?: () => void;
     onCommandInvoke?: (commandId: string) => void;
     onComposerAttachmentRemove?: (attachmentId: string) => void;
     onComposerAttachmentsSelect?: (files: File[]) => void;
@@ -75,6 +81,8 @@ export type ConversationDockProps = {
     onComposerSend: () => void;
     onComposerValueChange: (value: string) => void;
     running?: boolean;
+    /** Agents this conversation delegated to are still working. */
+    subagentsRunning?: boolean;
     style?: CSSProperties;
 };
 
@@ -365,12 +373,14 @@ export function ConversationDock(props: ConversationDockProps) {
                     onFocusChange={props.onComposerFocusChange}
                     onSend={composerSend}
                     onStop={props.onAbort}
+                    onSubagentsStop={props.onSubagentsAbort}
                     onValueChange={props.onComposerValueChange}
                     pending={composer.submission.status === "pending"}
                     placeholder={
                         hosted?.placeholder ?? props.composerPlaceholder ?? "Message the agent…"
                     }
                     running={props.running}
+                    subagentsRunning={props.subagentsRunning}
                     sendEnabled={sendEnabled}
                     submitDisabled={props.submitDisabled === true}
                     value={composer.text}
