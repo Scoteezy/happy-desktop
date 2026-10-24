@@ -590,15 +590,23 @@
 }
 
 /* Bounded to half the window: the reader must still see what the question is
-   about. Anything longer scrolls inside the region, Submit staying in reach. */
+   about. Anything longer scrolls inside the region, Submit staying in reach.
+ *
+ * It is part of the conversation held at its foot, so it wears the chat's own
+ * surface and only a frame, the input's box exactly: the same edges and
+ * corners as the card below it. The frame's padding is the margin it used to
+ * keep, so the question's text column is where it always was. */
 .happy-conversation__question {
     display: flex;
     flex: none;
     flex-direction: column;
-    margin-right: 36px;
-    margin-left: 10px;
+    box-sizing: border-box;
     max-height: 50vh;
+    padding: 8px 35px 8px 9px;
     overflow: hidden;
+    border: 1px solid var(--divider);
+    border-radius: 16px;
+    background: var(--surface);
 }
 
 .happy-conversation__question-scroll {
