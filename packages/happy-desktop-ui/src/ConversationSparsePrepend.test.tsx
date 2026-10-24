@@ -178,6 +178,11 @@ it.skipIf(server.browser !== "chromium")(
             await userEvent.keyboard("{PageUp}");
             await new Promise<void>((resolve) => setTimeout(resolve, 450));
             await frames();
+            const held = [
+                ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+            ].find((row) => row.textContent?.includes("Check scrolling"))!;
+            const heldTop = held.getBoundingClientRect().top;
+            const heldText = held.textContent;
             elements = [
                 ...Array.from(
                     { length: 14 },
@@ -197,6 +202,12 @@ it.skipIf(server.browser !== "chromium")(
             state = { ...state, loadingMore: false };
             publish();
             await frames();
+            expect(held.isConnected, "parked delegation row remounted").toBe(true);
+            expect(held.textContent, "parked row was reused for a different entry").toBe(heldText);
+            expect(
+                Math.abs(held.getBoundingClientRect().top - heldTop),
+                "parked delegation moved on prepend",
+            ).toBeLessThanOrEqual(1);
             const bounds = viewport.getBoundingClientRect();
             const rows = [
                 ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
