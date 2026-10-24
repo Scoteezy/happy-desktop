@@ -51,20 +51,23 @@ async function frames() {
 }
 
 /*
- * The desktop app zooms the way a browser does: Electron's page zoom scales the
- * device pixel ratio, and Chromium then lays text out exactly as at 100%, as
- * the canvas the text model measures with does. CSS `zoom` is not that in
- * Chromium: it lays text out at the zoomed font size, whose hinted advances do
- * not scale, so lines near a wrap boundary break differently from any model.
- * Chromium therefore zooms here through the device scale; Firefox, whose CSS
- * zoom scales text linearly, keeps CSS zoom.
+ * The desktop app zooms the way a browser does. Electron's page zoom multiplies
+ * the device pixel ratio and divides the CSS viewport, so a panel of the same
+ * physical size holds fewer CSS pixels. The test frame's own viewport does not
+ * follow the emulated one, so the panel is sized in CSS pixels here. Chromium
+ * lays text out exactly as at 100%, as the canvas the text model measures
+ * with does. CSS `zoom` is not
+ * that in Chromium: it lays text out at the zoomed font size, whose hinted
+ * advances do not scale, so lines near a wrap boundary break differently from
+ * any model. Chromium therefore zooms here the way the app does; Firefox, whose
+ * CSS zoom scales text linearly, keeps CSS zoom.
  */
 const pageZoom = server.browser === "chromium";
-async function deviceScale(scale: number) {
+async function pageZoomSet(baseScale: number, zoom: number) {
     await cdp().send("Emulation.setDeviceMetricsOverride", {
         width: 1550,
         height: 1550,
-        deviceScaleFactor: scale,
+        deviceScaleFactor: baseScale * zoom,
         mobile: false,
     });
 }
@@ -87,10 +90,21 @@ it.each([1, 0.5, 0.67, 0.9, 1.5, 2])(
         });
         function Harness() {
             const snapshot = useSyncExternalStore(store.subscribe, store.get);
-            const [geometry, update] = useState({ width: 820, zoom: 1 });
-            resize = () => flushSync(() => update({ width: 880, zoom: pageZoom ? 1 : zoom }));
+            const [geometry, update] = useState({ width: 820, height: 650, zoom: 1 });
+            /* The panel keeps its physical size: under page zoom it holds
+               880 / zoom CSS pixels. */
+            resize = () =>
+                flushSync(() =>
+                    update(
+                        pageZoom
+                            ? { width: 880 / zoom, height: 650 / zoom, zoom: 1 }
+                            : { width: 880, height: 650, zoom },
+                    ),
+                );
             return (
-                <div style={{ height: 650, width: geometry.width, zoom: geometry.zoom }}>
+                <div
+                    style={{ height: geometry.height, width: geometry.width, zoom: geometry.zoom }}
+                >
                     <ConversationView
                         conversationId="a"
                         motion="calm"
@@ -154,12 +168,12 @@ it.each([1, 0.5, 0.67, 0.9, 1.5, 2])(
             await view.ready();
             await frames();
             check(1, "before");
-            if (pageZoom) await deviceScale(baseScale * zoom);
+            if (pageZoom) await pageZoomSet(baseScale, zoom);
             resize();
             await frames();
             check(pageZoom ? 1 : zoom, "after");
         } finally {
-            if (pageZoom) await deviceScale(baseScale);
+            if (pageZoom) await pageZoomSet(baseScale, 1);
             view.destroy();
             store[Symbol.dispose]();
         }
