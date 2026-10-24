@@ -828,41 +828,47 @@ it("leaves a parked reader in place through a send and viewport height changes",
     expect(view.container.querySelector(".happy-message-list__viewport")).toBe(viewport);
 });
 
-it("holds the wheel's native position when a model commit precedes its scroll report", async () => {
-    const { view, stream } = renderConversation(60);
-    await view.ready();
-    stream(1);
-    await frames();
-    const viewport = view.container.querySelector<HTMLElement>(".happy-message-list__viewport")!;
-    const delayReport = (event: Event) => {
-        if (event.target === viewport) event.stopImmediatePropagation();
-    };
-    document.addEventListener("scroll", delayReport, true);
-    try {
-        viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true }));
-        viewport.scrollTop -= 120;
-        const bounds = viewport.getBoundingClientRect();
-        const anchor = [
-            ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
-        ].find((row) => {
-            const rect = row.getBoundingClientRect();
-            return (
-                row.dataset.itemId !== "working-status" &&
-                rect.top < bounds.bottom &&
-                rect.bottom > bounds.top
-            );
-        })!;
-        expect(anchor).toBeDefined();
-        const top = anchor.getBoundingClientRect().top;
-        stream(2);
+it.each([false, true])(
+    "holds the wheel's native position when a model commit precedes its scroll report (frame elapsed: %s)",
+    async (elapsed) => {
+        const { view, stream } = renderConversation(60);
+        await view.ready();
+        stream(1);
         await frames();
-        expect(anchor.isConnected).toBe(true);
-        expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
-    } finally {
-        document.removeEventListener("scroll", delayReport, true);
-        view.destroy();
-    }
-});
+        const viewport = view.container.querySelector<HTMLElement>(
+            ".happy-message-list__viewport",
+        )!;
+        const delayReport = (event: Event) => {
+            if (event.target === viewport) event.stopImmediatePropagation();
+        };
+        document.addEventListener("scroll", delayReport, true);
+        try {
+            viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -120, cancelable: true }));
+            viewport.scrollTop -= 120;
+            const bounds = viewport.getBoundingClientRect();
+            const anchor = [
+                ...viewport.querySelectorAll<HTMLElement>(".happy-message-list__virtual-row"),
+            ].find((row) => {
+                const rect = row.getBoundingClientRect();
+                return (
+                    row.dataset.itemId !== "working-status" &&
+                    rect.top < bounds.bottom &&
+                    rect.bottom > bounds.top
+                );
+            })!;
+            expect(anchor).toBeDefined();
+            const top = anchor.getBoundingClientRect().top;
+            if (elapsed) await frames();
+            stream(2);
+            await frames();
+            expect(anchor.isConnected).toBe(true);
+            expect(Math.abs(anchor.getBoundingClientRect().top - top)).toBeLessThanOrEqual(1);
+        } finally {
+            document.removeEventListener("scroll", delayReport, true);
+            view.destroy();
+        }
+    },
+);
 
 it("does not resume following on a small native offset adjustment after an upward wheel", async () => {
     const { view, send } = renderConversation(40);

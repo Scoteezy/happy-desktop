@@ -1141,6 +1141,8 @@ export function MessageList(props: MessageListProps) {
         value: number,
         placed?: (top: number) => void,
     ) => {
+        // This model placement supersedes wheel intent that has not moved yet.
+        wheelScrollPending.current = false;
         // Reassigning WebKit's reported offset at fractional zoom can round
         // its native position down a pixel, even though the value is equal.
         if (element.scrollTop !== value) element.scrollTop = value;
@@ -1402,8 +1404,9 @@ export function MessageList(props: MessageListProps) {
             wheelScrollPending.current &&
             !following.current &&
             element &&
-            element.scrollTop !== readerScrollTop.current
+            messageListScrollOffsetMoved(element.scrollTop, readerScrollTop.current)
         ) {
+            wheelScrollPending.current = false;
             // The native offset can change before its scroll event arrives.
             // An idle/model commit must hold that user position immediately.
             readerScrollTop.current = element.scrollTop;
@@ -1918,6 +1921,8 @@ export function MessageList(props: MessageListProps) {
             // Hide can precede the target scroll listener. Retained views must
             // adopt the same native input this published cold position holds.
             readerScrollTop.current = top;
+            wheelScrollPending.current = false;
+            pendingAnchor.current = undefined;
             // Notify an active observer before changing its cache, just as a
             // model write does. A hidden view has no observer and only needs
             // the cached offset that TanStack writes when it reattaches.
@@ -3110,10 +3115,17 @@ export function MessageList(props: MessageListProps) {
         const element = list.current;
         if (!element) return;
         let wheelDirection = 0;
+        const targetWindow = element.ownerDocument.defaultView!;
+        let wheelExpiry: number | undefined;
+        const wheelExpiryCancel = () => {
+            if (wheelExpiry !== undefined) targetWindow.cancelAnimationFrame(wheelExpiry);
+            wheelExpiry = undefined;
+        };
         const scrollToBottom = () => {
             scrollBottomFollow(element);
         };
         const onGeometryScrollIntent = () => {
+            wheelExpiryCancel();
             wheelDirection = 0;
             wheelScrollPending.current = false;
             expectedScrollTop.current = undefined;
@@ -3137,6 +3149,18 @@ export function MessageList(props: MessageListProps) {
                     messageListViewportHeight(element),
                     element.scrollTop,
                 ) ?? { scrollTop: element.scrollTop, type: "scrollTop" };
+                wheelExpiry = targetWindow.requestAnimationFrame(() => {
+                    wheelExpiry = undefined;
+                    if (!wheelScrollPending.current) return;
+                    wheelScrollPending.current = false;
+                    // A boundary wheel may produce no event. If native input
+                    // did move while its report was delayed, adopt it before
+                    // expiring the intent so the next model commit holds it.
+                    if (messageListScrollOffsetMoved(element.scrollTop, readerScrollTop.current)) {
+                        const position = positionCurrentRef.current(element);
+                        positionChange.current?.(position);
+                    }
+                });
             } else if (event.deltaY > 0) {
                 geometryFollowInset.current = 0;
                 const bottomOffset = Math.max(
@@ -3162,19 +3186,13 @@ export function MessageList(props: MessageListProps) {
         let previousScrollTop = element.scrollTop;
         scrollHeightBaseline.current = element.scrollHeight;
         const onScroll = () => {
-            if (wheelScrollPending.current) {
-                wheelScrollPending.current = false;
-                readerAnchor.current = modelAnchorCaptureCurrent.current(
-                    viewportGeometry.current.height,
-                    element.scrollTop,
-                );
-            }
             const currentScrollHeight = element.scrollHeight;
             const expected = expectedScrollTop.current;
             if (
                 expected !== undefined &&
                 !messageListScrollOffsetMoved(element.scrollTop, expected)
             ) {
+                wheelScrollPending.current = false;
                 expectedScrollTop.current = undefined;
                 previousScrollTop = element.scrollTop;
                 readerScrollTop.current = element.scrollTop;
@@ -3184,6 +3202,7 @@ export function MessageList(props: MessageListProps) {
             }
             expectedScrollTop.current = undefined;
             if (!messageListScrollOffsetMoved(element.scrollTop, readerScrollTop.current)) {
+                wheelScrollPending.current = false;
                 // A browser can emit more than one event for a model write.
                 // Its echoes retain the actual held point, including an inset
                 // that differs from the standard point used for user input.
@@ -3210,6 +3229,13 @@ export function MessageList(props: MessageListProps) {
                 previousScrollTop = element.scrollTop;
                 scrollHeightBaseline.current = currentScrollHeight;
                 return;
+            }
+            if (wheelScrollPending.current) {
+                wheelScrollPending.current = false;
+                readerAnchor.current = modelAnchorCaptureCurrent.current(
+                    viewportGeometry.current.height,
+                    element.scrollTop,
+                );
             }
             const bottomOffset = Math.max(
                 0,
@@ -3256,6 +3282,7 @@ export function MessageList(props: MessageListProps) {
         /* Keyboard scrolling moves the viewport too; it is not a reason to
            read the next scroll event as the reader's. */
         const onKeyDown = (event: KeyboardEvent) => {
+            wheelExpiryCancel();
             wheelDirection = 0;
             wheelScrollPending.current = false;
             expectedScrollTop.current = undefined;
@@ -3294,6 +3321,8 @@ export function MessageList(props: MessageListProps) {
               });
         observer?.observe(element, { characterData: true, childList: true, subtree: true });
         return () => {
+            wheelExpiryCancel();
+            wheelScrollPending.current = false;
             // Activity may have disconnected the ref already. Capture from
             // this listener lifetime's element, and retain the held row point
             // so a hidden width change restores the same reader when shown.

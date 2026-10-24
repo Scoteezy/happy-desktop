@@ -7,9 +7,10 @@ import { createRenderer } from "./testing";
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-it.each(["queued", "insert-only", "trim"] as const)(
+it.each(["queued", "queued-wheel", "insert-only", "trim"] as const)(
     "uses the pre-insertion floor when content and viewport height change together (%s)",
     async (mode) => {
+        const queued = mode === "queued" || mode === "queued-wheel";
         const view = createRenderer();
         let grow!: () => void;
         let commit!: () => void;
@@ -38,8 +39,8 @@ it.each(["queued", "insert-only", "trim"] as const)(
                 ...(state.stopped ? [{ key: "stopped", height: 32 }] : []),
                 { key: "question", height: 80 },
                 ...(mode === "trim" && !state.inserted ? [{ key: "removed", height: 100 }] : []),
-                { key: "tail", height: 16 },
-                ...(state.inserted && mode === "queued" ? [{ key: "queued", height: 76 }] : []),
+                ...(!queued ? [{ key: "tail", height: 16 }] : []),
+                ...(state.inserted && queued ? [{ key: "queued", height: 76 }] : []),
             ];
             return (
                 <div style={{ display: "flex", height: state.height }}>
@@ -51,14 +52,13 @@ it.each(["queued", "insert-only", "trim"] as const)(
                             position = next;
                         }}
                         estimateRowSize={(index) => rows[index]!.height}
+                        paddingEnd={queued ? 24 : 8}
                         footer={
-                            state.inserted && !state.stopped && mode === "queued" ? (
+                            state.inserted && !state.stopped && queued ? (
                                 <div style={{ height: 36 }} />
                             ) : undefined
                         }
-                        footerHeight={
-                            state.inserted && !state.stopped && mode === "queued" ? 36 : 0
-                        }
+                        footerHeight={state.inserted && !state.stopped && queued ? 36 : 0}
                         footerBefore={rows.length - 1}
                         initialScrollPosition={{
                             type: "row",
@@ -92,6 +92,13 @@ it.each(["queued", "insert-only", "trim"] as const)(
                 viewport.getBoundingClientRect().bottom - row.getBoundingClientRect().bottom;
             expect(viewport.scrollTop).toBe(0);
             expect(Math.abs(inset - (mode === "trim" ? 212 : 112))).toBeLessThanOrEqual(1);
+            if (mode === "queued-wheel") {
+                // The question is the last readable row. The upward wheel
+                // cannot move native 0, so its standard point is still this
+                // question's end. No native event arrives before the resize.
+                viewport.dispatchEvent(new WheelEvent("wheel", { deltaY: -10, cancelable: true }));
+                expect(viewport.scrollTop).toBe(0);
+            }
             commit();
             await frame();
             await frame();
@@ -103,10 +110,14 @@ it.each(["queued", "insert-only", "trim"] as const)(
                 ),
             ).toBeLessThanOrEqual(1);
             expect(Math.abs(viewport.scrollTop - 114)).toBeLessThanOrEqual(1);
-            expect(
-                Math.abs(viewport.scrollHeight - (mode === "queued" ? 803 : 779)),
-            ).toBeLessThanOrEqual(1);
-            if (mode === "queued") {
+            expect(Math.abs(viewport.scrollHeight - (queued ? 803 : 779))).toBeLessThanOrEqual(1);
+            if (queued) {
+                expect(position).toMatchObject({
+                    type: "row",
+                    rowKey: ".$question",
+                    offset: 80,
+                    viewportInset: 112,
+                });
                 const top = row.getBoundingClientRect().top;
                 // One echo consumes expectedScrollTop; a repeated native echo
                 // and scrollend must retain the same nonstandard row point.
@@ -154,7 +165,8 @@ it.each(["queued", "insert-only", "trim"] as const)(
                 expect(position).toMatchObject({
                     type: "row",
                     rowKey: ".$queued",
-                    viewportInset: 32,
+                    offset: 76,
+                    viewportInset: 35,
                 });
             }
         } finally {
