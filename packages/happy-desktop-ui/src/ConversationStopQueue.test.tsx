@@ -123,6 +123,103 @@ const cases = [0, 1, 3].flatMap((count) =>
     ),
 );
 
+it.each(["running", "delivery", "working between queued rows"] as const)(
+    "preserves queued DOM identity when only %s changes",
+    async (transition) => {
+        const view = createRenderer();
+        let running = true;
+        let elements: readonly ChatElement[] = [
+            ...Array.from({ length: 45 }, (_, index) => ({
+                ...reply(`history:${index}`, 2, `history:${index}`),
+                complete: true,
+            })),
+            ...Array.from(
+                { length: 3 },
+                (_, index): ChatElement => ({
+                    id: `queued:${index}`,
+                    messageId: `queued:${index}`,
+                    groupId: `queued:${index}`,
+                    runId: `queued:${index}`,
+                    createdAt: 1500,
+                    kind: "user_message",
+                    authority: "local",
+                    identity: null,
+                    delivery: "pending_steering",
+                    text: `Queued instruction ${index}`,
+                }),
+            ),
+        ];
+        let render!: () => void;
+        function Harness() {
+            const [, update] = useState(0);
+            render = () => flushSync(() => update((value) => value + 1));
+            return (
+                <div style={{ height: 700, width: 880 }}>
+                    <ConversationView
+                        conversationId="stop-queue"
+                        entries={happyAgentConversationProject({
+                            elements,
+                            sessionId: "stop-queue",
+                            showReasoning: false,
+                            ephemeral: [],
+                            pendingUserInputs: [],
+                            sentMessageIds: new Set(["queued:0", "queued:1", "queued:2"]),
+                            answeredUserInputs: [],
+                            expandedGroupIds: new Set(),
+                            subagents: [],
+                        })}
+                        agentAuthor={agentAuthor}
+                        viewerId={happyAgentOwnerAuthor.id}
+                        running={running}
+                        motion="calm"
+                    />
+                </div>
+            );
+        }
+        view.render(Harness, { width: 1550, height: 1550 });
+        try {
+            await view.ready();
+            await frames();
+            const queuedNodes = () =>
+                [...view.container.querySelectorAll<HTMLElement>(".happy-message")].filter((node) =>
+                    node.textContent?.includes("Queued instruction"),
+                );
+            const original = queuedNodes();
+            expect(original).toHaveLength(3);
+            const checkIdentity = () => {
+                const current = queuedNodes();
+                expect(current).toHaveLength(original.length);
+                for (const [index, node] of original.entries()) {
+                    expect(current[index]).toBe(node);
+                    expect(node.isConnected).toBe(true);
+                }
+            };
+            const check = async () => {
+                render();
+                checkIdentity();
+                await frames();
+                checkIdentity();
+            };
+            if (transition !== "running") {
+                elements = elements.map((entry) =>
+                    entry.id === "queued:0" && entry.kind === "user_message"
+                        ? { ...entry, delivery: "sent", authority: "server" }
+                        : entry,
+                );
+                await check();
+            }
+            if (transition !== "delivery") {
+                running = false;
+                await check();
+                running = true;
+                await check();
+            }
+        } finally {
+            view.destroy();
+        }
+    },
+);
+
 it.each(
     (["direct", "store"] as const).flatMap((mode) =>
         cases.map((scenario) => ({ ...scenario, mode })),

@@ -2536,7 +2536,16 @@ export function MessageList(props: MessageListProps) {
        render has no width to model rows at, so it paints no rows and must not
        position the reader against that placeholder. */
     const modelRendered = !virtualized || rowSizeModel.width !== undefined;
-    const virtualItems = modelRendered ? virtualizer.getVirtualItems() : [];
+    /* Moving the footer can reorder rows without changing their count. Until
+       this commit's measure runs, TanStack can return the previous keys at
+       those indexes. Pair each rendered child with its current entity key so
+       React preserves the message while the modeled offsets catch up. */
+    const virtualItems = modelRendered
+        ? virtualizer.getVirtualItems().map((item) => {
+              const key = itemKeyAt(item.index);
+              return item.key === key ? item : { ...item, key };
+          })
+        : [];
     // eslint-disable-next-line happy-react/no-layout-effect -- streaming React commits publish a new modeled scrollHeight; a follower must pin in this same pre-paint commit
     useLayoutEffect(() => {
         headerRestApply();
