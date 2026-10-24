@@ -147,6 +147,52 @@ it.each(["##", ">"])(
     },
 );
 
+it.each([false, true])(
+    "matches an empty paragraph before a nested list (spread: %s)",
+    async (spread) => {
+        const view = createRenderer();
+        const texts = [
+            ["-", "-"],
+            ["1.", "1."],
+            ["-", "1."],
+            ["1.", "-"],
+        ].map(
+            ([outer, inner]) =>
+                `${outer} <span></span>\n${spread ? "\n" : ""}${outer === "-" ? "  " : "   "}${inner} Child`,
+        );
+        try {
+            view.render(
+                () => (
+                    <>
+                        {texts.map((body, index) => (
+                            <Message agent author="Happy" body={body} key={index} />
+                        ))}
+                    </>
+                ),
+                { width: 560, height: 600 },
+            );
+            await view.ready();
+            await nextLayout();
+            const bodies = [
+                ...view.container.querySelectorAll<HTMLElement>(".happy-message__body--markdown"),
+            ];
+            expect(bodies).toHaveLength(4);
+            for (const [index, body] of bodies.entries()) {
+                const modeled = markdownBodyHeight(
+                    texts[index]!,
+                    body.getBoundingClientRect().width,
+                );
+                expect(modeled).toBe(spread ? 54 : 48);
+                expect(Math.abs(body.getBoundingClientRect().height - modeled)).toBeLessThanOrEqual(
+                    1 / 64,
+                );
+            }
+        } finally {
+            view.destroy();
+        }
+    },
+);
+
 function message(id: string, sender: "agent" | "human", text: string): ConversationMessageEntry {
     return {
         kind: "message",
