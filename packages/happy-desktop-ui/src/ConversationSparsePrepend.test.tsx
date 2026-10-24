@@ -252,11 +252,14 @@ it.skipIf(server.browser !== "chromium").each([0, 2])(
                       )!;
             expect(summaryAnchor).toBeDefined();
             const summaryAnchorTop = summaryAnchor.getBoundingClientRect().top;
+            // When the point is above the insertion, visible rows above it
+            // also stay fixed. A point below it instead carries those rows up.
             const aboveInsertion = rows
                 .filter((row) => {
                     const rect = row.getBoundingClientRect();
                     return (
                         Number(row.dataset.index) < Number(held.dataset.index) &&
+                        historyCount > 0 &&
                         rect.bottom > bounds.top &&
                         rect.top < bounds.bottom
                     );
