@@ -25,6 +25,9 @@ import { createRenderer } from "./testing";
  *   - the carried block glides once, in one direction, from where it was let go
  *     to the slot it was previewed in, which is where the list then has it;
  *   - no two elements that nobody is carrying ever overlap;
+ *   - no row on screen before a drop leaves it: a drop never files a row away
+ *     into a folded section, whether a separator, an open section or the row
+ *     itself is carried; only carrying a folded section folds what it lands on;
  *   - once settled the column has no gaps: every neighbour is one gap apart;
  *   - confirmations, echoes and name batches move nothing.
  */
@@ -38,16 +41,32 @@ const fixture = (): SidebarItem[] => [
     { icon: "doc", id: "stem-1", kind: "view", label: "New" },
     { icon: "doc", id: "roadmap", kind: "view", label: "Q4 roadmap" },
     { icon: "doc", id: "launch", kind: "view", label: "Launch checklist" },
-    { collapsed: false, id: "tasks", kind: "section", label: "Tasks" },
+    { collapsed: true, id: "tasks", kind: "section", label: "Tasks" },
     { icon: "doc", id: "t1", kind: "view", label: "Task one" },
     { icon: "doc", id: "t2", kind: "view", label: "Task two" },
     { collapsed: false, id: "bots", kind: "section", label: "Bots" },
     { icon: "doc", id: "b1", kind: "view", label: "Bot one" },
-    { id: "divider", kind: "separator", label: "" },
-    { collapsed: false, id: "later", kind: "section", label: "Later" },
+    { icon: "doc", id: "b2", kind: "view", label: "Bot two" },
+    { collapsed: true, id: "later", kind: "section", label: "Later" },
     { icon: "doc", id: "l1", kind: "view", label: "Later one" },
-    { icon: "doc", id: "l2", kind: "view", label: "Later two" },
+    { id: "divider", kind: "separator", label: "" },
+    { icon: "doc", id: "loose", kind: "view", label: "Loose one" },
+    { icon: "doc", id: "loose-2", kind: "view", label: "Loose two" },
 ];
+
+/* What the sidebar shows: a folded section hides its run up to the next
+   section or separator. */
+const visibleIds = (items: readonly SidebarItem[]): string[] => {
+    const ids: string[] = [];
+    let hidden = false;
+    for (const item of items) {
+        if (item.kind === "section" || item.kind === "separator") {
+            hidden = item.kind === "section" && item.collapsed === true;
+            ids.push(item.id);
+        } else if (!hidden) ids.push(item.id);
+    }
+    return ids;
+};
 
 /* The same peers the sidebar drags among: a section with its rows, a separator
    alone, the rows before the first section as one run; any other row alone. */
@@ -66,16 +85,33 @@ const blocksFor = (items: readonly SidebarItem[], id: string): SidebarItem[][] =
     items.find((item) => item.id === id)?.kind === "section"
         ? sectionBlocks(items)
         : items.map((item) => [item]);
+/* A move the way the document applies one: a section carries its whole run, a
+   folded section's run travels with it, and anything landing after a folded
+   section lands after its run. */
 const moveApply = (items: readonly SidebarItem[], move: SidebarReorder): SidebarItem[] => {
-    const blocks = blocksFor(items, move.id);
-    const from = blocks.findIndex((block) => block[0]!.id === move.id);
-    const [block] = blocks.splice(from, 1);
-    const at =
-        move.afterId === null
-            ? 0
-            : blocks.findIndex((candidate) => candidate[0]!.id === move.afterId) + 1;
-    blocks.splice(at, 0, block!);
-    return blocks.flat();
+    const breaks = (item: SidebarItem) => item.kind === "section" || item.kind === "separator";
+    const blockEnd = (list: readonly SidebarItem[], index: number) => {
+        let end = index + 1;
+        while (end < list.length && !breaks(list[end]!)) end += 1;
+        return end;
+    };
+    const runEnd = (list: readonly SidebarItem[], index: number) =>
+        list[index]!.kind === "section" && list[index]!.collapsed === true
+            ? blockEnd(list, index)
+            : index + 1;
+    const from = items.findIndex((item) => item.id === move.id);
+    const section = items[from]!.kind === "section";
+    const moved = items.slice(from, section ? blockEnd(items, from) : runEnd(items, from));
+    const rest = [...items.slice(0, from), ...items.slice(from + moved.length)];
+    let at = 0;
+    if (move.afterId !== null) {
+        const after = rest.findIndex((item) => item.id === move.afterId);
+        at =
+            section && rest[after]!.kind !== "separator"
+                ? blockEnd(rest, after)
+                : runEnd(rest, after);
+    }
+    return [...rest.slice(0, at), ...moved, ...rest.slice(at)];
 };
 
 const random = (seed: number) => {
@@ -122,6 +158,8 @@ const check = (
     releaseIndex: number,
     outcome: Outcome,
     landed: readonly string[],
+    /** A folded section was carried, which folds whatever it lands on. */
+    foldCarried: boolean,
 ): string[] => {
     const problems: string[] = [];
     const ids = frames[0]!.boxes.map(([id]) => id);
@@ -134,7 +172,7 @@ const check = (
     for (const id of ids) {
         const boxes = series(id);
         if (boxes.some((box) => box === undefined)) {
-            problems.push(`${id} left the list`);
+            if (!foldCarried) problems.push(`${id} left the list`);
             continue;
         }
         const tops = boxes.map((box) => box![1]);
@@ -176,6 +214,7 @@ const check = (
                 `${id} moved ${String(moves.length)} times: ${moves.map((move) => move.map((top) => top.toFixed(1)).join(" ")).join(" | ")}`,
             );
         const travel = tops.at(-1)! - tops[0]!;
+        if (foldCarried) continue;
         if (
             returns
                 ? Math.abs(travel) > 0.5
@@ -302,17 +341,17 @@ const chaos = async (seed: number, iterations: number) => {
 
     for (let iteration = 0; iteration < iterations; iteration += 1) {
         const outcome = pick<Outcome>(["confirm", "twice", "late", "async", "refuse", "decline"]);
-        const id = pick(shown.map((item) => item.id));
+        const id = pick(visibleIds(shown));
         const slots = Math.floor(next() * 8) - 4 || 1;
         // A refusal puts back the document as the daemon has it, so every
         // earlier write is answered first.
         if (outcome === "refuse") for (const answer of later.splice(0)) answer();
         const before = shown;
-        let landed = before.map((item) => item.id);
+        let landed = visibleIds(before);
         let written: number | undefined;
         applyMove = (move) => {
             const items = moveApply(shown, move);
-            landed = items.map((item) => item.id);
+            landed = visibleIds(items);
             if (outcome === "decline") return;
             sent += 1;
             written = sent;
@@ -381,16 +420,14 @@ const chaos = async (seed: number, iterations: number) => {
         );
         if (hole < 0) hole = resting.length;
         const preview = resting.map(([candidate]) => candidate);
-        preview.splice(
-            hole,
-            0,
-            ...before.map((item) => item.id).filter((item) => carried.has(item)),
-        );
+        preview.splice(hole, 0, ...visibleIds(before).filter((item) => carried.has(item)));
         releaseIndex = frames.length;
         pointer(body, "pointerup", x, y + Math.sign(slots) * 8 + travel);
         expect(dragging, "the drag ended").toBe(false);
+        // Rows a carried fold lands on are folded into it; every other row is
+        // where the preview showed it. Rows leaving otherwise fail per frame.
         expect(landed, `seed ${String(seed)} #${String(iteration)}: lands as previewed`).toEqual(
-            preview,
+            preview.filter((candidate) => landed.includes(candidate)),
         );
 
         // The daemon answers.
@@ -400,7 +437,7 @@ const chaos = async (seed: number, iterations: number) => {
                 await wait(240 + next() * 160);
                 version = answer;
                 show(before.map((item) => ({ ...item })));
-                landed = before.map((item) => item.id);
+                landed = visibleIds(before);
             } else if (outcome === "late") {
                 later.push(() => reply(answer));
             } else {
@@ -416,7 +453,7 @@ const chaos = async (seed: number, iterations: number) => {
                     );
             }
         } else if (outcome === "decline") {
-            landed = before.map((item) => item.id);
+            landed = visibleIds(before);
         }
         // Echoes and Prioritizing after the drop as well.
         setTimeout(() => show(shown.map((item) => ({ ...item }))), next() * 300);
@@ -425,7 +462,15 @@ const chaos = async (seed: number, iterations: number) => {
         recording = false;
         await frame();
 
-        const problems = check(frames, carried, releaseIndex, outcome, landed);
+        const head = before.find((item) => item.id === id)!;
+        const problems = check(
+            frames,
+            carried,
+            releaseIndex,
+            outcome,
+            landed,
+            head.kind === "section" && head.collapsed === true,
+        );
         expect(
             problems,
             `seed ${String(seed)} #${String(iteration)}: ${outcome} drag of ${id} by ${String(slots)}`,

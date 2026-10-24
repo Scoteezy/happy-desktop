@@ -51,6 +51,12 @@ export function artifactHtmlDocument(input: {
     readonly text: string;
     /** The version's other files by path, as `data:` URLs. */
     readonly assets: ReadonlyMap<string, string>;
+    /**
+     * What the page stands on: a `page` of its own, on the light canvas a
+     * browser gives a page, or a `sidebar` row, where it is drawn on the
+     * window's own background in the window's scheme, edge to edge.
+     */
+    readonly surface?: "page" | "sidebar";
 }): string {
     const document = new DOMParser().parseFromString(input.text, "text/html");
     const assetOf = (base: string, reference: string): string | undefined => {
@@ -169,8 +175,14 @@ export function artifactHtmlDocument(input: {
     // on an opaque canvas of its own scheme. A page that declares `light dark`
     // matches the window and stays transparent. `:where` keeps this weaker
     // than anything the page says.
+    // A sidebar widget is part of the window rather than a page in it: it takes
+    // the window's scheme, which keeps its canvas transparent, and the row's
+    // edges rather than a page's margin. It never scrolls; its row is its height.
     const canvas = document.createElement("style");
-    canvas.textContent = ":where(html) { color-scheme: light; }";
+    canvas.textContent =
+        input.surface === "sidebar"
+            ? ":where(html) { color-scheme: light dark; overflow: hidden; } :where(body) { margin: 0; font: 13px/18px system-ui, sans-serif; }"
+            : ":where(html) { color-scheme: light; }";
     head.prepend(policy, referrer, canvas);
 
     return `<!DOCTYPE html>${document.documentElement.outerHTML}`;

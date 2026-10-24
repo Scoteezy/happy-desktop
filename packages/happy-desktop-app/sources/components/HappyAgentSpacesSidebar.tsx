@@ -582,6 +582,17 @@ export function HappyAgentSpacesSidebar(props: HappyAgentSpacesSidebarProps) {
                         ...(editable ? {} : { reorderable: false }),
                     },
                 ];
+            // Prioritizing's own markup, drawn isolated where the document puts it.
+            case "widget":
+                return [
+                    {
+                        id: key,
+                        kind: "widget",
+                        label: "Prioritizing",
+                        widgetHtml: item.html,
+                        ...(editable ? {} : { reorderable: false }),
+                    },
+                ];
             case "space": {
                 const space = snapshot.spaces.get(item.id as HappyAgentSpaceId);
                 // A space this window does not know yet draws nothing until it does.

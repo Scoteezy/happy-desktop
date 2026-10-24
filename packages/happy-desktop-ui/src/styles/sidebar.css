@@ -1007,6 +1007,29 @@
     background: transparent;
 }
 
+/* A widget row is as tall as its markup, which stands inset 4px top and
+   bottom on the row's own padding. */
+.happy-sidebar__widget {
+    align-items: stretch;
+    height: auto;
+    min-height: 8px;
+    padding: 4px var(--happy-panel-row-padding);
+    cursor: grab;
+}
+
+.happy-sidebar__widget:hover:not([data-dragging]) {
+    background: transparent;
+}
+
+/* The row takes the pointer; the frame only draws. */
+.happy-sidebar-widget {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    pointer-events: none;
+}
+
 .happy-sidebar__separator-rule {
     flex: 1;
     min-width: 0;

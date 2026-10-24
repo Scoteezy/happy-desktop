@@ -338,6 +338,7 @@ export {
     type SidebarSearch,
     type SidebarSection,
 } from "./Sidebar";
+export { SIDEBAR_WIDGET_HEIGHT_MAX, SidebarWidget, type SidebarWidgetProps } from "./SidebarWidget";
 export {
     SidebarSectionContext,
     SidebarSectionTail,

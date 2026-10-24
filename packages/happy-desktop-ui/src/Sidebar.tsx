@@ -38,6 +38,7 @@ import { SidebarSectionContext, SidebarSectionTail } from "./SidebarSectionDetai
 import { TextField } from "./TextField";
 import { sidebarSectionsReuser } from "./sidebarSectionsReuser";
 import { Octicon } from "./vectorIcons/VectorIcon";
+import { SidebarWidget } from "./SidebarWidget";
 /** One control on a row: its glyph, what it does, and when it shows. */
 export type SidebarItemAction = {
     icon: IconName;
@@ -121,8 +122,11 @@ export type SidebarItem = {
         | "folder"
         | "action"
         | "section"
-        | "separator";
+        | "separator"
+        | "widget";
     label: string;
+    /** A `widget` row's markup, drawn by `SidebarWidget`. */
+    widgetHtml?: string;
     /**
      * A window chord shown at the row's trailing edge at all times, for a row
      * that is itself a window command, such as Search or Create.
@@ -810,6 +814,8 @@ interface SidebarDrag {
     readonly maximumDeltaY: number;
     /** Set when the drag rearranges one row's children rather than the top level. */
     readonly parentId?: string;
+    /** Slots a drop may not land in because it would hide a row on screen. */
+    readonly blocked?: readonly boolean[];
     /** False until the pointer passes the threshold, so a click still selects. */
     readonly moved: boolean;
     /**
@@ -986,6 +992,78 @@ function orderAfterMove(peers: readonly string[], from: number, to: number): rea
 }
 
 /**
+ * Which landing slots of a top-level drag would hide a row that is on screen.
+ *
+ * A folded section hides every row after it up to the next section or
+ * separator, so moving a boundary can file rows away: a separator carried past
+ * a row below a folded section takes that row into it, and so does a section
+ * landing just above it. A drop never makes a row disappear, so such a slot is
+ * simply not offered — the drag stops short of it and lands where the rows it
+ * showed can stay. A row carried into a folded section would vanish the same
+ * way, so that slot is closed too: a section takes new rows while it is open.
+ * Folding is the reader's own gesture, and carrying a folded section is that
+ * gesture: it folds whatever it is set down on, so its slots all stay open.
+ *
+ * Computed over every row the list holds, folded ones included, the way a
+ * move is applied: a section carries its whole run, any other row carries its
+ * nested rows, and a row landing after a folded section lands after its run.
+ */
+function dragSlotsBlocked(
+    all: readonly SidebarItem[],
+    peers: readonly string[],
+    from: number,
+): readonly boolean[] {
+    const breaks = (item: SidebarItem): boolean =>
+        (item.depth ?? 0) === 0 && (item.kind === "section" || item.kind === "separator");
+    const blockEnd = (items: readonly SidebarItem[], index: number): number => {
+        let end = index + 1;
+        while (end < items.length && !breaks(items[end]!)) end += 1;
+        return end;
+    };
+    const runEnd = (items: readonly SidebarItem[], index: number): number => {
+        const item = items[index]!;
+        if (item.kind === "section" && item.collapsed === true) return blockEnd(items, index);
+        const depth = item.depth ?? 0;
+        let end = index + 1;
+        while (end < items.length && (items[end]!.depth ?? 0) > depth) end += 1;
+        return end;
+    };
+    const shown = new Set(visibleRows(all).map((row) => row.item.id));
+    const movedId = peers[from];
+    const at = all.findIndex((item) => item.id === movedId);
+    if (at < 0) return peers.map(() => false);
+    const section = all[at]!.kind === "section";
+    if (section && all[at]!.collapsed === true) return peers.map(() => false);
+    const moved = all.slice(at, section ? blockEnd(all, at) : runEnd(all, at));
+    const rest = [...all.slice(0, at), ...all.slice(at + moved.length)];
+    const remaining = peers.filter((_, index) => index !== from);
+    return peers.map((_, to) => {
+        if (to === from) return false;
+        const afterId = to === 0 ? null : remaining[to - 1];
+        let insert = rest.findIndex((item) => item.id === (afterId ?? remaining[0]));
+        if (insert < 0) return false;
+        if (afterId !== null)
+            insert =
+                section && rest[insert]!.kind !== "separator"
+                    ? blockEnd(rest, insert)
+                    : runEnd(rest, insert);
+        const after = visibleRows([...rest.slice(0, insert), ...moved, ...rest.slice(insert)]);
+        const still = new Set(after.map((row) => row.item.id));
+        for (const id of shown) if (!still.has(id)) return true;
+        return false;
+    });
+}
+
+/** The slot a drag lands in: the one under the pointer, or the nearest open one short of it. */
+function dragSlotOpen(drag: SidebarDrag, to: number): number {
+    const blocked = drag.blocked;
+    if (!blocked) return to;
+    const step = to > drag.from ? -1 : 1;
+    while (to !== drag.from && blocked[to]) to += step;
+    return to;
+}
+
+/**
  * Whether the rows on screen already stand in the order a drop asked for.
  *
  * This is what tells the render that rearranged the list apart from one that has
@@ -1008,9 +1086,11 @@ function orderArranged(node: HTMLElement | undefined, expected: readonly string[
     ]
         .map((row) => row.dataset.itemId)
         .filter((id): id is string => id !== undefined && expected.includes(id));
-    return (
-        rendered.length === expected.length && rendered.every((id, index) => id === expected[index])
-    );
+    // A folded section set down on rows folds them away, so the peers the drop
+    // took in are no longer drawn: the rest standing in the new order is what
+    // the drop asked for.
+    const present = expected.filter((id) => rendered.includes(id));
+    return rendered.length > 0 && rendered.every((id, index) => id === present[index]);
 }
 
 /**
@@ -1742,6 +1822,36 @@ function SidebarRow({
                 <span aria-hidden="true" className="happy-sidebar__separator-rule" />
             </button>
         );
+    if (item().kind === "widget")
+        return (
+            /* A widget draws its markup across the row and opens nothing. The
+               row, not the frame, takes the pointer, so it is grabbed, carried
+               and opened for its menu like a separator. */
+            <div
+                aria-keyshortcuts={props.reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+                aria-label={item().label}
+                aria-roledescription="widget"
+                className="happy-sidebar__item happy-sidebar__widget"
+                data-dragging={props.dragging ? "" : undefined}
+                data-grabbed={props.grabbed ? "" : undefined}
+                data-happy-desktop-ui="sidebar-item"
+                data-item-id={item().id}
+                data-kind="widget"
+                onContextMenu={(event) => props.onContextMenu?.(item(), event)}
+                onKeyDown={props.onKeyDown}
+                onLostPointerCapture={props.onPointerCancel}
+                onPointerCancel={props.onPointerCancel}
+                onPointerDown={props.onPointerDown}
+                onPointerMove={props.onPointerMove}
+                onPointerUp={props.onPointerUp}
+                ref={(node) => nodeRef?.(node)}
+                role="group"
+                style={props.shift ? { top: props.shift } : undefined}
+                tabIndex={props.reorderable && props.tabStop === undefined ? 0 : -1}
+            >
+                <SidebarWidget html={item().widgetHtml ?? ""} title={item().label} />
+            </div>
+        );
     if (item().kind === "section" && props.rename)
         return (
             /* Renamed in place: the heading's title becomes the editable text,
@@ -2415,7 +2525,7 @@ export function Sidebar(props: SidebarProps) {
     const walkable = (root: HTMLElement): HTMLElement[] =>
         [
             ...root.querySelectorAll<HTMLElement>(
-                '[data-happy-desktop-ui="sidebar-item"]:not([data-kind="separator"])',
+                '[data-happy-desktop-ui="sidebar-item"]:not([data-kind="separator"], [data-kind="widget"])',
             ),
         ].filter((node) => !node.hasAttribute("data-renaming"));
     const keyboardWalk = (event: ReactKeyboardEvent<HTMLElement>): void => {
@@ -2825,6 +2935,11 @@ export function Sidebar(props: SidebarProps) {
      * The pinned actions and a section are told apart here and nowhere else, so
      * everything below arranges a list of rows without knowing which it has.
      */
+    /** Every row a list holds, folded ones included. */
+    const listItemsOf = (listId: SidebarListId): readonly SidebarItem[] | undefined =>
+        listId === ACTIONS_LIST
+            ? local.actions
+            : stableSections.find((section) => section.id === listId)?.items;
     const reorderOf = (listId: SidebarListId): ((move: SidebarReorder) => void) | undefined => {
         if (listId === ACTIONS_LIST) return local.onActionReorder;
         const reorder = local.onItemReorder;
@@ -2987,6 +3102,11 @@ export function Sidebar(props: SidebarProps) {
         }
         // Scripted PointerEvents have no browser-owned pointer to capture.
         if (event.isTrusted) event.currentTarget.setPointerCapture(event.pointerId);
+        const peers = units.map((unit) => items[unit[0]!]!.id);
+        const blocked =
+            parentId === undefined && !across
+                ? dragSlotsBlocked(listItemsOf(listId) ?? items, peers, blockIndex)
+                : undefined;
         const held = blocks[blockIndex]!;
         const heldFirst = bounds[held[0]!];
         dragSet({
@@ -3007,7 +3127,8 @@ export function Sidebar(props: SidebarProps) {
                 maximumDeltaY: bottom(blocks[blocks.length - 1]!) - bottom(blocks[blockIndex]!),
                 minimumDeltaY: top(0) - top(blockIndex),
                 moved: false,
-                peers: units.map((unit) => items[unit[0]!]!.id),
+                peers,
+                ...(blocked?.some(Boolean) ? { blocked } : {}),
                 pointerId: event.pointerId,
                 startY: event.clientY,
                 to: blockIndex,
@@ -3072,7 +3193,7 @@ export function Sidebar(props: SidebarProps) {
             return;
         }
         const deltaY = dragDeltaWithinPeers(current.drag, pointerDeltaY);
-        const to = dragTargetIndex(current.drag, deltaY);
+        const to = dragSlotOpen(current.drag, dragTargetIndex(current.drag, deltaY));
         // A tick each time the row crosses into a new slot, so the arrangement
         // can be felt without watching it.
         if (to !== current.drag.to) haptic("selection");
@@ -3363,9 +3484,15 @@ export function Sidebar(props: SidebarProps) {
         const { units, parentId } = dragUnitsOf(items, rowIndex);
         const from = units.findIndex((unit) => unit.includes(rowIndex));
         if (units.length < 2 || from < 0) return;
-        const to = from + (event.key === "ArrowUp" ? -1 : 1);
-        if (to < 0 || to >= units.length) return;
         const peers = units.map((unit) => items[unit[0]!]!.id);
+        const blocked =
+            parentId === undefined
+                ? dragSlotsBlocked(listItemsOf(listId) ?? items, peers, from)
+                : [];
+        const step = event.key === "ArrowUp" ? -1 : 1;
+        let to = from + step;
+        while (blocked[to]) to += step;
+        if (to < 0 || to >= units.length) return;
         const movedId = peers[from]!;
         if (!reducedMotion())
             settleCapture({
@@ -3718,7 +3845,7 @@ export function Sidebar(props: SidebarProps) {
                   ? []
                   : sectionRows(section, local.activeItemId)
                         .map((row) => row.item)
-                        .filter((item) => item.kind !== "separator")
+                        .filter((item) => item.kind !== "separator" && item.kind !== "widget")
                         .map((item) => item.id),
           )
         : [];

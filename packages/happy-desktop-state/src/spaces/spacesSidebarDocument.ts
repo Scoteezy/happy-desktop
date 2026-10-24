@@ -18,32 +18,22 @@
  *     </nav>
  *
  * A top-level `happy-space` names a space; a nested one names a session by its
- * agent. The daemon validates every write; the window validates again before it
- * draws anything, because the document is Prioritizing's to write and a window
- * must never render what it was not promised. It is parsed inertly as XML into
- * a typed tree, every edit the window makes is made on that tree, and the tree
- * is written back whole.
+ * agent. A `happy-widget` is a row of markup Prioritizing wrote, drawn isolated.
+ * The daemon validates every write; the window validates again before it draws
+ * anything, because the document is Prioritizing's to write and a window must
+ * never render what it was not promised. It is read with the one parser the
+ * daemon and every client share, every edit the window makes is made on the
+ * typed tree, and the tree is written back in the same canonical form.
  */
 
-const ROOT = "nav";
-const SEARCH = "happy-search";
-const CREATE = "happy-create";
-const SECTION = "happy-section";
-const SEPARATOR = "happy-separator";
-const SPACE = "happy-space";
-/** How deep sessions may nest under a space, as the daemon allows. */
-const DEPTH_MAX = 16;
-
-const FOLD_RIBBON = "fold-ribbon";
-
-const ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
-    [ROOT]: [FOLD_RIBBON],
-    [SEARCH]: [],
-    [CREATE]: [],
-    [SECTION]: ["id", "label", "collapsed"],
-    [SEPARATOR]: ["id"],
-    [SPACE]: ["id", "expanded", FOLD_RIBBON],
-};
+import {
+    formatSpaceSidebar,
+    parseSpaceSidebar,
+    SpaceSidebarError,
+    type SpaceSidebarDocument,
+    type SpaceSidebarItem,
+    type SpaceSidebarSpaceNode,
+} from "@slopus/happy-agent-client";
 
 /**
  * Where a foldable row's fold control stands: shown only while the row is
@@ -51,14 +41,6 @@ const ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
  * row's last column with the change count left of it.
  */
 export type SidebarDocumentFoldRibbon = "hover" | "always";
-
-function foldRibbonOf(element: Element): SidebarDocumentFoldRibbon | undefined {
-    const value = element.getAttribute(FOLD_RIBBON);
-    if (value === null) return undefined;
-    if (value !== "hover" && value !== "always")
-        throw new SidebarDocumentInvalid(`${FOLD_RIBBON} must be "hover" or "always".`);
-    return value;
-}
 
 /** A session shown under its parent's agent, by its agent ID. */
 export interface SidebarDocumentSession {
@@ -85,6 +67,8 @@ export type SidebarDocumentItem =
       }
     /** A rule between rows, and nothing else. */
     | { readonly kind: "separator"; readonly id: string }
+    /** Markup Prioritizing wrote, drawn as one isolated row. */
+    | { readonly kind: "widget"; readonly id: string; readonly html: string }
     | {
           readonly kind: "space";
           readonly id: string;
@@ -120,163 +104,116 @@ export function sidebarDocumentKey(node: SidebarDocumentNode): string {
         case "separator":
         case "space":
         case "session":
+        case "widget":
             return `${node.kind}:${node.id}`;
     }
 }
 
-const ID = /^[^\s\p{Cc}]{1,128}$/u;
-
-function flag(element: Element, name: string): boolean {
-    const value = element.getAttribute(name);
-    if (value === null || value === "false") return false;
-    if (value !== "true") throw new SidebarDocumentInvalid(`${name} must be "true" or "false".`);
-    return true;
+function sessionOf(node: SpaceSidebarSpaceNode): SidebarDocumentSession {
+    return {
+        kind: "session",
+        id: node.id,
+        expanded: node.expanded,
+        ...(node.foldRibbon ? { foldRibbon: node.foldRibbon } : {}),
+        children: node.children.map(sessionOf),
+    };
 }
 
-function attributesCheck(element: Element): void {
-    const allowed = ATTRIBUTES[element.tagName];
-    if (allowed === undefined || element.namespaceURI !== null)
-        throw new SidebarDocumentInvalid(`<${element.tagName}> is not allowed.`);
-    for (const attribute of element.getAttributeNames())
-        if (!allowed.includes(attribute))
-            throw new SidebarDocumentInvalid(`<${element.tagName}> may not carry ${attribute}.`);
-}
-
-function textCheck(element: Element): void {
-    for (const node of element.childNodes)
-        if (node.nodeType !== 1 && (node.nodeType !== 3 || /\S/u.test(node.textContent ?? "")))
-            throw new SidebarDocumentInvalid("The sidebar holds elements only.");
-}
-
-function idOf(element: Element, prefix: string, seen: Set<string>): string {
-    const id = element.getAttribute("id");
-    if (!id || !ID.test(id)) throw new SidebarDocumentInvalid(`<${element.tagName}> needs an id.`);
-    if (seen.has(`${prefix}:${id}`)) throw new SidebarDocumentInvalid(`${id} appears twice.`);
-    seen.add(`${prefix}:${id}`);
-    return id;
-}
-
-function sessionsOf(element: Element, seen: Set<string>, depth: number): SidebarDocumentSession[] {
-    textCheck(element);
-    if (element.children.length > 0 && depth > DEPTH_MAX)
-        throw new SidebarDocumentInvalid("Sessions nest too deep.");
-    return [...element.children].map((child) => {
-        attributesCheck(child);
-        if (child.tagName !== SPACE)
-            throw new SidebarDocumentInvalid(`Only <${SPACE}> may nest under a row.`);
-        const foldRibbon = foldRibbonOf(child);
-        return {
-            kind: "session",
-            id: idOf(child, "session", seen),
-            expanded: flag(child, "expanded"),
-            ...(foldRibbon ? { foldRibbon } : {}),
-            children: sessionsOf(child, seen, depth + 1),
-        };
+/** The shared grammar's tree read as what the window draws. */
+export function sidebarDocumentViewOf(document: SpaceSidebarDocument): SidebarDocumentView {
+    const items = document.items.map((item): SidebarDocumentItem => {
+        switch (item.type) {
+            case "search":
+            case "create":
+                return { kind: item.type };
+            case "section":
+                return {
+                    kind: "section",
+                    id: item.id,
+                    label: item.label,
+                    collapsed: item.collapsed,
+                };
+            case "separator":
+                return { kind: "separator", id: item.id };
+            case "widget":
+                return { kind: "widget", id: item.id, html: item.html };
+            case "space":
+                return {
+                    kind: "space",
+                    id: item.id,
+                    expanded: item.expanded,
+                    ...(item.foldRibbon ? { foldRibbon: item.foldRibbon } : {}),
+                    children: item.children.map(sessionOf),
+                };
+        }
     });
+    if (
+        !items.some((item) => item.kind === "search") ||
+        !items.some((item) => item.kind === "create")
+    )
+        throw new SidebarDocumentInvalid("<happy-search/> and <happy-create/> each appear once.");
+    return { ...(document.foldRibbon ? { foldRibbon: document.foldRibbon } : {}), items };
 }
 
 /** Parses and validates; throws `SidebarDocumentInvalid` for anything the window will not draw. */
 export function sidebarDocumentView(html: string): SidebarDocumentView {
-    const document = new DOMParser().parseFromString(html, "application/xml");
-    if (document.getElementsByTagName("parsererror").length > 0)
-        throw new SidebarDocumentInvalid("The sidebar is not well-formed XML.");
-    const root = document.documentElement;
-    if (root.tagName !== ROOT)
-        throw new SidebarDocumentInvalid(`The sidebar must be one <${ROOT}>.`);
-    attributesCheck(root);
-    textCheck(root);
-    const seen = new Set<string>();
-    const items = [...root.children].map((element): SidebarDocumentItem => {
-        attributesCheck(element);
-        switch (element.tagName) {
-            case SEARCH:
-            case CREATE: {
-                const kind = element.tagName === SEARCH ? "search" : "create";
-                if (element.childNodes.length > 0 || seen.has(kind))
-                    throw new SidebarDocumentInvalid(`<${element.tagName}> appears once, empty.`);
-                seen.add(kind);
-                return { kind };
-            }
-            case SECTION: {
-                if (element.childNodes.length > 0)
-                    throw new SidebarDocumentInvalid(`<${SECTION}> holds nothing.`);
-                const label = element.getAttribute("label") ?? "";
-                if (label.length === 0 || label.length > 256)
-                    throw new SidebarDocumentInvalid(
-                        `<${SECTION}> needs a label of 1–256 characters.`,
-                    );
-                return {
-                    kind: "section",
-                    id: idOf(element, "section", seen),
-                    label,
-                    collapsed: flag(element, "collapsed"),
-                };
-            }
-            case SEPARATOR: {
-                if (element.childNodes.length > 0)
-                    throw new SidebarDocumentInvalid(`<${SEPARATOR}> holds nothing.`);
-                return { kind: "separator", id: idOf(element, "separator", seen) };
-            }
-            case SPACE: {
-                const foldRibbon = foldRibbonOf(element);
-                return {
-                    kind: "space",
-                    id: idOf(element, "space", seen),
-                    expanded: flag(element, "expanded"),
-                    ...(foldRibbon ? { foldRibbon } : {}),
-                    children: sessionsOf(element, seen, 1),
-                };
-            }
-            default:
-                throw new SidebarDocumentInvalid(`<${element.tagName}> may not stand at the top.`);
-        }
-    });
-    if (!seen.has("search") || !seen.has("create"))
-        throw new SidebarDocumentInvalid(`<${SEARCH}/> and <${CREATE}/> each appear once.`);
-    const foldRibbon = foldRibbonOf(root);
-    return { ...(foldRibbon ? { foldRibbon } : {}), items };
-}
-
-function attribute(name: string, value: string): string {
-    const escaped = value
-        .replace(/&/gu, "&amp;")
-        .replace(/</gu, "&lt;")
-        .replace(/>/gu, "&gt;")
-        .replace(/"/gu, "&quot;");
-    return ` ${name}="${escaped}"`;
-}
-
-function nodeWrite(node: SidebarDocumentNode, indent: string): string {
-    switch (node.kind) {
-        case "search":
-            return `${indent}<${SEARCH}/>\n`;
-        case "create":
-            return `${indent}<${CREATE}/>\n`;
-        case "section":
-            return `${indent}<${SECTION}${attribute("id", node.id)}${attribute("label", node.label)}${
-                node.collapsed ? attribute("collapsed", "true") : ""
-            }/>\n`;
-        case "separator":
-            return `${indent}<${SEPARATOR}${attribute("id", node.id)}/>\n`;
-        case "space":
-        case "session": {
-            const open = `${indent}<${SPACE}${attribute("id", node.id)}${
-                node.expanded ? attribute("expanded", "true") : ""
-            }${node.foldRibbon ? attribute(FOLD_RIBBON, node.foldRibbon) : ""}`;
-            if (node.children.length === 0) return `${open}/>\n`;
-            return `${open}>\n${node.children
-                .map((child) => nodeWrite(child, `${indent}  `))
-                .join("")}${indent}</${SPACE}>\n`;
-        }
+    let document: SpaceSidebarDocument;
+    try {
+        document = parseSpaceSidebar(html);
+    } catch (error) {
+        if (error instanceof SpaceSidebarError) throw new SidebarDocumentInvalid(error.message);
+        throw error;
     }
+    return sidebarDocumentViewOf(document);
 }
 
-/** The document as the daemon reads it, one node a line. */
+function spaceNodeOf(node: SidebarDocumentSession): SpaceSidebarSpaceNode {
+    return {
+        type: "space",
+        id: node.id,
+        expanded: node.expanded,
+        ...(node.foldRibbon ? { foldRibbon: node.foldRibbon } : {}),
+        children: node.children.map(spaceNodeOf),
+    };
+}
+
+/** What the window draws, as the shared grammar's tree. */
+export function sidebarDocumentOf(view: SidebarDocumentView): SpaceSidebarDocument {
+    return {
+        ...(view.foldRibbon ? { foldRibbon: view.foldRibbon } : {}),
+        items: view.items.map((item): SpaceSidebarItem => {
+            switch (item.kind) {
+                case "search":
+                    return { type: "search", id: "happy-search" };
+                case "create":
+                    return { type: "create", id: "happy-create" };
+                case "section":
+                    return {
+                        type: "section",
+                        id: item.id,
+                        label: item.label,
+                        collapsed: item.collapsed,
+                    };
+                case "separator":
+                    return { type: "separator", id: item.id };
+                case "widget":
+                    return { type: "widget", id: item.id, html: item.html };
+                case "space":
+                    return {
+                        type: "space",
+                        id: item.id,
+                        expanded: item.expanded,
+                        ...(item.foldRibbon ? { foldRibbon: item.foldRibbon } : {}),
+                        children: item.children.map(spaceNodeOf),
+                    };
+            }
+        }),
+    };
+}
+
+/** The document as the daemon reads it, in the canonical form every writer shares. */
 export function sidebarDocumentWrite(view: SidebarDocumentView): string {
-    const open = view.foldRibbon
-        ? `<${ROOT}${attribute(FOLD_RIBBON, view.foldRibbon)}>`
-        : `<${ROOT}>`;
-    return `${open}\n${view.items.map((item) => nodeWrite(item, "  ")).join("")}</${ROOT}>\n`;
+    return formatSpaceSidebar(sidebarDocumentOf(view));
 }
 
 type Parent = Extract<SidebarDocumentNode, { readonly children: unknown }>;

@@ -1,6 +1,12 @@
 import {
     type Agent,
+    applySpaceSidebarOperations,
+    diffSpaceSidebar,
+    formatSpaceSidebar,
     HappyAgentApiError,
+    parseSpaceSidebar,
+    type SpaceSidebarDocument,
+    type SpaceSidebarOperation,
     type CreateStemCellResponse,
     type HappyAgentClient,
     type HappyAgentEvent,
@@ -41,6 +47,7 @@ const SPACE_EVENT_TYPES = [
     "space.section.updated",
     "space.section.removed",
     "space.batch.applied",
+    "space.sidebar.changed",
     "artifact.updated",
 ] as const satisfies readonly HappyAgentEvent["type"][];
 
@@ -435,6 +442,56 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     let sidebarStale = false;
     /** The document the daemon was last heard to hold, whatever is on screen over it. */
     let sidebarHeld: { readonly version: number; readonly html: string } | undefined;
+    /**
+     * The reader's own edits the daemon has not confirmed yet, oldest first,
+     * each as the operations it made against the document then on screen. The
+     * screen is always the held document with these applied on top, by the
+     * same function the daemon applies them with, so a confirmation draws
+     * exactly what was already drawn and nothing moves.
+     */
+    let sidebarBatches: readonly {
+        readonly mutationId: string;
+        readonly operations: readonly SpaceSidebarOperation[];
+        readonly base: SpaceSidebarDocument;
+    }[] = [];
+    /** A daemon that takes edits as operations by node ID and announces each version. */
+    const sidebarOperational = (): boolean =>
+        deps.sync.health()?.capabilities?.sidebarOperations === true;
+    /** The held document with every unconfirmed edit and new work still being made on top. */
+    const sidebarShown = (): string | undefined => {
+        if (sidebarHeld === undefined) return undefined;
+        let html = sidebarHeld.html;
+        if (sidebarBatches.length > 0) {
+            let document: SpaceSidebarDocument;
+            try {
+                document = parseSpaceSidebar(html);
+            } catch {
+                return html;
+            }
+            for (const batch of sidebarBatches) {
+                try {
+                    document = applySpaceSidebarOperations(document, batch.operations, {
+                        base: batch.base,
+                    }).document;
+                } catch {
+                    // Already in the held document, or no longer possible: the
+                    // daemon's answer for it decides, and it draws nothing now.
+                }
+            }
+            html = formatSpaceSidebar(document);
+        }
+        for (const [spaceId, placement] of creating)
+            html = insert(html, spaceId, placement) ?? html;
+        return html;
+    };
+    /** Puts the held document and the edits on top of it on screen. */
+    const sidebarShow = (): void => {
+        const current = snapshot.sidebar;
+        const html = sidebarShown();
+        if (current === undefined || sidebarHeld === undefined || html === undefined) return;
+        if (current.html === html && current.version === sidebarHeld.version) return;
+        publish({ sidebar: { ...current, version: sidebarHeld.version, html } });
+    };
     let classic: SidebarDocumentClassic | undefined;
     /** Writes the reader's classic folds into the daemon's seed, once per seed. */
     const seedAdopt = (): void => {
@@ -453,7 +510,10 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             return;
         }
         void deps.client
-            .getSpaceSidebar({ signal: life.signal })
+            .getSpaceSidebar({
+                signal: life.signal,
+                ...(sidebarOperational() ? { widgets: true } : {}),
+            })
             .then((answer) => {
                 if (disposed) return;
                 if (sidebarWrites > 0 || sidebarDragging || creating.size > 0) {
@@ -464,7 +524,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 if (current && current.version > answer.version) return;
                 if (current?.version === answer.version && current.html === answer.html) return;
                 sidebarHeld = { version: answer.version, html: answer.html };
-                publish({ sidebar: sidebarOf(answer) });
+                publish({ sidebar: { ...sidebarOf(answer), html: sidebarShown() ?? answer.html } });
                 seedAdopt();
             })
             .catch(() => undefined);
@@ -544,7 +604,12 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     if (html !== undefined) next.sidebar = { ...snapshot.sidebar, html };
                 }
                 // New work is written into the document where it was made.
-                if (event.type === "space.created" && snapshot.sidebar !== undefined) sidebarLoad();
+                if (
+                    event.type === "space.created" &&
+                    snapshot.sidebar !== undefined &&
+                    !sidebarOperational()
+                )
+                    sidebarLoad();
                 break;
             }
             case "space.section.created":
@@ -571,13 +636,15 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                     next.spaces = spaces;
                 }
                 // The daemon takes it out of the document too, as a new version.
-                if (snapshot.sidebar !== undefined) sidebarLoad();
+                if (snapshot.sidebar !== undefined && !sidebarOperational()) sidebarLoad();
                 break;
             }
             case "artifact.updated": {
                 const sidebar = snapshot.sidebar;
-                // A version this window already holds, its own write included, needs no read.
+                // A version this window already holds, its own write included, needs no read;
+                // a daemon that announces each version says what changed in it instead.
                 if (
+                    !sidebarOperational() &&
                     event.payload.artifactId === sidebar?.artifactId &&
                     event.payload.changes.latestVersion > sidebar.version
                 )
@@ -587,13 +654,52 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             case "space.batch.applied": {
                 const batch = batchOf(event.payload.batch);
                 // A batch is where the manager's queued document edits land.
-                if (snapshot.sidebar !== undefined) sidebarLoad();
+                if (snapshot.sidebar !== undefined && !sidebarOperational()) sidebarLoad();
                 if (!happyFocused() && !snapshot.batches.some((entry) => entry.id === batch.id))
                     next.noteUnread = true;
                 next.batches = [
                     batch,
                     ...snapshot.batches.filter((entry) => entry.id !== batch.id),
                 ].slice(0, BATCH_LIMIT);
+                break;
+            }
+            case "space.sidebar.changed": {
+                const payload = event.payload;
+                const sidebar = snapshot.sidebar;
+                if (sidebar === undefined || payload.artifactId !== sidebar.artifactId) break;
+                if (sidebarHeld === undefined || payload.version <= sidebarHeld.version) break;
+                // Nothing lands under a hand: the read after the release catches up.
+                if (sidebarDragging || creating.size > 0) {
+                    sidebarStale = true;
+                    break;
+                }
+                // A version that follows the one held is replayed onto it; any
+                // gap in between is read whole.
+                if (payload.previousVersion !== sidebarHeld.version) {
+                    sidebarLoad();
+                    break;
+                }
+                let document: SpaceSidebarDocument;
+                try {
+                    document = applySpaceSidebarOperations(
+                        parseSpaceSidebar(sidebarHeld.html),
+                        payload.operations,
+                    ).document;
+                } catch {
+                    sidebarLoad();
+                    break;
+                }
+                sidebarHeld = { version: payload.version, html: formatSpaceSidebar(document) };
+                // The reader's own edit, confirmed: it is already on screen.
+                if (payload.mutationId !== undefined)
+                    sidebarBatches = sidebarBatches.filter(
+                        (batch) => batch.mutationId !== payload.mutationId,
+                    );
+                next.sidebar = {
+                    ...sidebar,
+                    version: sidebarHeld.version,
+                    html: sidebarShown() ?? sidebarHeld.html,
+                };
                 break;
             }
         }
@@ -750,6 +856,84 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             sidebarStale = false;
             sidebarLoad();
         }
+    };
+
+    /**
+     * One edit of the document, sent as the operations that make it. It is on
+     * screen at once and stays exactly there when the daemon confirms it; a
+     * refusal takes only this edit back off, so whatever it moved glides back
+     * once from where it stands.
+     */
+    const sidebarOperationsSend = (
+        current: HappyAgentSpacesSidebarDocument,
+        html: string,
+    ): void => {
+        let base: SpaceSidebarDocument;
+        let proposed: SpaceSidebarDocument;
+        try {
+            base = parseSpaceSidebar(current.html);
+            proposed = parseSpaceSidebar(html);
+        } catch {
+            return;
+        }
+        const operations = diffSpaceSidebar(base, proposed);
+        if (operations.length === 0) return;
+        const batch = { mutationId: idCreate(), operations, base };
+        sidebarBatches = [...sidebarBatches, batch];
+        publish({
+            sidebar: {
+                ...current,
+                html: sidebarShown() ?? formatSpaceSidebar(proposed),
+                seed: false,
+            },
+        });
+        sidebarWrites += 1;
+        sidebarQueue = sidebarQueue.then(async () => {
+            await attentionQueue;
+            try {
+                if (disposed) return;
+                let answer: Awaited<ReturnType<HappyAgentClient["applySpaceSidebarOperations"]>>;
+                for (let attempt = 0; ; attempt += 1) {
+                    try {
+                        // Made against what was on screen, sent against what the
+                        // daemon last said; it rebases anything in between.
+                        answer = await deps.client.applySpaceSidebarOperations(
+                            {
+                                mutationId: batch.mutationId,
+                                baseVersion: sidebarHeld?.version ?? current.version,
+                                operations: [...batch.operations],
+                            },
+                            { signal: life.signal },
+                        );
+                        break;
+                    } catch (error) {
+                        // Only a request that was not heard is sent again, under
+                        // the same mutation ID; a refusal is final.
+                        if (
+                            attempt >= 2 ||
+                            life.signal.aborted ||
+                            (error instanceof HappyAgentApiError && error.status < 500)
+                        )
+                            throw error;
+                        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+                    }
+                }
+                if (disposed) return;
+                sidebarBatches = sidebarBatches.filter((entry) => entry !== batch);
+                if (sidebarHeld === undefined || answer.version > sidebarHeld.version)
+                    sidebarHeld = { version: answer.version, html: answer.html };
+                sidebarShow();
+            } catch (error) {
+                sidebarBatches = sidebarBatches.filter((entry) => entry !== batch);
+                failed(error);
+                sidebarShow();
+                // The daemon moved on from the document this window holds.
+                sidebarStale = true;
+            } finally {
+                sidebarWrites -= 1;
+                sidebarReleased();
+            }
+        });
     };
 
     const store: HappyAgentSpacesStore = {
@@ -991,6 +1175,17 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
         sidebarWrite(html, force = false) {
             const current = snapshot.sidebar;
             if (current === undefined || (current.html === html && !force)) return;
+            // New work still being made names rows the daemon has not written
+            // yet, and a seed is ended by a whole write: both go as one.
+            if (
+                !force &&
+                creating.size === 0 &&
+                sidebarHeld !== undefined &&
+                sidebarOperational()
+            ) {
+                sidebarOperationsSend(current, html);
+                return;
+            }
             publish({ sidebar: { ...current, html, seed: false } });
             sidebarWrites += 1;
             sidebarQueue = sidebarQueue.then(async () => {

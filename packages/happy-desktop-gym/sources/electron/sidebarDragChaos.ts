@@ -31,6 +31,8 @@ export interface SidebarDragChaosOptions {
 
 export interface SidebarDragChaosDrag {
     readonly id: string;
+    /** The rows on screen before the drag, in order. */
+    readonly start: readonly string[];
     readonly slots: number;
     readonly stepMs: number;
     readonly order: readonly string[];
@@ -229,6 +231,7 @@ export async function sidebarDragChaosRun(
         const { frames, releaseAt } = await framesTake(page);
         const problems = sidebarDragChaosCheck(frames, releaseAt, start);
         drags.push({
+            start,
             id,
             slots,
             stepMs,
