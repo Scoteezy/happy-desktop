@@ -4689,7 +4689,14 @@ export function happyAgentWorkspaceStoreCreate(
             return;
         }
         retained.delete(conversationId);
-        retained.set(conversationId, left);
+        // Scroll reports deliberately do not republish the active snapshot.
+        // Capture its latest position as it leaves, so a stand-in mounted
+        // after its DOM was evicted restores the reader's last actual place.
+        const scrollPosition = scrollPositions.get(conversationId);
+        retained.set(
+            conversationId,
+            scrollPosition === undefined ? left : { ...left, scrollPosition },
+        );
         retainedTrim();
         retainedPublish();
     };
