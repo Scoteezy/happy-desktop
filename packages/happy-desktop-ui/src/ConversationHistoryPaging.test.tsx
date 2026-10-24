@@ -98,7 +98,13 @@ it.each([1, 0.67, 2])(
         function Harness() {
             const snapshot = useSyncExternalStore(store.subscribe, store.get);
             return (
-                <div style={{ width: 820, height: 650, zoom: scale }}>
+                <div
+                    style={{
+                        width: pageZoom ? 820 / zoom : 820,
+                        height: pageZoom ? 650 / zoom : 650,
+                        zoom: scale,
+                    }}
+                >
                     <ConversationView
                         conversationId="a"
                         motion="calm"
