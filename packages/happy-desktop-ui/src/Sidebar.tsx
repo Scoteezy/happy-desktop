@@ -738,6 +738,20 @@ function rowKey(listId: SidebarListId, itemId: string): string {
     return `${String(list.length)}:${list}${itemId}`;
 }
 
+/**
+ * Which rows the sidebar holds and in what order, folded rows included, so
+ * that folding one changes nothing here and any move, arrival or removal does.
+ */
+function arrangementOf(
+    sections: readonly SidebarSection[],
+    actions: readonly SidebarItem[],
+): string {
+    return JSON.stringify([
+        actions.map((item) => item.id),
+        sections.map((section) => [section.id, section.items.map((item) => item.id)]),
+    ]);
+}
+
 /** True when the reader asked for no motion, so a drop lands instead of gliding. */
 function reducedMotion(): boolean {
     return (
@@ -2563,6 +2577,14 @@ export function Sidebar(props: SidebarProps) {
     const [carriedSurfaceNodes] = useState(() => new Map<SidebarListId, HTMLSpanElement>());
     // Row tops captured at the drop, consumed by the layout effect below.
     const flipRef = useRef<Map<string, number> | undefined>(undefined);
+    // Where each row was headed when the drop was captured, and the layout it
+    // was held against while the new order had not been rendered yet.
+    const flipTargets = useRef<Map<string, number> | undefined>(undefined);
+    const flipHeld = useRef<
+        Map<string, { readonly animation: Animation; readonly layout: number }> | undefined
+    >(undefined);
+    // Rows whose offset transition the drop took away until it has measured them.
+    const flipTransitionless = useRef<HTMLElement[]>([]);
     const connectorFlipRef = useRef<
         Map<string, { readonly height: number; readonly top: number }> | undefined
     >(undefined);
@@ -3077,10 +3099,39 @@ export function Sidebar(props: SidebarProps) {
     }): void => {
         const { expected, items, listId, movedId } = settle;
         const firsts = new Map<string, number>();
+        const targets = new Map<string, number>();
         for (const item of items) {
             const node = rowNodes.get(rowKey(listId, item.id));
-            if (node) firsts.set(rowKey(listId, item.id), node.getBoundingClientRect().top);
+            if (!node) continue;
+            const top = node.getBoundingClientRect().top;
+            firsts.set(rowKey(listId, item.id), top);
+            // Where the row's glide aside is taking it: the slot the drop shows.
+            targets.set(
+                rowKey(listId, item.id),
+                top -
+                    (Number.parseFloat(getComputedStyle(node).top) || 0) +
+                    (Number.parseFloat(node.style.top) || 0),
+            );
         }
+        // The drop clears every offset in one commit, and the rows' offset
+        // transition must not see it: Chromium starts a transition from the
+        // offset a row was pushed to even when the same commit also turns the
+        // transition off, and a row measured while that transition still holds
+        // it there reads as distance it has yet to travel — it would leap a
+        // whole slot ahead and glide back to where it already stood. The rows
+        // are read above first, so one caught mid-glide carries on from where it
+        // is painted; nothing is painted between here and the measurement that
+        // gives the transition back.
+        const transitionless: HTMLElement[] = [];
+        for (const item of items) {
+            const node = rowNodes.get(rowKey(listId, item.id));
+            if (!node) continue;
+            node.style.transition = "none";
+            transitionless.push(node);
+        }
+        // Flushed now, so the style the commit changes from has no transition.
+        if (transitionless.length > 0) void transitionless[0]!.getBoundingClientRect();
+        flipTransitionless.current = transitionless;
         const connectorFirsts = new Map<
             string,
             { readonly height: number; readonly top: number }
@@ -3093,6 +3144,8 @@ export function Sidebar(props: SidebarProps) {
             connectorFirsts.set(key, { height: bounds.height, top: bounds.top });
         }
         flipRef.current = firsts;
+        flipTargets.current = targets;
+        flipHeld.current = undefined;
         connectorFlipRef.current = connectorFirsts;
         settleRef.current = { expected, key: rowKey(listId, movedId) };
         // Released lit, not resting: the highlight is handed from the drag to
@@ -3115,7 +3168,25 @@ export function Sidebar(props: SidebarProps) {
         flipWaitClear();
         flipWait.current = window.setTimeout(() => {
             flipWait.current = undefined;
+            // Rows held for an order that never came glide back from where they
+            // were held, once, to where the list still has them.
+            // The holds are kept by reference: a finished hold that fills forwards
+            // is no longer listed by `getAnimations()` in Chromium, but it still
+            // holds its row.
+            for (const [key, hold] of flipHeld.current ?? []) {
+                const node = rowNodes.get(key);
+                const held = node ? Number.parseFloat(getComputedStyle(node).top) || 0 : 0;
+                hold.animation.cancel();
+                if (node && held !== 0)
+                    node.animate([{ top: `${String(held)}px` }, { top: "0px" }], {
+                        duration: SETTLE_MS,
+                        easing: SETTLE_EASING,
+                    });
+            }
+            for (const node of flipTransitionless.current) node.style.transition = "";
+            flipTransitionless.current = [];
             flipRef.current = undefined;
+            flipHeld.current = undefined;
             connectorFlipRef.current = undefined;
             settleRef.current = undefined;
             setDropped(undefined);
@@ -3172,7 +3243,10 @@ export function Sidebar(props: SidebarProps) {
             local.onItemReorder?.(target.sectionId, { id: movedId, afterId: target.afterId });
             return;
         }
-        if (!reducedMotion() && drag.from !== drag.to && movedId !== undefined)
+        // Captured even when the row lands back on its own slot: it was let go of
+        // wherever the hand had it, and it glides home from there rather than
+        // snapping the last few pixels.
+        if (!reducedMotion() && movedId !== undefined)
             settleCapture({
                 carried: true,
                 expected: orderAfterMove(drag.peers, drag.from, drag.to),
@@ -3327,8 +3401,50 @@ export function Sidebar(props: SidebarProps) {
         const firsts = flipRef.current;
         if (!firsts) return;
         const connectorFirsts = connectorFlipRef.current;
+        const settle = settleRef.current;
+        const arranged =
+            settle !== undefined && orderArranged(rowNodes.get(settle.key), settle.expected);
+        if (!arranged && flipHeld.current) return;
+        // A row held by an earlier pass starts from where that hold has it now.
+        const held = flipHeld.current;
+        const starts = new Map(firsts);
+        if (held)
+            for (const [key, { layout }] of held) {
+                const node = rowNodes.get(key);
+                if (node)
+                    starts.set(key, layout + (Number.parseFloat(getComputedStyle(node).top) || 0));
+            }
+        // The offsets are cleared, so the transition the capture took away can
+        // be given back without anything starting; then each row is read where
+        // the layout actually puts it.
+        for (const node of flipTransitionless.current) node.style.transition = "";
+        flipTransitionless.current = [];
+        if (held) for (const { animation } of held.values()) animation.cancel();
+        if (!arranged) {
+            // The new order has not been rendered yet. Every row carries on to
+            // the slot the drop showed and waits there until it has, so the list
+            // never shows the old order in between; a drop nobody applies glides
+            // back once from there.
+            const holds = new Map<string, { animation: Animation; layout: number }>();
+            for (const [key, first] of firsts) {
+                const node = rowNodes.get(key);
+                if (!node) continue;
+                const layout = node.getBoundingClientRect().top;
+                const animation = node.animate(
+                    [
+                        { top: `${String(first - layout)}px` },
+                        { top: `${String((flipTargets.current?.get(key) ?? first) - layout)}px` },
+                    ],
+                    { duration: SETTLE_MS, easing: SETTLE_EASING, fill: "forwards" },
+                );
+                holds.set(key, { animation, layout });
+            }
+            flipHeld.current = holds;
+            return;
+        }
+        flipHeld.current = undefined;
         const played: Animation[] = [];
-        for (const [key, first] of firsts) {
+        for (const [key, first] of starts) {
             const node = rowNodes.get(key);
             if (!node) continue;
             const delta = first - node.getBoundingClientRect().top;
@@ -3376,17 +3492,13 @@ export function Sidebar(props: SidebarProps) {
                 );
             }
         }
-        // Kept until the list is actually arranged the way the drop asked: the
-        // reorder may reach it one render later than the drop, and dropping the
-        // capture on the first pass would lose the animation entirely. Movement
-        // alone cannot answer that question — a row released on its slot travels
-        // nowhere — so the rendered order is what is waited for, and a pass that
-        // arranged the rows without moving any of them is still the pass that
-        // finished the drop.
-        const settle = settleRef.current;
-        const arranged =
-            settle !== undefined && orderArranged(rowNodes.get(settle.key), settle.expected);
-        if (played.length === 0 && !arranged) return;
+        // Played only once the list is actually arranged the way the drop asked:
+        // the reorder may reach it one render later than the drop, and playing on
+        // the first pass would glide every row back toward the old order and then
+        // throw it into the new one. Movement alone cannot answer that question —
+        // a row released on its slot travels nowhere — so the rendered order is
+        // what is waited for, and a pass that arranged the rows without moving
+        // any of them is still the pass that finished the drop.
         flipRef.current = undefined;
         connectorFlipRef.current = undefined;
         settleRef.current = undefined;
@@ -3420,6 +3532,69 @@ export function Sidebar(props: SidebarProps) {
         void last.finished.catch(() => undefined).then(() => setDropped(undefined));
         // The animations are deliberately not cancelled either: cancelling on
         // teardown would abort the drop animation on the next unrelated render.
+    });
+
+    /*
+     * Nothing the reader is not moving jumps. When the rows themselves change —
+     * a move refused and put back, a row another device moved, one created or
+     * removed — every row that was already on screen glides once from where it
+     * stood to where the new arrangement puts it. A fold is the reader's own
+     * gesture on the list's shape and lands at once, so only a change in which
+     * rows there are, or their order, glides; a render that changes neither
+     * moves nothing. A drag and the drop's own settle above own the motion
+     * while they last, and the resting positions are read afresh after them.
+     */
+    const arrangement = arrangementOf(stableSections, local.actions ?? []);
+    const restTops = useRef<Map<string, number> | undefined>(undefined);
+    const restArrangement = useRef<string | undefined>(undefined);
+    // eslint-disable-next-line happy-react/no-layout-effect -- a row's glide starts from where the previous layout put it and must be applied before the new one is painted, which only measured geometry can give
+    useLayoutEffect(() => {
+        const root = previewRoot.current;
+        // A document without Web Animations, such as a test DOM, has nothing to glide.
+        if (
+            !root ||
+            typeof root.getAnimations !== "function" ||
+            dragRef.current ||
+            flipRef.current
+        ) {
+            restTops.current = undefined;
+            return;
+        }
+        const nodes = previewNodes();
+        const previous =
+            restArrangement.current !== arrangement && !reducedMotion()
+                ? restTops.current
+                : undefined;
+        // Read where each row is painted now before anything is cancelled, so a
+        // row caught mid-glide carries on from where it actually is.
+        const offsets = nodes.map(([, node]) =>
+            node.getAnimations().length > 0
+                ? Number.parseFloat(getComputedStyle(node).top) || 0
+                : 0,
+        );
+        if (previous)
+            for (const [id, node] of nodes)
+                if (previous.has(id))
+                    for (const animation of node.getAnimations()) animation.cancel();
+        const rootTop = root.getBoundingClientRect().top;
+        const tops = new Map<string, number>();
+        for (const [index, [id, node]] of nodes.entries()) {
+            const top = node.getBoundingClientRect().top - rootTop;
+            const from = previous?.get(id);
+            if (from === undefined) {
+                tops.set(id, top - offsets[index]!);
+                continue;
+            }
+            tops.set(id, top);
+            const delta = from + offsets[index]! - top;
+            if (Math.abs(delta) >= 0.5)
+                node.animate([{ top: `${String(delta)}px` }, { top: "0px" }], {
+                    duration: SETTLE_MS,
+                    easing: SETTLE_EASING,
+                });
+        }
+        restTops.current = tops;
+        restArrangement.current = arrangement;
     });
 
     /** A heading's own controls, the same buttons in either heading layout. */

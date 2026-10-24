@@ -357,6 +357,8 @@
 }
 
 .happy-sidebar__section-head {
+    /* Offset by `top` while it glides to a new place, like a row. */
+    position: relative;
     display: flex;
     flex: none;
     align-items: center;

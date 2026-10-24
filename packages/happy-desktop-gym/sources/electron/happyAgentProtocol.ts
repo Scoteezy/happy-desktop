@@ -77,6 +77,25 @@ export class GymHappyAgentClient {
         return await this.#client.getHealth();
     }
 
+    /** Turns on Stem Cells for the person, which the Spaces sidebar's Create row needs. */
+    async stemCellsEnable(): Promise<void> {
+        await this.#client.saveUserSetting("happy-desktop.experiments.stemCells", {
+            mutationId: randomUUID(),
+            updatedAt: Date.now(),
+            value: true,
+        });
+    }
+
+    /** Writes the Spaces sidebar back unchanged, as another author would echo it. */
+    async spaceSidebarEcho(): Promise<void> {
+        const sidebar = await this.#client.getSpaceSidebar();
+        await this.#client.updateSpaceSidebar({
+            baseVersion: sidebar.version,
+            html: sidebar.html,
+            mutationId: randomUUID(),
+        });
+    }
+
     async projects(): Promise<{ readonly projects: readonly HappyAgentProject[] }> {
         const response = await this.#client.listProjects();
         return { projects: response.projects.map(projectProject) };

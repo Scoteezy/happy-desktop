@@ -5,6 +5,7 @@ import type { ElectronApplication, Locator, Page } from "playwright";
 
 import { gymGoldReplayMaterialRead, type GymGoldReplayMaterial } from "./goldReplay.js";
 import { hiddenWindowRun } from "./hiddenWindow.js";
+import { sidebarDragChaosRun } from "./sidebarDragChaos.js";
 import { gymLiveToolMutationLineCount } from "./inferenceServer.js";
 import { gymElectronInvisibleAssert, gymElectronLaunch } from "./launch.js";
 import { electronEntrypointResolve } from "./paths.js";
@@ -857,6 +858,33 @@ async function workloadRun(
     await mark("route-ready");
     if (workload === "hidden-window")
         return finish(await hiddenWindowRun(page, app, options.paths.artifacts, mark));
+    if (workload === "sidebar-drag") {
+        await options.runtime.client.stemCellsEnable();
+        await page.evaluate(() =>
+            localStorage.setItem(
+                "happy.experiments.v1",
+                JSON.stringify({ spacesSidebar: true, batchNotes: false }),
+            ),
+        );
+        await page.reload();
+        await page
+            .locator('[data-happy-desktop-ui="sidebar-item"][data-item-id="create"]')
+            .first()
+            .waitFor({ timeout: 45_000 });
+        await mark("sidebar-ready");
+        const result = await sidebarDragChaosRun(page, {
+            drags: 10,
+            echo: () => options.runtime.client.spaceSidebarEcho(),
+            seed: 7,
+        });
+        await writeFile(
+            join(options.paths.artifacts, "sidebar-drag.json"),
+            JSON.stringify(result, null, 2),
+        );
+        if (result.problems.length > 0)
+            throw new Error(`Something jumped in the sidebar:\n${result.problems.join("\n")}`);
+        return finish({ drags: result.drags.length });
+    }
     await options.profilerStart();
     await mark("profiler-started");
     if (workload === "long-transcript") {

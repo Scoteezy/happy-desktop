@@ -26,6 +26,7 @@ const workloads: readonly GymWorkloadName[] = [
     "memory-idle",
     "window-edge-resize",
     "archive-reconcile",
+    "sidebar-drag",
     "all",
 ];
 

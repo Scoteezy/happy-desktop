@@ -7,6 +7,37 @@ breakpoints, touch-only behavior, or mobile substitutes.
 The design system is implemented by `happy-desktop-ui`. Its component workbench is the
 blueprint: run it through Portless with `pnpm blueprint`.
 
+## Nothing jumps
+
+**This is the first principle and it is not negotiable.** An element that the
+person is not moving never changes position, except by one deliberate glide to
+its new slot. Nothing moves after a drop settles. Confirmations and echoes never
+move anything.
+
+- An element nobody is holding moves only while an animation is carrying it.
+  It never appears somewhere else from one frame to the next.
+- Each move is one glide, in one direction, that ends somewhere new. An element
+  never snaps ahead and glides back, never reverses mid-glide, and never moves
+  twice for one change. A move that is refused or put back glides back once,
+  from wherever it stands.
+- A dropped element lands where it was let go. The slot the drop previews is
+  the slot it ends in, and the neighbours that made room for it stay there.
+- No two resting elements overlap, and once settled there are no gaps that
+  were not there before.
+- The server's confirmation, an echo of the person's own change, another
+  author writing back the same content, and a background batch that renames
+  or marks rows move nothing. A render that changes no order moves no box.
+
+The sidebar enforces this with a seeded chaos test,
+`packages/happy-desktop-ui/src/Sidebar.chaos.test.tsx`, in Chromium, Firefox and
+WebKit. It drags random rows, sections, separators, Search and Create at random
+speeds, delivers replies late, twice, out of order, refused or not at all,
+injects name batches mid-drag and after the drop, and checks every element's
+box on every frame. A shorter run in the real app is the gym's `sidebar-drag`
+workload (`happy-desktop-gym/sources/electron/sidebarDragChaos.ts`). Any surface
+that rearranges content proves the same property the same way: per-frame boxes,
+not end states.
+
 ## Architecture and ownership
 
 Every visual element must be a reusable `happy-desktop-ui` component before it is used

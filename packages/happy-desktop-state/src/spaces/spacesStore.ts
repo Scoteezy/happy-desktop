@@ -433,6 +433,8 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
     let sidebarWrites = 0;
     let sidebarDragging = false;
     let sidebarStale = false;
+    /** The document the daemon was last heard to hold, whatever is on screen over it. */
+    let sidebarHeld: { readonly version: number; readonly html: string } | undefined;
     let classic: SidebarDocumentClassic | undefined;
     /** Writes the reader's classic folds into the daemon's seed, once per seed. */
     const seedAdopt = (): void => {
@@ -461,6 +463,7 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
                 const current = snapshot.sidebar;
                 if (current && current.version > answer.version) return;
                 if (current?.version === answer.version && current.html === answer.html) return;
+                sidebarHeld = { version: answer.version, html: answer.html };
                 publish({ sidebar: sidebarOf(answer) });
                 seedAdopt();
             })
@@ -993,12 +996,42 @@ export function happyAgentSpacesStoreCreate(deps: HappyAgentSpacesDeps): HappyAg
             sidebarQueue = sidebarQueue.then(async () => {
                 await attentionQueue;
                 const base = snapshot.sidebar;
+                // One mutation across every attempt: a refused write records
+                // nothing, and the same content under the same ID is a replay.
+                const mutationId = idCreate();
                 try {
                     if (disposed || base === undefined) return;
-                    const answer = await deps.client.updateSpaceSidebar(
-                        { html, baseVersion: base.version, mutationId: idCreate() },
-                        { signal: life.signal },
-                    );
+                    let baseVersion = base.version;
+                    let answer: SpaceSidebarResponse | undefined;
+                    for (let attempt = 0; answer === undefined; attempt += 1) {
+                        try {
+                            answer = await deps.client.updateSpaceSidebar(
+                                { html, baseVersion, mutationId },
+                                { signal: life.signal },
+                            );
+                        } catch (error) {
+                            // Stale only by number: another author wrote the
+                            // document back as it was — an echo, a calm batch
+                            // that changed nothing — while this edit was being
+                            // made. The edit still stands on exactly what it was
+                            // made against, so it is written again on the new
+                            // version rather than taken back off the screen.
+                            if (
+                                attempt >= 3 ||
+                                !(error instanceof HappyAgentApiError) ||
+                                error.status !== 409 ||
+                                sidebarHeld?.version !== baseVersion
+                            )
+                                throw error;
+                            const latest = await deps.client.getSpaceSidebar({
+                                signal: life.signal,
+                            });
+                            if (latest.html !== sidebarHeld.html) throw error;
+                            sidebarHeld = { version: latest.version, html: latest.html };
+                            baseVersion = latest.version;
+                        }
+                    }
+                    sidebarHeld = { version: answer.version, html: answer.html };
                     if (disposed) return;
                     const latest = snapshot.sidebar;
                     const written = sidebarOf(answer);

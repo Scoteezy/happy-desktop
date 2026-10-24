@@ -20,6 +20,7 @@ export type GymWorkloadName =
     | "memory-idle"
     | "window-edge-resize"
     | "archive-reconcile"
+    | "sidebar-drag"
     | "all";
 
 export interface GymTargetCounts {

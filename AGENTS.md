@@ -142,6 +142,13 @@ only for a genuine two-dimensional grid) solely when flexbox cannot express the
 layout at all; never fall back to floats, `inline-block` hacks, or layout tables.
 See `DESIGN.md` → "Layout with flexbox".
 
+Nothing jumps. An element that is not being moved by the person never changes
+position, except one deliberate glide to its new slot; nothing moves after a
+drop settles; confirmations and echoes never move anything. This outranks every
+other visual rule. Any change to drag, drop, reorder or list reconciliation must
+keep `packages/happy-desktop-ui/src/Sidebar.chaos.test.tsx` passing in all three
+engines, which is this rule's enforcement. See `DESIGN.md` → "Nothing jumps".
+
 ## Icons
 
 Every icon is a font glyph from the two families Happy itself uses — Ionicons
