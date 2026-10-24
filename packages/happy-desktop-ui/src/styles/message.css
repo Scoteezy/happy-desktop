@@ -724,6 +724,9 @@
 
 .happy-message__body--markdown li::marker {
     color: var(--text-secondary);
+    /* The text owns its 24px line box. Gecko's marker strut otherwise adds
+       half a pixel to each item; its glyph still shares the text baseline. */
+    line-height: 0;
 }
 
 .happy-message__body--markdown li + li {

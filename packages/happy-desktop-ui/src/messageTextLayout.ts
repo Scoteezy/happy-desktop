@@ -1042,6 +1042,8 @@ function markdownInlineRuns(
     for (const [index, child] of children.entries()) {
         if (index === children.length - 1)
             lastChildStart = { item: runs.at(-1)!.length, run: runs.length - 1 };
+        // Footnote return controls appended later do not change punctuation
+        // binding between the authored inline nodes before them.
         markdownInlineItemsAppend(
             child,
             style,
@@ -1049,7 +1051,7 @@ function markdownInlineRuns(
             cache,
             footnotes,
             measure,
-            suffixText.length === 0,
+            true,
             false,
             false,
             tableCell,
