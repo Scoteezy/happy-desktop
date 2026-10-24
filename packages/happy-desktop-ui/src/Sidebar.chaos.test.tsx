@@ -30,6 +30,11 @@ import { createRenderer } from "./testing";
  *     itself is carried; only carrying a folded section folds what it lands on;
  *   - once settled the column has no gaps: every neighbour is one gap apart;
  *   - confirmations, echoes and name batches move nothing.
+ *
+ * Rows attached under other rows are carried in, out and between rows too: a
+ * random sideways path picks the level wherever both are open, the row lands
+ * at the level it was let go of at, and its name never moves sideways after
+ * the drop unless the move is put back; no other row's name ever does.
  */
 
 const GAP = 2;
@@ -37,35 +42,71 @@ const GAP = 2;
 const fixture = (): SidebarItem[] => [
     { icon: "search", id: "search", kind: "view", label: "Search" },
     { icon: "compose", id: "create", kind: "view", label: "Create" },
-    { icon: "doc", id: "happy", kind: "view", label: "Happy" },
-    { icon: "doc", id: "stem-1", kind: "view", label: "New" },
-    { icon: "doc", id: "roadmap", kind: "view", label: "Q4 roadmap" },
-    { icon: "doc", id: "launch", kind: "view", label: "Launch checklist" },
+    { attachTarget: true, icon: "doc", id: "happy", kind: "view", label: "Happy" },
+    { attachable: true, icon: "doc", id: "stem-1", kind: "view", label: "New" },
+    { attachable: true, icon: "doc", id: "roadmap", kind: "view", label: "Q4 roadmap" },
+    {
+        attachTarget: true,
+        collapsed: false,
+        icon: "doc",
+        id: "launch",
+        kind: "view",
+        label: "Launch checklist",
+    },
+    { depth: 1, icon: "doc", id: "s1", kind: "view", label: "Review session" },
+    { attachable: true, depth: 1, icon: "doc", id: "a1", kind: "view", label: "Launch todos" },
+    { attachable: true, depth: 1, icon: "doc", id: "a2", kind: "view", label: "Launch notes" },
     { collapsed: true, id: "tasks", kind: "section", label: "Tasks" },
-    { icon: "doc", id: "t1", kind: "view", label: "Task one" },
-    { icon: "doc", id: "t2", kind: "view", label: "Task two" },
+    { attachTarget: true, icon: "doc", id: "t1", kind: "view", label: "Task one" },
+    { attachable: true, icon: "doc", id: "t2", kind: "view", label: "Task two" },
     { collapsed: false, id: "bots", kind: "section", label: "Bots" },
-    { icon: "doc", id: "b1", kind: "view", label: "Bot one" },
-    { icon: "doc", id: "b2", kind: "view", label: "Bot two" },
+    { attachTarget: true, collapsed: false, icon: "doc", id: "b1", kind: "view", label: "Bot one" },
+    { attachable: true, depth: 1, icon: "doc", id: "a3", kind: "view", label: "Bot chat" },
+    { attachTarget: true, collapsed: true, icon: "doc", id: "b2", kind: "view", label: "Bot two" },
+    { attachable: true, depth: 1, icon: "doc", id: "a4", kind: "view", label: "Folded away" },
     { collapsed: true, id: "later", kind: "section", label: "Later" },
     { icon: "doc", id: "l1", kind: "view", label: "Later one" },
     { id: "divider", kind: "separator", label: "" },
-    { icon: "doc", id: "loose", kind: "view", label: "Loose one" },
-    { icon: "doc", id: "loose-2", kind: "view", label: "Loose two" },
+    { attachTarget: true, icon: "doc", id: "loose", kind: "view", label: "Loose one" },
+    { attachable: true, icon: "doc", id: "loose-2", kind: "view", label: "Loose two" },
 ];
 
+const depthOf = (item: SidebarItem | undefined) => item?.depth ?? 0;
+const breaks = (item: SidebarItem) =>
+    depthOf(item) === 0 && (item.kind === "section" || item.kind === "separator");
+
 /* What the sidebar shows: a folded section hides its run up to the next
-   section or separator. */
+   section or separator, and a folded row the rows nested under it. */
 const visibleIds = (items: readonly SidebarItem[]): string[] => {
     const ids: string[] = [];
     let hidden = false;
+    let hiddenBelow: number | undefined;
     for (const item of items) {
-        if (item.kind === "section" || item.kind === "separator") {
+        if (breaks(item)) {
             hidden = item.kind === "section" && item.collapsed === true;
+            hiddenBelow = undefined;
             ids.push(item.id);
-        } else if (!hidden) ids.push(item.id);
+            continue;
+        }
+        if (hidden) continue;
+        if (hiddenBelow !== undefined) {
+            if (depthOf(item) >= hiddenBelow) continue;
+            hiddenBelow = undefined;
+        }
+        ids.push(item.id);
+        if (item.collapsed === true) hiddenBelow = depthOf(item) + 1;
     }
     return ids;
+};
+
+/* Whether the sidebar lets this row change parents: attachable, with nothing
+   nested under it, at the top level or directly under a row. */
+const attaches = (items: readonly SidebarItem[], id: string): boolean => {
+    const at = items.findIndex((item) => item.id === id);
+    const item = items[at]!;
+    return (
+        item.attachable === true && depthOf(item) <= 1 && depthOf(items[at + 1]) <= depthOf(item)
+    );
 };
 
 /* The same peers the sidebar drags among: a section with its rows, a separator
@@ -74,37 +115,63 @@ const sectionBlocks = (items: readonly SidebarItem[]): SidebarItem[][] => {
     const blocks: SidebarItem[][] = [];
     let open = false;
     for (const item of items) {
-        const breaks = item.kind === "section" || item.kind === "separator";
-        if (breaks || !open || blocks.length === 0) blocks.push([item]);
+        if (breaks(item) || !open || blocks.length === 0) blocks.push([item]);
         else blocks.at(-1)!.push(item);
-        open = item.kind !== "separator";
+        open = !(depthOf(item) === 0 && item.kind === "separator");
     }
     return blocks;
 };
-const blocksFor = (items: readonly SidebarItem[], id: string): SidebarItem[][] =>
-    items.find((item) => item.id === id)?.kind === "section"
-        ? sectionBlocks(items)
-        : items.map((item) => [item]);
+/* What a drag of `id` carries: a section its run, any other row its subtree. */
+const carriedOf = (items: readonly SidebarItem[], id: string): SidebarItem[] => {
+    if (items.find((item) => item.id === id)?.kind === "section")
+        return sectionBlocks(items).find((block) => block[0]!.id === id)!;
+    const at = items.findIndex((item) => item.id === id);
+    let end = at + 1;
+    while (end < items.length && depthOf(items[end]) > depthOf(items[at])) end += 1;
+    return items.slice(at, end);
+};
 /* A move the way the document applies one: a section carries its whole run, a
-   folded section's run travels with it, and anything landing after a folded
-   section lands after its run. */
+   folded section's run travels with it, anything landing after a folded
+   section lands after its run, and any other row carries its nested rows. A
+   move with a parent sets the row down under it, after the named one of its
+   rows and that row's own nested rows, and opens it; one without, at the top
+   level. */
 const moveApply = (items: readonly SidebarItem[], move: SidebarReorder): SidebarItem[] => {
-    const breaks = (item: SidebarItem) => item.kind === "section" || item.kind === "separator";
     const blockEnd = (list: readonly SidebarItem[], index: number) => {
         let end = index + 1;
         while (end < list.length && !breaks(list[end]!)) end += 1;
         return end;
     };
-    const runEnd = (list: readonly SidebarItem[], index: number) =>
-        list[index]!.kind === "section" && list[index]!.collapsed === true
-            ? blockEnd(list, index)
-            : index + 1;
+    const runEnd = (list: readonly SidebarItem[], index: number) => {
+        if (list[index]!.kind === "section" && list[index]!.collapsed === true)
+            return blockEnd(list, index);
+        let end = index + 1;
+        while (end < list.length && depthOf(list[end]) > depthOf(list[index])) end += 1;
+        return end;
+    };
     const from = items.findIndex((item) => item.id === move.id);
     const section = items[from]!.kind === "section";
-    const moved = items.slice(from, section ? blockEnd(items, from) : runEnd(items, from));
+    const base = depthOf(items[from]);
+    const level =
+        move.parentId === undefined
+            ? 0
+            : depthOf(items.find((item) => item.id === move.parentId)) + 1;
+    const moved = items
+        .slice(from, section ? blockEnd(items, from) : runEnd(items, from))
+        .map((item) => ({ ...item, depth: depthOf(item) - base + level }));
     const rest = [...items.slice(0, from), ...items.slice(from + moved.length)];
     let at = 0;
-    if (move.afterId !== null) {
+    if (move.parentId !== undefined) {
+        const parent = rest.findIndex((item) => item.id === move.parentId);
+        rest[parent] = { ...rest[parent]!, collapsed: false };
+        at =
+            move.afterId === null
+                ? parent + 1
+                : runEnd(
+                      rest,
+                      rest.findIndex((item) => item.id === move.afterId),
+                  );
+    } else if (move.afterId !== null) {
         const after = rest.findIndex((item) => item.id === move.afterId);
         at =
             section && rest[after]!.kind !== "separator"
@@ -122,7 +189,14 @@ const random = (seed: number) => {
     };
 };
 
-type Box = readonly [id: string, top: number, height: number, animated: boolean];
+type Box = readonly [
+    id: string,
+    top: number,
+    height: number,
+    animated: boolean,
+    /** Where the row's name starts, which only a change of level moves. */
+    labelLeft: number,
+];
 type Frame = { readonly at: number; readonly boxes: readonly Box[] };
 type Outcome = "confirm" | "twice" | "late" | "async" | "refuse" | "decline";
 
@@ -175,6 +249,16 @@ const check = (
             if (!foldCarried) problems.push(`${id} left the list`);
             continue;
         }
+        // Only the carried row changes level, and only while it is held, or
+        // once more when a move is put back.
+        const lefts = boxes.map((box) => box![4]);
+        const sideways = lefts
+            .slice(carried.has(id) ? releaseIndex : 0)
+            .filter((left, index, list) => index > 0 && Math.abs(left - list[index - 1]!) > 0.5);
+        if (sideways.length > (carried.has(id) && returns ? 1 : 0))
+            problems.push(
+                `${id}'s name moved sideways ${String(sideways.length)} times${carried.has(id) ? " after it was let go of" : ""}`,
+            );
         const tops = boxes.map((box) => box![1]);
         // The carried block follows the hand until it is let go of.
         const from = carried.has(id) ? releaseIndex : 0;
@@ -316,11 +400,13 @@ const chaos = async (seed: number, iterations: number) => {
         [...body.querySelectorAll<HTMLElement>('[data-happy-desktop-ui="sidebar-item"]')].map(
             (node) => {
                 const bounds = node.getBoundingClientRect();
+                const label = node.querySelector('[data-happy-desktop-ui="sidebar-item-label"]');
                 return [
                     node.dataset.itemId!,
                     bounds.top,
                     bounds.height,
                     node.getAnimations().length > 0,
+                    label ? label.getBoundingClientRect().left : bounds.left,
                 ] as const;
             },
         );
@@ -348,21 +434,22 @@ const chaos = async (seed: number, iterations: number) => {
         if (outcome === "refuse") for (const answer of later.splice(0)) answer();
         const before = shown;
         let landed = visibleIds(before);
+        let landedDepth = depthOf(before.find((item) => item.id === id));
         let written: number | undefined;
         applyMove = (move) => {
             const items = moveApply(shown, move);
             landed = visibleIds(items);
+            landedDepth = depthOf(items.find((item) => item.id === id));
             if (outcome === "decline") return;
             sent += 1;
             written = sent;
             if (outcome === "async") setTimeout(() => show(items), next() * 40);
             else show(items);
         };
-        const carried = new Set(
-            blocksFor(shown, id)
-                .find((block) => block[0]!.id === id)!
-                .map((item) => item.id),
-        );
+        const carried = new Set(carriedOf(shown, id).map((item) => item.id));
+        // A row that may change parents is also carried sideways, by up to a
+        // level and a half either way.
+        const sideways = attaches(shown, id) ? Math.round((next() * 2 - 1) * 24) : 0;
 
         const frames: Frame[] = [];
         let recording = true;
@@ -385,7 +472,12 @@ const chaos = async (seed: number, iterations: number) => {
         const steps = 2 + Math.floor(next() * 14);
         const travel = slots * 34;
         for (let step = 1; step <= steps; step += 1) {
-            pointer(body, "pointermove", x, y + Math.sign(slots) * 8 + (travel * step) / steps);
+            pointer(
+                body,
+                "pointermove",
+                x + (sideways * step) / steps,
+                y + Math.sign(slots) * 8 + (travel * step) / steps,
+            );
             for (let wait = Math.floor(next() * 3); wait >= 0; wait -= 1) await frame();
             if (next() < 0.25) later.shift()?.();
             if (next() < 0.2) prioritize();
@@ -421,14 +513,19 @@ const chaos = async (seed: number, iterations: number) => {
         if (hole < 0) hole = resting.length;
         const preview = resting.map(([candidate]) => candidate);
         preview.splice(hole, 0, ...visibleIds(before).filter((item) => carried.has(item)));
+        const previewDepth = Number(row(id).dataset.depth ?? 0);
         releaseIndex = frames.length;
-        pointer(body, "pointerup", x, y + Math.sign(slots) * 8 + travel);
+        pointer(body, "pointerup", x + sideways, y + Math.sign(slots) * 8 + travel);
         expect(dragging, "the drag ended").toBe(false);
         // Rows a carried fold lands on are folded into it; every other row is
         // where the preview showed it. Rows leaving otherwise fail per frame.
         expect(landed, `seed ${String(seed)} #${String(iteration)}: lands as previewed`).toEqual(
             preview.filter((candidate) => landed.includes(candidate)),
         );
+        expect(
+            landedDepth,
+            `seed ${String(seed)} #${String(iteration)}: ${id} lands at the level it was let go of at`,
+        ).toBe(previewDepth);
 
         // The daemon answers.
         const answer = written;
@@ -438,6 +535,7 @@ const chaos = async (seed: number, iterations: number) => {
                 version = answer;
                 show(before.map((item) => ({ ...item })));
                 landed = visibleIds(before);
+                landedDepth = depthOf(before.find((item) => item.id === id));
             } else if (outcome === "late") {
                 later.push(() => reply(answer));
             } else {
@@ -454,6 +552,7 @@ const chaos = async (seed: number, iterations: number) => {
             }
         } else if (outcome === "decline") {
             landed = visibleIds(before);
+            landedDepth = depthOf(before.find((item) => item.id === id));
         }
         // Echoes and Prioritizing after the drop as well.
         setTimeout(() => show(shown.map((item) => ({ ...item }))), next() * 300);
@@ -471,9 +570,13 @@ const chaos = async (seed: number, iterations: number) => {
             landed,
             head.kind === "section" && head.collapsed === true,
         );
+        if (Number(row(id)?.dataset.depth ?? 0) !== landedDepth)
+            problems.push(
+                `${id} settled at level ${row(id)?.dataset.depth ?? "0"}, expected ${String(landedDepth)}`,
+            );
         expect(
             problems,
-            `seed ${String(seed)} #${String(iteration)}: ${outcome} drag of ${id} by ${String(slots)}`,
+            `seed ${String(seed)} #${String(iteration)}: ${outcome} drag of ${id} by ${String(slots)}${sideways ? ` and ${String(sideways)}px sideways` : ""}`,
         ).toEqual([]);
     }
     for (const answer of later.splice(0)) answer();

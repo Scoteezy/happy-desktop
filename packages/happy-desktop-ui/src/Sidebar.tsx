@@ -80,6 +80,17 @@ export type SidebarItem = {
     /** Nesting level. `0`/absent is top level; each level adds `SIDEBAR_ROW_INDENT` of left inset. */
     depth?: number;
     /**
+     * This row may change parents: be set down under a row that takes
+     * attachments, taken back out to the top level, or moved from one such row
+     * to another. Only a row with no rows of its own nested under it, at the
+     * top level or directly under a row, travels this way; any other row keeps
+     * the ordinary moves. The horizontal position of the hand picks the level
+     * wherever both are possible.
+     */
+    attachable?: boolean;
+    /** A top-level row that takes `attachable` rows under it. */
+    attachTarget?: boolean;
+    /**
      * A single emoji in the row's leading slot instead of a house glyph, for a
      * row whose mark the reader chose themselves — a folder, say.
      *
@@ -406,7 +417,11 @@ export type SidebarNumberShortcutTarget = {
 export interface SidebarReorder {
     readonly id: string;
     readonly afterId: string | null;
-    /** Set when the drag rearranged one row's children rather than the top level. */
+    /**
+     * The row it now stands under, when that is not the top level: the parent
+     * of the siblings a nested drag rearranged, or the row an `attachable` row
+     * was set down under. Absent, the row stands at the top level.
+     */
     readonly parentId?: string;
 }
 /**
@@ -816,6 +831,12 @@ interface SidebarDrag {
     readonly parentId?: string;
     /** Slots a drop may not land in because it would hide a row on screen. */
     readonly blocked?: readonly boolean[];
+    /**
+     * Set when the carried row may change parents. Every row is then its own
+     * peer, so the hole opens between any two rows, and each slot says where
+     * the row may stand there: at the top level, under a row, or both.
+     */
+    readonly attach?: SidebarAttach;
     /** False until the pointer passes the threshold, so a click still selects. */
     readonly moved: boolean;
     /**
@@ -829,6 +850,24 @@ interface SidebarDrag {
         /** The slot the row already stands in; landing there moves nothing. */
         readonly home?: SidebarDropSlot;
     };
+}
+
+/** Where a row that may change parents can stand in one slot. */
+interface SidebarAttachLanding {
+    /** At the top level, after this top-level row (or first). */
+    readonly top?: { readonly afterId: string | null };
+    /** Under `parentId`, after this one of its rows (or first). */
+    readonly nested?: { readonly parentId: string; readonly afterId: string | null };
+}
+
+interface SidebarAttach {
+    readonly startX: number;
+    /** The level the row stood at when it was picked up. */
+    readonly fromDepth: number;
+    /** By slot, as `to` counts them. */
+    readonly landings: readonly SidebarAttachLanding[];
+    /** The level the row is shown at in the slot it is over now. */
+    readonly depth: number;
 }
 
 /** One place a carried row can land: a section, the row it follows, and the line's y. */
@@ -959,6 +998,102 @@ function dragUnitsOf(
     };
 }
 
+/**
+ * Whether a drag starting on `index` may change the row's parent: an
+ * `attachable` row with nothing nested under it, at the top level or directly
+ * under a row, in a list where some row takes attachments. `all` is every row
+ * the list holds, folded ones included, so a folded row's hidden rows count.
+ */
+function attachDragOf(
+    all: readonly SidebarItem[],
+    items: readonly SidebarItem[],
+    index: number,
+): boolean {
+    const item = items[index];
+    if (item?.attachable !== true || (item.depth ?? 0) > 1) return false;
+    const at = all.findIndex((candidate) => candidate.id === item.id);
+    if (at >= 0 && (all[at + 1]?.depth ?? 0) > (item.depth ?? 0)) return false;
+    return items.some((candidate) => candidate.attachTarget === true);
+}
+
+/**
+ * The peers of a row that may change parents: every row of the unbroken run
+ * of movable top-level blocks around it, each alone, so the hole can open
+ * between any two of them — between a row's attachments as well as between
+ * top-level rows.
+ */
+function attachUnitsOf(
+    items: readonly SidebarItem[],
+    index: number,
+): readonly (readonly number[])[] {
+    const blocks = blocksOf(items);
+    const movable = (block: readonly number[]): boolean => items[block[0]!]?.reorderable !== false;
+    const at = blocks.findIndex((block) => block.includes(index));
+    let first = at;
+    while (first > 0 && movable(blocks[first - 1]!)) first -= 1;
+    let last = at;
+    while (last < blocks.length - 1 && movable(blocks[last + 1]!)) last += 1;
+    return blocks.slice(first, last + 1).flatMap((block) => block.map((row) => [row]));
+}
+
+/**
+ * Where a row that may change parents can stand in each slot of its drag.
+ *
+ * Above a top-level row (or at the end) it may stand at the top level, after
+ * the top-level row whose block the slot follows, unless that would hide a row
+ * on screen. Right after a row that takes attachments and is open, or among
+ * that row's rows, it may stand under it, after whichever of its rows the
+ * slot follows. Among a row's rows it may only stand under that row, so a drop
+ * never splits one row's rows from it; a slot inside a deeper subtree takes
+ * nothing.
+ */
+function attachLandings(
+    all: readonly SidebarItem[],
+    items: readonly SidebarItem[],
+    units: readonly (readonly number[])[],
+    from: number,
+): readonly SidebarAttachLanding[] {
+    const rows = units.map((unit) => items[unit[0]!]!);
+    const moved = rows[from]!;
+    const remaining = rows.filter((_, index) => index !== from);
+    const depthOf = (item: SidebarItem | undefined): number => item?.depth ?? 0;
+    /** The nearest row at `depth` at or above `index` in `remaining`. */
+    const ancestorAt = (index: number, depth: number): SidebarItem | undefined => {
+        for (let row = index; row >= 0; row -= 1)
+            if (depthOf(remaining[row]) === depth) return remaining[row];
+        return undefined;
+    };
+    return rows.map((_, to) => {
+        const above = to > 0 ? remaining[to - 1] : undefined;
+        const below = remaining[to];
+        const landing: {
+            top?: { afterId: string | null };
+            nested?: { parentId: string; afterId: string | null };
+        } = {};
+        if (below === undefined || depthOf(below) === 0) {
+            const afterId = above ? (ancestorAt(to - 1, 0)?.id ?? null) : null;
+            if (!landingHides(all, moved.id, afterId, remaining[0]?.id)) landing.top = { afterId };
+        }
+        if (above !== undefined && depthOf(below) <= 1) {
+            const parent = depthOf(above) === 0 ? above : ancestorAt(to - 1, 0);
+            if (parent?.attachTarget === true && parent.collapsed !== true)
+                landing.nested = {
+                    parentId: parent.id,
+                    afterId: above === parent ? null : (ancestorAt(to - 1, 1)?.id ?? null),
+                };
+        }
+        return landing;
+    });
+}
+
+/** The level a carried row stands at in a slot: the one the hand asks for, where both are open. */
+function attachDepthOf(attach: SidebarAttach, to: number, deltaX: number): number {
+    const landing = attach.landings[to];
+    if (!landing?.nested) return 0;
+    if (!landing.top) return 1;
+    return Math.max(0, Math.min(1, attach.fromDepth + Math.round(deltaX / SIDEBAR_ROW_INDENT)));
+}
+
 /** Where the dragged block lands: each neighbour it has passed by half that neighbour's height. */
 function dragTargetIndex(drag: SidebarDrag, deltaY: number): number {
     let index = drag.from;
@@ -1013,6 +1148,29 @@ function dragSlotsBlocked(
     peers: readonly string[],
     from: number,
 ): readonly boolean[] {
+    const movedId = peers[from];
+    const at = all.findIndex((item) => item.id === movedId);
+    if (at < 0 || movedId === undefined) return peers.map(() => false);
+    if (all[at]!.kind === "section" && all[at]!.collapsed === true) return peers.map(() => false);
+    const remaining = peers.filter((_, index) => index !== from);
+    return peers.map((_, to) =>
+        to === from
+            ? false
+            : landingHides(all, movedId, to === 0 ? null : remaining[to - 1]!, remaining[0]),
+    );
+}
+
+/**
+ * Whether setting `movedId` down at the top level after `afterId` (or before
+ * `firstId`, the first of its peers) would hide a row that is on screen, with
+ * the move applied the way the document applies one.
+ */
+function landingHides(
+    all: readonly SidebarItem[],
+    movedId: string,
+    afterId: string | null,
+    firstId: string | undefined,
+): boolean {
     const breaks = (item: SidebarItem): boolean =>
         (item.depth ?? 0) === 0 && (item.kind === "section" || item.kind === "separator");
     const blockEnd = (items: readonly SidebarItem[], index: number): number => {
@@ -1028,30 +1186,30 @@ function dragSlotsBlocked(
         while (end < items.length && (items[end]!.depth ?? 0) > depth) end += 1;
         return end;
     };
-    const shown = new Set(visibleRows(all).map((row) => row.item.id));
-    const movedId = peers[from];
     const at = all.findIndex((item) => item.id === movedId);
-    if (at < 0) return peers.map(() => false);
+    if (at < 0) return false;
     const section = all[at]!.kind === "section";
-    if (section && all[at]!.collapsed === true) return peers.map(() => false);
-    const moved = all.slice(at, section ? blockEnd(all, at) : runEnd(all, at));
+    const base = all[at]!.depth ?? 0;
+    // Set down at the top level, its rows keep their places under it.
+    const moved = all
+        .slice(at, section ? blockEnd(all, at) : runEnd(all, at))
+        .map((item) => (base === 0 ? item : { ...item, depth: (item.depth ?? 0) - base }));
     const rest = [...all.slice(0, at), ...all.slice(at + moved.length)];
-    const remaining = peers.filter((_, index) => index !== from);
-    return peers.map((_, to) => {
-        if (to === from) return false;
-        const afterId = to === 0 ? null : remaining[to - 1];
-        let insert = rest.findIndex((item) => item.id === (afterId ?? remaining[0]));
-        if (insert < 0) return false;
-        if (afterId !== null)
-            insert =
-                section && rest[insert]!.kind !== "separator"
-                    ? blockEnd(rest, insert)
-                    : runEnd(rest, insert);
-        const after = visibleRows([...rest.slice(0, insert), ...moved, ...rest.slice(insert)]);
-        const still = new Set(after.map((row) => row.item.id));
-        for (const id of shown) if (!still.has(id)) return true;
-        return false;
-    });
+    let insert = rest.findIndex((item) => item.id === (afterId ?? firstId));
+    if (insert < 0) return false;
+    if (afterId !== null)
+        insert =
+            section && rest[insert]!.kind !== "separator"
+                ? blockEnd(rest, insert)
+                : runEnd(rest, insert);
+    const shown = new Set(visibleRows(all).map((row) => row.item.id));
+    const still = new Set(
+        visibleRows([...rest.slice(0, insert), ...moved, ...rest.slice(insert)]).map(
+            (row) => row.item.id,
+        ),
+    );
+    for (const id of shown) if (!still.has(id)) return true;
+    return false;
 }
 
 /** The slot a drag lands in: the one under the pointer, or the nearest open one short of it. */
@@ -2701,7 +2859,17 @@ export function Sidebar(props: SidebarProps) {
     // The arrangement the drop asked for, and the row to read it from, so the
     // render that applies it can be recognised even when it moves nothing.
     const settleRef = useRef<
-        { readonly key: string; readonly expected: readonly string[] } | undefined
+        | {
+              readonly key: string;
+              readonly expected: readonly string[];
+              /** The level the moved row was set down at, when the drop changed it. */
+              readonly depth?: {
+                  readonly listId: SidebarListId;
+                  readonly id: string;
+                  readonly depth: number;
+              };
+          }
+        | undefined
     >(undefined);
     // Lets go of a capture the rearranging render never came for.
     const flipWait = useRef<number | undefined>(undefined);
@@ -2715,6 +2883,8 @@ export function Sidebar(props: SidebarProps) {
         readonly itemIds: readonly string[];
         readonly key: string;
         readonly listId: SidebarListId;
+        /** The level the row was let go of at, shown until the list has it there. */
+        readonly depth?: number;
     }>();
     // Set by a drag that actually moved, so the click the browser fires on
     // release rearranges rather than also opening what was dragged.
@@ -3045,7 +3215,13 @@ export function Sidebar(props: SidebarProps) {
         items: readonly SidebarItem[],
         rowIndex: number,
     ): void => {
-        const { units, parentId } = dragUnitsOf(items, rowIndex);
+        const attaching =
+            !local.itemDragAcrossSections &&
+            listId !== ACTIONS_LIST &&
+            attachDragOf(listItemsOf(listId) ?? items, items, rowIndex);
+        const { units, parentId } = attaching
+            ? { units: attachUnitsOf(items, rowIndex), parentId: undefined }
+            : dragUnitsOf(items, rowIndex);
         const blocks = units;
         const blockIndex = units.findIndex((unit) => unit.includes(rowIndex));
         dragClick.current = false;
@@ -3103,16 +3279,24 @@ export function Sidebar(props: SidebarProps) {
         // Scripted PointerEvents have no browser-owned pointer to capture.
         if (event.isTrusted) event.currentTarget.setPointerCapture(event.pointerId);
         const peers = units.map((unit) => items[unit[0]!]!.id);
-        const blocked =
-            parentId === undefined && !across
-                ? dragSlotsBlocked(listItemsOf(listId) ?? items, peers, blockIndex)
-                : undefined;
+        const landings = attaching
+            ? attachLandings(listItemsOf(listId) ?? items, items, units, blockIndex)
+            : undefined;
+        const blocked = landings
+            ? landings.map((landing) => !landing.top && !landing.nested)
+            : parentId === undefined && !across
+              ? dragSlotsBlocked(listItemsOf(listId) ?? items, peers, blockIndex)
+              : undefined;
+        const fromDepth = items[rowIndex]!.depth ?? 0;
         const held = blocks[blockIndex]!;
         const heldFirst = bounds[held[0]!];
         dragSet({
             listId,
             drag: {
                 ...(across ? { across } : {}),
+                ...(landings
+                    ? { attach: { startX: event.clientX, fromDepth, landings, depth: fromDepth } }
+                    : {}),
                 deltaY: 0,
                 from: blockIndex,
                 heights,
@@ -3142,7 +3326,15 @@ export function Sidebar(props: SidebarProps) {
         const current = dragRef.current;
         if (!current || event.pointerId !== current.drag.pointerId) return;
         const pointerDeltaY = event.clientY - current.drag.startY;
-        if (!current.drag.moved && Math.abs(pointerDeltaY) < DRAG_THRESHOLD) return;
+        // A row that may change parents is also carried sideways alone: in or
+        // out under the row right above it, without leaving its slot.
+        const pointerDeltaX = current.drag.attach ? event.clientX - current.drag.attach.startX : 0;
+        if (
+            !current.drag.moved &&
+            Math.abs(pointerDeltaY) < DRAG_THRESHOLD &&
+            Math.abs(pointerDeltaX) < DRAG_THRESHOLD
+        )
+            return;
         const across = current.drag.across;
         if (across) {
             // Keep ordinary clicks on their row. Only a real drag transfers its
@@ -3194,12 +3386,20 @@ export function Sidebar(props: SidebarProps) {
         }
         const deltaY = dragDeltaWithinPeers(current.drag, pointerDeltaY);
         const to = dragSlotOpen(current.drag, dragTargetIndex(current.drag, deltaY));
-        // A tick each time the row crosses into a new slot, so the arrangement
-        // can be felt without watching it.
-        if (to !== current.drag.to) haptic("selection");
+        const attach = current.drag.attach;
+        const depth = attach ? attachDepthOf(attach, to, event.clientX - attach.startX) : 0;
+        // A tick each time the row crosses into a new slot or level, so the
+        // arrangement can be felt without watching it.
+        if (to !== current.drag.to || (attach && depth !== attach.depth)) haptic("selection");
         dragSet({
             ...current,
-            drag: { ...current.drag, deltaY, moved: true, to },
+            drag: {
+                ...current.drag,
+                deltaY,
+                moved: true,
+                to,
+                ...(attach ? { attach: { ...attach, depth } } : {}),
+            },
         });
     };
 
@@ -3217,6 +3417,8 @@ export function Sidebar(props: SidebarProps) {
         readonly items: readonly SidebarItem[];
         readonly listId: SidebarListId;
         readonly movedId: string;
+        /** The level the row was set down at, when the drop changed it. */
+        readonly depth?: number;
     }): void => {
         const { expected, items, listId, movedId } = settle;
         const firsts = new Map<string, number>();
@@ -3268,7 +3470,13 @@ export function Sidebar(props: SidebarProps) {
         flipTargets.current = targets;
         flipHeld.current = undefined;
         connectorFlipRef.current = connectorFirsts;
-        settleRef.current = { expected, key: rowKey(listId, movedId) };
+        settleRef.current = {
+            expected,
+            key: rowKey(listId, movedId),
+            ...(settle.depth !== undefined
+                ? { depth: { listId, id: movedId, depth: settle.depth } }
+                : {}),
+        };
         // Released lit, not resting: the highlight is handed from the drag to
         // the travelling row and only let go once it has arrived.
         const movedIndex = items.findIndex((item) => item.id === movedId);
@@ -3280,6 +3488,7 @@ export function Sidebar(props: SidebarProps) {
                     : subtreeOf(items, movedIndex).map((index) => items[index]!.id),
             key: rowKey(listId, movedId),
             listId,
+            ...(settle.depth !== undefined ? { depth: settle.depth } : {}),
         });
         // The capture waits for the render that applies the new order, but
         // it cannot wait forever: a move the caller declines to make, or one
@@ -3367,6 +3576,8 @@ export function Sidebar(props: SidebarProps) {
         // Captured even when the row lands back on its own slot: it was let go of
         // wherever the hand had it, and it glides home from there rather than
         // snapping the last few pixels.
+        const attach = drag.attach;
+        const releveled = attach !== undefined && attach.depth !== attach.fromDepth;
         if (!reducedMotion() && movedId !== undefined)
             settleCapture({
                 carried: true,
@@ -3374,13 +3585,27 @@ export function Sidebar(props: SidebarProps) {
                 items,
                 listId: current.listId,
                 movedId,
+                ...(attach ? { depth: attach.depth } : {}),
             });
         liftFadeStart({
             listId: current.listId,
             drag: sectionDragOf(current.listId, items) ?? drag,
         });
         dragSet(undefined);
-        if (drag.from === drag.to || movedId === undefined) return;
+        if ((drag.from === drag.to && !releveled) || movedId === undefined) return;
+        if (attach) {
+            const landing = attach.landings[drag.to];
+            const nested = attach.depth === 1 ? landing?.nested : undefined;
+            const top = attach.depth === 0 ? landing?.top : undefined;
+            if (!nested && !top) return;
+            haptic("impact");
+            reorderOf(current.listId)?.(
+                nested
+                    ? { id: movedId, afterId: nested.afterId, parentId: nested.parentId }
+                    : { id: movedId, afterId: top!.afterId },
+            );
+            return;
+        }
         haptic("impact");
         // Stated against the peers the drag started with: the row it now follows
         // is whichever peer precedes its landing slot once it has been lifted
@@ -3530,7 +3755,11 @@ export function Sidebar(props: SidebarProps) {
         const connectorFirsts = connectorFlipRef.current;
         const settle = settleRef.current;
         const arranged =
-            settle !== undefined && orderArranged(rowNodes.get(settle.key), settle.expected);
+            settle !== undefined &&
+            orderArranged(rowNodes.get(settle.key), settle.expected) &&
+            (settle.depth === undefined ||
+                (listItemsOf(settle.depth.listId)?.find((item) => item.id === settle.depth!.id)
+                    ?.depth ?? 0) === settle.depth.depth);
         if (!arranged && flipHeld.current) return;
         // A row held by an earlier pass starts from where that hold has it now.
         const held = flipHeld.current;
@@ -4556,6 +4785,19 @@ export function Sidebar(props: SidebarProps) {
                                                 listId: section.id,
                                             });
                                             const held = dragging && unitIndex === drag.from;
+                                            // Carried, the row stands at the level it
+                                            // would land at, and once let go it stays
+                                            // there until the list has it there too.
+                                            const level = held
+                                                ? drag.attach?.depth
+                                                : dropped?.listId === section.id &&
+                                                    dropped.key === key
+                                                  ? dropped.depth
+                                                  : undefined;
+                                            const shownItem =
+                                                level !== undefined && level !== (item.depth ?? 0)
+                                                    ? { ...item, depth: level }
+                                                    : item;
                                             return (
                                                 <SidebarListRow
                                                     handlers={rowHandlers}
@@ -4601,7 +4843,7 @@ export function Sidebar(props: SidebarProps) {
                                                     }
                                                     grabbed={held}
                                                     key={item.id}
-                                                    item={item}
+                                                    item={shownItem}
                                                     reorderable={reorderable}
                                                     shortcutActive={
                                                         item.shortcut !== undefined ||
