@@ -2005,13 +2005,18 @@ export function MessageList(props: MessageListProps) {
         const index = itemIndexOf(anchor.key, anchor.index);
         const item = index === undefined ? undefined : modeledItemAtIndex(index);
         if (index === undefined || !item) return undefined;
+        const point =
+            item.start +
+            Math.min(anchor.itemOffset, item.size) -
+            Math.max(0, viewportHeight - anchor.viewportInset);
+        /* A transcript on the viewport's floor cannot scroll: its rows sit
+           where the floor puts them. Placing a point any lower needs held
+           space, which takes the floor gap away, so it counts only the held
+           inset, as every scrolled transcript does. */
+        const floored = leadingGap(viewportHeight) + point;
         return {
             index,
-            scrollTop:
-                leadingGap(viewportHeight) +
-                item.start +
-                Math.min(anchor.itemOffset, item.size) -
-                Math.max(0, viewportHeight - anchor.viewportInset),
+            scrollTop: floored <= 0 ? 0 : geometrySparseInset.current + point,
         };
     }
     function modelAnchorRestore(anchor: MessageListVirtualAnchor, viewportHeight: number) {
