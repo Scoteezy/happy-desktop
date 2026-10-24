@@ -106,6 +106,7 @@
         ],
         "mac": {
             "extendInfo": {
+                "NSCameraUsageDescription": "Happy lets tools you run, such as agents or terminal commands, use your camera when you allow it.",
                 "NSMicrophoneUsageDescription": "Happy uses your microphone for GPT-Live voice conversations when you choose Start."
             },
             "category": "public.app-category.developer-tools",
