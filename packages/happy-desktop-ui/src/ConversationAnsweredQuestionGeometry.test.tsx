@@ -5,9 +5,14 @@ import { ConversationView } from "./ConversationView";
 import { createRenderer } from "./testing";
 
 const frame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-it.each([false, true])(
-    "matches narrow answered question height (options=%s, seed 999983)",
-    async (options) => {
+it.each([
+    [false, "Layout"],
+    [true, "Layout"],
+    [false, "Authentication"],
+    [true, "Configurationmanagement"],
+])(
+    "matches narrow answered question height (options=%s, header %s, seed 999983)",
+    async (options, header) => {
         const entry: ConversationEntry = {
             kind: "request",
             id: "question",
@@ -20,7 +25,7 @@ it.each([false, true])(
                 questions: [
                     {
                         id: "choice",
-                        header: "Layout",
+                        header,
                         question: "Keep this layout?",
                         multiSelect: false,
                         required: true,

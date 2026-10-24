@@ -120,6 +120,14 @@
     min-width: 0;
 }
 
+/* A name or rule wider than the column breaks inside its word, as the prompt
+   does, rather than spilling past the card. */
+.happy-agent-input__header,
+.happy-agent-input__rule {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 .happy-agent-input__header {
     font-size: 13px;
     font-weight: 500;
